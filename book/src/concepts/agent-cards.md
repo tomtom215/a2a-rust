@@ -41,6 +41,33 @@ Agent cards are served at `/.well-known/agent-card.json` and contain:
 }
 ```
 
+## Naming a protocol binding
+
+`protocolBinding` names the transport a client should dial. The spec's
+canonical values are `"JSONRPC"`, `"GRPC"` and `"HTTP+JSON"` (§5.3), and any
+binding outside those three is a *custom binding* (§12).
+
+Custom bindings **should** be identified by a URI rather than a bare word
+(§5.8). A bare name is unique only by convention: two projects can define
+incompatible bindings called `"WEBSOCKET"` and nothing in the card tells a
+client which one it is looking at. A URI under a domain the binding's author
+controls can only mean one thing. It is an identifier, not a document — it
+does not have to resolve.
+
+The two custom bindings in this project both follow that rule:
+
+| Binding | `protocolBinding` | Constant |
+|---|---|---|
+| WebSocket | `https://a2a-rust.com/bindings/websocket/v1` | `a2a_protocol_types::WEBSOCKET_BINDING_URI` |
+| SLIMRPC | `https://a2a-protocol.org/bindings/experimental-slimrpc/v1` | `a2a_protocol_slimrpc::SLIMRPC_PROTOCOL_BINDING` |
+
+The trailing `/v1` carries the binding's version, because §5.8 asks for a
+*new URI* on a breaking change rather than a redefinition of the old one.
+
+Before 0.11.0 this project advertised the bare `"WEBSOCKET"`. A client reading
+cards in the wild should accept both spellings for as long as the old one is
+still out there.
+
 ## Required Fields
 
 | Field | Description |

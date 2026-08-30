@@ -122,7 +122,7 @@ for why, and for the version-coupling rule that independence does *not* remove.
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.10"
+a2a-protocol-sdk = "0.11"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 

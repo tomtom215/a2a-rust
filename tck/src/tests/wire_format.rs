@@ -78,13 +78,21 @@ pub async fn test_task_state_values(url: &str, binding: &str) -> Result<(), Stri
     Ok(())
 }
 
-/// Tests that the server accepts the A2A media type `application/a2a+json`.
+/// Tests that a §11 REST server accepts the media type `application/a2a+json`.
 ///
-/// The A2A v1.0 specification registers `application/a2a+json` (Section
-/// 14.2), and production clients — including `a2a-protocol-client` — send it
-/// as the request Content-Type. A server that only accepts plain
-/// `application/json` interoperates with hand-written curl commands but
-/// rejects real clients, so this must be a conformance failure.
+/// §11 says it **SHOULD** be used for requests and responses, and §14.1.1
+/// registers it with the interoperability note *"This media type is intended
+/// for the HTTP+JSON/REST binding."* A REST server that rejects it refuses a
+/// media type the specification tells clients to send.
+///
+/// **Only §11.** The registration is §14.1.1, not §14.2, and the claim this
+/// comment used to make — that "production clients, including
+/// `a2a-protocol-client`, send it as the request Content-Type" — was not
+/// true of either binding: `transport/jsonrpc.rs` and `transport/rest/`
+/// both send `JSON_CONTENT_TYPE`. The check ran against JSON-RPC on the
+/// strength of that claim and failed two conformant reference SDKs, which
+/// the ITK then carried as upstream divergences. See `REST_MEDIA_TYPE_ONLY`
+/// in `runner.rs` for the scope and the citations.
 pub async fn test_a2a_media_type_accepted(url: &str, binding: &str) -> Result<(), String> {
     let params = helpers::make_send_params("TCK: a2a media type");
     let result = helpers::send_message_a2a_media_type(url, binding, params).await?;

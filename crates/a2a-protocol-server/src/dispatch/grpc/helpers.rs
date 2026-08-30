@@ -58,7 +58,6 @@ pub(super) fn validated_metadata(
 /// clients get the same machine-readable error identity as the JSON-RPC
 /// (`error.data`) and REST (`error.details`) bindings.
 pub(super) fn server_error_to_status(err: &ServerError) -> Status {
-    use a2a_protocol_types::ErrorCode;
     // Resource-limit rejections have no A2A/JSON-RPC code but map cleanly to the
     // gRPC RESOURCE_EXHAUSTED status (the retryable overload signal), so
     // special-case them before the code-based mapping.
@@ -66,20 +65,20 @@ pub(super) fn server_error_to_status(err: &ServerError) -> Status {
         return Status::new(tonic::Code::ResourceExhausted, msg.clone());
     }
     let a2a_err = err.to_a2a_error();
-    let code = match a2a_err.code {
-        ErrorCode::TaskNotFound => tonic::Code::NotFound,
-        ErrorCode::TaskNotCancelable
-        | ErrorCode::ExtendedAgentCardNotConfigured
-        | ErrorCode::ExtensionSupportRequired => tonic::Code::FailedPrecondition,
-        ErrorCode::ContentTypeNotSupported
-        | ErrorCode::InvalidParams
-        | ErrorCode::InvalidRequest
-        | ErrorCode::ParseError => tonic::Code::InvalidArgument,
-        ErrorCode::MethodNotFound
-        | ErrorCode::PushNotificationNotSupported
-        | ErrorCode::UnsupportedOperation
-        | ErrorCode::VersionNotSupported => tonic::Code::Unimplemented,
-        ErrorCode::InvalidAgentResponse | ErrorCode::InternalError | _ => tonic::Code::Internal,
+    // Derived from §5.4's table rather than restating it. This was a second
+    // copy of the mapping, and when §5.4 moved `PushNotificationNotSupported`,
+    // `UnsupportedOperation` and `VersionNotSupported` off `UNIMPLEMENTED`,
+    // a copy is exactly what would have been left behind. `grpc_status()` is
+    // the table; this only turns its name into a `tonic::Code`.
+    let code = match a2a_err.code.grpc_status() {
+        "NOT_FOUND" => tonic::Code::NotFound,
+        "FAILED_PRECONDITION" => tonic::Code::FailedPrecondition,
+        "INVALID_ARGUMENT" => tonic::Code::InvalidArgument,
+        "UNIMPLEMENTED" => tonic::Code::Unimplemented,
+        // "INTERNAL", and any status name added to the table later: a code
+        // this function has not been taught is reported as an internal error
+        // rather than silently becoming some unrelated status.
+        _ => tonic::Code::Internal,
     };
     if let Some(reason) = a2a_err.code.a2a_reason() {
         use tonic_types::StatusExt as _;
@@ -249,7 +248,10 @@ mod tests {
             }
             let status = validated_metadata(&meta, true)
                 .expect_err("absent/empty version must be rejected under the strict default");
-            assert_eq!(status.code(), tonic::Code::Unimplemented);
+            // FAILED_PRECONDITION, not UNIMPLEMENTED: §5.4 moved
+            // `VersionNotSupportedError` off UNIMPLEMENTED, which is now
+            // reserved for a method the server does not serve at all.
+            assert_eq!(status.code(), tonic::Code::FailedPrecondition);
             let info = status
                 .get_details_error_info()
                 .expect("version rejection must carry ErrorInfo");
@@ -271,7 +273,10 @@ mod tests {
             meta.insert("a2a-version", version.parse().unwrap());
             let status =
                 validated_metadata(&meta, true).expect_err("unsupported version must be rejected");
-            assert_eq!(status.code(), tonic::Code::Unimplemented);
+            // FAILED_PRECONDITION, not UNIMPLEMENTED: §5.4 moved
+            // `VersionNotSupportedError` off UNIMPLEMENTED, which is now
+            // reserved for a method the server does not serve at all.
+            assert_eq!(status.code(), tonic::Code::FailedPrecondition);
             let info = status
                 .get_details_error_info()
                 .expect("version rejection must carry ErrorInfo");

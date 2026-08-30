@@ -60,15 +60,32 @@ const ENVELOPE_ONLY: Scope = Scope::Only {
     why: "only §9 and §12 carry a JSON-RPC envelope; §10 and §11 have none to inspect",
 };
 
-/// Checks that negotiate an HTTP request body's media type.
+/// Checks that negotiate the `application/a2a+json` request media type.
+///
+/// §11 alone. The scope was `["jsonrpc", "rest"]` until 2026-08-30, and on
+/// JSON-RPC it asserted something no binding requires:
+///
+/// * §9 (JSON-RPC binding) specifies `Content-Type: application/json` and
+///   never mentions `application/a2a+json`.
+/// * §11 (HTTP+JSON/REST binding) is where `application/a2a+json` **SHOULD**
+///   be used for requests and responses.
+/// * §14.1.1's interoperability note settles it: *"This media type is
+///   intended for the HTTP+JSON/REST binding."*
+/// * §6's examples that use it are REST requests (`POST /message:send`),
+///   not JSON-RPC envelopes.
 ///
 /// A §12 WebSocket request is a text frame and a §10 gRPC request is a
 /// protobuf body whose content type is fixed at `application/grpc`; neither
-/// can carry `application/a2a+json`, so the check is not applicable rather
-/// than passing or failing.
-const HTTP_BODY_ONLY: Scope = Scope::Only {
-    bindings: &["jsonrpc", "rest"],
-    why: "application/a2a+json is an HTTP-body media type; §10 and §12 have no field for it",
+/// can carry the media type either.
+///
+/// Two agents were being failed by the old scope — `@a2a-js/sdk` and
+/// `a2a-java`, both of which reject the media type on JSON-RPC exactly as §9
+/// describes — and both were carried in the ITK's `--skip` list as upstream
+/// divergences. They were conformant; this kit was not.
+const REST_MEDIA_TYPE_ONLY: Scope = Scope::Only {
+    bindings: &["rest"],
+    why: "§14.1.1 scopes application/a2a+json to the HTTP+JSON/REST binding; \
+          §9 specifies application/json, and §10/§12 have no field for it",
 };
 
 /// Result of a single conformance test.
@@ -316,7 +333,7 @@ pub async fn run_all(card_url: &str, rpc_url: &str, binding: &str) -> Vec<TestRe
     run_test(
         &mut results,
         "a2a_media_type_accepted",
-        HTTP_BODY_ONLY,
+        REST_MEDIA_TYPE_ONLY,
         binding,
         async { tests::wire_format::test_a2a_media_type_accepted(rpc_url, binding).await },
     )
@@ -354,12 +371,12 @@ async fn run_test<F>(
 
 #[cfg(test)]
 mod tests_runner {
-    use super::{Scope, BINDINGS, ENVELOPE_ONLY, HTTP_BODY_ONLY};
+    use super::{Scope, BINDINGS, ENVELOPE_ONLY, REST_MEDIA_TYPE_ONLY};
 
     /// Every `Scope` in the runner, so the drift guard below sees all of them.
     const ALL_SCOPES: &[(&str, Scope)] = &[
         ("ENVELOPE_ONLY", ENVELOPE_ONLY),
-        ("HTTP_BODY_ONLY", HTTP_BODY_ONLY),
+        ("REST_MEDIA_TYPE_ONLY", REST_MEDIA_TYPE_ONLY),
     ];
 
     /// A `Scope` naming a binding the CLI does not accept excludes that check
@@ -425,8 +442,13 @@ mod tests_runner {
         assert!(ENVELOPE_ONLY.covers("websocket"));
         assert!(!ENVELOPE_ONLY.covers("rest"));
         assert!(!ENVELOPE_ONLY.covers("grpc"));
-        assert!(HTTP_BODY_ONLY.covers("rest"));
-        assert!(!HTTP_BODY_ONLY.covers("websocket"));
-        assert!(!HTTP_BODY_ONLY.covers("grpc"));
+        assert!(REST_MEDIA_TYPE_ONLY.covers("rest"));
+        // JSON-RPC is excluded deliberately: §9 specifies application/json
+        // and §14.1.1 scopes application/a2a+json to §11. Asserting it here
+        // failed two conformant reference SDKs, and the ITK carried both as
+        // upstream divergences until 2026-08-30.
+        assert!(!REST_MEDIA_TYPE_ONLY.covers("jsonrpc"));
+        assert!(!REST_MEDIA_TYPE_ONLY.covers("websocket"));
+        assert!(!REST_MEDIA_TYPE_ONLY.covers("grpc"));
     }
 }

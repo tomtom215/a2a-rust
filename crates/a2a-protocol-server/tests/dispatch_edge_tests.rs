@@ -150,7 +150,7 @@ async fn rest_path_traversal_rejected() {
 #[tokio::test]
 async fn rest_unsupported_content_type() {
     let addr = start_rest_server(make_handler()).await;
-    let (status, _) = http_request(
+    let (status, body) = http_request(
         addr,
         "POST",
         "/message:send",
@@ -158,7 +158,18 @@ async fn rest_unsupported_content_type() {
         Some("text/plain"),
     )
     .await;
-    assert_eq!(status, 415);
+    // 400, not 415: §5.4 assigns `ContentTypeNotSupportedError` a 400.
+    //
+    // The body is asserted as well because this request is *also* malformed
+    // JSON, which answers 400 too — so the status alone no longer shows that
+    // the Content-Type check is what rejected it, and a regression that
+    // removed that check entirely would still leave this test green.
+    assert_eq!(status, 400);
+    assert!(
+        body.contains("unsupported Content-Type"),
+        "the Content-Type must be what rejected this, not the malformed \
+         body that would answer 400 anyway: {body}"
+    );
 }
 
 #[tokio::test]

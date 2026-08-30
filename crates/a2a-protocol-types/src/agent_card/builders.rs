@@ -39,9 +39,11 @@ impl AgentInterface {
     /// [`A2A_VERSION`](crate::A2A_VERSION).
     ///
     /// The spec's canonical bindings are `"JSONRPC"`, `"GRPC"` and
-    /// `"HTTP+JSON"` (§5.3); `"WEBSOCKET"` and other custom values are
-    /// permitted (§12). Prefer [`Self::jsonrpc`], [`Self::grpc`] or
-    /// [`Self::rest`] over spelling one out.
+    /// `"HTTP+JSON"` (§5.3). Custom bindings are permitted (§12), and §5.8
+    /// says one **SHOULD** be identified by a URI — see
+    /// [`WEBSOCKET_BINDING_URI`](crate::WEBSOCKET_BINDING_URI) for this
+    /// crate's own. Prefer [`Self::jsonrpc`], [`Self::grpc`] or
+    /// [`Self::rest`] over spelling a canonical one out.
     ///
     /// ```
     /// use a2a_protocol_types::agent_card::AgentInterface;

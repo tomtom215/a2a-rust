@@ -40,7 +40,7 @@ off in both cases:
 | Card signing types | `signing` |
 
 ```toml
-a2a-protocol-server = { version = "0.10", features = ["tracing", "otel", "sqlite"] }
+a2a-protocol-server = { version = "0.11", features = ["tracing", "otel", "sqlite"] }
 ```
 
 ## The agent logs nothing

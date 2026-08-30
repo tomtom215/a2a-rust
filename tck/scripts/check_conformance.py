@@ -123,6 +123,32 @@ def flatten(failures: dict[str, dict[str, str]]) -> set[tuple[str, str]]:
     return {(req, tr) for req, trs in failures.items() for tr in trs}
 
 
+def graded_requirements(report: dict) -> set[str]:
+    """Gated requirement ids this report actually reached a verdict on.
+
+    Used to scope the stale-baseline check. A scoped run — the minimal and
+    required-extension profiles both are — grades a subset, and a baselined
+    failure it never exercised is not evidence that the failure is fixed. It
+    is no evidence at all.
+
+    This mattered from the moment the baseline stopped being empty. Until
+    2026-08-30 it held zero entries, so `base - obs` was always empty and the
+    scoped gates could not trip on it; the first two entries would have failed
+    both of them with STALE BASELINE while the full run passed. A mechanism
+    that is never exercised is not a mechanism that works.
+    """
+    per_req = report.get("per_requirement")
+    if not isinstance(per_req, dict):
+        sys.exit("error: report has no 'per_requirement' object — wrong file?")
+    return {
+        rid
+        for rid, entry in per_req.items()
+        if isinstance(entry, dict)
+        and entry.get("level") in GATED_LEVELS
+        and entry.get("status") in GRADED
+    }
+
+
 def unmet_requirements(report: dict, required: list[str]) -> list[str]:
     """Return a message per requirement in `required` that is not graded PASS.
 
@@ -236,7 +262,11 @@ def main() -> int:
 
     obs, base = flatten(observed), flatten(baseline)
     regressions = sorted(obs - base)
-    fixed = sorted(base - obs)
+    # Only a requirement this run actually graded can be called fixed. On a
+    # scoped profile the rest were never asked, and silence is not a pass.
+    exercised = graded_requirements(report) | {req for req, _ in obs}
+    fixed = sorted(pair for pair in base - obs if pair[0] in exercised)
+    unexercised = sorted({req for req, _ in base} - exercised)
 
     unmet = unmet_requirements(report, args.require_pass)
     graded = graded_count(report)
@@ -266,6 +296,13 @@ def main() -> int:
         print("\nGood news, but the baseline must shrink to match, or it stops")
         print("gating. Run:")
         print("  tck/scripts/check_conformance.py --report … --baseline … --update")
+
+    if unexercised:
+        print(
+            f"\nnote: {len(unexercised)} baselined requirement(s) were not graded by "
+            "this run\n      and are neither confirmed nor cleared by it: "
+            + ", ".join(unexercised)
+        )
 
     if unmet:
         print(f"\nNOT MEASURED — {len(unmet)} requirement(s) required to PASS did not:")

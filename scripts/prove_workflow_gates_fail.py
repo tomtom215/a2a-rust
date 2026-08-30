@@ -276,6 +276,7 @@ def compat_report(
     *,
     failing: dict[str, str] | None = None,
     extra_pass: dict[str, str] | None = None,
+    baselined: dict[str, dict[str, str]] | None = None,
 ) -> dict:
     """A `compatibility.json` shaped like the real suite's, with N graded MUSTs.
 
@@ -297,6 +298,24 @@ def compat_report(
             "status": status,
             "transports": {"jsonrpc": status},
         }
+    # Baselined failures must reproduce the baseline's exact (requirement,
+    # transport) pairs, since that is the granularity the gate compares at.
+    # "*" is the sentinel for a failure the report cannot attribute to a
+    # transport, and it is expressed the way the real report expresses it:
+    # no transports, failing top-level status.
+    for rid, transports in (baselined or {}).items():
+        if set(transports) == {"*"}:
+            per_req[rid] = {
+                "level": "MUST",
+                "status": transports["*"],
+                "transports": {},
+            }
+        else:
+            per_req[rid] = {
+                "level": "MUST",
+                "status": "FAIL",
+                "transports": dict(transports),
+            }
     for rid, status in (extra_pass or {}).items():
         per_req[rid] = {
             "level": "MUST",
@@ -316,16 +335,39 @@ def write_report(path: Path, report: dict) -> None:
     path.write_text(json.dumps(report))
 
 
-def mutants_out(root: Path, *, caught: int, missed: int, drop: str | None = None) -> None:
-    """A `mutants.out/` directory as cargo-mutants leaves it."""
+def mutants_out(
+    root: Path,
+    *,
+    caught: int,
+    missed: int,
+    drop: str | None = None,
+    selected: int | None = None,
+) -> None:
+    """A `mutants.out/` directory as cargo-mutants leaves it.
+
+    `mutants.json` lists every mutant the run *selected*, written up front,
+    before any is tested; the four outcome lists between them account for the
+    ones actually graded. `selected` defaults to `caught + missed` so the
+    fixture is self-consistent.
+
+    It was a bare `[]` until 2026-08-30, which made the healthy shape claim
+    nothing had been selected while ten mutants were caught. Harmless while
+    nothing read the file — and it meant the accounting check added to that
+    step could not be proven by this harness, because every fixture looked
+    like an empty selection. Setting `selected` above the outcome counts is
+    how the failed-baseline shape is expressed: mutants chosen, none graded.
+    """
     d = root / "mutants.out"
     d.mkdir(parents=True, exist_ok=True)
+    n_selected = caught + missed if selected is None else selected
     files = {
         "caught.txt": "".join(f"src/lib.rs:{i}: replace foo\n" for i in range(1, caught + 1)),
         "missed.txt": "".join(f"src/lib.rs:{i}: replace bar\n" for i in range(1, missed + 1)),
         "timeout.txt": "",
         "unviable.txt": "",
-        "mutants.json": "[]",
+        "mutants.json": json.dumps(
+            [{"function": f"f{i}", "file": "src/lib.rs"} for i in range(n_selected)]
+        ),
     }
     for name, content in files.items():
         if name == drop:
@@ -404,6 +446,26 @@ SIGNED = "Signed-off-by: A Human <human@example.com>"
 
 TCK_BASELINE = "tck/conformance-baseline.json"
 
+# Shared by every "start a server, then poll until it answers" step. Extracted
+# rather than repeated so the five call sites cannot drift into five slightly
+# different justifications for the same exemption.
+READINESS_POLL = (
+    "a readiness poll against a server this harness would have to build and "
+    "run; its failure mode (agent never came up) is already loud, and the "
+    "conformance verdict it guards is the a2a-tck run that follows"
+)
+
+
+def load_baseline_failures() -> dict[str, dict[str, str]]:
+    """The `known_failures` map from the real baseline the workflow gates on.
+
+    Read at fixture-build time so the healthy report and the baseline cannot
+    disagree. Every entry here is a failure this repository has accepted as
+    not its own — see docs/official-tck-findings.md.
+    """
+    doc = json.loads((REPO / TCK_BASELINE).read_text(encoding="utf-8"))
+    return doc.get("known_failures") or {}
+
 
 def _tck_gate_probe(report_name: str, healthy_graded: int) -> Probe:
     """Shared shape for the three `check_conformance.py` gate steps.
@@ -414,7 +476,24 @@ def _tck_gate_probe(report_name: str, healthy_graded: int) -> Probe:
     """
 
     def healthy(d: Path) -> None:
-        write_report(d / report_name, compat_report(healthy_graded))
+        # "Healthy" for this gate means *agreeing with the baseline*, not
+        # "no failures at all". The gate is differential in both directions:
+        # a baselined failure that starts passing is reported as an
+        # unexpected pass and exits 1, which is what stops the baseline
+        # rotting shut. So a fixture hard-coded to zero failures is only
+        # healthy while the baseline is empty, and it silently stopped being
+        # healthy the moment `tck/conformance-baseline.json` gained its first
+        # two entries.
+        #
+        # Read from the baseline rather than restating it. Unlike ALL_FOUR
+        # below, a copy here would prove nothing: the baseline is the gate's
+        # *input*, not the assertion under test, and the defects below still
+        # inject a failure absent from it — which is what actually proves the
+        # gate fires.
+        write_report(
+            d / report_name,
+            compat_report(healthy_graded, baselined=load_baseline_failures()),
+        )
 
     return Probe(
         healthy=healthy,
@@ -708,6 +787,15 @@ def build_registry() -> dict[str, Probe | Exempt]:
                 lambda d: None,
                 "is missing",
             ),
+            # The shape that was green across all eight shards in CI on
+            # 2026-08-30: the baseline failed, so cargo-mutants wrote the four
+            # outcome lists empty and stopped. Every file is present and
+            # readable, and the run measured nothing.
+            Defect(
+                "report present but nothing graded (failed baseline)",
+                lambda d: mutants_out(d, caught=0, missed=0, selected=12),
+                "none graded",
+            ),
         ],
         context={"steps.mutants.outputs.exit_code": "0"},
     )
@@ -771,6 +859,15 @@ def build_registry() -> dict[str, Probe | Exempt]:
 
         return setup
 
+    def incr_report_selected(selected: int, log: str) -> Setup:
+        """A report whose lists are present and empty, with mutants selected."""
+
+        def setup(d: Path) -> None:
+            mutants_out(d, caught=0, missed=0, selected=selected)
+            (d / "mutants-run.log").write_text(log)
+
+        return setup
+
     reg["mutants.yml::mutants-incremental-shard::Require a readable mutation report"] = Probe(
         healthy=incr_report(3, "ran fine\n"),
         defects=[
@@ -778,7 +875,12 @@ def build_registry() -> dict[str, Probe | Exempt]:
                 "no report, and the log does not claim an empty selection",
                 incr_report(None, "cargo-mutants died halfway\n"),
                 "no mutation report was produced",
-            )
+            ),
+            Defect(
+                "report present but nothing graded (failed baseline)",
+                incr_report_selected(12, "ERROR cargo test failed in an unmutated tree\n"),
+                "none graded",
+            ),
         ],
         context={"steps.mutants.outputs.exit_code": "0", "matrix.shard": "0"},
     )
@@ -949,15 +1051,31 @@ def build_registry() -> dict[str, Probe | Exempt]:
         ("tck-cross-language", "Wait for agent to be ready"),
         ("official-client-vs-rust-server", "Build and start our echo agent"),
     ):
-        reg[f"tck.yml::{job}::{name}"] = Exempt(
-            "a readiness poll against a server this harness would have to build and "
-            "run; its failure mode (agent never came up) is already loud, and the "
-            "conformance verdict it guards is the a2a-tck run that follows"
-        )
+        reg[f"tck.yml::{job}::{name}"] = Exempt(READINESS_POLL)
+
+    # ── pin-freshness.yml ────────────────────────────────────────────────────
+    # Same shape and same reason as the readiness polls above. Every other step
+    # in that workflow either lets a command's own exit status stand (the two
+    # `a2a-tck` runs, whose verdict is the kit's exit code) or writes to
+    # `$GITHUB_OUTPUT` without deciding to fail, so this is the only one the
+    # discovery pass finds.
+    reg["pin-freshness.yml::freshness::Wait for agent to be ready"] = Exempt(READINESS_POLL)
     # Guards what PR #103 added: all four listeners actually advertised. If the
     # card silently loses one, the leg for that binding resolves nothing and the
     # job reports a config error dressed as a conformance verdict.
-    ALL_FOUR = ["JSONRPC", "HTTP+JSON", "GRPC", "WEBSOCKET"]
+    # The WebSocket entry is the §5.8 URI, not the bare name, because that is
+    # what the guard in tck.yml now greps for and what the SUT now advertises.
+    # This list is a deliberate third copy of the same four strings — the
+    # workflow's, the SUT's, and this one — and it is a copy on purpose: a
+    # prover that imported the value it is proving against could not catch the
+    # workflow drifting. The cost is that all three move together, which is
+    # exactly what happened when §5.8 landed and this fixture went red.
+    ALL_FOUR = [
+        "JSONRPC",
+        "HTTP+JSON",
+        "GRPC",
+        "https://a2a-rust.com/bindings/websocket/v1",
+    ]
     reg["tck.yml::tck-all-bindings::Card advertises all four bindings"] = Probe(
         healthy=_card_fixture(ALL_FOUR),
         defects=[

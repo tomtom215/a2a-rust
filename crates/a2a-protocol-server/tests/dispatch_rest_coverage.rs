@@ -1163,10 +1163,20 @@ mod rest_dispatch_guards {
                 Some("text/plain"),
             )
             .await;
+            // 400, not 415: §5.4 assigns `ContentTypeNotSupportedError` a
+            // 400. That makes the status alone a weak signal — an invalid
+            // body is also 400 — so the message is asserted too. Without it
+            // a mutation that skips Content-Type validation entirely would
+            // still see 400 from `{}` failing validation, and survive.
             assert_eq!(
-                status, 415,
+                status, 400,
                 "{method} with text/plain must be refused; a body-bearing \
                  method that skips Content-Type validation accepts anything: {body}"
+            );
+            assert!(
+                body.contains("unsupported Content-Type"),
+                "{method} must be refused *for its Content-Type*, not for \
+                 something else that also answers 400: {body}"
             );
         }
     }
@@ -1182,10 +1192,15 @@ mod rest_dispatch_guards {
         let addr = start(DispatchConfig::default()).await;
 
         let (status, body) = http_request(addr, "GET", "/tasks", None, Some("text/plain")).await;
-        assert_ne!(
-            status, 415,
-            "GET carries no body, so its Content-Type must not be policed; a \
-             415 here means the method comparison was inverted: {body}"
+        // Asserting `status != 415` here would be vacuous now that the
+        // Content-Type refusal answers 400: nothing in this server emits 415
+        // any more, so the assertion could not fail whatever the code did.
+        // The refusal's message is what still distinguishes it.
+        assert!(
+            !body.contains("unsupported Content-Type"),
+            "GET carries no body, so its Content-Type must not be policed; \
+             a Content-Type refusal here means the method comparison was \
+             inverted: {status} {body}"
         );
     }
 }

@@ -53,9 +53,27 @@ pub struct Iface {
 /// unrecognised name is not an error — §12 explicitly permits custom bindings,
 /// and a kit that cannot drive one should say so rather than fail the agent.
 pub fn binding_for(declared: &str) -> Option<&'static str> {
+    // Spelled out rather than imported from `a2a_protocol_types`. This kit
+    // depends on none of the `a2a-protocol-*` crates on purpose — a kit that
+    // shares constants with the implementation it grades shares that
+    // implementation's reading of them. The duplication is the point.
+    //
+    // Case-sensitive, and checked before the upper-casing below: a URI's path
+    // is case-sensitive, so folding case would accept
+    // `HTTPS://A2A-RUST.COM/BINDINGS/WEBSOCKET/V1` as the same identifier,
+    // which §5.8 gives no licence for.
+    if declared == "https://a2a-rust.com/bindings/websocket/v1" {
+        return Some("websocket");
+    }
     match declared.to_ascii_uppercase().as_str() {
         "JSONRPC" => Some("jsonrpc"),
         "HTTP+JSON" | "REST" => Some("rest"),
+        // Both spellings. §5.8 says a custom binding SHOULD be identified by
+        // a URI, and this project's is `WEBSOCKET_BINDING_URI`; the bare name
+        // is what it advertised before 0.11.0 and what other implementations
+        // of the same binding may still emit. A kit that accepted only the
+        // new spelling would report a conformant agent as advertising a
+        // binding it cannot drive.
         "WEBSOCKET" => Some("websocket"),
         "GRPC" => Some("grpc"),
         _ => None,
@@ -199,19 +217,35 @@ impl Availability {
 /// Classifies a JSON-RPC error code from a **ghost-id** probe as "this method
 /// does not exist here".
 ///
-/// `-32601` is JSON-RPC 2.0's Method not found. `-32004` is A2A's
-/// `UnsupportedOperationError`, which §5.4 maps to gRPC `UNIMPLEMENTED`.
+/// Only `-32601`, JSON-RPC 2.0's *Method not found*. §5.4 draws the line this
+/// follows: `UNIMPLEMENTED` — and its JSON-RPC counterpart `-32601` — means
+/// the method is not served, while `UnsupportedOperationError` (`-32004`,
+/// gRPC `FAILED_PRECONDITION`, HTTP `400`) means the method *is* served and
+/// the agent refused it.
 ///
-/// The ghost id is what makes including `-32004` safe, and the first version
-/// of this probe got it wrong. Servers also use `-32004` for a *state*
-/// refusal: this SDK answers `SubscribeToTask` on a completed task with
-/// `-32004 … is in terminal state 'TASK_STATE_COMPLETED' and cannot be
-/// subscribed to`. Probed with a live task, that reads as "the binding does
-/// not offer SubscribeToTask" and reports a fabricated §5.1 violation — which
-/// is exactly what it did. A task that does not exist has no state to refuse
-/// on, so the only remaining meaning of `-32004` is genuine non-support.
+/// `-32004` was on this list until 2026-08-30, and it made the three bindings
+/// answer differently about the same agent. Against an agent built on the
+/// official Python SDK that serves `GetExtendedAgentCard` on both bindings and
+/// declines it on both — `-32004` on JSON-RPC, `400` with
+/// `reason: UNSUPPORTED_OPERATION` on HTTP+JSON — this read "JSONRPC does not
+/// offer it, HTTP+JSON does" and reported a `BIND-EQUIV-001` violation that
+/// was not there. The REST arm below has always required `404`/`501`, and the
+/// gRPC arm `UNIMPLEMENTED`; only the JSON-RPC arm treated a refusal as an
+/// absence.
+///
+/// Two consequences worth stating rather than discovering:
+///
+/// * The state-refusal hazard the ghost id was introduced for is gone as a
+///   side effect. This SDK answers `SubscribeToTask` on a completed task with
+///   `-32004 … is in terminal state …`; that is a refusal, and a refusal is
+///   no longer read as an absence whatever id it was probed with. The ghost
+///   id is kept because it still separates "no such method" from "no such
+///   task" on a binding whose error model hides the difference.
+/// * An agent that signals genuine non-support with `-32004` rather than
+///   `-32601` now reads as "offered". That is what §5.4 says those codes
+///   mean, and grading it the other way is what produced the false positive.
 const fn ghost_probe_says_unimplemented(code: i64) -> bool {
-    code == -32601 || code == -32004
+    code == -32601
 }
 
 /// Probes one operation on one binding.
@@ -507,7 +541,11 @@ const FAULTS: &[Fault] = &[
     Fault {
         error_type: "TaskNotCancelableError",
         jsonrpc: -32002,
-        http: 409,
+        // 400, not 409. Graded against 409 until 2026-08-30, which failed a
+        // conformant agent built on the official Python SDK — the kit and
+        // this repository's SDK were reading the same stale copy of §5.4, so
+        // they agreed with each other and with nobody else.
+        http: 400,
         grpc: ("FAILED_PRECONDITION", 9),
         why_untriggerable: "the fixture task never reached a terminal state, so \
                             cancelling it is a legitimate success on every binding",
@@ -1162,6 +1200,28 @@ mod tests {
         assert_eq!(binding_for("REST"), Some("rest"));
         assert_eq!(binding_for("GRPC"), Some("grpc"));
         assert_eq!(binding_for("WEBSOCKET"), Some("websocket"));
+        // §5.8's URI form resolves to the same binding, so an agent that
+        // adopts it does not read as advertising something this kit cannot
+        // drive. Both spellings are live in this repository: the SUT emits
+        // the URI, the examples still emit the bare name.
+        assert_eq!(
+            binding_for("https://a2a-rust.com/bindings/websocket/v1"),
+            Some("websocket")
+        );
+        // Case-folded, it is a different URI and must not resolve — a URI's
+        // path is case-sensitive and §5.8 gives no licence to fold it.
+        assert_eq!(
+            binding_for("HTTPS://A2A-RUST.COM/BINDINGS/WEBSOCKET/V1"),
+            None
+        );
+        // An unrelated project's custom binding is still skipped, not driven
+        // — and this is §5.8's own illustrative value, so it is the URI most
+        // likely to be copied into a card verbatim by someone reading the
+        // spec. Sharing a path with ours does not make it our binding.
+        assert_eq!(
+            binding_for("https://example.com/bindings/websocket/v1"),
+            None
+        );
         // Case is not significant in the card's spelling.
         assert_eq!(binding_for("jsonrpc"), Some("jsonrpc"));
     }

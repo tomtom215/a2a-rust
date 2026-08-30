@@ -1,0 +1,246 @@
+# SPDX-License-Identifier: Apache-2.0
+# Pin freshness — re-resolve the third-party SDK pins and re-grade against them.
+#
+# # Why this exists
+#
+# `tck.yml` grades the official SDKs at pinned versions, and a pin does not
+# decay loudly. On 2026-08-30 `itk/agents/js-sdk` was still locked to
+# `@a2a-js/sdk` 1.0.0 while 1.1.0 was the published release, so CI had been
+# grading a superseded version for months. Two consequences, both silent:
+#
+#   * A `--skip` for a real 1.0.0 bug (`list_tasks_basic`) went on asserting a
+#     defect that upstream had already fixed.
+#   * A second defect found by hand in the same session — `TaskNotFound`
+#     answered as `-32603`/HTTP 500 — was also already fixed, and was nearly
+#     reported upstream against a release nobody runs.
+#
+# Every mechanism needed to catch this already existed: the kit exits 1 on a
+# skipped test that passes, which is exactly the stale-skip signal. It could
+# not fire, because nothing ever moved the pin. This workflow moves it.
+#
+# # What it does, and does not do
+#
+# Resolves each official SDK to its latest release, runs the kit against it
+# with the skip list `tck.yml` currently carries, and reports. It does **not**
+# commit a pin bump: which version this repository grades against is a human
+# decision, and a bot that silently retargets the conformance claim would make
+# the claim mean less, not more.
+#
+# Red here means one of: a skip has gone stale, an upstream release changed
+# behaviour, or our own kit is wrong about the spec. All three want a person.
+# It is scheduled, never a pull-request gate, so a red run blocks nobody.
+
+name: Pin freshness
+
+on:
+  schedule:
+    # Every Monday; the `cadence` job narrows this to every third one. Cron
+    # cannot express "every 3 weeks" — `*/21` in day-of-month means the 1st and
+    # 22nd, which resets each month and yields 21-day and 8-to-10-day gaps
+    # alternately. See the guard below for the arithmetic that does work.
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run regardless of the three-week cadence'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Cadence ───────────────────────────────────────────────────────────────
+  #
+  # Weeks since the Unix epoch, modulo 3. The workflow only fires on Mondays,
+  # so `days / 7` advances by exactly one per firing and this selects every
+  # third one — verified to give uniform 21-day gaps, including across a year
+  # boundary, which an ISO-week-number modulo does not (week 52 → week 1).
+  #
+  # Deciding not to run is announced, never silent: a skipped run and a run
+  # that found nothing look identical in the actions list otherwise.
+  cadence:
+    name: Three-week cadence
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - name: Decide whether this week is a firing week
+        id: decide
+        run: |
+          set -euo pipefail
+          weeks=$(( $(date -u +%s) / 86400 / 7 ))
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "forced via workflow_dispatch" | tee -a "$GITHUB_STEP_SUMMARY"
+          elif [ $(( weeks % 3 )) -eq 0 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "week $weeks since epoch: firing week" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "week $weeks since epoch: not a firing week ($(( 3 - weeks % 3 )) to go)" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ── Freshness ─────────────────────────────────────────────────────────────
+  freshness:
+    name: ${{ matrix.sdk }} @ latest
+    needs: cadence
+    if: needs.cadence.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      # One SDK's decay must not hide another's. This job exists to enumerate
+      # what has drifted, and a fail-fast matrix reports the first and stops.
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: python-sdk
+            port: 9110
+            # `pip install -U` with no version constraint is the resolution.
+            resolve: |
+              pip install -U 'a2a-sdk[http-server]' uvicorn httpx
+              python -c "import importlib.metadata as m; print(m.version('a2a-sdk'))" > /tmp/resolved
+            pinned: 'unpinned (workflow installs latest at run time)'
+            start: |
+              PORT=9110 python itk/agents/python-sdk/agent.py &
+          - sdk: js-sdk
+            port: 9111
+            resolve: |
+              cd itk/agents/js-sdk
+              npm install @a2a-js/sdk@latest
+              node -p "require('./node_modules/@a2a-js/sdk/package.json').version" > /tmp/resolved
+            pinned: 'itk/agents/js-sdk/package.json'
+            start: |
+              cd itk/agents/js-sdk && PORT=9111 node index.js &
+          - sdk: go-sdk
+            port: 9112
+            # `go list -m`, not an awk over go.mod. The first version of this
+            # step used `awk '/a2a-go/ {print $2}'`, which prints the module
+            # path — the version is `$3` on a bare `require` line and `$2`
+            # only inside a `require (` block, and `go mod tidy` moves the
+            # line between those shapes. It reported
+            # "github.com/a2aproject/a2a-go/v2" as the resolved version, which
+            # is a freshness report that cannot show drift because it never
+            # contains a version at all.
+            resolve: |
+              cd itk/agents/go-sdk
+              go get -u github.com/a2aproject/a2a-go/v2@latest
+              go mod tidy
+              go list -m -f '{{.Version}}' github.com/a2aproject/a2a-go/v2 > /tmp/resolved
+            pinned: 'itk/agents/go-sdk/go.mod'
+            start: |
+              cd itk/agents/go-sdk && PORT=9112 go run . &
+          - sdk: java-sdk
+            port: 9113
+            # `-DincludeProperties`, not `-Dproperties`. The latter does not
+            # scope the update: run with `-Dproperties=a2a.sdk.version` it
+            # also bumped `quarkus.platform.version` (3.35.2 -> 3.39.1), so
+            # the leg would have upgraded the agent's own build framework
+            # underneath the SDK it is supposed to be grading, and reported
+            # any resulting breakage as SDK drift.
+            resolve: |
+              cd itk/agents/java-sdk
+              mvn -q -B versions:update-properties -DincludeProperties=a2a.sdk.version -DallowSnapshots=false
+              mvn -q -B help:evaluate -Dexpression=a2a.sdk.version -DforceStdout > /tmp/resolved
+            pinned: 'itk/agents/java-sdk/pom.xml (a2a.sdk.version)'
+            start: |
+              ( cd itk/agents/java-sdk && mvn -q -B package -DskipTests )
+              PORT=9113 java -jar itk/agents/java-sdk/target/quarkus-app/quarkus-run.jar &
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Setup Python
+        if: matrix.sdk == 'python-sdk'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node.js
+        if: matrix.sdk == 'js-sdk'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Setup Go
+        if: matrix.sdk == 'go-sdk'
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.25'
+
+      - name: Setup Java
+        if: matrix.sdk == 'java-sdk'
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build TCK
+        run: cargo build --release -p a2a-tck
+
+      # The skip list is read out of `tck.yml` rather than restated here.
+      # Two copies of a skip list is how this job would end up grading a
+      # different contract than CI does, which is the same duplicate-table
+      # failure that let §5.4 drift between the REST and Axum dispatchers.
+      - name: Read the skip list tck.yml currently carries
+        id: skips
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import yaml
+          doc = yaml.safe_load(open(".github/workflows/tck.yml"))
+          entries = doc["jobs"]["tck-cross-language"]["strategy"]["matrix"]["include"]
+          row = next(e for e in entries if e["sdk"] == "${{ matrix.sdk }}")
+          print(f"jsonrpc={row.get('skip_jsonrpc', '')}")
+          print(f"rest={row.get('skip_rest', '')}")
+          PY
+          echo "resolved skips for ${{ matrix.sdk }}:"
+          cat "$GITHUB_OUTPUT"
+
+      - name: Resolve ${{ matrix.sdk }} to its latest release
+        run: ${{ matrix.resolve }}
+
+      - name: Report pin drift
+        run: |
+          set -euo pipefail
+          resolved=$(tr -d '[:space:]' < /tmp/resolved)
+          {
+            echo "### ${{ matrix.sdk }}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| pinned at | \`${{ matrix.pinned }}\` |"
+            echo "| resolved to | \`${resolved}\` |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ matrix.sdk }} resolved to ${resolved}"
+
+      - name: Start the agent
+        run: ${{ matrix.start }}
+
+      - name: Wait for agent to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:${{ matrix.port }}/.well-known/agent-card.json > /dev/null 2>&1; then
+              echo "Agent ready on port ${{ matrix.port }}"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Agent failed to start on port ${{ matrix.port }}"
+          exit 1
+
+      # The kit's own exit codes carry the verdict: 1 on a failure *or* on a
+      # `--skip`ped test that now passes, 2 on a run that graded nothing.
+      - name: TCK — ${{ matrix.sdk }} @ latest (JSON-RPC)
+        run: |
+          ./target/release/a2a-tck --url http://127.0.0.1:${{ matrix.port }} \
+            --binding jsonrpc \
+            ${{ steps.skips.outputs.jsonrpc && format('--skip {0}', steps.skips.outputs.jsonrpc) || '' }}
+
+      - name: TCK — ${{ matrix.sdk }} @ latest (REST)
+        run: |
+          ./target/release/a2a-tck --url http://127.0.0.1:${{ matrix.port }} \
+            --binding rest \
+            ${{ steps.skips.outputs.rest && format('--skip {0}', steps.skips.outputs.rest) || '' }}

@@ -15,7 +15,7 @@ Two agent tiers exist per language:
 2. **Official-SDK agents** (`python-sdk/`, `js-sdk/`, `go-sdk/`,
    `java-sdk/`) — the same echo contract built on the official reference
    SDKs (`a2a-sdk` 1.x, `@a2a-js/sdk` 1.x, `a2a-go/v2`, `a2a-java`
-   1.0.0.CR1). These are the runs that prove real cross-SDK interop.
+   1.3.0.Final). These are the runs that prove real cross-SDK interop.
 
 The reverse direction is covered too: `interop/python_client_vs_rust.py`
 drives our `echo-agent` with the official Python SDK **client** over both
@@ -32,11 +32,44 @@ Each echo agent:
 Documented upstream bugs surfaced by running our TCK against the official
 SDKs — skipped with `--skip` (reported, never silent) in CI:
 
-| SDK | Test | Divergence |
-|---|---|---|
-| `@a2a-js/sdk` 1.0.0 | `list_tasks_basic` | `ListTasksRequest.fromJSON({})` materializes proto3 default `status=TASK_STATE_UNSPECIFIED`; the store filters on it, so unfiltered lists are always empty. |
-| `@a2a-js/sdk` 1.0.0 | `a2a_media_type_accepted` | Rejects `application/a2a+json` requests; spec §6.1 examples use that media type and the Python/Go SDKs accept it. |
-| `a2a-java` 1.0.0.CR1 | `a2a_media_type_accepted` | Same `application/a2a+json` rejection. |
+| SDK | Test | Binding | Divergence |
+|---|---|---|---|
+| `a2a-java` 1.3.0.Final | `a2a_media_type_accepted` | REST only | Rejects `application/a2a+json`, which §11 says **SHOULD** be used for requests and responses. Re-verified 2026-08-30 at 1.3.0.Final. |
+
+**A skip is a claim about someone else's software.** Every entry asserts that
+a named third party is wrong, so each one needs re-checking against the
+current release. This kit exits 1 on a `--skip`ped test that passes, which
+catches a stale entry — but only once the pin moves.
+
+Moving it is [`pin-freshness.yml`](../.github/workflows/pin-freshness.yml)'s
+job: every three weeks it re-resolves each official SDK to its latest release
+and re-grades against this table, so decay is reported rather than waiting to
+be noticed. It never commits a pin bump — which version this repository
+grades against stays a human decision.
+
+Three of the four entries this table carried were cleared on 2026-08-30, and
+the reasons are worth keeping:
+
+**`@a2a-js/sdk` `list_tasks_basic` — was real, now fixed.** In 1.0.0,
+`ListTasksRequest.fromJSON({})` materialised the proto3 default
+`status=TASK_STATE_UNSPECIFIED` and the store filtered on it, so an unfiltered
+list always came back empty. Fixed in 1.1.0, verified on both bindings. It
+went on being reported for months because `package-lock.json` pinned 1.0.0
+while 1.1.0 was current: **CI was grading a superseded release.**
+
+**`@a2a-js/sdk` and `a2a-java` `a2a_media_type_accepted` on JSON-RPC — never
+their bug.** Both reject `application/a2a+json` on JSON-RPC, and both are
+right to: §9 specifies `Content-Type: application/json`, §14.1.1 registers the
+A2A media type with the note *"This media type is intended for the
+HTTP+JSON/REST binding"*, and §6's examples that use it are REST requests
+(`POST /message:send`). Our own check was demanding it on the wrong binding —
+on the strength of a comment claiming `a2a-protocol-client` sends it, which it
+does not on either binding. The check is REST-only now. Two conformant SDKs
+were listed here as divergent for as long as the check was wrong.
+
+A third defect blamed on the JS SDK in the same session — `TaskNotFound`
+answered as `-32603`/HTTP 500 — was also already fixed in 1.1.0, and was
+nearly reported upstream against a release nobody runs.
 
 ## Architecture
 

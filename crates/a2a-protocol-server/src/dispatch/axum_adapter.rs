@@ -251,19 +251,27 @@ fn a2a_error_to_response(err: &dyn std::fmt::Display, status: u16) -> axum::resp
         .into_response()
 }
 
-const fn server_error_status(err: &crate::error::ServerError) -> u16 {
+/// The HTTP status this adapter answers with, per §5.4.
+///
+/// This was a second, hand-written copy of §5.4's table, and it had drifted
+/// from the one in [`ErrorCode::http_status`] in three places:
+/// `TaskNotCancelable` and `InvalidStateTransition` answered `409`, and
+/// `PushNotSupported` answered `501`, where the table says `400` for all
+/// three. Two copies of a conformance table is how a specification update
+/// reaches one dispatcher and not the other, so there is now one copy and
+/// this defers to it.
+///
+/// The two arms that remain are the ones §5.4 cannot answer for, because A2A
+/// has no error code for either: a body over the size limit, and a transient
+/// resource-limit rejection. Both are transport-level facts about this server
+/// rather than protocol errors, and `413`/`503` say so precisely.
+fn server_error_status(err: &crate::error::ServerError) -> u16 {
     use crate::error::ServerError;
 
     match err {
-        ServerError::TaskNotFound(_) | ServerError::MethodNotFound(_) => 404,
-        ServerError::InvalidParams(_) | ServerError::Serialization(_) => 400,
-        ServerError::InvalidStateTransition { .. } | ServerError::TaskNotCancelable(_) => 409,
-        ServerError::PushNotSupported => 501,
         ServerError::PayloadTooLarge(_) => 413,
-        // Transient resource-limit rejection → 503 Service Unavailable, the
-        // retryable overload status, rather than a generic 500.
         ServerError::Overloaded(_) => 503,
-        _ => 500,
+        other => other.to_a2a_error().code.http_status(),
     }
 }
 
@@ -855,8 +863,32 @@ mod tests {
         use crate::error::ServerError;
         assert_eq!(
             server_error_status(&ServerError::TaskNotCancelable("t".into())),
-            409
+            400
         );
+    }
+
+    /// This adapter and the REST dispatcher must answer the same status for
+    /// the same error, because §5.4 assigns one per error type and not one
+    /// per dispatcher. They disagreed for three variants until the duplicate
+    /// table here was removed; this fails if a second copy reappears.
+    #[test]
+    fn server_error_status_agrees_with_the_shared_5_4_table() {
+        use crate::error::ServerError;
+        let cases = [
+            ServerError::TaskNotFound("t".into()),
+            ServerError::TaskNotCancelable("t".into()),
+            ServerError::PushNotSupported,
+            ServerError::UnsupportedOperation("op".into()),
+            ServerError::InvalidParams("p".into()),
+            ServerError::MethodNotFound("m".into()),
+        ];
+        for err in cases {
+            assert_eq!(
+                server_error_status(&err),
+                err.to_a2a_error().code.http_status(),
+                "adapter disagrees with ErrorCode::http_status for {err:?}"
+            );
+        }
     }
 
     #[test]
@@ -867,13 +899,18 @@ mod tests {
             from: a2a_protocol_types::task::TaskState::Working,
             to: a2a_protocol_types::task::TaskState::Submitted,
         };
-        assert_eq!(server_error_status(&err), 409);
+        // `InvalidStateTransition` carries `InvalidParams`, which §5.4 puts
+        // at 400. It answered 409 while this adapter kept its own table.
+        assert_eq!(server_error_status(&err), 400);
     }
 
     #[test]
     fn server_error_status_push_not_supported() {
         use crate::error::ServerError;
-        assert_eq!(server_error_status(&ServerError::PushNotSupported), 501);
+        // 400, not 501: §5.4 assigns `PushNotificationNotSupportedError` a
+        // 400, and "not implemented" is not the same claim as "this agent
+        // does not offer that capability".
+        assert_eq!(server_error_status(&ServerError::PushNotSupported), 400);
     }
 
     #[test]

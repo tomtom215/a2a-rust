@@ -133,7 +133,7 @@ async fn main() -> ExitCode {
     // resolve them apart.
     let rpc_url = match binding.as_str() {
         "websocket" => {
-            match resolve_endpoint(&url, endpoint.as_deref(), "WEBSOCKET", "--ws-url").await {
+            match resolve_endpoint(&url, endpoint.as_deref(), "websocket", "--ws-url").await {
                 Ok(resolved) => resolved,
                 Err(msg) => {
                     eprintln!("Error: {msg}");
@@ -141,7 +141,7 @@ async fn main() -> ExitCode {
                 }
             }
         }
-        "grpc" => match resolve_endpoint(&url, endpoint.as_deref(), "GRPC", "--grpc-url").await {
+        "grpc" => match resolve_endpoint(&url, endpoint.as_deref(), "grpc", "--grpc-url").await {
             Ok(resolved) => resolved,
             Err(msg) => {
                 eprintln!("Error: {msg}");
@@ -304,11 +304,20 @@ async fn main() -> ExitCode {
 ///
 /// Prefers the explicit override. Otherwise reads it from the agent card the
 /// way a real client would: §5 discovery first, then the matching entry in
-/// `supportedInterfaces` — `GRPC` is one of §5.3's canonical binding names,
-/// and `WEBSOCKET` is the custom name §12 registers alongside them. An agent
-/// that serves a listener it does not advertise is undiscoverable, so that
-/// case is a config error naming the fix rather than a silent fallback to a
-/// guessed port.
+/// `supportedInterfaces`. An agent that serves a listener it does not
+/// advertise is undiscoverable, so that case is a config error naming the fix
+/// rather than a silent fallback to a guessed port.
+///
+/// `protocol_binding` is this kit's internal binding name (`"grpc"`,
+/// `"websocket"`), not a card spelling. The card's string is normalised
+/// through [`equivalence::binding_for`] before comparison rather than matched
+/// directly, because one binding has more than one conformant spelling: §5.3
+/// names `GRPC`, while §12's custom bindings are named freely and §5.8 says
+/// they SHOULD be URIs — so the WebSocket binding is `WEBSOCKET` on an agent
+/// written before 0.11.0 and a URI on one written after. Matching a single
+/// spelling would resolve the endpoint for some conformant agents and report
+/// "advertises no interface" for the rest, and would leave two places in this
+/// kit that know binding names instead of one.
 async fn resolve_endpoint(
     url: &str,
     override_url: Option<&str>,
@@ -343,7 +352,8 @@ async fn resolve_endpoint(
             iface
                 .get("protocolBinding")
                 .and_then(serde_json::Value::as_str)
-                .is_some_and(|b| b.eq_ignore_ascii_case(protocol_binding))
+                .and_then(equivalence::binding_for)
+                == Some(protocol_binding)
         })
         .and_then(|iface| iface.get("url"))
         .and_then(serde_json::Value::as_str);

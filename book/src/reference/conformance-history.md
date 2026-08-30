@@ -560,3 +560,41 @@ defects. It was a defect in the probe. What caught it was the plain
 Every probe above therefore carries a control, and the controls are reported
 next to the results rather than assumed: a measurement artifact and a real
 defect are indistinguishable from the failing line alone.
+
+### 2026-08-30 — the pins moved, and three of the four waivers went with them
+
+The paragraph above ends "the fix is not upstream yet". It stayed true for
+eighteen days and then stopped being checked, which is the failure this page
+was written to prevent: the register recorded that both pins were behind
+upstream and nothing moved them. `.github/workflows/pin-freshness.yml` now
+re-resolves every SDK pin on a three-week cadence so this cannot depend on
+someone remembering.
+
+All three third-party pins were behind:
+
+| Pin | Was | Now | Result |
+|---|---|---|---|
+| `@a2a-js/sdk` | 1.0.0 | **1.1.0** | W5 (`list_tasks_basic`) **removed** — fixed upstream |
+| `a2a-go/v2` | v2.3.1 | **v2.5.0** | no waiver; 21/21 on both bindings |
+| `a2a-java` | 1.0.0.CR1 | **1.3.0.Final** | W6 REST half stands; JSON-RPC half **removed** |
+
+**W6's JSON-RPC half was never a divergence.** Neither `a2a-java` nor
+`@a2a-js/sdk` was wrong to reject `application/a2a+json` on JSON-RPC: §9
+specifies `Content-Type: application/json`, and §14.1.1 registers the A2A
+media type with the note *"This media type is intended for the HTTP+JSON/REST
+binding"*. This kit was asserting it on the wrong binding. Both SDKs were
+listed here as divergent for as long as that check was mis-scoped. The REST
+half is real and still fails at 1.3.0.Final, so it alone is retained.
+
+**Bumping `a2a-java` required a migration, not just a version.** At
+1.3.0.Final the agent built and then failed eleven JSON-RPC checks, all
+cascading from `SendMessage` answering `TASK_NOT_FOUND`. The cause is
+upstream hardening, not a regression: 1.3.0 enforces a fail-closed default for
+task authorization, and `DefaultRequestHandler.enforceRead` throws
+`TaskNotFoundError` when no `TaskAuthorizationProvider` bean exists and
+`authorizationRequired` is set — a denied read is reported as "not found"
+rather than leaking that the task exists, which is why a working task store
+looked broken. `itk/agents/java-sdk` now produces a permissive provider, which
+grants rather than switching the check off, so the authorization path still
+executes. Controlled comparison, single variable: same 1.3.0.Final build,
+without the bean 11 failures, with it 0.

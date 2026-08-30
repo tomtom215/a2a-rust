@@ -594,7 +594,7 @@ async fn both_auth_and_token_headers_are_sent() {
 // ── Content-type tests ──────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn request_has_json_content_type() {
+async fn request_has_a2a_media_type_content_type() {
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
     let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
 
@@ -611,10 +611,14 @@ async fn request_has_json_content_type() {
     let reqs = captured.lock().unwrap();
     assert!(!reqs.is_empty());
     let req = &reqs[0];
+    // §4.3.3 fixes this as `application/a2a+json`, not the `application/json`
+    // that §9 specifies for the JSON-RPC binding. Matching the full media
+    // type is what makes this a regression test: a revert to plain JSON does
+    // not contain this string, so the assertion fails.
     assert!(
-        req.contains("content-type: application/json")
-            || req.contains("Content-Type: application/json"),
-        "should have JSON content type, got: {req}"
+        req.contains("content-type: application/a2a+json")
+            || req.contains("Content-Type: application/a2a+json"),
+        "§4.3.3 requires the A2A media type on a webhook POST, got: {req}"
     );
     handle.abort();
 }

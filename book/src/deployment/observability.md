@@ -15,7 +15,7 @@ and the answer is almost always this page's first section.
 ## Turning them on
 
 ```toml
-a2a-protocol-server = { version = "0.10", features = ["tracing", "otel"] }
+a2a-protocol-server = { version = "0.11", features = ["tracing", "otel"] }
 ```
 
 * **`tracing`** — the crate's logging calls compile to nothing without it. With

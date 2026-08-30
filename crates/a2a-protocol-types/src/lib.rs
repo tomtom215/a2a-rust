@@ -45,6 +45,37 @@ pub const A2A_VERSION: &str = "1.0";
 /// HTTP bindings alongside [`JSON_CONTENT_TYPE`].
 pub const A2A_CONTENT_TYPE: &str = "application/a2a+json";
 
+/// This project's identifier for its §12 WebSocket binding, as
+/// [`AgentInterface::protocol_binding`](crate::agent_card::AgentInterface).
+///
+/// §5.8 says a custom binding **SHOULD** be identified by a URI, because a
+/// bare name like `"WEBSOCKET"` is only unique by convention — two projects
+/// can define incompatible bindings under it and a client cannot tell them
+/// apart. A URI under a domain the binding's author controls can only mean
+/// one thing.
+///
+/// The trailing `/v1` is load-bearing rather than decorative: §5.8 requires a
+/// **new URI** when a breaking change is introduced to a binding, so the
+/// version belongs in the identifier and not beside it. Changing this
+/// binding's framing or envelope means publishing `/v2`, not editing what
+/// `/v1` means.
+///
+/// This is an identifier, not a fetchable document: nothing is served at that
+/// path and nothing needs to be. §5.8 asks for a URI so that the name is
+/// globally unambiguous, which a URI under a domain its author controls is
+/// whether or not it resolves.
+///
+/// The shape follows the one custom binding in this repository that already
+/// had a URI — `a2a-protocol-slimrpc` advertises upstream's
+/// `https://a2a-protocol.org/bindings/experimental-slimrpc/v1` — so WebSocket
+/// was the outlier here, not the pioneer.
+///
+/// Servers advertising this binding should prefer this value. Clients reading
+/// a card should accept the legacy `"WEBSOCKET"` spelling as well: it is what
+/// this project emitted before 0.11.0 and what other implementations of the
+/// same binding may still emit.
+pub const WEBSOCKET_BINDING_URI: &str = "https://a2a-rust.com/bindings/websocket/v1";
+
 /// Content type emitted by the JSON-RPC and REST bindings.
 ///
 /// Spec §9.1 and §11.1 both require `application/json` for requests and
