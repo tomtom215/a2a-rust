@@ -10,6 +10,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-30
+
+### Changed
+
+- **BREAKING (wire format): six §5.4 error mappings corrected.** A server on
+  0.11 answers some errors with a different HTTP status and gRPC code than one
+  on 0.10. Anything asserting the old values — a client matching on status, a
+  test, a gateway rule — needs updating.
+
+  | A2A error | HTTP was → is | gRPC was → is |
+  |---|---|---|
+  | `TaskNotCancelableError` | `409` → **`400`** | — |
+  | `ContentTypeNotSupportedError` | `415` → **`400`** | — |
+  | `InvalidAgentResponseError` | `502` → **`500`** | — |
+  | `PushNotificationNotSupportedError` | — | `UNIMPLEMENTED` → **`FAILED_PRECONDITION`** |
+  | `UnsupportedOperationError` | — | `UNIMPLEMENTED` → **`FAILED_PRECONDITION`** |
+  | `VersionNotSupportedError` | — | `UNIMPLEMENTED` → **`FAILED_PRECONDITION`** |
+
+  `ErrorCode::http_status()` and `ErrorCode::grpc_status()` keep their
+  signatures and return the new values, so this is a behavioural break that
+  `cargo-semver-checks` cannot see: it compares API surface, and no surface
+  changed. It is classified here by hand, which is the only way this class of
+  change gets classified.
+
+  Why the old values were wrong: `docs/implementation/v1.0.0-specification-complete.md`
+  was a snapshot of the specification taken 2026-03-31 and never refreshed.
+  Upstream amended the document in place under the same `1.0.0` version string,
+  so the vendored copy and the published spec disagreed in six of §5.4's nine
+  rows while both claimed to be v1.0.0. The SDK implemented the stale table and
+  the TCK graded against it, so they agreed with each other and failed
+  conformant third-party agents — the symmetric misreading the TCK's own README
+  warns about. Found by running the kit against an agent built on the official
+  Python SDK (`a2a-sdk` 1.1.2), which answered `400` where the kit demanded
+  `409`; the SDK was right.
+
+- **BREAKING (wire format): the Axum adapter now agrees with the REST
+  dispatcher.** It carried a second, hand-written copy of §5.4's table which had
+  drifted from the shared one in three further places: `TaskNotCancelable` and
+  `InvalidStateTransition` answered `409` and `PushNotSupported` answered `501`,
+  where the table says `400` for all three. The duplicate is deleted and the
+  adapter defers to `ErrorCode::http_status()`; a test now fails if the two
+  disagree again. `PayloadTooLarge` (`413`) and `Overloaded` (`503`) remain
+  adapter-specific, because A2A has no error code for either.
+
+### Fixed
+
+- **The vendored specification is current again.** Re-vendored from upstream
+  with a provenance header naming its source, retrieval date, and the one-line
+  command to refresh it. Four further normative changes are present in the
+  refreshed document and are **not** yet implemented — `PushNotificationConfig`
+  renamed to `TaskPushNotificationConfig`, the push-webhook `Content-Type`
+  becoming `application/a2a+json`, `AuthenticationInfo` reshaped from
+  `schemes[]` + `token` to `scheme` + `credentials`, and a new §5.8 saying
+  `protocolBinding` SHOULD be a URI. Each changes the wire and wants its own
+  change with its own tests.
+
+- **The TCK no longer fails conformant agents on `application/a2a+json`.** The
+  `a2a_media_type_accepted` check ran against JSON-RPC, where §9 specifies
+  `Content-Type: application/json` and §14.1.1 scopes the A2A media type to
+  §11's REST binding. It is REST-only now. Two official SDKs (`@a2a-js/sdk`,
+  `a2a-java`) were carried in the ITK's `--skip` list as divergent for as long
+  as the check was mis-scoped; both were conformant.
+
+- **The TCK's availability classifier no longer reads a refusal as an
+  absence.** `-32004` (`UnsupportedOperationError`) counted as "this binding
+  does not offer the method", which is what the stale §5.4 table implied by
+  mapping it to gRPC `UNIMPLEMENTED`. Under the corrected table it is
+  `FAILED_PRECONDITION` — served, and refused — so only `-32601` (JSON-RPC
+  *Method not found*) now means absent, matching REST's `404`/`501` and gRPC's
+  `UNIMPLEMENTED`. This was fabricating `BIND-EQUIV-001` violations against
+  agents that offer an operation on both bindings and decline it on both.
+
+### Internal
+
+Not shipped in the published crates; recorded because the conformance claims
+rest on them.
+
+- **Every third-party SDK pin was behind upstream**, and all three moved:
+  `@a2a-js/sdk` 1.0.0 → 1.1.0, `a2a-go/v2` v2.3.1 → v2.5.0, `a2a-java`
+  1.0.0.CR1 → 1.3.0.Final. Three of the four entries in the ITK's divergence
+  table went with them; one genuine divergence remains (`a2a-java` rejecting
+  `application/a2a+json` on REST, re-verified at 1.3.0.Final).
+
+- **`itk/agents/java-sdk` produces a permissive `TaskAuthorizationProvider`.**
+  a2a-java 1.3.0.Final enforces a fail-closed default for task authorization,
+  so an agent with no provider answers `TaskNotFoundError` to every task read —
+  a denied read reported as "not found" rather than leaking that the task
+  exists. Granting explicitly keeps the authorization path executing, where
+  `a2a.authorization.required=false` would switch it off.
+
+- **`pin-freshness.yml`** re-resolves every SDK pin on a three-week cadence and
+  re-grades against the current skip list. Every mechanism needed to catch the
+  stale pins already existed — the kit exits 1 on a skipped test that passes —
+  and never fired, because nothing moved the pins.
+
 ## [0.10.0] - 2026-08-27
 
 ### Deprecated
