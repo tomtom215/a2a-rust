@@ -3,7 +3,7 @@
 
 # Provenance Manifest
 
-**Measured 2026-08-30 at `5f5e819`. Regenerate with `scripts/provenance_manifest.sh`.**
+**Measured 2026-08-30 at `db795c2`. Regenerate with `scripts/provenance_manifest.sh`.**
 
 > Re-measured because nothing forced it to be. The figures below moved a long
 > way between `c008ab0` (2026-08-11) and this run — the share of history that
@@ -74,20 +74,20 @@ scripts/provenance_manifest.sh
 
 ## 1. What the history contains
 
-At `5f5e819`, **1027 commits**, spanning **2026-03-15 to 2026-08-30**.
+At `db795c2`, **1030 commits**, spanning **2026-03-15 to 2026-08-30**.
 
 | | Commits |
 |---|---:|
-| Total reachable | 1027 |
+| Total reachable | 1030 |
 | Merge commits (`dco.yml` does not examine these) | 108 |
-| **Non-merge commits — the population `dco.yml` grades** | **919** |
+| **Non-merge commits — the population `dco.yml` grades** | **922** |
 
-Git author field, all 1027 commits:
+Git author field, all 1030 commits:
 
 | Author | Commits |
 |---|---:|
 | `Claude <noreply@anthropic.com>` | 478 |
-| `Tom F. <tomf@tomtomtech.net>` | 390 |
+| `Tom F. <tomf@tomtomtech.net>` | 393 |
 | `Tom F <tomtom215@users.noreply.github.com>` | 122 |
 | `github-actions[bot] <41898282+…>` | 37 |
 
@@ -97,16 +97,16 @@ the 122 no-reply commits are merge commits created by GitHub's merge button.
 
 ## 2. Verdict under the project's own DCO gate
 
-Applying `dco.yml`'s rules to all 919 non-merge commits:
+Applying `dco.yml`'s rules to all 922 non-merge commits:
 
 | Outcome | Commits | Share |
 |---|---:|---:|
-| **Would pass** — human author, matching `Signed-off-by` | **389** | 42.3% |
-| Fail — author `noreply@anthropic.com` | 477 | 51.9% |
+| **Would pass** — human author, matching `Signed-off-by` | **392** | 42.5% |
+| Fail — author `noreply@anthropic.com` | 477 | 51.7% |
 | Fail — author `github-actions[bot]` | 37 | 4.0% |
 | Fail — human author, no matching `Signed-off-by` | 16 | 1.7% |
 
-The passing count has tripled since the 2026-08-11 measurement — 126 to 389.
+The passing count has tripled since the 2026-08-11 measurement — 126 to 392.
 The AI-authored count has not moved at all, which is the shape a closed pattern
 makes: that population is fixed and the compliant one grows past it.
 
@@ -124,12 +124,12 @@ authorship rule, which short-circuits before the sign-off check.
 
 **The pattern is closed, not ongoing.** The AI-authored commits run
 2026-03-15 to **2026-07-24** and stop there. `b416c1a` (2026-07-24, tagged
-`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **419 commits since**,
+`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **422 commits since**,
 **zero** are AI-authored:
 
-| Author, `b416c1a..5f5e819` | Commits |
+| Author, `b416c1a..db795c2` | Commits |
 |---|---:|
-| `Tom F. <tomf@tomtomtech.net>` | 390 |
+| `Tom F. <tomf@tomtomtech.net>` | 393 |
 | `Tom F <tomtom215@users.noreply.github.com>` | 15 |
 | `github-actions[bot]` | 14 |
 
