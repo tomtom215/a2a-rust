@@ -1644,3 +1644,75 @@ This does **not** make `CARD-SIGN-004` gradeable by the TCK — it carries the
 suite's `not-automatable` tag and has no test function upstream, so it remains
 in the 21 `NOT TESTED`. It removes the gap in *this SDK*, which is the part
 that was ours to close.
+
+---
+
+## 20. `GRPC-ERR-002` and `HTTP_JSON-STATUS-001`: the suite's vendored specification is stale
+
+Two MUST checks began failing when this SDK corrected its §5.4 error mappings
+for 0.11.0. Both are baselined in `tck/conformance-baseline.json`, which is the
+first time anything has been added to that file. The bar for adding to it is
+evidence that the failure is not this SDK's, so here is the evidence.
+
+**What the suite reports:**
+
+```
+HTTP_JSON-STATUS-001  expected ContentTypeNotSupportedError (415), got 400
+GRPC-ERR-002          expected VersionNotSupportedError (UNIMPLEMENTED),
+                      got FAILED_PRECONDITION
+```
+
+Both cite `specification/specification.md#54-error-code-mappings`. That path is
+the giveaway: **the suite vendors its own copy of the specification**, and
+grades against that copy rather than against the published document.
+
+**The two copies disagree, in exactly six of §5.4's nine rows:**
+
+| Error | `a2a-tck/specification/specification.md` | `A2A/docs/specification.md` |
+|---|---|---|
+| `TaskNotCancelableError` | `409 Conflict` | **`400 Bad Request`** |
+| `PushNotificationNotSupportedError` | `UNIMPLEMENTED` | **`FAILED_PRECONDITION`** |
+| `UnsupportedOperationError` | `UNIMPLEMENTED` | **`FAILED_PRECONDITION`** |
+| `ContentTypeNotSupportedError` | `415 Unsupported Media Type` | **`400 Bad Request`** |
+| `InvalidAgentResponseError` | `502 Bad Gateway` | **`500 Internal Server Error`** |
+| `VersionNotSupportedError` | `UNIMPLEMENTED` | **`FAILED_PRECONDITION`** |
+
+The other three rows (`TaskNotFoundError`, `ExtendedAgentCardNotConfiguredError`,
+`ExtensionSupportRequiredError`) agree.
+
+Reproduce it in two commands, no clone required:
+
+```sh
+curl -sSL https://raw.githubusercontent.com/a2aproject/a2a-tck/main/specification/specification.md
+curl -sSL https://raw.githubusercontent.com/a2aproject/A2A/main/docs/specification.md
+```
+
+then compare the §5.4 tables. Measured 2026-08-30.
+
+**Why this is not a claim of a bug in the suite's logic.** The tests are doing
+exactly what they should: asserting the table in the specification they were
+given. The specification they were given is a snapshot that upstream has since
+amended in place, under the same `1.0.0` version string. The suite is stale, not
+wrong-headed — and only two of the six stale rows have tests, which is why two
+checks fail rather than six.
+
+**Why this document does not treat that as ironic.** This repository shipped the
+identical defect: `docs/implementation/v1.0.0-specification-complete.md` was
+retrieved 2026-03-31, never refreshed, and carried the same six stale rows. Both
+the SDK and the in-repo TCK implemented it, so they agreed with each other and
+failed conformant third-party agents. That is the failure this file's own
+**Correction notice** exists for, and a previous revision of this document was
+wrong about `a2a-tck` once already. The conclusion here is not "we are right and
+they are careless" — it is that a vendored snapshot with no refresh mechanism
+rots the same way in every repository that keeps one, including this one.
+
+**Corroboration, so this does not rest on reading two documents.** The official
+Python SDK (`a2a-sdk` 1.1.2) answers `400` for `TaskNotCancelableError`, where
+the stale table says `409`. That was what surfaced this whole line of enquiry:
+the in-repo TCK failed a conformant agent, and the agent was right.
+
+**When these entries come out.** They clear the moment `a2a-tck` refreshes its
+vendored specification — no change here required, and
+`check_conformance.py` will report them as unexpected *passes* so the baseline
+cannot rot shut. Reporting it upstream is the obvious next step and has not been
+done at the time of writing.

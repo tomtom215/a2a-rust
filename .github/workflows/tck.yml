@@ -133,10 +133,19 @@ jobs:
       # The card must name every listener the SUT brought up, or the legs
       # below would resolve nothing and the job would report a config error
       # rather than a conformance verdict. Assert it before grading.
+      #
+      # The WebSocket entry is matched by URI, not by the bare name. §5.8 says
+      # a custom binding SHOULD be identified by a URI and the SUT advertises
+      # `WEBSOCKET_BINDING_URI` accordingly; this step asserted the literal
+      # `"WEBSOCKET"` and so failed the moment the SUT complied. The three
+      # canonical bindings of §5.3 keep their bare names because that is what
+      # the specification assigns them — the distinction is the whole point of
+      # §5.8, so the loop is written to show it rather than to hide it behind
+      # a pattern that matches either.
       - name: Card advertises all four bindings
         run: |
           card=$(curl -sf http://127.0.0.1:9999/.well-known/agent-card.json)
-          for b in JSONRPC HTTP+JSON GRPC WEBSOCKET; do
+          for b in JSONRPC HTTP+JSON GRPC "https://a2a-rust.com/bindings/websocket/v1"; do
             echo "$card" | grep -q "\"$b\"" || { echo "card is missing $b"; exit 1; }
           done
           echo "all four interfaces advertised"

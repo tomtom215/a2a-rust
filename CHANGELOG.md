@@ -66,6 +66,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Python SDK (`a2a-sdk` 1.1.2), which answered `400` where the kit demanded
   `409`; the SDK was right.
 
+  **If you grade against the official `a2aproject/a2a-tck`, expect two MUST
+  failures** — `HTTP_JSON-STATUS-001` and `GRPC-ERR-002`. They are not defects
+  in your agent. That suite vendors its own copy of the specification and it
+  carries the same stale table, disagreeing with the published document in the
+  same six rows. Both entries are baselined here with the evidence and a
+  two-command reproduction in `docs/official-tck-findings.md` §20, and they
+  clear when the suite refreshes its copy.
+
 - **BREAKING (wire format): the Axum adapter now agrees with the REST
   dispatcher.** It carried a second, hand-written copy of §5.4's table which had
   drifted from the shared one in three further places: `TaskNotCancelable` and
