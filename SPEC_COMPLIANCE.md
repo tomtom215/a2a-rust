@@ -97,7 +97,8 @@ from either direction (`grep -rn "§3.4.3" crates/`).
 
 | Spec area | Implementation | Evidence |
 |---|---|---|
-| WebSocket binding (`"WEBSOCKET"`) | `dispatch/websocket.rs` (`websocket` feature) | websocket test leg; message-size cap tests |
+| WebSocket binding | `dispatch/websocket.rs` (`websocket` feature) | websocket test leg; message-size cap tests |
+| §5.8 URI-identified binding | `WEBSOCKET_BINDING_URI` in `a2a-protocol-types` | TCK SUT advertises the URI; `binding_for` tests cover URI, legacy name, case-folding, and a foreign URI |
 
 ## §13 — Security considerations
 
@@ -115,6 +116,7 @@ from either direction (`grep -rn "§3.4.3" crates/`).
 | Spec area | Implementation | Evidence |
 |---|---|---|
 | §14.1.1 `application/a2a+json` registered constant | `A2A_CONTENT_TYPE` | accepted-on-ingress tests |
+| §4.3.3 push webhook sends `application/a2a+json` | `push/sender.rs` | `request_has_a2a_media_type_content_type` |
 | §14.2.2 `A2A-Extensions` header | `handler/helpers.rs::parse_extensions_header`; `A2A_EXTENSIONS_HEADER` | extension-activation tests |
 
 ---

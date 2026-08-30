@@ -764,9 +764,20 @@ impl PushSender for HttpPushSender {
             let mut last_err = String::new();
 
             for attempt in 0..self.retry_policy.max_attempts {
+                // §4.3.3 fixes the webhook request's Content-Type as
+                // `application/a2a+json`, and unlike §9's JSON-RPC binding —
+                // which specifies `application/json` — this one is the A2A
+                // media type. It read `application/json` until 2026-08-30,
+                // from the same stale vendored specification that put six
+                // §5.4 error mappings wrong.
+                //
+                // Named through the constant rather than spelled again: the
+                // REST dispatcher already accepts this media type by the same
+                // name, and a webhook receiver written against §4.3.3 matches
+                // on it.
                 let mut builder = hyper::Request::builder()
                     .method(hyper::Method::POST)
-                    .header("content-type", "application/json");
+                    .header("content-type", a2a_protocol_types::A2A_CONTENT_TYPE);
 
                 if let Some(uri) = pinned_uri.as_ref() {
                     builder = builder.uri(uri.clone());

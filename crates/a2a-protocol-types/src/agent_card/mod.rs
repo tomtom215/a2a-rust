@@ -32,8 +32,15 @@ pub struct AgentInterface {
     pub url: String,
 
     /// Protocol binding identifier — the spec's canonical values are
-    /// `"JSONRPC"`, `"GRPC"`, and `"HTTP+JSON"` (§5.3); custom bindings such
-    /// as `"WEBSOCKET"` are permitted (§12).
+    /// `"JSONRPC"`, `"GRPC"`, and `"HTTP+JSON"` (§5.3).
+    ///
+    /// §12 permits custom bindings, and §5.8 says a custom binding **SHOULD**
+    /// be identified by a **URI** rather than a bare name, so that two
+    /// projects cannot define incompatible bindings under the same word. This
+    /// crate's own WebSocket binding is
+    /// [`WEBSOCKET_BINDING_URI`](crate::WEBSOCKET_BINDING_URI); it advertised
+    /// the bare `"WEBSOCKET"` before 0.11.0, which readers should still
+    /// accept.
     #[serde(alias = "protocol_binding")]
     pub protocol_binding: String,
 

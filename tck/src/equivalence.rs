@@ -53,9 +53,27 @@ pub struct Iface {
 /// unrecognised name is not an error — §12 explicitly permits custom bindings,
 /// and a kit that cannot drive one should say so rather than fail the agent.
 pub fn binding_for(declared: &str) -> Option<&'static str> {
+    // Spelled out rather than imported from `a2a_protocol_types`. This kit
+    // depends on none of the `a2a-protocol-*` crates on purpose — a kit that
+    // shares constants with the implementation it grades shares that
+    // implementation's reading of them. The duplication is the point.
+    //
+    // Case-sensitive, and checked before the upper-casing below: a URI's path
+    // is case-sensitive, so folding case would accept
+    // `HTTPS://A2A-RUST.COM/BINDINGS/WEBSOCKET/V1` as the same identifier,
+    // which §5.8 gives no licence for.
+    if declared == "https://a2a-rust.com/bindings/websocket/v1" {
+        return Some("websocket");
+    }
     match declared.to_ascii_uppercase().as_str() {
         "JSONRPC" => Some("jsonrpc"),
         "HTTP+JSON" | "REST" => Some("rest"),
+        // Both spellings. §5.8 says a custom binding SHOULD be identified by
+        // a URI, and this project's is `WEBSOCKET_BINDING_URI`; the bare name
+        // is what it advertised before 0.11.0 and what other implementations
+        // of the same binding may still emit. A kit that accepted only the
+        // new spelling would report a conformant agent as advertising a
+        // binding it cannot drive.
         "WEBSOCKET" => Some("websocket"),
         "GRPC" => Some("grpc"),
         _ => None,
@@ -1182,6 +1200,25 @@ mod tests {
         assert_eq!(binding_for("REST"), Some("rest"));
         assert_eq!(binding_for("GRPC"), Some("grpc"));
         assert_eq!(binding_for("WEBSOCKET"), Some("websocket"));
+        // §5.8's URI form resolves to the same binding, so an agent that
+        // adopts it does not read as advertising something this kit cannot
+        // drive. Both spellings are live in this repository: the SUT emits
+        // the URI, the examples still emit the bare name.
+        assert_eq!(
+            binding_for("https://a2a-rust.com/bindings/websocket/v1"),
+            Some("websocket")
+        );
+        // Case-folded, it is a different URI and must not resolve — a URI's
+        // path is case-sensitive and §5.8 gives no licence to fold it.
+        assert_eq!(
+            binding_for("HTTPS://A2A-RUST.COM/BINDINGS/WEBSOCKET/V1"),
+            None
+        );
+        // An unrelated project's custom binding is still skipped, not driven.
+        assert_eq!(
+            binding_for("https://example.com/bindings/websocket/v1"),
+            None
+        );
         // Case is not significant in the card's spelling.
         assert_eq!(binding_for("jsonrpc"), Some("jsonrpc"));
     }

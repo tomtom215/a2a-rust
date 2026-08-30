@@ -414,7 +414,14 @@ fn make_agent_card(
         // way a real client would.
         .chain(ws_url.map(|url| AgentInterface {
             url: url.into(),
-            protocol_binding: "WEBSOCKET".into(),
+            // §5.8: a custom binding SHOULD be identified by a URI. The
+            // SUT is the target this repository's conformance claim is
+            // measured against, so it advertises the spec-preferred form.
+            // The examples deliberately still advertise the bare
+            // `"WEBSOCKET"`, which keeps CI exercising both spellings —
+            // agents written before 0.11.0 emit the old one and the kit has
+            // to keep finding them.
+            protocol_binding: a2a_protocol_types::WEBSOCKET_BINDING_URI.into(),
             protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }))

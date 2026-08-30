@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.11.0] - 2026-08-30
 
+### Added
+
+- **`WEBSOCKET_BINDING_URI`** (`a2a-protocol-types`) —
+  `https://a2a-rust.com/bindings/websocket/v1`, this project's identifier for
+  its WebSocket binding. §5.8 says a custom binding (§12) **SHOULD** be
+  identified by a URI rather than a bare name, so that two projects cannot
+  define incompatible bindings under the same word; `"WEBSOCKET"` is exactly
+  the collision that rule exists to prevent. `AgentInterface::protocol_binding`
+  is a free-form string the caller supplies and the crates never match on, so
+  nothing breaks by adopting it — but a card advertising the bare name should
+  move, and readers should accept both for as long as cards in the wild carry
+  the old spelling. The conformance SUT now advertises the URI while the
+  examples keep `"WEBSOCKET"`, so CI exercises both paths rather than
+  asserting the migration is complete.
+
+  This repository's other custom binding was already compliant:
+  `a2a-protocol-slimrpc` advertises upstream's
+  `https://a2a-protocol.org/bindings/experimental-slimrpc/v1`. WebSocket was
+  the outlier, which is the sort of thing a spec diff surfaces and an
+  inventory of your own bindings would have surfaced sooner.
+
 ### Changed
 
 - **BREAKING (wire format): six §5.4 error mappings corrected.** A server on
@@ -54,17 +75,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disagree again. `PayloadTooLarge` (`413`) and `Overloaded` (`503`) remain
   adapter-specific, because A2A has no error code for either.
 
+- **BREAKING (wire format): push notifications are delivered as
+  `application/a2a+json`.** §4.3.3 specifies the A2A media type for the
+  webhook `POST`; the sender was using `application/json`. A receiver that
+  matches the header exactly — a framework body parser keyed on
+  `application/json`, a gateway content-type rule, a WAF — will stop accepting
+  deliveries until it also accepts `application/a2a+json`. The body is
+  unchanged, and `+json` structured-suffix parsers already handle it.
+
 ### Fixed
 
 - **The vendored specification is current again.** Re-vendored from upstream
   with a provenance header naming its source, retrieval date, and the one-line
-  command to refresh it. Four further normative changes are present in the
-  refreshed document and are **not** yet implemented — `PushNotificationConfig`
-  renamed to `TaskPushNotificationConfig`, the push-webhook `Content-Type`
-  becoming `application/a2a+json`, `AuthenticationInfo` reshaped from
-  `schemes[]` + `token` to `scheme` + `credentials`, and a new §5.8 saying
-  `protocolBinding` SHOULD be a URI. Each changes the wire and wants its own
-  change with its own tests.
+  command to refresh it.
+
+  The refreshed document carries four normative changes beyond §5.4's table,
+  and 0.11.0 absorbs all four. Two were already implemented and needed only to
+  be confirmed against code rather than against the diff: `PushNotificationConfig`
+  is already the flat `TaskPushNotificationConfig` in both `proto/a2a_v1/a2a.proto`
+  and `a2a-protocol-types`, and `AuthenticationInfo` already carries `scheme` +
+  `credentials` rather than `schemes[]` + `token`. The other two ship here — the
+  push-webhook `Content-Type` and §5.8's URI-identified bindings, both above.
+
+  Worth recording that the first reading of this diff reported all four as
+  unimplemented. A specification diff says what the document changed, not what
+  the code does; two of the four had been implemented ahead of the vendored
+  snapshot, which is invisible from the diff alone.
 
 - **The TCK no longer fails conformant agents on `application/a2a+json`.** The
   `a2a_media_type_accepted` check ran against JSON-RPC, where §9 specifies

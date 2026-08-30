@@ -30,8 +30,10 @@ use a2a_protocol_types::agent_card::{AgentCard, AgentInterface};
 /// Advertised in an [`AgentInterface`] so a client knows to dial this binding
 /// rather than JSON-RPC, gRPC or HTTP+JSON. A2A §12 leaves `protocolBinding` an
 /// open string precisely so bindings outside the core three can name
-/// themselves; "experimental" is part of the identifier upstream chose, not a
-/// caveat added here.
+/// themselves, and §5.8 says one **SHOULD** be a URI rather than a bare name;
+/// this one already was. "experimental" is part of the identifier upstream
+/// chose, not a caveat added here, and the trailing `/v1` is what §5.8 asks a
+/// binding to increment on a breaking change rather than redefining in place.
 pub const SLIMRPC_PROTOCOL_BINDING: &str =
     "https://a2a-protocol.org/bindings/experimental-slimrpc/v1";
 
