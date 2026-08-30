@@ -13,6 +13,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 
 import org.a2aproject.sdk.server.PublicAgentCard;
+import org.a2aproject.sdk.server.ServerCallContext;
+import org.a2aproject.sdk.server.auth.TaskAuthorizationProvider;
+import org.a2aproject.sdk.server.auth.TaskOperation;
 import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
 import org.a2aproject.sdk.server.agentexecution.RequestContext;
 import org.a2aproject.sdk.server.tasks.AgentEmitter;
@@ -59,6 +62,64 @@ public class EchoAgent {
     @Produces
     public AgentExecutor agentExecutor() {
         return new EchoExecutor();
+    }
+
+    /// Every caller may do everything, stated as policy rather than assumed.
+    ///
+    /// `a2a-java` 1.3.0.Final enforces a fail-closed default for task
+    /// authorization. `DefaultRequestHandler.enforceRead` reads, in bytecode:
+    /// with no `TaskAuthorizationProvider` bean and `authorizationRequired`
+    /// set, every task read throws `TaskNotFoundError` — a denied read is
+    /// reported as "not found" rather than leaking that the task exists.
+    /// Without this bean the agent still starts, still answers
+    /// `SendMessage`, and then fails every check that reads a task back,
+    /// which reads like a broken task store and is not one.
+    ///
+    /// The other way to close it is `a2a.authorization.required=false`, which
+    /// switches the check off. This grants instead, so the authorization path
+    /// still runs and the ITK exercises it. For this agent that is the honest
+    /// policy and not a bypass: the card advertises no security schemes, so
+    /// "unauthenticated callers may do everything" is what it actually
+    /// implements. An agent that meant to restrict anything would deny here.
+    @Produces
+    @ApplicationScoped
+    public TaskAuthorizationProvider taskAuthorizationProvider() {
+        return new PermitAllTaskAuthorization();
+    }
+
+    private static final class PermitAllTaskAuthorization implements TaskAuthorizationProvider {
+        @Override
+        public boolean checkRead(ServerCallContext context, String taskId, TaskOperation operation) {
+            return true;
+        }
+
+        @Override
+        public boolean checkWrite(ServerCallContext context, String taskId, TaskOperation operation) {
+            return true;
+        }
+
+        @Override
+        public boolean checkCreate(ServerCallContext context, TaskOperation operation) {
+            return true;
+        }
+
+        /// `true`, so `recordOwnership` is never called.
+        ///
+        /// `DefaultRequestHandler.recordOwnershipIfNeeded` calls this purely as
+        /// an idempotence guard: it records ownership only when this answers
+        /// `false`. Nothing is recorded here because nothing is enforced, so
+        /// there is never an outstanding recording to make. Answering `false`
+        /// would also work and would call a no-op on every request.
+        @Override
+        public boolean isTaskRecorded(String taskId) {
+            return true;
+        }
+
+        @Override
+        public void recordOwnership(
+                ServerCallContext context, String taskId, TaskOperation operation) {
+            // No ownership model: see isTaskRecorded.
+        }
     }
 
     private static final class EchoExecutor implements AgentExecutor {

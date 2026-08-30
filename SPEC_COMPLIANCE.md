@@ -128,7 +128,7 @@ skipped in CI via `a2a-tck --skip` (reported, never silent):
 |---|---|---|
 | `@a2a-js/sdk` 1.0.0 | `list_tasks_basic` | `ListTasksRequest.fromJSON({})` materializes proto3-default `status=TASK_STATE_UNSPECIFIED`; the store filters on it, so unfiltered lists return empty. |
 | `@a2a-js/sdk` 1.0.0 | `a2a_media_type_accepted` | Rejects `application/a2a+json`; spec §6.1 examples use it (Python/Go SDKs accept it). |
-| `a2a-java` 1.0.0.CR1 | `a2a_media_type_accepted` | Same `application/a2a+json` rejection. |
+| `a2a-java` 1.3.0.Final | `a2a_media_type_accepted` | Same `application/a2a+json` rejection, on the REST binding only. |
 
 Our implementation accepts `application/a2a+json` and returns a populated
 `ListTasks` response, matching the spec and the Python/Go reference SDKs.

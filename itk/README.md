@@ -15,7 +15,7 @@ Two agent tiers exist per language:
 2. **Official-SDK agents** (`python-sdk/`, `js-sdk/`, `go-sdk/`,
    `java-sdk/`) — the same echo contract built on the official reference
    SDKs (`a2a-sdk` 1.x, `@a2a-js/sdk` 1.x, `a2a-go/v2`, `a2a-java`
-   1.0.0.CR1). These are the runs that prove real cross-SDK interop.
+   1.3.0.Final). These are the runs that prove real cross-SDK interop.
 
 The reverse direction is covered too: `interop/python_client_vs_rust.py`
 drives our `echo-agent` with the official Python SDK **client** over both
@@ -34,7 +34,7 @@ SDKs — skipped with `--skip` (reported, never silent) in CI:
 
 | SDK | Test | Binding | Divergence |
 |---|---|---|---|
-| `a2a-java` 1.0.0.CR1 | `a2a_media_type_accepted` | REST only | Rejects `application/a2a+json`, which §11 says **SHOULD** be used for requests and responses. Not re-verified since 2026-03; retained until a run says otherwise. |
+| `a2a-java` 1.3.0.Final | `a2a_media_type_accepted` | REST only | Rejects `application/a2a+json`, which §11 says **SHOULD** be used for requests and responses. Re-verified 2026-08-30 at 1.3.0.Final. |
 
 **A skip is a claim about someone else's software.** Every entry asserts that
 a named third party is wrong, so each one needs re-checking against the

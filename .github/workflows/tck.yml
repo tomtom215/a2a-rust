@@ -291,7 +291,7 @@ jobs:
               PORT=9113 java -jar itk/agents/java-sdk/target/quarkus-app/quarkus-run.jar &
               sleep 5
             port: 9113
-            # a2a-java 1.0.0.CR1 rejects `application/a2a+json`. The
+            # a2a-java 1.3.0.Final rejects `application/a2a+json`. The
             # JSON-RPC half of this skip is gone: §9 specifies
             # `application/json` and §14.1.1 scopes the A2A media type to
             # §11, so rejecting it there is conformant and our check no
@@ -299,9 +299,8 @@ jobs:
             #
             # The REST half stays, and is the one genuine divergence left in
             # this table: §11 says the media type SHOULD be used for requests
-            # and responses. Unverified locally — this leg needs a Maven
-            # build — so it is retained until a run says otherwise, which the
-            # stale-skip check will do on its own if it is also fixed.
+            # and responses. Re-verified 2026-08-30 at 1.3.0.Final: still
+            # fails on REST, reported skipped with no stale-skip verdict.
             skip_rest: a2a_media_type_accepted
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
