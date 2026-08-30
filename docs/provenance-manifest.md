@@ -3,7 +3,7 @@
 
 # Provenance Manifest
 
-**Measured 2026-08-30 at `9625502`. Regenerate with `scripts/provenance_manifest.sh`.**
+**Measured 2026-08-30 at `60de30f`. Regenerate with `scripts/provenance_manifest.sh`.**
 
 > Re-measured because nothing forced it to be. The figures below moved a long
 > way between `c008ab0` (2026-08-11) and this run — the share of history that
@@ -74,42 +74,47 @@ scripts/provenance_manifest.sh
 
 ## 1. What the history contains
 
-At `9625502`, **1019 commits**, spanning **2026-03-15 to 2026-08-30**.
+At `60de30f`, **1022 commits**, spanning **2026-03-15 to 2026-08-30**.
 
 | | Commits |
 |---|---:|
-| Total reachable | 1019 |
+| Total reachable | 1022 |
 | Merge commits (`dco.yml` does not examine these) | 108 |
-| **Non-merge commits — the population `dco.yml` grades** | **911** |
+| **Non-merge commits — the population `dco.yml` grades** | **914** |
 
-Git author field, all 1019 commits:
+Git author field, all 1022 commits:
 
 | Author | Commits |
 |---|---:|
 | `Claude <noreply@anthropic.com>` | 478 |
-| `Tom F. <tomf@tomtomtech.net>` | 374 |
-| `Tom F <tomtom215@users.noreply.github.com>` | 121 |
-| `github-actions[bot] <41898282+…>` | 36 |
+| `Tom F. <tomf@tomtomtech.net>` | 385 |
+| `Tom F <tomtom215@users.noreply.github.com>` | 122 |
+| `github-actions[bot] <41898282+…>` | 37 |
 
 The two `Tom F` identities are the same person: a GitHub no-reply address used
-for web-UI edits and merges, and a real address used for local commits. 105 of
-the 121 no-reply commits are merge commits created by GitHub's merge button.
+for web-UI edits and merges, and a real address used for local commits. 106 of
+the 122 no-reply commits are merge commits created by GitHub's merge button.
 
 ## 2. Verdict under the project's own DCO gate
 
-Applying `dco.yml`'s rules to all 911 non-merge commits:
+Applying `dco.yml`'s rules to all 914 non-merge commits:
 
 | Outcome | Commits | Share |
 |---|---:|---:|
-| **Would pass** — human author, matching `Signed-off-by` | **375** | 41.2% |
-| Fail — author `noreply@anthropic.com` | 477 | 52.4% |
-| Fail — author `github-actions[bot]` | 37 | 4.1% |
-| Fail — human author, no matching `Signed-off-by` | 22 | 2.4% |
+| **Would pass** — human author, matching `Signed-off-by` | **384** | 42.0% |
+| Fail — author `noreply@anthropic.com` | 477 | 52.2% |
+| Fail — author `github-actions[bot]` | 37 | 4.0% |
+| Fail — human author, no matching `Signed-off-by` | 16 | 1.8% |
 
-The passing count more than doubled since the 2026-08-11 measurement — 126 to 375
-— while every failing count stayed put except the bot's. That is the shape a
-closed pattern makes: the non-compliant population is fixed and the compliant
-one grows past it.
+The passing count has tripled since the 2026-08-11 measurement — 126 to 384.
+The AI-authored count has not moved at all, which is the shape a closed pattern
+makes: that population is fixed and the compliant one grows past it.
+
+Of the failing counts only the bot's still moves, with every generated-results
+push (§2.2). The no-sign-off count is the same 16 commits it has been since
+2026-07-24 — though not without incident while this release was prepared, which
+§2.3 records rather than leaves to be inferred from a figure that came back to
+where it started.
 
 Two facts that follow, and are not visible from the table alone:
 
@@ -119,14 +124,14 @@ authorship rule, which short-circuits before the sign-off check.
 
 **The pattern is closed, not ongoing.** The AI-authored commits run
 2026-03-15 to **2026-07-24** and stop there. `b416c1a` (2026-07-24, tagged
-`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **401 commits since**,
+`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **414 commits since**,
 **zero** are AI-authored:
 
-| Author, `b416c1a..4844d65` | Commits |
+| Author, `b416c1a..60de30f` | Commits |
 |---|---:|
-| `Tom F. <tomf@tomtomtech.net>` | 374 |
-| `Tom F <tomtom215@users.noreply.github.com>` | 14 |
-| `github-actions[bot]` | 13 |
+| `Tom F. <tomf@tomtomtech.net>` | 385 |
+| `Tom F <tomtom215@users.noreply.github.com>` | 15 |
+| `github-actions[bot]` | 14 |
 
 The forward policy is doing what it claims. Whatever counsel decides about the
 history, the practice that produced it has already stopped.
@@ -159,7 +164,7 @@ Every one is documentation. None is source.
 
 ### 2.2 The bot commits are ongoing and will not stop
 
-The 36 `github-actions[bot]` commits run 2026-03-20 to 2026-08-26 and will keep
+The 37 `github-actions[bot]` commits run 2026-03-20 to 2026-08-27 and will keep
 accruing: the benchmarks workflow commits generated results and pushes to
 `main` directly. `dco.yml` triggers on `pull_request` only, so these never pass
 through it.
@@ -169,6 +174,43 @@ makes no assertion about the authorship of contributed work — but it does mean
 "every commit on `main` carries a sign-off" is false today and will stay false.
 The narrower true statement is: every *contributed* commit does.
 
+### 2.3 Two corrections to this release's own commits, before publication
+
+Recorded because a provenance document that hides its own near-misses is worth
+less than one that does not. Both were caught while 0.11.0 was being prepared,
+both are fixed in the history measured above, and neither reached a published
+tag.
+
+**Author field.** Two commits were first written with
+`Claude <noreply@anthropic.com>` in the git *author* field — the pattern
+`PROVENANCE.md` §3.2 discontinued, and the first two such commits since
+`b416c1a`. Had they stood, section 2's claim that zero commits since then are
+AI-authored would have been false in the same release that re-measures it.
+They were re-authored to the maintainer on his instruction.
+
+**Sign-off.** The ten commits preparing this release then carried either
+`Signed-off-by: Claude <noreply@anthropic.com>` under the author `Tom F.`, or
+no sign-off at all. `dco.yml` requires the sign-off email to equal the
+author's, so all ten counted as failures and this section's population stood
+at 25 rather than 16. A sign-off is a certification by a person and an
+assistant is not in a position to make one in the maintainer's name, so the
+shortfall was reported rather than resolved unilaterally. The maintainer then
+signed off on all ten, and they were rewritten to carry
+`Signed-off-by: Tom F. <tomf@tomtomtech.net>` in place of the assistant's.
+
+Both rewrites left every tree and every message body unchanged — verified by
+comparing tree SHAs across the rewrite — so nothing moved but authorship
+metadata.
+
+What generalises is the mechanism, not the defects. Both were introduced
+mid-session by a convention that was being followed correctly at the start —
+`855dd95`, the commit these ten build on, carries §3.2's documented shape — and
+drifted with nothing checking it. That is the same failure this document's
+section 0 describes for its own figures, and the same one that left every
+third-party SDK pin behind upstream. `dco.yml` would have caught both at the
+pull-request boundary. What caught them earlier was re-measuring this document,
+which is what the release-time gate exists to force.
+
 ## 3. What a history rewrite would cost
 
 If the receiving project requires literal per-commit `Signed-off-by` trailers
@@ -177,21 +219,22 @@ mechanical. Its cost is not.
 
 **There is no partial rewrite.** The earliest commit failing `dco.yml` is
 `c6b33cb`, **the initial commit** (2026-03-15, "Initial commit", no sign-off).
-Amending it changes its SHA, and therefore the SHA of all 1008 descendants.
+Amending it changes its SHA, and therefore the SHA of all 1021 descendants.
 
 | | |
 |---|---|
-| Commits whose SHA changes | **1019 — all of them** |
-| Release tags that must be re-cut | **12** (`v0.2.0` … `v0.9.0`) |
-| Published crates.io releases whose source link breaks | 12 versions × 4 crates |
+| Commits whose SHA changes | **1022 — all of them** |
+| Release tags that must be re-cut | **13** (`v0.2.0` … `v0.10.0`) |
+| Published crates.io releases whose source link breaks | 13 versions × 4 crates |
 | SLSA provenance attestations that stop resolving | all, for every published tag |
 
 Every tag is an ancestor of `main`, so every one moves. The first ten are
 *lightweight* — they point directly at a commit object, so they carry no tagger,
-no date and no signature. `v0.8.0` and `v0.9.0` are annotated tag objects, which
-is `release.yml`'s annotated-tag gate (added 2026-08-10) working: the two
-releases cut since it landed are the first two in this project's history that
-record who cut them and when. Neither is signed; that half remains open.
+no date and no signature. `v0.8.0`, `v0.9.0` and `v0.10.0` are annotated tag
+objects, which is `release.yml`'s annotated-tag gate (added 2026-08-10)
+working: the three releases cut since it landed are the first three in this
+project's history that record who cut them and when. None is signed; that half
+remains open.
 
 | Tag | Object | Commit | Date |
 |---|---|---|---|
@@ -207,6 +250,7 @@ record who cut them and when. Neither is signed; that half remains open.
 | `v0.7.0` | commit | `b416c1a` | 2026-07-24 |
 | `v0.8.0` | **tag** | `031fa56` | 2026-08-14 |
 | `v0.9.0` | **tag** | `5012e90` | 2026-08-17 |
+| `v0.10.0` | **tag** | `be6a275` | 2026-08-27 |
 
 The trade being offered is therefore explicit: **verifiable supply-chain
 metadata is destroyed to gain a formality that `PROVENANCE.md` §2 already
