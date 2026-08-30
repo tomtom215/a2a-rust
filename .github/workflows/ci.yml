@@ -99,6 +99,23 @@ jobs:
       - name: Benchmark prose agrees with benchmark tables
         run: ./scripts/check_benchmark_prose.sh
 
+      # Same rule, the other decaying number: the release-prep commit bumps
+      # version numbers but not the sentences quoting them. At v0.10.0 all four
+      # such sentences were updated by hand; at v0.11.0 none were, leaving the
+      # binding's manifest saying "a tight `0.10`" beside a pin of `0.11`, and
+      # RELEASING.md describing `0.2.0` against an SDK that had reached 0.11.0.
+      #
+      # The binding's comment is the costly one. `cargo package` writes the
+      # original manifest into the `.crate` as `Cargo.toml.orig` with comments
+      # intact, so a stale sentence there reaches crates.io permanently — a
+      # published version cannot be amended, only yanked and superseded.
+      #
+      # `package_binding.py` already checks the pins against the tree. This
+      # checks the prose against the same manifests, and treats an anchor that
+      # matches nothing as a failure, so rewording cannot silently disarm it.
+      - name: Version prose agrees with the manifests
+        run: ./scripts/check_release_version_prose.py
+
       # The book carried 158 Rust blocks and nothing compiled any of them.
       # That is how the README Quick Start came to be broken for three minor
       # versions: `agent_executor!` was missing from the prelude and the macro

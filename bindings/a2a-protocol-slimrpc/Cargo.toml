@@ -27,15 +27,15 @@ keywords    = ["a2a", "agent2agent", "slim", "slimrpc", "agntcy"]
 categories  = ["network-programming", "api-bindings"]
 # Versioned independently of the four SDK crates, and deliberately so.
 #
-# This crate's public API is new. Numbering it 0.8.0 to match the SDK would
-# claim eight minor versions of accumulated stability it has not earned, and
+# This crate's public API is new. Numbering it 0.11.0 to match the SDK would
+# claim eleven minor versions of accumulated stability it has not earned, and
 # would then bump on every SDK release even when nothing here changed, making
 # its changelog useless. Independence also decouples the cadence: a fix here
 # ships without waiting for an SDK release, which matters precisely because
 # this binding exists to be adopted by third parties.
 #
 # What independence does NOT buy, and the reason the SDK requirement below is a
-# tight `0.10` rather than a range: `a2a-protocol-server` and
+# tight `0.11` rather than a range: `a2a-protocol-server` and
 # `a2a-protocol-types` are *public* dependencies. `SlimRpcServer::builder`
 # takes `Arc<RequestHandler>` and `agent_interface()` returns an
 # `AgentInterface`, so a caller must be using the same SDK version this crate

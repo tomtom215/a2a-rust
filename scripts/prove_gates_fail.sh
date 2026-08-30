@@ -318,6 +318,8 @@ injection_for() {
             echo "mutation_scope" ;;
         "./scripts/check_benchmark_prose.sh")
             echo "benchmark_prose" ;;
+        *"check_release_version_prose.py"*)
+            echo "version_prose" ;;
         "./scripts/check_book_code.sh")
             echo "book_code" ;;
         *"gen_sitemap.py --check"*)
@@ -428,6 +430,7 @@ expected_marker() {
         file_length)      echo "gate_probe_long.rs" ;;
         mutation_scope)   echo "MUTATION SCOPE GAP" ;;
         benchmark_prose)  echo "DRIFT" ;;
+        version_prose)    echo "has drifted from the manifests" ;;
         book_code)        echo "GREW" ;;
         sitemap)          echo "out of sync with SUMMARY.md" ;;
         api_reference)    echo "are not defined in crates/" ;;
@@ -621,6 +624,37 @@ s = s.replace(
 assert s != before, (
     "benchmark_prose injection matched no text — the connection-reuse figure "
     "in book/src/reference/benchmarks.md changed and this string is stale"
+)
+p.write_text(s)
+PY
+            ;;
+        version_prose)
+            # The defect is the historical one, restored verbatim: the binding's
+            # manifest as it shipped at v0.11.0, its comment still saying the SDK
+            # requirement is "a tight `0.10`" while the pin beside it read
+            # `0.11`. The release-prep commit bumped the pin and left the
+            # sentence, exactly as it had not at v0.10.0.
+            #
+            # Injecting into the *comment* rather than the pin is deliberate.
+            # Changing the pin would also move the ground truth the gate derives
+            # from, so prose and manifest could drift together and still agree —
+            # the gate would go red without proving it can tell the two apart.
+            # Prose drifting away from a correct manifest is the failure that
+            # actually happened, and is what has to be injected.
+            note_touched "bindings/a2a-protocol-slimrpc/Cargo.toml"
+            python3 - <<'PY'
+import pathlib
+p = pathlib.Path("bindings/a2a-protocol-slimrpc/Cargo.toml")
+s = p.read_text()
+before = s
+s = s.replace("# tight `0.11` rather than a range", "# tight `0.10` rather than a range")
+# The injected drift must actually change the manifest, or the gate is proving
+# nothing. The comment tracks the SDK minor, so this string moves every release;
+# when it does and this is not updated with it, the replace becomes a silent
+# no-op and the gate reports UNPROVEN. Fail loudly instead of injecting nothing.
+assert s != before, (
+    "version_prose injection matched no text — the SDK requirement quoted in "
+    "bindings/a2a-protocol-slimrpc/Cargo.toml moved and this string is stale"
 )
 p.write_text(s)
 PY

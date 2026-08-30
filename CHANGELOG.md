@@ -10,6 +10,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Five hand-written version claims had gone stale, and one of them would have
+  been published to crates.io permanently.** The release-prep commit bumps
+  version *numbers* — the four SDK crates, the binding's own version, and the
+  binding's `a2a-protocol-*` requirements — but not the sentences quoting them.
+  At v0.10.0 all four such sentences were updated by hand and were correct; at
+  v0.11.0 none were, so the tree simultaneously said:
+
+  ```
+  manifest : a2a-protocol-types = { version = "0.11", path = ... }
+  comment  : "the reason the SDK requirement below is a tight `0.10`"
+  ```
+
+  and `RELEASING.md` described the binding as "`0.2.0` against the SDK's
+  `0.10.0`" when it was 0.3.0 against 0.11.0, and stated all four crates were
+  "at 0.10.0 as of this writing".
+
+  The binding's manifest comment is the costly one, and the reason this is
+  filed as a fix rather than a docs tidy: `cargo package` writes the original
+  manifest into the `.crate` as `Cargo.toml.orig` with comments intact, so a
+  stale sentence there reaches crates.io permanently — a published version
+  cannot be amended, only yanked and superseded. `a2a-protocol-slimrpc` has
+  never been published, so 0.3.0 would have shipped it as the crate's first
+  release. Verified by extracting `a2a-protocol-types-0.10.0.crate` from
+  crates.io and confirming `Cargo.toml.orig` retains the source comments.
+
+  A sixth claim had been stale since 0.8.0 and was never caught by the manual
+  pass: the binding's comment arguing against "[n]umbering it 0.8.0 to match
+  the SDK" and the "eight minor versions" that would claim.
+
+- **Nothing recomputed those numbers, so nothing could notice them decaying.**
+  `scripts/check_release_version_prose.py` re-derives every checked claim from
+  the manifests and fails when the prose disagrees, on the rule
+  `check_benchmark_prose.sh` already states: a number nothing recomputes is a
+  number that decays. `scripts/package_binding.py` covers the *pins* against
+  the tree; this covers the *prose* against the same manifests.
+
+  Deliberately narrow — named claims, not every version-shaped string, so the
+  changelog, the historical tag list and the packaging-window worked example
+  are not flagged. An anchor that matches nothing is a failure, never a pass,
+  so rewording a sentence cannot silently disarm the check guarding it.
+
+  Proven to fail in eight ways before being wired in: each of the five claims
+  reverted to its stale v0.10.0 value, two rewordings that blind an anchor, and
+  the real regression — manifests bumped to a hypothetical 0.12.0 with the
+  prose left behind, which it reports as all five drifts at once with the
+  correct replacement for each. Registered in `scripts/prove_gates_fail.sh`,
+  whose injection restores the v0.11.0 defect verbatim.
+
+
 ## [0.11.0] - 2026-08-30
 
 ### Added
