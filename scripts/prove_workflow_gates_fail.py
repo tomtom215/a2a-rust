@@ -276,6 +276,7 @@ def compat_report(
     *,
     failing: dict[str, str] | None = None,
     extra_pass: dict[str, str] | None = None,
+    baselined: dict[str, dict[str, str]] | None = None,
 ) -> dict:
     """A `compatibility.json` shaped like the real suite's, with N graded MUSTs.
 
@@ -297,6 +298,24 @@ def compat_report(
             "status": status,
             "transports": {"jsonrpc": status},
         }
+    # Baselined failures must reproduce the baseline's exact (requirement,
+    # transport) pairs, since that is the granularity the gate compares at.
+    # "*" is the sentinel for a failure the report cannot attribute to a
+    # transport, and it is expressed the way the real report expresses it:
+    # no transports, failing top-level status.
+    for rid, transports in (baselined or {}).items():
+        if set(transports) == {"*"}:
+            per_req[rid] = {
+                "level": "MUST",
+                "status": transports["*"],
+                "transports": {},
+            }
+        else:
+            per_req[rid] = {
+                "level": "MUST",
+                "status": "FAIL",
+                "transports": dict(transports),
+            }
     for rid, status in (extra_pass or {}).items():
         per_req[rid] = {
             "level": "MUST",
@@ -414,6 +433,17 @@ READINESS_POLL = (
 )
 
 
+def load_baseline_failures() -> dict[str, dict[str, str]]:
+    """The `known_failures` map from the real baseline the workflow gates on.
+
+    Read at fixture-build time so the healthy report and the baseline cannot
+    disagree. Every entry here is a failure this repository has accepted as
+    not its own — see docs/official-tck-findings.md.
+    """
+    doc = json.loads((REPO / TCK_BASELINE).read_text(encoding="utf-8"))
+    return doc.get("known_failures") or {}
+
+
 def _tck_gate_probe(report_name: str, healthy_graded: int) -> Probe:
     """Shared shape for the three `check_conformance.py` gate steps.
 
@@ -423,7 +453,24 @@ def _tck_gate_probe(report_name: str, healthy_graded: int) -> Probe:
     """
 
     def healthy(d: Path) -> None:
-        write_report(d / report_name, compat_report(healthy_graded))
+        # "Healthy" for this gate means *agreeing with the baseline*, not
+        # "no failures at all". The gate is differential in both directions:
+        # a baselined failure that starts passing is reported as an
+        # unexpected pass and exits 1, which is what stops the baseline
+        # rotting shut. So a fixture hard-coded to zero failures is only
+        # healthy while the baseline is empty, and it silently stopped being
+        # healthy the moment `tck/conformance-baseline.json` gained its first
+        # two entries.
+        #
+        # Read from the baseline rather than restating it. Unlike ALL_FOUR
+        # below, a copy here would prove nothing: the baseline is the gate's
+        # *input*, not the assertion under test, and the defects below still
+        # inject a failure absent from it — which is what actually proves the
+        # gate fires.
+        write_report(
+            d / report_name,
+            compat_report(healthy_graded, baselined=load_baseline_failures()),
+        )
 
     return Probe(
         healthy=healthy,
@@ -970,7 +1017,19 @@ def build_registry() -> dict[str, Probe | Exempt]:
     # Guards what PR #103 added: all four listeners actually advertised. If the
     # card silently loses one, the leg for that binding resolves nothing and the
     # job reports a config error dressed as a conformance verdict.
-    ALL_FOUR = ["JSONRPC", "HTTP+JSON", "GRPC", "WEBSOCKET"]
+    # The WebSocket entry is the §5.8 URI, not the bare name, because that is
+    # what the guard in tck.yml now greps for and what the SUT now advertises.
+    # This list is a deliberate third copy of the same four strings — the
+    # workflow's, the SUT's, and this one — and it is a copy on purpose: a
+    # prover that imported the value it is proving against could not catch the
+    # workflow drifting. The cost is that all three move together, which is
+    # exactly what happened when §5.8 landed and this fixture went red.
+    ALL_FOUR = [
+        "JSONRPC",
+        "HTTP+JSON",
+        "GRPC",
+        "https://a2a-rust.com/bindings/websocket/v1",
+    ]
     reg["tck.yml::tck-all-bindings::Card advertises all four bindings"] = Probe(
         healthy=_card_fixture(ALL_FOUR),
         defects=[
