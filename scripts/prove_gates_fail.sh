@@ -609,21 +609,29 @@ PROBE
             note_touched "book/src/reference/benchmarks.md"
             python3 - <<'PY'
 import pathlib
+import re
 p = pathlib.Path("book/src/reference/benchmarks.md")
 s = p.read_text()
-before = s
-s = s.replace(
-    "Connection reuse saves 122.5 µs (42.7%) on loopback",
+# Match whatever figure the page currently carries and overwrite it with the
+# historical stale one, rather than naming the current value here.
+#
+# Naming it is what broke this injection once already: `benchmarks.md` is
+# regenerated from measurements, the bot re-ran the benchmarks, 122.5 µs
+# (42.7%) became 123.3 µs (50.7%), and the replace silently matched nothing.
+# The assert below caught it, but only after the fact and only on a full run.
+# A pattern cannot go stale when the numbers move — only if the sentence is
+# reworded, which the assert still catches.
+s, hits = re.subn(
+    r"Connection reuse saves [\d.]+ µs \([\d.]+%\) on loopback",
     "Connection reuse saves ~140µs (9%) on loopback",
+    s,
+    count=1,
 )
 # The injected drift must actually change the page, or the gate is proving
-# nothing. `benchmarks.md` is regenerated from measurements, so the exact
-# figure here moves between releases; when it does and this string is not
-# updated with it, the replace becomes a silent no-op and the gate reports
-# UNPROVEN. Fail loudly instead of injecting nothing.
-assert s != before, (
-    "benchmark_prose injection matched no text — the connection-reuse figure "
-    "in book/src/reference/benchmarks.md changed and this string is stale"
+# nothing. Fail loudly instead of injecting nothing.
+assert hits == 1, (
+    "benchmark_prose injection matched no text — the connection-reuse sentence "
+    "in book/src/reference/benchmarks.md was reworded and this pattern is stale"
 )
 p.write_text(s)
 PY
