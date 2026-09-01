@@ -10,6 +10,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Official TCK: two more `a2a-tck` checks baselined, same stale-specification
+  cause as the first two.** The nightly of 2026-09-01
+  ([33467431712](https://github.com/tomtom215/a2a-rust/actions/runs/33467431712))
+  went red on `CORE-CANCEL-002` [`http_json`] and `STREAM-SUB-003` [`grpc`]
+  while the nightly 22 hours earlier had passed **on the identical commit**
+  (`b6f3afb`). `a2a-tck` landed
+  [`de6af18`](https://github.com/a2aproject/a2a-tck/commit/de6af188d2d65779719c88d4f6bb5b180a4fa91d)
+  (PR #207) in between, which replaced "any error is acceptable" assertions
+  with assertions on the error each requirement names — a good change that
+  reached two rows §5.4's table has stale in the copy the suite vendors:
+  `TaskNotCancelableError` (`409` there, `400` published) and
+  `UnsupportedOperationError` (`UNIMPLEMENTED` there, `FAILED_PRECONDITION`
+  published). Both requirements pass on every binding where the two copies
+  agree and fail only on the one where they do not, which is the shape of a
+  stale table rather than of a defect here. No SDK behaviour changed;
+  `tck/conformance-baseline.json` now carries four entries and
+  `docs/official-tck-findings.md` §21 records the evidence.
+- **Official TCK: the `--deselect` on the minimal-capability profile is gone.**
+  [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225),
+  filed from this repository, was fixed upstream on 2026-08-31 by PR #226. The
+  minimal profile now grades the same 66 MUST requirements with nothing
+  excluded, measured with and without the flag.
+
+### Fixed
+
+- **Official TCK: one failure no longer reports as three.** The
+  minimal-capability and required-extension runs inherited the default
+  `success()` condition, so a red gate skipped them — while their own gates
+  carried `always()` and ran anyway, dying on reports that were never written
+  (`error: TCK report not found`). Both profiles are now measured whenever the
+  SUT built, and each gate runs unless its own run step was skipped, so a
+  nightly reports every profile's drift in one run instead of one per night.
+
 ## [0.11.0] - 2026-08-30
 
 ### Added

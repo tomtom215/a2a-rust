@@ -791,16 +791,28 @@ This is the category most worth clearing before any external review.
 
 ## Conformance
 
-Measured against the official `a2a-tck` suite: **92 of 114 MUST requirements
-passing, 0 failing.** The remaining 22 are not defects in this SDK — 21 have
-no test function upstream, and `CARD-EXT-002` is structurally inapplicable.
-Full analysis and reproduction steps in
-[`docs/official-tck-findings.md`](docs/official-tck-findings.md).
+Measured against the official `a2a-tck` suite, re-measured 2026-09-01 against
+`a2a-tck@de6af18`: **88 of 114 MUST requirements passing, 4 failing.** All four
+failures are the suite grading §5.4 against a specification copy vendored inside
+it that upstream has since amended in place — each fails on exactly the one
+binding whose cell the two copies disagree about, and passes on the bindings
+where they agree. They are baselined in `tck/conformance-baseline.json` with the
+evidence in `docs/official-tck-findings.md` §20 and §21, and they clear when the
+suite refreshes its copy. (Before 2026-08-30 this line read 92 passing, 0
+failing; the four moved out of the passing column as upstream tightened its
+assertions onto the stale rows, not as anything here changed.) The remaining 22
+are not defects in this SDK — 21 have no test function upstream, and
+`CARD-EXT-002` is structurally inapplicable. Full analysis and reproduction
+steps in [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
 
-* **`SSE-001` is reported upstream** as
+* **`SSE-001` is closed.** Reported upstream as
   [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225)
-  (filed 2026-08-07). Nothing more to do here until upstream responds; if the
-  fix lands, drop the `--deselect` in `.github/workflows/official-tck.yml`.
+  (filed 2026-08-07), fixed upstream 2026-08-31 by
+  [`38ab89e`](https://github.com/a2aproject/a2a-tck/commit/38ab89e) (PR #226).
+  The `--deselect` in `.github/workflows/official-tck.yml` was dropped on
+  2026-09-01 — measured at `a2a-tck@de6af18`, the minimal profile grades the
+  same 66 MUST requirements with and without it. See
+  `docs/official-tck-findings.md` §21.
 * **Track the 13 open upstream backlog items** that would move requirements
   out of `NOT TESTED` if `a2a-tck` implements them. Nothing to do here except
   re-measure when upstream moves; the ceiling is not this project's to raise.

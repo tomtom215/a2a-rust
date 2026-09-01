@@ -48,6 +48,17 @@ one client tells you the two disagree. It does not tell you which is wrong.
 
 ## 1. Score, and how CI gates on it
 
+> **Read §20 and §21 with this section.** Every figure below was measured on
+> 2026-08-12 at `6ebf821` against `a2a-tck@5996b79`, and the harness floats
+> (`A2A_TCK_REVISION: main`). It has since moved: as of 2026-09-01 at
+> `a2a-tck@de6af18` the tally is **88 MUST passing and 4 failing**, not 92 and
+> 0. Nothing in this SDK changed to cause that. The suite tightened four checks
+> onto rows of §5.4 that its vendored copy of the specification has stale, and
+> all four are baselined with the evidence in §20 and §21. The 22-requirement
+> remainder below — 21 `NOT TESTED`, `CARD-EXT-002` inapplicable — is unchanged.
+> This section is left as measured rather than restated, because a dated
+> measurement that gets quietly edited is no longer a measurement.
+
 | Run | Passed | Failed | Skipped |
 |---|---|---|---|
 | Against `examples/echo-agent`, before fixes | 128 | 12 | 125 |
@@ -1716,3 +1727,113 @@ vendored specification — no change here required, and
 `check_conformance.py` will report them as unexpected *passes* so the baseline
 cannot rot shut. Reporting it upstream is the obvious next step and has not been
 done at the time of writing.
+
+---
+
+## 21. `CORE-CANCEL-002` and `STREAM-SUB-003`: two more rows of §20's stale table
+
+The nightly run of 2026-09-01
+([33467431712](https://github.com/tomtom215/a2a-rust/actions/runs/33467431712))
+failed with two MUST checks not in the baseline. The nightly of 2026-08-31
+([33354950020](https://github.com/tomtom215/a2a-rust/actions/runs/33354950020))
+had passed **on the identical commit**, `b6f3afb`. Nothing in this repository
+moved between them, so nothing in this repository can be the cause: the only
+variable is `A2A_TCK_REVISION: main`, which every run re-clones.
+
+**What moved.** `a2a-tck` landed ten commits on 2026-08-31, after the green
+run. The relevant one is
+[`de6af18`](https://github.com/a2aproject/a2a-tck/commit/de6af188d2d65779719c88d4f6bb5b180a4fa91d)
+(PR #207, closing issue #206), *"assert the specific spec-mandated error, not
+just any error"*. Seven requirements whose text names an error had tests that
+accepted **any** error; those tests now assert the named one. That is a
+straightforwardly good change — it is the same class of under-assertion this
+document complains about elsewhere — and two of the checks it tightened land
+on rows §20 had already identified as stale.
+
+**The two failures:**
+
+| Check | Suite expects, from its vendored §5.4 | Published §5.4 | This SDK answers |
+|---|---|---|---|
+| `CORE-CANCEL-002` [`http_json`] | `TaskNotCancelableError` → `409 Conflict` | **`400 Bad Request`** | `400` |
+| `STREAM-SUB-003` [`grpc`] | `UnsupportedOperationError` → `UNIMPLEMENTED` | **`FAILED_PRECONDITION`** | `FAILED_PRECONDITION` |
+
+Those are rows 1 and 3 of §20's six-row divergence table, unchanged. Both were
+re-verified on 2026-09-01, by the two commands §20 gives, against a fresh clone
+at `de6af18`: the vendored copy still reads `409` / `UNIMPLEMENTED`, the
+published copy still reads `400` / `FAILED_PRECONDITION`.
+
+**The per-transport pattern is the evidence, and it is not circumstantial.**
+Both requirements are graded on all three bindings, and each fails on exactly
+one — the one binding whose cell the two documents disagree about:
+
+```
+CORE-CANCEL-002   jsonrpc PASS   grpc PASS   http_json FAIL
+STREAM-SUB-003    jsonrpc PASS   grpc FAIL   http_json PASS
+```
+
+`CORE-CANCEL-002` passes on `jsonrpc` (`-32002`) and on `grpc`
+(`FAILED_PRECONDITION`) — the two cells where the vendored and published tables
+agree — and fails only on `http_json`, the cell where they do not.
+`STREAM-SUB-003` is the mirror image: it passes on `jsonrpc` (`-32004`) and on
+`http_json` (`400` in both copies), and fails only on `grpc`. A defect in this
+SDK's error *identity* would fail all three bindings; a stale row in one cell
+of a mapping table fails exactly one. What is observed is the second shape.
+
+Note also what did **not** newly fail. `de6af18` also tightened `CORE-CAP-001`
+(`PushNotificationNotSupportedError`), whose row is stale in the same table.
+It stayed green because its two dedicated tests run on `jsonrpc` and
+`http_json` only — the cells where the two copies agree (`-32003`, and `400`
+in both) — and the gRPC cell of that row is exercised instead by
+`GRPC-ERR-002`'s own `test_push_not_supported_returns_unimplemented`, which was
+already failing and already baselined. So the count of stale rows that a test
+can reach went from two to four, not from two to six.
+
+**Decision: baselined, per the rule §20 set.** `tck/conformance-baseline.json`
+now carries four entries. The bar for adding one is evidence that the failure
+is not this SDK's; the table and the transport pattern above are that evidence,
+and the SDK's own `http_status()` provenance comment
+(`crates/a2a-protocol-types/src/error.rs`) records the deliberate 409→400 and
+`UNIMPLEMENTED`→`FAILED_PRECONDITION` corrections, corroborated by the official
+Python SDK answering `400`. Changing the SDK to satisfy the suite would mean
+un-fixing a defect this repository already found and fixed, and would fail a
+client written against the published specification.
+
+`CORE-CANCEL-002` is baselined for `http_json` only, and is graded on the
+`minimal` profile as well as the `full` one. `STREAM-SUB-003` is baselined for
+`grpc` only and is not graded on `minimal`, where the card advertises no
+streaming — `check_conformance.py` reports it there as *not graded by this run*
+rather than as fixed, which is the behaviour that keeps a scoped profile from
+silently clearing a baseline entry it never asked about.
+
+**When these entries come out:** unchanged from §20 — the moment `a2a-tck`
+refreshes its vendored specification. The gate reports a baselined check that
+starts passing as a *stale baseline* failure, so all four have to be removed in
+the same commit that observes them passing.
+
+### Two side-effects of the same upstream batch
+
+Neither is a conformance change, and both are recorded so a reader comparing
+nightly logs does not mistake either for one.
+
+**The `--deselect` in `official-tck.yml` is gone.** §17 assigned
+`HTTP_JSON-SSE-001`'s error under the `minimal` profile to the harness —
+`_extract_error` calling `response.json()` on a streamed response it had closed
+without reading — and reported it as
+[a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225). It was fixed
+upstream on 2026-08-31 by
+[`38ab89e`](https://github.com/a2aproject/a2a-tck/commit/38ab89e) (PR #226),
+which reads the body before the close. Measured here on 2026-09-01 at
+`de6af18`: the test now skips cleanly on *"Streaming not supported"*, and the
+`minimal` profile grades the same 66 MUST requirements and reports the same
+failures with the flag as without it. The waiver is closed rather than traded.
+
+**Reported MUST compatibility fell from 97.7% to 77.1%, and nothing regressed.**
+[`cf4985b`](https://github.com/a2aproject/a2a-tck/commit/cf4985b) (PR #218)
+stopped counting `NOT TESTED` requirements as compatible. Those are the 21
+requirements §1 describes — the ones for which the suite contains no test at
+all — and they now land in the report's *Failed* column: 84 `PASS` + 25
+"failed" + 5 `SKIPPED` = 114, where the 25 is 4 real failures plus those 21.
+The gate does not read that percentage; it reads per-requirement statuses, and
+`NOT TESTED` is not one of the statuses it gates on. `MUST graded` is still 88,
+exactly its floor. The change makes the suite's headline number agree with what
+§1 has said all along about what 100% did and did not mean.

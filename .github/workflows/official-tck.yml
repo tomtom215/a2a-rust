@@ -73,6 +73,7 @@ jobs:
         run: python -m pip install --upgrade pip uv
 
       - name: Build the SUT
+        id: build_sut
         run: cargo build --release -p a2a-tck-sut
 
       - name: Clone the official TCK
@@ -81,6 +82,7 @@ jobs:
             https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
 
       - name: Install the TCK
+        id: install_tck
         working-directory: /tmp/a2a-tck
         run: |
           uv venv
@@ -265,30 +267,49 @@ jobs:
       # both sides. This run is what makes those requirements observable.
       #
       # This step used to carry BOTH `continue-on-error: true` and `|| true`,
-      # because one HTTP+JSON check errors under this profile from inside the
-      # suite's own client. Both blanket waivers are now gone: the single
-      # offending test is deselected by name, and everything else in the
-      # minimal profile is a hard gate again.
+      # because one HTTP+JSON check errored under this profile from inside the
+      # suite's own client. Those blanket waivers gave way to a `--deselect` of
+      # the single offending test, and that has now gone too: the minimal
+      # profile is a hard gate with nothing excluded from it at all.
       #
-      # Why deselecting it is not a coverage loss, and not a papered-over
-      # failure (full evidence in docs/official-tck-findings.md §17):
+      # The record of why the exclusion existed, kept because what closed it is
+      # upstream's fix rather than a decision here (full evidence in
+      # docs/official-tck-findings.md §17):
       #   * The requirement it belongs to, HTTP_JSON-SSE-001, is graded PASS
       #     by the full-profile run above — the one the gate runs against. It
       #     is measured; it is just measured there rather than here.
-      #   * The error is a proven defect in the harness, not in this SDK.
+      #   * The error was a proven defect in the harness, not in this SDK.
       #     `_extract_error` in the suite's http_json client calls
       #     `response.json()` on a streamed response it closed without
       #     reading, and catches only (JSONDecodeError, ValueError) —
       #     `httpx.ResponseNotRead` is a RuntimeError, so it escapes, and the
       #     `response.text` fallback fails the same way. Reproduced against a
       #     bare `http.server` returning 400, with no A2A SDK on either side.
-      #   * Any conformant server reaches it: returning non-2xx to
+      #   * Any conformant server reached it: returning non-2xx to
       #     `message:stream` with streaming unadvertised is exactly what
       #     CORE-CAP-002 requires, and CORE-CAP-002 passes here.
-      # Reported upstream 2026-08-07 as a2aproject/a2a-tck#225:
-      #   https://github.com/a2aproject/a2a-tck/issues/225
-      # Remove the --deselect once that lands.
+      # Reported upstream 2026-08-07 as a2aproject/a2a-tck#225, fixed upstream
+      # 2026-08-31 by a2aproject/a2a-tck#226 (`38ab89e`), which reads the
+      # streamed body before closing it so `_extract_error` survives a non-2xx.
+      # The `--deselect` is gone with it: under this profile the test now skips
+      # cleanly on `Streaming not supported` instead of raising
+      # `httpx.ResponseNotRead`. Measured 2026-09-01 against `a2a-tck@de6af18`
+      # — with and without the flag the minimal profile grades the same 66 MUST
+      # requirements and reports the same failures, so removing it is a waiver
+      # closed, not coverage traded.
+      #
+      # `id` + the condition below: this step used to inherit the default
+      # `success()`, so a red gate above skipped it while its own `always()`
+      # gate still ran and died on a report that was never written. That turned
+      # one root cause into three red steps (run 33467431712). It now runs
+      # whenever its own two inputs exist — the SUT binary and the installed
+      # harness — because the point of a nightly drift-detector is to report
+      # every profile's drift in one run rather than one per night. A red full
+      # profile is not a reason to leave the other two unmeasured; a missing
+      # binary or a failed clone is, and those are the only two conditions.
       - name: Run the suite against the minimal-capability profile
+        id: minimal_run
+        if: ${{ !cancelled() && steps.build_sut.outcome == 'success' && steps.install_tck.outcome == 'success' }}
         run: |
           SUT_PROFILE=minimal SUT_HOST=127.0.0.1:9997 SUT_GRPC_HOST=127.0.0.1:9996 \
             ./target/release/a2a-tck-sut &
@@ -305,8 +326,7 @@ jobs:
           # were still caught by the un-piped gate step that follows.
           set -o pipefail
           suite_status=0
-          ./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9997 -- \
-            --deselect "tests/compatibility/core_operations/test_transport_behavior.py::TestRestStreaming::test_streaming_content_type" \
+          ./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9997 \
             2>&1 | tee /tmp/tck-minimal.log || suite_status=$?
           # Copy the report before propagating the suite's status, so the
           # requirement-level gate below can still say precisely what broke.
@@ -329,13 +349,15 @@ jobs:
             *) exit "$suite_status" ;;
           esac
 
-      # `always()` so a suite-level failure above still gets a
-      # requirement-level diagnosis rather than just a red X.
+      # Runs even when the step above failed, so a suite-level failure still
+      # gets a requirement-level diagnosis rather than just a red X — but not
+      # when that step was skipped, because then there is no report to read and
+      # the only thing this can produce is `error: TCK report not found`.
       # Floor of 66 measured the same way as the full profile's 88: the
       # less-capable card means the suite legitimately skips more, so this
       # profile grades 66 of 114 MUSTs.
       - name: Gate the minimal-profile run
-        if: always()
+        if: ${{ !cancelled() && steps.minimal_run.outcome != 'skipped' }}
         run: |
           python3 tck/scripts/check_conformance.py \
             --report /tmp/minimal-compatibility.json \
@@ -363,6 +385,8 @@ jobs:
       # `sitecustomize.py` shim that patches the harness into sending the
       # header; that changes the suite rather than the SUT, and is not used.
       - name: Run the suite against the required-extension profile
+        id: extension_run
+        if: ${{ !cancelled() && steps.build_sut.outcome == 'success' && steps.install_tck.outcome == 'success' }}
         run: |
           SUT_PROFILE=extension SUT_HOST=127.0.0.1:9995 SUT_GRPC_HOST=127.0.0.1:9994 \
             ./target/release/a2a-tck-sut &
@@ -402,7 +426,7 @@ jobs:
       # this repo refuses to ship. Requiring CORE-CAP-004 to be graded PASS
       # means an upstream rename of the test class turns the job red instead.
       - name: Gate the required-extension run
-        if: always()
+        if: ${{ !cancelled() && steps.extension_run.outcome != 'skipped' }}
         run: |
           python3 tck/scripts/check_conformance.py \
             --report /tmp/extension-compatibility.json \

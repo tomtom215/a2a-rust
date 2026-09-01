@@ -5,8 +5,11 @@
 
 **Status: FILED 2026-08-07** as
 [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225),
-by the maintainer. This file is retained as the record of what was submitted
-and the evidence behind it; the issue is now the live thread.
+by the maintainer, and **FIXED UPSTREAM 2026-08-31** by
+[`38ab89e`](https://github.com/a2aproject/a2a-tck/commit/38ab89e) (PR #226),
+which reads the streamed body before closing it so `_extract_error` survives a
+non-2xx. This file is retained as the record of what was submitted and the
+evidence behind it.
 
 Everything below was reproduced against pristine upstream at
 `5996b79f9cefa6fc390980e383e358a66fb9e49e` (`main`, 2026-06-29,
@@ -380,8 +383,11 @@ literally; strip it when pasting. Every line is real output captured on
   (`a2a-tck`'s own reference SUT imports `a2a.server.apps`, absent from both
   `a2a-sdk` 1.1.2 and `a2aproject/a2a-python@main`), is in
   `docs/official-tck-findings.md` §17.
-- This repository currently works around the bug with a single
-  `pytest --deselect` of the affected test on the minimal-capability profile
-  only, documented in `.github/workflows/official-tck.yml`. The requirement
-  itself is still graded — it passes on the full profile — so no coverage is
-  lost. If upstream fixes this, that `--deselect` should be removed.
+- This repository worked around the bug with a single `pytest --deselect` of
+  the affected test on the minimal-capability profile only, documented in
+  `.github/workflows/official-tck.yml`. The requirement itself stayed graded —
+  it passes on the full profile — so no coverage was lost. **That `--deselect`
+  was removed on 2026-09-01**, once the upstream fix was on `main`: measured at
+  `a2a-tck@de6af18`, the test now skips cleanly on *"Streaming not supported"*
+  and the minimal profile grades the same 66 MUST requirements with the flag as
+  without it. See `docs/official-tck-findings.md` §21.
