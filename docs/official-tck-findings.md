@@ -1890,8 +1890,8 @@ TCK"*). That is a specific, mechanical, non-accusatory thing to ask for, and it
 is not what §20 was preparing to file.
 
 **One caveat that belongs in any upstream report rather than being hidden from
-it.** A2A's own §6 says patch version numbers "do not affect protocol
-compatibility" and "MUST not be considered when clients and servers negotiate
+it.** A2A's own §3.6 (*Versioning*) says patch version numbers "do not affect
+protocol compatibility" and "MUST not be considered when clients and servers negotiate
 protocol versions" — yet `v1.0.1` changed HTTP status codes and gRPC statuses on
 the wire. Both documents therefore describe "A2A 1.0" and no peer can signal
 which patch it targets. A maintainer could reasonably answer that the fault is

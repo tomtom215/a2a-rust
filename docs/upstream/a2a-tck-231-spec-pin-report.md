@@ -118,6 +118,12 @@ data.
 
 ### The caveat, offered rather than hidden
 
+*(Submitted as written. The section citation in this paragraph is wrong: the
+versioning clause is A2A **§3.6**, "Versioning"; §6 is "Common Workflows &
+Examples". Noted here rather than silently fixed, because this file's job is to
+be the record of what was actually submitted. The quoted text is accurate and
+the argument is unaffected. See "Corrections to the submitted text" below.)*
+
 A2A's §6 says patch version numbers "do not affect protocol compatibility" and
 "MUST not be considered when clients and servers negotiate protocol versions" —
 yet v1.0.1 changed HTTP statuses and gRPC statuses on the wire. Both documents
@@ -192,3 +198,17 @@ would corroborate that a reference implementation already follows v1.0.1 — but
 that was measured in an earlier session and was not re-measured for this
 report, so it was left out rather than asserted second-hand about a third
 party's software.
+
+## Corrections to the submitted text
+
+Found after filing, recorded here rather than edited into the body above.
+
+* **`§6` should be `§3.6`.** The clause quoted in the caveat — patch numbers
+  "do not affect protocol compatibility", and "MUST not be considered when
+  clients and servers negotiate protocol versions" — is A2A §3.6,
+  *Versioning*, in both `v1.0.0` and `main`. §6 is *Common Workflows &
+  Examples*. The quotation itself is verbatim and correct, and nothing in the
+  report's argument turns on the number, so this has not been raised as a
+  comment on the issue; it would add noise to a thread awaiting a first
+  maintainer response. Worth a correcting comment if the caveat is ever
+  discussed there.
