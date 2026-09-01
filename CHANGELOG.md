@@ -40,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a silent rewrite look the same. Every conclusion drawn from the divergence
   is unaffected; the mechanism, and so the right thing to ask upstream for, is
   not. Full timeline and commands in `docs/official-tck-findings.md` §21.1.
+- **Reported upstream as
+  [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231).**
+  §20 had left "reporting it upstream is the obvious next step" undone for two
+  days; it is done, and it was worth the wait, because §21.1's correction
+  changed what there was to report — "your vendored copy is a superseded release
+  and `make spec` moves it" is a different request from "upstream rewrote a
+  published document". The submitted body, the duplicate check and the limits of
+  that check are kept in `docs/upstream/a2a-tck-231-spec-pin-report.md`.
 - **Official TCK: the `--deselect` on the minimal-capability profile is gone.**
   [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225),
   filed from this repository, was fixed upstream on 2026-08-31 by PR #226. The

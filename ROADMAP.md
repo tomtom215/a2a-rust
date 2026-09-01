@@ -815,6 +815,14 @@ steps in [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
   2026-09-01 — measured at `a2a-tck@de6af18`, the minimal profile grades the
   same 66 MUST requirements with and without it. See
   `docs/official-tck-findings.md` §21.
+* **The stale specification pin is reported upstream** as
+  [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231)
+  (filed 2026-09-01, open). It asks for `make spec` plus the six `ErrorBinding`
+  constants in `tck/requirements/base.py`. Nothing to do here until upstream
+  responds; when it lands, all four baseline entries become unexpected passes
+  and must be removed in the same commit that observes them passing. The
+  submitted body and its duplicate-check limitations are in
+  [`docs/upstream/a2a-tck-231-spec-pin-report.md`](docs/upstream/a2a-tck-231-spec-pin-report.md).
 * **Track the 13 open upstream backlog items** that would move requirements
   out of `NOT TESTED` if `a2a-tck` implements them. Nothing to do here except
   re-measure when upstream moves; the ceiling is not this project's to raise.

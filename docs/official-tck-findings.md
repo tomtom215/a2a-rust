@@ -1738,6 +1738,12 @@ vendored specification — no change here required, and
 cannot rot shut. Reporting it upstream is the obvious next step and has not been
 done at the time of writing.
 
+> **Update 2026-09-01: it has been done** — filed as
+> [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231),
+> after §21.1 corrected what there was to report. §21.2 is the status; the
+> submitted text and its evidence are kept in
+> `docs/upstream/a2a-tck-231-spec-pin-report.md`.
+
 ---
 
 ## 21. `CORE-CANCEL-002` and `STREAM-SUB-003`: two more rows of §20's stale table
@@ -1892,6 +1898,31 @@ which patch it targets. A maintainer could reasonably answer that the fault is
 upstream in A2A for shipping a wire change in a patch release. That would be a
 fair point and would not change what a conformance kit should grade against:
 the newest released text of the version it targets.
+
+### 21.2 Filed upstream
+
+[a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231),
+2026-09-01. Open, no maintainer response at the time of writing. The submitted
+body, the duplicate-check note and its stated limitations are kept in
+`docs/upstream/a2a-tck-231-spec-pin-report.md`, which is the record of what was
+claimed on this repository's behalf.
+
+It reports the pin and asks for `make spec` plus the six `ErrorBinding`
+constants; it does not ask for this SDK to be treated as correct, and it carries
+the §6 patch-versioning caveat rather than hiding it. It was first opened against
+the specification repository in error
+([a2aproject/A2A#2199](https://github.com/a2aproject/A2A/issues/2199)) and
+refiled against the kit.
+
+**What to watch for, and what each outcome means here.** If upstream refreshes
+the snapshot, all four baseline entries turn into *unexpected passes* and the
+gate goes red until they are removed — that is the mechanism working, not a
+regression, and the fix is `check_conformance.py --update` plus a note here. If
+upstream instead answers that the kit deliberately grades v1.0.0, the four
+entries stay and this section becomes the standing explanation of why. If the
+answer is that A2A should not have changed wire behaviour in a patch release,
+that is a question for `a2aproject/A2A` and does not by itself move this SDK,
+which follows the newest released text either way.
 
 ### Two side-effects of the same upstream batch
 
