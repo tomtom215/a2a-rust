@@ -35,7 +35,7 @@ categories  = ["network-programming", "api-bindings"]
 # this binding exists to be adopted by third parties.
 #
 # What independence does NOT buy, and the reason the SDK requirement below is a
-# tight `0.10` rather than a range: `a2a-protocol-server` and
+# tight `0.11` rather than a range: `a2a-protocol-server` and
 # `a2a-protocol-types` are *public* dependencies. `SlimRpcServer::builder`
 # takes `Arc<RequestHandler>` and `agent_interface()` returns an
 # `AgentInterface`, so a caller must be using the same SDK version this crate

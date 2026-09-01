@@ -170,7 +170,7 @@ above, and `release.yml` does not touch it. It lives outside the workspace with
 its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
 run from `bindings/a2a-protocol-slimrpc/`.
 
-It is versioned independently — `0.2.0` against the SDK's `0.10.0`. Numbering it
+It is versioned independently — currently `0.3.0` against the SDK's `0.11.0`. Numbering it
 to match would claim API stability it has not earned and force a bump on every
 SDK release even when nothing in it changed.
 
@@ -192,6 +192,40 @@ So **every SDK minor release requires a follow-up release of the binding**:
 
 Skipping step 4 leaves the newest binding on crates.io pinned to a superseded
 SDK, which is the failure mode this note exists to prevent.
+
+> **Step 4 has never actually been run.** As of 2026-09-01 the crate does not
+> exist on crates.io at all:
+>
+> ```sh
+> curl -s https://crates.io/api/v1/crates/a2a-protocol-slimrpc
+> # {"errors":[{"detail":"crate `a2a-protocol-slimrpc` does not exist"}]}
+> ```
+>
+> Steps 1–3 have been kept up: the four SDK crates are published at `0.11.0`,
+> the binding's requirements read `0.11`, and its own version has moved
+> `0.1.0` → `0.2.0` → `0.3.0` alongside them. Only the publish has never
+> happened, through three SDK releases.
+>
+> This is recorded here rather than only in
+> `docs/v0.9.0-post-release-review.md`, where it was first observed at 0.9.0
+> and where a release checklist reader would never see it. The failure mode the
+> note above describes — "the newest binding on crates.io pinned to a
+> superseded SDK" — understates it: there is no binding on crates.io to be
+> pinned to anything, so nobody outside this repository can depend on it, and
+> the `0.3.0` in its manifest is a number no consumer has ever seen.
+>
+> Two things to settle before the first publish, neither of which blocks it:
+>
+> * **The crate declares no `rust-version`.** The four SDK crates inherit
+>   `rust-version = "1.93"` from the workspace root; this crate is its own
+>   workspace and inherits nothing, so it publishes without an MSRV. Its true
+>   MSRV is at least 1.93 (it depends on crates that require it) and may be
+>   higher, because the `agntcy-slim-*` dependencies have their own floors.
+>   Measure it before declaring it — an MSRV that has not been built against is
+>   a claim, not a fact.
+> * **It has no changelog of its own**, though the comment in its manifest
+>   about independent versioning assumes one. The root `CHANGELOG.md` covers
+>   the four SDK crates.
 
 #### The window between step 1 and step 2, and why CI stays green across it
 
