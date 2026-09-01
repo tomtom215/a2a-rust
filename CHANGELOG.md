@@ -22,13 +22,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (PR #207) in between, which replaced "any error is acceptable" assertions
   with assertions on the error each requirement names — a good change that
   reached two rows §5.4's table has stale in the copy the suite vendors:
-  `TaskNotCancelableError` (`409` there, `400` published) and
+  `TaskNotCancelableError` (`409` there, `400` current) and
   `UnsupportedOperationError` (`UNIMPLEMENTED` there, `FAILED_PRECONDITION`
-  published). Both requirements pass on every binding where the two copies
-  agree and fail only on the one where they do not, which is the shape of a
-  stale table rather than of a defect here. No SDK behaviour changed;
+  current). Both requirements pass on every binding where the two copies agree
+  and fail only on the one where they do not, which is the shape of a stale
+  table rather than of a defect here. No SDK behaviour changed;
   `tck/conformance-baseline.json` now carries four entries and
   `docs/official-tck-findings.md` §21 records the evidence.
+- **Corrected: the specification divergence is a pinned release, not an
+  in-place amendment.** 0.11.0's notes and §20 both said upstream "amended the
+  document in place under the same `1.0.0` version string". It did not. A2A
+  released the change as **v1.0.1** (2026-05-28, commit `757f0ec`, PR #1627);
+  the `v1.0.0` tag still carries the old table, and `a2a-tck`'s vendored copy is
+  byte-identical to it — its own `specification/version.json` names that tag and
+  a 2026-03-13 download. The earlier reading came from a reproduction that
+  compares a vendored file against `main`, through which a tagged patch release
+  and a silent rewrite look the same. Every conclusion drawn from the divergence
+  is unaffected; the mechanism, and so the right thing to ask upstream for, is
+  not. Full timeline and commands in `docs/official-tck-findings.md` §21.1.
 - **Official TCK: the `--deselect` on the minimal-capability profile is gone.**
   [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225),
   filed from this repository, was fixed upstream on 2026-08-31 by PR #226. The

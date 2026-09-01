@@ -793,10 +793,12 @@ This is the category most worth clearing before any external review.
 
 Measured against the official `a2a-tck` suite, re-measured 2026-09-01 against
 `a2a-tck@de6af18`: **88 of 114 MUST requirements passing, 4 failing.** All four
-failures are the suite grading §5.4 against a specification copy vendored inside
-it that upstream has since amended in place — each fails on exactly the one
-binding whose cell the two copies disagree about, and passes on the bindings
-where they agree. They are baselined in `tck/conformance-baseline.json` with the
+failures are the suite grading §5.4 against the specification copy it vendors,
+which its own `specification/version.json` records as A2A v1.0.0 (taken
+2026-03-13, and byte-identical to that tag); A2A released v1.0.1 on 2026-05-28
+rewriting six of that table's nine rows. Each fails on exactly the one binding
+whose cell the two releases disagree about, and passes on the bindings where
+they agree. They are baselined in `tck/conformance-baseline.json` with the
 evidence in `docs/official-tck-findings.md` §20 and §21, and they clear when the
 suite refreshes its copy. (Before 2026-08-30 this line read 92 passing, 0
 failing; the four moved out of the passing column as upstream tightened its

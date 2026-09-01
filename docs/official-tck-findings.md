@@ -1707,6 +1707,16 @@ amended in place, under the same `1.0.0` version string. The suite is stale, not
 wrong-headed — and only two of the six stale rows have tests, which is why two
 checks fail rather than six.
 
+> **"Amended in place, under the same `1.0.0` version string" is wrong, and is
+> corrected in §21.1.** The two documents do differ exactly as tabulated above,
+> and every conclusion in this section survives — but the mechanism is not an
+> in-place amendment. Upstream released the change as **v1.0.1**, a tagged patch
+> release; A2A's `v1.0.0` tag still carries the old table today, and the copy
+> `a2a-tck` vendors is byte-identical to it. This section reached the wrong
+> mechanism because its two-command reproduction compares raw `main` against the
+> vendored file, and a tag is invisible to that comparison. Read §21.1 before
+> quoting this paragraph.
+
 **Why this document does not treat that as ironic.** This repository shipped the
 identical defect: `docs/implementation/v1.0.0-specification-complete.md` was
 retrieved 2026-03-31, never refreshed, and carried the same six stale rows. Both
@@ -1809,6 +1819,79 @@ silently clearing a baseline entry it never asked about.
 refreshes its vendored specification. The gate reports a baselined check that
 starts passing as a *stale baseline* failure, so all four have to be removed in
 the same commit that observes them passing.
+
+### 21.1 Correction: it is a pinned release, not an in-place amendment
+
+§20 concluded that upstream "amended the table in place, under the same
+`1.0.0` version string", and this section was drafted repeating it. That
+mechanism is wrong. The divergence is real and every consequence drawn from it
+holds; what follows is what actually happened, established from the git history
+of both repositories rather than from two `curl`s.
+
+**`a2a-tck` records its own answer, in a file neither §20 nor the first draft
+of §21 read.** `specification/version.json` in that repository says:
+
+```json
+{
+  "downloadTime": "2026-03-13T07:43:14Z",
+  "organization": "a2aproject",
+  "repository": "A2A",
+  "branch": "v1.0.0",
+  "commitHash": "173695755607e884aa9acf8ce4feed90e32727a1"
+}
+```
+
+That commit is A2A's `v1.0.0` tag. And the vendored document is not merely
+similar to that release — `specification/specification.md` is **byte-identical**
+to `git show v1.0.0:docs/specification.md` (md5 `65ae1635632ad20180dc78aad097ec2d`,
+zero differing lines). The vendored `a2a.proto` matches `v1.0.0`'s too.
+
+**The timeline, each step checkable with one `git` command:**
+
+| Date | Event |
+|---|---|
+| 2026-03-12 | A2A **`v1.0.0`** tagged (`1736957`). §5.4 reads `409` / `UNIMPLEMENTED` / `415` / `502`. |
+| 2026-03-13 | `a2a-tck` vendors `specification/` from that tag, and records it in `version.json`. |
+| 2026-03-31 | This repository snapshots A2A at `e131bad` — which does not contain the change either, so it takes the same table. |
+| 2026-04-14 | A2A commit **`757f0ec`** (PR #1627, *"fix(spec): recent transcoding-related error changes"*) rewrites six §5.4 rows on `main`. |
+| 2026-05-28 | A2A **`v1.0.1`** tagged, containing `757f0ec`. |
+| 2026-08-30 | This repository re-vendors from `main` and corrects the SDK to the new table (0.11.0). |
+| 2026-08-31 | `a2a-tck` `de6af18` tightens its assertions; two more of the six rows become reachable, which is §21. |
+
+`git merge-base --is-ancestor 757f0ec v1.0.0` answers no; against `v1.0.1` and
+`main` it answers yes. A2A's `v1.0.0` tag has never been moved, and its content
+is what `a2a-tck` still vendors.
+
+**Why the wrong mechanism was reached.** §20's reproduction is two `curl`s
+against `raw.githubusercontent.com/.../main/...`. A comparison between a
+vendored file and a branch tip cannot see a tag, so a properly released patch
+version and a silent rewrite of a published document look identical through it.
+They are not remotely the same thing, and the difference matters: one is a
+project quietly changing what it already published, the other is a project
+releasing a fix and a downstream consumer not picking it up.
+
+**What survives, and what it means for the report upstream.** The failing rows,
+the transport pattern, the decision to baseline, and this SDK's own mapping are
+all unaffected — this SDK follows `v1.0.1`/`main`, which is the current released
+text. What changes is the shape of the finding, and it gets stronger: the
+expectations that fail this SDK are hardcoded in `tck/requirements/base.py`
+(`TASK_NOT_CANCELABLE_ERROR = ErrorBinding(..., http_status=409, ...)`), the
+vendored snapshot they were written against is a named, superseded release, and
+that repository already carries the mechanism to move it — `make spec`, whose
+`scripts/update_spec.sh` defaults to `--branch main`, and whose history shows
+the routine being run before (*"feat: update A2A spec to commit … and align
+TCK"*). That is a specific, mechanical, non-accusatory thing to ask for, and it
+is not what §20 was preparing to file.
+
+**One caveat that belongs in any upstream report rather than being hidden from
+it.** A2A's own §6 says patch version numbers "do not affect protocol
+compatibility" and "MUST not be considered when clients and servers negotiate
+protocol versions" — yet `v1.0.1` changed HTTP status codes and gRPC statuses on
+the wire. Both documents therefore describe "A2A 1.0" and no peer can signal
+which patch it targets. A maintainer could reasonably answer that the fault is
+upstream in A2A for shipping a wire change in a patch release. That would be a
+fair point and would not change what a conformance kit should grade against:
+the newest released text of the version it targets.
 
 ### Two side-effects of the same upstream batch
 
