@@ -48,6 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `make spec` moves it" is a different request from "upstream rewrote a
   published document". The submitted body, the duplicate check and the limits of
   that check are kept in `docs/upstream/a2a-tck-231-spec-pin-report.md`.
+- **The root cause is reported to the specification as
+  [a2aproject/A2A#2200](https://github.com/a2aproject/A2A/issues/2200).** §3.6
+  promises patch releases do not affect protocol compatibility; `v1.0.1` changed
+  six wire-observable §5.4 rows. Reading `757f0ec` and `v1.0.1`'s release notes
+  before filing narrowed the claim and improved it: the change was announced and
+  was made deliberately, to align the HTTP codes with `google.rpc.Code`, so the
+  issue asks how §3.6 is to be reconciled and how an implementer is meant to
+  notice — not for a revert. Record, including what it deliberately does not
+  claim, in `docs/upstream/a2a-2200-patch-versioning-report.md`.
 - **Official TCK: the `--deselect` on the minimal-capability profile is gone.**
   [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225),
   filed from this repository, was fixed upstream on 2026-08-31 by PR #226. The

@@ -133,6 +133,14 @@ in a patch release, which belongs upstream in `a2aproject/A2A`. That would not
 change which text a conformance kit should grade against: the newest released
 text of the version it targets.
 
+*(That question was put to `a2aproject/A2A` the same day, as
+[#2200](https://github.com/a2aproject/A2A/issues/2200) — see
+`docs/upstream/a2a-2200-patch-versioning-report.md`. It is narrower there than
+the paragraph above suggests: the change was announced in `v1.0.1`'s release
+notes and was made deliberately, to align the HTTP codes with `google.rpc.Code`,
+so the filed issue asks about §3.6 and discoverability rather than about the
+change itself.)*
+
 ## Relevant log output
 
 ```

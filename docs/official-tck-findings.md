@@ -1899,7 +1899,36 @@ upstream in A2A for shipping a wire change in a patch release. That would be a
 fair point and would not change what a conformance kit should grade against:
 the newest released text of the version it targets.
 
+> **Filed as [a2aproject/A2A#2200](https://github.com/a2aproject/A2A/issues/2200),
+> 2026-09-01, and narrowed on the way there.** The wording above implies a wire
+> change was slipped into a patch. It was not slipped: `v1.0.1`'s release notes
+> list it, and `757f0ec`'s own message says the point was to make the HTTP codes
+> correspond to `google.rpc.Code`, closing A2A#1596. The new table is the better
+> one, and the filed issue says so and does not ask for a revert — it asks only
+> how §3.6's promise that patch releases "do not affect protocol compatibility"
+> is to be reconciled with a patch that changed six wire-observable rows, and how
+> an implementer is meant to discover such a change. See
+> `docs/upstream/a2a-2200-patch-versioning-report.md`.
+
 ### 21.2 Filed upstream
+
+Two threads, because the finding has two halves and they belong to different
+projects. Both filed 2026-09-01, both open with no maintainer response at the
+time of writing.
+
+| Thread | Asks |
+|---|---|
+| [a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231) | The kit vendors A2A `v1.0.0` and grades §5.4 against it. Refresh the snapshot (`make spec`) and the six `ErrorBinding` constants. |
+| [A2A#2200](https://github.com/a2aproject/A2A/issues/2200) | §3.6 says patch releases do not affect compatibility; `v1.0.1` changed six wire-observable rows. Reconcile the two, or record the change where §5.4 is read. |
+
+The kit issue is the one that clears this repository's baseline. The
+specification issue is the root cause — it is why the kit's snapshot did not
+look stale to anyone, this project included, which shipped the same superseded
+table until 2026-08-30. Their records are
+`docs/upstream/a2a-tck-231-spec-pin-report.md` and
+`docs/upstream/a2a-2200-patch-versioning-report.md`.
+
+Taking the kit issue at more length:
 
 [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231),
 2026-09-01. Open, no maintainer response at the time of writing. The submitted

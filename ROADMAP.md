@@ -823,6 +823,13 @@ steps in [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
   and must be removed in the same commit that observes them passing. The
   submitted body and its duplicate-check limitations are in
   [`docs/upstream/a2a-tck-231-spec-pin-report.md`](docs/upstream/a2a-tck-231-spec-pin-report.md).
+* **The root cause is reported to the specification** as
+  [a2aproject/A2A#2200](https://github.com/a2aproject/A2A/issues/2200) (filed
+  2026-09-01, open): §3.6 says patch releases do not affect protocol
+  compatibility, and `v1.0.1` changed six wire-observable §5.4 rows, which is
+  why the kit's snapshot did not look stale to anyone — this project included.
+  It does not ask for a revert; the new table is the better one. Record in
+  [`docs/upstream/a2a-2200-patch-versioning-report.md`](docs/upstream/a2a-2200-patch-versioning-report.md).
 * **Track the 13 open upstream backlog items** that would move requirements
   out of `NOT TESTED` if `a2a-tck` implements them. Nothing to do here except
   re-measure when upstream moves; the ceiling is not this project's to raise.
