@@ -48,6 +48,17 @@ one client tells you the two disagree. It does not tell you which is wrong.
 
 ## 1. Score, and how CI gates on it
 
+> **Read §20 and §21 with this section.** Every figure below was measured on
+> 2026-08-12 at `6ebf821` against `a2a-tck@5996b79`, and the harness floats
+> (`A2A_TCK_REVISION: main`). It has since moved: as of 2026-09-01 at
+> `a2a-tck@de6af18` the tally is **88 MUST passing and 4 failing**, not 92 and
+> 0. Nothing in this SDK changed to cause that. The suite tightened four checks
+> onto rows of §5.4 that its vendored copy of the specification has stale, and
+> all four are baselined with the evidence in §20 and §21. The 22-requirement
+> remainder below — 21 `NOT TESTED`, `CARD-EXT-002` inapplicable — is unchanged.
+> This section is left as measured rather than restated, because a dated
+> measurement that gets quietly edited is no longer a measurement.
+
 | Run | Passed | Failed | Skipped |
 |---|---|---|---|
 | Against `examples/echo-agent`, before fixes | 128 | 12 | 125 |
@@ -1696,6 +1707,16 @@ amended in place, under the same `1.0.0` version string. The suite is stale, not
 wrong-headed — and only two of the six stale rows have tests, which is why two
 checks fail rather than six.
 
+> **"Amended in place, under the same `1.0.0` version string" is wrong, and is
+> corrected in §21.1.** The two documents do differ exactly as tabulated above,
+> and every conclusion in this section survives — but the mechanism is not an
+> in-place amendment. Upstream released the change as **v1.0.1**, a tagged patch
+> release; A2A's `v1.0.0` tag still carries the old table today, and the copy
+> `a2a-tck` vendors is byte-identical to it. This section reached the wrong
+> mechanism because its two-command reproduction compares raw `main` against the
+> vendored file, and a tag is invisible to that comparison. Read §21.1 before
+> quoting this paragraph.
+
 **Why this document does not treat that as ironic.** This repository shipped the
 identical defect: `docs/implementation/v1.0.0-specification-complete.md` was
 retrieved 2026-03-31, never refreshed, and carried the same six stale rows. Both
@@ -1716,3 +1737,246 @@ vendored specification — no change here required, and
 `check_conformance.py` will report them as unexpected *passes* so the baseline
 cannot rot shut. Reporting it upstream is the obvious next step and has not been
 done at the time of writing.
+
+> **Update 2026-09-01: it has been done** — filed as
+> [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231),
+> after §21.1 corrected what there was to report. §21.2 is the status; the
+> submitted text and its evidence are kept in
+> `docs/upstream/a2a-tck-231-spec-pin-report.md`.
+
+---
+
+## 21. `CORE-CANCEL-002` and `STREAM-SUB-003`: two more rows of §20's stale table
+
+The nightly run of 2026-09-01
+([33467431712](https://github.com/tomtom215/a2a-rust/actions/runs/33467431712))
+failed with two MUST checks not in the baseline. The nightly of 2026-08-31
+([33354950020](https://github.com/tomtom215/a2a-rust/actions/runs/33354950020))
+had passed **on the identical commit**, `b6f3afb`. Nothing in this repository
+moved between them, so nothing in this repository can be the cause: the only
+variable is `A2A_TCK_REVISION: main`, which every run re-clones.
+
+**What moved.** `a2a-tck` landed ten commits on 2026-08-31, after the green
+run. The relevant one is
+[`de6af18`](https://github.com/a2aproject/a2a-tck/commit/de6af188d2d65779719c88d4f6bb5b180a4fa91d)
+(PR #207, closing issue #206), *"assert the specific spec-mandated error, not
+just any error"*. Seven requirements whose text names an error had tests that
+accepted **any** error; those tests now assert the named one. That is a
+straightforwardly good change — it is the same class of under-assertion this
+document complains about elsewhere — and two of the checks it tightened land
+on rows §20 had already identified as stale.
+
+**The two failures:**
+
+| Check | Suite expects, from its vendored §5.4 | Published §5.4 | This SDK answers |
+|---|---|---|---|
+| `CORE-CANCEL-002` [`http_json`] | `TaskNotCancelableError` → `409 Conflict` | **`400 Bad Request`** | `400` |
+| `STREAM-SUB-003` [`grpc`] | `UnsupportedOperationError` → `UNIMPLEMENTED` | **`FAILED_PRECONDITION`** | `FAILED_PRECONDITION` |
+
+Those are rows 1 and 3 of §20's six-row divergence table, unchanged. Both were
+re-verified on 2026-09-01, by the two commands §20 gives, against a fresh clone
+at `de6af18`: the vendored copy still reads `409` / `UNIMPLEMENTED`, the
+published copy still reads `400` / `FAILED_PRECONDITION`.
+
+**The per-transport pattern is the evidence, and it is not circumstantial.**
+Both requirements are graded on all three bindings, and each fails on exactly
+one — the one binding whose cell the two documents disagree about:
+
+```
+CORE-CANCEL-002   jsonrpc PASS   grpc PASS   http_json FAIL
+STREAM-SUB-003    jsonrpc PASS   grpc FAIL   http_json PASS
+```
+
+`CORE-CANCEL-002` passes on `jsonrpc` (`-32002`) and on `grpc`
+(`FAILED_PRECONDITION`) — the two cells where the vendored and published tables
+agree — and fails only on `http_json`, the cell where they do not.
+`STREAM-SUB-003` is the mirror image: it passes on `jsonrpc` (`-32004`) and on
+`http_json` (`400` in both copies), and fails only on `grpc`. A defect in this
+SDK's error *identity* would fail all three bindings; a stale row in one cell
+of a mapping table fails exactly one. What is observed is the second shape.
+
+Note also what did **not** newly fail. `de6af18` also tightened `CORE-CAP-001`
+(`PushNotificationNotSupportedError`), whose row is stale in the same table.
+It stayed green because its two dedicated tests run on `jsonrpc` and
+`http_json` only — the cells where the two copies agree (`-32003`, and `400`
+in both) — and the gRPC cell of that row is exercised instead by
+`GRPC-ERR-002`'s own `test_push_not_supported_returns_unimplemented`, which was
+already failing and already baselined. So the count of stale rows that a test
+can reach went from two to four, not from two to six.
+
+**Decision: baselined, per the rule §20 set.** `tck/conformance-baseline.json`
+now carries four entries. The bar for adding one is evidence that the failure
+is not this SDK's; the table and the transport pattern above are that evidence,
+and the SDK's own `http_status()` provenance comment
+(`crates/a2a-protocol-types/src/error.rs`) records the deliberate 409→400 and
+`UNIMPLEMENTED`→`FAILED_PRECONDITION` corrections, corroborated by the official
+Python SDK answering `400`. Changing the SDK to satisfy the suite would mean
+un-fixing a defect this repository already found and fixed, and would fail a
+client written against the published specification.
+
+`CORE-CANCEL-002` is baselined for `http_json` only, and is graded on the
+`minimal` profile as well as the `full` one. `STREAM-SUB-003` is baselined for
+`grpc` only and is not graded on `minimal`, where the card advertises no
+streaming — `check_conformance.py` reports it there as *not graded by this run*
+rather than as fixed, which is the behaviour that keeps a scoped profile from
+silently clearing a baseline entry it never asked about.
+
+**When these entries come out:** unchanged from §20 — the moment `a2a-tck`
+refreshes its vendored specification. The gate reports a baselined check that
+starts passing as a *stale baseline* failure, so all four have to be removed in
+the same commit that observes them passing.
+
+### 21.1 Correction: it is a pinned release, not an in-place amendment
+
+§20 concluded that upstream "amended the table in place, under the same
+`1.0.0` version string", and this section was drafted repeating it. That
+mechanism is wrong. The divergence is real and every consequence drawn from it
+holds; what follows is what actually happened, established from the git history
+of both repositories rather than from two `curl`s.
+
+**`a2a-tck` records its own answer, in a file neither §20 nor the first draft
+of §21 read.** `specification/version.json` in that repository says:
+
+```json
+{
+  "downloadTime": "2026-03-13T07:43:14Z",
+  "organization": "a2aproject",
+  "repository": "A2A",
+  "branch": "v1.0.0",
+  "commitHash": "173695755607e884aa9acf8ce4feed90e32727a1"
+}
+```
+
+That commit is A2A's `v1.0.0` tag. And the vendored document is not merely
+similar to that release — `specification/specification.md` is **byte-identical**
+to `git show v1.0.0:docs/specification.md` (md5 `65ae1635632ad20180dc78aad097ec2d`,
+zero differing lines). The vendored `a2a.proto` matches `v1.0.0`'s too.
+
+**The timeline, each step checkable with one `git` command:**
+
+| Date | Event |
+|---|---|
+| 2026-03-12 | A2A **`v1.0.0`** tagged (`1736957`). §5.4 reads `409` / `UNIMPLEMENTED` / `415` / `502`. |
+| 2026-03-13 | `a2a-tck` vendors `specification/` from that tag, and records it in `version.json`. |
+| 2026-03-31 | This repository snapshots A2A at `e131bad` — which does not contain the change either, so it takes the same table. |
+| 2026-04-14 | A2A commit **`757f0ec`** (PR #1627, *"fix(spec): recent transcoding-related error changes"*) rewrites six §5.4 rows on `main`. |
+| 2026-05-28 | A2A **`v1.0.1`** tagged, containing `757f0ec`. |
+| 2026-08-30 | This repository re-vendors from `main` and corrects the SDK to the new table (0.11.0). |
+| 2026-08-31 | `a2a-tck` `de6af18` tightens its assertions; two more of the six rows become reachable, which is §21. |
+
+`git merge-base --is-ancestor 757f0ec v1.0.0` answers no; against `v1.0.1` and
+`main` it answers yes. A2A's `v1.0.0` tag has never been moved, and its content
+is what `a2a-tck` still vendors.
+
+**Why the wrong mechanism was reached.** §20's reproduction is two `curl`s
+against `raw.githubusercontent.com/.../main/...`. A comparison between a
+vendored file and a branch tip cannot see a tag, so a properly released patch
+version and a silent rewrite of a published document look identical through it.
+They are not remotely the same thing, and the difference matters: one is a
+project quietly changing what it already published, the other is a project
+releasing a fix and a downstream consumer not picking it up.
+
+**What survives, and what it means for the report upstream.** The failing rows,
+the transport pattern, the decision to baseline, and this SDK's own mapping are
+all unaffected — this SDK follows `v1.0.1`/`main`, which is the current released
+text. What changes is the shape of the finding, and it gets stronger: the
+expectations that fail this SDK are hardcoded in `tck/requirements/base.py`
+(`TASK_NOT_CANCELABLE_ERROR = ErrorBinding(..., http_status=409, ...)`), the
+vendored snapshot they were written against is a named, superseded release, and
+that repository already carries the mechanism to move it — `make spec`, whose
+`scripts/update_spec.sh` defaults to `--branch main`, and whose history shows
+the routine being run before (*"feat: update A2A spec to commit … and align
+TCK"*). That is a specific, mechanical, non-accusatory thing to ask for, and it
+is not what §20 was preparing to file.
+
+**One caveat that belongs in any upstream report rather than being hidden from
+it.** A2A's own §3.6 (*Versioning*) says patch version numbers "do not affect
+protocol compatibility" and "MUST not be considered when clients and servers negotiate
+protocol versions" — yet `v1.0.1` changed HTTP status codes and gRPC statuses on
+the wire. Both documents therefore describe "A2A 1.0" and no peer can signal
+which patch it targets. A maintainer could reasonably answer that the fault is
+upstream in A2A for shipping a wire change in a patch release. That would be a
+fair point and would not change what a conformance kit should grade against:
+the newest released text of the version it targets.
+
+> **Filed as [a2aproject/A2A#2200](https://github.com/a2aproject/A2A/issues/2200),
+> 2026-09-01, and narrowed on the way there.** The wording above implies a wire
+> change was slipped into a patch. It was not slipped: `v1.0.1`'s release notes
+> list it, and `757f0ec`'s own message says the point was to make the HTTP codes
+> correspond to `google.rpc.Code`, closing A2A#1596. The new table is the better
+> one, and the filed issue says so and does not ask for a revert — it asks only
+> how §3.6's promise that patch releases "do not affect protocol compatibility"
+> is to be reconciled with a patch that changed six wire-observable rows, and how
+> an implementer is meant to discover such a change. See
+> `docs/upstream/a2a-2200-patch-versioning-report.md`.
+
+### 21.2 Filed upstream
+
+Two threads, because the finding has two halves and they belong to different
+projects. Both filed 2026-09-01, both open with no maintainer response at the
+time of writing.
+
+| Thread | Asks |
+|---|---|
+| [a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231) | The kit vendors A2A `v1.0.0` and grades §5.4 against it. Refresh the snapshot (`make spec`) and the six `ErrorBinding` constants. |
+| [A2A#2200](https://github.com/a2aproject/A2A/issues/2200) | §3.6 says patch releases do not affect compatibility; `v1.0.1` changed six wire-observable rows. Reconcile the two, or record the change where §5.4 is read. |
+
+The kit issue is the one that clears this repository's baseline. The
+specification issue is the root cause — it is why the kit's snapshot did not
+look stale to anyone, this project included, which shipped the same superseded
+table until 2026-08-30. Their records are
+`docs/upstream/a2a-tck-231-spec-pin-report.md` and
+`docs/upstream/a2a-2200-patch-versioning-report.md`.
+
+Taking the kit issue at more length:
+
+[a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231),
+2026-09-01. Open, no maintainer response at the time of writing. The submitted
+body, the duplicate-check note and its stated limitations are kept in
+`docs/upstream/a2a-tck-231-spec-pin-report.md`, which is the record of what was
+claimed on this repository's behalf.
+
+It reports the pin and asks for `make spec` plus the six `ErrorBinding`
+constants; it does not ask for this SDK to be treated as correct, and it carries
+the §3.6 patch-versioning caveat rather than hiding it. It was first opened against
+the specification repository in error
+([a2aproject/A2A#2199](https://github.com/a2aproject/A2A/issues/2199)) and
+refiled against the kit.
+
+**What to watch for, and what each outcome means here.** If upstream refreshes
+the snapshot, all four baseline entries turn into *unexpected passes* and the
+gate goes red until they are removed — that is the mechanism working, not a
+regression, and the fix is `check_conformance.py --update` plus a note here. If
+upstream instead answers that the kit deliberately grades v1.0.0, the four
+entries stay and this section becomes the standing explanation of why. If the
+answer is that A2A should not have changed wire behaviour in a patch release,
+that is a question for `a2aproject/A2A` and does not by itself move this SDK,
+which follows the newest released text either way.
+
+### Two side-effects of the same upstream batch
+
+Neither is a conformance change, and both are recorded so a reader comparing
+nightly logs does not mistake either for one.
+
+**The `--deselect` in `official-tck.yml` is gone.** §17 assigned
+`HTTP_JSON-SSE-001`'s error under the `minimal` profile to the harness —
+`_extract_error` calling `response.json()` on a streamed response it had closed
+without reading — and reported it as
+[a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225). It was fixed
+upstream on 2026-08-31 by
+[`38ab89e`](https://github.com/a2aproject/a2a-tck/commit/38ab89e) (PR #226),
+which reads the body before the close. Measured here on 2026-09-01 at
+`de6af18`: the test now skips cleanly on *"Streaming not supported"*, and the
+`minimal` profile grades the same 66 MUST requirements and reports the same
+failures with the flag as without it. The waiver is closed rather than traded.
+
+**Reported MUST compatibility fell from 97.7% to 77.1%, and nothing regressed.**
+[`cf4985b`](https://github.com/a2aproject/a2a-tck/commit/cf4985b) (PR #218)
+stopped counting `NOT TESTED` requirements as compatible. Those are the 21
+requirements §1 describes — the ones for which the suite contains no test at
+all — and they now land in the report's *Failed* column: 84 `PASS` + 25
+"failed" + 5 `SKIPPED` = 114, where the 25 is 4 real failures plus those 21.
+The gate does not read that percentage; it reads per-requirement statuses, and
+`NOT TESTED` is not one of the statuses it gates on. `MUST graded` is still 88,
+exactly its floor. The change makes the suite's headline number agree with what
+§1 has said all along about what 100% did and did not mean.

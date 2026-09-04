@@ -40,7 +40,7 @@ pub(super) fn store_of(states: &[TaskState]) -> StoreData {
         // Oldest first: entry 0 is the furthest in the past.
         let age = Duration::from_secs((states.len() - i) as u64);
         let when = base.checked_sub(age).unwrap_or(base);
-        data.insert(id.clone(), task(&format!("t{i}"), *state), when);
+        data.insert(id, task(&format!("t{i}"), *state), when);
     }
     data
 }

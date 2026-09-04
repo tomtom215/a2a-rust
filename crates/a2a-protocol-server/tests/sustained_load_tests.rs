@@ -128,12 +128,58 @@ where
         sent += 1;
     }
 
-    let late = probe().await;
+    let late = probe_settled(&probe).await;
     // Printed so a CI log shows the margin rather than only a green tick: an
     // assertion that passes because the load loop did nothing looks identical
     // to one that passes because nothing leaked.
     eprintln!("sustained load: {sent} requests, probe {early} -> {late}");
     (early, late, sent)
+}
+
+/// Samples `probe` until two consecutive reads agree, or [`SETTLE_TIMEOUT`]
+/// elapses.
+///
+/// The load loop awaits each `on_send_message`, but the work those calls start
+/// finishes asynchronously — the two things this file counts are released when
+/// a *task* completes, not when its request returns. A probe taken the instant
+/// the loop exits therefore counts the last few in-flight tasks as growth.
+///
+/// That is a measurement artifact, and it was making these tests intermittent:
+/// on 2026-09-04 `cancellation_tokens_do_not_accumulate_under_sustained_load`
+/// read `0 -> 2` and failed on CI, while the identical commit passed in the
+/// sibling run and five consecutive local runs. Both leak tests here allowed
+/// `early + 1`, a tolerance with no derivation behind it — one straggler was
+/// simply the number that had been seen.
+///
+/// Waiting for quiescence costs no detection power, which is why this is the
+/// fix rather than a wider tolerance: a leaked entry is never released, so the
+/// count a real leak settles on *is* the leaked count, and it settles at once.
+/// Only the stragglers drain. Widening the tolerance instead would have traded
+/// away the thing the test exists to detect.
+///
+/// The timeout is a bound, not a wait: quiescence is normally reached on the
+/// first poll. If it is not reached at all, the last read is returned and the
+/// caller's assertion runs against it — a hang here would be worse than a
+/// failure, since it would hide the leak rather than report it.
+async fn probe_settled<F, Fut>(probe: &F) -> usize
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = usize>,
+{
+    const SETTLE_TIMEOUT: Duration = Duration::from_secs(5);
+    const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+    let deadline = Instant::now() + SETTLE_TIMEOUT;
+    let mut last = probe().await;
+    while Instant::now() < deadline {
+        tokio::time::sleep(POLL_INTERVAL).await;
+        let current = probe().await;
+        if current == last {
+            return current;
+        }
+        last = current;
+    }
+    last
 }
 
 /// Event queues must be reclaimed as tasks finish.

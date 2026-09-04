@@ -791,16 +791,45 @@ This is the category most worth clearing before any external review.
 
 ## Conformance
 
-Measured against the official `a2a-tck` suite: **92 of 114 MUST requirements
-passing, 0 failing.** The remaining 22 are not defects in this SDK — 21 have
-no test function upstream, and `CARD-EXT-002` is structurally inapplicable.
-Full analysis and reproduction steps in
-[`docs/official-tck-findings.md`](docs/official-tck-findings.md).
+Measured against the official `a2a-tck` suite, re-measured 2026-09-01 against
+`a2a-tck@de6af18`: **88 of 114 MUST requirements passing, 4 failing.** All four
+failures are the suite grading §5.4 against the specification copy it vendors,
+which its own `specification/version.json` records as A2A v1.0.0 (taken
+2026-03-13, and byte-identical to that tag); A2A released v1.0.1 on 2026-05-28
+rewriting six of that table's nine rows. Each fails on exactly the one binding
+whose cell the two releases disagree about, and passes on the bindings where
+they agree. They are baselined in `tck/conformance-baseline.json` with the
+evidence in `docs/official-tck-findings.md` §20 and §21, and they clear when the
+suite refreshes its copy. (Before 2026-08-30 this line read 92 passing, 0
+failing; the four moved out of the passing column as upstream tightened its
+assertions onto the stale rows, not as anything here changed.) The remaining 22
+are not defects in this SDK — 21 have no test function upstream, and
+`CARD-EXT-002` is structurally inapplicable. Full analysis and reproduction
+steps in [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
 
-* **`SSE-001` is reported upstream** as
+* **`SSE-001` is closed.** Reported upstream as
   [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225)
-  (filed 2026-08-07). Nothing more to do here until upstream responds; if the
-  fix lands, drop the `--deselect` in `.github/workflows/official-tck.yml`.
+  (filed 2026-08-07), fixed upstream 2026-08-31 by
+  [`38ab89e`](https://github.com/a2aproject/a2a-tck/commit/38ab89e) (PR #226).
+  The `--deselect` in `.github/workflows/official-tck.yml` was dropped on
+  2026-09-01 — measured at `a2a-tck@de6af18`, the minimal profile grades the
+  same 66 MUST requirements with and without it. See
+  `docs/official-tck-findings.md` §21.
+* **The stale specification pin is reported upstream** as
+  [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231)
+  (filed 2026-09-01, open). It asks for `make spec` plus the six `ErrorBinding`
+  constants in `tck/requirements/base.py`. Nothing to do here until upstream
+  responds; when it lands, all four baseline entries become unexpected passes
+  and must be removed in the same commit that observes them passing. The
+  submitted body and its duplicate-check limitations are in
+  [`docs/upstream/a2a-tck-231-spec-pin-report.md`](docs/upstream/a2a-tck-231-spec-pin-report.md).
+* **The root cause is reported to the specification** as
+  [a2aproject/A2A#2200](https://github.com/a2aproject/A2A/issues/2200) (filed
+  2026-09-01, open): §3.6 says patch releases do not affect protocol
+  compatibility, and `v1.0.1` changed six wire-observable §5.4 rows, which is
+  why the kit's snapshot did not look stale to anyone — this project included.
+  It does not ask for a revert; the new table is the better one. Record in
+  [`docs/upstream/a2a-2200-patch-versioning-report.md`](docs/upstream/a2a-2200-patch-versioning-report.md).
 * **Track the 13 open upstream backlog items** that would move requirements
   out of `NOT TESTED` if `a2a-tck` implements them. Nothing to do here except
   re-measure when upstream moves; the ceiling is not this project's to raise.

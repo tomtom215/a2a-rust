@@ -10,6 +10,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Official TCK: two more `a2a-tck` checks baselined, same stale-specification
+  cause as the first two.** The nightly of 2026-09-01
+  ([33467431712](https://github.com/tomtom215/a2a-rust/actions/runs/33467431712))
+  went red on `CORE-CANCEL-002` [`http_json`] and `STREAM-SUB-003` [`grpc`]
+  while the nightly 22 hours earlier had passed **on the identical commit**
+  (`b6f3afb`). `a2a-tck` landed
+  [`de6af18`](https://github.com/a2aproject/a2a-tck/commit/de6af188d2d65779719c88d4f6bb5b180a4fa91d)
+  (PR #207) in between, which replaced "any error is acceptable" assertions
+  with assertions on the error each requirement names — a good change that
+  reached two rows §5.4's table has stale in the copy the suite vendors:
+  `TaskNotCancelableError` (`409` there, `400` current) and
+  `UnsupportedOperationError` (`UNIMPLEMENTED` there, `FAILED_PRECONDITION`
+  current). Both requirements pass on every binding where the two copies agree
+  and fail only on the one where they do not, which is the shape of a stale
+  table rather than of a defect here. No SDK behaviour changed;
+  `tck/conformance-baseline.json` now carries four entries and
+  `docs/official-tck-findings.md` §21 records the evidence.
+- **Corrected: the specification divergence is a pinned release, not an
+  in-place amendment.** 0.11.0's changelog entry and §20 both said upstream "amended the
+  document in place under the same `1.0.0` version string". It did not. A2A
+  released the change as **v1.0.1** (2026-05-28, commit `757f0ec`, PR #1627);
+  the `v1.0.0` tag still carries the old table, and `a2a-tck`'s vendored copy is
+  byte-identical to it — its own `specification/version.json` names that tag and
+  a 2026-03-13 download. The earlier reading came from a reproduction that
+  compares a vendored file against `main`, through which a tagged patch release
+  and a silent rewrite look the same. Every conclusion drawn from the divergence
+  is unaffected; the mechanism, and so the right thing to ask upstream for, is
+  not. Full timeline and commands in `docs/official-tck-findings.md` §21.1.
+- **Reported upstream as
+  [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231).**
+  §20 had left "reporting it upstream is the obvious next step" undone for two
+  days; it is done, and it was worth the wait, because §21.1's correction
+  changed what there was to report — "your vendored copy is a superseded release
+  and `make spec` moves it" is a different request from "upstream rewrote a
+  published document". The submitted body, the duplicate check and the limits of
+  that check are kept in `docs/upstream/a2a-tck-231-spec-pin-report.md`.
+- **The root cause is reported to the specification as
+  [a2aproject/A2A#2200](https://github.com/a2aproject/A2A/issues/2200).** §3.6
+  promises patch releases do not affect protocol compatibility; `v1.0.1` changed
+  six wire-observable §5.4 rows. Reading `757f0ec` and `v1.0.1`'s release notes
+  before filing narrowed the claim and improved it: the change was announced and
+  was made deliberately, to align the HTTP codes with `google.rpc.Code`, so the
+  issue asks how §3.6 is to be reconciled and how an implementer is meant to
+  notice — not for a revert. Record, including what it deliberately does not
+  claim, in `docs/upstream/a2a-2200-patch-versioning-report.md`.
+- **SLIMRPC branch-spec triage: `slimrpc-broadcast-live.md`.** Upstream moved
+  `feat/slimrpc-collaborative-channel` at `0c38776` (2026-09-03), replacing the
+  spec that branch had been triaged against, so
+  `scripts/check_slimrpc_spec.sh` — which surveys every upstream branch on every
+  run — began failing as designed. The new spec is not followed by this binding,
+  and that is a fact rather than a preference: its own §3 requires A2A 1.1 and
+  the `SendLiveMessage` method, and neither exists in any released A2A
+  specification. `a2aproject/A2A` is tagged `v1.0.1`, `SendLiveMessage` appears
+  nowhere in its docs, and this SDK implements the ratified 11-method v1.0
+  surface that `check_method_denominator.py` holds it to. Re-triage if A2A 1.1
+  ships.
+- **Official TCK: the `--deselect` on the minimal-capability profile is gone.**
+  [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225),
+  filed from this repository, was fixed upstream on 2026-08-31 by PR #226. The
+  minimal profile now grades the same 66 MUST requirements with nothing
+  excluded, measured with and without the flag.
+
+### Fixed
+
+- **Official TCK: one failure no longer reports as three.** The
+  minimal-capability and required-extension runs inherited the default
+  `success()` condition, so a red gate skipped them — while their own gates
+  carried `always()` and ran anyway, dying on reports that were never written
+  (`error: TCK report not found`). Both profiles are now measured whenever the
+  SUT built, and each gate runs unless its own run step was skipped, so a
+  nightly reports every profile's drift in one run instead of one per night.
+- **`sustained_load_tests` was intermittent, and the tolerance was hiding it.**
+  Both leak tests sampled their late probe the instant the load loop exited.
+  The loop awaits each request, but the work it starts finishes asynchronously —
+  event queues and cancellation tokens are released when a *task* completes, not
+  when its request returns — so the last few in-flight tasks were counted as
+  growth. Both allowed `early + 1`, a tolerance with no derivation behind it, and
+  on 2026-09-04 `cancellation_tokens_do_not_accumulate_under_sustained_load` read
+  `0 -> 2` and failed on CI while the identical commit passed in the sibling run
+  and in five consecutive local runs. The late probe now polls until two reads
+  agree, bounded by a five-second timeout. This costs no detection power, which
+  is why it is the fix rather than a wider tolerance: a leaked entry is never
+  released, so the count a real leak settles on *is* the leaked count. Measured
+  after the change — the two leak probes read `0 -> 0` where one had read
+  `0 -> 2`, and the capacity test's real numbers (`50 -> 200`, against a ceiling
+  of 200) are unchanged.
+- **`clippy::redundant_clone` on nightly.** `eviction/fixtures.rs` cloned a
+  `TaskId` into a map insert and dropped the original unused. Caught by the
+  `Nightly (informational)` canary, which floats with the nightly toolchain
+  precisely so a lint reaches this repository before it reaches stable and
+  blocks everything.
+
 ## [0.11.0] - 2026-08-30
 
 ### Added
