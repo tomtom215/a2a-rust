@@ -62,7 +62,7 @@ UPSTREAM_URL="https://github.com/a2aproject/experimental-cpb-slimrpc"
 # each. Format: <branch>:<path>:<disposition>. Removing an entry is how you say
 # the branch is gone; adding one is how you say you have read the spec.
 KNOWN_BRANCH_SPECS=(
-    "feat/slimrpc-collaborative-channel:spec/v1/slimrpc-collaborative-channel.md:many-to-many channels with slim-src attribution; implemented by the official a2a-slimrpc crate, not by this binding."
+    "feat/slimrpc-collaborative-channel:spec/v1/slimrpc-broadcast-live.md:broadcast SendLiveMessage over a SLIM group channel. Replaced spec/v1/slimrpc-collaborative-channel.md on this branch at 0c38776 (2026-09-03), which is why the previous entry stopped matching. Not followed by this binding, and that is a fact rather than a scope preference: its own section 3 requires A2A 1.1 and the SendLiveMessage method, and neither exists in any released A2A specification — a2aproject/A2A is tagged v1.0.1, SendLiveMessage appears nowhere in its docs, and this SDK implements the ratified 11-method v1.0 surface that scripts/check_method_denominator.py holds it to. Re-triage if A2A 1.1 ships."
     "feat/slimrpc-channel-moderator:spec/v1/slimrpc-channel-moderator.md:invite-to-channel extension; implemented by neither this binding nor the official crate."
     "feat/slimrpc-multicast-spec:spec/slimrpc-multicast.md:pre-versioning layout of the multicast spec, superseded by spec/v1/ on main."
     "feat/slimrpc-multicast-spec:spec/slimrpc.md:pre-versioning layout of the base spec, superseded by spec/v1/ on main."

@@ -57,6 +57,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   issue asks how §3.6 is to be reconciled and how an implementer is meant to
   notice — not for a revert. Record, including what it deliberately does not
   claim, in `docs/upstream/a2a-2200-patch-versioning-report.md`.
+- **SLIMRPC branch-spec triage: `slimrpc-broadcast-live.md`.** Upstream moved
+  `feat/slimrpc-collaborative-channel` at `0c38776` (2026-09-03), replacing the
+  spec that branch had been triaged against, so
+  `scripts/check_slimrpc_spec.sh` — which surveys every upstream branch on every
+  run — began failing as designed. The new spec is not followed by this binding,
+  and that is a fact rather than a preference: its own §3 requires A2A 1.1 and
+  the `SendLiveMessage` method, and neither exists in any released A2A
+  specification. `a2aproject/A2A` is tagged `v1.0.1`, `SendLiveMessage` appears
+  nowhere in its docs, and this SDK implements the ratified 11-method v1.0
+  surface that `check_method_denominator.py` holds it to. Re-triage if A2A 1.1
+  ships.
 - **Official TCK: the `--deselect` on the minimal-capability profile is gone.**
   [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225),
   filed from this repository, was fixed upstream on 2026-08-31 by PR #226. The
@@ -72,6 +83,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`error: TCK report not found`). Both profiles are now measured whenever the
   SUT built, and each gate runs unless its own run step was skipped, so a
   nightly reports every profile's drift in one run instead of one per night.
+- **`sustained_load_tests` was intermittent, and the tolerance was hiding it.**
+  Both leak tests sampled their late probe the instant the load loop exited.
+  The loop awaits each request, but the work it starts finishes asynchronously —
+  event queues and cancellation tokens are released when a *task* completes, not
+  when its request returns — so the last few in-flight tasks were counted as
+  growth. Both allowed `early + 1`, a tolerance with no derivation behind it, and
+  on 2026-09-04 `cancellation_tokens_do_not_accumulate_under_sustained_load` read
+  `0 -> 2` and failed on CI while the identical commit passed in the sibling run
+  and in five consecutive local runs. The late probe now polls until two reads
+  agree, bounded by a five-second timeout. This costs no detection power, which
+  is why it is the fix rather than a wider tolerance: a leaked entry is never
+  released, so the count a real leak settles on *is* the leaked count. Measured
+  after the change — the two leak probes read `0 -> 0` where one had read
+  `0 -> 2`, and the capacity test's real numbers (`50 -> 200`, against a ceiling
+  of 200) are unchanged.
+- **`clippy::redundant_clone` on nightly.** `eviction/fixtures.rs` cloned a
+  `TaskId` into a map insert and dropped the original unused. Caught by the
+  `Nightly (informational)` canary, which floats with the nightly toolchain
+  precisely so a lint reaches this repository before it reaches stable and
+  blocks everything.
 
 ## [0.11.0] - 2026-08-30
 
