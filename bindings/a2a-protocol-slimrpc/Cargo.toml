@@ -15,16 +15,17 @@
 [workspace]
 
 [package]
-name        = "a2a-protocol-slimrpc"
-version     = "0.3.0"
-edition     = "2021"
-license     = "Apache-2.0"
-authors     = ["Tom F."]
-repository  = "https://github.com/tomtom215/a2a-rust"
-homepage    = "https://a2a-rust.com"
-description = "SLIMRPC custom protocol binding for the a2a-protocol SDK — A2A over the AGNTCY SLIM fabric"
-keywords    = ["a2a", "agent2agent", "slim", "slimrpc", "agntcy"]
-categories  = ["network-programming", "api-bindings"]
+name         = "a2a-protocol-slimrpc"
+version      = "0.3.0"
+edition      = "2021"
+rust-version = "1.93"
+license      = "Apache-2.0"
+authors      = ["Tom F."]
+repository   = "https://github.com/tomtom215/a2a-rust"
+homepage     = "https://a2a-rust.com"
+description  = "SLIMRPC custom protocol binding for the a2a-protocol SDK — A2A over the AGNTCY SLIM fabric"
+keywords     = ["a2a", "agent2agent", "slim", "slimrpc", "agntcy"]
+categories   = ["network-programming", "api-bindings"]
 # Versioned independently of the four SDK crates, and deliberately so.
 #
 # This crate's public API is new. Numbering it 0.8.0 to match the SDK would
