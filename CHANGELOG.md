@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tck/conformance-baseline.json` now carries four entries and
   `docs/official-tck-findings.md` §21 records the evidence.
 - **Corrected: the specification divergence is a pinned release, not an
-  in-place amendment.** 0.11.0's notes and §20 both said upstream "amended the
+  in-place amendment.** 0.11.0's changelog entry and §20 both said upstream "amended the
   document in place under the same `1.0.0` version string". It did not. A2A
   released the change as **v1.0.1** (2026-05-28, commit `757f0ec`, PR #1627);
   the `v1.0.0` tag still carries the old table, and `a2a-tck`'s vendored copy is

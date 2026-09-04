@@ -14,7 +14,7 @@ It was first opened against the specification repository in error
 refiled here. Every artefact the report cites — `specification/version.json`,
 `tck/requirements/base.py`, `make spec` — belongs to the kit, not to `A2A`,
 whose `specification/` holds the proto and JSON schema and whose prose lives at
-`docs/specification.md`.
+that repository's own `docs/specification.md`.
 
 This is the finding recorded in `docs/official-tck-findings.md` §20 and §21,
 with §21.1 as the correction that made it filable: §20 had concluded that

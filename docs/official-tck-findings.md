@@ -1938,7 +1938,7 @@ claimed on this repository's behalf.
 
 It reports the pin and asks for `make spec` plus the six `ErrorBinding`
 constants; it does not ask for this SDK to be treated as correct, and it carries
-the §6 patch-versioning caveat rather than hiding it. It was first opened against
+the §3.6 patch-versioning caveat rather than hiding it. It was first opened against
 the specification repository in error
 ([a2aproject/A2A#2199](https://github.com/a2aproject/A2A/issues/2199)) and
 refiled against the kit.
