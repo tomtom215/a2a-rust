@@ -18,6 +18,8 @@ GitHub Actions workflows for the a2a-rust project.
 | **Benchmarks** | `benchmarks.yml` | Push to `main`, manual; PRs run the regression gate | Full criterion run + book publish on `main`; statistical regression gate on PRs |
 | **Release** | `release.yml` | Tag push (`v*`) | Validation (versions, CHANGELOG, CITATION.cff, SECURITY.md), CI matrix, security audit, SLSA-attested packaging, GitHub release, crates.io publish via Trusted Publishing (OIDC; environment-secret fallback until every crate is configured) |
 | **Mutants** | `mutants.yml` | PRs (incremental `--in-diff`), manual full sweep | Mutation testing; fails on any missed mutant, reports timeouts separately |
+| **ITK (upstream current-mount)** | `itk.yml` | Push to `main`, PRs, nightly | The in-repo traversal self-test of the ITK "current" agent under `itk/`, plus a manual current-vs-`python_v10` run through the upstream `run_tests.py` |
+| **ITK nightly** | `itk-nightly.yml` | Nightly 02:00 UTC, manual | The A2A project's own Integration Testing Kit (`a2aproject/a2a-itk`) with this repository mounted as the system under test against every peer SDK line in its `matrix.yaml` — official Python, JavaScript, Go, Java, and a2a-rs — over JSON-RPC, gRPC and HTTP+JSON. Results (`itk_rust.json`) are uploaded as a run artifact and, from `main`, to the rolling `nightly-metrics` prerelease the ITK dashboard reads. Not a PR gate |
 | **Dependabot** | `../dependabot.yml` | Weekly (Mondays 04:00 UTC) | Grouped minor/patch bumps for Cargo (workspace and the SLIMRPC binding) and GitHub Actions; majors arrive as separate PRs. Its commits are DCO-exempt by exact author identity (see `dco.yml`, `PROVENANCE.md` §3.2) |
 
 ## Required status checks

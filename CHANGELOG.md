@@ -67,6 +67,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`init_otlp_pipeline_with_endpoint`** (`a2a_protocol_server::otel`):
   `init_otlp_pipeline` with the collector endpoint given explicitly instead
   of read from `OTEL_EXPORTER_OTLP_ENDPOINT`.
+- **Nightly run in the official ITK, with published metrics.** Until now
+  the only cross-SDK evidence graded by someone other than this project was
+  the official TCK; the upstream Integration Testing Kit job was
+  dispatch-only and had never completed. `itk/run_itk.sh` now adopts the
+  shim every SDK repository carries over a2a-itk's shared driver, and
+  `.github/workflows/itk-nightly.yml` runs the shared nightly set at 02:00
+  UTC with this repository mounted as the system under test against every
+  peer in the ITK's `matrix.yaml` — official Python, JavaScript, Go, Java,
+  and a2a-rs — over JSON-RPC, gRPC and HTTP+JSON. Results are uploaded as a
+  run artifact and, from `main`, to the rolling `nightly-metrics`
+  prerelease the ITK dashboard reads, the same mechanism the other SDKs
+  use. The workflow also diffs the vendored `instruction.proto` against
+  upstream so the agent cannot silently drift from the schema it is graded
+  against. Not a PR gate.
 - **Feature-matrix CI job.** `cargo hack clippy --each-feature` now lints
   every feature of each published crate on its own, plus no-default-features
   and all-features (39 combinations, 8 minutes warm), so a `#[cfg(feature)]`
