@@ -274,8 +274,50 @@ let client = ClientBuilder::from_card(&card)?
     .await?;
 ```
 
-The server's gRPC listener is plaintext; put it behind a TLS-terminating proxy
-or mesh, which is also where the official SDKs' gRPC servers expect TLS.
+#### Serving TLS
+
+The server's gRPC listener is plaintext with the `grpc` feature — the shape
+the official SDKs' gRPC servers expect, with TLS terminated in a proxy or
+mesh. With `grpc-tls` on `a2a-protocol-server` it can serve TLS itself:
+`GrpcDispatcher::with_tls` takes a `ServerTlsConfig` carrying the server
+certificate and key and, for mutual TLS, the CA that client certificates
+must chain to. The types are re-exported from `dispatch::grpc`, so no tonic
+dependency of your own. The listener then speaks TLS only; a plaintext
+client is refused at the handshake rather than served.
+
+```rust
+# use std::sync::Arc;
+# use a2a_protocol_server::RequestHandler;
+use a2a_protocol_server::dispatch::grpc::{
+    Certificate, GrpcConfig, GrpcDispatcher, Identity, ServerTlsConfig,
+};
+
+# async fn example(
+#     handler: Arc<RequestHandler>,
+#     cert_pem: &str,
+#     key_pem: &str,
+#     client_ca_pem: &str,
+# ) -> std::io::Result<()> {
+let tls = ServerTlsConfig::new()
+    .identity(Identity::from_pem(cert_pem, key_pem))
+    // Mutual TLS: clients must present a certificate this CA signed.
+    // Add `.client_auth_optional(true)` to admit clients that present none.
+    .client_ca_root(Certificate::from_pem(client_ca_pem));
+
+GrpcDispatcher::new(handler, GrpcConfig::default())
+    .with_tls(tls)
+    .serve("0.0.0.0:50051")
+    .await?;
+# Ok(())
+# }
+```
+
+A configuration tonic rejects — a key that does not match its certificate —
+comes back from the `serve*` call as an `std::io::Error`, not a panic. tonic
+builds its acceptor from the process-level rustls crypto provider; when none
+is installed and more than one is linked, the dispatcher installs `ring`
+rather than letting rustls panic, and never overrides a provider the
+application installed first.
 
 ### Protocol
 

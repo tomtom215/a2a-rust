@@ -34,9 +34,10 @@ tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing"]
 tls-rustls = ["a2a-protocol-client/tls-rustls", "a2a-protocol-server/tls-rustls"]
 ## Enable gRPC transport via tonic.
 grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
-## gRPC over TLS on the client (the server's gRPC listener is plaintext; put
-## it behind a TLS-terminating proxy or mesh). See the client crate's entry.
-grpc-tls = ["grpc", "tls-rustls", "a2a-protocol-client/grpc-tls"]
+## gRPC over TLS on both sides: the client dials `https://` (see the client
+## crate's entry) and the server's own gRPC listener can serve TLS through
+## `GrpcDispatcher::with_tls` (see the server crate's entry).
+grpc-tls = ["grpc", "tls-rustls", "a2a-protocol-client/grpc-tls", "a2a-protocol-server/grpc-tls"]
 ## Enable OpenTelemetry integration.
 otel = ["a2a-protocol-server/otel"]
 ## Enable WebSocket transport via tokio-tungstenite.

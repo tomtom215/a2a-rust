@@ -178,7 +178,8 @@ and the `with_*` setters.
 | `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | Off | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
-| `grpc` | Off | gRPC transport via `tonic` |
+| `grpc` | Off | gRPC transport via `tonic` (plaintext listener) |
+| `grpc-tls` | Off | TLS on the gRPC listener itself: `GrpcDispatcher::with_tls(ServerTlsConfig)` with a server identity and, optionally, a client CA for mutual TLS; implies `grpc`; the TLS types are re-exported from `dispatch::grpc` |
 | `otel` | Off | OpenTelemetry metrics via `opentelemetry-otlp` |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
 
@@ -207,7 +208,7 @@ and the `with_*` setters.
 | `tracing` | Off | Enables `tracing` in client and server |
 | `tls-rustls` | **On** | Enables `tls-rustls` in client and server |
 | `grpc` | Off | Enables `grpc` in client and server |
-| `grpc-tls` | Off | Enables `grpc-tls` in the client (the server's gRPC listener stays plaintext; terminate TLS in a proxy or mesh) |
+| `grpc-tls` | Off | Enables `grpc-tls` in the client and the server: `https://` dialling on one side, `GrpcDispatcher::with_tls` on the other |
 | `websocket` | Off | Enables `websocket` in client and server |
 | `sqlite` | Off | Enables `sqlite` in the server |
 | `postgres` | Off | Enables `postgres` in the server |

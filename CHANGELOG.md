@@ -37,6 +37,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`grpc-tls` feature on `a2a-protocol-server`: TLS on the gRPC listener
+  itself.** Until now the dispatcher was plaintext-only and the book said to
+  terminate TLS in a proxy or mesh, which the official Go, Python and Java
+  SDKs also expect — but a2a-rs serves gRPC TLS in-process, and a deployment
+  without a mesh had no in-tree answer. `GrpcDispatcher::with_tls` takes a
+  `tonic::transport::ServerTlsConfig` (re-exported from `dispatch::grpc`
+  with `Identity` and `Certificate`, so no tonic dependency of your own):
+  the server certificate and key, and for mutual TLS a client CA, with
+  `client_auth_optional` to admit clients that present none. Every `serve*`
+  method applies it; `into_service` still hands the bare service to a server
+  the caller configures. The listener then speaks TLS only — a plaintext
+  client is refused at the handshake, with no fallback. tonic builds its
+  acceptor from the process-level rustls provider and panics when none is
+  installed and both `ring` and `aws-lc-rs` are linked (this workspace's
+  `--all-features` build is such a binary); the dispatcher installs `ring`
+  when nothing is installed, which is what a single-provider build does
+  implicitly, and never overrides an installed one. A rejected
+  configuration (a key that does not match its certificate) is an
+  `std::io::Error` from the `serve*` call, not a panic. The SDK crate's
+  `grpc-tls` now enables both sides. Proved end to end in
+  `a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs` against the client's
+  `grpc-tls` transport with `rcgen` certificates: pinned-CA round trip,
+  plaintext refusal, mutual TLS admitting a CA-signed client and rejecting
+  one without a certificate, optional client auth, and the
+  certificate/key-mismatch error; `grpc_server_tls_provider_e2e.rs`, in its
+  own binary because the provider is process state, proves the
+  install-when-absent path.
 - **`init_otlp_pipeline_with_endpoint`** (`a2a_protocol_server::otel`):
   `init_otlp_pipeline` with the collector endpoint given explicitly instead
   of read from `OTEL_EXPORTER_OTLP_ENDPOINT`.

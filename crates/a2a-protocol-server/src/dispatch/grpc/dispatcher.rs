@@ -27,6 +27,8 @@ pub struct GrpcDispatcher {
     config: GrpcConfig,
     keepalive: Option<(Duration, Duration)>,
     max_connection_age: Option<Duration>,
+    #[cfg(feature = "grpc-tls")]
+    tls: Option<tonic::transport::ServerTlsConfig>,
 }
 
 impl GrpcDispatcher {
@@ -38,7 +40,42 @@ impl GrpcDispatcher {
             config,
             keepalive: None,
             max_connection_age: None,
+            #[cfg(feature = "grpc-tls")]
+            tls: None,
         }
+    }
+
+    /// Serves TLS on the listener itself instead of relying on a terminating
+    /// proxy. Default: **off** (plaintext).
+    ///
+    /// `tls` carries the server certificate and key (`ServerTlsConfig::new()
+    /// .identity(Identity::from_pem(cert, key))`) and, for mutual TLS, the CA
+    /// that client certificates must chain to (`.client_ca_root(..)`, with
+    /// `.client_auth_optional(true)` to admit clients that present none).
+    /// The types are re-exported from [`dispatch::grpc`](super) so no tonic
+    /// dependency is needed. Applied by every `serve*` method and by nothing
+    /// else: [`into_service`](Self::into_service) hands the service to a
+    /// `tonic::transport::Server` the caller configures, TLS included.
+    ///
+    /// The listener then speaks TLS only. A plaintext client is refused at
+    /// the handshake; there is no fallback, for the same reason the client's
+    /// `grpc-tls` transport refuses to downgrade.
+    ///
+    /// tonic builds the acceptor from the process-level rustls crypto
+    /// provider. If none is installed when the listener is built — the case
+    /// for a binary that links both `ring` and `aws-lc-rs`, which this
+    /// workspace's `--all-features` build does — `ring` is installed as the
+    /// default, once, rather than letting rustls panic. An application that
+    /// wants a different provider installs it before serving.
+    ///
+    /// A configuration tonic rejects (a key that does not match its
+    /// certificate, an unparsable PEM) is reported by the `serve*` call as an
+    /// `std::io::Error`, not a panic.
+    #[cfg(feature = "grpc-tls")]
+    #[must_use]
+    pub fn with_tls(mut self, tls: tonic::transport::ServerTlsConfig) -> Self {
+        self.tls = Some(tls);
+        self
     }
 
     /// Sends an HTTP/2 PING every `interval` on an idle connection and closes
@@ -104,7 +141,7 @@ impl GrpcDispatcher {
             "A2A gRPC server listening"
         );
 
-        let router = self.build_router();
+        let router = self.build_router()?;
         router.serve(addr).await.map_err(std::io::Error::other)
     }
 
@@ -148,7 +185,7 @@ impl GrpcDispatcher {
             "A2A gRPC server listening"
         );
 
-        let router = self.build_router();
+        let router = self.build_router()?;
         tokio::spawn(async move {
             let _ = router.serve_with_incoming(incoming).await;
         });
@@ -174,7 +211,15 @@ impl GrpcDispatcher {
     }
 
     /// Builds the tonic router with every enabled service registered.
-    fn build_router(&self) -> tonic::transport::server::Router {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the TLS configuration given to
+    /// [`with_tls`](Self::with_tls) is rejected by tonic. Without `grpc-tls`
+    /// there is nothing to reject; the signature stays fallible so the
+    /// `serve*` callers are the same in both builds.
+    #[cfg_attr(not(feature = "grpc-tls"), allow(clippy::unnecessary_wraps))]
+    fn build_router(&self) -> std::io::Result<tonic::transport::server::Router> {
         let mut server = tonic::transport::Server::builder()
             .concurrency_limit_per_connection(self.config.concurrency_limit);
         if let Some((interval, timeout)) = self.keepalive {
@@ -185,18 +230,45 @@ impl GrpcDispatcher {
         if let Some(age) = self.max_connection_age {
             server = server.max_connection_age(age);
         }
-        server.add_service(self.into_service())
+        #[cfg(feature = "grpc-tls")]
+        if let Some(tls) = &self.tls {
+            ensure_crypto_provider();
+            server = server.tls_config(tls.clone()).map_err(|e| {
+                std::io::Error::other(format!("gRPC TLS configuration rejected: {e}"))
+            })?;
+        }
+        Ok(server.add_service(self.into_service()))
+    }
+}
+
+/// Installs `ring` as the process-level rustls provider if nothing is
+/// installed yet.
+///
+/// tonic's server acceptor calls `rustls::ServerConfig::builder()`, which
+/// panics when no default is installed and more than one provider is linked.
+/// A build with only `ring` never reaches the branch; a build that also links
+/// `aws-lc-rs` (this workspace's `--all-features`) would otherwise panic on
+/// the first TLS listener. Installing when nothing is installed is exactly
+/// what a single-provider build does implicitly, so no application that
+/// chose a provider is overridden. A race with a concurrent install elsewhere
+/// is harmless: the loser's `Err` is ignored and the winner's provider stays.
+#[cfg(feature = "grpc-tls")]
+fn ensure_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
     }
 }
 
 impl std::fmt::Debug for GrpcDispatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GrpcDispatcher")
-            .field("handler", &"RequestHandler { .. }")
+        let mut s = f.debug_struct("GrpcDispatcher");
+        s.field("handler", &"RequestHandler { .. }")
             .field("config", &self.config)
             .field("keepalive", &self.keepalive)
-            .field("max_connection_age", &self.max_connection_age)
-            .finish()
+            .field("max_connection_age", &self.max_connection_age);
+        #[cfg(feature = "grpc-tls")]
+        s.field("tls", &self.tls.is_some());
+        s.finish()
     }
 }
 

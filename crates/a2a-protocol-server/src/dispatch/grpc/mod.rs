@@ -71,3 +71,7 @@ pub use config::GrpcConfig;
 pub use dispatcher::GrpcDispatcher;
 pub use native::A2aServiceImpl;
 pub use pb::a2a_service_server::A2aServiceServer;
+/// The TLS types [`GrpcDispatcher::with_tls`] takes, re-exported so a server
+/// needs no tonic dependency of its own (`grpc-tls` feature).
+#[cfg(feature = "grpc-tls")]
+pub use tonic::transport::{Certificate, Identity, ServerTlsConfig};
