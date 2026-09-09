@@ -10,7 +10,9 @@ name: Coverage
 
 on:
   push:
-    branches: [main]
+    # `claude/**` as in ci.yml: a branch's coverage is uploaded under its
+    # own name, so the number can be read back before a PR exists.
+    branches: ["main", "claude/**"]
   pull_request:
     branches: [main]
   # On demand as well, so a change to the upload step can be proven without
