@@ -132,7 +132,7 @@ pub mod transport;
 pub use auth::{AuthInterceptor, CredentialsStore, InMemoryCredentialsStore, SessionId};
 pub use builder::ClientBuilder;
 pub use client::A2aClient;
-pub use config::ClientConfig;
+pub use config::{ClientConfig, GrpcBareAddressScheme};
 pub use discovery::resolve_agent_card;
 pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};

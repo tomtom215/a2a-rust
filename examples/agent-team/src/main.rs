@@ -163,7 +163,9 @@ async fn main() {
     #[cfg(feature = "grpc")]
     let grpc_analyzer_url = {
         let (grpc_listener, grpc_bind_addr) = bind_listener().await;
-        let grpc_base_url = format!("http://{grpc_bind_addr}");
+        // A gRPC interface advertises a *target* (`host:port`, no scheme), the
+        // A2A proto's form; the client picks TLS or not (`GrpcBareAddressScheme`).
+        let grpc_base_url = grpc_bind_addr.to_string();
         let grpc_handler = Arc::new(
             RequestHandlerBuilder::new(CodeAnalyzerExecutor)
                 .with_agent_card(grpc_analyzer_card(&grpc_base_url))

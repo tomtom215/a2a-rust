@@ -34,6 +34,9 @@ tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing"]
 tls-rustls = ["a2a-protocol-client/tls-rustls", "a2a-protocol-server/tls-rustls"]
 ## Enable gRPC transport via tonic.
 grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
+## gRPC over TLS on the client (the server's gRPC listener is plaintext; put
+## it behind a TLS-terminating proxy or mesh). See the client crate's entry.
+grpc-tls = ["grpc", "tls-rustls", "a2a-protocol-client/grpc-tls"]
 ## Enable OpenTelemetry integration.
 otel = ["a2a-protocol-server/otel"]
 ## Enable WebSocket transport via tokio-tungstenite.
@@ -64,3 +67,10 @@ tokio       = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde_json  = { workspace = true }
 tonic-prost = { workspace = true }
 prost       = { workspace = true }
+# `grpc_address_e2e.rs`: a TLS gRPC listener (tonic's server TLS is enabled
+# by the client's `grpc-tls` feature, since tonic is one crate compiled with
+# the union of its features) and the certificates it presents.
+tonic        = { workspace = true }
+tokio-stream = { workspace = true, features = ["net"] }
+rcgen        = "0.14"
+rustls       = { version = ">=0.23, <0.24", default-features = false, features = ["std", "tls12", "ring"] }

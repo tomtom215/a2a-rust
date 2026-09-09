@@ -148,7 +148,8 @@ impl ClientBuilder {
                 // Keep the response-size ceiling consistent across transports:
                 // a payload that fits the configured cap over JSON-RPC/REST
                 // must not be rejected by gRPC's separate decode default.
-                .with_max_message_size(self.config.max_response_size);
+                .with_max_message_size(self.config.max_response_size)
+                .with_bare_address_scheme(self.grpc_bare_address_scheme);
             // The third timeout. `with_timeout`/`with_connect_timeout` above
             // carry two of the builder's three, and this one used to be
             // dropped on the floor — so a caller who set it got the *unary

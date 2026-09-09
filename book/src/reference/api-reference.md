@@ -156,7 +156,8 @@ a stale entry here.
 | `JsonRpcTransport` | JSON-RPC 2.0 transport |
 | `RestTransport` | REST/HTTP transport |
 | `WebSocketTransport` | WebSocket transport (`websocket` feature) |
-| `GrpcTransport` | gRPC transport (`grpc` feature) |
+| `GrpcTransport` | gRPC transport (`grpc` feature); dials `host:port` targets and `http(s)://` URLs |
+| `GrpcBareAddressScheme` | How a bare `host:port` gRPC target is dialled: TLS except loopback (default), always TLS, or always plaintext |
 
 ## Server (`a2a-protocol-server`)
 

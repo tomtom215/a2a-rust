@@ -61,7 +61,8 @@ dependency.
 | `signing` | Agent card signing verification |
 | `tracing` | Structured logging via the `tracing` crate |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
-| `grpc` | gRPC transport via `tonic` |
+| `grpc` | gRPC transport via `tonic` (plaintext) |
+| `grpc-tls` | gRPC over TLS — `grpc` + `tls-rustls` + tonic's rustls connector; needed for `https://` gRPC endpoints and for the default dialling of a bare non-loopback `host:port` target |
 
 ### `a2a-protocol-server`
 
@@ -82,8 +83,9 @@ dependency.
 |---------|-------------|
 | `signing` | Enables signing across types, client, and server |
 | `tracing` | Enables tracing across client and server |
-| `tls-rustls` | Enables HTTPS in the client |
+| `tls-rustls` | Enables HTTPS in the client and TLS push delivery in the server |
 | `grpc` | Enables gRPC across client and server |
+| `grpc-tls` | Enables gRPC over TLS in the client |
 | `websocket` | Enables WebSocket across client and server |
 | `sqlite` | Enables SQLite stores in the server |
 | `postgres` | Enables PostgreSQL stores in the server |

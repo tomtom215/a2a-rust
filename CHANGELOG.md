@@ -10,7 +10,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`grpc-tls` feature (client, forwarded by the SDK crate): gRPC over TLS.**
+  `grpc` alone never had a TLS connector — tonic's is a feature, and none was
+  enabled — so an `https://` gRPC endpoint opened a plaintext HTTP/2 stream to a
+  TLS port and failed on the handshake with an error that read like a network
+  fault. With `grpc-tls`, `https://` endpoints are verified against the same
+  bundled Mozilla roots (`webpki-roots`, ring) the HTTP transports use, or
+  against a `tonic::transport::ClientTlsConfig` supplied through the new
+  `GrpcTransportConfig::with_tls_config` for a private CA or client
+  certificate. Without the feature an `https://` endpoint is now refused up
+  front with a message naming it, instead of failing after the fact. No new
+  crate versions: tonic's `tls-ring` and `tls-webpki-roots` resolve to the
+  `rustls 0.23` / `tokio-rustls 0.26` / `webpki-roots 1.0` already in the
+  tree. Proved in `a2a-protocol-sdk/tests/grpc_address_e2e.rs` against a
+  tonic TLS listener presenting an `rcgen` certificate: a pinned CA round-trips
+  over a bare target and over `https://`, the bundled roots reject that CA,
+  and TLS against a plaintext listener does not fall back. One thing tonic
+  does differently from every other TLS path in this SDK: it builds its rustls
+  config from the *process-level* crypto provider rather than being handed
+  `ring` explicitly, and a binary that links rustls with both `ring` and
+  `aws-lc-rs` (this workspace's own `--all-features` build is one, through
+  the examples' HTTP clients) has no default and panics at connect. The
+  transport installs `ring` as the process default when none is set and
+  respects one the application installed first; `grpc_tls_provider_e2e.rs`,
+  in its own test binary because the provider is process state, proves an
+  `https://` connect in such a binary is a connection error and not a panic.
+- **`GrpcBareAddressScheme`** (`a2a-protocol-client`), with
+  `GrpcTransportConfig::with_bare_address_scheme` and
+  `ClientBuilder::with_grpc_bare_address_scheme`: how a bare `host:port` gRPC
+  target is dialled. `HttpsExceptLoopback` (default) uses TLS for every host
+  except `localhost` / `127.0.0.0/8` / `::1`; `Https` and `Http` force one
+  scheme. See the fix below for why a bare target is accepted at all.
+- **§7.6.4 conformance test** (`auth_required_state_tests.rs`). Upstream
+  added *In-Task Authorization Scope* on 2026-07-30 (`6550d34`): the
+  `TASK_STATE_AUTH_REQUIRED` transition "MUST NOT" be treated as authorization
+  for anything. This server has always satisfied that by construction — the
+  interceptor chain runs before every method and nothing reads the task's
+  state for an authentication decision — and the test pins it: a continuation
+  of an `AUTH_REQUIRED` task with no credential is refused on the
+  interceptor's terms, runs no executor, and leaves the task's history
+  untouched, while the same continuation with the credential is processed.
+  `SPEC_COMPLIANCE.md` carries the row.
+
 ### Changed
+
+- **`GrpcTransportConfig` is `#[non_exhaustive]`** (breaking for code that
+  built it as a struct literal; `GrpcTransportConfig::default()` plus the
+  `with_*` setters covers every field). It gained `bare_address_scheme` and,
+  under `grpc-tls`, `tls_config`, and a public-fields config struct that grows
+  by a field on every such change would break its callers each time. No code
+  in this repository, its examples or its bindings constructed it literally.
+- **`GrpcTransport::connect` rejects a non-target address by name.** An
+  address with a scheme other than `http`/`https`, a path, a query, or userinfo
+  is an `InvalidEndpoint` that quotes the input (`grpc://…`, `agent:50051/a2a`,
+  `user:pw@agent:50051`), where before anything without `http(s)://` was
+  refused with the same one-line message.
 
 - **Official TCK: two more `a2a-tck` checks baselined, same stale-specification
   cause as the first two.** The nightly of 2026-09-01
@@ -76,6 +132,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **gRPC client: a card's `host:port` gRPC address is accepted.** Since A2A
+  `cfc9d34` (2026-07-21) the proto's `AgentInterface.url` comment says a gRPC
+  interface's address "should be in the format `hostname:port`", example
+  `grpc.example.com:443` — a gRPC target, which carries no scheme. That is what
+  every official SDK's agent advertises, and what this repository's own
+  conformance SUT advertises (`grpc.insecure_channel("http://…")` fails on the
+  Python side). `GrpcTransport::connect` refused anything that did not start
+  with `http://` or `https://`, so `ClientBuilder::from_card(..).build_grpc()`
+  could not reach a spec-format gRPC agent at all; the examples worked only
+  because each one prepends `http://` by hand. A bare target is now normalised
+  per `GrpcBareAddressScheme` — the same decision the official SDKs leave to
+  a channel factory (Python) or make as plaintext-unless-configured (the A2A
+  project's own Rust SDK); this one defaults to TLS and exempts loopback, and
+  says so. Proved in `grpc_address_e2e.rs`: `from_card` on `127.0.0.1:{port}`
+  and on `localhost:{port}` builds and talks; the `Http` policy dials a
+  non-loopback spelling in plaintext; without `grpc-tls` a non-loopback target
+  is refused with the feature named rather than downgraded to plaintext.
+- **Examples and the ITK agent advertise spec-format gRPC targets.** The
+  `agent-team` example's gRPC card said `http://127.0.0.1:{port}`, and its
+  gRPC tests bypassed the card with a hand-built transport; the ITK current
+  agent's card said the same and its peer client prepended `http://` to any
+  scheme-less address it met — a workaround for the limitation fixed above,
+  written on the assumption that scheme-less was the peer's quirk rather than
+  the specification's form. Both cards now advertise `127.0.0.1:{port}`, test
+  56 reaches the gRPC agent through `ClientBuilder::from_card(..).build_grpc()`,
+  and the ITK workaround is gone; the in-repo ITK traversal self-test (one-hop
+  GRPC, two-hop JSONRPC→GRPC) passes against the rebuilt agent.
+- **Book: `tls-rustls` was documented as off by default for the client and
+  the SDK crate.** It has been on by default since the feature existed
+  (`default = ["tls-rustls"]` in both manifests; the client's own README said
+  so). `reference/configuration.md` now agrees with the manifests.
 - **Client: the Agent Card's `tenant` now rides on every request, not only on
   `SendMessage`.** A2A §8.3.2 rule 4 says a client **MUST** "set the `tenant`
   field in every request message to exactly the value declared in the selected

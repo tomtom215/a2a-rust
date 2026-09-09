@@ -136,8 +136,10 @@ fn extract_responses(resp: &StreamResponse) -> Vec<String> {
 // ── Peer calls ───────────────────────────────────────────────────────────────
 
 /// Resolves the peer's agent card and builds a client for the requested
-/// transport. Scheme-less gRPC endpoints (as advertised by some reference
-/// agents) are normalized to `http://`.
+/// transport. A gRPC interface advertises a bare `host:port` target (the
+/// A2A proto's form, and what the reference agents publish); `build_grpc`
+/// dials it per `GrpcBareAddressScheme` — plaintext for loopback, which is
+/// every ITK peer, and TLS otherwise.
 async fn client_for(
     transport: &str,
     agent_card_uri: &str,
@@ -171,13 +173,8 @@ async fn client_for(
             )
         })?;
 
-    let mut endpoint = iface.url.clone();
-    if want == "GRPC" && !endpoint.contains("://") {
-        endpoint = format!("http://{endpoint}");
-    }
-
-    let builder =
-        ClientBuilder::new(endpoint).with_protocol_binding(iface.protocol_binding.clone());
+    let builder = ClientBuilder::new(iface.url.clone())
+        .with_protocol_binding(iface.protocol_binding.clone());
     if want == "GRPC" {
         builder
             .build_grpc()
@@ -476,7 +473,10 @@ impl AgentExecutor for ItkExecutor {
 
 fn build_card(http_port: u16, grpc_port: u16) -> AgentCard {
     let http_url = format!("http://127.0.0.1:{http_port}");
-    let grpc_url = format!("http://127.0.0.1:{grpc_port}");
+    // A gRPC target, not a URL: `AgentInterface.url` for the gRPC binding is
+    // `hostname:port` per the A2A proto, and `grpc.insecure_channel` on the
+    // Python side rejects a scheme outright.
+    let grpc_url = format!("127.0.0.1:{grpc_port}");
     AgentCard {
         url: Some(http_url.clone()),
         name: "a2a-rust ITK current agent".into(),

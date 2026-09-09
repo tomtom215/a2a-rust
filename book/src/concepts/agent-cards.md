@@ -149,11 +149,16 @@ let interface = AgentInterface {
 };
 ```
 
+For HTTP-based bindings `url` is an absolute URL (HTTPS in production). For
+the gRPC binding it is a gRPC target, `"grpc.example.com:443"` — no scheme,
+because gRPC names have none; whether the channel uses TLS is the client's
+decision (see [gRPC](transport-layers.md#grpc)).
+
 An agent must have at least one interface. Having multiple interfaces (e.g., JSON-RPC and REST) lets clients choose their preferred transport.
 
 The choice is the *client's*, not the card's. `ClientBuilder::from_card()` walks `ClientConfig::preferred_bindings` in order and takes the first binding the card offers, falling back to the card's first interface only when it offers none of them. Pass your own order with `ClientBuilder::from_card_preferring(&card, &["GRPC".into()])`.
 
-Because a card gives each binding its own URL, the endpoint follows the binding: selecting `GRPC` selects that interface's `url` and `tenant` as well. The `tenant` field from the selected interface is preserved in `ClientConfig::tenant` and applied to all requests.
+Because a card gives each binding its own URL, the endpoint follows the binding: selecting `GRPC` selects that interface's `url` and `tenant` as well. The `tenant` field from the selected interface is preserved in `ClientConfig::tenant` and sent on every request — all eleven methods, `GetExtendedAgentCard` included — as spec §8.3.2 rule 4 requires. A `tenant` set on an individual request overrides it.
 
 ## Extended Agent Card
 

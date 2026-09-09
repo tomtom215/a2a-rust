@@ -57,7 +57,7 @@ The test suite exercises 40+ SDK features including:
 - `AgentExecutor` trait (4 implementations)
 - `RequestHandlerBuilder` (all configuration options)
 - `JsonRpcDispatcher` + `RestDispatcher`
-- `ClientBuilder` (JSON-RPC + REST bindings)
+- `ClientBuilder` (JSON-RPC + REST bindings; `from_card` + `build_grpc` on a bare `host:port` gRPC target)
 - Sync and streaming `SendMessage`
 - `GetTask`, `ListTasks` (pagination, context, status filters)
 - `CancelTask` with executor override

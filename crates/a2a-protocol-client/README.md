@@ -54,7 +54,8 @@ All 11 A2A v1.0 methods are supported:
 | `signing` | No | Agent card signature verification |
 | `tracing` | No | Structured logging (zero-cost when off) |
 | `websocket` | No | WebSocket transport |
-| `grpc` | No | gRPC transport via tonic |
+| `grpc` | No | gRPC transport via tonic (plaintext) |
+| `grpc-tls` | No | gRPC over TLS (implies `grpc` + `tls-rustls`); bundled roots or a pinned `ClientTlsConfig` |
 
 ## Agent Discovery
 

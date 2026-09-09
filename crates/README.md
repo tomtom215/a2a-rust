@@ -74,6 +74,7 @@ Features are defined on individual crates and passed through by the SDK umbrella
 | `postgres` | server | PostgreSQL-backed stores |
 | `websocket` | client, server | WebSocket transport |
 | `grpc` | client, server | Protobuf-native gRPC (canonical `lf.a2a.v1.A2AService`) via tonic |
+| `grpc-tls` | client | gRPC over TLS: tonic's rustls connector with the bundled Mozilla roots, or a pinned CA / client certificate |
 | `proto` | types | Canonical protobuf message types + JSON⇄proto conversion layer (enabled transitively by `grpc`) |
 | `otel` | server | OpenTelemetry OTLP metrics export |
 | `axum` | server | Axum framework integration |
