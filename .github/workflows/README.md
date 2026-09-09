@@ -10,14 +10,15 @@ GitHub Actions workflows for the a2a-rust project.
 | Workflow | File | Trigger | Purpose |
 |----------|------|---------|---------|
 | **DCO** | `dco.yml` | PRs | Every non-merge commit carries a `Signed-off-by:` matching a human git author (see `../../DCO`, `../../PROVENANCE.md`) |
-| **CI** | `ci.yml` | Push to `main`/`claude/**`, PRs | Format, clippy, tests across nine feature combinations, docs, cargo-deny, MSRV, package validation |
+| **CI** | `ci.yml` | Push to `main`/`claude/**`, PRs | Format, clippy, feature matrix (`cargo hack --each-feature` over every published crate), tests across nine feature combinations, docs, cargo-deny, MSRV, package validation |
 | **Official TCK** | `official-tck.yml` | Push to `main`, PRs, nightly | The A2A project's own conformance suite (`a2aproject/a2a-tck`) against `tck/sut`. Gated differentially against `tck/conformance-baseline.json`: fails on a MUST failure not in the baseline **and** on a baseline entry that starts passing. See `docs/official-tck-findings.md` |
 | **TCK** | `tck.yml` | Push to `main`, PRs | Conformance self-test (echo-agent) plus cross-language agents (Python, JS, Go, Java) over the JSON-RPC and REST bindings |
 | **Coverage** | `coverage.yml` | Push to `main`, PRs | Code coverage via `cargo-llvm-cov`, Codecov upload (policy in `codecov.yml`) |
 | **Documentation** | `docs.yml` | Push to `main` | Build mdbook, deploy to GitHub Pages |
 | **Benchmarks** | `benchmarks.yml` | Push to `main`, manual; PRs run the regression gate | Full criterion run + book publish on `main`; statistical regression gate on PRs |
-| **Release** | `release.yml` | Tag push (`v*`) | Validation (versions, CHANGELOG, CITATION.cff, SECURITY.md), CI matrix, security audit, SLSA-attested packaging, GitHub release, crates.io publish |
+| **Release** | `release.yml` | Tag push (`v*`) | Validation (versions, CHANGELOG, CITATION.cff, SECURITY.md), CI matrix, security audit, SLSA-attested packaging, GitHub release, crates.io publish via Trusted Publishing (OIDC; environment-secret fallback until every crate is configured) |
 | **Mutants** | `mutants.yml` | PRs (incremental `--in-diff`), manual full sweep | Mutation testing; fails on any missed mutant, reports timeouts separately |
+| **Dependabot** | `../dependabot.yml` | Weekly (Mondays 04:00 UTC) | Grouped minor/patch bumps for Cargo (workspace and the SLIMRPC binding) and GitHub Actions; majors arrive as separate PRs. Its commits are DCO-exempt by exact author identity (see `dco.yml`, `PROVENANCE.md` §3.2) |
 
 ## Required status checks
 
@@ -29,7 +30,7 @@ requirement there):
 
 - `DCO / Sign-off and authorship`
 - `Official TCK / a2a-tck conformance`
-- All `CI` jobs (Format, Clippy, Test, Documentation, cargo-deny, Package validation)
+- All `CI` jobs (Format, Clippy, Feature matrix, Test, Documentation, cargo-deny, Package validation)
 - `TCK self-test (echo-agent)` and the `TCK cross-language` matrix
 - `Mutation Testing (incremental)`
 - `Regression Gate` (benchmarks)
@@ -48,6 +49,10 @@ The CI workflow tests across multiple configurations:
 - **Platforms**: Linux, macOS, Windows
 - **Feature combinations**: default, `signing`, `tracing`, `tls-rustls`,
   `sqlite`, `postgres`, `axum`, `--all-features`, `--no-default-features`
+- **Feature matrix**: `cargo hack clippy --each-feature` over the four
+  published crates — every feature alone, no-default-features and
+  all-features — on Linux, so a `#[cfg(feature)]` gap cannot hide behind
+  the hand-picked list above
 - **Checks**: `cargo fmt`, `cargo clippy`, `cargo test`, `cargo doc`,
   `cargo deny`, `cargo package`
 

@@ -524,6 +524,8 @@ jobs:
       url: https://crates.io/crates/a2a-protocol-sdk/${{ needs.validate.outputs.version }}
     permissions:
       contents: read
+      # Lets the job mint a GitHub OIDC token for crates.io Trusted Publishing.
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@stable
@@ -531,11 +533,42 @@ jobs:
       # cold rather than on top of cache written by routine CI runs.
       # protoc is bundled via the `protoc-bin-vendored` crate.
 
+      # ── Credentials ──────────────────────────────────────────────────────
+      #
+      # Preferred: crates.io Trusted Publishing. The action exchanges this
+      # job's OIDC token for a 30-minute crates.io token scoped to the crates
+      # whose trusted-publisher configuration names this repository, this
+      # workflow file and the `crates-io` environment. No long-lived secret
+      # exists to leak or rotate. The one-time crates.io setup is in
+      # RELEASING.md ("Prerequisites").
+      #
+      # Fallback: the `CARGO_REGISTRY_TOKEN` environment secret, kept only
+      # until every crate has a trusted publisher configured. `continue-on-
+      # error` on the exchange step is what makes the fallback reachable; the
+      # publish step below fails loudly if neither credential is present, so
+      # a misconfiguration cannot publish nothing and report green.
+      - name: Obtain a crates.io token via Trusted Publishing
+        id: trusted
+        continue-on-error: true
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+
       - name: Publish crates (dependency order)
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          TRUSTED_TOKEN: ${{ steps.trusted.outputs.token }}
+          FALLBACK_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         shell: bash
         run: |
+          if [ -n "$TRUSTED_TOKEN" ]; then
+            echo "Publishing with a Trusted Publishing token (OIDC)."
+            export CARGO_REGISTRY_TOKEN="$TRUSTED_TOKEN"
+          elif [ -n "$FALLBACK_TOKEN" ]; then
+            echo "::warning::Trusted Publishing exchange failed or is not configured; using the CARGO_REGISTRY_TOKEN secret. See RELEASING.md to finish the trusted-publisher setup."
+            export CARGO_REGISTRY_TOKEN="$FALLBACK_TOKEN"
+          else
+            echo "::error::No crates.io credential: Trusted Publishing is not configured for this repository/workflow/environment and the CARGO_REGISTRY_TOKEN secret is absent. See RELEASING.md."
+            exit 1
+          fi
+
           VERSION="${{ needs.validate.outputs.version }}"
 
           # Helper: idempotent publish with retry and yank recovery.

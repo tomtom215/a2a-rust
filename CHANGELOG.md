@@ -12,6 +12,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Feature-matrix CI job.** `cargo hack clippy --each-feature` now lints
+  every feature of each published crate on its own, plus no-default-features
+  and all-features (39 combinations, 8 minutes warm), so a `#[cfg(feature)]`
+  gap is caught before a downstream build enables an unusual subset. The
+  hand-picked combination list stayed as it was; this is the exhaustive
+  complement. `scripts/preflight.sh` picks the gate up automatically.
+- **Dependabot** (`.github/dependabot.yml`): weekly grouped minor/patch bumps
+  for the workspace, the SLIMRPC binding's own lockfile and GitHub Actions;
+  majors arrive as separate pull requests. Its commits are exempt from the
+  DCO gate by exact author identity — a version bump carries no authored
+  content to certify, and the review and merge stay human — recorded in
+  `PROVENANCE.md` §3.2.
+- **`STABILITY.md`**: the API stability policy — what "breaking" means for
+  these crates, deprecate-then-remove with a one-minor window, at most one
+  breaking minor per month, `### Breaking` changelog headings,
+  `cargo-semver-checks` as the proof, the MSRV rule, what is and is not
+  covered, and the criteria for `1.0`. Linked from the README's Stability
+  section.
+- **crates.io Trusted Publishing.** The release workflow's publish job now
+  exchanges its GitHub OIDC token for a short-lived crates.io token
+  (`rust-lang/crates-io-auth-action`), falling back to the environment
+  secret with a warning until every crate has a trusted publisher
+  configured, and failing if neither credential exists. The one-time
+  crates.io setup is in `RELEASING.md`.
+
 - **`grpc-tls` feature (client, forwarded by the SDK crate): gRPC over TLS.**
   `grpc` alone never had a TLS connector — tonic's is a feature, and none was
   enabled — so an `https://` gRPC endpoint opened a plaintext HTTP/2 stream to a

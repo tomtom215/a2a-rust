@@ -3,8 +3,10 @@
 #
 # Continuous integration — enforces all quality gates.
 #
-# Jobs: format, clippy, test (default + signing + tls-rustls + tracing + all-features),
-#       documentation, cargo-deny (license/advisory), package validation, nightly.
+# Jobs: format, clippy, feature matrix (cargo-hack, each feature of every
+#       published crate), test (default + signing + tls-rustls + tracing +
+#       all-features), documentation, cargo-deny (license/advisory), package
+#       validation, nightly.
 #
 # Matrix: stable + MSRV (1.93), multi-platform.
 
@@ -270,6 +272,33 @@ jobs:
         run: cargo clippy -p a2a-protocol-server --all-targets --no-default-features --features auth-jwt -- -D warnings
       - name: Clippy (all features)
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  # ── Feature matrix ───────────────────────────────────────────────────────
+  #
+  # The clippy job above lints the combinations someone once thought of. This
+  # job lints every feature of every published crate on its own, plus
+  # no-default-features and all-features, so a `#[cfg(feature)]` gap is found
+  # here rather than by a downstream build that enables an unusual subset.
+  # The 2026-09-09 `grpc`-without-`grpc-tls` unused import is the shape of
+  # bug it exists for: the hand-picked list happened to catch that one only
+  # because workspace feature unification tripped over it.
+  #
+  # Linux only: feature gating is platform-independent, and the OS matrix
+  # already covers the platform-specific code paths.
+  features:
+    name: Feature matrix (cargo-hack, each feature)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install cargo-hack
+        run: cargo install cargo-hack --locked
+      - name: Clippy (each feature of every published crate)
+        run: cargo hack clippy -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk --all-targets --each-feature -- -D warnings
 
   # ── Tests ────────────────────────────────────────────────────────────────
   test:

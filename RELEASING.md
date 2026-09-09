@@ -8,7 +8,18 @@ This document describes the release process for the `a2a-rust` workspace.
 ## Prerequisites
 
 - Commit access to `main`
-- `CARGO_REGISTRY_TOKEN` secret configured in the `crates-io` GitHub environment
+- **crates.io Trusted Publishing** configured for each of the four crates
+  (one-time, per crate, by a crate owner): on crates.io open the crate →
+  *Settings* → *Trusted Publishing* → *Add a new GitHub publisher* with
+  repository owner `tomtom215`, repository `a2a-rust`, workflow filename
+  `release.yml`, environment `crates-io`. The `publish` job then exchanges
+  its GitHub OIDC token for a short-lived crates.io token
+  (`rust-lang/crates-io-auth-action`); no long-lived secret is involved.
+- Until every crate has a trusted publisher, the `CARGO_REGISTRY_TOKEN`
+  secret in the `crates-io` GitHub environment is the fallback. The job
+  prints a warning when it falls back and fails if neither credential is
+  available. Delete the secret once the fallback has not been used for a
+  release.
 - All CI checks passing on `main`
 - **`protoc`** installed locally (required for `--all-features` builds that enable the `grpc` feature). Install via `apt-get install protobuf-compiler` (Debian/Ubuntu), `brew install protobuf` (macOS), or download from the [protobuf releases page](https://github.com/protocolbuffers/protobuf/releases)
 
@@ -146,7 +157,7 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
 3. **Packages** all crates with SLSA build provenance attestation
 4. **Runs a publish dry run** to verify packages are publishable
 5. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts
-6. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval)
+6. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval; authenticates with Trusted Publishing, falling back to the environment secret)
 
 ### 4. Post-release
 
