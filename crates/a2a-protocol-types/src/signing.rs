@@ -17,8 +17,8 @@
 //! algorithm, which is the most commonly used algorithm for JWS in the A2A
 //! specification.
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::rand::SystemRandom;
 #[cfg(test)]
 use ring::signature::KeyPair;

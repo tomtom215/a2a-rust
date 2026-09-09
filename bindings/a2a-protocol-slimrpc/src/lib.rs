@@ -178,8 +178,8 @@ pub mod multicast;
 pub mod server;
 
 pub use binding::{
-    slimrpc_address, slimrpc_interface, SlimName, SlimNameError, A2A_SERVICE_NAME,
-    SLIMRPC_PROTOCOL_BINDING,
+    A2A_SERVICE_NAME, SLIMRPC_PROTOCOL_BINDING, SlimName, SlimNameError, slimrpc_address,
+    slimrpc_interface,
 };
 pub use client::{SlimRpcTransport, SlimRpcTransportBuilder};
 pub use codec::Pb;

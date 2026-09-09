@@ -46,9 +46,14 @@ use a2a_protocol_types::proto::convert::ConvertError;
 use tokio::sync::mpsc;
 use tonic::transport::Channel;
 
+pub use crate::config::GrpcBareAddressScheme;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
+/// The tonic TLS types [`GrpcTransportConfig::with_tls_config`] takes,
+/// re-exported so a caller needs no direct tonic dependency.
+#[cfg(feature = "grpc-tls")]
+pub use tonic::transport::{Certificate, ClientTlsConfig, Identity};
 
 // Include the generated tonic client glue for `lf.a2a.v1.A2AService`.
 // Message types live in `a2a_protocol_types::proto` via `extern_path`.
@@ -79,7 +84,12 @@ use proto::a2a_service_client::A2aServiceClient;
 ///     .with_timeout(Duration::from_secs(60))
 ///     .with_max_message_size(8 * 1024 * 1024);
 /// ```
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters.
+/// Struct literals and `..Default::default()` are not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct GrpcTransportConfig {
     /// Request timeout for unary calls. Default: 30 seconds.
     pub timeout: Duration,
@@ -89,6 +99,15 @@ pub struct GrpcTransportConfig {
     pub max_message_size: usize,
     /// Channel capacity for streaming responses. Default: 64.
     pub stream_channel_capacity: usize,
+    /// How a bare `host[:port]` address is connected. See
+    /// [`GrpcBareAddressScheme`].
+    pub bare_address_scheme: GrpcBareAddressScheme,
+    /// TLS settings for `https://` endpoints (explicit or derived from a bare
+    /// address). `None` verifies the server against the bundled Mozilla root
+    /// store (`webpki-roots`), which is what a public agent needs; set one to
+    /// pin a private CA or a client certificate.
+    #[cfg(feature = "grpc-tls")]
+    pub tls_config: Option<tonic::transport::ClientTlsConfig>,
 }
 
 impl Default for GrpcTransportConfig {
@@ -98,6 +117,9 @@ impl Default for GrpcTransportConfig {
             connect_timeout: Duration::from_secs(10),
             max_message_size: 4 * 1024 * 1024,
             stream_channel_capacity: 64,
+            bare_address_scheme: GrpcBareAddressScheme::default(),
+            #[cfg(feature = "grpc-tls")]
+            tls_config: None,
         }
     }
 }
@@ -130,6 +152,85 @@ impl GrpcTransportConfig {
         self.stream_channel_capacity = capacity;
         self
     }
+
+    /// Sets how a bare `host[:port]` address is connected.
+    #[must_use]
+    pub const fn with_bare_address_scheme(mut self, scheme: GrpcBareAddressScheme) -> Self {
+        self.bare_address_scheme = scheme;
+        self
+    }
+
+    /// Sets the TLS configuration used for `https://` endpoints.
+    #[cfg(feature = "grpc-tls")]
+    #[must_use]
+    pub fn with_tls_config(mut self, tls: tonic::transport::ClientTlsConfig) -> Self {
+        self.tls_config = Some(tls);
+        self
+    }
+}
+
+/// Turns what an Agent Card advertises into a URI tonic can dial.
+///
+/// Three inputs are accepted: an `http://` or `https://` URL (used verbatim),
+/// and a bare gRPC target `host[:port]`, which gets the scheme `policy`
+/// chooses. Anything else — another scheme, a path, userinfo — is an error
+/// naming the input, because a card that says `ws://…` or `grpc://…` for
+/// its gRPC interface is wrong and silently guessing hides that.
+pub(crate) fn normalize_endpoint(
+    endpoint: &str,
+    policy: GrpcBareAddressScheme,
+) -> ClientResult<String> {
+    if endpoint.is_empty() {
+        return Err(ClientError::InvalidEndpoint(
+            "gRPC address must not be empty".into(),
+        ));
+    }
+    if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
+        return Ok(endpoint.to_owned());
+    }
+    if endpoint.contains("://") {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "gRPC address must be `host:port` or an http(s) URL, got a `{}` URL: {endpoint}",
+            endpoint.split("://").next().unwrap_or_default()
+        )));
+    }
+    // A gRPC target is an authority and nothing more. `Authority` would also
+    // accept `user:pw@host`; a credential in a card's address is never right.
+    let authority: hyper::http::uri::Authority = endpoint.parse().map_err(|e| {
+        ClientError::InvalidEndpoint(format!(
+            "gRPC address must be `host:port` or an http(s) URL: {endpoint}: {e}"
+        ))
+    })?;
+    if endpoint.contains('@') {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "gRPC address must not carry userinfo: {endpoint}"
+        )));
+    }
+    let scheme = match policy {
+        GrpcBareAddressScheme::Http => "http",
+        GrpcBareAddressScheme::Https => "https",
+        GrpcBareAddressScheme::HttpsExceptLoopback => {
+            if is_loopback_host(authority.host()) {
+                "http"
+            } else {
+                "https"
+            }
+        }
+    };
+    Ok(format!("{scheme}://{authority}"))
+}
+
+/// `localhost`, any `127.0.0.0/8` address, or `::1` (bracketed or not).
+fn is_loopback_host(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    bare.parse::<std::net::IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback())
 }
 
 // ── GrpcTransport ───────────────────────────────────────────────────────────
@@ -169,11 +270,17 @@ struct Inner {
 impl GrpcTransport {
     /// Connects to a gRPC endpoint with default configuration.
     ///
-    /// The endpoint should be an `http://` or `https://` URL.
+    /// `endpoint` is what an Agent Card's gRPC interface advertises: a gRPC
+    /// target `host:port` (the form the specification's proto names), or an
+    /// `http://`/`https://` URL. A bare target is dialled per
+    /// [`GrpcBareAddressScheme`]'s default — TLS unless the host is loopback.
+    /// `https://` needs the `grpc-tls` feature and fails with a message
+    /// saying so without it.
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError::Transport`] if the connection fails.
+    /// Returns [`ClientError::InvalidEndpoint`] for an address in none of
+    /// those forms, and [`ClientError::Transport`] if the connection fails.
     pub async fn connect(endpoint: impl Into<String>) -> ClientResult<Self> {
         Self::connect_with_config(endpoint, GrpcTransportConfig::default()).await
     }
@@ -187,16 +294,29 @@ impl GrpcTransport {
         endpoint: impl Into<String>,
         config: GrpcTransportConfig,
     ) -> ClientResult<Self> {
-        let endpoint_str = endpoint.into();
-        validate_url(&endpoint_str)?;
+        let raw = endpoint.into();
+        let endpoint_str = normalize_endpoint(&raw, config.bare_address_scheme)?;
+        // A bare target the policy chose to dial with TLS: the usual failure is
+        // a plaintext peer on a private network, so say what to set.
+        let tls_by_policy = !raw.contains("://") && endpoint_str.starts_with("https://");
 
-        let channel = tonic::transport::Channel::from_shared(endpoint_str.clone())
+        let endpoint = tonic::transport::Channel::from_shared(endpoint_str.clone())
             .map_err(|e| ClientError::InvalidEndpoint(format!("invalid gRPC endpoint: {e}")))?
             .connect_timeout(config.connect_timeout)
-            .timeout(config.timeout)
-            .connect()
-            .await
-            .map_err(|e| ClientError::Transport(format!("gRPC connect failed: {e}")))?;
+            .timeout(config.timeout);
+        let endpoint = Self::apply_tls(endpoint, &endpoint_str, &config)?;
+        let channel = endpoint.connect().await.map_err(|e| {
+            if tls_by_policy {
+                ClientError::Transport(format!(
+                    "gRPC connect failed: {e} (`{raw}` was dialled with TLS by \
+                         {:?}; if this peer speaks plaintext, set \
+                         GrpcBareAddressScheme::Http)",
+                    config.bare_address_scheme
+                ))
+            } else {
+                ClientError::Transport(format!("gRPC connect failed: {e}"))
+            }
+        })?;
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -206,6 +326,49 @@ impl GrpcTransport {
                 stream_connect_timeout: None,
             }),
         })
+    }
+
+    /// Attaches TLS to an `https://` endpoint, or refuses one this build
+    /// cannot secure.
+    ///
+    /// Without `grpc-tls`, tonic has no TLS connector at all: it would open a
+    /// plaintext TCP connection to the TLS port and fail on the handshake
+    /// with an error that reads like a transport fault. Refusing up front
+    /// names the actual problem. `Channel::from_shared` does *not* apply
+    /// tonic's automatic `https` → TLS rule (that lives in `Endpoint::new`,
+    /// which `from_shared` bypasses), so the TLS config is attached here
+    /// explicitly.
+    ///
+    /// One function with the feature split inside it rather than two
+    /// `#[cfg]`-gated twins: a twin compiled out under `--all-features` is
+    /// invisible to every test, and `cargo mutants` reports its mutants as
+    /// survivors that nothing can kill.
+    fn apply_tls(
+        endpoint: tonic::transport::Endpoint,
+        endpoint_str: &str,
+        config: &GrpcTransportConfig,
+    ) -> ClientResult<tonic::transport::Endpoint> {
+        if !endpoint_str.starts_with("https://") {
+            return Ok(endpoint);
+        }
+        #[cfg(feature = "grpc-tls")]
+        {
+            let tls = config
+                .tls_config
+                .clone()
+                .unwrap_or_else(|| tonic::transport::ClientTlsConfig::new().with_enabled_roots());
+            endpoint.tls_config(tls).map_err(|e| {
+                ClientError::Transport(format!("gRPC TLS configuration rejected: {e}"))
+            })
+        }
+        #[cfg(not(feature = "grpc-tls"))]
+        {
+            let _ = (endpoint, config);
+            Err(ClientError::Transport(format!(
+                "gRPC over TLS needs the `grpc-tls` feature of a2a-protocol-client; \
+                 this build has no TLS connector for {endpoint_str}"
+            )))
+        }
     }
 
     /// Bounds the wait for a stream's **first** event, separately from
@@ -671,18 +834,6 @@ fn convert_error(err: ConvertError) -> ClientError {
     ClientError::Transport(format!("protobuf conversion failed: {err}"))
 }
 
-fn validate_url(url: &str) -> ClientResult<()> {
-    if url.is_empty() {
-        return Err(ClientError::InvalidEndpoint("URL must not be empty".into()));
-    }
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err(ClientError::InvalidEndpoint(format!(
-            "URL must start with http:// or https://: {url}"
-        )));
-    }
-    Ok(())
-}
-
 const fn grpc_code_to_error_code(code: tonic::Code) -> a2a_protocol_types::ErrorCode {
     // DeadlineExceeded and Cancelled fall through to the wildcard arm because
     // both map to InternalError. A dedicated arm would be redundant with the
@@ -707,19 +858,122 @@ mod tests {
     use a2a_protocol_types::events::TaskStatusUpdateEvent;
     use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
-    #[test]
-    fn validate_url_rejects_empty() {
-        assert!(validate_url("").is_err());
+    // ── normalize_endpoint: what a card advertises → what tonic dials ──────
+
+    use GrpcBareAddressScheme as Scheme;
+
+    fn norm(endpoint: &str, policy: Scheme) -> ClientResult<String> {
+        normalize_endpoint(endpoint, policy)
     }
 
     #[test]
-    fn validate_url_rejects_non_http() {
-        assert!(validate_url("ftp://example.com").is_err());
+    fn normalize_rejects_empty() {
+        assert!(matches!(
+            norm("", Scheme::default()),
+            Err(ClientError::InvalidEndpoint(_))
+        ));
     }
 
     #[test]
-    fn validate_url_accepts_http() {
-        assert!(validate_url("http://localhost:50051").is_ok());
+    fn normalize_rejects_other_schemes_by_name() {
+        for bad in [
+            "ftp://example.com",
+            "ws://example.com:1",
+            "grpc://example.com:443",
+        ] {
+            let err = norm(bad, Scheme::default()).unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                matches!(err, ClientError::InvalidEndpoint(_)) && msg.contains(bad),
+                "{bad}: expected InvalidEndpoint naming the input, got {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_passes_http_and_https_urls_through_unchanged() {
+        for url in [
+            "http://localhost:50051",
+            "https://agent.example.com:443",
+            "http://10.0.0.5:9",
+        ] {
+            for policy in [Scheme::HttpsExceptLoopback, Scheme::Https, Scheme::Http] {
+                assert_eq!(
+                    norm(url, policy).unwrap(),
+                    url,
+                    "policy must not touch a URL"
+                );
+            }
+        }
+    }
+
+    /// The proto's example for a gRPC interface is `grpc.example.com:443`.
+    #[test]
+    fn normalize_bare_address_default_is_tls_for_a_remote_host() {
+        assert_eq!(
+            norm("grpc.example.com:443", Scheme::default()).unwrap(),
+            "https://grpc.example.com:443"
+        );
+        assert_eq!(
+            norm("grpc.example.com", Scheme::default()).unwrap(),
+            "https://grpc.example.com",
+            "a target without a port keeps the scheme's default port"
+        );
+    }
+
+    #[test]
+    fn normalize_bare_address_default_is_plaintext_for_loopback() {
+        for local in [
+            "localhost:50051",
+            "LOCALHOST:50051",
+            "127.0.0.1:9998",
+            "127.9.8.7:1",
+            "[::1]:50051",
+        ] {
+            let got = norm(local, Scheme::default()).unwrap();
+            assert_eq!(got, format!("http://{local}"), "{local} is loopback");
+        }
+        // Not loopback: link-local, private, unspecified.
+        for remote in [
+            "10.0.0.5:50051",
+            "[fe80::1]:50051",
+            "0.0.0.0:50051",
+            "127.example.com:1",
+        ] {
+            let got = norm(remote, Scheme::default()).unwrap();
+            assert_eq!(got, format!("https://{remote}"), "{remote} is not loopback");
+        }
+    }
+
+    #[test]
+    fn normalize_explicit_policies_override_the_loopback_rule() {
+        assert_eq!(
+            norm("localhost:1", Scheme::Https).unwrap(),
+            "https://localhost:1"
+        );
+        assert_eq!(
+            norm("agent:50051", Scheme::Http).unwrap(),
+            "http://agent:50051",
+            "a Compose service name on a private network"
+        );
+    }
+
+    #[test]
+    fn normalize_rejects_paths_and_userinfo() {
+        for bad in [
+            "agent:50051/a2a",
+            "user:pw@agent:50051",
+            "agent:50051?x=1",
+            "a b:1",
+        ] {
+            assert!(
+                matches!(
+                    norm(bad, Scheme::default()),
+                    Err(ClientError::InvalidEndpoint(_))
+                ),
+                "{bad} is not a gRPC target"
+            );
+        }
     }
 
     #[test]
@@ -737,6 +991,24 @@ mod tests {
         assert_eq!(cfg.timeout, Duration::from_secs(60));
         assert_eq!(cfg.max_message_size, 8 * 1024 * 1024);
         assert_eq!(cfg.stream_channel_capacity, 128);
+    }
+
+    /// Kills `with_tls_config -> Default::default()`: the TLS config must be
+    /// stored *and* the other fields already set must survive the call.
+    #[cfg(feature = "grpc-tls")]
+    #[test]
+    fn with_tls_config_stores_it_and_keeps_the_rest() {
+        let cfg = GrpcTransportConfig::default()
+            .with_timeout(Duration::from_secs(60))
+            .with_tls_config(
+                tonic::transport::ClientTlsConfig::new().domain_name("agent.internal"),
+            );
+        assert!(cfg.tls_config.is_some(), "the TLS config must be stored");
+        assert_eq!(
+            cfg.timeout,
+            Duration::from_secs(60),
+            "fields set before with_tls_config must not be reset"
+        );
     }
 
     #[test]

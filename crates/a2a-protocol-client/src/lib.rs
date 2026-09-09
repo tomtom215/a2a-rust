@@ -104,7 +104,7 @@
 #![allow(clippy::module_name_repetitions)]
 // See `crates/a2a-protocol-server/src/lib.rs` for the full rationale behind this
 // allow — in short, the lint lands in clippy 1.95 but its suggested
-// `Duration::from_hours` fix requires Rust 1.95, while our MSRV is 1.93.
+// `Duration::from_hours` fix requires Rust 1.95, while our MSRV is 1.88.
 #![allow(unknown_lints, clippy::duration_suboptimal_units)]
 
 // ── Modules ───────────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ pub mod transport;
 pub use auth::{AuthInterceptor, CredentialsStore, InMemoryCredentialsStore, SessionId};
 pub use builder::ClientBuilder;
 pub use client::A2aClient;
-pub use config::ClientConfig;
+pub use config::{ClientConfig, GrpcBareAddressScheme};
 pub use discovery::resolve_agent_card;
 pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};

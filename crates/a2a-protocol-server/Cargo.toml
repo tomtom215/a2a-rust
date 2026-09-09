@@ -40,6 +40,17 @@ websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`. Serves the canonical `lf.a2a.v1.A2AService`
 ## (protobuf-native, wire-compatible with the official Go/Python/Java A2A SDKs).
 grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-types", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
+## TLS on the server's own gRPC listener. `GrpcDispatcher::with_tls` takes a
+## `tonic::transport::ServerTlsConfig` — the server certificate and key, and
+## optionally a client CA for mutual TLS — re-exported from `dispatch::grpc`
+## together with `Identity` and `Certificate`, so no tonic dependency of your
+## own. Implies `grpc`. The listener then speaks TLS only: a plaintext client
+## is refused at the handshake. rustls with `ring`; if the process has no
+## default crypto provider installed when the listener is built, `ring` is
+## installed as the default (an application that wants `aws-lc-rs` installs
+## it first). Without this feature the listener is plaintext and TLS is
+## terminated in front of it.
+grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls"]
 ## Enable OpenTelemetry integration for native OTLP export of traces and metrics.
 otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
@@ -110,6 +121,16 @@ axum      = { version = "0.8", features = ["json", "query", "tokio"] }
 # For the live-TLS end-to-end push-sender test (gated on `tls-rustls`): generate
 # a throwaway CA + server cert and run a real rustls HTTPS server on loopback.
 rcgen = "0.14"
+# rustls with its default provider (`aws-lc-rs`) alongside the `ring` the
+# `grpc-tls` feature links, so this crate's own test binaries link two
+# providers — the only configuration in which `GrpcDispatcher::with_tls`'s
+# install-when-absent guard is observable (with one provider linked, rustls
+# installs it implicitly on first use). `tests/grpc_tls_provider.rs` depends
+# on this. This crate's own `--all-features` graph links `ring` alone (the
+# workspace's links both, through the client's rustls), so without this the
+# guard would be dead code in every in-crate test and its mutant would
+# survive, as the PR's incremental sweep reported on 2026-09-09.
+rustls = { version = ">=0.23, <0.24" }
 tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
 
 [[bench]]

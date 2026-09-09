@@ -7,8 +7,8 @@
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use a2a_protocol_types::error::A2aResult;
 
@@ -153,15 +153,15 @@ impl ServerInterceptor for AuditInterceptor {
                 ctx.caller_identity(),
             );
             // If we have a required token and caller doesn't match, reject.
-            if let Some(ref expected) = self.expected_token {
-                if ctx.caller_identity() != Some(expected.as_str()) {
-                    // For this demo we allow through but log a warning.
-                    println!(
-                        "  [{:>15}] INTERCEPTOR auth warning: expected token, got {:?}",
-                        self.agent_name,
-                        ctx.caller_identity(),
-                    );
-                }
+            if let Some(ref expected) = self.expected_token
+                && ctx.caller_identity() != Some(expected.as_str())
+            {
+                // For this demo we allow through but log a warning.
+                println!(
+                    "  [{:>15}] INTERCEPTOR auth warning: expected token, got {:?}",
+                    self.agent_name,
+                    ctx.caller_identity(),
+                );
             }
             Ok(())
         })

@@ -24,23 +24,23 @@ pub(super) fn caller_key(ctx: &CallContext, trusted_proxy_hops: usize) -> String
         return identity.to_owned();
     }
     let hops = trusted_proxy_hops;
-    if hops > 0 {
-        if let Some(xff) = ctx.http_headers().get("x-forwarded-for") {
-            let entries: Vec<&str> = xff
-                .split(',')
-                .map(str::trim)
-                .filter(|e| !e.is_empty())
-                .collect();
-            // With `hops` trusted proxies each appending its peer address,
-            // the client address is the `hops`-th entry from the right.
-            // Entries further left are client-supplied and untrusted.
-            if entries.len() >= hops {
-                return canonicalize_caller_ip(entries[entries.len() - hops]);
-            }
-            // Fewer entries than trusted hops: the request did not come
-            // through the expected proxy chain. Fall through to the
-            // shared anonymous bucket rather than trusting any entry.
+    if hops > 0
+        && let Some(xff) = ctx.http_headers().get("x-forwarded-for")
+    {
+        let entries: Vec<&str> = xff
+            .split(',')
+            .map(str::trim)
+            .filter(|e| !e.is_empty())
+            .collect();
+        // With `hops` trusted proxies each appending its peer address,
+        // the client address is the `hops`-th entry from the right.
+        // Entries further left are client-supplied and untrusted.
+        if entries.len() >= hops {
+            return canonicalize_caller_ip(entries[entries.len() - hops]);
         }
+        // Fewer entries than trusted hops: the request did not come
+        // through the expected proxy chain. Fall through to the
+        // shared anonymous bucket rather than trusting any entry.
     }
     "anonymous".to_string()
 }

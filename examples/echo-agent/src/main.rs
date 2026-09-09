@@ -44,12 +44,12 @@ mod serve;
 
 use std::sync::Arc;
 
-use a2a_protocol_client::{resolve_agent_card, ClientBuilder};
+use a2a_protocol_client::{ClientBuilder, resolve_agent_card};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_types::agent_card::AgentCapabilities;
 
-use a2a_example_harness::{counter, sweep, Binding, Endpoints, Matrix};
-use agent::{make_agent_card, EchoExecutor};
+use a2a_example_harness::{Binding, Endpoints, Matrix, counter, sweep};
+use agent::{EchoExecutor, make_agent_card};
 
 /// A webhook sink so push configs point somewhere real.
 ///

@@ -34,8 +34,8 @@
 //! # }
 //! ```
 
-use sqlx::postgres::PgPool;
 use sqlx::Row;
+use sqlx::postgres::PgPool;
 
 /// A single schema migration.
 #[derive(Debug, Clone)]

@@ -569,10 +569,10 @@ pub async fn test_get_task_after_stream(ctx: &TestContext) -> TestResult {
         Ok(mut stream) => {
             let mut task_id = None;
             while let Some(event) = stream.next().await {
-                if let Ok(a2a_protocol_types::events::StreamResponse::StatusUpdate(ev)) = &event {
-                    if task_id.is_none() {
-                        task_id = Some(ev.task_id.0.clone());
-                    }
+                if let Ok(a2a_protocol_types::events::StreamResponse::StatusUpdate(ev)) = &event
+                    && task_id.is_none()
+                {
+                    task_id = Some(ev.task_id.0.clone());
                 }
             }
 

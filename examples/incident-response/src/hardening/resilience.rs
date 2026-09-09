@@ -3,14 +3,14 @@
 
 //! Riding out a transient failure — without double-executing real work.
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use a2a_protocol_client::{ClientBuilder, RetryPolicy};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 
-use super::{bind, plain_card, serve, Check};
+use super::{Check, bind, plain_card, serve};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 
@@ -164,7 +164,9 @@ pub(super) async fn client_retry() -> Check {
     {
         return Check::fail(
             LABEL,
-            format!("a client with no retry policy survived {FAULTS} injected 503s — the fault injector is not faulting, so the rest of this check would be vacuous"),
+            format!(
+                "a client with no retry policy survived {FAULTS} injected 503s — the fault injector is not faulting, so the rest of this check would be vacuous"
+            ),
         );
     }
 

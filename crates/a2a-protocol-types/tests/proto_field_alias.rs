@@ -36,8 +36,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{de::DeserializeOwned, Serialize};
-use serde_json::{json, Value};
+use serde::{Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
 
 /// The canonical schema, byte-identical to the specification copy — a
 /// property `proto_schema_sync.rs` enforces separately.
@@ -115,16 +115,16 @@ fn parse_messages(src: &str) -> BTreeMap<String, Vec<String>> {
         let line = &src[offset..line_end];
         let trimmed = line.trim_start();
 
-        if let Some(rest) = trimmed.strip_prefix("message ") {
-            if let Some(brace_rel) = trimmed.find('{') {
-                let name = rest[..brace_rel - "message ".len()].trim();
-                if !name.is_empty() && !name.contains(char::is_whitespace) {
-                    let brace = offset + (line.len() - trimmed.len()) + brace_rel;
-                    let end = match_brace(bytes, brace);
-                    messages.insert(name.to_owned(), parse_fields(&src[brace + 1..end]));
-                    offset = end + 1;
-                    continue;
-                }
+        if let Some(rest) = trimmed.strip_prefix("message ")
+            && let Some(brace_rel) = trimmed.find('{')
+        {
+            let name = rest[..brace_rel - "message ".len()].trim();
+            if !name.is_empty() && !name.contains(char::is_whitespace) {
+                let brace = offset + (line.len() - trimmed.len()) + brace_rel;
+                let end = match_brace(bytes, brace);
+                messages.insert(name.to_owned(), parse_fields(&src[brace + 1..end]));
+                offset = end + 1;
+                continue;
             }
         }
         offset = line_end + 1;
@@ -263,16 +263,16 @@ impl Registry {
         // indistinguishable from the field being dropped. Absent the field,
         // `T` must either fail to parse (required) or parse to something
         // *different* (optional).
-        if let Ok(bare) = serde_json::from_value::<T>(without.clone()) {
-            if to_value(&bare) == camel_out {
-                self.fail(
-                    message,
-                    field,
-                    "sample value is indistinguishable from the field being absent — \
+        if let Ok(bare) = serde_json::from_value::<T>(without.clone())
+            && to_value(&bare) == camel_out
+        {
+            self.fail(
+                message,
+                field,
+                "sample value is indistinguishable from the field being absent — \
                      this case would pass even with no alias at all; pick a non-default sample",
-                );
-                return;
-            }
+            );
+            return;
         }
 
         // Acceptance is symmetric; *emission* is not. Spec §5.5 requires

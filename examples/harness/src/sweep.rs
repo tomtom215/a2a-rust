@@ -86,13 +86,13 @@ pub async fn sweep(
     let mut failures = Vec::new();
 
     macro_rules! ok {
-        ($method:expr, $detail:expr) => {{
+        ($method:expr_2021, $detail:expr_2021) => {{
             matrix.record($method, binding);
             lines.push(format!("  [ok]   {:<34} {}", $method.wire_name(), $detail));
         }};
     }
     macro_rules! bad {
-        ($method:expr, $err:expr) => {{
+        ($method:expr_2021, $err:expr_2021) => {{
             let msg = format!("{} over {}: {}", $method.wire_name(), binding.label(), $err);
             lines.push(format!("  [FAIL] {:<34} {}", $method.wire_name(), $err));
             failures.push(msg);

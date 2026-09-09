@@ -1,0 +1,168 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+#
+# Nightly interoperability run in the A2A project's own Integration Testing
+# Kit (a2aproject/a2a-itk), with this repository mounted as the system under
+# test and every peer SDK line in the ITK's matrix.yaml — the official
+# Python, JavaScript, Go and Java SDKs, and a2a-rs — as the counterparties,
+# over JSON-RPC, gRPC and HTTP+JSON, for send-message, push-notification and
+# resubscribe behaviour.
+#
+# This is the run that the in-repo ITK self-test (itk.yml) can only
+# approximate: the harness, the scenarios and the peers are all upstream's,
+# so nothing here is graded by the project it grades. The per-scenario
+# results land in itk_rust.json, which is uploaded to a rolling
+# `nightly-metrics` prerelease so anyone — the ITK dashboard included — can
+# read the current pass rate without a checkout. Same mechanism and asset
+# name as the other SDK repositories.
+#
+# Deliberately not a PR gate: the run takes the better part of an hour, and
+# a red night is a bug report to read in the morning, not a merge blocker.
+
+name: ITK nightly
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 02:00 UTC daily, before the ITK dashboard redeploys
+  workflow_dispatch:
+  # A change to the harness or the agent validates itself on its own PR;
+  # nothing else triggers the hour-long run. The rolling-release upload
+  # below is main-only, so these runs only produce the artifact.
+  pull_request:
+    paths:
+      - '.github/workflows/itk-nightly.yml'
+      - 'itk/run_itk.sh'
+      - 'itk/Cargo.toml'
+      - 'itk/Cargo.lock'
+      - 'itk/build.rs'
+      - 'itk/src/**'
+      - 'itk/protos/**'
+
+# Uploading to the rolling prerelease needs write access to releases.
+permissions:
+  contents: write
+
+concurrency:
+  group: itk-nightly
+  cancel-in-progress: true
+
+env:
+  A2A_ITK_REVISION: main
+
+jobs:
+  nightly:
+    name: ITK nightly (current vs every peer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # The shared driver in itk/run_itk.sh sources this checkout; placing it
+      # here skips the clone the shim would otherwise perform.
+      - name: Check out a2a-itk
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: a2aproject/a2a-itk
+          ref: ${{ env.A2A_ITK_REVISION }}
+          path: itk/a2a-itk
+
+      # The agent compiles its own copy of the instruction schema; a silent
+      # drift from upstream would grade this SDK against the wrong contract.
+      - name: Verify the vendored instruction.proto matches upstream
+        # The vendored copy carries a two-line provenance header above the
+        # `syntax` line; from that line on it must be byte-identical.
+        run: diff -u itk/a2a-itk/protos/instruction.proto <(sed -n '/^syntax /,$p' itk/protos/instruction.proto)
+        shell: bash
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      # Built here rather than by the driver so the image layers are cached
+      # between nights; the driver skips its own build when ITK_SKIP_BUILD=1.
+      - name: Build the itk_service image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: itk/a2a-itk
+          tags: itk_service:latest
+          load: true
+          cache-from: type=gha,scope=itk_service
+          cache-to: type=gha,mode=max,scope=itk_service
+
+      # Peer SDK checkouts and their build outputs, which the launcher keeps
+      # under ~/.cache/a2a-itk-launcher on the host.
+      - name: Cache peer SDK checkouts and build outputs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/a2a-itk-launcher
+          key: itk-launcher-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            itk-launcher-${{ runner.os }}-
+
+      - name: Run the shared nightly scenario set
+        run: bash run_itk.sh
+        working-directory: itk
+        env:
+          ITK_NIGHTLY_RUN: "True"
+          ITK_SKIP_BUILD: "1"
+          # DEBUG mounts itk/logs and keeps every agent's and the service's
+          # log; raw_results.json alone says only which pair failed, not why.
+          ITK_LOG_LEVEL: DEBUG
+
+      # The shared driver exits 0 for a nightly with failures — the run is
+      # metrics, not a gate — so the failures are put where a reader looks:
+      # the job summary, and the artifact. This step never fails the job.
+      - name: Summarise the scenario results
+        if: always() && hashFiles('itk/raw_results.json') != ''
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          r = json.load(open("itk/raw_results.json"))
+          res = r["results"]
+          # A dict keyed by scenario name whose values carry no name field.
+          items = (
+              [dict(v, name=v.get("name", k)) for k, v in res.items()]
+              if isinstance(res, dict)
+              else res
+          )
+          passed = [i for i in items if i.get("passed")]
+          failed = [i for i in items if not i.get("passed")]
+          print(f"## ITK nightly: {len(passed)} / {len(items)} scenarios passed")
+          print()
+          if failed:
+              print("| Failed scenario | Peers | Protocols | Behaviour |")
+              print("|---|---|---|---|")
+              for i in failed:
+                  print(f"| {i['name']} | {', '.join(i.get('sdks', []))} | {', '.join(i.get('protocols', []))} | {i.get('behavior')} |")
+          else:
+              print("All scenarios passed.")
+          PY
+          cat "$GITHUB_STEP_SUMMARY"
+
+      # Kept even when the run fails: a red night's evidence is the point.
+      - name: Upload raw results and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: itk-nightly-results
+          path: |
+            itk/raw_results.json
+            itk/itk_rust.json
+            itk/logs/
+          if-no-files-found: ignore
+
+      # Only from main: a workflow_dispatch on a branch validates the run
+      # (the artifact above carries its results) without moving the rolling
+      # tag onto an unmerged commit.
+      - name: Publish itk_rust.json to the rolling nightly-metrics prerelease
+        if: always() && github.ref == 'refs/heads/main' && hashFiles('itk/itk_rust.json') != ''
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        with:
+          tag_name: nightly-metrics
+          name: ITK nightly metrics
+          body: >-
+            Rolling, machine-readable results of the nightly a2a-itk run
+            (this repository as the system under test against every peer SDK
+            in the ITK matrix). Replaced on every run; see
+            .github/workflows/itk-nightly.yml.
+          prerelease: true
+          files: itk/itk_rust.json

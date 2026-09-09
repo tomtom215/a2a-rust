@@ -3,7 +3,7 @@
 
 //! Tests for the interfaces an agent card advertises.
 
-use super::{interfaces, Endpoints};
+use super::{Endpoints, interfaces};
 use crate::Binding;
 
 fn endpoints() -> Endpoints {

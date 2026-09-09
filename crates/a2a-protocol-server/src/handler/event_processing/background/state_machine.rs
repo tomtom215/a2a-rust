@@ -127,102 +127,101 @@ pub(super) async fn process_event_bg(
         }
         Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
             // Validate artifact has at least one part per A2A spec (unless appending).
-            if update.append != Some(true) {
-                if let Err(_e) = update.artifact.validate() {
-                    trace_warn!(
-                        task_id = %task_id,
-                        "dropping artifact with empty parts (spec violation)"
-                    );
-                    return;
-                }
+            if update.append != Some(true)
+                && let Err(_e) = update.artifact.validate()
+            {
+                trace_warn!(
+                    task_id = %task_id,
+                    "dropping artifact with empty parts (spec violation)"
+                );
+                return;
             }
             let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
 
             // When append=true, merge parts and metadata into the existing
             // artifact with the same ID (Python #735, Java #615).
-            if update.append == Some(true) {
-                if let Some((index, existing)) = artifacts
+            if update.append == Some(true)
+                && let Some((index, existing)) = artifacts
                     .iter_mut()
                     .enumerate()
                     .find(|(_, a)| a.id == update.artifact.id)
-                {
-                    // Bound cumulative per-artifact growth: an unbounded stream
-                    // of append updates would otherwise grow one artifact's
-                    // parts (and the re-serialized task record) without limit.
-                    if crate::handler::event_processing::append_exceeds_parts_cap(
-                        existing.parts.len(),
-                        update.artifact.parts.len(),
-                        limits.max_parts_per_artifact,
-                    ) {
-                        trace_warn!(
-                            task_id = %task_id,
-                            "dropping artifact append: would exceed max_parts_per_artifact"
-                        );
-                        return;
-                    }
-                    // Snapshot the artifact state before mutation so we can
-                    // revert if the store save fails (data consistency).
-                    let prev_parts_len = existing.parts.len();
-                    let prev_metadata = existing.metadata.clone();
-
-                    let appended = update.artifact.parts.len();
-                    existing.parts.extend(update.artifact.parts.iter().cloned());
-                    // Merge metadata: new values override existing keys.
-                    if let Some(ref new_meta) = update.artifact.metadata {
-                        let meta = existing.metadata.get_or_insert_with(|| {
-                            serde_json::Value::Object(serde_json::Map::new())
-                        });
-                        if let (Some(existing_map), Some(new_map)) =
-                            (meta.as_object_mut(), new_meta.as_object())
-                        {
-                            for (k, v) in new_map {
-                                existing_map.insert(k.clone(), v.clone());
-                            }
-                        }
-                    }
-                    if let Err(e) = task_store
-                        .save_artifact_delta(
-                            last_task,
-                            ArtifactDelta::AppendedParts {
-                                index,
-                                count: appended,
-                            },
-                        )
-                        .await
-                    {
-                        trace_error!(
-                            task_id = %task_id,
-                            error = %e,
-                            "background processor: task store save failed for artifact append; reverting"
-                        );
-                        metrics.on_persistence_error(
-                            persistence_operation::ARTIFACT_APPEND,
-                            e.metric_label(),
-                        );
-                        // Revert: truncate parts back and restore metadata.
-                        if let Some(existing) = last_task
-                            .artifacts
-                            .as_mut()
-                            .and_then(|arts| arts.iter_mut().find(|a| a.id == update.artifact.id))
-                        {
-                            existing.parts.truncate(prev_parts_len);
-                            existing.metadata = prev_metadata;
-                        }
-                        return;
-                    }
-                    deliver_push_bg(
-                        task_id,
-                        stream_resp,
-                        push_config_store,
-                        push_sender,
-                        limits,
-                        metrics,
-                    )
-                    .await;
+            {
+                // Bound cumulative per-artifact growth: an unbounded stream
+                // of append updates would otherwise grow one artifact's
+                // parts (and the re-serialized task record) without limit.
+                if crate::handler::event_processing::append_exceeds_parts_cap(
+                    existing.parts.len(),
+                    update.artifact.parts.len(),
+                    limits.max_parts_per_artifact,
+                ) {
+                    trace_warn!(
+                        task_id = %task_id,
+                        "dropping artifact append: would exceed max_parts_per_artifact"
+                    );
                     return;
                 }
-                // Artifact ID not found — fall through to push as new artifact.
+                // Snapshot the artifact state before mutation so we can
+                // revert if the store save fails (data consistency).
+                let prev_parts_len = existing.parts.len();
+                let prev_metadata = existing.metadata.clone();
+
+                let appended = update.artifact.parts.len();
+                existing.parts.extend(update.artifact.parts.iter().cloned());
+                // Merge metadata: new values override existing keys.
+                if let Some(ref new_meta) = update.artifact.metadata {
+                    let meta = existing
+                        .metadata
+                        .get_or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                    if let (Some(existing_map), Some(new_map)) =
+                        (meta.as_object_mut(), new_meta.as_object())
+                    {
+                        for (k, v) in new_map {
+                            existing_map.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+                if let Err(e) = task_store
+                    .save_artifact_delta(
+                        last_task,
+                        ArtifactDelta::AppendedParts {
+                            index,
+                            count: appended,
+                        },
+                    )
+                    .await
+                {
+                    trace_error!(
+                        task_id = %task_id,
+                        error = %e,
+                        "background processor: task store save failed for artifact append; reverting"
+                    );
+                    metrics.on_persistence_error(
+                        persistence_operation::ARTIFACT_APPEND,
+                        e.metric_label(),
+                    );
+                    // Revert: truncate parts back and restore metadata.
+                    if let Some(existing) = last_task
+                        .artifacts
+                        .as_mut()
+                        .and_then(|arts| arts.iter_mut().find(|a| a.id == update.artifact.id))
+                    {
+                        existing.parts.truncate(prev_parts_len);
+                        existing.metadata = prev_metadata;
+                    }
+                    return;
+                }
+                deliver_push_bg(
+                    task_id,
+                    stream_resp,
+                    push_config_store,
+                    push_sender,
+                    limits,
+                    metrics,
+                )
+                .await;
+                return;
             }
+            // Artifact ID not found — fall through to push as new artifact.
 
             if artifacts.len() >= limits.max_artifacts_per_task {
                 trace_warn!(
@@ -1031,6 +1030,35 @@ mod tests {
             "append must accumulate parts; a count of 1 means the update \
              replaced instead of merging: {arts:?}"
         );
+    }
+
+    /// An append carrying artifact metadata merges it into the existing
+    /// artifact's metadata: an updated key takes the new value, an
+    /// unmentioned key survives, a new key is added.
+    #[tokio::test]
+    async fn append_merges_metadata_keys() {
+        let limits = default_limits();
+        let mut task = make_task("t1", TaskState::Working);
+
+        let mut first = artifact_event("t1", "art-1", vec![Part::text("one")], None);
+        let mut second = artifact_event("t1", "art-1", vec![Part::text("two")], Some(true));
+        for (event, meta) in [
+            (&mut first, serde_json::json!({"lang": "en", "keep": true})),
+            (&mut second, serde_json::json!({"lang": "fr", "added": 1})),
+        ] {
+            if let StreamResponse::ArtifactUpdate(update) = event {
+                update.artifact.metadata = Some(meta);
+            }
+        }
+        run(first, &mut task, &limits).await;
+        run(second, &mut task, &limits).await;
+
+        let arts = task.artifacts.as_ref().expect("artifacts");
+        assert_eq!(arts.len(), 1);
+        let meta = arts[0].metadata.as_ref().expect("metadata merged");
+        assert_eq!(meta["lang"], "fr");
+        assert_eq!(meta["keep"], true);
+        assert_eq!(meta["added"], 1);
     }
 
     /// Kills `replace == with !=` in the merge target lookup,

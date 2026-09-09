@@ -653,10 +653,10 @@ agent_executor!(BlockingExecutor, |_ctx, _queue| async {
 
 async fn poll_task_state(handler: &RequestHandler, task_id: &TaskId, want: TaskState) -> TaskState {
     for _ in 0..200 {
-        if let Ok(Some(t)) = handler.task_store.get(task_id).await {
-            if t.status.state == want {
-                return want;
-            }
+        if let Ok(Some(t)) = handler.task_store.get(task_id).await
+            && t.status.state == want
+        {
+            return want;
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
@@ -782,16 +782,43 @@ async fn stream_cap_exhaustion_returns_overloaded_without_orphan() {
     );
 }
 
+/// An exactly-empty `contextId` is proto3's unset value (the JSON bindings
+/// are `ProtoJSON`, and a2a-java's JSON-RPC client prints it that way), so it
+/// is accepted and a context is generated. Until 2026-09-09 this returned
+/// `InvalidParams`, which failed every JSON-RPC pairing with the Java SDK in
+/// the official ITK.
 #[tokio::test]
-async fn empty_context_id_returns_invalid_params() {
+async fn empty_context_id_is_unset_and_a_context_is_generated() {
     let handler = make_handler();
     let params = make_params(Some(""));
+
+    let result = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("an empty contextId is the unset value, not an invalid id");
+    let task = match result {
+        SendMessageResult::Response(SendMessageResponse::Task(task)) => task,
+        other => panic!("expected a task, got {other:?}"),
+    };
+    assert!(
+        !task.context_id.0.is_empty(),
+        "a context must be generated for an unset one"
+    );
+}
+
+/// Whitespace-only is not a value any `ProtoJSON` printer produces for
+/// "unset", so it stays a client error: the normalisation is exactly-empty
+/// and nothing wider.
+#[tokio::test]
+async fn whitespace_only_context_id_returns_invalid_params() {
+    let handler = make_handler();
+    let params = make_params(Some("   "));
 
     let result = handler.on_send_message(params, false, None).await;
 
     assert!(
         matches!(result, Err(ServerError::InvalidParams(_))),
-        "expected InvalidParams for empty context_id"
+        "expected InvalidParams for whitespace-only context_id, got {result:?}"
     );
 }
 
@@ -834,19 +861,38 @@ async fn too_long_task_id_returns_invalid_params() {
     );
 }
 
+/// An exactly-empty `taskId` is likewise unset: a new task is started rather
+/// than the request rejected.
 #[tokio::test]
-async fn empty_task_id_returns_invalid_params() {
-    // Covers line 114: empty task_id validation.
+async fn empty_task_id_is_unset_and_a_new_task_starts() {
     use a2a_protocol_types::task::TaskId;
 
     let handler = make_handler();
     let mut params = make_params(None);
     params.message.task_id = Some(TaskId::new(""));
 
+    let result = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("an empty taskId is the unset value, not an invalid id");
+    assert!(
+        matches!(result, SendMessageResult::Response(SendMessageResponse::Task(ref task)) if !task.id.0.is_empty()),
+        "expected a fresh task, got {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn whitespace_only_task_id_returns_invalid_params() {
+    use a2a_protocol_types::task::TaskId;
+
+    let handler = make_handler();
+    let mut params = make_params(None);
+    params.message.task_id = Some(TaskId::new(" \t"));
+
     let result = handler.on_send_message(params, false, None).await;
     assert!(
         matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("empty")),
-        "expected InvalidParams for empty task_id"
+        "expected InvalidParams for whitespace-only task_id, got {result:?}"
     );
 }
 

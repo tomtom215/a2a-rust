@@ -10,7 +10,195 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An empty `contextId` or `taskId` on an incoming message is "unset", not
+  an invalid id.** The A2A JSON bindings are ProtoJSON, and both fields are
+  proto3 strings without presence, so `""` is the unset value. a2a-java's
+  JSON-RPC transport prints every field (`alwaysPrintFieldsWithNoPresence`)
+  and therefore sends `"contextId": ""` for none; this server answered
+  `InvalidParams: context_id must not be empty or whitespace-only`, which
+  failed every JSON-RPC pairing with the Java SDK in the first official ITK
+  nightly (4 of 60 scenarios; the same peer passed over gRPC and HTTP+JSON,
+  whose printers omit defaults). The server now maps an exactly-empty id to
+  absent before validation and generates the context as for an omitted one;
+  whitespace-only ids are still rejected, because no printer produces them
+  for "unset". Regression test in
+  `a2a-protocol-server/tests/proto3_empty_ids.rs` posts the raw JSON-RPC
+  body the Java client sends.
+
 ### Changed
+
+- **MSRV lowered from 1.93 to 1.88; edition 2024.** The workspace had
+  never needed anything newer than 1.88 — `cargo check --workspace
+  --all-features --all-targets` on 1.88.0 passed without a code change —
+  and 1.88 is the oldest toolchain the dependency tree (`time`,
+  `serde_with`, `darling`) declares support for. Lowering an MSRV is not a
+  breaking change. With it the crates move to edition 2024 and the
+  MSRV-aware resolver (`resolver = "3"`), so `cargo update` keeps
+  dependency versions compatible with the declared floor. `cargo fix
+  --edition` made the mechanical changes (`$x:expr_2021` in macro
+  matchers, `ref` patterns, `unsafe { set_var }` in the four build scripts,
+  now carrying `SAFETY` notes); the edition's tail-expression drop-order
+  change was reviewed at every site the migration lint reported and the
+  full suite passes on both 1.88.0 and stable. Two places that seeded the
+  environment for a reader — the OTLP pipeline test and the
+  incident-response observability check — now pass the endpoint explicitly
+  through the new `init_otlp_pipeline_with_endpoint`, and the rig example
+  builds its client from explicit settings, so no library or example code
+  writes the process environment. CI's clippy matrix now runs on stable
+  only: 0.1.88's `similar_names` and `cognitive_complexity` verdicts differ
+  from current clippy's, and lint verdicts are a property of the linter,
+  not of the compatibility floor; the Test matrix keeps its 1.88 leg on all
+  three platforms.
+
+### Added
+
+- **`grpc-tls` feature on `a2a-protocol-server`: TLS on the gRPC listener
+  itself.** Until now the dispatcher was plaintext-only and the book said to
+  terminate TLS in a proxy or mesh, which the official Go, Python and Java
+  SDKs also expect — but a2a-rs serves gRPC TLS in-process, and a deployment
+  without a mesh had no in-tree answer. `GrpcDispatcher::with_tls` takes a
+  `tonic::transport::ServerTlsConfig` (re-exported from `dispatch::grpc`
+  with `Identity` and `Certificate`, so no tonic dependency of your own):
+  the server certificate and key, and for mutual TLS a client CA, with
+  `client_auth_optional` to admit clients that present none. Every `serve*`
+  method applies it; `into_service` still hands the bare service to a server
+  the caller configures. The listener then speaks TLS only — a plaintext
+  client is refused at the handshake, with no fallback. tonic builds its
+  acceptor from the process-level rustls provider and panics when none is
+  installed and both `ring` and `aws-lc-rs` are linked (this workspace's
+  `--all-features` build is such a binary); the dispatcher installs `ring`
+  when nothing is installed, which is what a single-provider build does
+  implicitly, and never overrides an installed one. A rejected
+  configuration (a key that does not match its certificate) is an
+  `std::io::Error` from the `serve*` call, not a panic. The SDK crate's
+  `grpc-tls` now enables both sides. Proved end to end in
+  `a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs` against the client's
+  `grpc-tls` transport with `rcgen` certificates: pinned-CA round trip,
+  plaintext refusal, mutual TLS admitting a CA-signed client and rejecting
+  one without a certificate, optional client auth, and the
+  certificate/key-mismatch error; `grpc_server_tls_provider_e2e.rs`, in its
+  own binary because the provider is process state, proves the
+  install-when-absent path.
+- **`init_otlp_pipeline_with_endpoint`** (`a2a_protocol_server::otel`):
+  `init_otlp_pipeline` with the collector endpoint given explicitly instead
+  of read from `OTEL_EXPORTER_OTLP_ENDPOINT`.
+- **Coverage measures the PostgreSQL stores instead of failing to exclude
+  them.** The coverage workflow now runs the same live-database suites the
+  `test-postgres` CI job runs (`postgres_store_tests`, `multi_replica`)
+  under instrumentation against a `postgres:16` service and merges the
+  profiles into one report. The seven PostgreSQL files had sat at 0-8% on
+  the dashboard — 42% of every uncovered line in the repository — behind an
+  ignore list that never took effect (`codecov.yml` keeps the history).
+  Measured locally the same way: the PostgreSQL files at 94.55% in
+  aggregate. Two live-database tests were added for the paths the
+  isolation tests did not reach — the tenant-aware task store's
+  `context_id`, `status` and `statusTimestampAfter` filters, cursor
+  pagination, delete and count, and the push-config stores' list, delete
+  and count — proving along the way that a delete under the wrong tenant is
+  a no-op that leaves the other tenant's row intact.
+- **Nightly run in the official ITK, with published metrics.** Until now
+  the only cross-SDK evidence graded by someone other than this project was
+  the official TCK; the upstream Integration Testing Kit job was
+  dispatch-only and had never completed. `itk/run_itk.sh` now adopts the
+  shim every SDK repository carries over a2a-itk's shared driver, and
+  `.github/workflows/itk-nightly.yml` runs the shared nightly set at 02:00
+  UTC with this repository mounted as the system under test against every
+  peer in the ITK's `matrix.yaml` — official Python, JavaScript, Go, Java,
+  and a2a-rs — over JSON-RPC, gRPC and HTTP+JSON. Results are uploaded as a
+  run artifact and, from `main`, to the rolling `nightly-metrics`
+  prerelease the ITK dashboard reads, the same mechanism the other SDKs
+  use. The workflow also diffs the vendored `instruction.proto` against
+  upstream so the agent cannot silently drift from the schema it is graded
+  against. Not a PR gate. The first run reported 56 / 60 and found the
+  empty-`contextId` bug fixed under "Fixed" above; the run on the final
+  commit of this change reports 60 / 60.
+- **Feature-matrix CI job.** `cargo hack clippy --each-feature` now lints
+  every feature of each published crate on its own, plus no-default-features
+  and all-features (39 combinations, 8 minutes warm), so a `#[cfg(feature)]`
+  gap is caught before a downstream build enables an unusual subset. The
+  hand-picked combination list stayed as it was; this is the exhaustive
+  complement. `scripts/preflight.sh` picks the gate up automatically.
+- **Dependabot** (`.github/dependabot.yml`): weekly grouped minor/patch bumps
+  for the workspace, the SLIMRPC binding's own lockfile and GitHub Actions;
+  majors arrive as separate pull requests. Its commits are exempt from the
+  DCO gate by exact author identity — a version bump carries no authored
+  content to certify, and the review and merge stay human — recorded in
+  `PROVENANCE.md` §3.2.
+- **`STABILITY.md`**: the API stability policy — what "breaking" means for
+  these crates, deprecate-then-remove with a one-minor window, at most one
+  breaking minor per month, `### Breaking Changes` changelog headings,
+  `cargo-semver-checks` as the proof, the MSRV rule, what is and is not
+  covered, and the criteria for `1.0`. Linked from the README's Stability
+  section.
+- **crates.io Trusted Publishing.** The release workflow's publish job now
+  exchanges its GitHub OIDC token for a short-lived crates.io token
+  (`rust-lang/crates-io-auth-action`), falling back to the environment
+  secret with a warning until every crate has a trusted publisher
+  configured, and failing if neither credential exists. The one-time
+  crates.io setup is in `RELEASING.md`.
+
+- **`grpc-tls` feature (client, forwarded by the SDK crate): gRPC over TLS.**
+  `grpc` alone never had a TLS connector — tonic's is a feature, and none was
+  enabled — so an `https://` gRPC endpoint opened a plaintext HTTP/2 stream to a
+  TLS port and failed on the handshake with an error that read like a network
+  fault. With `grpc-tls`, `https://` endpoints are verified against the same
+  bundled Mozilla roots (`webpki-roots`, ring) the HTTP transports use, or
+  against a `tonic::transport::ClientTlsConfig` supplied through the new
+  `GrpcTransportConfig::with_tls_config` for a private CA or client
+  certificate. Without the feature an `https://` endpoint is now refused up
+  front with a message naming it, instead of failing after the fact. No new
+  crate versions: tonic's `tls-ring` and `tls-webpki-roots` resolve to the
+  `rustls 0.23` / `tokio-rustls 0.26` / `webpki-roots 1.0` already in the
+  tree. Proved in `a2a-protocol-sdk/tests/grpc_address_e2e.rs` against a
+  tonic TLS listener presenting an `rcgen` certificate: a pinned CA round-trips
+  over a bare target and over `https://`, the bundled roots reject that CA,
+  and TLS against a plaintext listener does not fall back. The connector
+  never touches the process-level rustls crypto provider: tonic under
+  `tls-ring` uses an installed default or else `ring` explicitly, so a binary
+  that links both `ring` and `aws-lc-rs` (this workspace's `--all-features`
+  build is one) gets a connection error, not a panic, and an application that
+  wants `aws-lc-rs` installs it itself — `grpc_tls_provider_e2e.rs`, in its
+  own test binary because the provider is process state, proves both. The
+  feature does not pull in `tls-rustls`; a gRPC-only client gets no
+  hyper-rustls. The tonic types a caller needs (`ClientTlsConfig`,
+  `Certificate`, `Identity`) are re-exported from `transport::grpc`, so no
+  direct tonic dependency is required, and `ClientBuilder::with_grpc_tls_config`
+  carries a pinned CA or client certificate through `from_card(..).build_grpc()`.
+  A bare target that the policy dialled with TLS and that refused the
+  handshake fails with the policy named and `GrpcBareAddressScheme::Http`
+  suggested, since a plaintext peer on a private network is the usual cause.
+- **`GrpcBareAddressScheme`** (`a2a-protocol-client`), with
+  `GrpcTransportConfig::with_bare_address_scheme` and
+  `ClientBuilder::with_grpc_bare_address_scheme`: how a bare `host:port` gRPC
+  target is dialled. `HttpsExceptLoopback` (default) uses TLS for every host
+  except `localhost` / `127.0.0.0/8` / `::1`; `Https` and `Http` force one
+  scheme. See the fix below for why a bare target is accepted at all.
+- **§7.6.4 conformance test** (`auth_required_state_tests.rs`). Upstream
+  added *In-Task Authorization Scope* on 2026-07-30 (`6550d34`): the
+  `TASK_STATE_AUTH_REQUIRED` transition "MUST NOT" be treated as authorization
+  for anything. This server has always satisfied that by construction — the
+  interceptor chain runs before every method and nothing reads the task's
+  state for an authentication decision — and the test pins it: a continuation
+  of an `AUTH_REQUIRED` task with no credential is refused on the
+  interceptor's terms, runs no executor, and leaves the task's history
+  untouched, while the same continuation with the credential is processed.
+  `SPEC_COMPLIANCE.md` carries the row.
+
+### Changed
+
+- **`GrpcTransportConfig` is `#[non_exhaustive]`** (breaking for code that
+  built it as a struct literal; `GrpcTransportConfig::default()` plus the
+  `with_*` setters covers every field). It gained `bare_address_scheme` and,
+  under `grpc-tls`, `tls_config`, and a public-fields config struct that grows
+  by a field on every such change would break its callers each time. No code
+  in this repository, its examples or its bindings constructed it literally.
+- **`GrpcTransport::connect` rejects a non-target address by name.** An
+  address with a scheme other than `http`/`https`, a path, a query, or userinfo
+  is an `InvalidEndpoint` that quotes the input (`grpc://…`, `agent:50051/a2a`,
+  `user:pw@agent:50051`), where before anything without `http(s)://` was
+  refused with the same one-line message.
 
 - **Official TCK: two more `a2a-tck` checks baselined, same stale-specification
   cause as the first two.** The nightly of 2026-09-01
@@ -76,6 +264,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **gRPC client: a card's `host:port` gRPC address is accepted.** Since A2A
+  `cfc9d34` (2026-07-21) the proto's `AgentInterface.url` comment says a gRPC
+  interface's address "should be in the format `hostname:port`", example
+  `grpc.example.com:443` — a gRPC target, which carries no scheme. That is what
+  every official SDK's agent advertises, and what this repository's own
+  conformance SUT advertises (`grpc.insecure_channel("http://…")` fails on the
+  Python side). `GrpcTransport::connect` refused anything that did not start
+  with `http://` or `https://`, so `ClientBuilder::from_card(..).build_grpc()`
+  could not reach a spec-format gRPC agent at all; the examples worked only
+  because each one prepends `http://` by hand. A bare target is now normalised
+  per `GrpcBareAddressScheme` — the same decision the official SDKs leave to
+  a channel factory (Python) or make as plaintext-unless-configured (the A2A
+  project's own Rust SDK); this one defaults to TLS and exempts loopback, and
+  says so. Proved in `grpc_address_e2e.rs`: `from_card` on `127.0.0.1:{port}`
+  and on `localhost:{port}` builds and talks; the `Http` policy dials a
+  non-loopback spelling in plaintext; without `grpc-tls` a non-loopback target
+  is refused with the feature named rather than downgraded to plaintext.
+- **Examples and the ITK agent advertise spec-format gRPC targets.** The
+  `agent-team` example's gRPC card said `http://127.0.0.1:{port}`, and its
+  gRPC tests bypassed the card with a hand-built transport; the ITK current
+  agent's card said the same and its peer client prepended `http://` to any
+  scheme-less address it met — a workaround for the limitation fixed above,
+  written on the assumption that scheme-less was the peer's quirk rather than
+  the specification's form. Both cards now advertise `127.0.0.1:{port}`, test
+  56 reaches the gRPC agent through `ClientBuilder::from_card(..).build_grpc()`,
+  and the ITK workaround is gone; the in-repo ITK traversal self-test (one-hop
+  GRPC, two-hop JSONRPC→GRPC) passes against the rebuilt agent.
+- **Book: `tls-rustls` was documented as off by default for the client and
+  the SDK crate.** It has been on by default since the feature existed
+  (`default = ["tls-rustls"]` in both manifests; the client's own README said
+  so). `reference/configuration.md` now agrees with the manifests.
+- **Client: the Agent Card's `tenant` now rides on every request, not only on
+  `SendMessage`.** A2A §8.3.2 rule 4 says a client **MUST** "set the `tenant`
+  field in every request message to exactly the value declared in the selected
+  `AgentInterface` entry". `ClientBuilder::from_card` has carried that value in
+  `ClientConfig::tenant` since the multi-tenancy work, and the book said it was
+  "applied to all requests" — but only `send_message` read it. `GetTask`,
+  `ListTasks`, `CancelTask`, `SubscribeToTask`, the four push-config methods
+  and `GetExtendedAgentCard` all went out with no tenant, so a task created
+  under `acme` was then looked up under the default partition and answered
+  `TaskNotFound`, and against a server that resolves the tenant itself every
+  follow-up call was a cross-tenant request. Found by diffing the client's
+  eleven methods against the rule while re-reading the specification at
+  upstream `main` (`f63dbb4`), not by a report. A per-request `tenant` still
+  wins over the client default, and an absent tenant still leaves the field
+  out (the parameterless `GetExtendedAgentCard` stays `null` on the wire).
+  Proved three ways: a capturing transport asserts the field on each of the
+  nine methods by name; `tests/tenant_round_trip_tests.rs` drives a client
+  built from a tenant-bearing card through send → get → list → cancel →
+  push-config create/get/list/delete against a real server with
+  tenant-partitioned stores over both JSON-RPC and REST; and the same test's
+  control shows the task is `TaskNotFound` to an untenanted client, so the
+  suite cannot pass against a server that ignores tenants.
+- **REST binding: the tenant travels as the `/{tenant}/…` path prefix on the
+  client, and the server accepts every place the proto lets it arrive.**
+  `a2a.proto` binds each method twice — a primary pattern with no tenant in
+  the path and an `additional_bindings` pattern with it as the leading segment.
+  The reference SDKs' REST clients send the prefix form (`a2a-python` 1.1.4
+  `_get_path`), and the reference server reads *only* that form. Ours did the
+  reverse on the client (tenant as `?tenant=` on GET/DELETE and in the body on
+  POST — the primary-pattern transcoding of §11.5) while the server, like the
+  reference, read only the prefix, so the two halves of this SDK disagreed
+  with each other and every tenanted GET lost its tenant. Now the client emits
+  `/{tenant}/tasks/{id}` (percent-encoding the segment, keeping the field in
+  POST bodies exactly as the Python SDK does), and the server honours, in
+  this order, the path prefix, then `?tenant=` on GET/DELETE, then the body
+  on POST — including `POST /tasks/{id}:cancel`, whose `body: "*"` was never
+  read at all, dropping `metadata` too. The path tenant is percent-decoded
+  before it names a partition and is injected into POST bodies that omit it
+  (`/acme/message:send` with no `tenant` in the body lands in `acme`). Seven
+  server tests in `tests/rest_tenant_binding_tests.rs` pin each arrival path
+  and the precedence, each with a `TaskNotFound` control.
 - **Official TCK: one failure no longer reports as three.** The
   minimal-capability and required-extension runs inherited the default
   `success()` condition, so a red gate skipped them — while their own gates

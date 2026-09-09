@@ -77,6 +77,12 @@ the production depth it lacks without importing ~89,000 lines of unreviewed,
 un-signed-off code into a Linux Foundation project, and without spending the
 maintainer capacity a repository merge would consume.
 
+**Update 2026-09-09.** Seven of the rows where this document found `a2a-rs`
+ahead on engineering practice were worked in one branch; §9 records what
+changed, what was measured, and what is still pending. The governance rows —
+home, listing, contributor count, adoption — are unchanged and unchangeable
+by code.
+
 ---
 
 ## 2. Corrections to the earlier v0.6.0 comparison
@@ -114,10 +120,10 @@ surface, not in scope.
 | Stars / forks / open issues | 55 / 14 / 6 | 19 / 0 / 0 |
 | crates.io downloads (recent 90d) | `a2a-lf` 23.2k, `a2a-client-lf` 18.0k, `a2a-server-lf` 14.9k | `a2a-protocol-sdk` 526, `-server` 616, `-client` 589 |
 | Latest release | `a2a-server-lf` 0.4.1 (2026-07-16) | v0.7.0 (2026-07-24; 14 downloads) |
-| Rust edition / MSRV | 2024 / **1.85** | 2021 / **1.93** |
+| Rust edition / MSRV | 2024 / **1.85** | ~~2021 / **1.93**~~ **2024 / 1.88** since 2026-09-09 (§9) |
 | Hand-written source LOC (approx.) | ~17k (+5k generated protobuf) | ~61k src (incl. inline tests) + 28k in `tests/` |
 | Tests passing locally | 454 | 2,086 (default) / 2,519 (all features) |
-| Codecov, last upload | 96.56%, 2026-07-27 | **93.62%, 2026-07-31** (current; see 4.4 for why local reads 95.75%) |
+| Codecov, last upload | 96.56%, 2026-07-27; **96.62%, 2026-09-07** | **93.62%, 2026-07-31** (current; see 4.4 for why local reads 95.75%); **96.62%, 2026-09-09** on `f65aeb8` (§9) |
 | Security contact | `security@agntcy.org` | Individual maintainer |
 
 Two figures deserve caveats. **crates.io download counts** include CI, mirror,
@@ -296,6 +302,7 @@ between the two projects and the one most worth closing.
 | | `a2a-rs` | `a2a-rust` |
 |---|---|---|
 | TLS (rustls) | ✅ | ✅ |
+| TLS on the gRPC listener itself | ✅ (`tonic-tls`) | ~~❌ — terminate in a proxy or mesh~~ ✅ since 2026-09-09 (`grpc-tls` on the server crate, §9) |
 | Client-side auth (credentials store, interceptor) | ✅ | ✅ (+ OAuth2 client-credentials, OIDC discovery) |
 | **Server-side auth primitives** | ❌ — `CallInterceptor` hook + a `User` struct; the only shipped interceptor is `LoggingInterceptor`. Token validation is entirely the integrator's job. | ✅ — `ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`, `JwtAuthInterceptor` (HS256/RS256/ES256, static or remote JWKS, OIDC discovery) |
 | Rate limiting | ❌ | ✅ (`RateLimitInterceptor`, trusted-proxy-hop aware, bounded bucket map) |
@@ -353,8 +360,8 @@ the field."
 | `cargo-semver-checks` on release | ❌ | ✅ |
 | Hostile-peer / adversarial client tests | ❌ | ✅ |
 | CI OS matrix | Linux, macOS, Windows | Linux, macOS, Windows |
-| MSRV leg in CI | ❌ | ✅ (1.93) |
-| Feature-combination linting | ✅ (`cargo hack --each-feature`) | ✅ (explicit per-feature legs) |
+| MSRV leg in CI | ❌ | ✅ (~~1.93~~ 1.88 since 2026-09-09) |
+| Feature-combination linting | ✅ (`cargo hack --each-feature`) | ✅ (explicit per-feature legs; plus `cargo hack --each-feature` over every published crate since 2026-09-09, §9) |
 
 **On the Codecov discrepancy — resolved, and re-measured 2026-08-06.** The
 staleness described in the 27 July revision of this section is fixed. Codecov's
@@ -500,6 +507,14 @@ and 06-12, recorded no scenarios):
   Artifact Registry that returns 401 to unauthenticated clients. The
   in-repo deterministic self-test that substitutes for it is a reasonable
   proxy, but it is a proxy, and it is graded by the same project it grades.
+  **Update 2026-09-09:** the private-registry blocker no longer exists
+  upstream (a2a-itk `bd4e926`, 2026-09-02, ships a shared driver every SDK
+  repository sources), and `a2a-rust` now carries the same shim
+  (`itk/run_itk.sh`) and a nightly workflow (`itk-nightly.yml`) that runs the
+  shared nightly set with this repository as the SUT against every peer in
+  the ITK matrix — including `a2a-rs` — and publishes `itk_rust.json` to a
+  rolling `nightly-metrics` prerelease from `main`. See §9 for the state of
+  its first run.
 
 **Assessment:** `a2a-rust`'s interop testing is broader and its gRPC wire
 evidence is stronger. `a2a-rs`'s is the one that actually counts, because it
@@ -609,15 +624,27 @@ the more expensive option pre-agreed if the ruling requires it.
   backends, three auth interceptors, OTel, WebSocket. For a foundation with
   one Rust maintainer, that ratio is a liability, not an asset — every feature
   in the table above is also a feature someone has to keep working.
-- **MSRV 1.93** is effectively current stable. `a2a-rs` at 1.85 is reachable
+- ~~**MSRV 1.93** is effectively current stable. `a2a-rs` at 1.85 is reachable
   from distribution toolchains and enterprise pins. For an official SDK the
   lower MSRV is the correct choice, and adopting `a2a-rust` code wholesale
-  would drag the floor up.
+  would drag the floor up.~~ **Retired 2026-09-09:** lowered to **1.88** with
+  edition 2024 — the workspace had never needed newer, and 1.88 is the oldest
+  toolchain the dependency tree declares. Three minors above `a2a-rs`, not
+  eight; going to 1.85 would mean holding `time`/`serde_with`/`darling`
+  back, which `ROADMAP.md` records as the remaining trade-off.
 - **Rapid breaking change.** v0.7.0 alone lists five explicitly labelled
   breaking changes,
   including removing v0.3-style method aliases and rejecting requests without
-  `A2A-Version`. Correct decisions, but the API is not settled.
-- The stale Codecov pipeline (4.4).
+  `A2A-Version`. Correct decisions, but the API is not settled. Between
+  v0.7.0 and v0.11.0 (2026-08-30) four minors shipped in five weeks with
+  nine breaking changes. **Since 2026-09-09** that cadence is governed by
+  [`STABILITY.md`](../STABILITY.md): deprecate for a minor before removing,
+  at most one breaking minor per month, `### Breaking Changes` headings, and
+  `cargo-semver-checks` on every PR. A policy is not a track record; the
+  next two releases are the evidence.
+- ~~The stale Codecov pipeline (4.4).~~ **Retired 2026-09-09:** the pipeline
+  had been current since 2026-08-06; what remained wrong was the number, and
+  §9 records how it was fixed.
 
 ### 5.3 `a2a-rs` — risks
 
@@ -836,6 +863,29 @@ underway.
    with a public one? It currently prevents any non-AGNTCY implementation from
    running the official harness in public CI — a barrier to exactly the kind
    of external contribution this consolidation is meant to encourage.
+
+---
+
+## 9. Changes made on 2026-09-09, against the rows above
+
+Each item names the row it answers, what was done, how it was verified, and
+what is still open. Verified figures are from commands run that day on the
+`claude/happy-thompson-emts1e` branch, final state commit `f65aeb8`, on
+which CI (20 jobs), the coverage upload and the ITK nightly are all green.
+
+| Row (section) | Was | Now | Verification | Open |
+|---|---|---|---|---|
+| MSRV / edition (§3, §5.2) | 1.93 / 2021 | **1.88 / 2024**, `resolver = "3"` | `cargo test --workspace --all-features` on rustc 1.88.0: 3128 passed, 0 failed; stable clippy and docs clean; SLIMRPC binding and ITK agent migrated too | 1.85 would need `time`, `serde_with`, `darling` held back (`ROADMAP.md`) |
+| Feature-combination CI (§4.4) | hand-picked legs | plus `cargo hack clippy --each-feature` over the four published crates (39 combinations) as a CI gate and a preflight gate | 480 s warm locally; it caught an `unnecessary_wraps` under `grpc`-without-`grpc-tls` the same day | — |
+| Interop evidence (§4.5) | ITK job dispatch-only, never completed | `itk/run_itk.sh` over a2a-itk's shared driver; `itk-nightly.yml` runs the shared nightly set against every matrix peer and publishes `itk_rust.json` to `nightly-metrics` from `main` | Three full branch runs. First: **56 / 60** — every JSON-RPC pairing with `java_v10`, both directions. Debug logs showed Java parsing an `InvalidParams` from this server: a2a-java's JSON-RPC client prints proto3 no-presence fields, so an unset `contextId` arrives as `""`, which this server rejected; its REST client omits it, hence the asymmetry. Fixed in `84ac9ea` (`""` is the ProtoJSON unset value; whitespace-only still rejected). Final run on `f65aeb8`: **60 / 60** against Python, JavaScript, Go, Java and a2a-rs over JSON-RPC, gRPC and HTTP+JSON | The published `nightly-metrics` asset appears after the first run from `main`. For comparison, `a2a-rs`'s own last readable figure was 168 / 180 (§4.5, 2026-07-23) with a standing HTTP+JSON resubscribe failure; its current rate is not retrievable from here |
+| Release engineering (§4.6) | manual tag flow, no dependency automation, long-lived crates.io token | tag flow kept (it validates more than `release-plz` does); **Dependabot** weekly grouped for Cargo, the SLIMRPC lockfile and Actions; **crates.io Trusted Publishing** (OIDC) with a documented secret fallback until each crate is configured | Workflow YAML validated; the OIDC exchange itself runs only on a real release | Crate owner must add the trusted publisher on crates.io for each of the four crates (`RELEASING.md`) |
+| gRPC server TLS (§4.1) | plaintext listener, "terminate in a proxy" | `grpc-tls` on `a2a-protocol-server`: `GrpcDispatcher::with_tls(ServerTlsConfig)`, mutual TLS, plaintext refused, provider installed when absent | 6 end-to-end tests plus a separate-binary provider test, under `grpc-tls` and `--all-features`; feature matrix clean | — |
+| Coverage (§3, §4.4) | 94.09% on Codecov with the PostgreSQL files at 0-8% behind an ignore that never applied | the coverage job runs the live-database suites under instrumentation; tests added for the tenant-store list/pagination/delete/count paths, three gRPC client methods, the push sender's auth-header edge cases, WebSocket header validation and artifact metadata merging | Codecov on `f65aeb8`: **96.62%** (35,782 of 37,033 lines); local `cargo-llvm-cov` with `tck` ignored read 95.85% on the same tree, its denominator being wider | **Level with `a2a-rs`'s 96.62% (Codecov, 2026-09-07), not above it.** The badge on `main` updates when this branch merges |
+| API stability (§5.2) | "minor versions may include breaking changes" | [`STABILITY.md`](../STABILITY.md): deprecation window, monthly batching, labelled headings, `cargo-semver-checks` gate, `1.0` criteria | Policy text; `cargo-semver-checks` already ran in CI | A policy is not a track record: the next two releases are the evidence |
+
+What this section does not claim: none of it changes the governance rows in
+§3, and the ITK and Codecov results are the two numbers this day's work
+produced but had not yet read back.
 
 ---
 

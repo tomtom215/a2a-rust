@@ -30,8 +30,8 @@ use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
-use a2a_protocol_server::dispatch::cors::CorsConfig;
 use a2a_protocol_server::dispatch::RestDispatcher;
+use a2a_protocol_server::dispatch::cors::CorsConfig;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::push::PushSender;
 use a2a_protocol_server::request_context::RequestContext;

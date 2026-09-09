@@ -18,7 +18,7 @@
 #
 # The caller must set CI_YML before sourcing.
 
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|package|dogfood|example-surface|slimrpc-binding)$'
+GATE_JOBS='^(fmt|clippy|features|test|test-postgres|doc|package|dogfood|example-surface|slimrpc-binding)$'
 
 NON_GATE_JOBS='^(nightly|deny|semver)$'
 

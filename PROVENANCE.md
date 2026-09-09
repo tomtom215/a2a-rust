@@ -299,6 +299,16 @@ CI enforces this too: the DCO workflow rejects any commit whose author email is
 a known non-human assistant identity, so the old pattern cannot silently
 return.
 
+**One exemption: Dependabot.** Since 2026-09-09 the repository accepts
+automated dependency updates (`.github/dependabot.yml`), and the DCO workflow
+passes commits authored by Dependabot's exact identity
+(`49699333+dependabot[bot]@users.noreply.github.com`) without a sign-off. A
+version bump in `Cargo.toml`, `Cargo.lock` or a workflow's `uses:` line
+carries no authored content for a person to certify; the human act is the
+review and merge, which branch protection still requires. The exemption is by
+exact address rather than by the `[bot]` suffix, so no other automation
+inherits it, and the assistant identities above remain rejected.
+
 ### 3.3 Disclosure is maintained
 
 Section 1 of this document is kept current. Material changes in how the project

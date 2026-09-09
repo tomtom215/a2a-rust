@@ -56,6 +56,14 @@ jobs:
           # this list if the project adopts another assistant.
           NON_HUMAN='^(noreply@anthropic\.com|.*\[bot\]@users\.noreply\.github\.com)$'
 
+          # Dependabot's commits are exempt from both checks. A version bump
+          # in Cargo.toml, Cargo.lock or a workflow's `uses:` line carries no
+          # authored content to certify; the human act is the review and
+          # merge, which the branch protection still requires. The exemption
+          # is by exact author identity, not by the [bot] suffix, so no other
+          # automation inherits it. See PROVENANCE.md section 3.2.
+          DEPENDABOT='^49699333\+dependabot\[bot\]@users\.noreply\.github\.com$'
+
           failed=0
 
           # %H<TAB>%ae<TAB>%an — one line per non-merge commit in the range.
@@ -64,6 +72,11 @@ jobs:
             [ -n "$sha" ] || continue
 
             subject=$(git log -1 --format='%s' "$sha")
+
+            if printf '%s' "$author_email" | grep -Eq "$DEPENDABOT"; then
+              echo "  ok  ${sha:0:8}  dependabot (exempt: dependency bump, see PROVENANCE.md 3.2)"
+              continue
+            fi
 
             # ── 1. Authorship ────────────────────────────────────────────────
             if printf '%s' "$author_email" | grep -Eqi "$NON_HUMAN"; then

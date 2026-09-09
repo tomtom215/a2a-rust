@@ -5,9 +5,9 @@
 
 #![cfg(feature = "sqlite")]
 
-use a2a_protocol_server::store::tenant::TenantContext;
 use a2a_protocol_server::store::TaskStore;
 use a2a_protocol_server::store::TenantAwareSqliteTaskStore;
+use a2a_protocol_server::store::tenant::TenantContext;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 

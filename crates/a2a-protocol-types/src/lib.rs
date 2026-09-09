@@ -141,7 +141,7 @@ pub use security::{
     NamedSecuritySchemes, OAuth2SecurityScheme, OAuthFlows, OpenIdConnectSecurityScheme,
     PasswordOAuthFlow, SecurityRequirement, SecurityScheme, StringList,
 };
-pub use serde_helpers::{deser_from_slice, deser_from_str, SerBuffer};
+pub use serde_helpers::{SerBuffer, deser_from_slice, deser_from_str};
 pub use task::{ContextId, Task, TaskId, TaskState, TaskStatus, TaskVersion};
 
 // ── Utilities ─────────────────────────────────────────────────────────────
@@ -282,6 +282,9 @@ pub fn parse_iso8601_to_unix_millis(s: &str) -> Option<i64> {
 
 /// Converts a civil date to days since 1970-01-01 (Howard Hinnant's
 /// `days_from_civil`, the inverse of [`secs_to_ymd_hms`]'s date step).
+// `doy` / `doe` are the algorithm's own names (day of year, day of era);
+// clippy 0.1.88 flags them as similar, later versions do not.
+#[allow(clippy::similar_names)]
 const fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
@@ -293,6 +296,7 @@ const fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 }
 
 /// Converts UNIX epoch seconds to (year, month, day, hour, minute, second).
+#[allow(clippy::similar_names)] // `doy` / `doe`, as in `days_from_civil`
 const fn secs_to_ymd_hms(epoch: u64) -> (u64, u64, u64, u64, u64, u64) {
     let secs_per_day = 86400_u64;
     let mut days = epoch / secs_per_day;

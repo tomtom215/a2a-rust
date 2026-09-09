@@ -27,10 +27,10 @@ fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
     if cfg.return_immediately.is_none() && config.return_immediately {
         cfg.return_immediately = Some(true);
     }
-    if cfg.history_length.is_none() {
-        if let Some(hl) = config.history_length {
-            cfg.history_length = Some(hl);
-        }
+    if cfg.history_length.is_none()
+        && let Some(hl) = config.history_length
+    {
+        cfg.history_length = Some(hl);
     }
     if cfg.accepted_output_modes.is_empty() && !config.accepted_output_modes.is_empty() {
         cfg.accepted_output_modes
@@ -300,10 +300,10 @@ mod tests {
         use std::future::Future;
         use std::pin::Pin;
 
+        use crate::ClientBuilder;
         use crate::error::{ClientError, ClientResult};
         use crate::streaming::EventStream;
         use crate::transport::Transport;
-        use crate::ClientBuilder;
 
         /// A mock transport that captures the streaming request and returns an error
         /// (since we can't easily construct an `EventStream` in a unit test).
@@ -356,14 +356,14 @@ mod tests {
         use std::collections::HashMap;
         use std::future::Future;
         use std::pin::Pin;
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
+        use crate::ClientBuilder;
         use crate::error::ClientResult;
         use crate::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
         use crate::streaming::EventStream;
         use crate::transport::Transport;
-        use crate::ClientBuilder;
 
         struct StreamingOkTransport;
 

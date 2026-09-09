@@ -184,12 +184,18 @@ nothing is added to the pile while that decision waits.
 ### `unsafe` blocks
 
 Library crates are under `#![forbid(unsafe_code)]`; introducing an `unsafe`
-block in one of the published crates is a compile error. The only
-`unsafe`-bearing file in the repository is the counting global allocator in
+block in one of the published crates is a compile error. The
+`unsafe`-bearing files in the repository are the counting global allocator in
 `benches/benches/memory_overhead.rs`, where the `GlobalAlloc` trait cannot
-be implemented safely. Any `unsafe` block in that file must be preceded by
-a `// SAFETY:` comment explaining exactly why the invariants required by
-the unsafe operation are upheld.
+be implemented safely, and the four `build.rs` scripts that point
+`prost-build` at the vendored `protoc` through `std::env::set_var`, which
+edition 2024 made `unsafe` because a concurrent reader of the environment
+is a data race. Any `unsafe` block in those files must be preceded by a
+`// SAFETY:` comment explaining exactly why the invariants required by the
+unsafe operation are upheld. Do not add `set_var` anywhere else: pass the
+value explicitly instead (`init_otlp_pipeline_with_endpoint` exists for
+exactly that reason), and construct clients from explicit settings rather
+than by seeding the environment they read.
 
 ---
 

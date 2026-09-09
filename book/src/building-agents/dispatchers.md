@@ -255,7 +255,9 @@ alive.
 
 ## GrpcDispatcher
 
-Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature flag:
+Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature flag
+(plaintext listener) or `grpc-tls` to serve TLS on the listener itself with
+`with_tls` — see [Transport Layers](../concepts/transport-layers.md#serving-tls):
 
 ```toml
 a2a-protocol-server = { version = "0.8", features = ["grpc"] }

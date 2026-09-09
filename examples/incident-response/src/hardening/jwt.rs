@@ -40,7 +40,7 @@ pub(super) async fn jwt_auth() -> Check {
     use a2a_protocol_server::auth::jwt::{JwtAuthInterceptor, JwtValidator};
     use a2a_protocol_server::builder::RequestHandlerBuilder;
 
-    use super::{bind, is_refusal, plain_card, serve, HeaderInterceptor};
+    use super::{HeaderInterceptor, bind, is_refusal, plain_card, serve};
     use crate::agents::LogSearchExecutor;
     use crate::{send_params, user_message};
 
@@ -125,7 +125,7 @@ pub(super) async fn jwt_auth() -> Check {
                 return Check::fail(
                     LABEL,
                     format!("the {case} call never reached the server: {e}"),
-                )
+                );
             }
             Err(_) => {}
         }
@@ -210,7 +210,7 @@ struct EcKey {
 #[cfg(feature = "auth-jwt")]
 impl EcKey {
     fn generate() -> Result<Self, String> {
-        use ring::signature::{EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_FIXED_SIGNING};
+        use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair};
 
         let rng = ring::rand::SystemRandom::new();
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &rng)

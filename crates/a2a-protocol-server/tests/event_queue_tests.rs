@@ -15,8 +15,8 @@ use a2a_protocol_server::streaming::event_queue::{
     new_in_memory_queue, new_in_memory_queue_with_capacity, new_in_memory_queue_with_options,
 };
 use a2a_protocol_server::streaming::{
-    EventQueueManager, EventQueueReader, EventQueueWriter, DEFAULT_MAX_EVENT_SIZE,
-    DEFAULT_QUEUE_CAPACITY,
+    DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY, EventQueueManager, EventQueueReader,
+    EventQueueWriter,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ async fn slow_reader_gets_explicit_lag_error() {
     );
     let last = events.last().unwrap();
     assert!(
-        matches!(last, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed),
+        matches!(last, StreamResponse::StatusUpdate(u) if u.status.state == TaskState::Completed),
         "last event should be Completed"
     );
 }

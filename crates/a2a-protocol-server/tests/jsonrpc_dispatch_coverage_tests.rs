@@ -20,8 +20,8 @@ use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
-use a2a_protocol_server::dispatch::cors::CorsConfig;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
+use a2a_protocol_server::dispatch::cors::CorsConfig;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
@@ -727,7 +727,10 @@ async fn delete_push_config_with_params() {
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
     // The params use 'pushNotificationConfigId' but the server expects 'id', so this is a parse error.
-    assert!(v.get("error").is_some(), "DeleteTaskPushNotificationConfig with mismatched param names should return error, got: {v}");
+    assert!(
+        v.get("error").is_some(),
+        "DeleteTaskPushNotificationConfig with mismatched param names should return error, got: {v}"
+    );
 }
 
 // ── GetExtendedAgentCard (line 356) ──────────────────────────────────────────

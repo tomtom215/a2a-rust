@@ -80,10 +80,10 @@ pub async fn connect(target: &str) -> Result<Client, String> {
 /// versionless ones the server is required to reject. A value a caller set for
 /// itself is left untouched.
 fn inject_a2a_version(mut req: Request<()>) -> Result<Request<()>, Status> {
-    if req.metadata().get("a2a-version").is_none() {
-        if let Ok(value) = tonic::metadata::MetadataValue::try_from("1.0") {
-            req.metadata_mut().insert("a2a-version", value);
-        }
+    if req.metadata().get("a2a-version").is_none()
+        && let Ok(value) = tonic::metadata::MetadataValue::try_from("1.0")
+    {
+        req.metadata_mut().insert("a2a-version", value);
     }
     Ok(req)
 }
@@ -328,7 +328,9 @@ pub async fn cancel_task(target: &str) -> Result<(), String> {
     {
         Ok(resp) => {
             let task = resp.into_inner();
-            let status = task.status.ok_or_else(|| "cancelled task has no status".to_string())?;
+            let status = task
+                .status
+                .ok_or_else(|| "cancelled task has no status".to_string())?;
             decode_state(status.state)?;
             Ok(())
         }
@@ -365,10 +367,10 @@ pub async fn streaming_send_message(target: &str) -> Result<(), String> {
         let item = item.map_err(|s| format!("stream error: {}: {}", s.code(), s.message()))?;
         frames += 1;
 
-        if let Some(state) = stream_state(&item) {
-            if is_terminal(decode_state(state)?) {
-                return Ok(());
-            }
+        if let Some(state) = stream_state(&item)
+            && is_terminal(decode_state(state)?)
+        {
+            return Ok(());
         }
     }
 

@@ -44,6 +44,7 @@ All features are pass-through to the constituent crates:
 | `tracing` | `a2a-protocol-client`, `a2a-protocol-server` |
 | `tls-rustls` | `a2a-protocol-client` |
 | `grpc` | `a2a-protocol-client`, `a2a-protocol-server` |
+| `grpc-tls` | `a2a-protocol-client` |
 | `otel` | `a2a-protocol-server` |
 | `websocket` | `a2a-protocol-client`, `a2a-protocol-server` |
 | `sqlite` | `a2a-protocol-server` |

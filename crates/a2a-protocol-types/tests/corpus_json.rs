@@ -164,7 +164,7 @@ fn corpus_text_part() {
 fn corpus_raw_part_with_metadata() {
     let json = r#"{"raw": "aGVsbG8=", "mediaType": "image/png", "filename": "test.png"}"#;
     let part: Part = serde_json::from_str(json).unwrap();
-    assert!(matches!(&part.content, PartContent::Raw(ref r) if r == "aGVsbG8="));
+    assert!(matches!(&part.content, PartContent::Raw(r) if r == "aGVsbG8="));
     assert_eq!(part.media_type.as_deref(), Some("image/png"));
     assert_eq!(part.filename.as_deref(), Some("test.png"));
     assert_roundtrip::<Part>(json);

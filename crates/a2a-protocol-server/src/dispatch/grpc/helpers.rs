@@ -17,10 +17,10 @@ use crate::error::ServerError;
 pub(super) fn extract_metadata(metadata: &tonic::metadata::MetadataMap) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for kv in metadata.iter() {
-        if let tonic::metadata::KeyAndValueRef::Ascii(key, value) = kv {
-            if let Ok(v) = value.to_str() {
-                map.insert(key.as_str().to_owned(), v.to_owned());
-            }
+        if let tonic::metadata::KeyAndValueRef::Ascii(key, value) = kv
+            && let Ok(v) = value.to_str()
+        {
+            map.insert(key.as_str().to_owned(), v.to_owned());
         }
     }
     map

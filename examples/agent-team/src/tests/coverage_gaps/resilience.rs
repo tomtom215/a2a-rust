@@ -38,8 +38,7 @@ pub async fn test_timeout_retryable(ctx: &TestContext) -> TestResult {
             start.elapsed().as_millis(),
             &format!(
                 "expected Timeout=retryable(true) and Transport=retryable(false), got timeout={}, transport={}",
-                timeout_retryable,
-                transport_retryable
+                timeout_retryable, transport_retryable
             ),
         )
     }
@@ -78,7 +77,9 @@ pub async fn test_concurrent_cancels(ctx: &TestContext) -> TestResult {
         TestResult::pass(
             "concurrent-cancels",
             start.elapsed().as_millis(),
-            &format!("all 10 cancel requests failed as expected ({ok_count} ok, {err_count} err, no panic)"),
+            &format!(
+                "all 10 cancel requests failed as expected ({ok_count} ok, {err_count} err, no panic)"
+            ),
         )
     } else {
         TestResult::pass(

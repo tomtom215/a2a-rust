@@ -61,6 +61,39 @@ impl Default for TlsConfig {
     }
 }
 
+// ── GrpcBareAddressScheme ─────────────────────────────────────────────────────
+
+/// How a gRPC interface address that carries no scheme is connected.
+///
+/// A2A's `AgentInterface.url` for the gRPC binding is a gRPC *target*
+/// (`"hostname:port"`, per the proto's field comment since A2A `cfc9d34`),
+/// not a URL: gRPC names carry no scheme, and whether the channel is TLS is
+/// a property of the channel, not of the name. The official SDKs leave that
+/// choice to the caller (Python: a `grpc_channel_factory`; the A2A project's
+/// own Rust SDK: plaintext unless a rustls config is supplied). This SDK makes
+/// the choice explicit and defaults to the safe one.
+///
+/// An address that already carries `http://` or `https://` is used as-is; this
+/// policy applies only to bare `host[:port]` addresses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum GrpcBareAddressScheme {
+    /// TLS (`https://`) for every host except loopback (`localhost`,
+    /// `127.0.0.0/8`, `::1`), which is plaintext. The default: the
+    /// specification requires TLS in production (§13), and a loopback
+    /// address is the one case where the peer is this machine — the same
+    /// rule browsers apply when they treat `localhost` as a secure context.
+    #[default]
+    HttpsExceptLoopback,
+    /// TLS for every bare address, loopback included.
+    Https,
+    /// Plaintext for every bare address. For private networks that terminate
+    /// TLS elsewhere (a service mesh sidecar, a Docker Compose network whose
+    /// agents advertise `agent:50051`), and for nothing reachable from the
+    /// public internet.
+    Http,
+}
+
 // ── ClientConfig ──────────────────────────────────────────────────────────────
 
 /// Configuration for an [`crate::A2aClient`] instance.

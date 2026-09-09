@@ -7,7 +7,7 @@
 //! Act 5 exercises what a deployment needs beyond the protocol. Each act
 //! asserts; none of them merely prints.
 
-use a2a_example_harness::{counter, sweep, Binding, Matrix};
+use a2a_example_harness::{Binding, Matrix, counter, sweep};
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::events::StreamResponse;
@@ -19,7 +19,7 @@ use crate::serving::{
     start_triage_agent, start_webhook_sink,
 };
 use crate::{
-    extract_text, hardening, incident_model, send_params, user_message, SURFACE_PAUSE_PREFIX,
+    SURFACE_PAUSE_PREFIX, extract_text, hardening, incident_model, send_params, user_message,
 };
 
 // ── Demo client ──────────────────────────────────────────────────────────────

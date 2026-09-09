@@ -13,8 +13,8 @@
 
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
 use a2a_protocol_server::streaming::EventQueueReader;
+use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
 use a2a_protocol_types::error::{A2aResult, ErrorCode};
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
@@ -23,7 +23,7 @@ use rig_core::completion::{
     CompletionError, CompletionModel, CompletionRequest, CompletionResponse,
 };
 
-use crate::{make_agent_card, RigAgentExecutor, SLOW_PREFIX};
+use crate::{RigAgentExecutor, SLOW_PREFIX, make_agent_card};
 
 // ── Two models, neither of which has a provider ──────────────────────────────
 

@@ -10,7 +10,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::handler::HandlerLimits;
 use a2a_protocol_types::task::ContextId;
 
-use super::{bind, is_refusal, plain_card, serve, Check};
+use super::{Check, bind, is_refusal, plain_card, serve};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 

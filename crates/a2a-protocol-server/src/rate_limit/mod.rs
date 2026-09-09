@@ -105,7 +105,7 @@ mod identity;
 mod shared;
 mod unwind_safety;
 mod window;
-pub use config::{RateLimitConfig, DEFAULT_MAX_BUCKETS};
+pub use config::{DEFAULT_MAX_BUCKETS, RateLimitConfig};
 #[cfg(feature = "postgres")]
 pub use shared::PostgresRateLimitCounter;
 pub use shared::RateLimitCounter;

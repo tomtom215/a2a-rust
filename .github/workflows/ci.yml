@@ -3,10 +3,12 @@
 #
 # Continuous integration — enforces all quality gates.
 #
-# Jobs: format, clippy, test (default + signing + tls-rustls + tracing + all-features),
-#       documentation, cargo-deny (license/advisory), package validation, nightly.
+# Jobs: format, clippy, feature matrix (cargo-hack, each feature of every
+#       published crate), test (default + signing + tls-rustls + tracing +
+#       all-features), documentation, cargo-deny (license/advisory), package
+#       validation, nightly.
 #
-# Matrix: stable + MSRV (1.93), multi-platform.
+# Matrix: stable + MSRV (1.88), multi-platform.
 
 name: CI
 
@@ -35,7 +37,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # No debuginfo in CI test builds: the 9-combination test matrix shares one
   # target dir per runner, and full debuginfo pushed linker memory/disk far
-  # enough that `ld` died with SIGBUS on the 1.93 leg after rig-core joined
+  # enough that `ld` died with SIGBUS on the MSRV leg after rig-core joined
   # the workspace. Tests don't need debuginfo to pass or to report failures.
   CARGO_PROFILE_DEV_DEBUG: 0
 
@@ -230,10 +232,19 @@ jobs:
     # each cut off mid-run — read exactly like a hang somewhere else entirely.
     # A red matrix should say which cells are red, not hide five to save a
     # runner-minute. Same reason fuzz, mutants and tck already set it.
+    #
+    # Stable only, since the MSRV moved to 1.88 (2026-09-09). The MSRV
+    # guarantee is that the crates compile and their tests pass on that
+    # toolchain, which the `test` matrix below checks on all three platforms.
+    # Lint verdicts are a property of the clippy that runs them: 0.1.88 fires
+    # `similar_names` on `uri`/`url` and `doy`/`doe`, and computes
+    # `cognitive_complexity` differently from 0.1.98, so linting on both
+    # would mean version-specific `#[allow]`s in library code for findings
+    # current clippy has withdrawn.
     strategy:
       fail-fast: false
       matrix:
-        rust: [stable, "1.93"]
+        rust: [stable]
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -271,6 +282,33 @@ jobs:
       - name: Clippy (all features)
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+  # ── Feature matrix ───────────────────────────────────────────────────────
+  #
+  # The clippy job above lints the combinations someone once thought of. This
+  # job lints every feature of every published crate on its own, plus
+  # no-default-features and all-features, so a `#[cfg(feature)]` gap is found
+  # here rather than by a downstream build that enables an unusual subset.
+  # The 2026-09-09 `grpc`-without-`grpc-tls` unused import is the shape of
+  # bug it exists for: the hand-picked list happened to catch that one only
+  # because workspace feature unification tripped over it.
+  #
+  # Linux only: feature gating is platform-independent, and the OS matrix
+  # already covers the platform-specific code paths.
+  features:
+    name: Feature matrix (cargo-hack, each feature)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install cargo-hack
+        run: cargo install cargo-hack --locked
+      - name: Clippy (each feature of every published crate)
+        run: cargo hack clippy -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk --all-targets --each-feature -- -D warnings
+
   # ── Tests ────────────────────────────────────────────────────────────────
   test:
     name: Test (${{ matrix.rust }}, ${{ matrix.os }})
@@ -283,7 +321,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: [stable, "1.93"]
+        rust: [stable, "1.88"]
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

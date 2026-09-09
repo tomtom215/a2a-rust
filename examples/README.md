@@ -88,7 +88,7 @@ let dispatcher = JsonRpcDispatcher::new(handler);
 
 ## Prerequisites
 
-- Rust 1.93+ (MSRV)
+- Rust 1.88+ (MSRV)
 - `protoc` only when using `--features grpc`
 - See each example's README for additional requirements
 

@@ -18,9 +18,9 @@ use a2a_protocol_types::JsonRpcResponse;
 
 use crate::error::{ClientError, ClientResult};
 
-use super::query::{build_query_string, encode_query_value};
-use super::routing::{route_for, HttpMethod, Route};
 use super::RestTransport;
+use super::query::{build_query_string, encode_query_value};
+use super::routing::{HttpMethod, Route, route_for};
 
 impl RestTransport {
     pub(super) fn build_uri(
@@ -30,6 +30,31 @@ impl RestTransport {
     ) -> ClientResult<(String, serde_json::Value)> {
         let mut path = route.path_template.to_owned();
         let mut remaining = params.clone();
+
+        // §8.3.2 rule 4 names the tenant on every request; on this binding
+        // it travels as the leading path segment of the proto's
+        // `additional_bindings` (`/{tenant}/tasks/{id}`), which is what the
+        // reference SDKs' REST clients send and what a server that mounts
+        // the tenant as a path variable can route. GET and DELETE carry no
+        // body, so the field leaves the query string too (§11.5 would have
+        // it there for the primary binding, and the path form supersedes
+        // it); POST bodies keep it, harmlessly, exactly as the Python SDK
+        // does — a server reading only the body still learns the tenant.
+        let tenant = remaining
+            .get("tenant")
+            .and_then(serde_json::Value::as_str)
+            .filter(|t| !t.is_empty())
+            .map(str::to_owned);
+        if let Some(tenant) = tenant {
+            // The query encoder is a superset of path-segment encoding (it also
+            // escapes `/`, `?`, `#`), so the segment cannot escape its slot.
+            path = format!("/{}{path}", encode_query_value(&tenant));
+            if route.http_method != HttpMethod::Post
+                && let Some(obj) = remaining.as_object_mut()
+            {
+                obj.remove("tenant");
+            }
+        }
 
         for &param in route.path_params {
             let value = remaining
@@ -263,7 +288,7 @@ mod tests {
     use http_body_util::Full;
     use hyper::body::Bytes;
 
-    use super::super::routing::{route_for, HttpMethod};
+    use super::super::routing::{HttpMethod, route_for};
     use super::super::*;
 
     #[test]
@@ -289,6 +314,97 @@ mod tests {
         let params = serde_json::json!({"pageSize": 10});
         let (uri, _remaining) = transport.build_uri(&route, &params).unwrap();
         assert!(uri.contains("pageSize=10"), "should have pageSize in query");
+    }
+
+    // ── Tenant as a path prefix (§8.3.2 rule 4; proto additional_bindings) ──
+
+    #[test]
+    fn build_uri_get_puts_tenant_in_path_and_drops_it_from_query() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let route = route_for("GetTask").unwrap();
+        let params = serde_json::json!({"tenant": "acme", "id": "task-1", "historyLength": 3});
+        let (uri, remaining) = transport.build_uri(&route, &params).unwrap();
+        assert!(
+            uri.starts_with("http://localhost:8080/acme/tasks/task-1"),
+            "tenant must lead the path, got: {uri}"
+        );
+        assert!(
+            uri.contains("historyLength=3"),
+            "other fields stay in the query: {uri}"
+        );
+        assert!(
+            !uri.contains("tenant="),
+            "tenant must not also be a query param: {uri}"
+        );
+        assert!(
+            remaining.get("tenant").is_none(),
+            "GET strips tenant from the remainder"
+        );
+    }
+
+    #[test]
+    fn build_uri_delete_puts_tenant_in_path_and_drops_it_from_query() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let route = route_for("DeleteTaskPushNotificationConfig").unwrap();
+        let params = serde_json::json!({"tenant": "acme", "taskId": "t1", "id": "c1"});
+        let (uri, _) = transport.build_uri(&route, &params).unwrap();
+        assert_eq!(
+            uri,
+            "http://localhost:8080/acme/tasks/t1/pushNotificationConfigs/c1"
+        );
+    }
+
+    /// POST keeps the field in the body as well — the Python SDK does the
+    /// same, and a server that reads only the body still learns the tenant.
+    #[test]
+    fn build_uri_post_puts_tenant_in_path_and_keeps_it_in_body() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let route = route_for("CancelTask").unwrap();
+        let params = serde_json::json!({"tenant": "acme", "id": "task-1"});
+        let (uri, body) = transport.build_uri(&route, &params).unwrap();
+        assert_eq!(uri, "http://localhost:8080/acme/tasks/task-1:cancel");
+        assert_eq!(body, serde_json::json!({"tenant": "acme"}));
+    }
+
+    /// A base URL with its own path keeps it: the tenant segment follows the
+    /// base, exactly where the reference SDK's `_get_path` puts it.
+    #[test]
+    fn build_uri_tenant_follows_base_path_prefix() {
+        let transport = RestTransport::new("http://localhost:8080/api/v1").unwrap();
+        let route = route_for("ListTasks").unwrap();
+        let params = serde_json::json!({"tenant": "acme"});
+        let (uri, _) = transport.build_uri(&route, &params).unwrap();
+        assert_eq!(uri, "http://localhost:8080/api/v1/acme/tasks");
+    }
+
+    /// The segment is a path variable, so a reserved character in the tenant
+    /// is percent-encoded rather than splitting the path.
+    #[test]
+    fn build_uri_percent_encodes_reserved_chars_in_tenant() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let route = route_for("GetTask").unwrap();
+        let params = serde_json::json!({"tenant": "acme/eu?x", "id": "task-1"});
+        let (uri, _) = transport.build_uri(&route, &params).unwrap();
+        assert_eq!(uri, "http://localhost:8080/acme%2Feu%3Fx/tasks/task-1");
+    }
+
+    /// "Omit the field if `tenant` is not set": an absent or empty tenant
+    /// leaves the primary path form untouched.
+    #[test]
+    fn build_uri_without_tenant_keeps_primary_path() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let route = route_for("GetTask").unwrap();
+        for params in [
+            serde_json::json!({"id": "task-1"}),
+            serde_json::json!({"tenant": "", "id": "task-1"}),
+            serde_json::json!({"tenant": null, "id": "task-1"}),
+        ] {
+            let (uri, _) = transport.build_uri(&route, &params).unwrap();
+            assert!(
+                uri.starts_with("http://localhost:8080/tasks/task-1"),
+                "no tenant prefix expected, got: {uri}"
+            );
+        }
     }
 
     // ── Mutation-killing tests for build_uri / build_request query param logic ──

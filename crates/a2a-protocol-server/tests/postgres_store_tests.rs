@@ -24,8 +24,8 @@
 use a2a_protocol_server::push::{
     PostgresPushConfigStore, PushConfigStore, TenantAwarePostgresPushConfigStore,
 };
-use a2a_protocol_server::store::tenant::TenantContext;
 use a2a_protocol_server::store::ArtifactDelta;
+use a2a_protocol_server::store::tenant::TenantContext;
 use a2a_protocol_server::store::{
     PgMigrationRunner, PostgresTaskStore, RetentionPolicy, TaskStore, TenantAwarePostgresTaskStore,
 };
@@ -484,11 +484,13 @@ async fn migrations_apply_in_order_and_are_idempotent() {
         .save(&make_task("t1", "ctx1"))
         .await
         .expect("save on migrated schema");
-    assert!(store
-        .get(&TaskId("t1".into()))
-        .await
-        .expect("get on migrated schema")
-        .is_some());
+    assert!(
+        store
+            .get(&TaskId("t1".into()))
+            .await
+            .expect("get on migrated schema")
+            .is_some()
+    );
 
     db.drop_db().await;
 }
@@ -565,11 +567,13 @@ async fn tenant_task_store_isolates_tenants() {
             .save(&make_task("t1", "ctx1"))
             .await
             .expect("save under acme");
-        assert!(store
-            .get(&TaskId("t1".into()))
-            .await
-            .expect("get under acme")
-            .is_some());
+        assert!(
+            store
+                .get(&TaskId("t1".into()))
+                .await
+                .expect("get under acme")
+                .is_some()
+        );
     })
     .await;
 
@@ -666,11 +670,13 @@ async fn tenant_push_store_isolates_tenants() {
             .await
             .expect("set under acme");
         let id = saved.id.expect("id auto-generated");
-        assert!(store
-            .get("task-1", &id)
-            .await
-            .expect("get under acme")
-            .is_some());
+        assert!(
+            store
+                .get("task-1", &id)
+                .await
+                .expect("get under acme")
+                .is_some()
+        );
         id
     })
     .await;
@@ -696,6 +702,194 @@ async fn tenant_push_store_isolates_tenants() {
     .await;
 
     db.drop_db().await;
+}
+
+/// The tenant-aware task store's list filters, cursor pagination, delete and
+/// count. Until 2026-09-09 the tenant store was exercised only through
+/// save/get/insert_if_absent and an unfiltered list, so these paths ran only
+/// in production.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_task_store_filters_paginates_deletes_and_counts() -> A2aResult<()> {
+    let db = TestDb::create("tenant_list").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant postgres store");
+
+    TenantContext::scope("acme", async {
+        for (id, ctx, ts) in [
+            ("a1", "ctx-a", "2026-01-01T00:00:00.000Z"),
+            ("a2", "ctx-a", "2026-01-02T00:00:00.000Z"),
+            ("b1", "ctx-b", "2026-01-03T00:00:00.000Z"),
+        ] {
+            store.save(&make_task_with_ts(id, ctx, ts)).await?;
+        }
+        let mut working = make_task_with_ts("b2", "ctx-b", "2026-01-04T00:00:00.000Z");
+        working.status.state = TaskState::Working;
+        store.save(&working).await?;
+
+        // context_id filter
+        let by_ctx = store
+            .list(&ListTasksParams {
+                context_id: Some("ctx-a".into()),
+                ..ListTasksParams::default()
+            })
+            .await?;
+        let mut ids: Vec<&str> = by_ctx.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["a1", "a2"], "context filter");
+
+        // status filter
+        let by_status = store
+            .list(&ListTasksParams {
+                status: Some(TaskState::Working),
+                ..ListTasksParams::default()
+            })
+            .await?;
+        let ids: Vec<&str> = by_status.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(ids, vec!["b2"], "status filter");
+
+        // statusTimestampAfter is strictly-after
+        let after = store
+            .list(&ListTasksParams {
+                status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
+                ..ListTasksParams::default()
+            })
+            .await?;
+        let mut ids: Vec<&str> = after.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["b1", "b2"], "strictly after the second timestamp");
+
+        // An unparseable value matches nothing rather than everything.
+        let garbage = store
+            .list(&ListTasksParams {
+                status_timestamp_after: Some("not-a-timestamp".into()),
+                ..ListTasksParams::default()
+            })
+            .await?;
+        assert!(
+            garbage.tasks.is_empty(),
+            "unparseable filter matches nothing"
+        );
+
+        // Cursor walk with page_size 3 over 4 tasks: two pages, every task once.
+        let mut seen = Vec::new();
+        let mut token: Option<String> = None;
+        let mut pages = 0;
+        loop {
+            let page = store
+                .list(&ListTasksParams {
+                    page_size: Some(3),
+                    page_token: token.clone(),
+                    ..ListTasksParams::default()
+                })
+                .await?;
+            pages += 1;
+            assert!(page.tasks.len() <= 3, "page size honoured");
+            seen.extend(page.tasks.iter().map(|t| t.id.0.clone()));
+            if page.next_page_token.is_empty() {
+                break;
+            }
+            token = Some(page.next_page_token.clone());
+        }
+        assert_eq!(pages, 2, "4 tasks at page_size 3 is two pages");
+        seen.sort_unstable();
+        assert_eq!(
+            seen,
+            vec!["a1", "a2", "b1", "b2"],
+            "every task exactly once"
+        );
+
+        // count and delete are tenant-scoped
+        assert_eq!(store.count().await?, 4);
+        store.delete(&TaskId("a1".into())).await?;
+        assert_eq!(store.count().await?, 3);
+        assert!(store.get(&TaskId("a1".into())).await?.is_none());
+        Ok::<(), a2a_protocol_types::error::A2aError>(())
+    })
+    .await?;
+
+    TenantContext::scope("globex", async {
+        assert_eq!(store.count().await?, 0, "another tenant counts nothing");
+        // Deleting a task the tenant cannot see is a no-op, not an error.
+        store.delete(&TaskId("a2".into())).await?;
+        Ok::<(), a2a_protocol_types::error::A2aError>(())
+    })
+    .await?;
+
+    TenantContext::scope("acme", async {
+        assert!(
+            store.get(&TaskId("a2".into())).await?.is_some(),
+            "globex's delete must not reach acme's task"
+        );
+        Ok::<(), a2a_protocol_types::error::A2aError>(())
+    })
+    .await?;
+
+    db.drop_db().await;
+    Ok(())
+}
+
+/// The tenant-aware push-config store's list, delete and count, and the plain
+/// store's count — the paths the isolation test above does not reach.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn push_config_stores_list_delete_and_count() -> A2aResult<()> {
+    let db = TestDb::create("push_list_count").await;
+    let tenant_store = TenantAwarePostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("open tenant postgres push store");
+
+    let (first, second) = TenantContext::scope("acme", async {
+        let first = tenant_store.set(make_push_config("task-1")).await?;
+        let second = tenant_store.set(make_push_config("task-1")).await?;
+        tenant_store.set(make_push_config("task-2")).await?;
+
+        let listed = tenant_store.list("task-1").await?;
+        assert_eq!(listed.len(), 2, "two configs on task-1");
+        assert_eq!(tenant_store.count().await?, Some(3), "three in the tenant");
+
+        let first_id = first.id.clone().expect("id");
+        tenant_store.delete("task-1", &first_id).await?;
+        assert_eq!(tenant_store.list("task-1").await?.len(), 1);
+        assert_eq!(tenant_store.count().await?, Some(2));
+        Ok::<_, a2a_protocol_types::error::A2aError>((first_id, second.id.expect("id")))
+    })
+    .await?;
+
+    TenantContext::scope("globex", async {
+        assert_eq!(
+            tenant_store.count().await?,
+            Some(0),
+            "another tenant counts nothing"
+        );
+        // A delete under the wrong tenant is a no-op.
+        tenant_store.delete("task-1", &second).await?;
+        assert!(tenant_store.get("task-1", &first).await?.is_none());
+        Ok::<(), a2a_protocol_types::error::A2aError>(())
+    })
+    .await?;
+
+    TenantContext::scope("acme", async {
+        assert!(
+            tenant_store.get("task-1", &second).await?.is_some(),
+            "globex's delete must not reach acme's config"
+        );
+        Ok::<(), a2a_protocol_types::error::A2aError>(())
+    })
+    .await?;
+
+    // The plain store shares the database but not the table.
+    let plain = PostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("open postgres push store");
+    assert_eq!(plain.count().await?, Some(0));
+    plain.set(make_push_config("task-9")).await?;
+    plain.set(make_push_config("task-9")).await?;
+    assert_eq!(plain.count().await?, Some(2));
+
+    db.drop_db().await;
+    Ok(())
 }
 
 // ── Incremental artifact persistence (`save_artifact_delta`) ─────────────────

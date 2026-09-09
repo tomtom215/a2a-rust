@@ -146,7 +146,9 @@ pub async fn test_extended_agent_card(ctx: &TestContext) -> TestResult {
                 TestResult::fail(
                     "extended-agent-card",
                     start.elapsed().as_millis(),
-                    &format!("expected name='Code Analyzer' with skills, got name={name}, has_skills={has_skills}"),
+                    &format!(
+                        "expected name='Code Analyzer' with skills, got name={name}, has_skills={has_skills}"
+                    ),
                 )
             }
         }

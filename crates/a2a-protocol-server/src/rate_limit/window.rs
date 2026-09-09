@@ -22,7 +22,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 
-use super::{CallerBucket, RateLimitInterceptor, CLEANUP_INTERVAL};
+use super::{CLEANUP_INTERVAL, CallerBucket, RateLimitInterceptor};
 
 impl RateLimitInterceptor {
     /// Returns the current window number for the given timestamp.

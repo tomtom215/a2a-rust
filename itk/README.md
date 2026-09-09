@@ -118,6 +118,44 @@ docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
    ```
 
 
+## Upstream ITK nightly
+
+Everything above is graded by this repository. The run that is not is the
+A2A project's own Integration Testing Kit
+([a2aproject/a2a-itk](https://github.com/a2aproject/a2a-itk)) with this
+repository mounted as the system under test — its harness, its scenarios,
+its peers: the official Python, JavaScript, Go and Java SDKs and a2a-rs,
+each over JSON-RPC, gRPC and HTTP+JSON, for send-message, push-notification
+and resubscribe behaviour.
+
+`run_itk.sh` is the shim every SDK repository carries: it clones `a2a-itk`
+next to itself and sources the shared driver
+(`a2a-itk/scripts/run_itk_shared.sh`), which builds the `itk_service`
+image, starts it with this repository bind-mounted at `/app/agents/repo`,
+builds the agent in this directory inside the container, runs the shared
+scenario set and writes `raw_results.json` and `itk_rust.json` here. Docker
+or Podman is required; the first run builds a multi-language image and
+checks out and builds every peer SDK, so expect it to take a while.
+
+```bash
+# The PR-sized set (scenarios/traversal/pr.yaml in a2a-itk)
+A2A_ITK_REVISION=main bash itk/run_itk.sh
+
+# The full nightly set: this SDK against every peer, one pair at a time
+A2A_ITK_REVISION=main ITK_NIGHTLY_RUN=true bash itk/run_itk.sh
+```
+
+[`itk-nightly.yml`](../.github/workflows/itk-nightly.yml) runs the nightly
+set at 02:00 UTC, uploads both result files as a run artifact, and — from
+`main` only — publishes `itk_rust.json` to the rolling `nightly-metrics`
+prerelease, the same asset name and mechanism the other SDK repositories
+use, so the current pass rate is readable without a checkout. It also
+diffs the vendored `protos/instruction.proto` against the upstream copy
+(everything from the `syntax` line on must be byte-identical) so the agent
+cannot drift from the schema it is graded against. A red night is a bug
+report to read, not a merge blocker: the workflow is deliberately not a PR
+gate.
+
 ## a2a-inspector validation
 
 The official [a2a-inspector](https://github.com/a2aproject/a2a-inspector)

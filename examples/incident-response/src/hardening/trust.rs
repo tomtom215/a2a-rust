@@ -20,7 +20,7 @@ const LABEL: &str = "Agent card signing (sign, verify, detect tampering)";
 pub(super) fn card_signing() -> Check {
     use a2a_protocol_types::signing::{sign_agent_card, verify_agent_card};
     use ring::rand::SystemRandom;
-    use ring::signature::{EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_FIXED_SIGNING};
+    use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair};
 
     let rng = SystemRandom::new();
     let pkcs8 = match EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &rng) {

@@ -12,7 +12,7 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::TaskId;
 
 use crate::handler::limits::HandlerLimits;
-use crate::metrics::{push_outcome, Metrics};
+use crate::metrics::{Metrics, push_outcome};
 use crate::push::{PushConfigStore, PushSender};
 
 /// Which timeout label a cut-off delivery deserves.

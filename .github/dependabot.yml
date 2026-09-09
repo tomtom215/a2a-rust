@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+#
+# Automated dependency updates. Cargo and GitHub Actions are checked weekly
+# and batched into one PR each per ecosystem, so a week's worth of minor and
+# patch bumps arrives as a single review rather than a dozen. Major bumps
+# stay separate: they are the ones that need reading.
+#
+# A Dependabot PR runs the full CI, TCK, mutation and coverage gates like any
+# other. The DCO gate exempts Dependabot's commits by author identity — see
+# dco.yml and PROVENANCE.md §3.3 for why a version bump is not an authored
+# contribution.
+#
+# Action versions in this repository are pinned to commit SHAs with a
+# trailing `# vX.Y.Z` comment; Dependabot updates both the SHA and the
+# comment together.
+
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps"
+
+  # The SLIMRPC binding keeps its own lockfile outside the workspace.
+  - package-ecosystem: cargo
+    directory: /bindings/a2a-protocol-slimrpc
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    groups:
+      slimrpc-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(slimrpc)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"

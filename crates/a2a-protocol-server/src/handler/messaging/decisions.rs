@@ -11,8 +11,8 @@
 
 use std::time::Instant;
 
-use super::super::helpers::truncate_history;
 use super::super::CancellationEntry;
+use super::super::helpers::truncate_history;
 use a2a_protocol_types::task::Task;
 
 /// Hard cap on the number of messages retained in `Task.history`.

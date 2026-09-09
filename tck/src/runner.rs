@@ -156,7 +156,7 @@ impl TestResult {
 /// constructed and only one is awaited, which costs nothing: futures do no
 /// work until polled.
 macro_rules! check {
-    ($results:expr, $name:literal, $scope:expr, $binding:expr, grpc: $g:expr, otherwise: $j:expr $(,)?) => {
+    ($results:expr_2021, $name:literal, $scope:expr_2021, $binding:expr_2021, grpc: $g:expr_2021, otherwise: $j:expr_2021 $(,)?) => {
         run_test(&mut $results, $name, $scope, $binding, async {
             if $binding == "grpc" {
                 $g.await
@@ -371,7 +371,7 @@ async fn run_test<F>(
 
 #[cfg(test)]
 mod tests_runner {
-    use super::{Scope, BINDINGS, ENVELOPE_ONLY, REST_MEDIA_TYPE_ONLY};
+    use super::{BINDINGS, ENVELOPE_ONLY, REST_MEDIA_TYPE_ONLY, Scope};
 
     /// Every `Scope` in the runner, so the drift guard below sees all of them.
     const ALL_SCOPES: &[(&str, Scope)] = &[

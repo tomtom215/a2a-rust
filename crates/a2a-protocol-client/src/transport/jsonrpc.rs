@@ -25,9 +25,9 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::header;
 #[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::connect::HttpConnector;
-#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
+#[cfg(not(feature = "tls-rustls"))]
+use hyper_util::client::legacy::connect::HttpConnector;
 #[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 use tokio::sync::mpsc;
@@ -448,11 +448,11 @@ async fn body_reader_task(
                 break;
             }
             Some(Ok(frame)) => {
-                if let Ok(data) = frame.into_data() {
-                    if tx.send(Ok(data)).await.is_err() {
-                        // Receiver dropped; stop reading.
-                        break;
-                    }
+                if let Ok(data) = frame.into_data()
+                    && tx.send(Ok(data)).await.is_err()
+                {
+                    // Receiver dropped; stop reading.
+                    break;
                 }
                 // Non-data frames (trailers) are skipped.
             }

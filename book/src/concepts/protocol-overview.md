@@ -145,9 +145,9 @@ When a client sends a message with a `context_id`, the server groups that task w
 
 ## Multi-Tenancy
 
-A2A supports **multi-tenancy** via an optional `tenant` field on all requests. This allows a single agent server to serve multiple isolated tenants, each with their own tasks and configurations.
+A2A supports **multi-tenancy** via an optional `tenant` field on all requests. This allows a single agent server to serve multiple isolated tenants, each with their own tasks and configurations. A client **must** send the tenant its selected `AgentInterface` declares on every request (spec §8.3.2 rule 4); `ClientBuilder::from_card` does this for all eleven methods.
 
-In the REST transport, tenancy is expressed as a path prefix: `/tenants/{tenant-id}/tasks/...`
+In the REST transport the client sends the tenant as the leading path segment, `/{tenant}/tasks/...`, and the server also accepts `?tenant=` on `GET`/`DELETE` and the body field on `POST`. See [Transport Layers](transport-layers.md#multi-tenant-paths).
 
 ## Next Steps
 

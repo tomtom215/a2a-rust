@@ -103,6 +103,20 @@ pub struct ClientBuilder {
     /// own URL, so the two are a pair; changing one without the other points
     /// the client at the wrong port.
     pub(super) card_interfaces: Vec<AgentInterface>,
+    /// How a bare `host:port` gRPC address is dialled by [`build_grpc`].
+    ///
+    /// Lives on the builder rather than on [`ClientConfig`] because it is a
+    /// dialling decision, not a per-request one, and [`ClientConfig`] is a
+    /// public-fields struct that every literal construction would break on.
+    ///
+    /// [`build_grpc`]: ClientBuilder::build_grpc
+    pub(super) grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme,
+    /// TLS settings for [`build_grpc`]; `None` verifies against the bundled
+    /// Mozilla roots.
+    ///
+    /// [`build_grpc`]: ClientBuilder::build_grpc
+    #[cfg(feature = "grpc-tls")]
+    pub(super) grpc_tls_config: Option<crate::transport::grpc::ClientTlsConfig>,
 }
 
 /// The interface to talk to: the first of `preferences` the card offers, or
@@ -140,6 +154,9 @@ impl ClientBuilder {
             config: ClientConfig::default(),
             preferred_binding: None,
             retry_policy: None,
+            grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme::default(),
+            #[cfg(feature = "grpc-tls")]
+            grpc_tls_config: None,
             card_interfaces: Vec::new(),
         }
     }
@@ -213,6 +230,9 @@ impl ClientBuilder {
             },
             preferred_binding: Some(binding),
             retry_policy: None,
+            grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme::default(),
+            #[cfg(feature = "grpc-tls")]
+            grpc_tls_config: None,
             card_interfaces: card.supported_interfaces.clone(),
         })
     }
@@ -286,6 +306,39 @@ impl ClientBuilder {
             self.config.tenant = tenant;
         }
         self.preferred_binding = Some(binding);
+        self
+    }
+
+    /// Sets how a bare `host:port` gRPC interface address is dialled.
+    ///
+    /// A card's gRPC `url` is a gRPC target with no scheme. The default
+    /// ([`GrpcBareAddressScheme::HttpsExceptLoopback`]) uses TLS for every
+    /// host except loopback; a deployment whose plaintext gRPC lives on a
+    /// private network sets [`GrpcBareAddressScheme::Http`]. Only
+    /// [`build_grpc`](Self::build_grpc) reads this; an address that already
+    /// carries a scheme is unaffected.
+    ///
+    /// [`GrpcBareAddressScheme::HttpsExceptLoopback`]: crate::config::GrpcBareAddressScheme::HttpsExceptLoopback
+    /// [`GrpcBareAddressScheme::Http`]: crate::config::GrpcBareAddressScheme::Http
+    #[must_use]
+    pub const fn with_grpc_bare_address_scheme(
+        mut self,
+        scheme: crate::config::GrpcBareAddressScheme,
+    ) -> Self {
+        self.grpc_bare_address_scheme = scheme;
+        self
+    }
+
+    /// Sets the TLS configuration [`build_grpc`](Self::build_grpc) uses for
+    /// an `https://` endpoint, explicit or chosen by the bare-address policy:
+    /// a private CA, a client certificate, or a server name that differs from
+    /// the host. Without it the server is verified against the bundled
+    /// Mozilla roots. The type is re-exported as
+    /// [`transport::grpc::ClientTlsConfig`](crate::transport::grpc::ClientTlsConfig).
+    #[cfg(feature = "grpc-tls")]
+    #[must_use]
+    pub fn with_grpc_tls_config(mut self, tls: crate::transport::grpc::ClientTlsConfig) -> Self {
+        self.grpc_tls_config = Some(tls);
         self
     }
 

@@ -30,9 +30,9 @@ pub mod postgres_store;
 #[cfg(feature = "postgres")]
 pub mod tenant_postgres_store;
 
-pub use retention::{terminal_states, PurgeReport, RetentionPolicy};
+pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 pub use task_store::{
-    ArtifactDelta, InMemoryTaskStore, TaskStore, TaskStoreConfig, DEFAULT_MAX_PAGE_SIZE,
+    ArtifactDelta, DEFAULT_MAX_PAGE_SIZE, InMemoryTaskStore, TaskStore, TaskStoreConfig,
 };
 pub use tenant::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
 

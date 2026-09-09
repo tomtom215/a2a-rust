@@ -272,8 +272,8 @@ async fn rest_rejects_oversized_body() {
 
 /// Start a JSON-RPC server with a tiny body cap and a short read timeout so the
 /// "buffer-to-completion then time out" failure mode is fast and observable.
-async fn start_jsonrpc_server_tiny_body_short_timeout(
-) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+async fn start_jsonrpc_server_tiny_body_short_timeout()
+-> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
     use a2a_protocol_server::dispatch::DispatchConfig;
 
     let handler = Arc::new(
@@ -318,8 +318,8 @@ async fn start_jsonrpc_server_tiny_body_short_timeout(
 }
 
 /// Start a REST server with a tiny body cap and a short read timeout.
-async fn start_rest_server_tiny_body_short_timeout(
-) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+async fn start_rest_server_tiny_body_short_timeout()
+-> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
     use a2a_protocol_server::dispatch::DispatchConfig;
 
     let handler = Arc::new(

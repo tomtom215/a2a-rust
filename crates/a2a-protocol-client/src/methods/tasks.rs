@@ -26,9 +26,10 @@ impl A2aClient {
     ///
     /// Returns [`ClientError::Protocol`] with [`a2a_protocol_types::ErrorCode::TaskNotFound`]
     /// if no task with the given ID exists.
-    pub async fn get_task(&self, params: TaskQueryParams) -> ClientResult<Task> {
+    pub async fn get_task(&self, mut params: TaskQueryParams) -> ClientResult<Task> {
         const METHOD: &str = "GetTask";
 
+        params.tenant = self.tenant_or_default(params.tenant.take());
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
 
         let mut req = ClientRequest::new(METHOD, params_value);
@@ -57,9 +58,10 @@ impl A2aClient {
     /// # Errors
     ///
     /// Returns [`ClientError`] on transport or protocol errors.
-    pub async fn list_tasks(&self, params: ListTasksParams) -> ClientResult<TaskListResponse> {
+    pub async fn list_tasks(&self, mut params: ListTasksParams) -> ClientResult<TaskListResponse> {
         const METHOD: &str = "ListTasks";
 
+        params.tenant = self.tenant_or_default(params.tenant.take());
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
 
         let mut req = ClientRequest::new(METHOD, params_value);
@@ -94,7 +96,7 @@ impl A2aClient {
         const METHOD: &str = "CancelTask";
 
         let params = CancelTaskParams {
-            tenant: None,
+            tenant: self.tenant_or_default(None),
             id: id.into(),
             metadata: None,
         };
@@ -134,7 +136,7 @@ impl A2aClient {
         const METHOD: &str = "SubscribeToTask";
 
         let params = TaskIdParams {
-            tenant: None,
+            tenant: self.tenant_or_default(None),
             id: id.into(),
         };
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
@@ -170,10 +172,10 @@ mod tests {
 
     use a2a_protocol_types::{ListTasksParams, TaskQueryParams};
 
+    use crate::ClientBuilder;
     use crate::error::{ClientError, ClientResult};
     use crate::streaming::EventStream;
     use crate::transport::Transport;
-    use crate::ClientBuilder;
 
     /// A mock transport that returns a pre-configured JSON value for requests
     /// and an error for streaming requests.
@@ -283,8 +285,8 @@ mod tests {
     #[allow(clippy::unused_async_trait_impl)]
     #[tokio::test]
     async fn subscribe_to_task_calls_after_interceptor() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         use crate::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
 

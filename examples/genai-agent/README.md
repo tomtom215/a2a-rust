@@ -123,7 +123,7 @@ cargo run -p a2a-tck -- --url http://127.0.0.1:<port> --binding jsonrpc
 
 ## Prerequisites
 
-- Rust 1.93+ (MSRV)
+- Rust 1.88+ (MSRV)
 - An API key for a hosted provider, **or** any local OpenAI-compatible
   server on port 11434 (llama-server, Ollama)
 

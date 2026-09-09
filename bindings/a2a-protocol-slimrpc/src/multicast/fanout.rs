@@ -14,8 +14,8 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use a2a_protocol_client::{ClientError, ClientResult};
-use a2a_protocol_types::proto as pb;
 use a2a_protocol_types::StreamResponse;
+use a2a_protocol_types::proto as pb;
 use futures::StreamExt;
 use slim_rpc::{Channel, Metadata, MulticastItem};
 
@@ -103,10 +103,10 @@ pub(super) async fn fan_out_to_members(
         // Tell this member about any earlier gap before handing it the event
         // that follows the gap. If the report cannot be sent either, the count
         // survives to the next attempt.
-        if let Some(&missed) = lagged.get(&key).filter(|&&n| n > 0) {
-            if tx.try_send(Err(lag_report(missed))).is_ok() {
-                lagged.remove(&key);
-            }
+        if let Some(&missed) = lagged.get(&key).filter(|&&n| n > 0)
+            && tx.try_send(Err(lag_report(missed))).is_ok()
+        {
+            lagged.remove(&key);
         }
 
         // `try_send`, not `send().await` — see this function's docs. A `Closed`

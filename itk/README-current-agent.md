@@ -9,7 +9,9 @@ repository. The upstream Integration Testing Kit
 repo at `agents/repo/` and runs whatever agent it finds under
 `<repo>/itk/`. Its `test_suite/current.py` detects a `Cargo.toml` here,
 runs `cargo build --release`, and launches the resulting `itk-*` binary
-with `--httpPort N --grpcPort N`.
+with `--httpPort N --grpcPort N`. `run_itk.sh` in this directory drives that
+mount through the ITK's shared driver; see `README.md` ("Upstream ITK
+nightly").
 
 `src/main.rs` implements the ITK's multi-hop **traversal instruction**
 protocol on top of `a2a-protocol-server` and `a2a-protocol-client`:

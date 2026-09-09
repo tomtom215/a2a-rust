@@ -6,7 +6,7 @@
 
 use std::time::Instant;
 
-use a2a_protocol_client::{resolve_agent_card, ClientBuilder};
+use a2a_protocol_client::{ClientBuilder, resolve_agent_card};
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{ListPushConfigsParams, ListTasksParams, MessageSendParams};

@@ -283,11 +283,11 @@ impl EventStream {
     pub(crate) fn holding(
         mut self,
         resource: impl std::any::Any
-            + Send
-            + Sync
-            + std::panic::UnwindSafe
-            + std::panic::RefUnwindSafe
-            + 'static,
+        + Send
+        + Sync
+        + std::panic::UnwindSafe
+        + std::panic::RefUnwindSafe
+        + 'static,
     ) -> Self {
         self.held = Some(Box::new(resource));
         self

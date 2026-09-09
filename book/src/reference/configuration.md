@@ -123,12 +123,16 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `with_accepted_output_modes` | `Vec<String>` | `["text/plain", "application/json"]` | MIME types accepted |
 | `with_history_length` | `u32` | None | Messages in responses |
 | `with_return_immediately` | `bool` | false | Don't wait for completion |
-| `with_tenant` | `impl Into<String>` | None (auto from `AgentCard`) | Default tenant for multi-tenancy |
+| `with_tenant` | `impl Into<String>` | None (auto from `AgentCard`) | Tenant sent on **every** request (spec §8.3.2 rule 4); a per-request `tenant` overrides it |
+| `with_grpc_bare_address_scheme` | `GrpcBareAddressScheme` | `HttpsExceptLoopback` | How `build_grpc` dials a card's bare `host:port` gRPC target: TLS except for loopback (default), always TLS, or always plaintext |
+| `with_grpc_tls_config` | `ClientTlsConfig` | None (bundled Mozilla roots) | `grpc-tls` feature: the TLS settings `build_grpc` uses for an `https://` endpoint, explicit or policy-chosen — a private CA, a client certificate, or a server name that differs from the host |
 | `with_interceptor` | `impl CallInterceptor` | Empty chain | Client middleware |
 
 ### GrpcTransportConfig
 
-Configuration for the gRPC client transport (requires `grpc` feature).
+Configuration for the gRPC client transport (requires `grpc` feature). The
+struct is `#[non_exhaustive]`: build it with `GrpcTransportConfig::default()`
+and the `with_*` setters.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -136,6 +140,8 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 | `connect_timeout` | `Duration` | 10s | Connection timeout |
 | `max_message_size` | `usize` | 4 MiB | Maximum message size |
 | `stream_channel_capacity` | `usize` | 64 | Streaming response buffer |
+| `bare_address_scheme` | `GrpcBareAddressScheme` | `HttpsExceptLoopback` | Scheme used for a bare `host:port` target (an `http://`/`https://` URL is used as-is) |
+| `tls_config` | `Option<ClientTlsConfig>` | None (bundled Mozilla roots) | `grpc-tls` feature: pin a private CA or present a client certificate for `https://` endpoints |
 
 ### RetryPolicy
 
@@ -172,7 +178,8 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 | `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | Off | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
-| `grpc` | Off | gRPC transport via `tonic` |
+| `grpc` | Off | gRPC transport via `tonic` (plaintext listener) |
+| `grpc-tls` | Off | TLS on the gRPC listener itself: `GrpcDispatcher::with_tls(ServerTlsConfig)` with a server identity and, optionally, a client CA for mutual TLS; implies `grpc`; the TLS types are re-exported from `dispatch::grpc` |
 | `otel` | Off | OpenTelemetry metrics via `opentelemetry-otlp` |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
 
@@ -182,9 +189,10 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 |---------|---------|-------------|
 | `signing` | Off | Agent card signing verification |
 | `tracing` | Off | Structured logging via `tracing` crate |
-| `tls-rustls` | Off | HTTPS via rustls (no OpenSSL dependency) |
+| `tls-rustls` | **On** | HTTPS via rustls (no OpenSSL dependency); `default-features = false` for a plaintext-only build |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
-| `grpc` | Off | gRPC transport via `tonic` |
+| `grpc` | Off | gRPC transport via `tonic` (plaintext; `https://` is refused with a message naming `grpc-tls`) |
+| `grpc-tls` | Off | gRPC over TLS: implies `grpc` (not `tls-rustls`), verifies against the bundled Mozilla roots or a supplied `ClientTlsConfig` (re-exported from `transport::grpc`) |
 
 ### `a2a-protocol-types`
 
@@ -198,8 +206,9 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 |---------|---------|-------------|
 | `signing` | Off | Enables `signing` in all sub-crates |
 | `tracing` | Off | Enables `tracing` in client and server |
-| `tls-rustls` | Off | Enables `tls-rustls` in client |
+| `tls-rustls` | **On** | Enables `tls-rustls` in client and server |
 | `grpc` | Off | Enables `grpc` in client and server |
+| `grpc-tls` | Off | Enables `grpc-tls` in the client and the server: `https://` dialling on one side, `GrpcDispatcher::with_tls` on the other |
 | `websocket` | Off | Enables `websocket` in client and server |
 | `sqlite` | Off | Enables `sqlite` in the server |
 | `postgres` | Off | Enables `postgres` in the server |

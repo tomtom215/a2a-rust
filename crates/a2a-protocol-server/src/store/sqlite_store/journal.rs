@@ -74,8 +74,8 @@
 //! append next, an insert never races another insert into the same slot, and
 //! replaying an append is idempotent rather than duplicating a part.
 
-use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::Task;
+use a2a_protocol_types::error::{A2aError, A2aResult};
 
 /// The table holding parts appended since the task document was last written.
 ///
@@ -94,8 +94,7 @@ pub const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS task_artifact_app
     ) WITHOUT ROWID";
 
 /// Reads a task's journal rows, in the order they must be applied.
-pub(super) const SELECT_FOR_TASK_SQL: &str =
-    "SELECT artifact, seq, part FROM task_artifact_appends \
+pub(super) const SELECT_FOR_TASK_SQL: &str = "SELECT artifact, seq, part FROM task_artifact_appends \
      WHERE task_id = ?1 ORDER BY artifact, seq";
 
 /// Drops a task's journal rows. Used by `save`, which supersedes them, and by

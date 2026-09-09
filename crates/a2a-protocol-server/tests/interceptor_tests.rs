@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 
 use a2a_protocol_types::error::{A2aError, A2aResult, ErrorCode};
 
-use a2a_protocol_server::interceptor::{ServerInterceptor, ServerInterceptorChain};
 use a2a_protocol_server::CallContext;
+use a2a_protocol_server::interceptor::{ServerInterceptor, ServerInterceptorChain};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

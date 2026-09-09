@@ -528,7 +528,7 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
 
 #[cfg(test)]
 mod tests_main {
-    use super::{parse_args, BINDINGS, ENDPOINT_FLAGS};
+    use super::{BINDINGS, ENDPOINT_FLAGS, parse_args};
 
     fn argv(rest: &[&str]) -> Vec<String> {
         std::iter::once("a2a-tck")

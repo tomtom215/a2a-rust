@@ -41,6 +41,12 @@ websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`. Speaks the canonical `lf.a2a.v1.A2AService`
 ## (protobuf-native, wire-compatible with the official Go/Python/Java A2A SDKs).
 grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-types", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
+## gRPC over TLS. `grpc` alone has no TLS connector — tonic's is a feature —
+## so an `https://` endpoint, or a bare `host:port` the default policy
+## dials securely, is refused with a message naming this feature. Verifies
+## against the same bundled Mozilla roots (`webpki-roots`, via ring) the
+## HTTP transports use, or a `ClientTlsConfig` you supply for a private CA.
+grpc-tls = ["grpc", "tonic?/tls-ring", "tonic?/tls-webpki-roots"]
 
 [dependencies]
 a2a-protocol-types = { version = "0.11.0", path = "../a2a-protocol-types" }

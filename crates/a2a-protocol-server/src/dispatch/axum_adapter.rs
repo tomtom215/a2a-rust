@@ -78,11 +78,11 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use axum::Router;
 use bytes::Bytes;
 
 use crate::handler::{RequestHandler, SendMessageResult};

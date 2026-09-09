@@ -25,7 +25,7 @@ use tokio::sync::mpsc;
 
 use super::super::RequestHandler;
 
-use state_machine::{process_event_bg, BackgroundDeps};
+use state_machine::{BackgroundDeps, process_event_bg};
 
 // ── Background event processor (streaming mode) ─────────────────────────────
 

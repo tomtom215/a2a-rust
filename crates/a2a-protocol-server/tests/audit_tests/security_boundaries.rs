@@ -118,7 +118,11 @@ async fn task_id_over_max_length_fails() {
 // 13. Empty string IDs rejected
 
 #[tokio::test]
-async fn empty_context_id_rejected() {
+async fn empty_context_id_is_unset_not_rejected() {
+    // Proto3 no-presence semantics on the ProtoJSON bindings: `""` is the
+    // unset value (a2a-java's JSON-RPC client prints it that way), so it is
+    // accepted and a context generated. Whitespace-only, below, stays a
+    // client error; the boundary is exactly-empty.
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .build()
         .expect("build handler");
@@ -133,16 +137,15 @@ async fn empty_context_id_rejected() {
         metadata: None,
     };
 
-    let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
-    let err_msg = format!("{err:?}");
+    let result = handler.on_send_message(params, false, None).await;
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
-        "empty context_id should be rejected with InvalidParams, got {err_msg}"
+        result.is_ok(),
+        "an empty context_id is the unset value and must be accepted, got {result:?}"
     );
 }
 
 #[tokio::test]
-async fn empty_task_id_rejected() {
+async fn empty_task_id_is_unset_not_rejected() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .build()
         .expect("build handler");
@@ -157,11 +160,10 @@ async fn empty_task_id_rejected() {
         metadata: None,
     };
 
-    let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
-    let err_msg = format!("{err:?}");
+    let result = handler.on_send_message(params, false, None).await;
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
-        "empty task_id should be rejected with InvalidParams, got {err_msg}"
+        result.is_ok(),
+        "an empty task_id is the unset value and must start a new task, got {result:?}"
     );
 }
 

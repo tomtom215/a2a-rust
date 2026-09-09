@@ -189,9 +189,11 @@ impl PushConfigStore for InMemoryPushConfigStore {
                 if count >= max {
                     drop(counts);
                     drop(store);
-                    return Err(a2a_protocol_types::error::A2aError::invalid_params(format!(
-                        "push config limit exceeded: task {task_id} already has {count} configs (max {max})"
-                    )));
+                    return Err(a2a_protocol_types::error::A2aError::invalid_params(
+                        format!(
+                            "push config limit exceeded: task {task_id} already has {count} configs (max {max})"
+                        ),
+                    ));
                 }
             }
 

@@ -105,7 +105,7 @@ pub async fn test_ws_send_message(_ctx: &TestContext) -> TestResult {
                 "51-ws-send-message",
                 start.elapsed().as_millis(),
                 &format!("start WS server: {e}"),
-            )
+            );
         }
     };
 
@@ -130,7 +130,7 @@ pub async fn test_ws_send_message(_ctx: &TestContext) -> TestResult {
                 "51-ws-send-message",
                 start.elapsed().as_millis(),
                 &format!("serialize request: {e}"),
-            )
+            );
         }
     };
     if let Err(e) = ws.send(WsMessage::Text(json.into())).await {
@@ -191,7 +191,7 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
                 "52-ws-streaming",
                 start.elapsed().as_millis(),
                 &format!("start WS server: {e}"),
-            )
+            );
         }
     };
 
@@ -213,7 +213,7 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
                 "52-ws-streaming",
                 start.elapsed().as_millis(),
                 &format!("serialize request: {e}"),
-            )
+            );
         }
     };
     if let Err(e) = ws.send(WsMessage::Text(json.into())).await {
@@ -270,30 +270,38 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
 
 // ── gRPC tests (require `grpc` feature) ─────────────────────────────────────
 
-/// Test 56: gRPC send message over the code analyzer agent.
+/// Test 56: gRPC send message over the code analyzer agent, reached the way
+/// a real client reaches a gRPC agent: from its card. The card advertises a
+/// bare `host:port` target (the A2A proto's form), and `build_grpc` dials it
+/// per `GrpcBareAddressScheme` — plaintext here because the target is
+/// loopback; TLS for anything else.
 #[cfg(feature = "grpc")]
 pub async fn test_grpc_send_message(ctx: &TestContext) -> TestResult {
-    use a2a_protocol_client::transport::grpc::GrpcTransport;
     use a2a_protocol_types::responses::SendMessageResponse;
 
     let start = Instant::now();
 
-    let transport = match GrpcTransport::connect(&ctx.grpc_analyzer_url).await {
-        Ok(t) => t,
+    let card = crate::cards::grpc_analyzer_card(&ctx.grpc_analyzer_url);
+    let builder = match a2a_protocol_client::ClientBuilder::from_card(&card) {
+        Ok(b) => b,
         Err(e) => {
             return TestResult::fail(
                 "56-grpc-send-message",
                 start.elapsed().as_millis(),
-                &format!("connect failed: {e}"),
+                &format!("from_card failed: {e}"),
             );
         }
     };
-
-    let client = a2a_protocol_client::ClientBuilder::new(&ctx.grpc_analyzer_url)
-        .with_custom_transport(transport)
-        .without_tls()
-        .build()
-        .expect("build gRPC client");
+    let client = match builder.build_grpc().await {
+        Ok(c) => c,
+        Err(e) => {
+            return TestResult::fail(
+                "56-grpc-send-message",
+                start.elapsed().as_millis(),
+                &format!("build_grpc on the card's bare target failed: {e}"),
+            );
+        }
+    };
 
     let params = make_send_params("fn main() { println!(\"grpc!\"); }");
     match client.send_message(params).await {

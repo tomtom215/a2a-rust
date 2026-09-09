@@ -3,14 +3,14 @@
 
 //! Whether anyone can tell what the agent is doing.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::metrics::Metrics;
 
-use super::{bind, plain_card, serve, Check};
+use super::{Check, bind, plain_card, serve};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 
@@ -316,11 +316,13 @@ pub(super) async fn otlp_pipeline() -> Check {
         });
     }
 
-    // `MetricExporter` reads its endpoint from the environment. Set before the
-    // pipeline is built; the checks run sequentially and nothing else in this
-    // process reads the variable, so the process-global write is contained.
-    std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", &endpoint);
-    let provider = match a2a_protocol_server::otel::init_otlp_pipeline("incident-response") {
+    // The endpoint is passed explicitly rather than through
+    // `OTEL_EXPORTER_OTLP_ENDPOINT`: writing the environment is `unsafe` in
+    // edition 2024 because other threads of this process may be reading it.
+    let provider = match a2a_protocol_server::otel::init_otlp_pipeline_with_endpoint(
+        "incident-response",
+        &endpoint,
+    ) {
         Ok(provider) => provider,
         Err(e) => return Check::fail(OTLP_LABEL, format!("building the pipeline: {e}")),
     };
@@ -374,7 +376,9 @@ pub(super) async fn otlp_pipeline() -> Check {
     if bytes <= H2_PREFACE.len() {
         return Check::fail(
             OTLP_LABEL,
-            format!("only the {bytes}-byte HTTP/2 preface arrived — the exporter connected but sent no frames"),
+            format!(
+                "only the {bytes}-byte HTTP/2 preface arrived — the exporter connected but sent no frames"
+            ),
         );
     }
     Check::pass(

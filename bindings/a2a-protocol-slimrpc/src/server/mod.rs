@@ -23,7 +23,7 @@ use std::sync::Arc;
 use a2a_protocol_server::RequestHandler;
 use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
 use slim_auth::shared_secret::SharedSecret;
-use slim_config::component::id::{Kind, ID};
+use slim_config::component::id::{ID, Kind};
 use slim_rpc::{RpcError, Server};
 use slim_service::app::App as SlimApp;
 use slim_service::service::Service;

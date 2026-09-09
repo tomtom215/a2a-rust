@@ -40,9 +40,9 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_protocol_client::transport::Transport;
 use a2a_protocol_client::ClientError;
-use a2a_protocol_slimrpc::{method, SlimName, SlimRpcServer, SlimRpcTransport};
+use a2a_protocol_client::transport::Transport;
+use a2a_protocol_slimrpc::{SlimName, SlimRpcServer, SlimRpcTransport, method};
 use a2a_protocol_types::{ErrorCode, TaskQueryParams};
 use slim_config::client::ClientConfig;
 use slim_config::server::ServerConfig;

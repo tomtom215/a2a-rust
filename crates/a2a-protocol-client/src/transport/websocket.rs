@@ -54,8 +54,8 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{mpsc, oneshot};
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use uuid::Uuid;
 
 use a2a_protocol_types::{JsonRpcRequest, JsonRpcResponse};
@@ -836,18 +836,17 @@ fn is_stream_terminal(text: &str) -> bool {
     // at one of the known locations (statusUpdate.status.state or status.state).
     let has_terminal_state = |obj: &serde_json::Value| -> bool {
         // Check for terminal status in statusUpdate
-        if let Some(status_update) = obj.get("statusUpdate") {
-            if let Some(status) = status_update.get("status") {
-                if let Some(state) = status.get("state").and_then(|s| s.as_str()) {
-                    return task_state_str_is_terminal(state);
-                }
-            }
+        if let Some(status_update) = obj.get("statusUpdate")
+            && let Some(status) = status_update.get("status")
+            && let Some(state) = status.get("state").and_then(|s| s.as_str())
+        {
+            return task_state_str_is_terminal(state);
         }
         // Check for terminal status in a full task response
-        if let Some(status) = obj.get("status") {
-            if let Some(state) = status.get("state").and_then(|s| s.as_str()) {
-                return task_state_str_is_terminal(state);
-            }
+        if let Some(status) = obj.get("status")
+            && let Some(state) = status.get("state").and_then(|s| s.as_str())
+        {
+            return task_state_str_is_terminal(state);
         }
         false
     };
@@ -897,6 +896,48 @@ mod tests {
     #[test]
     fn validate_ws_url_rejects_empty() {
         assert!(validate_ws_url("").is_err());
+    }
+
+    /// An extra header whose name cannot be an HTTP header name fails the
+    /// connect before any socket is opened — closed, not dropped, because
+    /// the header may be the credential.
+    #[tokio::test]
+    async fn invalid_extra_header_name_fails_the_connect_closed() {
+        let mut headers = HashMap::new();
+        headers.insert("not a header name".to_owned(), "x".to_owned());
+        let err = WebSocketTransport::connect_with_options(
+            "ws://127.0.0.1:1/ws",
+            Duration::from_secs(1),
+            &headers,
+        )
+        .await
+        .expect_err("an invalid header name must fail the connect");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid WebSocket header name"),
+            "error must name the problem: {msg}"
+        );
+    }
+
+    /// An extra header whose value is not a valid HTTP header value fails
+    /// the same way, and the value is not echoed into the error.
+    #[tokio::test]
+    async fn invalid_extra_header_value_fails_the_connect_without_echoing_it() {
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_owned(), "Bearer sec\u{0}ret".to_owned());
+        let err = WebSocketTransport::connect_with_options(
+            "ws://127.0.0.1:1/ws",
+            Duration::from_secs(1),
+            &headers,
+        )
+        .await
+        .expect_err("an invalid header value must fail the connect");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid WebSocket header value for \"authorization\""),
+            "error must name the header: {msg}"
+        );
+        assert!(!msg.contains("sec"), "the value must not be echoed: {msg}");
     }
 
     #[test]
@@ -1539,8 +1580,8 @@ mod tests {
     #[cfg(feature = "tracing")]
     #[test]
     fn warn_dropped_per_request_headers_warns_iff_headers_present() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         /// Minimal subscriber that just counts emitted events.
         struct CountingSubscriber(Arc<AtomicUsize>);

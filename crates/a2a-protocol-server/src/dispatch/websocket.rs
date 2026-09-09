@@ -41,11 +41,11 @@ use std::time::Duration;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::tungstenite::handshake::server::{
     ErrorResponse, Request as WsUpgradeRequest, Response as WsUpgradeResponse,
 };
-use tokio_tungstenite::tungstenite::Message as WsMessage;
-use tokio_tungstenite::WebSocketStream;
 
 use a2a_protocol_types::jsonrpc::{
     JsonRpcError, JsonRpcErrorResponse, JsonRpcId, JsonRpcRequest, JsonRpcSuccessResponse,
@@ -1077,8 +1077,8 @@ mod tests {
     // WebSocketDispatcher construction
     #[test]
     fn websocket_dispatcher_new() {
-        use crate::agent_executor;
         use crate::RequestHandlerBuilder;
+        use crate::agent_executor;
         use std::sync::Arc;
         struct DummyExec;
         agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
@@ -1088,8 +1088,8 @@ mod tests {
 
     // ── Integration tests via real WebSocket connections ──────────────────
 
-    use crate::agent_executor;
     use crate::RequestHandlerBuilder;
+    use crate::agent_executor;
     use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
     use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
     use futures_util::{SinkExt, StreamExt};
@@ -2077,8 +2077,8 @@ mod tests {
     // own.
     #[tokio::test]
     async fn ws_version_rejection_body_carries_error_details() {
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
         use tokio_tungstenite::tungstenite::Error as WsError;
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 
         let addr = spawn_ws_server().await;
         let mut req = format!("ws://{addr}").into_client_request().unwrap();

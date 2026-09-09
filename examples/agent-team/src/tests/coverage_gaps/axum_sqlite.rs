@@ -125,10 +125,10 @@ pub async fn test_axum_streaming(ctx: &TestContext) -> TestResult {
             let mut saw_completed = false;
             while let Some(event) = stream.next().await {
                 event_count += 1;
-                if let Ok(a2a_protocol_types::events::StreamResponse::StatusUpdate(ev)) = &event {
-                    if ev.status.state == a2a_protocol_types::task::TaskState::Completed {
-                        saw_completed = true;
-                    }
+                if let Ok(a2a_protocol_types::events::StreamResponse::StatusUpdate(ev)) = &event
+                    && ev.status.state == a2a_protocol_types::task::TaskState::Completed
+                {
+                    saw_completed = true;
                 }
             }
             if saw_completed && event_count >= 3 {
@@ -226,7 +226,7 @@ pub async fn test_sqlite_task_store(ctx: &TestContext) -> TestResult {
                 "sqlite-task-store",
                 start.elapsed().as_millis(),
                 &format!("create store: {e}"),
-            )
+            );
         }
     };
 
@@ -258,14 +258,14 @@ pub async fn test_sqlite_task_store(ctx: &TestContext) -> TestResult {
                 "sqlite-task-store",
                 start.elapsed().as_millis(),
                 "expected Task response",
-            )
+            );
         }
         Err(e) => {
             return TestResult::fail(
                 "sqlite-task-store",
                 start.elapsed().as_millis(),
                 &format!("send error: {e}"),
-            )
+            );
         }
     };
 
@@ -286,7 +286,7 @@ pub async fn test_sqlite_task_store(ctx: &TestContext) -> TestResult {
                 "sqlite-task-store",
                 start.elapsed().as_millis(),
                 &format!("get_task error: {e}"),
-            )
+            );
         }
     };
 
@@ -310,7 +310,7 @@ pub async fn test_sqlite_task_store(ctx: &TestContext) -> TestResult {
                 "sqlite-task-store",
                 start.elapsed().as_millis(),
                 &format!("list_tasks error: {e}"),
-            )
+            );
         }
     };
 
@@ -351,7 +351,7 @@ pub async fn test_sqlite_push_config(ctx: &TestContext) -> TestResult {
                 "sqlite-push-config",
                 start.elapsed().as_millis(),
                 &format!("create task store: {e}"),
-            )
+            );
         }
     };
 
@@ -362,7 +362,7 @@ pub async fn test_sqlite_push_config(ctx: &TestContext) -> TestResult {
                 "sqlite-push-config",
                 start.elapsed().as_millis(),
                 &format!("create push store: {e}"),
-            )
+            );
         }
     };
 
@@ -393,7 +393,7 @@ pub async fn test_sqlite_push_config(ctx: &TestContext) -> TestResult {
                 "sqlite-push-config",
                 start.elapsed().as_millis(),
                 "could not create task",
-            )
+            );
         }
     };
 
@@ -416,7 +416,7 @@ pub async fn test_sqlite_push_config(ctx: &TestContext) -> TestResult {
                 "sqlite-push-config",
                 start.elapsed().as_millis(),
                 &format!("set_push_config: {e}"),
-            )
+            );
         }
     };
 
@@ -471,7 +471,7 @@ pub async fn test_axum_with_sqlite(ctx: &TestContext) -> TestResult {
                 "axum-sqlite-combo",
                 start.elapsed().as_millis(),
                 &format!("create store: {e}"),
-            )
+            );
         }
     };
 
@@ -513,7 +513,7 @@ pub async fn test_axum_with_sqlite(ctx: &TestContext) -> TestResult {
                     "axum-sqlite-combo",
                     start.elapsed().as_millis(),
                     &format!("send {i} failed"),
-                )
+                );
             }
         }
     }

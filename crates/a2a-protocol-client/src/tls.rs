@@ -20,11 +20,11 @@ use std::time::Duration;
 
 use http_body_util::Full;
 use hyper::body::Bytes;
-use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
+use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
-use rustls::crypto::CryptoProvider;
 use rustls::ClientConfig;
+use rustls::crypto::CryptoProvider;
 
 /// Type alias for the HTTPS-capable hyper client.
 pub type HttpsClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;

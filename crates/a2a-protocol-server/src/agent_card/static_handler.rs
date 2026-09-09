@@ -14,10 +14,10 @@ use a2a_protocol_types::agent_card::AgentCard;
 use bytes::Bytes;
 use http_body_util::Full;
 
-use crate::agent_card::caching::{
-    check_conditional, format_http_date, make_etag, CacheConfig, ConditionalResult,
-};
 use crate::agent_card::CORS_ALLOW_ALL;
+use crate::agent_card::caching::{
+    CacheConfig, ConditionalResult, check_conditional, format_http_date, make_etag,
+};
 use crate::error::ServerResult;
 
 /// Serves a pre-serialized [`AgentCard`] as a JSON HTTP response with caching.

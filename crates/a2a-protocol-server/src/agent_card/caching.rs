@@ -114,23 +114,22 @@ pub fn check_conditional(
     current_last_modified: &str,
 ) -> ConditionalResult {
     // Check If-None-Match first (takes precedence per RFC 7232 §6).
-    if let Some(inm) = req.headers().get("if-none-match") {
-        if let Ok(inm_str) = inm.to_str() {
-            if etag_matches(inm_str, current_etag) {
-                return ConditionalResult::NotModified;
-            }
-            // If-None-Match was present but didn't match; skip If-Modified-Since.
-            return ConditionalResult::SendFull;
+    if let Some(inm) = req.headers().get("if-none-match")
+        && let Ok(inm_str) = inm.to_str()
+    {
+        if etag_matches(inm_str, current_etag) {
+            return ConditionalResult::NotModified;
         }
+        // If-None-Match was present but didn't match; skip If-Modified-Since.
+        return ConditionalResult::SendFull;
     }
 
     // Check If-Modified-Since (only when If-None-Match is absent).
-    if let Some(ims) = req.headers().get("if-modified-since") {
-        if let Ok(ims_str) = ims.to_str() {
-            if ims_str == current_last_modified {
-                return ConditionalResult::NotModified;
-            }
-        }
+    if let Some(ims) = req.headers().get("if-modified-since")
+        && let Ok(ims_str) = ims.to_str()
+        && ims_str == current_last_modified
+    {
+        return ConditionalResult::NotModified;
     }
 
     ConditionalResult::SendFull

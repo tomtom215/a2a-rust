@@ -41,13 +41,13 @@ use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::signature;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 
-use super::{auth_rejected, extract_bearer, AuthenticatedPrincipal};
+use super::{AuthenticatedPrincipal, auth_rejected, extract_bearer};
 use crate::call_context::CallContext;
 use crate::interceptor::ServerInterceptor;
 
@@ -462,10 +462,10 @@ impl JwtValidator {
             None if self.require_exp => return Err(()),
             None => {}
         }
-        if let Some(nbf) = claims.nbf {
-            if now.saturating_add(leeway) < nbf {
-                return Err(()); // not yet valid
-            }
+        if let Some(nbf) = claims.nbf
+            && now.saturating_add(leeway) < nbf
+        {
+            return Err(()); // not yet valid
         }
         if !self.issuers.is_empty() {
             match &claims.iss {
@@ -737,18 +737,14 @@ impl ServerInterceptor for JwtAuthInterceptor {
 impl RemoteJwks {
     /// Returns the cached JWKS, fetching when absent, stale, or `force`d.
     async fn get(&self, force: bool) -> A2aResult<Jwks> {
-        if !force {
-            if let Some(jwks) = self.cached_fresh() {
-                return Ok(jwks);
-            }
+        if !force && let Some(jwks) = self.cached_fresh() {
+            return Ok(jwks);
         }
         let _guard = self.refresh_lock.lock().await;
         // Re-check after acquiring the lock (another caller may have fetched),
         // unless we were explicitly forced to refetch for a rotation.
-        if !force {
-            if let Some(jwks) = self.cached_fresh() {
-                return Ok(jwks);
-            }
+        if !force && let Some(jwks) = self.cached_fresh() {
+            return Ok(jwks);
         }
         let jwks = self.fetch().await?;
         *self
@@ -789,8 +785,8 @@ impl RemoteJwks {
 
 use http_body_util::Full;
 use hyper::body::Bytes;
-use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
+use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
 
 /// Total budget for one JWKS or OIDC-discovery fetch — headers **and** body.
@@ -1155,10 +1151,11 @@ mod tests {
         let v = base_validator().with_hs256_secret(secret);
         let i = JwtAuthInterceptor::new(v, Jwks::new());
         assert!(i.before(&CallContext::new("m")).await.is_err());
-        assert!(i
-            .before(&CallContext::new("m").with_http_header("authorization", "Basic x"))
-            .await
-            .is_err());
+        assert!(
+            i.before(&CallContext::new("m").with_http_header("authorization", "Basic x"))
+                .await
+                .is_err()
+        );
     }
 
     // -- DER encoding ---------------------------------------------------------

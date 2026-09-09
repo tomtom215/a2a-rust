@@ -66,7 +66,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::message::{Part, PartContent};
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
-use rig_core::client::{CompletionClient, ProviderClient};
+use rig_core::client::CompletionClient;
 use rig_core::completion::Prompt;
 use rig_core::providers::openai;
 
@@ -251,19 +251,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("llama.cpp's llama-server, vLLM or Ollama for a local agent.");
     println!();
 
-    // rig's OpenAI client refuses to build without OPENAI_API_KEY. Local
-    // servers ignore the value, so default it rather than making the surface
-    // run impossible to start — and say so, instead of pretending a key was
-    // configured.
-    if std::env::var("OPENAI_API_KEY").is_err() {
+    // rig's OpenAI client refuses to build without an API key. Local servers
+    // ignore the value, so default it rather than making the surface run
+    // impossible to start — and say so, instead of pretending a key was
+    // configured. The client is built from these explicit values, mirroring
+    // what rig's `from_env` reads, rather than by seeding the environment:
+    // writing it is `unsafe` in edition 2024 once the runtime's threads exist.
+    let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| {
         println!("OPENAI_API_KEY unset — defaulting to a placeholder, which local");
         println!("OpenAI-compatible servers ignore. Hosted providers will reject it.");
-        std::env::set_var("OPENAI_API_KEY", "local");
         println!();
-    }
+        "local".to_owned()
+    });
+    let base_url = std::env::var("OPENAI_BASE_URL").ok();
 
     let build_agent = |model: &str| -> Result<_, String> {
-        let client = openai::CompletionsClient::from_env()
+        let mut builder = openai::CompletionsClient::builder().api_key(&api_key);
+        if let Some(base_url) = &base_url {
+            builder = builder.base_url(base_url);
+        }
+        let client = builder
+            .build()
             .map_err(|e| format!("failed to build the rig OpenAI client: {e}"))?;
         Ok(client
             .agent(model)

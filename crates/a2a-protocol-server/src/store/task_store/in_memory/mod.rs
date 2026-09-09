@@ -430,19 +430,17 @@ impl TaskStore for InMemoryTaskStore {
         delta: ArtifactDelta,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let applied = {
-                let mut store = self.data.write().await;
-                let applied = store
-                    .entries
-                    .get_mut(&task.id)
-                    .is_some_and(|entry| apply_delta(&mut entry.task, task, delta));
-                if applied {
-                    if let Some(entry) = store.entries.get_mut(&task.id) {
-                        entry.last_updated = Instant::now();
-                    }
-                }
-                applied
-            };
+            let mut store = self.data.write().await;
+            let applied = store
+                .entries
+                .get_mut(&task.id)
+                .is_some_and(|entry| apply_delta(&mut entry.task, task, delta));
+            if applied && let Some(entry) = store.entries.get_mut(&task.id) {
+                entry.last_updated = Instant::now();
+            }
+            // Released before the fallback below, which takes the lock again
+            // through `save`.
+            drop(store);
 
             if applied {
                 trace_debug!(task_id = %task.id, "applied artifact delta in place");
@@ -528,10 +526,10 @@ impl TaskStore for InMemoryTaskStore {
                     .rev()
                     .filter_map(|(key, id)| {
                         let entry = store.entries.get(id)?;
-                        if let Some(ref status) = params.status {
-                            if entry.task.status.state != *status {
-                                return None;
-                            }
+                        if let Some(ref status) = params.status
+                            && entry.task.status.state != *status
+                        {
+                            return None;
                         }
                         Some((*key, entry.task.clone()))
                     })

@@ -25,7 +25,7 @@
 //! - Agent intelligence or LLM latency
 //! - Network latency (loopback only)
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
 use a2a_benchmarks::executor::EchoExecutor;
 use a2a_benchmarks::fixtures;

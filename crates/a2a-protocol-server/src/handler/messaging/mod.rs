@@ -114,7 +114,7 @@ impl RequestHandler {
     #[allow(clippy::too_many_lines)]
     async fn send_message_inner(
         &self,
-        params: MessageSendParams,
+        mut params: MessageSendParams,
         streaming: bool,
         method_name: &str,
         headers: Option<&HashMap<String, String>>,
@@ -139,6 +139,8 @@ impl RequestHandler {
         if streaming {
             self.ensure_streaming_supported()?;
         }
+
+        unset_proto3_empty_ids(&mut params.message);
 
         // Validate incoming IDs: reject empty/whitespace-only and excessively long values (AP-1).
         if let Some(ref ctx_id) = params.message.context_id {
@@ -282,13 +284,13 @@ impl RequestHandler {
         // atomic with the token insert below.
         {
             let tokens = self.cancellation_tokens.read().await;
-            if let Some(entry) = tokens.get(&task_id) {
-                if second_send_blocked(entry) {
-                    return Err(ServerError::UnsupportedOperation(format!(
-                        "task {task_id} is already being processed; \
+            if let Some(entry) = tokens.get(&task_id)
+                && second_send_blocked(entry)
+            {
+                return Err(ServerError::UnsupportedOperation(format!(
+                    "task {task_id} is already being processed; \
                          wait for it to reach input-required or a terminal state before sending again"
-                    )));
-                }
+                )));
             }
         }
 
@@ -543,7 +545,7 @@ impl RequestHandler {
 
             // Wrap executor call to catch panics, ensuring cleanup always runs.
             let result = {
-                let exec_future = if let Some(timeout) = executor_timeout {
+                if let Some(timeout) = executor_timeout {
                     tokio::time::timeout(timeout, executor.execute(&ctx, writer.as_ref()))
                         .await
                         .unwrap_or_else(|_| {
@@ -554,8 +556,7 @@ impl RequestHandler {
                         })
                 } else {
                     executor.execute(&ctx, writer.as_ref()).await
-                };
-                exec_future
+                }
             };
 
             if let Err(ref e) = result {
@@ -652,6 +653,27 @@ impl RequestHandler {
                 final_task,
             )))
         }
+    }
+}
+
+/// Maps an exactly-empty `contextId` / `taskId` on an incoming message to
+/// absent.
+///
+/// The A2A JSON bindings are `ProtoJSON`, and both fields are proto3 strings
+/// without presence: an empty string *is* the unset value. A client that
+/// prints every field — a2a-java's JSON-RPC transport uses
+/// `alwaysPrintFieldsWithNoPresence` — therefore sends `"contextId": ""` for
+/// "none", and until 2026-09-09 this server rejected that as an invalid id,
+/// failing every JSON-RPC pairing with the Java SDK in the official ITK while
+/// the same peer passed over gRPC and HTTP+JSON, whose printers omit
+/// defaults. Whitespace-only is left alone and still rejected by
+/// `validate_id`: no printer produces it for "unset".
+fn unset_proto3_empty_ids(message: &mut a2a_protocol_types::message::Message) {
+    if message.context_id.as_ref().is_some_and(|c| c.0.is_empty()) {
+        message.context_id = None;
+    }
+    if message.task_id.as_ref().is_some_and(|t| t.0.is_empty()) {
+        message.task_id = None;
     }
 }
 

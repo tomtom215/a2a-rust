@@ -92,10 +92,27 @@ The REST transport uses standard HTTP methods and URL paths:
 
 ### Multi-Tenant Paths
 
-With tenancy, the tenant rides in the path — either the canonical bare-segment
-form from the spec's `google.api.http` bindings (`/{tenant}/tasks/{id}`, what
-official-SDK REST clients send) or this SDK's explicit
-`/tenants/{tenant-id}/tasks/{id}` form; both are routed.
+The spec's proto binds every method twice: a primary pattern with no tenant in
+the path (`/tasks/{id}`) and an `additional_bindings` pattern with the tenant
+as the leading segment (`/{tenant}/tasks/{id}`). This SDK's client sends the
+prefix form — the same one the official Python SDK's REST client sends, and
+the only one the official Python server reads — with the segment
+percent-encoded, and keeps the field in POST bodies as well.
+
+The server accepts the tenant from every place the proto lets it arrive, in
+this order of precedence:
+
+1. the path prefix — `/{tenant}/…` (canonical) or this SDK's explicit
+   `/tenants/{tenant-id}/…` form, percent-decoded;
+2. the `?tenant=` query parameter on `GET` and `DELETE` (§11.5's transcoding
+   of the primary pattern);
+3. the `tenant` field of a `POST` body (`message:send`, `message:stream`,
+   `tasks/{id}:cancel`, `tasks/{id}:subscribe`, push-config create).
+
+A path tenant is injected into a POST body that omits it, so
+`POST /acme/message:send` with no `tenant` in the JSON lands in `acme`. When
+the path and the body disagree the path wins, as a path variable does under
+`google.api.http`.
 
 ### Content Types
 
@@ -214,14 +231,93 @@ dispatcher.serve("0.0.0.0:50051").await?;
 
 ### Client
 
-```rust,ignore
-use a2a_protocol_client::GrpcTransport;
+An Agent Card's gRPC interface advertises a gRPC **target** — `host:port`,
+per the proto's `AgentInterface.url` comment — not a URL, because gRPC names
+carry no scheme. `GrpcTransport::connect` and `ClientBuilder::build_grpc`
+accept that form, and decide how to dial it with a `GrpcBareAddressScheme`:
 
-let transport = GrpcTransport::connect("http://agent.example.com:50051").await?;
-let client = ClientBuilder::new("http://agent.example.com:50051")
-    .with_custom_transport(transport)
-    .build()?;
+| Policy | Bare `host:port` is dialled… | When |
+|---|---|---|
+| `HttpsExceptLoopback` (default) | with TLS, except `localhost` / `127.0.0.0/8` / `::1` in plaintext | the spec requires TLS in production (§13); a loopback peer is this machine |
+| `Https` | always with TLS | a loopback TLS terminator, or to remove the exception |
+| `Http` | always in plaintext | a private network whose agents advertise `agent:50051` and terminate TLS in a mesh or sidecar |
+
+An address that already carries `http://` or `https://` is used as-is.
+`https://` — explicit or chosen by the policy — needs the `grpc-tls` feature;
+without it the connect fails with a message naming the feature rather than
+attempting a plaintext handshake against a TLS port.
+
+```rust,ignore
+use a2a_protocol_client::{ClientBuilder, GrpcBareAddressScheme};
+
+// From a card whose gRPC interface says "grpc.example.com:443": TLS,
+// verified against the bundled Mozilla roots (needs `grpc-tls`).
+let client = ClientBuilder::from_card(&card)?.build_grpc().await?;
+
+// A Compose network where the card says "analyzer:50051" and the mesh
+// terminates TLS: plaintext, on purpose.
+let client = ClientBuilder::from_card(&card)?
+    .with_grpc_bare_address_scheme(GrpcBareAddressScheme::Http)
+    .build_grpc()
+    .await?;
+
+// A private CA, pinned (needs `grpc-tls`). The TLS types are re-exported
+// from `transport::grpc`, so no tonic dependency of your own.
+use a2a_protocol_client::transport::grpc::{Certificate, ClientTlsConfig};
+
+let tls = ClientTlsConfig::new()
+    .ca_certificate(Certificate::from_pem(ca_pem))
+    .domain_name("agent.internal");
+let client = ClientBuilder::from_card(&card)?
+    .with_grpc_tls_config(tls)
+    .build_grpc()
+    .await?;
 ```
+
+#### Serving TLS
+
+The server's gRPC listener is plaintext with the `grpc` feature — the shape
+the official SDKs' gRPC servers expect, with TLS terminated in a proxy or
+mesh. With `grpc-tls` on `a2a-protocol-server` it can serve TLS itself:
+`GrpcDispatcher::with_tls` takes a `ServerTlsConfig` carrying the server
+certificate and key and, for mutual TLS, the CA that client certificates
+must chain to. The types are re-exported from `dispatch::grpc`, so no tonic
+dependency of your own. The listener then speaks TLS only; a plaintext
+client is refused at the handshake rather than served.
+
+```rust
+# use std::sync::Arc;
+# use a2a_protocol_server::RequestHandler;
+use a2a_protocol_server::dispatch::grpc::{
+    Certificate, GrpcConfig, GrpcDispatcher, Identity, ServerTlsConfig,
+};
+
+# async fn example(
+#     handler: Arc<RequestHandler>,
+#     cert_pem: &str,
+#     key_pem: &str,
+#     client_ca_pem: &str,
+# ) -> std::io::Result<()> {
+let tls = ServerTlsConfig::new()
+    .identity(Identity::from_pem(cert_pem, key_pem))
+    // Mutual TLS: clients must present a certificate this CA signed.
+    // Add `.client_auth_optional(true)` to admit clients that present none.
+    .client_ca_root(Certificate::from_pem(client_ca_pem));
+
+GrpcDispatcher::new(handler, GrpcConfig::default())
+    .with_tls(tls)
+    .serve("0.0.0.0:50051")
+    .await?;
+# Ok(())
+# }
+```
+
+A configuration tonic rejects — a key that does not match its certificate —
+comes back from the `serve*` call as an `std::io::Error`, not a panic. tonic
+builds its acceptor from the process-level rustls crypto provider; when none
+is installed and more than one is linked, the dispatcher installs `ring`
+rather than letting rustls panic, and never overrides a provider the
+application installed first.
 
 ### Protocol
 

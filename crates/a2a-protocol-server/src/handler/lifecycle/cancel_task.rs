@@ -14,8 +14,8 @@ use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 use crate::error::{ServerError, ServerResult};
 use crate::request_context::RequestContext;
 
-use super::super::helpers::build_call_context;
 use super::super::RequestHandler;
+use super::super::helpers::build_call_context;
 
 impl RequestHandler {
     /// Handles `CancelTask`.

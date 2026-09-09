@@ -14,14 +14,14 @@
 
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
 use a2a_protocol_server::streaming::EventQueueReader;
+use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
 use a2a_protocol_types::error::{A2aResult, ErrorCode};
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
 use a2a_protocol_types::task::{TaskId, TaskState};
 
-use crate::{make_agent_card, GenaiAgentExecutor, SLOW_PREFIX};
+use crate::{GenaiAgentExecutor, SLOW_PREFIX, make_agent_card};
 
 /// A genai client whose every request goes to a port nothing listens on.
 ///

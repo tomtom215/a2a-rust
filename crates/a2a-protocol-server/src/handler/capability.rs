@@ -37,13 +37,13 @@ impl RequestHandler {
     /// Returns [`ServerError::UnsupportedOperation`] if streaming is not
     /// advertised by the configured agent card.
     pub(crate) fn ensure_streaming_supported(&self) -> ServerResult<()> {
-        if let Some(card) = &self.agent_card {
-            if card.capabilities.streaming != Some(true) {
-                return Err(ServerError::UnsupportedOperation(
-                    "agent does not support streaming (AgentCard.capabilities.streaming is not true)"
-                        .into(),
-                ));
-            }
+        if let Some(card) = &self.agent_card
+            && card.capabilities.streaming != Some(true)
+        {
+            return Err(ServerError::UnsupportedOperation(
+                "agent does not support streaming (AgentCard.capabilities.streaming is not true)"
+                    .into(),
+            ));
         }
         Ok(())
     }
@@ -60,10 +60,10 @@ impl RequestHandler {
     /// Returns [`ServerError::PushNotSupported`] if push notifications are not
     /// advertised by the configured agent card.
     pub(crate) fn ensure_push_supported(&self) -> ServerResult<()> {
-        if let Some(card) = &self.agent_card {
-            if card.capabilities.push_notifications != Some(true) {
-                return Err(ServerError::PushNotSupported);
-            }
+        if let Some(card) = &self.agent_card
+            && card.capabilities.push_notifications != Some(true)
+        {
+            return Err(ServerError::PushNotSupported);
         }
         Ok(())
     }

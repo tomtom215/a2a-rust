@@ -64,9 +64,9 @@
 // 1.95) and fires on `Duration::from_secs(3600)` / `_secs(7200)` /
 // `_secs(86400)`, suggesting `Duration::from_hours` / `from_days`. Those
 // constructors were themselves only stabilised in 1.95, so adopting the
-// suggested fix would break our MSRV (1.93). The `unknown_lints` allow
+// suggested fix would break our MSRV (1.88). The `unknown_lints` allow
 // silences the "unknown lint name" warning when the lint itself does
-// not yet exist in clippy 0.1.93.
+// not yet exist in clippy 0.1.88.
 #![allow(unknown_lints, clippy::duration_suboptimal_units)]
 
 #[macro_use]
@@ -116,25 +116,25 @@ pub use a2a_protocol_types as __types;
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 
 pub use agent_card::{
-    AgentCardProducer, DynamicAgentCardHandler, HotReloadAgentCardHandler, StaticAgentCardHandler,
-    CORS_ALLOW_ALL,
+    AgentCardProducer, CORS_ALLOW_ALL, DynamicAgentCardHandler, HotReloadAgentCardHandler,
+    StaticAgentCardHandler,
 };
 pub use auth::{ApiKeyAuthInterceptor, BearerTokenAuthInterceptor};
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;
-#[cfg(feature = "axum")]
-pub use dispatch::axum_adapter::A2aRouter;
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
+#[cfg(feature = "axum")]
+pub use dispatch::axum_adapter::A2aRouter;
 pub use dispatch::{
-    validate_version_metadata, CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher,
-    A2A_VERSION_METADATA_KEY,
+    A2A_VERSION_METADATA_KEY, CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher,
+    validate_version_metadata,
 };
 #[cfg(feature = "grpc")]
 pub use dispatch::{GrpcConfig, GrpcDispatcher};
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
-pub use executor_helpers::{boxed_future, EventEmitter};
+pub use executor_helpers::{EventEmitter, boxed_future};
 pub use handler::{HandlerLimits, RequestHandler, SendMessageResult, ShutdownReport};
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
 pub use metrics::{ConnectionPoolStats, Metrics};
@@ -148,7 +148,7 @@ pub use push::{
 pub use rate_limit::PostgresRateLimitCounter;
 pub use rate_limit::{RateLimitConfig, RateLimitCounter, RateLimitInterceptor};
 pub use request_context::RequestContext;
-pub use serve::{serve, serve_with_addr, Dispatcher, ServeConfig, ServeReport, Server};
+pub use serve::{Dispatcher, ServeConfig, ServeReport, Server, serve, serve_with_addr};
 pub use store::{
     InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,
     TenantStoreConfig,

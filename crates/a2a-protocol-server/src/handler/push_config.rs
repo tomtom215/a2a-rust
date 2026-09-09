@@ -14,8 +14,8 @@ use a2a_protocol_types::task::TaskId;
 
 use crate::error::{ServerError, ServerResult};
 
-use super::helpers::build_call_context;
 use super::RequestHandler;
+use super::helpers::build_call_context;
 
 impl RequestHandler {
     /// Validates a push notification config and writes it to the store.
@@ -118,16 +118,15 @@ impl RequestHandler {
         // Making it exact means one server-wide lock around every push-config
         // create, which is a throughput decision for the deployment rather
         // than a bug fix. Recorded as backlog B20.
-        if !is_update {
-            if let Some(total) = self.push_config_store.count().await? {
-                if total >= self.limits.max_total_push_configs {
-                    return Err(ServerError::Overloaded(format!(
-                        "server is at the maximum of {} push notification configs; \
+        if !is_update
+            && let Some(total) = self.push_config_store.count().await?
+            && total >= self.limits.max_total_push_configs
+        {
+            return Err(ServerError::Overloaded(format!(
+                "server is at the maximum of {} push notification configs; \
                          delete unused configs before creating more",
-                        self.limits.max_total_push_configs
-                    )));
-                }
-            }
+                self.limits.max_total_push_configs
+            )));
         }
 
         Ok(self.push_config_store.set(config).await?)

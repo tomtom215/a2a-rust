@@ -10,8 +10,8 @@ pub mod sse;
 
 pub(crate) use event_queue::QueueLease;
 pub use event_queue::{
-    EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader,
-    InMemoryQueueWriter, DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY,
+    DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY, EventQueueManager, EventQueueReader,
+    EventQueueWriter, InMemoryQueueReader, InMemoryQueueWriter,
 };
 pub(crate) use event_queue::{ReattachFn, Reattached};
-pub use sse::{build_sse_response, SseBodyWriter};
+pub use sse::{SseBodyWriter, build_sse_response};

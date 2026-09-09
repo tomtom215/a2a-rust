@@ -19,7 +19,7 @@ use a2a_protocol_server::executor_helpers::boxed_future;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
 
-use crate::helpers::{make_send_params, EventEmitter};
+use crate::helpers::{EventEmitter, make_send_params};
 
 /// Orchestrates the team: delegates tasks to other agents via A2A client calls,
 /// aggregates results, and reports a unified summary.

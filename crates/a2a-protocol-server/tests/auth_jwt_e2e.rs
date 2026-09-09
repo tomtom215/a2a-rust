@@ -12,12 +12,12 @@
 
 #![cfg(feature = "auth-jwt")]
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use a2a_protocol_server::auth::jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::{agent_executor, RequestHandlerBuilder};
+use a2a_protocol_server::{RequestHandlerBuilder, agent_executor};
 
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;

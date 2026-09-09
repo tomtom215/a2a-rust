@@ -111,7 +111,7 @@ This mode serves both JSON-RPC and REST on a single address and is used by the A
 
 ## Prerequisites
 
-- Rust 1.93+ (MSRV)
+- Rust 1.88+ (MSRV)
 - No external services required — everything runs in-process
 
 ## License

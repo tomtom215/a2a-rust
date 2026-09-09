@@ -143,10 +143,10 @@ async fn body_reader_task(
                 break;
             }
             Some(Ok(f)) => {
-                if let Ok(data) = f.into_data() {
-                    if tx.send(Ok(data)).await.is_err() {
-                        break;
-                    }
+                if let Ok(data) = f.into_data()
+                    && tx.send(Ok(data)).await.is_err()
+                {
+                    break;
                 }
             }
         }

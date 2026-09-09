@@ -20,7 +20,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use a2a_example_harness::Binding;
-use a2a_example_harness::{interfaces, Endpoints};
+use a2a_example_harness::{Endpoints, interfaces};
 use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
@@ -28,7 +28,7 @@ use a2a_protocol_server::handler::RequestHandler;
 use a2a_protocol_server::push::{HttpPushSender, InMemoryPushConfigStore};
 use a2a_protocol_types::agent_card::AgentCapabilities;
 
-use crate::{make_coordinator_card, CoordinatorExecutor, Worker};
+use crate::{CoordinatorExecutor, Worker, make_coordinator_card};
 
 type BoxErr = Box<dyn std::error::Error>;
 

@@ -16,7 +16,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::task::Task;
 
-use super::{to_a2a_error, PostgresTaskStore};
+use super::{PostgresTaskStore, to_a2a_error};
 
 /// Whether an `AppendedParts` delta actually describes `artifact`.
 ///

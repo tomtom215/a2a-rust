@@ -30,7 +30,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::error::ServerError;
 use a2a_protocol_server::handler::{HandlerLimits, SendMessageResult};
 use a2a_protocol_server::push::HttpPushSender;
-use a2a_protocol_server::{agent_executor, RequestHandler};
+use a2a_protocol_server::{RequestHandler, agent_executor};
 
 struct NoopExecutor;
 agent_executor!(NoopExecutor, |_ctx, _queue| async { Ok(()) });

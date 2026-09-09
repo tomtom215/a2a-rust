@@ -28,7 +28,14 @@ impl A2aClient {
     pub async fn get_extended_agent_card(&self) -> ClientResult<AuthenticatedExtendedCardResponse> {
         const METHOD: &str = "GetExtendedAgentCard";
 
-        let mut req = ClientRequest::new(METHOD, serde_json::Value::Null);
+        // `GetExtendedAgentCardRequest` has exactly one field, `tenant`
+        // (§8.3.2 rule 4 applies to it like any other request). Parameterless
+        // stays `null` so the wire is unchanged for single-tenant agents.
+        let params = self.tenant_or_default(None).map_or(
+            serde_json::Value::Null,
+            |tenant| serde_json::json!({ "tenant": tenant }),
+        );
+        let mut req = ClientRequest::new(METHOD, params);
         self.interceptors.run_before(&mut req).await?;
 
         let result = self
@@ -56,10 +63,10 @@ mod tests {
     use std::future::Future;
     use std::pin::Pin;
 
+    use crate::ClientBuilder;
     use crate::error::{ClientError, ClientResult};
     use crate::streaming::EventStream;
     use crate::transport::Transport;
-    use crate::ClientBuilder;
 
     struct MockTransport {
         response: serde_json::Value,

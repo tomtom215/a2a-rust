@@ -6,8 +6,8 @@
 //! Tests for HttpPushSender retry logic, authentication headers, and error handling.
 
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::push::{AuthenticationInfo, TaskPushNotificationConfig};
@@ -278,11 +278,14 @@ async fn backoff_is_paid_between_attempts_but_not_after_the_last() {
     );
 
     // The claim in the name: *not after the last*. A trailing backoff would be
-    // the 1500ms one again, so anything under half of that excludes it while
-    // leaving room for a slow response round trip.
+    // the 1500ms one again, so a bound well under that excludes it while
+    // leaving room for a slow response round trip. 700ms was not enough room:
+    // a correct run on a Windows 1.88 runner measured 873ms between the last
+    // arrival and the return (2026-09-09), so the bound is 1000ms — still
+    // 500ms short of the backoff it must rule out.
     let after_last = returned_at - arrivals[2];
     assert!(
-        after_last < Duration::from_millis(700),
+        after_last < Duration::from_millis(1000),
         "no backoff may be paid after the final attempt — {after_last:?} elapsed \
          between the last request arriving and send() returning, and a trailing \
          backoff would be 1500ms"
@@ -425,6 +428,66 @@ async fn bearer_auth_header_is_sent() {
         req.contains("authorization: Bearer my-secret-token")
             || req.contains("Authorization: Bearer my-secret-token"),
         "should contain Bearer auth header, got: {req}"
+    );
+    handle.abort();
+}
+
+/// A scheme with no credential value cannot produce a header; the request
+/// must go out without one rather than with an empty `Bearer `.
+#[tokio::test]
+async fn scheme_without_credentials_sends_no_auth_header() {
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
+
+    let sender = HttpPushSender::new().allow_private_urls();
+    let url = format!("http://{addr}/webhook");
+    let mut config = base_config(&url);
+    config.authentication = Some(AuthenticationInfo {
+        scheme: "bearer".into(),
+        credentials: None,
+    });
+
+    sender.send(&url, &status_event(), &config).await.unwrap();
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let reqs = captured.lock().unwrap();
+    let req = reqs[0].to_ascii_lowercase();
+    assert!(
+        !req.contains("authorization:"),
+        "no credentials must mean no Authorization header, got: {req}"
+    );
+    handle.abort();
+}
+
+/// An unknown scheme is not guessed at: the request goes out without an
+/// Authorization header rather than with a made-up one.
+#[tokio::test]
+async fn unknown_scheme_sends_no_auth_header() {
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
+
+    let sender = HttpPushSender::new().allow_private_urls();
+    let url = format!("http://{addr}/webhook");
+    let mut config = base_config(&url);
+    config.authentication = Some(AuthenticationInfo {
+        scheme: "digest".into(),
+        credentials: Some("opaque".into()),
+    });
+
+    sender.send(&url, &status_event(), &config).await.unwrap();
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let reqs = captured.lock().unwrap();
+    let req = reqs[0].to_ascii_lowercase();
+    assert!(
+        !req.contains("authorization:"),
+        "an unknown scheme must not produce an Authorization header, got: {req}"
     );
     handle.abort();
 }

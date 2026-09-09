@@ -138,13 +138,13 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for IdleTimeout<T> {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let result = Pin::new(&mut self.inner).poll_write(cx, buf);
-        if let Poll::Ready(Ok(n)) = result {
-            if n > 0 {
-                // Why writes count: an SSE response reads nothing for minutes
-                // while it streams. Counting only reads would make the idle
-                // timeout a cap on streaming response length.
-                self.touch();
-            }
+        if let Poll::Ready(Ok(n)) = result
+            && n > 0
+        {
+            // Why writes count: an SSE response reads nothing for minutes
+            // while it streams. Counting only reads would make the idle
+            // timeout a cap on streaming response length.
+            self.touch();
         }
         result
     }
@@ -163,10 +163,10 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for IdleTimeout<T> {
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
         let result = Pin::new(&mut self.inner).poll_write_vectored(cx, bufs);
-        if let Poll::Ready(Ok(n)) = result {
-            if n > 0 {
-                self.touch();
-            }
+        if let Poll::Ready(Ok(n)) = result
+            && n > 0
+        {
+            self.touch();
         }
         result
     }

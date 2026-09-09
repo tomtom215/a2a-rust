@@ -72,12 +72,15 @@ from either direction (`grep -rn "§3.4.3" crates/`).
 |---|---|---|
 | Bearer / API-key / JWT interceptors | `auth/` (`auth-jwt` feature) | `auth_jwt_e2e`, JWKS/OIDC discovery e2e tests; live-TLS JWKS test |
 | JWKS parsing (remote keys) | `auth/jwt.rs::Jwks::from_json` | unit tests; `fuzz/jwks_parse` |
+| §7.6.4 `TASK_STATE_AUTH_REQUIRED` is not itself an authorization (added upstream 2026-07-30, `6550d34`) | `ServerInterceptor` runs before every method regardless of task state; no server code reads `AuthRequired` for any decision (`grep -rn AuthRequired crates/a2a-protocol-server/src` — tests only) | `auth_required_state_tests.rs`: a continuation of an `AUTH_REQUIRED` task without credentials is rejected by the interceptor exactly as the first request was |
 
 ## §8 — Agent discovery
 
 | Spec area | Implementation | Evidence |
 |---|---|---|
 | §8.3 Well-known agent card at `/.well-known/agent-card.json` | dispatchers; `client/discovery.rs` | discovery tests; card served versionless (see §3.6.2 row) |
+| §8.3.2 rule 4 Client sends the selected interface's `tenant` on **every** request | `methods/mod.rs::tenant_or_default`, applied in all eleven methods; `builder/mod.rs` populates `ClientConfig::tenant` from the card | `methods::tests::card_tenant_is_sent_on_every_request` (per-method, by name); `tenant_round_trip_tests.rs` (client vs. tenant-partitioned server over JSON-RPC and REST, with a `TaskNotFound` control) |
+| `AgentInterface.url` for gRPC is a target `host:port` (proto comment, upstream `cfc9d34`) | `transport/grpc.rs::normalize_endpoint`; `GrpcBareAddressScheme` | `normalize_*` unit tests; `a2a-protocol-sdk/tests/grpc_address_e2e.rs` (bare loopback → plaintext; bare target with TLS and a pinned CA; bundled roots reject an unknown CA) |
 | Card body bounded (DoS) | `client/discovery.rs` (`MAX_CARD_BODY_SIZE`, read timeout) | hostile-peer: `oversized_card_body_rejected`, `slow_drip_card_body_times_out`, `short_body_under_declared_length_errors`, `immediate_reset_errors`, `valid_json_wrong_shape_rejected` |
 | §13.3 Extended card requires authentication by default | `handler/lifecycle/extended_card.rs`; `ServerInterceptor::authenticates()` | extended-card auth tests; `allow_unauthenticated_extended_card` opt-out |
 
@@ -91,6 +94,7 @@ from either direction (`grep -rn "§3.4.3" crates/`).
 | §10 gRPC binding (canonical `lf.a2a.v1.A2AService`) | `dispatch/grpc/` (`grpc` feature); `client/transport/grpc.rs` | grpc test leg; golden wire fixtures; ITK gRPC scenarios |
 | §10.6 gRPC `google.rpc.ErrorInfo` details | `dispatch/grpc/helpers.rs` | gRPC error-detail tests |
 | §11 HTTP+JSON/REST binding | `dispatch/rest/` | full TCK REST leg (our agent + 4 official SDKs) |
+| §11.3 / proto `additional_bindings`: tenant as `/{tenant}/…` prefix; §11.5: `?tenant=` on GET/DELETE and body on POST | client `transport/rest/request.rs::build_uri`; server `dispatch/rest/mod.rs` (prefix → query → body, path wins, percent-decoded) | client `build_uri_*tenant*` tests; server `rest_tenant_binding_tests.rs` (7 arrival/precedence cases, each with a `TaskNotFound` control) |
 | §11.6 AIP-193 error bodies | `dispatch/rest/response.rs`; client REST decoder | REST error-shape tests |
 
 ## §12 — Custom bindings

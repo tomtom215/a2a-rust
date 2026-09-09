@@ -22,7 +22,7 @@ use a2a_protocol_server::push::{HttpPushSender, InMemoryPushConfigStore};
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 
 use crate::agents::{LogSearchExecutor, RunbookExecutor, TriageExecutor};
-use crate::{incident_model, LOGS_PORT, RUNBOOK_PORT, TRIAGE_PORT};
+use crate::{LOGS_PORT, RUNBOOK_PORT, TRIAGE_PORT, incident_model};
 
 // ── Server scaffolding ───────────────────────────────────────────────────────
 

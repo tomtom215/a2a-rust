@@ -17,11 +17,11 @@ use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{ListTasksParams, MessageSendParams, SendMessageConfiguration};
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
+use a2a_protocol_server::TaskStoreConfig;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
-use a2a_protocol_server::{ServerError, TaskStoreConfig};
 
 // ── Test executors ───────────────────────────────────────────────────────────
 
@@ -140,8 +140,11 @@ fn make_params_with_context(text: &str, ctx_id: &str) -> MessageSendParams {
 
 // ── ID Validation Tests ──────────────────────────────────────────────────────
 
+/// `""` is proto3's unset value on the ProtoJSON bindings (a2a-java's
+/// JSON-RPC client prints an unset contextId that way), so it is accepted
+/// and a context generated; whitespace-only stays rejected below.
 #[tokio::test]
-async fn reject_empty_context_id() {
+async fn empty_context_id_is_unset() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
         .build()
         .unwrap();
@@ -150,13 +153,10 @@ async fn reject_empty_context_id() {
     params.message.context_id = Some(ContextId::new(""));
 
     let result = handler.on_send_message(params, false, None).await;
-    assert!(result.is_err(), "empty context_id should be rejected");
-    if let Err(e) = result {
-        assert!(
-            matches!(e, ServerError::InvalidParams(_)),
-            "expected InvalidParams, got: {e}"
-        );
-    }
+    assert!(
+        result.is_ok(),
+        "an empty context_id is the unset value, got {result:?}"
+    );
 }
 
 #[tokio::test]

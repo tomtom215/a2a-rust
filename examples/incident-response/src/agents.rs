@@ -26,8 +26,8 @@ use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
 use crate::{
-    agent_message, complete, emit_artifact, extract_text, find_service, known_services, progress,
-    send_params, try_llm, user_message, INCIDENT_LOG, RUNBOOKS,
+    INCIDENT_LOG, RUNBOOKS, agent_message, complete, emit_artifact, extract_text, find_service,
+    known_services, progress, send_params, try_llm, user_message,
 };
 
 #[cfg(test)]

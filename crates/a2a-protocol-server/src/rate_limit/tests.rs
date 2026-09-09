@@ -839,10 +839,10 @@ async fn x_forwarded_for_single_ip_with_trusted_hop() {
 // ── per-tenant limits ────────────────────────────────────────────────────
 
 mod tenant {
-    use super::{make_ctx, RateLimitConfig, RateLimitInterceptor};
+    use super::{RateLimitConfig, RateLimitInterceptor, make_ctx};
+    use crate::ServerInterceptor as _;
     use crate::store::tenant::TenantContext;
     use crate::tenant_config::{PerTenantConfig, TenantLimits};
-    use crate::ServerInterceptor as _;
 
     /// A limiter whose own caller limit is high enough not to interfere, so a
     /// rejection can only have come from the tenant bucket.

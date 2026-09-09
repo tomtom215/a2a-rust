@@ -13,8 +13,8 @@ use a2a_protocol_types::responses::TaskListResponse;
 
 use crate::error::ServerResult;
 
-use super::super::helpers::{build_call_context, truncate_history};
 use super::super::RequestHandler;
+use super::super::helpers::{build_call_context, truncate_history};
 
 impl RequestHandler {
     /// Handles `ListTasks`.
@@ -43,15 +43,15 @@ impl RequestHandler {
         // Validate statusTimestampAfter up front so every store backend sees
         // a well-formed value; a malformed timestamp is a client error, not
         // an empty result set.
-        if let Some(ref after) = params.status_timestamp_after {
-            if a2a_protocol_types::parse_iso8601_to_unix_millis(after).is_none() {
-                let err = crate::error::ServerError::InvalidParams(format!(
-                    "statusTimestampAfter is not a valid ISO 8601 timestamp: {after:?}"
-                ));
-                self.metrics.on_error("ListTasks", err.metric_label());
-                self.metrics.on_latency("ListTasks", start.elapsed());
-                return Err(err);
-            }
+        if let Some(ref after) = params.status_timestamp_after
+            && a2a_protocol_types::parse_iso8601_to_unix_millis(after).is_none()
+        {
+            let err = crate::error::ServerError::InvalidParams(format!(
+                "statusTimestampAfter is not a valid ISO 8601 timestamp: {after:?}"
+            ));
+            self.metrics.on_error("ListTasks", err.metric_label());
+            self.metrics.on_latency("ListTasks", start.elapsed());
+            return Err(err);
         }
         let history_length = params.history_length;
         let include_artifacts = params.include_artifacts;

@@ -16,7 +16,7 @@
 //! |---|---|
 //! | (this file) | `OtelMetrics` struct and `Metrics` trait impl |
 //! | `builder` | `OtelMetricsBuilder` — fluent configuration |
-//! | `pipeline` | `init_otlp_pipeline` — OTLP export setup |
+//! | `pipeline` | `init_otlp_pipeline` / `init_otlp_pipeline_with_endpoint` — OTLP export setup |
 //!
 //! # Feature flag
 //!
@@ -46,13 +46,13 @@ mod pipeline;
 
 use std::time::Duration;
 
-use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use opentelemetry::KeyValue;
+use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 
 use crate::metrics::{ConnectionPoolStats, Metrics};
 
 pub use builder::OtelMetricsBuilder;
-pub use pipeline::init_otlp_pipeline;
+pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
 
 // ── OtelMetrics ──────────────────────────────────────────────────────────────
 

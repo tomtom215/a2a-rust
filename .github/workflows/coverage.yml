@@ -10,7 +10,9 @@ name: Coverage
 
 on:
   push:
-    branches: [main]
+    # `claude/**` as in ci.yml: a branch's coverage is uploaded under its
+    # own name, so the number can be read back before a PR exists.
+    branches: ["main", "claude/**"]
   pull_request:
     branches: [main]
   # On demand as well, so a change to the upload step can be proven without
@@ -35,6 +37,26 @@ jobs:
   coverage:
     name: Test coverage
     runs-on: ubuntu-latest
+    # The seven PostgreSQL store files only execute against a live server.
+    # Until 2026-09-09 they were meant to be excluded from the dashboard
+    # instead, and the exclusion never worked (see codecov.yml): 957 of the
+    # 35,287 counted lines sat at 0-8% and made up 42% of every uncovered
+    # line in the repository. Running the same suite the `test-postgres`
+    # CI job runs, under instrumentation, measures them instead.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -50,8 +72,25 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
 
+      # Two instrumented runs, one report. `--no-report` accumulates profiles
+      # across both; the second adds the `#[ignore]`d PostgreSQL suite, which
+      # is gated on A2A_TEST_POSTGRES_URL exactly as in ci.yml's
+      # `test-postgres` job.
+      - name: Run the workspace tests under instrumentation
+        run: cargo llvm-cov --workspace --all-features --no-report
+      - name: Run the PostgreSQL integration suite under instrumentation
+        run: cargo llvm-cov --no-report -p a2a-protocol-server --features postgres --test postgres_store_tests -- --ignored
+        env:
+          A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+      # `--test-threads=1` for the same reason as in ci.yml: each test creates
+      # and drops a scratch database and the rate-limit tests count
+      # admissions against a shared counter.
+      - name: Run the multi-replica suite under instrumentation
+        run: cargo llvm-cov --no-report -p a2a-protocol-server --features postgres --test multi_replica -- --ignored --test-threads=1
+        env:
+          A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
       - name: Generate coverage report
-        run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+        run: cargo llvm-cov report --lcov --output-path lcov.info
 
       - name: Upload to Codecov
         # RESOLVED (2026-07-30): the 2026-06-10 outage that motivated the

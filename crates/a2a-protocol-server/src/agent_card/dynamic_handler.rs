@@ -18,8 +18,8 @@ use a2a_protocol_types::error::A2aResult;
 use bytes::Bytes;
 use http_body_util::Full;
 
-use crate::agent_card::caching::{format_http_date, make_etag, CacheConfig};
 use crate::agent_card::CORS_ALLOW_ALL;
+use crate::agent_card::caching::{CacheConfig, format_http_date, make_etag};
 
 /// Trait for producing an [`AgentCard`] dynamically.
 ///
@@ -407,7 +407,7 @@ mod tests {
     fn fallback_error_response_returns_internal_error_json() {
         let resp = fallback_error_response();
         assert_eq!(resp.status(), 200); // default status for Response::new
-                                        // Body should contain error JSON
+        // Body should contain error JSON
     }
 
     /// Covers line 113 (serialization error in handle) and line 136 (in `handle_unconditional`).

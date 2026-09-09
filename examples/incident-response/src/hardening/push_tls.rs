@@ -81,7 +81,7 @@ pub(super) async fn https_push() -> Check {
             return Check::fail(
                 LABEL,
                 format!("delivery to a certificate the sender was told to trust failed: {e}"),
-            )
+            );
         }
         Err(_) => return Check::fail(LABEL, format!("trusted delivery hung past {deadline:?}")),
     }

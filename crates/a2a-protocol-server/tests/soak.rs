@@ -62,15 +62,15 @@
 //! per-process rate limiter and the shared-store questions are still
 //! unevidenced, and this file does not change that.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use a2a_protocol_server::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::serve::{ServeConfig, Server};
-use a2a_protocol_server::store::task_store::TaskStoreConfig;
 use a2a_protocol_server::store::InMemoryTaskStore;
-use a2a_protocol_server::RequestHandlerBuilder;
+use a2a_protocol_server::store::task_store::TaskStoreConfig;
 
 /// How long to sustain load. Long enough by default to see a trend, short
 /// enough that someone actually runs it.

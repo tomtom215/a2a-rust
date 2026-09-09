@@ -202,10 +202,10 @@ async fn full_handler_lifecycle_failing_executor() {
 
     let mut saw_failed = false;
     while let Some(event) = reader.read().await {
-        if let Ok(StreamResponse::StatusUpdate(u)) = event {
-            if u.status.state == TaskState::Failed {
-                saw_failed = true;
-            }
+        if let Ok(StreamResponse::StatusUpdate(u)) = event
+            && u.status.state == TaskState::Failed
+        {
+            saw_failed = true;
         }
     }
     assert!(

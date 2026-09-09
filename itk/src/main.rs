@@ -32,12 +32,12 @@ use base64::Engine as _;
 use prost::Message as _;
 
 use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_server::RequestContext;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::streaming::EventQueueWriter;
-use a2a_protocol_server::RequestContext;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
@@ -63,21 +63,18 @@ fn extract_instruction(msg: &Message) -> Result<pb::Instruction, String> {
     for part in &msg.parts {
         let is_proto_part = part.media_type.as_deref() == Some("application/x-protobuf")
             || (part.media_type.is_none() && part.filename.as_deref() == Some("instruction.bin"));
-        if is_proto_part {
-            if let PartContent::Raw(b64) = &part.content {
-                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
-                    if let Ok(instruction) = pb::Instruction::decode(bytes.as_slice()) {
-                        return Ok(instruction);
-                    }
-                }
-            }
+        if is_proto_part
+            && let PartContent::Raw(b64) = &part.content
+            && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64)
+            && let Ok(instruction) = pb::Instruction::decode(bytes.as_slice())
+        {
+            return Ok(instruction);
         }
-        if let PartContent::Text(text) = &part.content {
-            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(text.trim()) {
-                if let Ok(instruction) = pb::Instruction::decode(bytes.as_slice()) {
-                    return Ok(instruction);
-                }
-            }
+        if let PartContent::Text(text) = &part.content
+            && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(text.trim())
+            && let Ok(instruction) = pb::Instruction::decode(bytes.as_slice())
+        {
+            return Ok(instruction);
         }
     }
     Err("no valid instruction found in request".to_owned())
@@ -136,8 +133,10 @@ fn extract_responses(resp: &StreamResponse) -> Vec<String> {
 // ── Peer calls ───────────────────────────────────────────────────────────────
 
 /// Resolves the peer's agent card and builds a client for the requested
-/// transport. Scheme-less gRPC endpoints (as advertised by some reference
-/// agents) are normalized to `http://`.
+/// transport. A gRPC interface advertises a bare `host:port` target (the
+/// A2A proto's form, and what the reference agents publish); `build_grpc`
+/// dials it per `GrpcBareAddressScheme` — plaintext for loopback, which is
+/// every ITK peer, and TLS otherwise.
 async fn client_for(
     transport: &str,
     agent_card_uri: &str,
@@ -171,13 +170,8 @@ async fn client_for(
             )
         })?;
 
-    let mut endpoint = iface.url.clone();
-    if want == "GRPC" && !endpoint.contains("://") {
-        endpoint = format!("http://{endpoint}");
-    }
-
     let builder =
-        ClientBuilder::new(endpoint).with_protocol_binding(iface.protocol_binding.clone());
+        ClientBuilder::new(iface.url.clone()).with_protocol_binding(iface.protocol_binding.clone());
     if want == "GRPC" {
         builder
             .build_grpc()
@@ -306,17 +300,17 @@ async fn handle_resubscribe(
         let event = event.map_err(|e| format!("resubscribe stream error: {e}"))?;
         // A full-task snapshot carries agent history; scan it for the marker
         // (reference-agent parity).
-        if let StreamResponse::Task(t) = &event {
-            if let Some(history) = &t.history {
-                for msg in history {
-                    if msg.role == MessageRole::Agent {
-                        for part in &msg.parts {
-                            if let Some(text) = part.text_content() {
-                                responses.push(text.replace("task-finished", ""));
-                                if text.contains("task-finished") {
-                                    finished = true;
-                                    break 'outer;
-                                }
+        if let StreamResponse::Task(t) = &event
+            && let Some(history) = &t.history
+        {
+            for msg in history {
+                if msg.role == MessageRole::Agent {
+                    for part in &msg.parts {
+                        if let Some(text) = part.text_content() {
+                            responses.push(text.replace("task-finished", ""));
+                            if text.contains("task-finished") {
+                                finished = true;
+                                break 'outer;
                             }
                         }
                     }
@@ -476,7 +470,10 @@ impl AgentExecutor for ItkExecutor {
 
 fn build_card(http_port: u16, grpc_port: u16) -> AgentCard {
     let http_url = format!("http://127.0.0.1:{http_port}");
-    let grpc_url = format!("http://127.0.0.1:{grpc_port}");
+    // A gRPC target, not a URL: `AgentInterface.url` for the gRPC binding is
+    // `hostname:port` per the A2A proto, and `grpc.insecure_channel` on the
+    // Python side rejects a scheme outright.
+    let grpc_url = format!("127.0.0.1:{grpc_port}");
     AgentCard {
         url: Some(http_url.clone()),
         name: "a2a-rust ITK current agent".into(),

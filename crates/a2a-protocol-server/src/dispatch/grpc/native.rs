@@ -19,9 +19,9 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
+use super::GrpcConfig;
 use super::helpers::{server_error_to_status, validated_metadata};
 use super::pb::a2a_service_server::A2aService;
-use super::GrpcConfig;
 use crate::handler::{RequestHandler, SendMessageResult};
 
 /// The streaming response type for canonical server-streaming methods.
@@ -56,7 +56,7 @@ fn send_result_to_stream(
             return Err(ConvertError {
                 field: "sendMessageResponse.payload",
                 reason: format!("unsupported response variant: {other:?}"),
-            })
+            });
         }
     };
     Ok(apb::StreamResponse {
@@ -775,8 +775,8 @@ mod tests {
         use a2a_protocol_types::events::StreamResponse;
         use tokio_stream::StreamExt;
 
-        use crate::streaming::event_queue::new_in_memory_queue;
         use crate::streaming::EventQueueWriter;
+        use crate::streaming::event_queue::new_in_memory_queue;
 
         fn message(metadata: serde_json::Value) -> Message {
             Message {
