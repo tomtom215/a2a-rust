@@ -225,3 +225,109 @@ async fn vectored_write_support_is_reported_from_the_socket() {
 
     assert_eq!(io.is_write_vectored(), expected);
 }
+
+/// A write that moved nothing is not activity. Kills `n > 0` → `n >= 0` in
+/// `poll_write`: with it, an empty write every 30 seconds would keep a
+/// connection alive forever while sending nothing.
+#[tokio::test(start_paused = true)]
+async fn a_zero_length_write_does_not_count_as_activity() {
+    let (server, mut client) = duplex_pair();
+    let mut io = IdleTimeout::new(server, Some(Duration::from_secs(75)));
+    tokio::spawn(async move {
+        let mut sink = vec![0_u8; 1024];
+        loop {
+            if client.read(&mut sink).await.unwrap_or(0) == 0 {
+                break;
+            }
+        }
+    });
+
+    let mut buf = [0_u8; 64];
+    let outcome = tokio::time::timeout(Duration::from_secs(600), async {
+        loop {
+            tokio::select! {
+                read = io.read(&mut buf) => break read,
+                () = tokio::time::sleep(Duration::from_secs(30)) => {
+                    io.write_all(&[]).await.expect("an empty write is writable");
+                }
+            }
+        }
+    })
+    .await
+    .expect("empty writes kept the connection alive: the idle deadline never fired");
+    let err = outcome.expect_err("a peer that only sends empty writes is idle");
+    assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+}
+
+/// Vectored writes are how hyper sends SSE frames, so they must count as
+/// activity exactly as plain writes do. Kills `n > 0` → `==`/`<` in
+/// `poll_write_vectored`, under which an outbound-only stream written this
+/// way would be cut off at the idle deadline.
+#[tokio::test(start_paused = true)]
+async fn vectored_writes_count_as_activity() {
+    let (server, mut client) = duplex_pair();
+    let mut io = IdleTimeout::new(server, Some(Duration::from_secs(75)));
+    tokio::spawn(async move {
+        let mut sink = vec![0_u8; 1024];
+        loop {
+            if client.read(&mut sink).await.unwrap_or(0) == 0 {
+                break;
+            }
+        }
+    });
+
+    let mut buf = [0_u8; 64];
+    for i in 0..10_u8 {
+        tokio::select! {
+            read = io.read(&mut buf) => {
+                let n = read.unwrap_or_else(|e| panic!(
+                    "the pending read failed at frame {i}, so vectored writes \
+                     were not counted as activity: {e}"
+                ));
+                assert_eq!(n, 0, "the peer never writes, so any read is EOF");
+                break;
+            }
+            () = tokio::time::sleep(Duration::from_secs(30)) => {
+                let byte = [i];
+                let bufs = [std::io::IoSlice::new(&byte), std::io::IoSlice::new(&byte)];
+                let n = io.write_vectored(&bufs)
+                    .await
+                    .unwrap_or_else(|e| panic!("frame {i} should be writable: {e}"));
+                assert!(n > 0, "the vectored write must move bytes");
+            }
+        }
+    }
+}
+
+/// The vectored twin of the zero-length case. Kills `n > 0` → `n >= 0` in
+/// `poll_write_vectored`.
+#[tokio::test(start_paused = true)]
+async fn a_zero_length_vectored_write_does_not_count_as_activity() {
+    let (server, mut client) = duplex_pair();
+    let mut io = IdleTimeout::new(server, Some(Duration::from_secs(75)));
+    tokio::spawn(async move {
+        let mut sink = vec![0_u8; 1024];
+        loop {
+            if client.read(&mut sink).await.unwrap_or(0) == 0 {
+                break;
+            }
+        }
+    });
+
+    let mut buf = [0_u8; 64];
+    let outcome = tokio::time::timeout(Duration::from_secs(600), async {
+        loop {
+            tokio::select! {
+                read = io.read(&mut buf) => break read,
+                () = tokio::time::sleep(Duration::from_secs(30)) => {
+                    let n = io.write_vectored(&[]).await.expect("an empty vectored write is writable");
+                    assert_eq!(n, 0, "nothing to write means nothing written");
+                }
+            }
+        }
+    })
+    .await
+    .expect("empty vectored writes kept the connection alive: the idle deadline never fired");
+    let err = outcome.expect_err("a peer that only sends empty vectored writes is idle");
+    assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+}

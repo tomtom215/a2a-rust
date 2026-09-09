@@ -192,6 +192,56 @@ async fn journal_orphans_are_reclaimed_when_the_cascade_does_not_fire() {
 }
 
 #[tokio::test]
+async fn the_journal_sweep_runs_only_after_a_task_was_deleted() {
+    // The anti-join is gated on `tasks_deleted > 0`: a purge that deleted
+    // nothing must not touch the journal at all, even where a stranded row
+    // exists. Kills `> 0` → `>= 0`, under which every purge would run the
+    // sweep and report an orphan it had no business reclaiming on that run.
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use std::str::FromStr;
+
+    let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+        .unwrap()
+        .pragma("foreign_keys", "OFF")
+        .create_if_missing(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(opts)
+        .await
+        .expect("pool");
+    let store = SqliteTaskStore::from_pool(pool).await.expect("store");
+
+    // A stranded row with no task at all, which only a pool without the
+    // foreign-key pragma can hold.
+    sqlx::query(
+        "INSERT INTO task_artifact_appends (task_id, artifact, seq, part) \
+         VALUES ('ghost', 0, 0, '{\"kind\":\"text\",\"text\":\"stranded\"}')",
+    )
+    .execute(&store.pool)
+    .await
+    .expect("seed orphan");
+
+    let report = store
+        .purge_expired(&RetentionPolicy::new(Duration::from_secs(3_600)))
+        .await
+        .expect("purge");
+
+    assert_eq!(report.tasks_deleted, 0, "nothing was old enough to delete");
+    assert_eq!(
+        report.journal_orphans_deleted, 0,
+        "no task was deleted, so the sweep must not have run"
+    );
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM task_artifact_appends")
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        left, 1,
+        "the orphan is untouched until a purge deletes a task"
+    );
+}
+
+#[tokio::test]
 async fn a_live_task_keeps_its_journal_rows() {
     // The anti-join deletes rows whose task is gone. A task that survives the
     // sweep must keep its journal, or the next read would splice a truncated
