@@ -95,7 +95,7 @@ opentelemetry     = { version = "0.31", optional = true }
 # end-to-end. The feature only *adds* API surface — it does not change runtime
 # behaviour — so its "experimental" status only matters to the test code.
 opentelemetry_sdk = { version = "0.31", optional = true, features = ["rt-tokio", "metrics", "experimental_metrics_custom_reader"] }
-opentelemetry-otlp = { version = "0.31", optional = true, default-features = false, features = ["grpc-tonic", "metrics"] }
+opentelemetry-otlp = { version = "0.32", optional = true, default-features = false, features = ["grpc-tonic", "metrics"] }
 axum = { version = "0.8", optional = true, default-features = false, features = ["json", "query", "tokio"] }
 
 [build-dependencies]
