@@ -106,7 +106,8 @@ fn agent_card() -> AgentCard {
         }],
         capabilities: AgentCapabilities::none()
             .with_streaming(true)
-            .with_push_notifications(true),
+            .with_push_notifications(true)
+            .with_extended_agent_card(true),
         provider: None,
         icon_url: None,
         documentation_url: None,
@@ -136,6 +137,9 @@ async fn start() -> A2aClient {
         RequestHandlerBuilder::new(CompletingExecutor)
             .with_agent_card(agent_card())
             .with_push_sender(NoopPushSender)
+            // Lets `get_extended_agent_card` below answer over gRPC without an
+            // authenticated principal; the plaintext test fixture has none.
+            .allow_unauthenticated_extended_card()
             .build()
             .expect("build handler"),
     );
@@ -365,4 +369,110 @@ async fn stream_message_delivers_typed_events_until_terminal() {
         _ => false,
     });
     assert!(terminal, "stream must reach a terminal state: {events:?}");
+}
+
+/// `ListTasks` over the canonical gRPC service: a task that `SendMessage`
+/// created is listed, with the `context_id` filter applied server-side.
+#[tokio::test]
+async fn list_tasks_over_grpc_returns_the_sent_task() {
+    let client = start().await;
+    let response = client
+        .send_message(send_params("list me"))
+        .await
+        .expect("send_message");
+    let task_id = match response {
+        SendMessageResponse::Task(t) => t.id.0.clone(),
+        other => panic!("expected a task, got {other:?}"),
+    };
+    let task = await_terminal(&client, &task_id).await;
+
+    let listed = client
+        .list_tasks(a2a_protocol_types::params::ListTasksParams::default())
+        .await
+        .expect("list_tasks over gRPC");
+    assert!(
+        listed.tasks.iter().any(|t| t.id.0 == task_id),
+        "the sent task must be listed: {listed:?}"
+    );
+
+    let filtered = client
+        .list_tasks(a2a_protocol_types::params::ListTasksParams {
+            context_id: Some(task.context_id.0.clone()),
+            ..Default::default()
+        })
+        .await
+        .expect("filtered list_tasks over gRPC");
+    assert!(
+        filtered
+            .tasks
+            .iter()
+            .all(|t| t.context_id == task.context_id),
+        "context filter must be applied: {filtered:?}"
+    );
+    let missing = client
+        .list_tasks(a2a_protocol_types::params::ListTasksParams {
+            context_id: Some("no-such-context".into()),
+            ..Default::default()
+        })
+        .await
+        .expect("list_tasks with an unknown context");
+    assert!(missing.tasks.is_empty(), "an unknown context lists nothing");
+}
+
+/// `GetExtendedAgentCard` over gRPC returns the card the handler serves.
+#[tokio::test]
+async fn extended_agent_card_over_grpc_returns_the_card() {
+    let client = start().await;
+    let card = client
+        .get_extended_agent_card()
+        .await
+        .expect("get_extended_agent_card over gRPC");
+    assert_eq!(card.name, agent_card().name);
+    assert_eq!(card.version, agent_card().version);
+}
+
+/// `SubscribeToTask` over gRPC reaches the server: on a task that already
+/// completed the answer is either a stream that ends, or an A2A protocol
+/// error — never a transport failure, which is what a wrong request shape
+/// or an unmapped method would look like.
+#[tokio::test]
+async fn subscribe_to_task_over_grpc_reaches_the_server() {
+    let client = start().await;
+    let response = client
+        .send_message(send_params("subscribe me"))
+        .await
+        .expect("send_message");
+    let task_id = match response {
+        SendMessageResponse::Task(t) => t.id.0.clone(),
+        other => panic!("expected a task, got {other:?}"),
+    };
+    await_terminal(&client, &task_id).await;
+
+    match client.subscribe_to_task(task_id.clone()).await {
+        Ok(mut stream) => {
+            // Drain: every item must decode, and the stream must end.
+            let mut n = 0;
+            while let Some(item) = stream.next().await {
+                if let Err(e) = item {
+                    assert!(
+                        matches!(e, ClientError::Protocol(_)),
+                        "a stream error must be a protocol error, got {e:?}"
+                    );
+                }
+                n += 1;
+                assert!(n < 1000, "the subscription stream must end");
+            }
+        }
+        Err(e) => assert!(
+            matches!(e, ClientError::Protocol(_)),
+            "subscribing to a terminal task must be answered by the server, got {e:?}"
+        ),
+    }
+
+    if let Err(e) = client.subscribe_to_task("no-such-task").await {
+        assert!(
+            matches!(e, ClientError::Protocol(_)),
+            "an unknown task id must be a protocol error, not a transport one: {e:?}"
+        );
+    }
 }
