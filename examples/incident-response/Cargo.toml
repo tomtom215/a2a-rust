@@ -68,7 +68,7 @@ rustls            = { version = "0.23", optional = true, default-features = fals
 rustls-pki-types  = { version = "1", optional = true }
 tokio-rustls      = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12"] }
 rcgen             = { version = "0.14", optional = true }
-opentelemetry     = { version = "0.31", optional = true }
+opentelemetry     = { version = "0.32", optional = true }
 opentelemetry_sdk = { version = "0.31", optional = true, features = ["metrics", "experimental_metrics_custom_reader"] }
 
 # genai — multi-provider LLM client; unknown model names route to the local

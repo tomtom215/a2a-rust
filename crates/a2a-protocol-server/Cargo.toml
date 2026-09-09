@@ -89,7 +89,7 @@ tonic-prost       = { workspace = true, optional = true }
 tonic-types       = { workspace = true, optional = true }
 prost             = { workspace = true, optional = true }
 tokio-stream      = { workspace = true, optional = true }
-opentelemetry     = { version = "0.31", optional = true }
+opentelemetry     = { version = "0.32", optional = true }
 # `experimental_metrics_custom_reader` exposes `ManualReader` + the `MetricReader`
 # trait for the unit tests in `src/otel/mod.rs` that verify instrument emission
 # end-to-end. The feature only *adds* API surface — it does not change runtime
