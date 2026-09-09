@@ -993,6 +993,24 @@ mod tests {
         assert_eq!(cfg.stream_channel_capacity, 128);
     }
 
+    /// Kills `with_tls_config -> Default::default()`: the TLS config must be
+    /// stored *and* the other fields already set must survive the call.
+    #[cfg(feature = "grpc-tls")]
+    #[test]
+    fn with_tls_config_stores_it_and_keeps_the_rest() {
+        let cfg = GrpcTransportConfig::default()
+            .with_timeout(Duration::from_secs(60))
+            .with_tls_config(
+                tonic::transport::ClientTlsConfig::new().domain_name("agent.internal"),
+            );
+        assert!(cfg.tls_config.is_some(), "the TLS config must be stored");
+        assert_eq!(
+            cfg.timeout,
+            Duration::from_secs(60),
+            "fields set before with_tls_config must not be reset"
+        );
+    }
+
     #[test]
     fn convert_error_maps_to_non_retryable_transport() {
         let err = convert_error(ConvertError {
