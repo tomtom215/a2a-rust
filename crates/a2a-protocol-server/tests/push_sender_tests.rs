@@ -429,6 +429,66 @@ async fn bearer_auth_header_is_sent() {
     handle.abort();
 }
 
+/// A scheme with no credential value cannot produce a header; the request
+/// must go out without one rather than with an empty `Bearer `.
+#[tokio::test]
+async fn scheme_without_credentials_sends_no_auth_header() {
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
+
+    let sender = HttpPushSender::new().allow_private_urls();
+    let url = format!("http://{addr}/webhook");
+    let mut config = base_config(&url);
+    config.authentication = Some(AuthenticationInfo {
+        scheme: "bearer".into(),
+        credentials: None,
+    });
+
+    sender.send(&url, &status_event(), &config).await.unwrap();
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let reqs = captured.lock().unwrap();
+    let req = reqs[0].to_ascii_lowercase();
+    assert!(
+        !req.contains("authorization:"),
+        "no credentials must mean no Authorization header, got: {req}"
+    );
+    handle.abort();
+}
+
+/// An unknown scheme is not guessed at: the request goes out without an
+/// Authorization header rather than with a made-up one.
+#[tokio::test]
+async fn unknown_scheme_sends_no_auth_header() {
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
+
+    let sender = HttpPushSender::new().allow_private_urls();
+    let url = format!("http://{addr}/webhook");
+    let mut config = base_config(&url);
+    config.authentication = Some(AuthenticationInfo {
+        scheme: "digest".into(),
+        credentials: Some("opaque".into()),
+    });
+
+    sender.send(&url, &status_event(), &config).await.unwrap();
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let reqs = captured.lock().unwrap();
+    let req = reqs[0].to_ascii_lowercase();
+    assert!(
+        !req.contains("authorization:"),
+        "an unknown scheme must not produce an Authorization header, got: {req}"
+    );
+    handle.abort();
+}
+
 #[tokio::test]
 async fn basic_auth_header_is_sent() {
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
