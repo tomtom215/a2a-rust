@@ -62,7 +62,7 @@ dependency.
 | `tracing` | Structured logging via the `tracing` crate |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` (plaintext) |
-| `grpc-tls` | gRPC over TLS — `grpc` + `tls-rustls` + tonic's rustls connector; needed for `https://` gRPC endpoints and for the default dialling of a bare non-loopback `host:port` target |
+| `grpc-tls` | gRPC over TLS — `grpc` + tonic's rustls connector (independent of `tls-rustls`); needed for `https://` gRPC endpoints and for the default dialling of a bare non-loopback `host:port` target |
 
 ### `a2a-protocol-server`
 

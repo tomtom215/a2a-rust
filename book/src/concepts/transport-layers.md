@@ -261,21 +261,17 @@ let client = ClientBuilder::from_card(&card)?
     .build_grpc()
     .await?;
 
-// A private CA, pinned (needs `grpc-tls`).
-use a2a_protocol_client::transport::grpc::{GrpcTransport, GrpcTransportConfig};
-use tonic::transport::{Certificate, ClientTlsConfig};
+// A private CA, pinned (needs `grpc-tls`). The TLS types are re-exported
+// from `transport::grpc`, so no tonic dependency of your own.
+use a2a_protocol_client::transport::grpc::{Certificate, ClientTlsConfig};
 
 let tls = ClientTlsConfig::new()
     .ca_certificate(Certificate::from_pem(ca_pem))
     .domain_name("agent.internal");
-let transport = GrpcTransport::connect_with_config(
-    "agent.internal:443",
-    GrpcTransportConfig::default().with_tls_config(tls),
-)
-.await?;
-let client = ClientBuilder::new("https://agent.internal:443")
-    .with_custom_transport(transport)
-    .build()?;
+let client = ClientBuilder::from_card(&card)?
+    .with_grpc_tls_config(tls)
+    .build_grpc()
+    .await?;
 ```
 
 The server's gRPC listener is plaintext; put it behind a TLS-terminating proxy

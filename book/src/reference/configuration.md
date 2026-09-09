@@ -125,6 +125,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `with_return_immediately` | `bool` | false | Don't wait for completion |
 | `with_tenant` | `impl Into<String>` | None (auto from `AgentCard`) | Tenant sent on **every** request (spec §8.3.2 rule 4); a per-request `tenant` overrides it |
 | `with_grpc_bare_address_scheme` | `GrpcBareAddressScheme` | `HttpsExceptLoopback` | How `build_grpc` dials a card's bare `host:port` gRPC target: TLS except for loopback (default), always TLS, or always plaintext |
+| `with_grpc_tls_config` | `ClientTlsConfig` | None (bundled Mozilla roots) | `grpc-tls` feature: the TLS settings `build_grpc` uses for an `https://` endpoint, explicit or policy-chosen — a private CA, a client certificate, or a server name that differs from the host |
 | `with_interceptor` | `impl CallInterceptor` | Empty chain | Client middleware |
 
 ### GrpcTransportConfig
@@ -190,7 +191,7 @@ and the `with_*` setters.
 | `tls-rustls` | **On** | HTTPS via rustls (no OpenSSL dependency); `default-features = false` for a plaintext-only build |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` (plaintext; `https://` is refused with a message naming `grpc-tls`) |
-| `grpc-tls` | Off | gRPC over TLS: implies `grpc` and `tls-rustls`, verifies against the bundled Mozilla roots or a supplied `ClientTlsConfig` |
+| `grpc-tls` | Off | gRPC over TLS: implies `grpc` (not `tls-rustls`), verifies against the bundled Mozilla roots or a supplied `ClientTlsConfig` (re-exported from `transport::grpc`) |
 
 ### `a2a-protocol-types`
 

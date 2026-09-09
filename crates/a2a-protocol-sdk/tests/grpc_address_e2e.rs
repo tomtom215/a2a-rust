@@ -236,7 +236,10 @@ async fn bare_non_loopback_target_is_refused_without_grpc_tls() {
 #[cfg(feature = "grpc-tls")]
 mod tls {
     use super::*;
-    use tonic::transport::{Certificate, ClientTlsConfig, Identity, ServerTlsConfig};
+    // The client-side types come from the SDK's re-export: a caller needs no
+    // tonic dependency of their own. The server fixture is tonic's.
+    use a2a_protocol_client::transport::grpc::{Certificate, ClientTlsConfig, Identity};
+    use tonic::transport::ServerTlsConfig;
 
     struct Pems {
         ca: String,
@@ -319,6 +322,23 @@ mod tls {
         assert_round_trip(&client, "TLS over a bare target").await;
     }
 
+    /// The builder path: a card advertising a bare target, a pinned CA
+    /// through `with_grpc_tls_config`, and `build_grpc` — no transport built
+    /// by hand.
+    #[tokio::test]
+    async fn from_card_with_grpc_tls_config_round_trips() {
+        let pems = pems();
+        let addr = tls_listener(&pems).await;
+        let client = ClientBuilder::from_card(&card(&addr.to_string()))
+            .expect("from_card")
+            .with_grpc_bare_address_scheme(GrpcBareAddressScheme::Https)
+            .with_grpc_tls_config(pinned(&pems))
+            .build_grpc()
+            .await
+            .expect("build_grpc with a pinned CA on a bare target");
+        assert_round_trip(&client, "from_card + with_grpc_tls_config").await;
+    }
+
     /// The same, spelled as an explicit `https://` URL.
     #[tokio::test]
     async fn explicit_https_url_with_pinned_ca_round_trips() {
@@ -366,15 +386,39 @@ mod tls {
         let config =
             GrpcTransportConfig::default().with_bare_address_scheme(GrpcBareAddressScheme::Https);
         let result = GrpcTransport::connect_with_config(addr.to_string(), config).await;
-        if let Ok(transport) = result {
-            let client = ClientBuilder::new(format!("https://{addr}"))
-                .with_custom_transport(transport)
-                .build()
-                .expect("build");
-            client
-                .send_message(send_params())
-                .await
-                .expect_err("TLS against a plaintext listener must not succeed");
+        match result {
+            Err(e) => {
+                // The bare target was dialled with TLS because the policy said
+                // so; the failure names that and the way out.
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("GrpcBareAddressScheme::Http") && msg.contains(&addr.to_string()),
+                    "a policy-chosen TLS dial that fails must say so: {msg}"
+                );
+            }
+            Ok(transport) => {
+                let client = ClientBuilder::new(format!("https://{addr}"))
+                    .with_custom_transport(transport)
+                    .build()
+                    .expect("build");
+                client
+                    .send_message(send_params())
+                    .await
+                    .expect_err("TLS against a plaintext listener must not succeed");
+            }
+        }
+    }
+
+    /// An explicit `https://` URL that fails carries no policy hint: the
+    /// caller chose TLS, not the policy.
+    #[tokio::test]
+    async fn explicit_https_failure_has_no_policy_hint() {
+        let addr = plaintext_listener().await;
+        if let Err(e) = GrpcTransport::connect(format!("https://{addr}")).await {
+            assert!(
+                !e.to_string().contains("GrpcBareAddressScheme"),
+                "no policy was involved: {e}"
+            );
         }
     }
 }

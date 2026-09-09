@@ -27,16 +27,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tree. Proved in `a2a-protocol-sdk/tests/grpc_address_e2e.rs` against a
   tonic TLS listener presenting an `rcgen` certificate: a pinned CA round-trips
   over a bare target and over `https://`, the bundled roots reject that CA,
-  and TLS against a plaintext listener does not fall back. One thing tonic
-  does differently from every other TLS path in this SDK: it builds its rustls
-  config from the *process-level* crypto provider rather than being handed
-  `ring` explicitly, and a binary that links rustls with both `ring` and
-  `aws-lc-rs` (this workspace's own `--all-features` build is one, through
-  the examples' HTTP clients) has no default and panics at connect. The
-  transport installs `ring` as the process default when none is set and
-  respects one the application installed first; `grpc_tls_provider_e2e.rs`,
-  in its own test binary because the provider is process state, proves an
-  `https://` connect in such a binary is a connection error and not a panic.
+  and TLS against a plaintext listener does not fall back. The connector
+  never touches the process-level rustls crypto provider: tonic under
+  `tls-ring` uses an installed default or else `ring` explicitly, so a binary
+  that links both `ring` and `aws-lc-rs` (this workspace's `--all-features`
+  build is one) gets a connection error, not a panic, and an application that
+  wants `aws-lc-rs` installs it itself — `grpc_tls_provider_e2e.rs`, in its
+  own test binary because the provider is process state, proves both. The
+  feature does not pull in `tls-rustls`; a gRPC-only client gets no
+  hyper-rustls. The tonic types a caller needs (`ClientTlsConfig`,
+  `Certificate`, `Identity`) are re-exported from `transport::grpc`, so no
+  direct tonic dependency is required, and `ClientBuilder::with_grpc_tls_config`
+  carries a pinned CA or client certificate through `from_card(..).build_grpc()`.
+  A bare target that the policy dialled with TLS and that refused the
+  handshake fails with the policy named and `GrpcBareAddressScheme::Http`
+  suggested, since a plaintext peer on a private network is the usual cause.
 - **`GrpcBareAddressScheme`** (`a2a-protocol-client`), with
   `GrpcTransportConfig::with_bare_address_scheme` and
   `ClientBuilder::with_grpc_bare_address_scheme`: how a bare `host:port` gRPC

@@ -46,6 +46,8 @@ impl RestTransport {
             .filter(|t| !t.is_empty())
             .map(str::to_owned);
         if let Some(tenant) = tenant {
+            // The query encoder is a superset of path-segment encoding (it also
+            // escapes `/`, `?`, `#`), so the segment cannot escape its slot.
             path = format!("/{}{path}", encode_query_value(&tenant));
             if route.http_method != HttpMethod::Post {
                 if let Some(obj) = remaining.as_object_mut() {

@@ -50,6 +50,10 @@ pub use crate::config::GrpcBareAddressScheme;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
+/// The tonic TLS types [`GrpcTransportConfig::with_tls_config`] takes,
+/// re-exported so a caller needs no direct tonic dependency.
+#[cfg(feature = "grpc-tls")]
+pub use tonic::transport::{Certificate, ClientTlsConfig, Identity};
 
 // Include the generated tonic client glue for `lf.a2a.v1.A2AService`.
 // Message types live in `a2a_protocol_types::proto` via `extern_path`.
@@ -80,6 +84,10 @@ use proto::a2a_service_client::A2aServiceClient;
 ///     .with_timeout(Duration::from_secs(60))
 ///     .with_max_message_size(8 * 1024 * 1024);
 /// ```
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters.
+/// Struct literals and `..Default::default()` are not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct GrpcTransportConfig {
@@ -286,17 +294,29 @@ impl GrpcTransport {
         endpoint: impl Into<String>,
         config: GrpcTransportConfig,
     ) -> ClientResult<Self> {
-        let endpoint_str = normalize_endpoint(&endpoint.into(), config.bare_address_scheme)?;
+        let raw = endpoint.into();
+        let endpoint_str = normalize_endpoint(&raw, config.bare_address_scheme)?;
+        // A bare target the policy chose to dial with TLS: the usual failure is
+        // a plaintext peer on a private network, so say what to set.
+        let tls_by_policy = !raw.contains("://") && endpoint_str.starts_with("https://");
 
         let endpoint = tonic::transport::Channel::from_shared(endpoint_str.clone())
             .map_err(|e| ClientError::InvalidEndpoint(format!("invalid gRPC endpoint: {e}")))?
             .connect_timeout(config.connect_timeout)
             .timeout(config.timeout);
         let endpoint = Self::apply_tls(endpoint, &endpoint_str, &config)?;
-        let channel = endpoint
-            .connect()
-            .await
-            .map_err(|e| ClientError::Transport(format!("gRPC connect failed: {e}")))?;
+        let channel = endpoint.connect().await.map_err(|e| {
+            if tls_by_policy {
+                ClientError::Transport(format!(
+                    "gRPC connect failed: {e} (`{raw}` was dialled with TLS by \
+                         {:?}; if this peer speaks plaintext, set \
+                         GrpcBareAddressScheme::Http)",
+                    config.bare_address_scheme
+                ))
+            } else {
+                ClientError::Transport(format!("gRPC connect failed: {e}"))
+            }
+        })?;
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -326,20 +346,6 @@ impl GrpcTransport {
     ) -> ClientResult<tonic::transport::Endpoint> {
         if !endpoint_str.starts_with("https://") {
             return Ok(endpoint);
-        }
-        // tonic builds its rustls `ClientConfig` with `ClientConfig::builder()`,
-        // which resolves the *process-level* crypto provider; every other TLS
-        // path in this SDK passes `ring` explicitly (`builder_with_provider`)
-        // and never depends on that global. A binary whose other dependencies
-        // enable rustls's `aws-lc-rs` alongside our `ring` — the workspace's
-        // own `--all-features` build does, through the examples' HTTP
-        // clients — then has two providers and no default, and tonic panics
-        // at connect. Installing `ring` when nothing is installed yet makes
-        // this path as deterministic as the others; a provider the
-        // application installed first is respected (`get_default` is checked
-        // first, and `install_default` refuses once one is set).
-        if rustls::crypto::CryptoProvider::get_default().is_none() {
-            let _ = rustls::crypto::ring::default_provider().install_default();
         }
         let tls = config
             .tls_config
