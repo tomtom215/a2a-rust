@@ -325,6 +325,9 @@ impl RestDispatcher {
     ///
     /// `Err` carries the response to return: 413 for an oversized body, 400
     /// for one that is not JSON.
+    // The `Err` is the finished response, sent as-is by the one caller of
+    // each route; boxing it would only add an allocation on the error path.
+    #[allow(clippy::result_large_err)]
     async fn read_body_with_path_fields(
         &self,
         req: hyper::Request<Incoming>,

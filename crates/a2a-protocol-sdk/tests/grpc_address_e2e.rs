@@ -115,6 +115,24 @@ async fn plaintext_listener() -> SocketAddr {
     dispatcher().serve_with_listener(listener).expect("serve")
 }
 
+/// The IPv4 address of the interface that carries this machine's default
+/// route, found by asking the kernel which source address it would use for
+/// a datagram to a TEST-NET address. `connect` on a UDP socket sends
+/// nothing; it only selects the route.
+fn local_non_loopback_ip() -> std::net::Ipv4Addr {
+    let probe = std::net::UdpSocket::bind("0.0.0.0:0").expect("bind udp probe");
+    probe
+        .connect("192.0.2.1:9")
+        .expect("this test needs an interface with a default route");
+    match probe.local_addr().expect("local_addr").ip() {
+        std::net::IpAddr::V4(ip) => {
+            assert!(!ip.is_loopback(), "route lookup returned loopback: {ip}");
+            ip
+        }
+        std::net::IpAddr::V6(ip) => panic!("expected an IPv4 route, got {ip}"),
+    }
+}
+
 fn send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
@@ -184,11 +202,19 @@ async fn explicit_http_url_is_unchanged() {
 /// its non-loopback form, dials in plaintext only when asked to.
 #[tokio::test]
 async fn http_policy_dials_a_bare_non_loopback_target_in_plaintext() {
-    let addr = plaintext_listener().await;
-    // A non-loopback spelling of this machine: the bound port on the address
-    // the OS routes to itself. `0.0.0.0` is "unspecified", which the loopback
-    // rule deliberately does not treat as local, so it exercises the policy.
-    let target = format!("0.0.0.0:{}", addr.port());
+    // A non-loopback spelling of this machine. The listener binds every
+    // interface and the client dials the address of the one with a default
+    // route, which is what a private-network agent would advertise. Dialing
+    // `0.0.0.0` instead would work on Linux and macOS, which route the
+    // unspecified address to the host, but Windows refuses to connect to it.
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:0")
+        .await
+        .expect("bind");
+    let port = dispatcher()
+        .serve_with_listener(listener)
+        .expect("serve")
+        .port();
+    let target = format!("{}:{port}", local_non_loopback_ip());
     let client = ClientBuilder::from_card(&card(&target))
         .expect("from_card")
         .with_grpc_bare_address_scheme(GrpcBareAddressScheme::Http)
