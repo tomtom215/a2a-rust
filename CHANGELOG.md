@@ -76,6 +76,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Client: the Agent Card's `tenant` now rides on every request, not only on
+  `SendMessage`.** A2A §8.3.2 rule 4 says a client **MUST** "set the `tenant`
+  field in every request message to exactly the value declared in the selected
+  `AgentInterface` entry". `ClientBuilder::from_card` has carried that value in
+  `ClientConfig::tenant` since the multi-tenancy work, and the book said it was
+  "applied to all requests" — but only `send_message` read it. `GetTask`,
+  `ListTasks`, `CancelTask`, `SubscribeToTask`, the four push-config methods
+  and `GetExtendedAgentCard` all went out with no tenant, so a task created
+  under `acme` was then looked up under the default partition and answered
+  `TaskNotFound`, and against a server that resolves the tenant itself every
+  follow-up call was a cross-tenant request. Found by diffing the client's
+  eleven methods against the rule while re-reading the specification at
+  upstream `main` (`f63dbb4`), not by a report. A per-request `tenant` still
+  wins over the client default, and an absent tenant still leaves the field
+  out (the parameterless `GetExtendedAgentCard` stays `null` on the wire).
+  Proved three ways: a capturing transport asserts the field on each of the
+  nine methods by name; `tests/tenant_round_trip_tests.rs` drives a client
+  built from a tenant-bearing card through send → get → list → cancel →
+  push-config create/get/list/delete against a real server with
+  tenant-partitioned stores over both JSON-RPC and REST; and the same test's
+  control shows the task is `TaskNotFound` to an untenanted client, so the
+  suite cannot pass against a server that ignores tenants.
+- **REST binding: the tenant travels as the `/{tenant}/…` path prefix on the
+  client, and the server accepts every place the proto lets it arrive.**
+  `a2a.proto` binds each method twice — a primary pattern with no tenant in
+  the path and an `additional_bindings` pattern with it as the leading segment.
+  The reference SDKs' REST clients send the prefix form (`a2a-python` 1.1.4
+  `_get_path`), and the reference server reads *only* that form. Ours did the
+  reverse on the client (tenant as `?tenant=` on GET/DELETE and in the body on
+  POST — the primary-pattern transcoding of §11.5) while the server, like the
+  reference, read only the prefix, so the two halves of this SDK disagreed
+  with each other and every tenanted GET lost its tenant. Now the client emits
+  `/{tenant}/tasks/{id}` (percent-encoding the segment, keeping the field in
+  POST bodies exactly as the Python SDK does), and the server honours, in
+  this order, the path prefix, then `?tenant=` on GET/DELETE, then the body
+  on POST — including `POST /tasks/{id}:cancel`, whose `body: "*"` was never
+  read at all, dropping `metadata` too. The path tenant is percent-decoded
+  before it names a partition and is injected into POST bodies that omit it
+  (`/acme/message:send` with no `tenant` in the body lands in `acme`). Seven
+  server tests in `tests/rest_tenant_binding_tests.rs` pin each arrival path
+  and the precedence, each with a `TaskNotFound` control.
 - **Official TCK: one failure no longer reports as three.** The
   minimal-capability and required-extension runs inherited the default
   `success()` condition, so a red gate skipped them — while their own gates

@@ -30,10 +30,11 @@ impl A2aClient {
     /// does not support push notifications.
     pub async fn set_push_config(
         &self,
-        config: TaskPushNotificationConfig,
+        mut config: TaskPushNotificationConfig,
     ) -> ClientResult<TaskPushNotificationConfig> {
         const METHOD: &str = "CreateTaskPushNotificationConfig";
 
+        config.tenant = self.tenant_or_default(config.tenant.take());
         let params_value = serde_json::to_value(&config).map_err(ClientError::Serialization)?;
 
         let mut req = ClientRequest::new(METHOD, params_value);
@@ -70,7 +71,7 @@ impl A2aClient {
         const METHOD: &str = "GetTaskPushNotificationConfig";
 
         let params = GetPushConfigParams {
-            tenant: None,
+            tenant: self.tenant_or_default(None),
             task_id: task_id.into(),
             id: id.into(),
         };
@@ -104,10 +105,11 @@ impl A2aClient {
     /// Returns [`ClientError`] on transport or protocol errors.
     pub async fn list_push_configs(
         &self,
-        params: ListPushConfigsParams,
+        mut params: ListPushConfigsParams,
     ) -> ClientResult<ListPushConfigsResponse> {
         const METHOD: &str = "ListTaskPushNotificationConfigs";
 
+        params.tenant = self.tenant_or_default(params.tenant.take());
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
@@ -143,7 +145,7 @@ impl A2aClient {
         const METHOD: &str = "DeleteTaskPushNotificationConfig";
 
         let params = DeletePushConfigParams {
-            tenant: None,
+            tenant: self.tenant_or_default(None),
             task_id: task_id.into(),
             id: id.into(),
         };

@@ -26,7 +26,8 @@ use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
 
 use query::{
-    contains_path_traversal, parse_list_tasks_query, parse_query_param_u32, strip_tenant_prefix,
+    contains_path_traversal, parse_list_tasks_query, parse_query_param, parse_query_param_u32,
+    percent_decode, strip_tenant_prefix,
 };
 use response::{
     error_json_response, extract_headers, health_response, inject_field_if_missing,
@@ -170,8 +171,14 @@ impl RestDispatcher {
             return server_error_to_response(&crate::error::ServerError::Protocol(err));
         }
 
-        // Strip optional /tenants/{tenant}/ prefix.
+        // Strip the optional tenant prefix — `/{tenant}/...` from the proto's
+        // `additional_bindings`, or this SDK's explicit `/tenants/{tenant}/`.
+        // The segment is a path variable, so a client that percent-encodes a
+        // reserved character in it (as ours does) is decoded here; task and
+        // config ids in the path are matched raw, as before.
         let (tenant, rest_path) = strip_tenant_prefix(&path);
+        let tenant = tenant.map(percent_decode);
+        let tenant = tenant.as_deref();
 
         // Extract HTTP headers BEFORE consuming the request body.
         let headers = extract_headers(req.headers());
@@ -212,14 +219,27 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        // The proto's *primary* HTTP binding has no tenant in the path, so a
+        // transcoding client puts the request's `tenant` field where §11.5
+        // sends every other non-path field: the query string on GET and
+        // DELETE, the body on POST. Honour that when no prefix named one;
+        // the path form wins when both are present, as it does under
+        // `google.api.http` (a path variable is bound before the body).
+        let query_tenant = if tenant.is_none() {
+            parse_query_param(query, "tenant").filter(|t| !t.is_empty())
+        } else {
+            None
+        };
+        let tenant = tenant.or(query_tenant.as_deref());
+
         // Colon-suffixed routes: /message:send, /message:stream.
         // Also accept slash-separated variants: /message/send, /message/stream.
         match (method, path) {
             ("POST", "/message:send") => {
-                return self.handle_send(req, false, headers).await;
+                return self.handle_send(req, false, tenant, headers).await;
             }
             ("POST", "/message:stream") => {
-                return self.handle_send(req, true, headers).await;
+                return self.handle_send(req, true, tenant, headers).await;
             }
             _ => {}
         }
@@ -230,7 +250,7 @@ impl RestDispatcher {
                 if !id.is_empty() {
                     match (method, action) {
                         ("POST", "cancel") => {
-                            return self.handle_cancel_task(id, tenant, headers).await;
+                            return self.handle_cancel_task(req, id, tenant, headers).await;
                         }
                         // Spec §11.3.2 (and the §5.3 method-mapping table)
                         // define `POST /tasks/{id}:subscribe`; the upstream
@@ -241,7 +261,7 @@ impl RestDispatcher {
                         // browser EventSource can only GET), while this SDK's
                         // client sends the spec-prose POST.
                         ("POST" | "GET", "subscribe") => {
-                            return self.handle_resubscribe(id, tenant, headers).await;
+                            return self.handle_resubscribe(req, id, tenant, headers).await;
                         }
                         _ => {}
                     }
@@ -257,11 +277,14 @@ impl RestDispatcher {
             ("GET", ["tasks", id]) => self.handle_get_task(id, query, tenant, headers).await,
 
             // Task cancel (slash-separated variant: /tasks/{id}/cancel).
-            ("POST", ["tasks", id, "cancel"]) => self.handle_cancel_task(id, tenant, headers).await,
+            ("POST", ["tasks", id, "cancel"]) => {
+                self.handle_cancel_task(req, id, tenant, headers).await
+            }
 
             // Push notification configs (accept both plural and singular path segments).
             ("POST", ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig"]) => {
-                self.handle_set_push_config(req, task_id, headers).await
+                self.handle_set_push_config(req, task_id, tenant, headers)
+                    .await
             }
             (
                 "GET",
@@ -295,24 +318,63 @@ impl RestDispatcher {
 
     // ── Route handlers ───────────────────────────────────────────────────
 
-    async fn handle_send(
+    /// Reads a bounded POST body as JSON and fills in fields the client put
+    /// in the URL instead: the path tenant (when the prefix form was used)
+    /// and any other path variable the route bound. An empty body is the
+    /// empty object, so a bodiless `POST /tasks/{id}:cancel` still parses.
+    ///
+    /// `Err` carries the response to return: 413 for an oversized body, 400
+    /// for one that is not JSON.
+    async fn read_body_with_path_fields(
         &self,
         req: hyper::Request<Incoming>,
-        streaming: bool,
-        headers: &HashMap<String, String>,
-    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let body_bytes = match read_body_limited(
+        tenant: Option<&str>,
+        path_fields: &[(&str, &str)],
+    ) -> Result<serde_json::Value, hyper::Response<BoxBody<Bytes, Infallible>>> {
+        let body_bytes = read_body_limited(
             req.into_body(),
             self.config.max_request_body_size,
             self.config.body_read_timeout,
         )
         .await
-        {
-            Ok(bytes) => bytes,
-            Err(msg) => return error_json_response(413, &msg),
+        .map_err(|msg| error_json_response(413, &msg))?;
+        let mut value: serde_json::Value = if body_bytes.iter().all(u8::is_ascii_whitespace) {
+            serde_json::Value::Object(serde_json::Map::new())
+        } else {
+            serde_json::from_slice(&body_bytes)
+                .map_err(|e| error_json_response(400, &e.to_string()))?
+        };
+        for &(field, path_value) in path_fields {
+            value = inject_field_if_missing(value, field, path_value);
+        }
+        // The path form is authoritative: under `google.api.http` a variable
+        // bound from the path is the field's value, whatever the body says.
+        // (A body-only tenant was already applied by the caller, so `tenant`
+        // here is either the path's or the body's own.)
+        if let Some(tenant) = tenant {
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert(
+                    "tenant".to_owned(),
+                    serde_json::Value::String(tenant.to_owned()),
+                );
+            }
+        }
+        Ok(value)
+    }
+
+    async fn handle_send(
+        &self,
+        req: hyper::Request<Incoming>,
+        streaming: bool,
+        tenant: Option<&str>,
+        headers: &HashMap<String, String>,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let body_value = match self.read_body_with_path_fields(req, tenant, &[]).await {
+            Ok(v) => v,
+            Err(resp) => return resp,
         };
         let params: a2a_protocol_types::params::MessageSendParams =
-            match serde_json::from_slice(&body_bytes) {
+            match serde_json::from_value(body_value) {
                 Ok(p) => p,
                 Err(e) => return error_json_response(400, &e.to_string()),
             };
@@ -366,15 +428,26 @@ impl RestDispatcher {
 
     async fn handle_cancel_task(
         &self,
+        req: hyper::Request<Incoming>,
         id: &str,
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = a2a_protocol_types::params::CancelTaskParams {
-            tenant: tenant.map(str::to_owned),
-            id: id.to_owned(),
-            metadata: None,
+        // `CancelTaskRequest` is `body: "*"`: the body may carry `metadata`,
+        // and — under the primary binding — the `tenant`. Until 2026-09-09
+        // the body was never read, so both were dropped on this binding.
+        let body_value = match self
+            .read_body_with_path_fields(req, tenant, &[("id", id)])
+            .await
+        {
+            Ok(v) => v,
+            Err(resp) => return resp,
         };
+        let params: a2a_protocol_types::params::CancelTaskParams =
+            match serde_json::from_value(body_value) {
+                Ok(p) => p,
+                Err(e) => return error_json_response(400, &e.to_string()),
+            };
         match self.handler.on_cancel_task(params, Some(headers)).await {
             Ok(task) => json_ok_response(&task),
             Err(e) => server_error_to_response(&e),
@@ -383,14 +456,26 @@ impl RestDispatcher {
 
     async fn handle_resubscribe(
         &self,
+        req: hyper::Request<Incoming>,
         id: &str,
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = a2a_protocol_types::params::TaskIdParams {
-            tenant: tenant.map(str::to_owned),
-            id: id.to_owned(),
+        // A POST body, when present, may name the tenant (`SubscribeToTask
+        // Request` under the primary binding); a GET has none and its
+        // `?tenant=` was read by the caller.
+        let body_value = match self
+            .read_body_with_path_fields(req, tenant, &[("id", id)])
+            .await
+        {
+            Ok(v) => v,
+            Err(resp) => return resp,
         };
+        let params: a2a_protocol_types::params::TaskIdParams =
+            match serde_json::from_value(body_value) {
+                Ok(p) => p,
+                Err(e) => return error_json_response(400, &e.to_string()),
+            };
         match self.handler.on_resubscribe(params, Some(headers)).await {
             Ok(reader) => build_sse_response(
                 reader,
@@ -406,26 +491,20 @@ impl RestDispatcher {
         &self,
         req: hyper::Request<Incoming>,
         task_id: &str,
+        tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let body_bytes = match read_body_limited(
-            req.into_body(),
-            self.config.max_request_body_size,
-            self.config.body_read_timeout,
-        )
-        .await
-        {
-            Ok(bytes) => bytes,
-            Err(msg) => return error_json_response(413, &msg),
-        };
         // The REST client may strip `taskId` from the body (it's already in the
-        // URL path).  Inject it before deserializing so the required field is
-        // always present.
-        let body_value: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+        // URL path), and the tenant may only be in the path prefix. Inject
+        // both before deserializing so the required field is always present
+        // and the config lands in the caller's partition.
+        let body_value = match self
+            .read_body_with_path_fields(req, tenant, &[("taskId", task_id)])
+            .await
+        {
             Ok(v) => v,
-            Err(e) => return error_json_response(400, &e.to_string()),
+            Err(resp) => return resp,
         };
-        let body_value = inject_field_if_missing(body_value, "taskId", task_id);
         let config: a2a_protocol_types::push::TaskPushNotificationConfig =
             match serde_json::from_value(body_value) {
                 Ok(c) => c,

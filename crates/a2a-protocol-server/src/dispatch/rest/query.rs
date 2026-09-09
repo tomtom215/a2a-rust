@@ -78,7 +78,7 @@ pub(super) fn parse_query_param(query: &str, key: &str) -> Option<String> {
 /// every byte as Latin-1, mangling any multi-byte UTF-8 sequence (e.g. a
 /// percent-encoded non-ASCII tenant name or query value) into several garbage
 /// characters.
-fn percent_decode(input: &str) -> String {
+pub(super) fn percent_decode(input: &str) -> String {
     let mut rest = input.as_bytes();
     let mut bytes: Vec<u8> = Vec::with_capacity(rest.len());
     // Advance by consuming from the front of `rest` rather than tracking a
