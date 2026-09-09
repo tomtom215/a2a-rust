@@ -408,6 +408,17 @@ jobs:
           cargo test -p a2a-protocol-server --features postgres \
             --test multi_replica -- --ignored --test-threads=1
 
+      # The shared rate-limit counter's sweep cadence: no sweep on a counter's
+      # first count, a sweep on count SWEEP_INTERVAL that clears past windows
+      # only. These are lib tests, not a `--test` binary, so the module is
+      # named: a bare `--ignored` would also select every other ignored lib
+      # test, and those are ignored for reasons a database does not fix. Each
+      # test creates and drops its own scratch database, so no thread limit.
+      - name: Test (Postgres rate-limit counter, live database)
+        run: |
+          cargo test -p a2a-protocol-server --features postgres --lib \
+            rate_limit::shared::postgres -- --ignored
+
   # ── Nightly CI ──────────────────────────────────────────────────────────
   nightly:
     name: Nightly (informational)
