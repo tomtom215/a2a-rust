@@ -24,9 +24,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use a2a_protocol_client::error::ClientError;
-use a2a_protocol_client::transport::grpc::{
-    GrpcBareAddressScheme, GrpcTransport, GrpcTransportConfig,
-};
+use a2a_protocol_client::transport::grpc::{GrpcBareAddressScheme, GrpcTransport};
 use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
@@ -238,7 +236,9 @@ mod tls {
     use super::*;
     // The client-side types come from the SDK's re-export: a caller needs no
     // tonic dependency of their own. The server fixture is tonic's.
-    use a2a_protocol_client::transport::grpc::{Certificate, ClientTlsConfig, Identity};
+    use a2a_protocol_client::transport::grpc::{
+        Certificate, ClientTlsConfig, GrpcTransportConfig, Identity,
+    };
     use tonic::transport::ServerTlsConfig;
 
     struct Pems {
