@@ -841,6 +841,67 @@ mod tests {
         assert_eq!(artifacts[0].parts[1].text_content(), Some("second"));
     }
 
+    /// An append carrying artifact metadata merges it into the existing
+    /// artifact's metadata: new keys are added, an existing key is
+    /// overwritten, and keys the update does not mention survive.
+    #[tokio::test]
+    async fn artifact_append_merges_metadata_keys() {
+        use a2a_protocol_types::artifact::{Artifact, ArtifactId};
+        use a2a_protocol_types::events::TaskArtifactUpdateEvent;
+        use a2a_protocol_types::message::Part;
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-meta");
+        task_store
+            .save(&make_task("t-meta", TaskState::Working))
+            .await
+            .unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        for (parts, append, meta) in [
+            (
+                vec![Part::text("first")],
+                None,
+                serde_json::json!({"lang": "en", "keep": true}),
+            ),
+            (
+                vec![Part::text("second")],
+                Some(true),
+                serde_json::json!({"lang": "fr", "added": 1}),
+            ),
+        ] {
+            let mut artifact = Artifact::new(ArtifactId::new("art-1"), parts);
+            artifact.metadata = Some(meta);
+            writer
+                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                    task_id: TaskId::new("t-meta"),
+                    context_id: ContextId::new("ctx-1"),
+                    artifact,
+                    append,
+                    last_chunk: Some(true),
+                    metadata: None,
+                }))
+                .await
+                .unwrap();
+        }
+        drop(writer);
+
+        let collected = handler
+            .collect_events(reader, task_id, tokio::spawn(async {}))
+            .await
+            .expect("collect_events should succeed");
+        let artifacts = collected.task.artifacts.expect("artifacts present");
+        assert_eq!(artifacts.len(), 1);
+        let meta = artifacts[0].metadata.as_ref().expect("metadata merged");
+        assert_eq!(meta["lang"], "fr", "an updated key takes the new value");
+        assert_eq!(meta["keep"], true, "an unmentioned key survives");
+        assert_eq!(meta["added"], 1, "a new key is added");
+    }
+
     /// Kills `replace == with !=` on the `a.id == update.artifact.id` lookup
     /// specifically. With two artifacts present, `!=` selects the *first
     /// non-matching* one, so the parts land on the wrong artifact — a bug the

@@ -1032,6 +1032,35 @@ mod tests {
         );
     }
 
+    /// An append carrying artifact metadata merges it into the existing
+    /// artifact's metadata: an updated key takes the new value, an
+    /// unmentioned key survives, a new key is added.
+    #[tokio::test]
+    async fn append_merges_metadata_keys() {
+        let limits = default_limits();
+        let mut task = make_task("t1", TaskState::Working);
+
+        let mut first = artifact_event("t1", "art-1", vec![Part::text("one")], None);
+        let mut second = artifact_event("t1", "art-1", vec![Part::text("two")], Some(true));
+        for (event, meta) in [
+            (&mut first, serde_json::json!({"lang": "en", "keep": true})),
+            (&mut second, serde_json::json!({"lang": "fr", "added": 1})),
+        ] {
+            if let StreamResponse::ArtifactUpdate(update) = event {
+                update.artifact.metadata = Some(meta);
+            }
+        }
+        run(first, &mut task, &limits).await;
+        run(second, &mut task, &limits).await;
+
+        let arts = task.artifacts.as_ref().expect("artifacts");
+        assert_eq!(arts.len(), 1);
+        let meta = arts[0].metadata.as_ref().expect("metadata merged");
+        assert_eq!(meta["lang"], "fr");
+        assert_eq!(meta["keep"], true);
+        assert_eq!(meta["added"], 1);
+    }
+
     /// Kills `replace == with !=` in the merge target lookup,
     /// `.find(|a| a.id == update.artifact.id)`.
     ///

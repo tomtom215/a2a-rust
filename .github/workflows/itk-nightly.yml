@@ -107,9 +107,38 @@ jobs:
         env:
           ITK_NIGHTLY_RUN: "True"
           ITK_SKIP_BUILD: "1"
+          # DEBUG mounts itk/logs and keeps every agent's and the service's
+          # log; raw_results.json alone says only which pair failed, not why.
+          ITK_LOG_LEVEL: DEBUG
+
+      # The shared driver exits 0 for a nightly with failures — the run is
+      # metrics, not a gate — so the failures are put where a reader looks:
+      # the job summary, and the artifact. This step never fails the job.
+      - name: Summarise the scenario results
+        if: always() && hashFiles('itk/raw_results.json') != ''
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          r = json.load(open("itk/raw_results.json"))
+          res = r["results"]
+          items = list(res.values()) if isinstance(res, dict) else res
+          passed = [i for i in items if i.get("passed")]
+          failed = [i for i in items if not i.get("passed")]
+          print(f"## ITK nightly: {len(passed)} / {len(items)} scenarios passed")
+          print()
+          if failed:
+              print("| Failed scenario | Peers | Protocols | Behaviour |")
+              print("|---|---|---|---|")
+              for i in failed:
+                  print(f"| {i['name']} | {', '.join(i.get('sdks', []))} | {', '.join(i.get('protocols', []))} | {i.get('behavior')} |")
+          else:
+              print("All scenarios passed.")
+          PY
+          cat "$GITHUB_STEP_SUMMARY"
 
       # Kept even when the run fails: a red night's evidence is the point.
-      - name: Upload raw results
+      - name: Upload raw results and logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -117,6 +146,7 @@ jobs:
           path: |
             itk/raw_results.json
             itk/itk_rust.json
+            itk/logs/
           if-no-files-found: ignore
 
       # Only from main: a workflow_dispatch on a branch validates the run

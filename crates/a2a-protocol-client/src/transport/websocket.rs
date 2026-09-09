@@ -898,6 +898,48 @@ mod tests {
         assert!(validate_ws_url("").is_err());
     }
 
+    /// An extra header whose name cannot be an HTTP header name fails the
+    /// connect before any socket is opened — closed, not dropped, because
+    /// the header may be the credential.
+    #[tokio::test]
+    async fn invalid_extra_header_name_fails_the_connect_closed() {
+        let mut headers = HashMap::new();
+        headers.insert("not a header name".to_owned(), "x".to_owned());
+        let err = WebSocketTransport::connect_with_options(
+            "ws://127.0.0.1:1/ws",
+            Duration::from_secs(1),
+            &headers,
+        )
+        .await
+        .expect_err("an invalid header name must fail the connect");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid WebSocket header name"),
+            "error must name the problem: {msg}"
+        );
+    }
+
+    /// An extra header whose value is not a valid HTTP header value fails
+    /// the same way, and the value is not echoed into the error.
+    #[tokio::test]
+    async fn invalid_extra_header_value_fails_the_connect_without_echoing_it() {
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_owned(), "Bearer sec\u{0}ret".to_owned());
+        let err = WebSocketTransport::connect_with_options(
+            "ws://127.0.0.1:1/ws",
+            Duration::from_secs(1),
+            &headers,
+        )
+        .await
+        .expect_err("an invalid header value must fail the connect");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid WebSocket header value for \"authorization\""),
+            "error must name the header: {msg}"
+        );
+        assert!(!msg.contains("sec"), "the value must not be echoed: {msg}");
+    }
+
     #[test]
     fn with_extra_headers_sets_the_headers() {
         // The builder must actually store the headers (a default-returning stub
