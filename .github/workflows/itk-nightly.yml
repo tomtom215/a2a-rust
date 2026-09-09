@@ -122,7 +122,12 @@ jobs:
           import json
           r = json.load(open("itk/raw_results.json"))
           res = r["results"]
-          items = list(res.values()) if isinstance(res, dict) else res
+          # A dict keyed by scenario name whose values carry no name field.
+          items = (
+              [dict(v, name=v.get("name", k)) for k, v in res.items()]
+              if isinstance(res, dict)
+              else res
+          )
           passed = [i for i in items if i.get("passed")]
           failed = [i for i in items if not i.get("passed")]
           print(f"## ITK nightly: {len(passed)} / {len(items)} scenarios passed")

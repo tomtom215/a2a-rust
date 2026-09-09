@@ -278,11 +278,14 @@ async fn backoff_is_paid_between_attempts_but_not_after_the_last() {
     );
 
     // The claim in the name: *not after the last*. A trailing backoff would be
-    // the 1500ms one again, so anything under half of that excludes it while
-    // leaving room for a slow response round trip.
+    // the 1500ms one again, so a bound well under that excludes it while
+    // leaving room for a slow response round trip. 700ms was not enough room:
+    // a correct run on a Windows 1.88 runner measured 873ms between the last
+    // arrival and the return (2026-09-09), so the bound is 1000ms — still
+    // 500ms short of the backoff it must rule out.
     let after_last = returned_at - arrivals[2];
     assert!(
-        after_last < Duration::from_millis(700),
+        after_last < Duration::from_millis(1000),
         "no backoff may be paid after the final attempt — {after_last:?} elapsed \
          between the last request arriving and send() returning, and a trailing \
          backoff would be 1500ms"

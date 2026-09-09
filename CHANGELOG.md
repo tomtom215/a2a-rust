@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An empty `contextId` or `taskId` on an incoming message is "unset", not
+  an invalid id.** The A2A JSON bindings are ProtoJSON, and both fields are
+  proto3 strings without presence, so `""` is the unset value. a2a-java's
+  JSON-RPC transport prints every field (`alwaysPrintFieldsWithNoPresence`)
+  and therefore sends `"contextId": ""` for none; this server answered
+  `InvalidParams: context_id must not be empty or whitespace-only`, which
+  failed every JSON-RPC pairing with the Java SDK in the first official ITK
+  nightly (4 of 60 scenarios; the same peer passed over gRPC and HTTP+JSON,
+  whose printers omit defaults). The server now maps an exactly-empty id to
+  absent before validation and generates the context as for an omitted one;
+  whitespace-only ids are still rejected, because no printer produces them
+  for "unset". Regression test in
+  `a2a-protocol-server/tests/proto3_empty_ids.rs` posts the raw JSON-RPC
+  body the Java client sends.
+
 ### Changed
 
 - **MSRV lowered from 1.93 to 1.88; edition 2024.** The workspace had
