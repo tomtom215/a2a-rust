@@ -67,6 +67,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`init_otlp_pipeline_with_endpoint`** (`a2a_protocol_server::otel`):
   `init_otlp_pipeline` with the collector endpoint given explicitly instead
   of read from `OTEL_EXPORTER_OTLP_ENDPOINT`.
+- **Coverage measures the PostgreSQL stores instead of failing to exclude
+  them.** The coverage workflow now runs the same live-database suites the
+  `test-postgres` CI job runs (`postgres_store_tests`, `multi_replica`)
+  under instrumentation against a `postgres:16` service and merges the
+  profiles into one report. The seven PostgreSQL files had sat at 0-8% on
+  the dashboard — 42% of every uncovered line in the repository — behind an
+  ignore list that never took effect (`codecov.yml` keeps the history).
+  Measured locally the same way: the PostgreSQL files at 94.55% in
+  aggregate. Two live-database tests were added for the paths the
+  isolation tests did not reach — the tenant-aware task store's
+  `context_id`, `status` and `statusTimestampAfter` filters, cursor
+  pagination, delete and count, and the push-config stores' list, delete
+  and count — proving along the way that a delete under the wrong tenant is
+  a no-op that leaves the other tenant's row intact.
 - **Nightly run in the official ITK, with published metrics.** Until now
   the only cross-SDK evidence graded by someone other than this project was
   the official TCK; the upstream Integration Testing Kit job was
@@ -95,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PROVENANCE.md` §3.2.
 - **`STABILITY.md`**: the API stability policy — what "breaking" means for
   these crates, deprecate-then-remove with a one-minor window, at most one
-  breaking minor per month, `### Breaking` changelog headings,
+  breaking minor per month, `### Breaking Changes` changelog headings,
   `cargo-semver-checks` as the proof, the MSRV rule, what is and is not
   covered, and the criteria for `1.0`. Linked from the README's Stability
   section.

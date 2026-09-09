@@ -6,9 +6,13 @@
 
 # What problem this solves
 
-`codecov.yml` excludes the PostgreSQL stores, because they only execute against
-a live server and would otherwise report 0% forever. The exclusion has never
-worked, and the file records a fix that was applied and never checked:
+Until 2026-09-09 `codecov.yml` tried to exclude the PostgreSQL stores, because
+they only execute against a live server and would otherwise report 0% forever.
+The exclusion never worked, and the file recorded a fix that was applied and
+never checked. Since 2026-09-09 those files are measured instead — the coverage
+workflow runs the live-database suites under instrumentation — and the only
+remaining ignore is `tck/**`. This script stays as the instrument for whatever
+is listed: an entry Codecov is still counting is a failure. The history:
 
     # These five were previously listed as bare paths, and Codecov did not
     # apply them. Verified 2026-08-06 against Codecov's own API for `615d01f8`:
@@ -28,7 +32,8 @@ The badge reads 94.06%; without them it is 96.46%. Every conversation about
 where the coverage gaps are has been starting from the wrong number.
 
 This is the same failure the file it checks already names: a number nothing
-recomputes is a number that decays. So this recomputes it.
+recomputes is a number that decays. So this recomputes it. (Those seven files
+are no longer excluded; see codecov.yml for how the gap was closed.)
 
 # What this checks, and what it does not
 
