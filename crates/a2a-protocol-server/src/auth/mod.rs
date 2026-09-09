@@ -127,7 +127,14 @@ fn labelled_constant_time_match<'a>(
         let hit = constant_time_eq(candidate, value);
         // All ones when this entry matched, all zeros otherwise.
         let mask = 0_usize.wrapping_sub(usize::from(hit));
-        selected = (selected & !mask) | (index & mask);
+        // Branchless select: flip exactly the bits in which `selected` and
+        // `index` differ, and only under an all-ones mask. This replaced
+        // `(selected & !mask) | (index & mask)`, which computes the same
+        // value but whose `|` could be swapped for `^` with no change in
+        // behaviour — the two operands never share a set bit — leaving an
+        // equivalent mutant nothing could kill. Every operator here has an
+        // observable job: a match must select its own index, and only its own.
+        selected ^= (selected ^ index) & mask;
     }
     match allowed.get(selected) {
         None => CredentialMatch::NoMatch,

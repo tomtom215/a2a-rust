@@ -162,3 +162,62 @@ async fn a_sender_cut_short_by_the_handler_bound_is_reported_as_truncated() {
         "nothing is known to have been truncated, so nothing is claimed"
     );
 }
+
+/// Never answers, and wants exactly the bound it will be given: 5s.
+struct WantsExactlyTheBound;
+
+impl crate::push::PushSender for WantsExactlyTheBound {
+    fn send<'a>(
+        &'a self,
+        _url: &'a str,
+        _event: &'a StreamResponse,
+        _config: &'a TaskPushNotificationConfig,
+    ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>> {
+        Box::pin(async {
+            tokio::time::sleep(std::time::Duration::from_secs(93)).await;
+            Ok(())
+        })
+    }
+
+    fn max_delivery_duration(&self) -> Option<std::time::Duration> {
+        Some(std::time::Duration::from_secs(5))
+    }
+}
+
+/// A sender whose schedule fits the bound exactly was given all the time it
+/// asked for, so a timeout is the webhook's fault and not the configuration's:
+/// `TIMEOUT`, not `TIMEOUT_TRUNCATED`. The boundary is strict — `wanted >
+/// bound` — and `>=` would tell an operator their two numbers disagree when
+/// they are equal.
+#[tokio::test(start_paused = true)]
+async fn a_sender_that_wants_exactly_the_bound_is_not_reported_as_truncated() {
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let task_id = TaskId::new("t-exact");
+    let event = make_status_event("t-exact", TaskState::Working);
+    let store = store_with_configs("t-exact", 1).await;
+    let limits = HandlerLimits::default().with_push_delivery_timeout(Duration::from_secs(5));
+
+    let metrics = CountingMetrics::default();
+    deliver_push_bg(
+        &task_id,
+        &event,
+        &store,
+        Some(&WantsExactlyTheBound),
+        &limits,
+        &metrics,
+    )
+    .await;
+
+    assert_eq!(
+        metrics.timed_out.load(Ordering::Relaxed),
+        1,
+        "the delivery timed out"
+    );
+    assert_eq!(
+        metrics.truncated.load(Ordering::Relaxed),
+        0,
+        "a schedule equal to the bound was not cut short by it"
+    );
+}

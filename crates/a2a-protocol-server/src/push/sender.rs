@@ -327,31 +327,40 @@ fn is_private_v4(v4: Ipv4Addr) -> bool {
 /// the cloud metadata endpoint) passed the registration-time host check while
 /// resolving to a link-local address at connect time.
 fn parse_numeric_ipv4(host: &str) -> Option<Ipv4Addr> {
-    // `inet_aton` accepts 1..=4 dot-separated C-integer parts.
+    // `inet_aton` accepts 1..=4 dot-separated C-integer parts. More than four
+    // is refused before any part is parsed, so a host with thousands of dots
+    // costs one `split` and nothing else.
     let parts: Vec<&str> = host.split('.').collect();
-    if parts.is_empty() || parts.len() > 4 {
+    if parts.len() > 4 {
         return None;
     }
     let mut vals: Vec<u64> = Vec::with_capacity(parts.len());
     for p in &parts {
         vals.push(parse_c_integer(p)?);
     }
-    // Pack per `inet_aton`'s part-count rules: the final part absorbs all the
-    // low-order bytes the earlier parts did not name.
-    let addr: u64 = match vals.as_slice() {
-        [a] => *a,
-        [a, b] if *a <= 0xff && *b <= 0x00ff_ffff => (a << 24) | b,
-        [a, b, c] if *a <= 0xff && *b <= 0xff && *c <= 0xffff => (a << 24) | (b << 16) | c,
-        [a, b, c, d] if *a <= 0xff && *b <= 0xff && *c <= 0xff && *d <= 0xff => {
-            (a << 24) | (b << 16) | (c << 8) | d
-        }
-        _ => return None,
-    };
-    if addr > u64::from(u32::MAX) {
+    // Pack per `inet_aton`'s part-count rules: every part but the last names
+    // exactly one byte, and the last part absorbs all the low-order bytes the
+    // earlier parts did not name — one for `a.b.c.d`, four for a bare `n`.
+    //
+    // Written as "fill the leading octets, then bound and place the tail"
+    // rather than as one shift-and-or expression per part count. The earlier
+    // form carried three near-identical guards and twelve `<<`/`|` operators,
+    // and because the shifted fields never overlap, swapping `|` for `^` or
+    // `+` in any of them changed nothing — equivalent mutants that said
+    // nothing about the tests. Here each operator has exactly one job and a
+    // boundary that observes it.
+    let (last, head) = vals.split_last()?;
+    let mut octets = [0_u8; 4];
+    for (slot, part) in octets.iter_mut().zip(head) {
+        *slot = u8::try_from(*part).ok()?;
+    }
+    let tail_bytes = 4 - head.len();
+    if *last > (1_u64 << (8 * tail_bytes)) - 1 {
         return None;
     }
-    #[allow(clippy::cast_possible_truncation)] // bounded by the check above
-    Some(Ipv4Addr::from((addr as u32).to_be_bytes()))
+    let last = u32::try_from(*last).ok()?;
+    octets[head.len()..].copy_from_slice(&last.to_be_bytes()[head.len()..]);
+    Some(Ipv4Addr::from(octets))
 }
 
 /// Parses one C-style integer: `0x`/`0X` hex, a leading `0` octal, otherwise
@@ -903,6 +912,25 @@ impl PushSender for HttpPushSender {
 mod tests {
     use super::*;
 
+    /// A sender that says nothing about its schedule reports `None`, not
+    /// `Some(0s)`: `None` is "I cannot say", which is never reported as
+    /// truncated, while a zero-length schedule is a claim that would be.
+    #[test]
+    fn a_sender_that_does_not_report_a_schedule_reports_none() {
+        struct SaysNothing;
+        impl PushSender for SaysNothing {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+                Box::pin(async { Ok(()) })
+            }
+        }
+        assert_eq!(SaysNothing.max_delivery_duration(), None);
+    }
+
     /// Covers lines 89-92 (`PushRetryPolicy::with_max_attempts`).
     #[test]
     fn push_retry_policy_with_max_attempts() {
@@ -1025,6 +1053,61 @@ mod tests {
         assert_eq!(parse_numeric_ipv4("99999999999999999999"), None); // u64 overflow
         assert_eq!(parse_numeric_ipv4("0x"), None); // empty hex
         assert_eq!(parse_numeric_ipv4("1e10"), None); // decimal parse fails
+    }
+
+    /// Every `inet_aton` packing rule, at its exact boundary on both sides.
+    ///
+    /// The private-range checks above only ask *whether* a host is refused;
+    /// this asks *which address* each form denotes, which is the only thing
+    /// that distinguishes a correct packing from one that shifts the wrong
+    /// part, bounds the wrong part, or bounds it off by one. Each rejected row
+    /// is the smallest value the corresponding part cannot hold; each accepted
+    /// row beside it is the largest it can.
+    #[test]
+    fn parse_numeric_ipv4_packs_every_part_count_exactly() {
+        let v4 = |s: &str| s.parse::<Ipv4Addr>().unwrap();
+
+        // Which byte each part lands in, per part count.
+        assert_eq!(parse_numeric_ipv4("1"), Some(v4("0.0.0.1")));
+        assert_eq!(parse_numeric_ipv4("1.2"), Some(v4("1.0.0.2")));
+        assert_eq!(parse_numeric_ipv4("1.2.3"), Some(v4("1.2.0.3")));
+        assert_eq!(parse_numeric_ipv4("1.2.3.4"), Some(v4("1.2.3.4")));
+        assert_eq!(parse_numeric_ipv4("0177.0.0.01"), Some(v4("127.0.0.1")));
+
+        // The last part's width is whatever the earlier parts left: 4, 3, 2
+        // or 1 bytes. Largest value that fits, then the first that does not.
+        assert_eq!(
+            parse_numeric_ipv4("4294967295"),
+            Some(v4("255.255.255.255"))
+        );
+        assert_eq!(parse_numeric_ipv4("4294967296"), None);
+        assert_eq!(parse_numeric_ipv4("1.16777215"), Some(v4("1.255.255.255")));
+        assert_eq!(parse_numeric_ipv4("1.16777216"), None);
+        assert_eq!(parse_numeric_ipv4("1.2.65535"), Some(v4("1.2.255.255")));
+        assert_eq!(parse_numeric_ipv4("1.2.65536"), None);
+        assert_eq!(parse_numeric_ipv4("1.2.3.255"), Some(v4("1.2.3.255")));
+        assert_eq!(parse_numeric_ipv4("1.2.3.256"), None);
+
+        // Every leading part is exactly one byte, whichever position it is in.
+        assert_eq!(parse_numeric_ipv4("255.1"), Some(v4("255.0.0.1")));
+        assert_eq!(parse_numeric_ipv4("256.1"), None);
+        assert_eq!(parse_numeric_ipv4("1.255.1"), Some(v4("1.255.0.1")));
+        assert_eq!(parse_numeric_ipv4("1.256.1"), None);
+        assert_eq!(parse_numeric_ipv4("1.2.255.1"), Some(v4("1.2.255.1")));
+        assert_eq!(parse_numeric_ipv4("1.2.256.1"), None);
+
+        // Part count: four is the most `inet_aton` takes; five and six are
+        // both refused, not only the first count past the limit.
+        assert_eq!(parse_numeric_ipv4("1.2.3.4.5"), None);
+        assert_eq!(parse_numeric_ipv4("1.2.3.4.5.6"), None);
+
+        // Malformed parts never reach the packing.
+        assert_eq!(parse_numeric_ipv4(""), None);
+        assert_eq!(parse_numeric_ipv4("."), None);
+        assert_eq!(parse_numeric_ipv4("1..2"), None);
+        assert_eq!(parse_numeric_ipv4("1.2."), None);
+        assert_eq!(parse_numeric_ipv4("-1"), None);
+        assert_eq!(parse_numeric_ipv4("1.-1"), None);
     }
 
     #[test]

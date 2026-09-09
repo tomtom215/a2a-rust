@@ -26,6 +26,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for "unset". Regression test in
   `a2a-protocol-server/tests/proto3_empty_ids.rs` posts the raw JSON-RPC
   body the Java client sends.
+- **The weekly mutation sweep's 55 survivors are addressed** (run
+  34078555778 at `d3ebb72`, all in `a2a-protocol-server`). Twenty-six sat in
+  `parse_numeric_ipv4`, merged on 2026-08-27 while the per-PR gate was
+  passing over a failed baseline (the defect `db795c2` fixed); the function
+  is rewritten to fill the leading octets and bound the tail, which retires
+  the shift-and-or operators whose mutants were equivalent, and its packing
+  is pinned by a table naming the exact address of every `inet_aton` form
+  and the first value each part cannot hold. `labelled_constant_time_match`
+  selects with an XOR-swap for the same reason, still branchless.
+  `build_jwks_client` is one function with the feature split inside it, so
+  its plaintext body is no longer a `#[cfg]` twin that `--all-features`
+  compiles out. The rest are tests named for the mutant each kills: the
+  tenant-slot sweep, the Postgres rate-limit counter's sweep cadence (live
+  database, `#[ignore]`d like the store suite), the WebSocket keepalive sent
+  once per silence, `IdleTimeout` forwarding flush and shutdown, the push
+  truncation boundary, the SQLite delta payload and statement choice, and
+  `rows_for_append` on a delta covering every part. Three survivors remain
+  by construction — `TenantLimits::builder`, `PerTenantConfig::builder`,
+  `SseBodyWriter::close` — and the ledger, `CONTRIBUTING.md`, ADR 0006 and
+  `ROADMAP.md` now carry the current figures and the two false-green sweeps.
 
 ### Changed
 

@@ -1318,11 +1318,131 @@ mod tests {
         drop(second);
     }
 
+    /// Emits `count` non-terminal status updates, `step` apart, then
+    /// completes. Outbound traffic with nothing inbound, for as long as the
+    /// test needs it.
+    struct TrickleExec {
+        count: usize,
+        step: Duration,
+    }
+
+    impl crate::executor::AgentExecutor for TrickleExec {
+        fn execute<'a>(
+            &'a self,
+            ctx: &'a crate::request_context::RequestContext,
+            queue: &'a dyn crate::streaming::EventQueueWriter,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async move {
+                let status = |state: TaskState| {
+                    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                        task_id: ctx.task_id.clone(),
+                        context_id: ContextId::new(ctx.context_id.clone()),
+                        status: TaskStatus::new(state),
+                        metadata: None,
+                    })
+                };
+                for _ in 0..self.count {
+                    tokio::time::sleep(self.step).await;
+                    queue.write(status(TaskState::Working)).await?;
+                }
+                queue.write(status(TaskState::Completed)).await?;
+                Ok(())
+            })
+        }
+    }
+
+    /// While the server is the only side talking, the keepalive is sent
+    /// once and not again: the Ping is a question, and a peer that has not
+    /// answered it is not asked twice.
+    ///
+    /// Kills `pinged || idle_for >= half` → `&&`. Under it, every half-budget
+    /// of outbound-only traffic re-arms the Ping — a stream to a consumer
+    /// that has stopped reading would be pinged for as long as it streams,
+    /// which is the re-arming the comment on `pinged` rules out. The consumer
+    /// here reads nothing until the connection is closed, so every frame the
+    /// server sent is still in the socket to be counted afterwards.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_stream_to_a_silent_consumer_is_pinged_once() {
+        let idle = Duration::from_millis(1_000);
+        // 12 x 250ms = 3s of outbound traffic: six half-budgets, so a
+        // re-arming keepalive would send several Pings, not one.
+        let executor = TrickleExec {
+            count: 12,
+            step: Duration::from_millis(250),
+        };
+        let addr = spawn_ws_server_with_executor(executor, |d| d.with_idle_timeout(idle)).await;
+        let mut ws = ws_connect(addr).await;
+
+        ws.send(WsMessage::Text(streaming_message_json("trickle").into()))
+            .await
+            .expect("send the streaming request");
+
+        // Neither read nor write while the stream runs and the idle budget
+        // after it is spent.
+        tokio::time::sleep(Duration::from_millis(3_000) + 2 * idle).await;
+
+        let mut pings = 0;
+        let mut texts = 0;
+        let closed = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match ws.next().await {
+                    Some(Ok(WsMessage::Ping(_))) => pings += 1,
+                    Some(Ok(WsMessage::Text(_))) => texts += 1,
+                    Some(Ok(WsMessage::Close(_)) | Err(_)) | None => return,
+                    Some(Ok(other)) => panic!("unexpected frame: {other:?}"),
+                }
+            }
+        })
+        .await;
+        assert!(
+            closed.is_ok(),
+            "a consumer that never reads must be closed once the stream ends and the idle budget passes"
+        );
+        assert!(
+            texts >= 12,
+            "the whole stream was written while the consumer read nothing; got {texts} text frames"
+        );
+        assert_eq!(
+            pings, 1,
+            "one Ping at the half-budget, and no more without an inbound frame"
+        );
+    }
+
+    fn streaming_message_json(id: &str) -> String {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "SendStreamingMessage",
+            "id": id,
+            "params": {
+                "message": {
+                    "messageId": "msg-stream",
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "stream"}]
+                }
+            }
+        })
+        .to_string()
+    }
+
     /// Spawns a dispatcher configured by `configure`, for the bound tests.
     async fn spawn_ws_server_with(
         configure: impl FnOnce(WebSocketDispatcher) -> WebSocketDispatcher,
     ) -> std::net::SocketAddr {
-        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        spawn_ws_server_with_executor(EchoExec, configure).await
+    }
+
+    /// As [`spawn_ws_server_with`], with the executor chosen by the test.
+    async fn spawn_ws_server_with_executor(
+        executor: impl crate::executor::AgentExecutor + 'static,
+        configure: impl FnOnce(WebSocketDispatcher) -> WebSocketDispatcher,
+    ) -> std::net::SocketAddr {
+        let handler = Arc::new(RequestHandlerBuilder::new(executor).build().unwrap());
         let dispatcher = Arc::new(configure(WebSocketDispatcher::new(handler)));
         dispatcher
             .serve_with_addr("127.0.0.1:0")

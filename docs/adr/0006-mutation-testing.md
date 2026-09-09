@@ -43,8 +43,9 @@ orchestration flows.
 
    The target is unconditional; the *enforcement* is scoped. A PR must add no
    survivors to the lines it changes, and that is blocking. The workspace
-   figure is a tracked standing target — **94%, 125 surviving, as of
-   2026-08-10** — burned down over time rather than waived. There is
+   figure is a tracked standing target — **97%, 55 surviving, as of
+   2026-09-07** (94%, 125 on 2026-08-10) — burned down over time rather than
+   waived. There is
    deliberately no baseline or allowlist file: the incremental gate already
    prevents the count from growing, so a mechanism whose only purpose is to
    turn a red result green would buy nothing and cost the signal.

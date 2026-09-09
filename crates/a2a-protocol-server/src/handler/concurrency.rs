@@ -96,3 +96,72 @@ impl RequestHandler {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent_executor;
+    use crate::builder::RequestHandlerBuilder;
+    use crate::handler::HandlerLimits;
+
+    struct Idle;
+    agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+
+    fn handler_with_lock_cap(max: usize) -> RequestHandler {
+        RequestHandlerBuilder::new(Idle)
+            .with_handler_limits(HandlerLimits::default().with_max_context_locks(max))
+            .build()
+            .expect("handler builds")
+    }
+
+    /// The map is swept only once it reaches `max_context_locks`, and the sweep
+    /// keeps exactly the semaphores a permit still holds.
+    ///
+    /// Both halves are pinned because each has a mutant only it can see: a
+    /// threshold of `<` sweeps early and leaves the map one entry short before
+    /// it is ever full, and a strong-count test of `>=`, `==` or `<` keeps
+    /// everything, keeps only the idle tenants, or drops the busy one — none
+    /// of which a test that merely acquires a slot would notice.
+    #[tokio::test]
+    async fn the_sweep_keeps_busy_tenants_and_drops_idle_ones() {
+        let handler = handler_with_lock_cap(2);
+
+        // "busy" has a permit outstanding: the map and the permit both hold
+        // its semaphore. "idle" is held by the map alone.
+        let busy = handler.tenant_slot_semaphore("busy", 1).await;
+        let _permit = Arc::clone(&busy)
+            .try_acquire_owned()
+            .expect("a fresh semaphore has a free slot");
+        drop(busy);
+        drop(handler.tenant_slot_semaphore("idle", 1).await);
+        assert_eq!(
+            handler.tenant_slots.read().await.len(),
+            2,
+            "below the threshold nothing is swept"
+        );
+
+        // The third tenant finds the map at its threshold, so the sweep runs
+        // before it is inserted.
+        drop(handler.tenant_slot_semaphore("third", 1).await);
+
+        let kept: std::collections::BTreeSet<String> =
+            handler.tenant_slots.read().await.keys().cloned().collect();
+        assert!(
+            kept.contains("busy"),
+            "a tenant with a permit outstanding is never swept"
+        );
+        assert!(
+            !kept.contains("idle"),
+            "a tenant only the map holds is swept at the threshold"
+        );
+        assert!(
+            kept.contains("third"),
+            "the tenant that triggered the sweep is kept"
+        );
+        assert_eq!(
+            kept.len(),
+            2,
+            "exactly the busy tenant and the new one remain"
+        );
+    }
+}

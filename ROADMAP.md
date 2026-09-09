@@ -661,6 +661,19 @@ This is the category most worth clearing before any external review.
   25 mutants → 17, all 17 caught (exit 0); the old pattern matches 0 of the
   crate's 2097 mutants. With nothing left to skip, taking the `mutants` crate as
   a dependency of a published crate is no longer a decision anyone is waiting on.
+
+  **Reopened by measurement, 2026-08-14 and every sweep since.** Three
+  survivors are equivalent by construction and no rewrite removes them
+  without a breaking change: `TenantLimits::builder` and
+  `PerTenantConfig::builder` return `<Builder>::default()`, which is textually
+  the `Default::default()` the mutant substitutes, and dropping the derived
+  `Default` from a public builder is a semver break; `SseBodyWriter::close(self)`
+  is `drop(self)`, and a body of `()` drops `self` at scope end just the same,
+  while removing a public method is a break too. (A fourth, `build_jwks_client`,
+  was a `#[cfg]` twin compiled out under `--all-features` and is retired by
+  folding the split inside one function.) So the decision ADR 0006 defers —
+  take the `mutants` crate as a dependency of a published crate, or carry
+  three known survivors in every sweep — is waiting on someone after all.
 * **Raise coverage on the genuinely weak files.** After the 2026-07-31 pass,
   the weakest are `handler/event_processing/background/mod.rs` (54.2%),
   `serve.rs` (67.5%), and `background/push_delivery.rs` (72.8%). The first
