@@ -37,10 +37,6 @@ on:
       - 'itk/build.rs'
       - 'itk/src/**'
       - 'itk/protos/**'
-  # TEMPORARY — validation of this workflow before it reaches main, where
-  # workflow_dispatch becomes available. Remove once one branch run is green.
-  push:
-    branches: ['claude/happy-thompson-emts1e']
 
 # Uploading to the rolling prerelease needs write access to releases.
 permissions:

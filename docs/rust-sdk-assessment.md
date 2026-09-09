@@ -123,7 +123,7 @@ surface, not in scope.
 | Rust edition / MSRV | 2024 / **1.85** | ~~2021 / **1.93**~~ **2024 / 1.88** since 2026-09-09 (§9) |
 | Hand-written source LOC (approx.) | ~17k (+5k generated protobuf) | ~61k src (incl. inline tests) + 28k in `tests/` |
 | Tests passing locally | 454 | 2,086 (default) / 2,519 (all features) |
-| Codecov, last upload | 96.56%, 2026-07-27 | **93.62%, 2026-07-31** (current; see 4.4 for why local reads 95.75%) |
+| Codecov, last upload | 96.56%, 2026-07-27; **96.62%, 2026-09-07** | **93.62%, 2026-07-31** (current; see 4.4 for why local reads 95.75%); **96.62%, 2026-09-09** on `f65aeb8` (§9) |
 | Security contact | `security@agntcy.org` | Individual maintainer |
 
 Two figures deserve caveats. **crates.io download counts** include CI, mirror,
@@ -870,17 +870,17 @@ underway.
 
 Each item names the row it answers, what was done, how it was verified, and
 what is still open. Verified figures are from commands run that day on the
-`claude/happy-thompson-emts1e` branch; anything marked *pending* had not
-been observed when this section was written.
+`claude/happy-thompson-emts1e` branch, final state commit `f65aeb8`, on
+which CI (20 jobs), the coverage upload and the ITK nightly are all green.
 
 | Row (section) | Was | Now | Verification | Open |
 |---|---|---|---|---|
 | MSRV / edition (§3, §5.2) | 1.93 / 2021 | **1.88 / 2024**, `resolver = "3"` | `cargo test --workspace --all-features` on rustc 1.88.0: 3128 passed, 0 failed; stable clippy and docs clean; SLIMRPC binding and ITK agent migrated too | 1.85 would need `time`, `serde_with`, `darling` held back (`ROADMAP.md`) |
 | Feature-combination CI (§4.4) | hand-picked legs | plus `cargo hack clippy --each-feature` over the four published crates (39 combinations) as a CI gate and a preflight gate | 480 s warm locally; it caught an `unnecessary_wraps` under `grpc`-without-`grpc-tls` the same day | — |
-| Interop evidence (§4.5) | ITK job dispatch-only, never completed | `itk/run_itk.sh` over a2a-itk's shared driver; `itk-nightly.yml` runs the shared nightly set against every matrix peer and publishes `itk_rust.json` to `nightly-metrics` from `main` | Vendored `instruction.proto` byte-identical to upstream from its `syntax` line; image build and proto check green on the branch run | **First full run pending** at the time of writing; the branch run's scenario step was in progress |
+| Interop evidence (§4.5) | ITK job dispatch-only, never completed | `itk/run_itk.sh` over a2a-itk's shared driver; `itk-nightly.yml` runs the shared nightly set against every matrix peer and publishes `itk_rust.json` to `nightly-metrics` from `main` | Three full branch runs. First: **56 / 60** — every JSON-RPC pairing with `java_v10`, both directions. Debug logs showed Java parsing an `InvalidParams` from this server: a2a-java's JSON-RPC client prints proto3 no-presence fields, so an unset `contextId` arrives as `""`, which this server rejected; its REST client omits it, hence the asymmetry. Fixed in `84ac9ea` (`""` is the ProtoJSON unset value; whitespace-only still rejected). Final run on `f65aeb8`: **60 / 60** against Python, JavaScript, Go, Java and a2a-rs over JSON-RPC, gRPC and HTTP+JSON | The published `nightly-metrics` asset appears after the first run from `main`. For comparison, `a2a-rs`'s own last readable figure was 168 / 180 (§4.5, 2026-07-23) with a standing HTTP+JSON resubscribe failure; its current rate is not retrievable from here |
 | Release engineering (§4.6) | manual tag flow, no dependency automation, long-lived crates.io token | tag flow kept (it validates more than `release-plz` does); **Dependabot** weekly grouped for Cargo, the SLIMRPC lockfile and Actions; **crates.io Trusted Publishing** (OIDC) with a documented secret fallback until each crate is configured | Workflow YAML validated; the OIDC exchange itself runs only on a real release | Crate owner must add the trusted publisher on crates.io for each of the four crates (`RELEASING.md`) |
 | gRPC server TLS (§4.1) | plaintext listener, "terminate in a proxy" | `grpc-tls` on `a2a-protocol-server`: `GrpcDispatcher::with_tls(ServerTlsConfig)`, mutual TLS, plaintext refused, provider installed when absent | 6 end-to-end tests plus a separate-binary provider test, under `grpc-tls` and `--all-features`; feature matrix clean | — |
-| Coverage (§3, §4.4) | 94.09% on Codecov with the PostgreSQL files at 0-8% behind an ignore that never applied | the coverage job runs the live-database suites under instrumentation; tenant-store list/pagination/delete/count tests and three gRPC client method tests added | Local `cargo-llvm-cov` with `tck` ignored as on Codecov: **95.85%**, PostgreSQL files **94.55%** | **Codecov's figure from the upload is pending**; its line accounting differs from llvm-cov's, so the badge will not equal 95.85 |
+| Coverage (§3, §4.4) | 94.09% on Codecov with the PostgreSQL files at 0-8% behind an ignore that never applied | the coverage job runs the live-database suites under instrumentation; tests added for the tenant-store list/pagination/delete/count paths, three gRPC client methods, the push sender's auth-header edge cases, WebSocket header validation and artifact metadata merging | Codecov on `f65aeb8`: **96.62%** (35,782 of 37,033 lines); local `cargo-llvm-cov` with `tck` ignored read 95.85% on the same tree, its denominator being wider | **Level with `a2a-rs`'s 96.62% (Codecov, 2026-09-07), not above it.** The badge on `main` updates when this branch merges |
 | API stability (§5.2) | "minor versions may include breaking changes" | [`STABILITY.md`](../STABILITY.md): deprecation window, monthly batching, labelled headings, `cargo-semver-checks` gate, `1.0` criteria | Policy text; `cargo-semver-checks` already ran in CI | A policy is not a track record: the next two releases are the evidence |
 
 What this section does not claim: none of it changes the governance rows in

@@ -111,7 +111,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prerelease the ITK dashboard reads, the same mechanism the other SDKs
   use. The workflow also diffs the vendored `instruction.proto` against
   upstream so the agent cannot silently drift from the schema it is graded
-  against. Not a PR gate.
+  against. Not a PR gate. The first run reported 56 / 60 and found the
+  empty-`contextId` bug fixed under "Fixed" above; the run on the final
+  commit of this change reports 60 / 60.
 - **Feature-matrix CI job.** `cargo hack clippy --each-feature` now lints
   every feature of each published crate on its own, plus no-default-features
   and all-features (39 combinations, 8 minutes warm), so a `#[cfg(feature)]`
