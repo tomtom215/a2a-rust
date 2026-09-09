@@ -416,7 +416,11 @@ growing" is a claim with a dated exception. The rest are boundary mutants in
 code whose tests covered the behaviour but not the exact comparison. It is
 being burned down rather than suppressed — there is deliberately no baseline
 file — and the ledger below records each sweep, including the two that
-reported a score over work they had not done.
+reported a score over work they had not done. As of 2026-09-09 all but three
+of the 55 are killed (measured over their functions with the sweep's own
+command line: 133 mutants, 3 missed); the three that remain are equivalents
+by construction, named in `ROADMAP.md`, and are what the `#[mutants::skip]`
+decision below is now about.
 
 The score and its history are in
 [`book/src/reference/mutation-history.md`](book/src/reference/mutation-history.md),
