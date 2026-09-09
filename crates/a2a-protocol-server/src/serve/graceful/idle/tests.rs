@@ -248,7 +248,11 @@ async fn a_zero_length_write_does_not_count_as_activity() {
             tokio::select! {
                 read = io.read(&mut buf) => break read,
                 () = tokio::time::sleep(Duration::from_secs(30)) => {
-                    io.write_all(&[]).await.expect("an empty write is writable");
+                    // `write`, not `write_all`: `write_all` returns before
+                    // ever polling for an empty buffer, so the guard under
+                    // test would never run.
+                    let n = io.write(&[]).await.expect("an empty write is writable");
+                    assert_eq!(n, 0, "nothing to write means nothing written");
                 }
             }
         }
