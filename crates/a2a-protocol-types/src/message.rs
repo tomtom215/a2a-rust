@@ -975,8 +975,8 @@ mod tests {
 
     #[test]
     fn field_visitor_expecting_describes_field_name() {
-        use serde::de::value::MapDeserializer;
         use serde::Deserialize;
+        use serde::de::value::MapDeserializer;
 
         // u64 keys force FieldVisitor's default visit_u64 fallback, which
         // raises invalid_type with the text from expecting().

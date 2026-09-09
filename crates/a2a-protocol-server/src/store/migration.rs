@@ -42,8 +42,8 @@
 //! # }
 //! ```
 
-use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
+use sqlx::sqlite::SqlitePool;
 
 /// A single schema migration.
 ///

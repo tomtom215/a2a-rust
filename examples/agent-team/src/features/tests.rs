@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use super::{audit, status_of, ClaimStatus, FeatureClaim};
+use super::{ClaimStatus, FeatureClaim, audit, status_of};
 use crate::tests::TestResult;
 
 fn claim(label: &'static str, backed_by: &'static [&'static str]) -> FeatureClaim {

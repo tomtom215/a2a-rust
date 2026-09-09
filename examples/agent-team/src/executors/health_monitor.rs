@@ -11,7 +11,7 @@ use a2a_protocol_types::message::{Part, PartContent};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::task::TaskState;
 
-use a2a_protocol_client::{resolve_agent_card, ClientBuilder};
+use a2a_protocol_client::{ClientBuilder, resolve_agent_card};
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::executor_helpers::boxed_future;
 use a2a_protocol_server::request_context::RequestContext;

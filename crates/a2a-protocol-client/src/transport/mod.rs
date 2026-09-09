@@ -72,12 +72,12 @@ pub(crate) async fn collect_response_limited(
 
     let body = resp.into_body();
     let size_hint = <hyper::body::Incoming as hyper::body::Body>::size_hint(&body);
-    if let Some(upper) = size_hint.upper() {
-        if upper > max_size as u64 {
-            return Err(ClientError::Transport(format!(
-                "response body too large: {upper} bytes exceeds {max_size} byte limit"
-            )));
-        }
+    if let Some(upper) = size_hint.upper()
+        && upper > max_size as u64
+    {
+        return Err(ClientError::Transport(format!(
+            "response body too large: {upper} bytes exceeds {max_size} byte limit"
+        )));
     }
 
     let limited = Limited::new(body, max_size);

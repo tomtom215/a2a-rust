@@ -19,14 +19,14 @@ use std::sync::Mutex;
 
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
 use a2a_protocol_server::streaming::EventQueueReader;
+use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
 use a2a_protocol_types::error::{A2aResult, ErrorCode};
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::{TaskId, TaskState};
 
 use super::{LogSearchExecutor, RunbookExecutor, TriageExecutor};
-use crate::{extract_text, incident_model, known_services, user_message, INCIDENT_LOG};
+use crate::{INCIDENT_LOG, extract_text, incident_model, known_services, user_message};
 
 // ── Harness ──────────────────────────────────────────────────────────────────
 
@@ -107,9 +107,11 @@ async fn log_search_narrates_then_delivers_then_completes() {
     let arts = artifacts(&events);
     assert_eq!(arts.len(), 1);
     assert_eq!(arts[0].0, "log-findings");
-    assert!(status_texts(&events)
-        .iter()
-        .any(|t| t.contains("searching log for 'payments-api'")));
+    assert!(
+        status_texts(&events)
+            .iter()
+            .any(|t| t.contains("searching log for 'payments-api'"))
+    );
 }
 
 #[tokio::test]
@@ -282,14 +284,18 @@ async fn the_parked_alert_is_held_against_its_own_task_id() {
 #[tokio::test]
 async fn two_vague_alerts_park_independently() {
     let exec = triage();
-    assert!(drive(&exec, &ctx_for("t-a", "first vague alert"))
-        .await
-        .0
-        .is_ok());
-    assert!(drive(&exec, &ctx_for("t-b", "second vague alert"))
-        .await
-        .0
-        .is_ok());
+    assert!(
+        drive(&exec, &ctx_for("t-a", "first vague alert"))
+            .await
+            .0
+            .is_ok()
+    );
+    assert!(
+        drive(&exec, &ctx_for("t-b", "second vague alert"))
+            .await
+            .0
+            .is_ok()
+    );
 
     let pending = exec.pending.lock().unwrap();
     assert_eq!(pending.len(), 2);
@@ -306,14 +312,18 @@ async fn two_vague_alerts_park_independently() {
 #[tokio::test]
 async fn cancel_releases_only_the_cancelled_task() {
     let exec = triage();
-    assert!(drive(&exec, &ctx_for("t-keep", "vague one"))
-        .await
-        .0
-        .is_ok());
-    assert!(drive(&exec, &ctx_for("t-drop", "vague two"))
-        .await
-        .0
-        .is_ok());
+    assert!(
+        drive(&exec, &ctx_for("t-keep", "vague one"))
+            .await
+            .0
+            .is_ok()
+    );
+    assert!(
+        drive(&exec, &ctx_for("t-drop", "vague two"))
+            .await
+            .0
+            .is_ok()
+    );
     assert_eq!(exec.pending.lock().unwrap().len(), 2);
 
     // Cancellation is cooperative: the executor opts in by releasing what the

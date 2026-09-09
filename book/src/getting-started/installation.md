@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **Rust 1.93+** (stable; also tested on 1.94)
+- **Rust 1.88+** (stable; CI tests the MSRV and current stable)
 - A working internet connection for downloading crates
 - **`protoc`** (Protocol Buffers compiler) — bundled automatically: the `grpc`/`proto` build scripts use a vendored `protoc` (`protoc-bin-vendored`), so a clean `cargo build --features grpc` works with no system install. Set the `PROTOC` environment variable only to override with your own binary (or on a platform the vendored binaries don't cover).
 

@@ -9,7 +9,7 @@ The CI workflow (`.github/workflows/ci.yml`) runs on every push and PR:
 | Job | Description |
 |-----|-------------|
 | **Format** | `cargo fmt --all -- --check` — enforces consistent formatting |
-| **Clippy** | `cargo clippy` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, all-features) across 3 OSes (ubuntu, macOS, Windows) and 2 Rust versions (stable, MSRV 1.93) |
+| **Clippy** | `cargo clippy` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, all-features) across 3 OSes (ubuntu, macOS, Windows) on stable (lint verdicts are a property of the clippy version; the MSRV leg of the Test job is what proves 1.88 compatibility) |
 | **Feature matrix** | `cargo hack clippy --each-feature` over the four published crates — every feature on its own, plus no-default-features and all-features — so a `#[cfg(feature)]` gap is caught here rather than by a downstream build enabling an unusual subset |
 | **Test** | `cargo test --workspace` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, all-features, no-default-features) across 3 OSes and 2 Rust versions |
 | **Test (postgres integration)** | Runs the `#[ignore]`-gated live-database suite (`postgres_store_tests.rs`) against a `postgres:16` service container |

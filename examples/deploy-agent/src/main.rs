@@ -42,9 +42,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_sdk::prelude::*;
+use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::Router;
 
 // ── The agent ───────────────────────────────────────────────────────────────
 
@@ -86,14 +86,21 @@ struct Config {
 
 impl Config {
     fn from_env() -> Result<Self, String> {
-        let port = match std::env::var("PORT") {
-            Ok(raw) => raw
+        Self::from_vars(std::env::var("PORT").ok(), std::env::var("AGENT_URL").ok())
+    }
+
+    /// The parsing behind [`from_env`](Self::from_env), with the two
+    /// variables' values passed in so it can be tested without writing the
+    /// process environment (which is `unsafe` in edition 2024: another test
+    /// thread may be reading it).
+    fn from_vars(port: Option<String>, agent_url: Option<String>) -> Result<Self, String> {
+        let port = match port {
+            Some(raw) => raw
                 .parse::<u16>()
                 .map_err(|_| format!("PORT is not a valid port number: {raw:?}"))?,
-            Err(_) => 8080,
+            None => 8080,
         };
-        let public_url =
-            std::env::var("AGENT_URL").unwrap_or_else(|_| format!("http://localhost:{port}"));
+        let public_url = agent_url.unwrap_or_else(|| format!("http://localhost:{port}"));
         Ok(Self { port, public_url })
     }
 }
@@ -193,7 +200,7 @@ async fn shutdown_signal() {
 
     #[cfg(unix)]
     let terminate = async {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
         match signal(SignalKind::terminate()) {
             Ok(mut sig) => {
                 sig.recv().await;
@@ -252,7 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{app, Config};
+    use super::{Config, app};
 
     /// Drives the real router over a real socket, because the point of this
     /// example is the wiring — asserting on the handler directly would skip
@@ -274,8 +281,7 @@ mod tests {
     }
 
     async fn get(url: &str) -> (u16, String) {
-        let resp = reqwest_get(url).await;
-        resp
+        reqwest_get(url).await
     }
 
     async fn post(url: &str, body: &str) -> (u16, String) {
@@ -404,11 +410,7 @@ mod tests {
     /// that refuses to start, because the misconfiguration survives the deploy.
     #[test]
     fn invalid_port_is_rejected() {
-        // Safety: single-threaded test, and the variable is removed before it
-        // returns, so no other test observes it.
-        unsafe { std::env::set_var("PORT", "not-a-port") };
-        let result = Config::from_env();
-        unsafe { std::env::remove_var("PORT") };
+        let result = Config::from_vars(Some("not-a-port".to_owned()), None);
 
         let err = result.err().expect("invalid PORT should be rejected");
         assert!(err.contains("not a valid port"), "unhelpful error: {err}");

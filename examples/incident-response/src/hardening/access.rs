@@ -12,7 +12,7 @@ use a2a_protocol_server::auth::{ApiKeyAuthInterceptor, BearerTokenAuthIntercepto
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::rate_limit::{RateLimitConfig, RateLimitInterceptor};
 
-use super::{bind, is_refusal, plain_card, serve, Check, HeaderInterceptor};
+use super::{Check, HeaderInterceptor, bind, is_refusal, plain_card, serve};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 
@@ -61,13 +61,13 @@ pub(super) async fn bearer_auth() -> Check {
                 format!(
                     "an unauthenticated request SUCCEEDED ({response:?}) — auth is not enforced"
                 ),
-            )
+            );
         }
         Err(e) if !is_refusal(&e) => {
             return Check::fail(
                 LABEL,
                 format!("the anonymous call never reached the server, so nothing refused it: {e}"),
-            )
+            );
         }
         Err(_) => {}
     }
@@ -143,13 +143,13 @@ pub(super) async fn api_key_auth() -> Check {
                 return Check::fail(
                     LABEL,
                     format!("a request with {case} SUCCEEDED — the key is not checked"),
-                )
+                );
             }
             Err(e) if !is_refusal(&e) => {
                 return Check::fail(
                     LABEL,
                     format!("the {case} call never reached the server: {e}"),
-                )
+                );
             }
             Err(_) => {}
         }
@@ -228,7 +228,7 @@ pub(super) async fn rate_limiting() -> Check {
                 return Check::fail(
                     LABEL,
                     format!("call {} of {ATTEMPTS} never reached the server: {e}", n + 1),
-                )
+                );
             }
         }
     }

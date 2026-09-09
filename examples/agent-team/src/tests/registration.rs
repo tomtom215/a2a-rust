@@ -80,10 +80,10 @@ fn registered_tests() -> BTreeSet<String> {
         // `module::test_name(&ctx).await)` — take the segment after the last
         // `::` up to the opening parenthesis.
         let call = after.split('(').next().unwrap_or_default();
-        if let Some(name) = call.rsplit("::").next() {
-            if name.starts_with("test_") {
-                out.insert(name.to_owned());
-            }
+        if let Some(name) = call.rsplit("::").next()
+            && name.starts_with("test_")
+        {
+            out.insert(name.to_owned());
         }
     }
     out

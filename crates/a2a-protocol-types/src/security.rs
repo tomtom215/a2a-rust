@@ -199,7 +199,7 @@ impl<'de> Deserialize<'de> for SecurityScheme {
             // Each arm parses into a different type, so this cannot be one
             // shared closure — a generic `fn` would be monomorphised per call.
             macro_rules! parse {
-                ($variant:expr) => {
+                ($variant:expr_2021) => {
                     $variant(serde_json::from_value(inner).map_err(D::Error::custom)?)
                 };
             }

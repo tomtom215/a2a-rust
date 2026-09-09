@@ -61,12 +61,42 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 pub fn init_otlp_pipeline(
     service_name: &str,
 ) -> Result<SdkMeterProvider, Box<dyn std::error::Error>> {
-    use opentelemetry::KeyValue as Kv;
-    use opentelemetry_otlp::MetricExporter;
-    use opentelemetry_sdk::metrics::PeriodicReader;
-    use opentelemetry_sdk::Resource;
+    build_pipeline(service_name, None)
+}
 
-    let exporter = MetricExporter::builder().with_tonic().build()?;
+/// [`init_otlp_pipeline`] with the collector endpoint given explicitly
+/// instead of read from `OTEL_EXPORTER_OTLP_ENDPOINT`.
+///
+/// For a process that configures its exporter from its own settings rather
+/// than the environment — and for tests, where writing the environment is
+/// `unsafe` in edition 2024 because another thread may be reading it. The
+/// `OTEL_EXPORTER_OTLP_*` variables other than the endpoint (headers,
+/// timeout, protocol) still apply.
+///
+/// # Errors
+///
+/// As [`init_otlp_pipeline`].
+pub fn init_otlp_pipeline_with_endpoint(
+    service_name: &str,
+    endpoint: &str,
+) -> Result<SdkMeterProvider, Box<dyn std::error::Error>> {
+    build_pipeline(service_name, Some(endpoint))
+}
+
+fn build_pipeline(
+    service_name: &str,
+    endpoint: Option<&str>,
+) -> Result<SdkMeterProvider, Box<dyn std::error::Error>> {
+    use opentelemetry::KeyValue as Kv;
+    use opentelemetry_otlp::{MetricExporter, WithExportConfig as _};
+    use opentelemetry_sdk::Resource;
+    use opentelemetry_sdk::metrics::PeriodicReader;
+
+    let builder = MetricExporter::builder().with_tonic();
+    let exporter = match endpoint {
+        Some(endpoint) => builder.with_endpoint(endpoint).build()?,
+        None => builder.build()?,
+    };
 
     let reader = PeriodicReader::builder(exporter).build();
 
@@ -88,9 +118,9 @@ pub fn init_otlp_pipeline(
 
 #[cfg(test)]
 mod tests {
-    use super::init_otlp_pipeline;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use super::init_otlp_pipeline_with_endpoint;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tokio::io::AsyncReadExt as _;
 
     /// Kills `replace init_otlp_pipeline -> Result<..> with Ok(Default::default())`.
@@ -148,11 +178,11 @@ mod tests {
             });
         }
 
-        // `MetricExporter` reads its endpoint from the environment at build
-        // time. Nothing else in this crate's tests reads or writes the
-        // variable, so the process-global write is contained.
-        std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", &endpoint);
-        let provider = init_otlp_pipeline("a2a-pipeline-test").expect("pipeline builds");
+        // The endpoint is passed explicitly: writing the environment is
+        // `unsafe` in edition 2024 (another test thread may be reading it),
+        // and this crate forbids `unsafe`.
+        let provider = init_otlp_pipeline_with_endpoint("a2a-pipeline-test", &endpoint)
+            .expect("pipeline builds");
 
         // Record through the *global* meter, not the returned provider: the
         // mutant skips `set_meter_provider`, so this is the path that

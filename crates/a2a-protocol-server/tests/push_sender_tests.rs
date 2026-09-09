@@ -6,8 +6,8 @@
 //! Tests for HttpPushSender retry logic, authentication headers, and error handling.
 
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::push::{AuthenticationInfo, TaskPushNotificationConfig};

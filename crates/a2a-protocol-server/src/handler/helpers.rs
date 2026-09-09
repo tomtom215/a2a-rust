@@ -46,14 +46,14 @@ pub(super) fn validate_metadata_object(
     metadata: Option<&serde_json::Value>,
     field: &str,
 ) -> ServerResult<()> {
-    if let Some(value) = metadata {
-        if !value.is_object() {
-            return Err(ServerError::InvalidParams(format!(
-                "{field} metadata must be a JSON object (got {}); non-object metadata \
+    if let Some(value) = metadata
+        && !value.is_object()
+    {
+        return Err(ServerError::InvalidParams(format!(
+            "{field} metadata must be a JSON object (got {}); non-object metadata \
                  is not representable across all A2A transports (gRPC google.protobuf.Struct)",
-                json_kind(value)
-            )));
-        }
+            json_kind(value)
+        )));
     }
     Ok(())
 }

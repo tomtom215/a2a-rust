@@ -3,7 +3,7 @@
 
 //! The echo executor and the agent card it is served behind.
 
-use a2a_example_harness::{interfaces, Endpoints};
+use a2a_example_harness::{Endpoints, interfaces};
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentSkill};
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::TaskState;
@@ -95,12 +95,12 @@ pub fn make_agent_card(ep: &Endpoints) -> AgentCard {
 
 #[cfg(test)]
 mod tests {
-    use super::{make_agent_card, EchoExecutor, SLOW_PREFIX};
+    use super::{EchoExecutor, SLOW_PREFIX, make_agent_card};
     use a2a_example_harness::{Binding, Endpoints};
     use a2a_protocol_server::executor::AgentExecutor;
     use a2a_protocol_server::request_context::RequestContext;
-    use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
     use a2a_protocol_server::streaming::EventQueueReader;
+    use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
     use a2a_protocol_types::error::A2aResult;
     use a2a_protocol_types::events::StreamResponse;
     use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};

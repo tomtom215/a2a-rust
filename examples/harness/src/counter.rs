@@ -51,7 +51,7 @@ pub async fn run(client: &A2aClient, restricted: &A2aClient) -> CounterOutcome {
     let mut failures = Vec::new();
 
     macro_rules! expect_code {
-        ($label:expr, $want:expr, $call:expr) => {{
+        ($label:expr_2021, $want:expr_2021, $call:expr_2021) => {{
             match $call.await {
                 Ok(v) => {
                     let msg = format!(
@@ -66,8 +66,7 @@ pub async fn run(client: &A2aClient, restricted: &A2aClient) -> CounterOutcome {
                         lines.push(format!("  [ok]   {:<44} refused: {:?}", $label, got));
                     }
                     Some(got) => {
-                        let msg =
-                            format!("{}: expected {:?}, got {:?} ({e})", $label, $want, got);
+                        let msg = format!("{}: expected {:?}, got {:?} ({e})", $label, $want, got);
                         lines.push(format!("  [FAIL] {msg}"));
                         failures.push(msg);
                     }

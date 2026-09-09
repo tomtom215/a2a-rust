@@ -91,7 +91,7 @@ When workers are not running, you'll see connection errors for each unavailable 
 
 ## Prerequisites
 
-- Rust 1.93+ (MSRV)
+- Rust 1.88+ (MSRV)
 - Worker agents from `itk/agents/` (Python, Node.js, Go, Java)
 
 ## License

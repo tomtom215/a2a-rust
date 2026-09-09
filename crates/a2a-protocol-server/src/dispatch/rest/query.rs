@@ -32,21 +32,21 @@ fn is_route_head(segment: &str) -> bool {
 ///   tenant only when it is not itself a route head **and** the remainder
 ///   starts with one, mirroring transcoding's literal-beats-variable rule.
 pub(super) fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
-    if let Some(rest) = path.strip_prefix("/tenants/") {
-        if let Some(slash_pos) = rest.find('/') {
-            let tenant = &rest[..slash_pos];
-            let remaining = &rest[slash_pos..];
-            return (Some(tenant), remaining);
-        }
+    if let Some(rest) = path.strip_prefix("/tenants/")
+        && let Some(slash_pos) = rest.find('/')
+    {
+        let tenant = &rest[..slash_pos];
+        let remaining = &rest[slash_pos..];
+        return (Some(tenant), remaining);
     }
-    if let Some(no_slash) = path.strip_prefix('/') {
-        if let Some(slash_pos) = no_slash.find('/') {
-            let first = &no_slash[..slash_pos];
-            let remaining = &no_slash[slash_pos..];
-            let head = remaining[1..].split('/').next().unwrap_or("");
-            if !first.is_empty() && !is_route_head(first) && is_route_head(head) {
-                return (Some(first), remaining);
-            }
+    if let Some(no_slash) = path.strip_prefix('/')
+        && let Some(slash_pos) = no_slash.find('/')
+    {
+        let first = &no_slash[..slash_pos];
+        let remaining = &no_slash[slash_pos..];
+        let head = remaining[1..].split('/').next().unwrap_or("");
+        if !first.is_empty() && !is_route_head(first) && is_route_head(head) {
+            return (Some(first), remaining);
         }
     }
     (None, path)
@@ -90,17 +90,17 @@ pub(super) fn percent_decode(input: &str) -> String {
             // A `%XX` sequence needs two more bytes; `[h, l, ..]` matches iff
             // they exist (equivalent to the old `i + 2 < len` bound).
             b'%' => {
-                if let [h, l, ..] = tail {
-                    if let (Some(hv), Some(lv)) = (hex_val(*h), hex_val(*l)) {
-                        // `hv`/`lv` are single hex nibbles (0..=15), so the high
-                        // nibble (`hv << 4`, bits 4-7) and low nibble (`lv`, bits
-                        // 0-3) never overlap: `+` composes the byte exactly like a
-                        // bitwise OR would, but without an equivalent `| -> ^`
-                        // mutation.
-                        bytes.push((hv << 4) + lv);
-                        rest = &tail[2..];
-                        continue;
-                    }
+                if let [h, l, ..] = tail
+                    && let (Some(hv), Some(lv)) = (hex_val(*h), hex_val(*l))
+                {
+                    // `hv`/`lv` are single hex nibbles (0..=15), so the high
+                    // nibble (`hv << 4`, bits 4-7) and low nibble (`lv`, bits
+                    // 0-3) never overlap: `+` composes the byte exactly like a
+                    // bitwise OR would, but without an equivalent `| -> ^`
+                    // mutation.
+                    bytes.push((hv << 4) + lv);
+                    rest = &tail[2..];
+                    continue;
                 }
                 // Truncated or invalid `%` sequence — pass the `%` through
                 // literally and keep decoding the byte(s) after it.
@@ -265,7 +265,7 @@ mod tests {
         // string, not to per-byte Latin-1 garbage.
         assert_eq!(percent_decode("%E2%9C%93"), "\u{2713}"); // ✓ (3-byte UTF-8)
         assert_eq!(percent_decode("caf%C3%A9"), "café"); // 2-byte é
-                                                         // Invalid UTF-8 bytes decode lossily rather than panicking.
+        // Invalid UTF-8 bytes decode lossily rather than panicking.
         assert_eq!(percent_decode("%FF"), "\u{FFFD}");
     }
 

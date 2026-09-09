@@ -299,7 +299,7 @@ pub async fn run(
     webhook_addr: std::net::SocketAddr,
 ) -> Vec<(a2a_protocol_types::method::Method, Binding)> {
     use crate::tests::TestResult;
-    use a2a_example_harness::{counter as hcounter, sweep as hsweep, Matrix};
+    use a2a_example_harness::{Matrix, counter as hcounter, sweep as hsweep};
 
     println!("\n╔══════════════════════════════════════════════════════════════╗");
     println!("║      SURFACE MATRIX — every method x every binding          ║");
@@ -372,7 +372,7 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
-    use super::{card, SurfaceEndpoints};
+    use super::{SurfaceEndpoints, card};
     use a2a_example_harness::Binding;
     use a2a_protocol_types::agent_card::AgentCapabilities;
 

@@ -6,11 +6,11 @@
 //! Tests covering client coverage gaps: builder edge cases, transport
 //! configuration, credential store, error types.
 
+use a2a_protocol_client::CredentialsStore;
 use a2a_protocol_client::auth::{InMemoryCredentialsStore, SessionId};
 use a2a_protocol_client::builder::ClientBuilder;
 use a2a_protocol_client::error::ClientError;
 use a2a_protocol_client::interceptor::InterceptorChain;
-use a2a_protocol_client::CredentialsStore;
 
 // ── Builder edge cases ───────────────────────────────────────────────────────
 

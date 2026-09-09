@@ -282,13 +282,13 @@ impl RequestHandler {
         // atomic with the token insert below.
         {
             let tokens = self.cancellation_tokens.read().await;
-            if let Some(entry) = tokens.get(&task_id) {
-                if second_send_blocked(entry) {
-                    return Err(ServerError::UnsupportedOperation(format!(
-                        "task {task_id} is already being processed; \
+            if let Some(entry) = tokens.get(&task_id)
+                && second_send_blocked(entry)
+            {
+                return Err(ServerError::UnsupportedOperation(format!(
+                    "task {task_id} is already being processed; \
                          wait for it to reach input-required or a terminal state before sending again"
-                    )));
-                }
+                )));
             }
         }
 
@@ -543,7 +543,7 @@ impl RequestHandler {
 
             // Wrap executor call to catch panics, ensuring cleanup always runs.
             let result = {
-                let exec_future = if let Some(timeout) = executor_timeout {
+                if let Some(timeout) = executor_timeout {
                     tokio::time::timeout(timeout, executor.execute(&ctx, writer.as_ref()))
                         .await
                         .unwrap_or_else(|_| {
@@ -554,8 +554,7 @@ impl RequestHandler {
                         })
                 } else {
                     executor.execute(&ctx, writer.as_ref()).await
-                };
-                exec_future
+                }
             };
 
             if let Err(ref e) = result {

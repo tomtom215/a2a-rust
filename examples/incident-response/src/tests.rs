@@ -14,8 +14,8 @@
 use a2a_protocol_types::message::{MessageRole, Part, PartContent};
 
 use crate::{
-    agent_message, extract_text, find_service, known_services, user_message, INCIDENT_LOG,
-    RUNBOOKS, SURFACE_PAUSE_PREFIX,
+    INCIDENT_LOG, RUNBOOKS, SURFACE_PAUSE_PREFIX, agent_message, extract_text, find_service,
+    known_services, user_message,
 };
 
 // ── The bundled data ─────────────────────────────────────────────────────────

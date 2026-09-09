@@ -211,12 +211,13 @@ impl RequestHandler {
             ));
         }
         let authoritative = derived.unwrap_or_default();
-        if let Some(client) = client_tenant {
-            if !client.is_empty() && client != authoritative {
-                return Err(crate::error::ServerError::InvalidParams(format!(
-                    "request tenant '{client}' does not match the authenticated tenant"
-                )));
-            }
+        if let Some(client) = client_tenant
+            && !client.is_empty()
+            && client != authoritative
+        {
+            return Err(crate::error::ServerError::InvalidParams(format!(
+                "request tenant '{client}' does not match the authenticated tenant"
+            )));
         }
         Ok(authoritative)
     }

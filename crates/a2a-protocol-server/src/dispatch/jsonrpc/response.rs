@@ -208,12 +208,12 @@ pub(super) async fn read_body_limited(
     // Fast path: reject before reading any body bytes when an honest
     // Content-Length already exceeds the cap.
     let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
-    if let Some(upper) = size_hint.upper() {
-        if upper > max_size as u64 {
-            return Err(format!(
-                "request body too large: {upper} bytes exceeds {max_size} byte limit"
-            ));
-        }
+    if let Some(upper) = size_hint.upper()
+        && upper > max_size as u64
+    {
+        return Err(format!(
+            "request body too large: {upper} bytes exceeds {max_size} byte limit"
+        ));
     }
 
     // Enforce the cap *during* streaming, not just after collection. A chunked
@@ -459,10 +459,11 @@ mod tests {
     fn json_response_has_content_type_and_version_header() {
         let resp = json_response(200, b"{}".to_vec());
         assert!(resp.headers().get("content-type").is_some());
-        assert!(resp
-            .headers()
-            .get(a2a_protocol_types::A2A_VERSION_HEADER)
-            .is_some());
+        assert!(
+            resp.headers()
+                .get(a2a_protocol_types::A2A_VERSION_HEADER)
+                .is_some()
+        );
     }
 }
 

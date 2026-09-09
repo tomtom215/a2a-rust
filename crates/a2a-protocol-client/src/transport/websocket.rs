@@ -54,8 +54,8 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{mpsc, oneshot};
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use uuid::Uuid;
 
 use a2a_protocol_types::{JsonRpcRequest, JsonRpcResponse};
@@ -836,18 +836,17 @@ fn is_stream_terminal(text: &str) -> bool {
     // at one of the known locations (statusUpdate.status.state or status.state).
     let has_terminal_state = |obj: &serde_json::Value| -> bool {
         // Check for terminal status in statusUpdate
-        if let Some(status_update) = obj.get("statusUpdate") {
-            if let Some(status) = status_update.get("status") {
-                if let Some(state) = status.get("state").and_then(|s| s.as_str()) {
-                    return task_state_str_is_terminal(state);
-                }
-            }
+        if let Some(status_update) = obj.get("statusUpdate")
+            && let Some(status) = status_update.get("status")
+            && let Some(state) = status.get("state").and_then(|s| s.as_str())
+        {
+            return task_state_str_is_terminal(state);
         }
         // Check for terminal status in a full task response
-        if let Some(status) = obj.get("status") {
-            if let Some(state) = status.get("state").and_then(|s| s.as_str()) {
-                return task_state_str_is_terminal(state);
-            }
+        if let Some(status) = obj.get("status")
+            && let Some(state) = status.get("state").and_then(|s| s.as_str())
+        {
+            return task_state_str_is_terminal(state);
         }
         false
     };
@@ -1539,8 +1538,8 @@ mod tests {
     #[cfg(feature = "tracing")]
     #[test]
     fn warn_dropped_per_request_headers_warns_iff_headers_present() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         /// Minimal subscriber that just counts emitted events.
         struct CountingSubscriber(Arc<AtomicUsize>);

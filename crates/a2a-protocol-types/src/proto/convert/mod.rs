@@ -100,11 +100,7 @@ pub fn struct_to_json(value: prost_types::Struct) -> Result<serde_json::Value, C
 
 /// Maps a proto3 implicit-presence string to a domain option.
 pub(crate) fn none_if_empty(s: String) -> Option<String> {
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 /// Maps a domain option to a proto3 implicit-presence string.
@@ -114,11 +110,7 @@ pub(crate) fn empty_if_none(o: Option<String>) -> String {
 
 /// Maps a proto3 implicit-presence bool to a domain option (`false` ⇄ absent).
 pub(crate) const fn none_if_false(b: bool) -> Option<bool> {
-    if b {
-        Some(true)
-    } else {
-        None
-    }
+    if b { Some(true) } else { None }
 }
 
 /// Maps a proto3 `int32` used as an unsigned count to `Option<u32>`.

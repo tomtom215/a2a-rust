@@ -2,7 +2,9 @@
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 [workspace]
-resolver = "2"
+# "3" is the edition-2024 resolver: MSRV-aware, so `cargo update` selects
+# dependency versions compatible with `rust-version` below.
+resolver = "3"
 members = [
     "crates/a2a-protocol-types",
     "crates/a2a-protocol-client",
@@ -24,8 +26,8 @@ members = [
 ]
 
 [workspace.package]
-edition      = "2021"
-rust-version = "1.93"
+edition      = "2024"
+rust-version = "1.88"
 license      = "Apache-2.0"
 authors      = ["Tom F."]
 repository   = "https://github.com/tomtom215/a2a-rust"

@@ -5,7 +5,7 @@
 > **Note:** Some details are outdated (e.g., line counts, test counts, directory names). As of v0.4.0, `TaskState` serialization uses `SCREAMING_SNAKE_CASE` as the primary format (e.g., `"TASK_STATE_COMPLETED"`), with lowercase as deserialization aliases for backward compatibility. `SendMessageResponse` uses a custom deserializer (discriminating on `role` field presence), not `#[serde(untagged)]`. `StreamResponse` uses externally tagged serialization (`#[serde(rename_all = "camelCase")]`). See `type-mapping.md` for current wire format details.
 
 **Protocol Version:** A2A v1.0.0
-**Target Rust Version:** 1.93.x (stable)
+**Target Rust Version:** 1.88+ (MSRV; edition 2024)
 **License:** Apache-2.0
 **Status:** All 9 phases complete
 
@@ -763,7 +763,7 @@ Files: `crates/a2a-protocol-client/src/tls.rs`
 
 | Item | Status |
 |---|---|
-| Matrix strategy (stable + MSRV 1.93) | ✅ Clippy + test on both |
+| Matrix strategy (stable + MSRV 1.88) | ✅ Clippy + test on both |
 | Format check job | ✅ `cargo fmt --all -- --check` |
 | Clippy job (all feature combos) | ✅ default, signing, tracing, tls-rustls |
 | Test job (all feature combos) | ✅ default, signing, tracing, tls-rustls |
@@ -822,7 +822,7 @@ Examples:
 
 ## 8. Quality Gates
 
-All gates must pass before tagging a release. Enforced by CI (`.github/workflows/ci.yml`) on stable + MSRV (1.93).
+All gates must pass before tagging a release. Enforced by CI (`.github/workflows/ci.yml`) on stable + MSRV (1.88).
 
 ```bash
 # Formatting (zero diffs allowed)

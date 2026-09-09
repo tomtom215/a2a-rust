@@ -97,10 +97,12 @@ async fn task_store_list_with_status_filter() {
     };
     let result = store.list(&params).await.expect("list");
     assert_eq!(result.tasks.len(), 2, "should return 2 completed tasks");
-    assert!(result
-        .tasks
-        .iter()
-        .all(|t| t.status.state == TaskState::Completed));
+    assert!(
+        result
+            .tasks
+            .iter()
+            .all(|t| t.status.state == TaskState::Completed)
+    );
 }
 
 #[tokio::test]

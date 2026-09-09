@@ -7,7 +7,7 @@
 
 use std::collections::VecDeque;
 
-use super::types::{SseFrame, SseParseError, DEFAULT_MAX_EVENT_SIZE};
+use super::types::{DEFAULT_MAX_EVENT_SIZE, SseFrame, SseParseError};
 
 // ── SseParser ─────────────────────────────────────────────────────────────────
 
@@ -642,7 +642,7 @@ mod tests {
         // This covers: `!input.is_empty() || bytes.len() >= 3` mutations.
         let mut p = SseParser::new();
         p.feed(b""); // empty feed
-                     // Now feed BOM + data — BOM should still be stripped.
+        // Now feed BOM + data — BOM should still be stripped.
         let mut input = Vec::new();
         input.extend_from_slice(b"\xEF\xBB\xBF");
         input.extend_from_slice(b"data: still-works\n\n");
@@ -732,8 +732,8 @@ mod tests {
         // With >= → <: `false || (3 < 3)` → `false || false` → false → bom_checked stays false.
         let mut p = SseParser::new();
         p.feed(b"\xEF\xBB\xBF"); // exactly 3 BOM bytes
-                                 // If bom_checked stayed false (mutation), next feed would try to strip BOM again.
-                                 // Feed normal data — should work regardless.
+        // If bom_checked stayed false (mutation), next feed would try to strip BOM again.
+        // Feed normal data — should work regardless.
         p.feed(b"data: ok\n\n");
         let frame = p.next_frame().unwrap().unwrap();
         assert_eq!(frame.data, "ok");
@@ -755,8 +755,8 @@ mod tests {
         // With mutation, bom_checked stays false, so a second BOM would be stripped.
         let mut p = SseParser::new();
         p.feed(b"\xEF\xBB\xBF"); // exactly 3 BOM bytes
-                                 // Immediately feed BOM + data. If bom_checked was not set (mutation),
-                                 // the BOM is stripped again and "data: stolen" is parsed as a frame.
+        // Immediately feed BOM + data. If bom_checked was not set (mutation),
+        // the BOM is stripped again and "data: stolen" is parsed as a frame.
         p.feed(b"\xEF\xBB\xBFdata: stolen\n\n");
         // With correct code: bom_checked=true after first feed → BOM not stripped
         // → line is unknown field → no frame.

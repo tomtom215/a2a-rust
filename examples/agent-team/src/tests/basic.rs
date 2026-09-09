@@ -279,7 +279,7 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
                 "push-config-crud",
                 start.elapsed().as_millis(),
                 "could not create initial task",
-            )
+            );
         }
     };
     let webhook_url = format!("http://{}/webhook", ctx.webhook_addr);
@@ -302,7 +302,7 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
                 "push-config-crud",
                 start.elapsed().as_millis(),
                 &format!("create error: {e:?}"),
-            )
+            );
         }
     };
     let config_id = stored.id.clone().unwrap_or_default();

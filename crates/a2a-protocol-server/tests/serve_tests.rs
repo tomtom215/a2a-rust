@@ -14,7 +14,7 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Empty, Full};
 use hyper::body::Incoming;
 
-use a2a_protocol_server::serve::{serve_with_addr, DispatchResponse, Dispatcher};
+use a2a_protocol_server::serve::{DispatchResponse, Dispatcher, serve_with_addr};
 
 // ── Dummy dispatcher ────────────────────────────────────────────────────────
 

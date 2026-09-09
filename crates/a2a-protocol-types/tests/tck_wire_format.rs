@@ -1524,11 +1524,13 @@ fn tck_omitted_accepted_output_modes_is_empty() {
         "configuration": {}
     }))
     .expect("configuration without acceptedOutputModes must parse");
-    assert!(params
-        .configuration
-        .expect("configuration present")
-        .accepted_output_modes
-        .is_empty());
+    assert!(
+        params
+            .configuration
+            .expect("configuration present")
+            .accepted_output_modes
+            .is_empty()
+    );
 }
 
 /// An empty `StringList` prints as `{}` in ProtoJSON — a scheme requiring no

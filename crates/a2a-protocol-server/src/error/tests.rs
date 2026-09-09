@@ -73,41 +73,62 @@ fn source_internal_returns_none() {
 // ── Display tests for all variants ────────────────────────────────────
 
 #[test]
+#[allow(clippy::too_many_lines)] // one assertion per variant; grew past 60 under the 2024 style edition
 fn display_all_variants() {
-    assert!(ServerError::TaskNotFound("t1".into())
-        .to_string()
-        .contains("t1"));
-    assert!(ServerError::TaskNotCancelable("t2".into())
-        .to_string()
-        .contains("t2"));
-    assert!(ServerError::InvalidParams("bad".into())
-        .to_string()
-        .contains("bad"));
-    assert!(ServerError::HttpClient("conn".into())
-        .to_string()
-        .contains("conn"));
-    assert!(ServerError::Transport("tcp".into())
-        .to_string()
-        .contains("tcp"));
+    assert!(
+        ServerError::TaskNotFound("t1".into())
+            .to_string()
+            .contains("t1")
+    );
+    assert!(
+        ServerError::TaskNotCancelable("t2".into())
+            .to_string()
+            .contains("t2")
+    );
+    assert!(
+        ServerError::InvalidParams("bad".into())
+            .to_string()
+            .contains("bad")
+    );
+    assert!(
+        ServerError::HttpClient("conn".into())
+            .to_string()
+            .contains("conn")
+    );
+    assert!(
+        ServerError::Transport("tcp".into())
+            .to_string()
+            .contains("tcp")
+    );
     assert_eq!(
         ServerError::PushNotSupported.to_string(),
         "push notifications not supported"
     );
-    assert!(ServerError::UnsupportedOperation("cannot do this".into())
-        .to_string()
-        .contains("cannot do this"));
-    assert!(ServerError::Internal("oops".into())
-        .to_string()
-        .contains("oops"));
-    assert!(ServerError::MethodNotFound("foo/bar".into())
-        .to_string()
-        .contains("foo/bar"));
-    assert!(ServerError::Protocol(A2aError::task_not_found("t"))
-        .to_string()
-        .contains("protocol error"));
-    assert!(ServerError::PayloadTooLarge("too big".into())
-        .to_string()
-        .contains("too big"));
+    assert!(
+        ServerError::UnsupportedOperation("cannot do this".into())
+            .to_string()
+            .contains("cannot do this")
+    );
+    assert!(
+        ServerError::Internal("oops".into())
+            .to_string()
+            .contains("oops")
+    );
+    assert!(
+        ServerError::MethodNotFound("foo/bar".into())
+            .to_string()
+            .contains("foo/bar")
+    );
+    assert!(
+        ServerError::Protocol(A2aError::task_not_found("t"))
+            .to_string()
+            .contains("protocol error")
+    );
+    assert!(
+        ServerError::PayloadTooLarge("too big".into())
+            .to_string()
+            .contains("too big")
+    );
     let ist = ServerError::InvalidStateTransition {
         task_id: "t3".into(),
         from: a2a_protocol_types::task::TaskState::Working,

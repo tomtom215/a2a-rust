@@ -132,11 +132,10 @@ impl JsonRpcDispatcher {
         if let Some(hval) = self
             .handler
             .activated_extensions_header_value(requested_extensions.as_deref())
+            && let Ok(v) = hyper::header::HeaderValue::from_str(&hval)
         {
-            if let Ok(v) = hyper::header::HeaderValue::from_str(&hval) {
-                resp.headers_mut()
-                    .insert(a2a_protocol_types::A2A_EXTENSIONS_HEADER, v);
-            }
+            resp.headers_mut()
+                .insert(a2a_protocol_types::A2A_EXTENSIONS_HEADER, v);
         }
         if let Some(ref cors) = self.cors {
             cors.apply_headers(&mut resp);
@@ -165,9 +164,11 @@ impl JsonRpcDispatcher {
                 // detail like every other A2A error.
                 return error_response(
                     None,
-                    &ServerError::Protocol(a2a_protocol_types::error::A2aError::content_type_not_supported(
-                        format!("unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"),
-                    )),
+                    &ServerError::Protocol(
+                        a2a_protocol_types::error::A2aError::content_type_not_supported(format!(
+                            "unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"
+                        )),
+                    ),
                 );
             }
         }

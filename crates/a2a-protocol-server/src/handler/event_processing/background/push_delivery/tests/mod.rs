@@ -126,8 +126,8 @@ async fn deliver_push_bg_with_failing_store_returns_silently() {
 
 #[tokio::test(start_paused = true)]
 async fn deliver_push_bg_respects_total_deadline() {
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
     // A push sender that sleeps for 2 seconds per delivery.

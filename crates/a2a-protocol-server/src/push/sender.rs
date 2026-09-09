@@ -23,8 +23,8 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use bytes::Bytes;
 use http_body_util::Full;
-use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
+use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
 
 /// The hyper client type backing [`HttpPushSender`].
@@ -1014,8 +1014,8 @@ mod tests {
         assert_eq!(parse_numeric_ipv4("2130706433"), Some(v4("127.0.0.1"))); // 1-part
         assert_eq!(parse_numeric_ipv4("127.1"), Some(v4("127.0.0.1"))); // 2-part
         assert_eq!(parse_numeric_ipv4("0x7f.0.0.1"), Some(v4("127.0.0.1"))); // mixed radix
-                                                                             // A public integer maps through unchanged (8.8.8.8), so we do not
-                                                                             // over-reject legitimate — if unusual — numeric hosts.
+        // A public integer maps through unchanged (8.8.8.8), so we do not
+        // over-reject legitimate — if unusual — numeric hosts.
         assert_eq!(parse_numeric_ipv4("134744072"), Some(v4("8.8.8.8")));
         // Real hostnames and out-of-range / malformed forms are not numeric IPs.
         assert_eq!(parse_numeric_ipv4("example.com"), None);
@@ -1207,8 +1207,8 @@ mod tests {
         assert!(is_private_v4("100.127.255.255".parse().unwrap())); // top of the block
         assert!(!is_private_v4("100.0.0.1".parse().unwrap())); // below the block
         assert!(!is_private_v4("100.128.0.1".parse().unwrap())); // above the block
-                                                                 // The two octet conditions are ANDed — neither alone makes an address
-                                                                 // CGNAT: a matching second octet with a non-100 first octet is public.
+        // The two octet conditions are ANDed — neither alone makes an address
+        // CGNAT: a matching second octet with a non-100 first octet is public.
         assert!(!is_private_v4("5.64.0.1".parse().unwrap()));
     }
 

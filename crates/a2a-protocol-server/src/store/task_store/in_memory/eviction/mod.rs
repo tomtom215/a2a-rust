@@ -338,8 +338,8 @@ mod tests {
     /// a shutdown cancellation drops that future wherever it is.
     #[tokio::test]
     async fn a_cancelled_sweep_releases_the_eviction_slot() {
-        use std::sync::atomic::Ordering;
         use std::sync::Arc;
+        use std::sync::atomic::Ordering;
 
         let store = Arc::new(InMemoryTaskStore::with_config(config(Some(1), None, 1)));
         let passes = EvictionPasses {

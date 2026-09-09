@@ -8,7 +8,7 @@
 #       all-features), documentation, cargo-deny (license/advisory), package
 #       validation, nightly.
 #
-# Matrix: stable + MSRV (1.93), multi-platform.
+# Matrix: stable + MSRV (1.88), multi-platform.
 
 name: CI
 
@@ -37,7 +37,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # No debuginfo in CI test builds: the 9-combination test matrix shares one
   # target dir per runner, and full debuginfo pushed linker memory/disk far
-  # enough that `ld` died with SIGBUS on the 1.93 leg after rig-core joined
+  # enough that `ld` died with SIGBUS on the MSRV leg after rig-core joined
   # the workspace. Tests don't need debuginfo to pass or to report failures.
   CARGO_PROFILE_DEV_DEBUG: 0
 
@@ -232,10 +232,19 @@ jobs:
     # each cut off mid-run — read exactly like a hang somewhere else entirely.
     # A red matrix should say which cells are red, not hide five to save a
     # runner-minute. Same reason fuzz, mutants and tck already set it.
+    #
+    # Stable only, since the MSRV moved to 1.88 (2026-09-09). The MSRV
+    # guarantee is that the crates compile and their tests pass on that
+    # toolchain, which the `test` matrix below checks on all three platforms.
+    # Lint verdicts are a property of the clippy that runs them: 0.1.88 fires
+    # `similar_names` on `uri`/`url` and `doy`/`doe`, and computes
+    # `cognitive_complexity` differently from 0.1.98, so linting on both
+    # would mean version-specific `#[allow]`s in library code for findings
+    # current clippy has withdrawn.
     strategy:
       fail-fast: false
       matrix:
-        rust: [stable, "1.93"]
+        rust: [stable]
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -312,7 +321,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: [stable, "1.93"]
+        rust: [stable, "1.88"]
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

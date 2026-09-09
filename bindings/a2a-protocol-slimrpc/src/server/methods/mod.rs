@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use a2a_protocol_server::streaming::EventQueueReader as _;
 use a2a_protocol_server::{
-    validate_version_metadata, RequestHandler, SendMessageResult, ServerError,
+    RequestHandler, SendMessageResult, ServerError, validate_version_metadata,
 };
 use a2a_protocol_types::proto as pb;
 use futures::StreamExt;
@@ -131,7 +131,7 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
                     SendMessageResult::Stream(_) => {
                         return Err(RpcError::internal(
                             "InternalError: blocking send produced a stream",
-                        ))
+                        ));
                     }
                 };
                 let proto: pb::SendMessageResponse = response

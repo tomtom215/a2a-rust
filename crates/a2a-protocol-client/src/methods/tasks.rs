@@ -172,10 +172,10 @@ mod tests {
 
     use a2a_protocol_types::{ListTasksParams, TaskQueryParams};
 
+    use crate::ClientBuilder;
     use crate::error::{ClientError, ClientResult};
     use crate::streaming::EventStream;
     use crate::transport::Transport;
-    use crate::ClientBuilder;
 
     /// A mock transport that returns a pre-configured JSON value for requests
     /// and an error for streaming requests.
@@ -285,8 +285,8 @@ mod tests {
     #[allow(clippy::unused_async_trait_impl)]
     #[tokio::test]
     async fn subscribe_to_task_calls_after_interceptor() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         use crate::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
 

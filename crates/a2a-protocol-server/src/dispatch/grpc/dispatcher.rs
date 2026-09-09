@@ -224,8 +224,8 @@ mod tests {
     /// start sending PINGs to every existing deployment's clients.
     #[test]
     fn connection_knobs_are_off_by_default_and_carry_what_they_are_given() {
-        use crate::agent_executor;
         use crate::RequestHandlerBuilder;
+        use crate::agent_executor;
         use std::sync::Arc;
         struct DummyExec;
         agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
@@ -264,8 +264,8 @@ mod tests {
 
     #[test]
     fn grpc_dispatcher_debug_does_not_panic() {
-        use crate::agent_executor;
         use crate::RequestHandlerBuilder;
+        use crate::agent_executor;
         use std::sync::Arc;
         struct DummyExec;
         agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });

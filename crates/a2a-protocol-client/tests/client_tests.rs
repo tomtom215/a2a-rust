@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_client::auth::{AuthInterceptor, InMemoryCredentialsStore, SessionId};
-use a2a_protocol_client::config::{ClientConfig, TlsConfig, BINDING_JSONRPC};
+use a2a_protocol_client::config::{BINDING_JSONRPC, ClientConfig, TlsConfig};
 use a2a_protocol_client::error::ClientError;
 use a2a_protocol_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
 use a2a_protocol_client::{ClientBuilder, CredentialsStore, JsonRpcTransport, RestTransport};

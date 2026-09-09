@@ -45,7 +45,7 @@ canary, the latter runs on demand.
 
 The CI workflow tests across multiple configurations:
 
-- **Rust versions**: stable + MSRV (1.93)
+- **Rust versions**: stable + MSRV (1.88) for tests; clippy runs on stable only, since lint verdicts change between clippy versions
 - **Platforms**: Linux, macOS, Windows
 - **Feature combinations**: default, `signing`, `tracing`, `tls-rustls`,
   `sqlite`, `postgres`, `axum`, `--all-features`, `--no-default-features`

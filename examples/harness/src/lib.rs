@@ -296,8 +296,8 @@ pub mod endpoints;
 pub mod sweep;
 
 pub use counter::CounterOutcome;
-pub use endpoints::{interfaces, Endpoints};
-pub use sweep::{make_send_params, sweep, SweepOutcome};
+pub use endpoints::{Endpoints, interfaces};
+pub use sweep::{SweepOutcome, make_send_params, sweep};
 
 // ── One-call surface phase ───────────────────────────────────────────────────
 

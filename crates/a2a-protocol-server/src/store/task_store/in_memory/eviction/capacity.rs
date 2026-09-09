@@ -130,8 +130,8 @@ impl InMemoryTaskStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::task_store::in_memory::eviction::fixtures::{config, ids, store_of};
     use crate::store::task_store::in_memory::eviction::EvictionPasses;
+    use crate::store::task_store::in_memory::eviction::fixtures::{config, ids, store_of};
     use a2a_protocol_types::task::TaskState;
 
     /// Capacity eviction removes exactly the overflow, oldest terminal first.

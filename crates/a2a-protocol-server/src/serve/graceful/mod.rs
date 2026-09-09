@@ -95,14 +95,14 @@
 use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 
-use super::{pause_after_accept_error, Dispatcher};
+use super::{Dispatcher, pause_after_accept_error};
 
 mod idle;
 use idle::IdleTimeout;

@@ -197,7 +197,7 @@ impl HotReloadAgentCardHandler {
     #[cfg(unix)]
     #[must_use]
     pub fn spawn_signal_watcher(&self, path: &Path) -> tokio::task::JoinHandle<()> {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
 
         // Registered before the spawn — see this function's `# Panics`.
         let stream = signal(SignalKind::hangup());
@@ -549,7 +549,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn signal_watcher_reloads_on_sighup() {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
 
         // Register a guard SIGHUP stream up front. This overrides the default
         // "terminate" disposition for the whole process so raising SIGHUP

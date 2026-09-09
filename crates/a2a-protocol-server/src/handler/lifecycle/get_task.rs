@@ -13,8 +13,8 @@ use a2a_protocol_types::task::{Task, TaskId};
 
 use crate::error::{ServerError, ServerResult};
 
-use super::super::helpers::{build_call_context, truncate_history};
 use super::super::RequestHandler;
+use super::super::helpers::{build_call_context, truncate_history};
 
 impl RequestHandler {
     /// Handles `GetTask`. Returns [`ServerError::TaskNotFound`] if missing.

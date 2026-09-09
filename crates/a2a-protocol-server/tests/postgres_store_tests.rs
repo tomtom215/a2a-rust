@@ -24,8 +24,8 @@
 use a2a_protocol_server::push::{
     PostgresPushConfigStore, PushConfigStore, TenantAwarePostgresPushConfigStore,
 };
-use a2a_protocol_server::store::tenant::TenantContext;
 use a2a_protocol_server::store::ArtifactDelta;
+use a2a_protocol_server::store::tenant::TenantContext;
 use a2a_protocol_server::store::{
     PgMigrationRunner, PostgresTaskStore, RetentionPolicy, TaskStore, TenantAwarePostgresTaskStore,
 };
@@ -484,11 +484,13 @@ async fn migrations_apply_in_order_and_are_idempotent() {
         .save(&make_task("t1", "ctx1"))
         .await
         .expect("save on migrated schema");
-    assert!(store
-        .get(&TaskId("t1".into()))
-        .await
-        .expect("get on migrated schema")
-        .is_some());
+    assert!(
+        store
+            .get(&TaskId("t1".into()))
+            .await
+            .expect("get on migrated schema")
+            .is_some()
+    );
 
     db.drop_db().await;
 }
@@ -565,11 +567,13 @@ async fn tenant_task_store_isolates_tenants() {
             .save(&make_task("t1", "ctx1"))
             .await
             .expect("save under acme");
-        assert!(store
-            .get(&TaskId("t1".into()))
-            .await
-            .expect("get under acme")
-            .is_some());
+        assert!(
+            store
+                .get(&TaskId("t1".into()))
+                .await
+                .expect("get under acme")
+                .is_some()
+        );
     })
     .await;
 
@@ -666,11 +670,13 @@ async fn tenant_push_store_isolates_tenants() {
             .await
             .expect("set under acme");
         let id = saved.id.expect("id auto-generated");
-        assert!(store
-            .get("task-1", &id)
-            .await
-            .expect("get under acme")
-            .is_some());
+        assert!(
+            store
+                .get("task-1", &id)
+                .await
+                .expect("get under acme")
+                .is_some()
+        );
         id
     })
     .await;

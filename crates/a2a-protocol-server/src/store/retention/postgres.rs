@@ -5,7 +5,7 @@
 
 use sqlx::PgPool;
 
-use super::{terminal_state_labels, PurgeReport, RetentionPolicy};
+use super::{PurgeReport, RetentionPolicy, terminal_state_labels};
 
 /// Deletes terminal tasks older than `policy` from `table`, in batches.
 ///

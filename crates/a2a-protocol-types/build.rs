@@ -17,10 +17,14 @@ fn main() {
         // `protoc-bin-vendored`, unless the user has set `PROTOC` themselves.
         // This lets `cargo build --features proto` work on a clean machine
         // without a protobuf-compiler install step.
-        if std::env::var_os("PROTOC").is_none() {
-            if let Ok(path) = protoc_bin_vendored::protoc_bin_path() {
-                std::env::set_var("PROTOC", path);
-            }
+        if std::env::var_os("PROTOC").is_none()
+            && let Ok(path) = protoc_bin_vendored::protoc_bin_path()
+        {
+            // SAFETY: a build script runs on the main thread of a fresh process; no
+            // other thread exists to read the environment concurrently, and the one
+            // reader that matters — prost-build's `protoc` lookup — runs on this
+            // thread after the write.
+            unsafe { std::env::set_var("PROTOC", path) };
         }
 
         // The canonical a2a.proto imports google/protobuf well-known types;

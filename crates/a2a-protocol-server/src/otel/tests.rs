@@ -111,13 +111,13 @@ fn on_connection_pool_stats_does_not_panic() {
 // ── Observable-effect tests ─────────────────────────────────────────────
 
 use opentelemetry::metrics::MeterProvider;
+use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::metrics::data::{
     AggregatedMetrics, GaugeDataPoint, HistogramDataPoint, MetricData, ResourceMetrics,
     SumDataPoint,
 };
 use opentelemetry_sdk::metrics::reader::MetricReader;
 use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
-use opentelemetry_sdk::Resource;
 
 struct CloneableReader(std::sync::Arc<ManualReader>);
 
@@ -178,10 +178,10 @@ fn collect_metrics(reader: &CloneableReader) -> ResourceMetrics {
 fn find_sum_u64(rm: &ResourceMetrics, name: &str) -> u64 {
     for scope in rm.scope_metrics() {
         for metric in scope.metrics() {
-            if metric.name() == name {
-                if let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() {
-                    return sum.data_points().map(SumDataPoint::value).sum();
-                }
+            if metric.name() == name
+                && let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data()
+            {
+                return sum.data_points().map(SumDataPoint::value).sum();
             }
         }
     }
@@ -230,12 +230,12 @@ fn on_latency_records_histogram() {
     let mut found = false;
     for scope in rm.scope_metrics() {
         for metric in scope.metrics() {
-            if metric.name() == "a2a.server.latency" {
-                if let AggregatedMetrics::F64(MetricData::Histogram(hist)) = metric.data() {
-                    let count: u64 = hist.data_points().map(HistogramDataPoint::count).sum();
-                    assert!(count > 0, "histogram should have recorded a value");
-                    found = true;
-                }
+            if metric.name() == "a2a.server.latency"
+                && let AggregatedMetrics::F64(MetricData::Histogram(hist)) = metric.data()
+            {
+                let count: u64 = hist.data_points().map(HistogramDataPoint::count).sum();
+                assert!(count > 0, "histogram should have recorded a value");
+                found = true;
             }
         }
     }
@@ -251,12 +251,12 @@ fn on_queue_depth_records_gauge() {
     let mut found = false;
     for scope in rm.scope_metrics() {
         for metric in scope.metrics() {
-            if metric.name() == "a2a.server.queue_depth" {
-                if let AggregatedMetrics::U64(MetricData::Gauge(gauge)) = metric.data() {
-                    let val: u64 = gauge.data_points().map(GaugeDataPoint::value).sum();
-                    assert_eq!(val, 42, "gauge should record 42");
-                    found = true;
-                }
+            if metric.name() == "a2a.server.queue_depth"
+                && let AggregatedMetrics::U64(MetricData::Gauge(gauge)) = metric.data()
+            {
+                let val: u64 = gauge.data_points().map(GaugeDataPoint::value).sum();
+                assert_eq!(val, 42, "gauge should record 42");
+                found = true;
             }
         }
     }

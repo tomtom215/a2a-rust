@@ -23,10 +23,14 @@ fn main() {
     // Use the vendored protoc unless the caller supplied one, so a clean
     // machine needs no protobuf-compiler install. Same rationale as the other
     // crates' build scripts.
-    if std::env::var_os("PROTOC").is_none() {
-        if let Ok(path) = protoc_bin_vendored::protoc_bin_path() {
-            std::env::set_var("PROTOC", path);
-        }
+    if std::env::var_os("PROTOC").is_none()
+        && let Ok(path) = protoc_bin_vendored::protoc_bin_path()
+    {
+        // SAFETY: a build script runs on the main thread of a fresh process; no
+        // other thread exists to read the environment concurrently, and the one
+        // reader that matters — prost-build's `protoc` lookup — runs on this
+        // thread after the write.
+        unsafe { std::env::set_var("PROTOC", path) };
     }
 
     let mut includes = vec![proto_dir];

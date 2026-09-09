@@ -18,8 +18,8 @@ use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 
-use super::pool::to_a2a_error;
 use super::PostgresTaskStore;
+use super::pool::to_a2a_error;
 use crate::store::task_store::{ArtifactDelta, TaskStore};
 
 #[allow(clippy::manual_async_fn)]

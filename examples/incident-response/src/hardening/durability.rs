@@ -9,7 +9,7 @@ use std::time::Duration;
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 
-use super::{bind, plain_card, serve, Check};
+use super::{Check, bind, plain_card, serve};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 

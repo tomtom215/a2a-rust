@@ -105,7 +105,7 @@ pub async fn test_ws_send_message(_ctx: &TestContext) -> TestResult {
                 "51-ws-send-message",
                 start.elapsed().as_millis(),
                 &format!("start WS server: {e}"),
-            )
+            );
         }
     };
 
@@ -130,7 +130,7 @@ pub async fn test_ws_send_message(_ctx: &TestContext) -> TestResult {
                 "51-ws-send-message",
                 start.elapsed().as_millis(),
                 &format!("serialize request: {e}"),
-            )
+            );
         }
     };
     if let Err(e) = ws.send(WsMessage::Text(json.into())).await {
@@ -191,7 +191,7 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
                 "52-ws-streaming",
                 start.elapsed().as_millis(),
                 &format!("start WS server: {e}"),
-            )
+            );
         }
     };
 
@@ -213,7 +213,7 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
                 "52-ws-streaming",
                 start.elapsed().as_millis(),
                 &format!("serialize request: {e}"),
-            )
+            );
         }
     };
     if let Err(e) = ws.send(WsMessage::Text(json.into())).await {

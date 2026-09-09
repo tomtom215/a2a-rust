@@ -16,8 +16,8 @@ use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use crate::error::{ServerError, ServerResult};
 use crate::streaming::{InMemoryQueueReader, Reattached};
 
-use super::super::helpers::build_call_context;
 use super::super::RequestHandler;
+use super::super::helpers::build_call_context;
 
 impl RequestHandler {
     /// Builds the hook that keeps a `SubscribeToTask` stream alive across turns.

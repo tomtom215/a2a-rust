@@ -1013,10 +1013,10 @@ async fn await_terminal(iface: &Iface, task_id: &str) -> Option<String> {
     ];
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
     while tokio::time::Instant::now() < deadline {
-        if let Ok(view) = task_view(iface, task_id).await {
-            if TERMINAL.contains(&view.state.as_str()) {
-                return Some(task_id.to_owned());
-            }
+        if let Ok(view) = task_view(iface, task_id).await
+            && TERMINAL.contains(&view.state.as_str())
+        {
+            return Some(task_id.to_owned());
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
@@ -1191,7 +1191,7 @@ fn record(results: &mut Vec<TestResult>, name: &str, outcome: Result<(), String>
 
 #[cfg(test)]
 mod tests {
-    use super::{bind_equiv_004, binding_for, Iface, OPERATIONS};
+    use super::{Iface, OPERATIONS, bind_equiv_004, binding_for};
 
     #[test]
     fn canonical_and_legacy_binding_names_both_resolve() {

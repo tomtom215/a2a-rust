@@ -21,12 +21,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_client::{ClientError, ClientResult, EventStream};
-use a2a_protocol_types::proto as pb;
 use a2a_protocol_types::StreamResponse;
+use a2a_protocol_types::proto as pb;
 use futures::StreamExt;
 use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
 use slim_auth::shared_secret::SharedSecret;
-use slim_config::component::id::{Kind, ID};
+use slim_config::component::id::{ID, Kind};
 use slim_rpc::{Channel, Metadata};
 use slim_service::app::App as SlimApp;
 use slim_service::service::Service;
@@ -34,10 +34,10 @@ use slim_service::service::Service;
 mod dispatch;
 mod push_config;
 
+use crate::SlimName;
 use crate::binding::A2A_SERVICE_NAME;
 use crate::codec::Pb;
 use crate::error::rpc_error_to_client_error;
-use crate::SlimName;
 
 /// Buffer depth for the task bridging SLIMRPC frames into an [`EventStream`].
 const STREAM_CHANNEL_CAPACITY: usize = 64;

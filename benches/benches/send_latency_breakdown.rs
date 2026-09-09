@@ -25,7 +25,7 @@
 //! dispatch, serialize, respond — and does no executor work at all, so it is
 //! the floor that `send` is measured against.
 
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 
 use a2a_benchmarks::executor::{EchoExecutor, NoopExecutor};
 use a2a_benchmarks::fixtures;

@@ -30,8 +30,8 @@ use a2a_protocol_server::push::PushSender;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
 
-use a2a_protocol_client::transport::websocket::WebSocketTransport;
 use a2a_protocol_client::transport::Transport;
+use a2a_protocol_client::transport::websocket::WebSocketTransport;
 
 // ── Test executor ───────────────────────────────────────────────────────────
 

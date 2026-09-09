@@ -5,7 +5,7 @@
 
 //! Benchmarks for the a2a-server task store and event queue subsystems.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};

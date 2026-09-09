@@ -393,12 +393,12 @@ plugins {{
                 ])
                 .arg(&self.workload_socket)
                 .output();
-            if let Ok(out) = out {
-                if out.status.success() {
-                    seen = String::from_utf8_lossy(&out.stdout).into_owned();
-                    if self.spiffe_ids.iter().all(|id| seen.contains(id)) {
-                        return;
-                    }
+            if let Ok(out) = out
+                && out.status.success()
+            {
+                seen = String::from_utf8_lossy(&out.stdout).into_owned();
+                if self.spiffe_ids.iter().all(|id| seen.contains(id)) {
+                    return;
                 }
             }
             std::thread::sleep(Duration::from_millis(250));

@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_client::transport::Transport;
-use a2a_protocol_slimrpc::{method, SlimName, SlimRpcServer, SlimRpcTransport};
+use a2a_protocol_slimrpc::{SlimName, SlimRpcServer, SlimRpcTransport, method};
 use slim_config::client::ClientConfig;
 use slim_config::server::ServerConfig;
 use slim_config::tls::client::TlsClientConfig;

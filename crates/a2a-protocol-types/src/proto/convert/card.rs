@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use super::{metadata_from_proto, metadata_to_proto, none_if_empty, none_if_false, ConvertError};
+use super::{ConvertError, metadata_from_proto, metadata_to_proto, none_if_empty, none_if_false};
 use crate::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentProvider, AgentSkill};
 use crate::extensions::{AgentCardSignature, AgentExtension};
 use crate::proto as pb;
@@ -546,11 +546,7 @@ impl TryFrom<AgentCard> for pb::AgentCard {
 }
 
 fn vec_to_option(v: Vec<String>) -> Option<Vec<String>> {
-    if v.is_empty() {
-        None
-    } else {
-        Some(v)
-    }
+    if v.is_empty() { None } else { Some(v) }
 }
 
 #[cfg(test)]

@@ -31,19 +31,19 @@
 //! - External webhook delivery latency (network I/O)
 //! - TLS handshake overhead
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
 use a2a_benchmarks::executor::EchoExecutor;
 use a2a_benchmarks::fixtures;
 use a2a_benchmarks::server;
 
-use a2a_protocol_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_client::ClientResult;
+use a2a_protocol_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
 use a2a_protocol_server::push::InMemoryPushConfigStore;
 use a2a_protocol_server::push::PushConfigStore;
 use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};

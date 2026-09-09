@@ -50,9 +50,9 @@ use http_body_util::Full;
 #[cfg(not(feature = "tls-rustls"))]
 use hyper::body::Bytes;
 #[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::connect::HttpConnector;
-#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
+#[cfg(not(feature = "tls-rustls"))]
+use hyper_util::client::legacy::connect::HttpConnector;
 #[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 

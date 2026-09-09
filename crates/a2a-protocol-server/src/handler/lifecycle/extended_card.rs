@@ -12,8 +12,8 @@ use a2a_protocol_types::agent_card::AgentCard;
 
 use crate::error::{ServerError, ServerResult};
 
-use super::super::helpers::build_call_context;
 use super::super::RequestHandler;
+use super::super::helpers::build_call_context;
 
 impl RequestHandler {
     /// Handles `GetExtendedAgentCard`.

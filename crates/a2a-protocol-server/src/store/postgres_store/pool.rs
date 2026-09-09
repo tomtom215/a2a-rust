@@ -11,8 +11,8 @@
 //! details of.
 
 use a2a_protocol_types::error::A2aError;
-use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 
 /// Creates a `PgPool` with production-ready defaults.
 pub(super) async fn pg_pool(url: &str) -> Result<PgPool, sqlx::Error> {

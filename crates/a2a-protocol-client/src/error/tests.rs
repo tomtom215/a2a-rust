@@ -255,61 +255,78 @@ fn client_error_from_serde_json_error() {
 
 /// Verify all retryable/non-retryable classifications.
 #[test]
+#[allow(clippy::too_many_lines)] // one assertion per variant; grew past 60 under the 2024 style edition
 fn retryable_classification_exhaustive() {
     // Retryable
     assert!(ClientError::HttpClient("conn reset".into()).is_retryable());
     assert!(ClientError::Timeout("deadline".into()).is_retryable());
-    assert!(ClientError::UnexpectedStatus {
-        status: 429,
-        body: String::new(),
-        retry_after: None,
-    }
-    .is_retryable());
-    assert!(ClientError::UnexpectedStatus {
-        status: 502,
-        body: String::new(),
-        retry_after: None,
-    }
-    .is_retryable());
-    assert!(ClientError::UnexpectedStatus {
-        status: 503,
-        body: String::new(),
-        retry_after: None,
-    }
-    .is_retryable());
-    assert!(ClientError::UnexpectedStatus {
-        status: 504,
-        body: String::new(),
-        retry_after: None,
-    }
-    .is_retryable());
+    assert!(
+        ClientError::UnexpectedStatus {
+            status: 429,
+            body: String::new(),
+            retry_after: None,
+        }
+        .is_retryable()
+    );
+    assert!(
+        ClientError::UnexpectedStatus {
+            status: 502,
+            body: String::new(),
+            retry_after: None,
+        }
+        .is_retryable()
+    );
+    assert!(
+        ClientError::UnexpectedStatus {
+            status: 503,
+            body: String::new(),
+            retry_after: None,
+        }
+        .is_retryable()
+    );
+    assert!(
+        ClientError::UnexpectedStatus {
+            status: 504,
+            body: String::new(),
+            retry_after: None,
+        }
+        .is_retryable()
+    );
 
     // Non-retryable
     assert!(!ClientError::Transport("bad config".into()).is_retryable());
     assert!(!ClientError::InvalidEndpoint("bad url".into()).is_retryable());
-    assert!(!ClientError::UnexpectedStatus {
-        status: 400,
-        body: String::new(),
-        retry_after: None,
-    }
-    .is_retryable());
-    assert!(!ClientError::UnexpectedStatus {
-        status: 401,
-        body: String::new(),
-        retry_after: None,
-    }
-    .is_retryable());
-    assert!(!ClientError::UnexpectedStatus {
-        status: 404,
-        body: String::new(),
-        retry_after: None,
-    }
-    .is_retryable());
+    assert!(
+        !ClientError::UnexpectedStatus {
+            status: 400,
+            body: String::new(),
+            retry_after: None,
+        }
+        .is_retryable()
+    );
+    assert!(
+        !ClientError::UnexpectedStatus {
+            status: 401,
+            body: String::new(),
+            retry_after: None,
+        }
+        .is_retryable()
+    );
+    assert!(
+        !ClientError::UnexpectedStatus {
+            status: 404,
+            body: String::new(),
+            retry_after: None,
+        }
+        .is_retryable()
+    );
     assert!(!ClientError::ProtocolBindingMismatch("wrong".into()).is_retryable());
-    assert!(!ClientError::AuthRequired {
-        task_id: TaskId::new("t")
-    }
-    .is_retryable());
+    assert!(
+        !ClientError::AuthRequired {
+            task_id: TaskId::new("t")
+        }
+        .is_retryable()
+    );
 }
 
 // ── Stream-lag passthrough ───────────────────────────────────────────

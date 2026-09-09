@@ -5,7 +5,7 @@
 
 use sqlx::SqlitePool;
 
-use super::{terminal_state_labels, PurgeReport, RetentionPolicy};
+use super::{PurgeReport, RetentionPolicy, terminal_state_labels};
 
 /// Deletes terminal tasks older than `policy` from `table`, in batches.
 ///
@@ -77,12 +77,11 @@ pub async fn purge(
     // A row can only be an orphan because its task was deleted — the foreign
     // key means it could not have been written before the task existed — so
     // there is no race with a concurrent writer here.
-    if let Some(journal) = journal {
-        if report.tasks_deleted > 0 {
-            let sql =
-                format!("DELETE FROM {journal} WHERE task_id NOT IN (SELECT id FROM {table})");
-            report.journal_orphans_deleted = sqlx::query(&sql).execute(pool).await?.rows_affected();
-        }
+    if let Some(journal) = journal
+        && report.tasks_deleted > 0
+    {
+        let sql = format!("DELETE FROM {journal} WHERE task_id NOT IN (SELECT id FROM {table})");
+        report.journal_orphans_deleted = sqlx::query(&sql).execute(pool).await?.rows_affected();
     }
 
     Ok(report)

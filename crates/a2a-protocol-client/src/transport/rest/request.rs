@@ -18,9 +18,9 @@ use a2a_protocol_types::JsonRpcResponse;
 
 use crate::error::{ClientError, ClientResult};
 
-use super::query::{build_query_string, encode_query_value};
-use super::routing::{route_for, HttpMethod, Route};
 use super::RestTransport;
+use super::query::{build_query_string, encode_query_value};
+use super::routing::{HttpMethod, Route, route_for};
 
 impl RestTransport {
     pub(super) fn build_uri(
@@ -49,10 +49,10 @@ impl RestTransport {
             // The query encoder is a superset of path-segment encoding (it also
             // escapes `/`, `?`, `#`), so the segment cannot escape its slot.
             path = format!("/{}{path}", encode_query_value(&tenant));
-            if route.http_method != HttpMethod::Post {
-                if let Some(obj) = remaining.as_object_mut() {
-                    obj.remove("tenant");
-                }
+            if route.http_method != HttpMethod::Post
+                && let Some(obj) = remaining.as_object_mut()
+            {
+                obj.remove("tenant");
             }
         }
 
@@ -288,7 +288,7 @@ mod tests {
     use http_body_util::Full;
     use hyper::body::Bytes;
 
-    use super::super::routing::{route_for, HttpMethod};
+    use super::super::routing::{HttpMethod, route_for};
     use super::super::*;
 
     #[test]

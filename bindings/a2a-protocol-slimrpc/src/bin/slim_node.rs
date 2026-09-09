@@ -30,7 +30,7 @@
 
 use std::process::ExitCode;
 
-use slim_config::component::id::{Kind, ID};
+use slim_config::component::id::{ID, Kind};
 use slim_config::server::ServerConfig;
 use slim_config::tls::server::TlsServerConfig;
 use slim_service::service::Service;

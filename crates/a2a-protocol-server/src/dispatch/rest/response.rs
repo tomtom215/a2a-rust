@@ -139,12 +139,12 @@ pub(super) async fn read_body_limited(
     // Fast path: reject before reading any body bytes when an honest
     // Content-Length already exceeds the cap.
     let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
-    if let Some(upper) = size_hint.upper() {
-        if upper > max_size as u64 {
-            return Err(format!(
-                "request body too large: {upper} bytes exceeds {max_size} byte limit"
-            ));
-        }
+    if let Some(upper) = size_hint.upper()
+        && upper > max_size as u64
+    {
+        return Err(format!(
+            "request body too large: {upper} bytes exceeds {max_size} byte limit"
+        ));
     }
 
     // Enforce the cap *during* streaming, not just after collection. A chunked
@@ -445,10 +445,12 @@ mod tests {
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
         // AIP-193 format: {"error": {"message": "..."}}
-        assert!(val["error"]["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("proto err"));
+        assert!(
+            val["error"]["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("proto err")
+        );
     }
 
     /// Covers line 97: `build_json_response` `unwrap_or_else` fallback.

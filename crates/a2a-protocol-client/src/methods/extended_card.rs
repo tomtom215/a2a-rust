@@ -63,10 +63,10 @@ mod tests {
     use std::future::Future;
     use std::pin::Pin;
 
+    use crate::ClientBuilder;
     use crate::error::{ClientError, ClientResult};
     use crate::streaming::EventStream;
     use crate::transport::Transport;
-    use crate::ClientBuilder;
 
     struct MockTransport {
         response: serde_json::Value,

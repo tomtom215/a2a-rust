@@ -24,8 +24,8 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use http_body_util::Full;
-use hyper::service::service_fn;
 use hyper::Response;
+use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;

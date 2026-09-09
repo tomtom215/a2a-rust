@@ -27,8 +27,8 @@
 
 use a2a_protocol_client::ClientError;
 use a2a_protocol_server::ServerError;
-use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::ErrorCode;
+use a2a_protocol_types::error::A2aError;
 use slim_rpc::{RpcCode, RpcError};
 
 /// The A2A error type name for an [`ErrorCode`], as the SLIMRPC spec spells it.
@@ -148,20 +148,20 @@ pub fn rpc_error_to_client_error(err: &RpcError) -> ClientError {
     // Transport-shaped conditions are not A2A errors and must stay retryable.
     match err.code() {
         RpcCode::DeadlineExceeded => {
-            return ClientError::Timeout(format!("SLIMRPC deadline exceeded: {message}"))
+            return ClientError::Timeout(format!("SLIMRPC deadline exceeded: {message}"));
         }
         RpcCode::Cancelled => {
-            return ClientError::Timeout(format!("SLIMRPC call cancelled: {message}"))
+            return ClientError::Timeout(format!("SLIMRPC call cancelled: {message}"));
         }
         RpcCode::Unavailable => {
-            return ClientError::HttpClient(format!("SLIM fabric unavailable: {message}"))
+            return ClientError::HttpClient(format!("SLIM fabric unavailable: {message}"));
         }
         RpcCode::ResourceExhausted => {
             return ClientError::UnexpectedStatus {
                 status: 429,
                 body: message.to_string(),
                 retry_after: None,
-            }
+            };
         }
         _ => {}
     }

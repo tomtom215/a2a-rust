@@ -30,7 +30,7 @@ use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
 use slim_auth::shared_secret::SharedSecret;
-use slim_config::component::id::{Kind, ID};
+use slim_config::component::id::{ID, Kind};
 use slim_service::service::Service;
 
 pub const SECRET: &str = "slimrpc-e2e-shared-secret-0123456789abcdef";

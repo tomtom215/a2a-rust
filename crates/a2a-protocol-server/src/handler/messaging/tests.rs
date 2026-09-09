@@ -653,10 +653,10 @@ agent_executor!(BlockingExecutor, |_ctx, _queue| async {
 
 async fn poll_task_state(handler: &RequestHandler, task_id: &TaskId, want: TaskState) -> TaskState {
     for _ in 0..200 {
-        if let Ok(Some(t)) = handler.task_store.get(task_id).await {
-            if t.status.state == want {
-                return want;
-            }
+        if let Ok(Some(t)) = handler.task_store.get(task_id).await
+            && t.status.state == want
+        {
+            return want;
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }

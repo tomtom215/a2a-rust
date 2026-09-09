@@ -45,12 +45,12 @@ use executors::{
 #[cfg(feature = "grpc")]
 use infrastructure::serve_grpc;
 use infrastructure::{
-    bind_listener, serve_jsonrpc, serve_rest, start_webhook_server, AuditInterceptor,
-    MetricsForward, TeamMetrics, WebhookReceiver,
+    AuditInterceptor, MetricsForward, TeamMetrics, WebhookReceiver, bind_listener, serve_jsonrpc,
+    serve_rest, start_webhook_server,
 };
 use tests::{
-    basic, coverage_gaps, dogfood, edge_cases, lifecycle, stress, transport, TestContext,
-    TestResult,
+    TestContext, TestResult, basic, coverage_gaps, dogfood, edge_cases, lifecycle, stress,
+    transport,
 };
 
 #[tokio::main]

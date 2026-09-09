@@ -48,7 +48,7 @@ use std::time::{Duration, Instant};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::store::InMemoryTaskStore;
-use a2a_protocol_server::{agent_executor, EventEmitter, RequestHandler};
+use a2a_protocol_server::{EventEmitter, RequestHandler, agent_executor};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::task::TaskState;

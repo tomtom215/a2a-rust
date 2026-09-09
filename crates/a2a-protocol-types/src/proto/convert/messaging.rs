@@ -7,8 +7,8 @@
 //! streaming events, and the send/stream response unions.
 
 use super::{
-    base64_to_bytes, bytes_to_base64, metadata_from_proto, metadata_to_proto, none_if_empty,
-    none_if_false, rfc3339_to_timestamp, timestamp_to_rfc3339, ConvertError,
+    ConvertError, base64_to_bytes, bytes_to_base64, metadata_from_proto, metadata_to_proto,
+    none_if_empty, none_if_false, rfc3339_to_timestamp, timestamp_to_rfc3339,
 };
 use crate::artifact::{Artifact, ArtifactId};
 use crate::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};

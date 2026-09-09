@@ -24,10 +24,10 @@ use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming;
 use tokio::sync::watch;
 
+use a2a_protocol_server::Dispatcher;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::executor::AgentExecutor;
-use a2a_protocol_server::Dispatcher;
 
 use crate::fixtures;
 

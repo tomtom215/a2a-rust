@@ -7,8 +7,8 @@
 
 use super::messaging::task_state_from_i32;
 use super::{
-    empty_if_none, i32_from_u32, metadata_from_proto, metadata_to_proto, none_if_empty,
-    none_if_false, rfc3339_to_timestamp, timestamp_to_rfc3339, u32_from_i32, ConvertError,
+    ConvertError, empty_if_none, i32_from_u32, metadata_from_proto, metadata_to_proto,
+    none_if_empty, none_if_false, rfc3339_to_timestamp, timestamp_to_rfc3339, u32_from_i32,
 };
 use crate::params::{
     CancelTaskParams, DeletePushConfigParams, GetExtendedAgentCardParams, GetPushConfigParams,

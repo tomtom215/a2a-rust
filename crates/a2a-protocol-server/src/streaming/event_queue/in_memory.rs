@@ -422,8 +422,8 @@ impl EventQueueReader for InMemoryQueueReader {
 mod tests {
     use super::*;
     use crate::streaming::event_queue::{
-        new_in_memory_queue, new_in_memory_queue_with_options,
-        new_in_memory_queue_with_persistence, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT,
+        DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT, new_in_memory_queue,
+        new_in_memory_queue_with_options, new_in_memory_queue_with_persistence,
     };
     use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
     use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};

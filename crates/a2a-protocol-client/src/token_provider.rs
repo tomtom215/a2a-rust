@@ -63,14 +63,14 @@ use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use http_body_util::Full;
 use hyper::body::Bytes;
 #[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::connect::HttpConnector;
-#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
+#[cfg(not(feature = "tls-rustls"))]
+use hyper_util::client::legacy::connect::HttpConnector;
 #[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 
@@ -446,12 +446,12 @@ impl OAuth2ClientCredentials {
         let token_resp: TokenResponse = serde_json::from_slice(&body).map_err(|e| {
             ClientError::Transport(format!("token endpoint returned invalid JSON: {e}"))
         })?;
-        if let Some(ref tt) = token_resp.token_type {
-            if !tt.eq_ignore_ascii_case("bearer") {
-                return Err(ClientError::Transport(format!(
-                    "token endpoint returned unsupported token_type {tt:?} (expected \"Bearer\")"
-                )));
-            }
+        if let Some(ref tt) = token_resp.token_type
+            && !tt.eq_ignore_ascii_case("bearer")
+        {
+            return Err(ClientError::Transport(format!(
+                "token endpoint returned unsupported token_type {tt:?} (expected \"Bearer\")"
+            )));
         }
 
         let ttl = token_resp.expires_in.map_or(NO_EXPIRY_CACHE_TTL, |secs| {

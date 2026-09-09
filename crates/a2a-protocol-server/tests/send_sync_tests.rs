@@ -94,7 +94,7 @@ mod direct_message_response {
 
     use a2a_protocol_server::builder::RequestHandlerBuilder;
     use a2a_protocol_server::handler::SendMessageResult;
-    use a2a_protocol_server::{agent_executor, RequestHandler};
+    use a2a_protocol_server::{RequestHandler, agent_executor};
 
     /// Emits only an agent `Message` — the "simple interaction that doesn't
     /// require task tracking" of spec §3.1.1.

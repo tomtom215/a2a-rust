@@ -122,22 +122,24 @@ impl RestDispatcher {
         }
 
         // Validate Content-Type for POST/PUT/PATCH requests.
-        if method == "POST" || method == "PUT" || method == "PATCH" {
-            if let Some(ct) = req.headers().get("content-type") {
-                let ct_str = ct.to_str().unwrap_or("");
-                if !ct_str.starts_with("application/json")
-                    && !ct_str.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE)
-                {
-                    // 400, not 415. `ContentTypeNotSupportedError` is the
-                    // A2A error this is, and §5.4 assigns it 400 — even
-                    // though 415 is the more descriptive HTTP status, and
-                    // this answered 415 until the table was re-read on
-                    // 2026-08-30.
-                    return error_json_response(
-                        a2a_protocol_types::ErrorCode::ContentTypeNotSupported.http_status(),
-                        &format!("unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"),
-                    );
-                }
+        if (method == "POST" || method == "PUT" || method == "PATCH")
+            && let Some(ct) = req.headers().get("content-type")
+        {
+            let ct_str = ct.to_str().unwrap_or("");
+            if !ct_str.starts_with("application/json")
+                && !ct_str.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE)
+            {
+                // 400, not 415. `ContentTypeNotSupportedError` is the
+                // A2A error this is, and §5.4 assigns it 400 — even
+                // though 415 is the more descriptive HTTP status, and
+                // this answered 415 until the table was re-read on
+                // 2026-08-30.
+                return error_json_response(
+                    a2a_protocol_types::ErrorCode::ContentTypeNotSupported.http_status(),
+                    &format!(
+                        "unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"
+                    ),
+                );
             }
         }
 
@@ -196,11 +198,10 @@ impl RestDispatcher {
         if let Some(hval) = self
             .handler
             .activated_extensions_header_value(headers.get("a2a-extensions").map(String::as_str))
+            && let Ok(v) = hyper::header::HeaderValue::from_str(&hval)
         {
-            if let Ok(v) = hyper::header::HeaderValue::from_str(&hval) {
-                resp.headers_mut()
-                    .insert(a2a_protocol_types::A2A_EXTENSIONS_HEADER, v);
-            }
+            resp.headers_mut()
+                .insert(a2a_protocol_types::A2A_EXTENSIONS_HEADER, v);
         }
         if let Some(ref cors) = self.cors {
             cors.apply_headers(&mut resp);
@@ -245,27 +246,26 @@ impl RestDispatcher {
         }
 
         // Colon-action routes on tasks: /tasks/{id}:cancel, /tasks/{id}:subscribe.
-        if let Some(rest) = path.strip_prefix("/tasks/") {
-            if let Some((id, action)) = rest.split_once(':') {
-                if !id.is_empty() {
-                    match (method, action) {
-                        ("POST", "cancel") => {
-                            return self.handle_cancel_task(req, id, tenant, headers).await;
-                        }
-                        // Spec §11.3.2 (and the §5.3 method-mapping table)
-                        // define `POST /tasks/{id}:subscribe`; the upstream
-                        // a2a.proto's google.api.http annotation says `get:`
-                        // instead. Accepting both verbs keeps this server
-                        // interoperable with peers generated from either
-                        // source (e.g. grpc-gateway transcoders emit GET,
-                        // browser EventSource can only GET), while this SDK's
-                        // client sends the spec-prose POST.
-                        ("POST" | "GET", "subscribe") => {
-                            return self.handle_resubscribe(req, id, tenant, headers).await;
-                        }
-                        _ => {}
-                    }
+        if let Some(rest) = path.strip_prefix("/tasks/")
+            && let Some((id, action)) = rest.split_once(':')
+            && !id.is_empty()
+        {
+            match (method, action) {
+                ("POST", "cancel") => {
+                    return self.handle_cancel_task(req, id, tenant, headers).await;
                 }
+                // Spec §11.3.2 (and the §5.3 method-mapping table)
+                // define `POST /tasks/{id}:subscribe`; the upstream
+                // a2a.proto's google.api.http annotation says `get:`
+                // instead. Accepting both verbs keeps this server
+                // interoperable with peers generated from either
+                // source (e.g. grpc-gateway transcoders emit GET,
+                // browser EventSource can only GET), while this SDK's
+                // client sends the spec-prose POST.
+                ("POST" | "GET", "subscribe") => {
+                    return self.handle_resubscribe(req, id, tenant, headers).await;
+                }
+                _ => {}
             }
         }
 
@@ -282,28 +282,58 @@ impl RestDispatcher {
             }
 
             // Push notification configs (accept both plural and singular path segments).
-            ("POST", ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig"]) => {
+            (
+                "POST",
+                [
+                    "tasks",
+                    task_id,
+                    "pushNotificationConfigs" | "pushNotificationConfig",
+                ],
+            ) => {
                 self.handle_set_push_config(req, task_id, tenant, headers)
                     .await
             }
             (
                 "GET",
-                ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig", config_id],
+                [
+                    "tasks",
+                    task_id,
+                    "pushNotificationConfigs" | "pushNotificationConfig",
+                    config_id,
+                ],
             ) => {
                 self.handle_get_push_config(task_id, config_id, tenant, headers)
                     .await
             }
-            ("GET", ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig"]) => {
+            (
+                "GET",
+                [
+                    "tasks",
+                    task_id,
+                    "pushNotificationConfigs" | "pushNotificationConfig",
+                ],
+            ) => {
                 self.handle_list_push_configs(task_id, tenant, headers)
                     .await
             }
             (
                 "DELETE",
-                ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig", config_id],
+                [
+                    "tasks",
+                    task_id,
+                    "pushNotificationConfigs" | "pushNotificationConfig",
+                    config_id,
+                ],
             )
             | (
                 "POST",
-                ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig", config_id, "delete"],
+                [
+                    "tasks",
+                    task_id,
+                    "pushNotificationConfigs" | "pushNotificationConfig",
+                    config_id,
+                    "delete",
+                ],
             ) => {
                 self.handle_delete_push_config(task_id, config_id, tenant, headers)
                     .await
@@ -354,13 +384,13 @@ impl RestDispatcher {
         // bound from the path is the field's value, whatever the body says.
         // (A body-only tenant was already applied by the caller, so `tenant`
         // here is either the path's or the body's own.)
-        if let Some(tenant) = tenant {
-            if let Some(obj) = value.as_object_mut() {
-                obj.insert(
-                    "tenant".to_owned(),
-                    serde_json::Value::String(tenant.to_owned()),
-                );
-            }
+        if let Some(tenant) = tenant
+            && let Some(obj) = value.as_object_mut()
+        {
+            obj.insert(
+                "tenant".to_owned(),
+                serde_json::Value::String(tenant.to_owned()),
+            );
         }
         Ok(value)
     }

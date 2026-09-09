@@ -30,7 +30,7 @@ use bytes::Bytes;
 use http_body_util::BodyExt;
 
 use a2a_protocol_server::streaming::event_queue::new_in_memory_queue_with_capacity;
-use a2a_protocol_server::streaming::{build_sse_response, EventQueueWriter};
+use a2a_protocol_server::streaming::{EventQueueWriter, build_sse_response};
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
@@ -85,10 +85,8 @@ fn error_frame_data(body: &str) -> Option<serde_json::Value> {
     for line in body.lines() {
         if line.trim() == "event: error" {
             saw_error_event = true;
-        } else if saw_error_event {
-            if let Some(data) = line.strip_prefix("data: ") {
-                return serde_json::from_str(data).ok();
-            }
+        } else if saw_error_event && let Some(data) = line.strip_prefix("data: ") {
+            return serde_json::from_str(data).ok();
         }
     }
     None

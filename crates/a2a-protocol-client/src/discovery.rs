@@ -21,9 +21,9 @@ use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Bytes;
 use hyper::header;
 #[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::connect::HttpConnector;
-#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
+#[cfg(not(feature = "tls-rustls"))]
+use hyper_util::client::legacy::connect::HttpConnector;
 #[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 use tokio::sync::RwLock;
@@ -272,16 +272,16 @@ async fn fetch_card_with_metadata(
     let retry_after = crate::error::parse_retry_after(resp.headers());
 
     // 304 Not Modified — return cached card with existing metadata.
-    if status == hyper::StatusCode::NOT_MODIFIED {
-        if let Some(cached) = cached {
-            return Ok((
-                cached.card.clone(),
-                cached.etag.clone(),
-                cached.last_modified.clone(),
-            ));
-        }
-        // No cached card but got 304 — shouldn't happen, fall through to error.
+    if status == hyper::StatusCode::NOT_MODIFIED
+        && let Some(cached) = cached
+    {
+        return Ok((
+            cached.card.clone(),
+            cached.etag.clone(),
+            cached.last_modified.clone(),
+        ));
     }
+    // No cached card but got 304 — shouldn't happen, fall through to error.
 
     // Extract caching headers before consuming the response body.
     let etag = resp
@@ -299,14 +299,13 @@ async fn fetch_card_with_metadata(
     // from a compromised card endpoint sending an arbitrarily large response.
     // 2 MiB — generous for agent cards
     let max_card_body_size: u64 = MAX_CARD_BODY_SIZE;
-    if let Some(cl) = resp.headers().get(header::CONTENT_LENGTH) {
-        if let Ok(len) = cl.to_str().unwrap_or("0").parse::<u64>() {
-            if exceeds_card_body_size(len, max_card_body_size) {
-                return Err(ClientError::Transport(format!(
-                    "agent card response too large: {len} bytes exceeds {max_card_body_size} byte limit"
-                )));
-            }
-        }
+    if let Some(cl) = resp.headers().get(header::CONTENT_LENGTH)
+        && let Ok(len) = cl.to_str().unwrap_or("0").parse::<u64>()
+        && exceeds_card_body_size(len, max_card_body_size)
+    {
+        return Err(ClientError::Transport(format!(
+            "agent card response too large: {len} bytes exceeds {max_card_body_size} byte limit"
+        )));
     }
 
     // Enforce the card size cap *during* streaming, not just after collection.
@@ -326,7 +325,7 @@ async fn fetch_card_with_metadata(
         Err(_) => {
             return Err(ClientError::Transport(
                 "agent card body read timed out".into(),
-            ))
+            ));
         }
         Ok(Ok(collected)) => collected.to_bytes(),
         Ok(Err(err)) => {

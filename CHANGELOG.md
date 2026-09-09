@@ -10,8 +10,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **MSRV lowered from 1.93 to 1.88; edition 2024.** The workspace had
+  never needed anything newer than 1.88 — `cargo check --workspace
+  --all-features --all-targets` on 1.88.0 passed without a code change —
+  and 1.88 is the oldest toolchain the dependency tree (`time`,
+  `serde_with`, `darling`) declares support for. Lowering an MSRV is not a
+  breaking change. With it the crates move to edition 2024 and the
+  MSRV-aware resolver (`resolver = "3"`), so `cargo update` keeps
+  dependency versions compatible with the declared floor. `cargo fix
+  --edition` made the mechanical changes (`$x:expr_2021` in macro
+  matchers, `ref` patterns, `unsafe { set_var }` in the four build scripts,
+  now carrying `SAFETY` notes); the edition's tail-expression drop-order
+  change was reviewed at every site the migration lint reported and the
+  full suite passes on both 1.88.0 and stable. Two places that seeded the
+  environment for a reader — the OTLP pipeline test and the
+  incident-response observability check — now pass the endpoint explicitly
+  through the new `init_otlp_pipeline_with_endpoint`, and the rig example
+  builds its client from explicit settings, so no library or example code
+  writes the process environment. CI's clippy matrix now runs on stable
+  only: 0.1.88's `similar_names` and `cognitive_complexity` verdicts differ
+  from current clippy's, and lint verdicts are a property of the linter,
+  not of the compatibility floor; the Test matrix keeps its 1.88 leg on all
+  three platforms.
+
 ### Added
 
+- **`init_otlp_pipeline_with_endpoint`** (`a2a_protocol_server::otel`):
+  `init_otlp_pipeline` with the collector endpoint given explicitly instead
+  of read from `OTEL_EXPORTER_OTLP_ENDPOINT`.
 - **Feature-matrix CI job.** `cargo hack clippy --each-feature` now lints
   every feature of each published crate on its own, plus no-default-features
   and all-features (39 combinations, 8 minutes warm), so a `#[cfg(feature)]`

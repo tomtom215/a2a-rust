@@ -64,22 +64,26 @@ async fn api_key_custom_header() {
 async fn bearer_accepts_allowed_and_rejects_others() {
     let i = BearerTokenAuthInterceptor::new(["tok-a", "tok-b"]);
 
-    assert!(i
-        .before(&ctx_with("authorization", "Bearer tok-a"))
-        .await
-        .is_ok());
-    assert!(i
-        .before(&ctx_with("authorization", "bearer tok-b"))
-        .await
-        .is_ok());
-    assert!(i
-        .before(&ctx_with("authorization", "Bearer wrong"))
-        .await
-        .is_err());
-    assert!(i
-        .before(&ctx_with("authorization", "Basic tok-a"))
-        .await
-        .is_err());
+    assert!(
+        i.before(&ctx_with("authorization", "Bearer tok-a"))
+            .await
+            .is_ok()
+    );
+    assert!(
+        i.before(&ctx_with("authorization", "bearer tok-b"))
+            .await
+            .is_ok()
+    );
+    assert!(
+        i.before(&ctx_with("authorization", "Bearer wrong"))
+            .await
+            .is_err()
+    );
+    assert!(
+        i.before(&ctx_with("authorization", "Basic tok-a"))
+            .await
+            .is_err()
+    );
     assert!(i.before(&CallContext::new("m")).await.is_err());
 }
 

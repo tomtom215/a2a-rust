@@ -97,7 +97,7 @@ The test suite exercises 40+ SDK features including:
 
 ## Prerequisites
 
-- Rust 1.93+ (MSRV)
+- Rust 1.88+ (MSRV)
 - `protoc` (only when `--features grpc` is enabled)
 - No external services — everything runs in-process
 

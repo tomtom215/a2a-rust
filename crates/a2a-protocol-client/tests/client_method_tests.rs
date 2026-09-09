@@ -8,14 +8,14 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_client::error::{ClientError, ClientResult};
 use a2a_protocol_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
 use a2a_protocol_client::streaming::EventStream;
 use a2a_protocol_client::transport::Transport;
-use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_types::{
     ListPushConfigsParams, ListTasksParams, Message, MessageId, MessageRole, MessageSendParams,
     Part, SendMessageResponse, TaskPushNotificationConfig, TaskQueryParams, TaskState,

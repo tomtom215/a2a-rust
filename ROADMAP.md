@@ -3,7 +3,7 @@
 
 # Roadmap
 
-Current release: **0.7.0**. MSRV **1.93**.
+Current release: **0.11.0**. MSRV **1.88** (lowered from 1.93 on 2026-09-09; edition 2024).
 
 ## What this file is
 
@@ -871,7 +871,13 @@ Genuinely undecided — listed so they are not mistaken for oversights.
 * Whether to adopt signed tags at all, or to rely solely on the SLSA build
   provenance attestations already produced for release artifacts
   (see [`PROVENANCE.md`](PROVENANCE.md)).
-* Whether `0.8` should also raise MSRV, and what support window to state.
+* ~~Whether `0.8` should also raise MSRV, and what support window to state.~~
+  **Decided 2026-09-09:** lowered to **1.88**, the oldest toolchain the
+  dependency tree declares support for, with edition 2024 and the
+  MSRV-aware resolver; the policy and the raise rule are in
+  [`STABILITY.md`](STABILITY.md#5-minimum-supported-rust-version). Going
+  lower (a2a-rs is at 1.85) would mean holding `time`, `serde_with` and
+  `darling` at older releases, which is the remaining open trade-off.
 * Whether the axum adapter should reach parity with the REST dispatcher on
   tenant routing, or whether the split is intentional and should simply be
   documented as such.

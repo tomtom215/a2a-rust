@@ -19,7 +19,7 @@
 [![docs.rs](https://img.shields.io/docsrs/a2a-protocol-sdk)](https://docs.rs/a2a-protocol-sdk)
 [![Guide](https://img.shields.io/badge/guide-a2a--rust.com-blue)](https://a2a-rust.com)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![MSRV](https://img.shields.io/badge/rust-1.93%2B-orange.svg)](https://www.rust-lang.org)
+[![MSRV](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 [![A2A Conformance](https://img.shields.io/badge/official%20TCK-92%2F114%20MUST%2C%200%20failing-blue)](docs/official-tck-findings.md)
 
 Pure Rust implementation of the [**Agent2Agent (A2A) protocol**](https://a2a-protocol.org/), written against the **v1.0.0** wire specification — the open, vendor-neutral standard for AI-agent interoperability.
@@ -410,18 +410,22 @@ The server crate's eleven public traits — `AgentExecutor`, `TaskStore`, `PushC
 
 ## Minimum Supported Rust Version
 
-Rust **1.93** or later (stable).
+Rust **1.88** or later (stable), edition 2024.
 
 **Policy.** The MSRV is treated as part of the public API: raising it is a
 **minor** version bump, never a patch, and the release notes say so. It is
 raised only when a language or standard-library feature earns it — not
-incidentally, because a transitive dependency moved.
+incidentally, because a transitive dependency moved. The edition-2024
+resolver selects dependency versions compatible with the declared
+`rust-version`, and CI builds and tests the workspace on exactly that
+toolchain. The full policy is in [STABILITY.md](STABILITY.md#5-minimum-supported-rust-version).
 
-That 1.93 currently sits close to the latest stable is a consequence of this
-project being pre-1.0 and moving quickly, and it is a real adoption cost for
-organisations pinning older toolchains. It is listed as an open question on the
-[roadmap](ROADMAP.md) rather than presented as settled: the right floor for a
-1.0 is probably older than this one, and choosing it is a maintainer's call.
+**History.** The floor was 1.93 until 2026-09-09, when it was lowered to
+1.88 — the workspace had never needed anything newer, and 1.88 is the
+oldest toolchain the current dependency tree (`time`, `serde_with`,
+`darling`) declares support for. Lowering it further would mean holding
+those crates at older releases, a cost weighed against the adoption benefit
+on the [roadmap](ROADMAP.md).
 
 ## Contributing
 

@@ -14,8 +14,8 @@ use super::*;
 
 use std::sync::{Arc, Mutex, OnceLock};
 use tracing::Level;
-use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 use tracing_subscriber::Registry;
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 
 /// Where the globally-installed layer sends events, when a test wants them.
 type Sink = Arc<Mutex<Vec<String>>>;
@@ -138,8 +138,7 @@ where
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 
-    let out = sink.lock().expect("warn log").clone();
-    out
+    sink.lock().expect("warn log").clone()
 }
 
 fn mentions_cleanup(warnings: &[String]) -> bool {

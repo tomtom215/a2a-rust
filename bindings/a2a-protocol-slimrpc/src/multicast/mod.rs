@@ -44,27 +44,27 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_client::{ClientError, ClientResult, EventStream};
+use a2a_protocol_types::StreamResponse;
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::proto as pb;
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::StreamResponse;
 use futures::StreamExt;
 use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
 use slim_datapath::api::ProtoName;
 use slim_rpc::{Channel, Metadata, MulticastItem, RpcCode, RpcError};
 use slim_service::app::App as SlimApp;
 
+use crate::SlimName;
 use crate::binding::A2A_SERVICE_NAME;
 use crate::client::TransportBuildError;
 use crate::codec::Pb;
 use crate::error::rpc_error_to_client_error;
 use crate::method;
-use crate::SlimName;
 
 mod fanout;
 mod outcome;
 
-use fanout::{fan_out_to_members, MEMBER_STREAM_CAPACITY};
+use fanout::{MEMBER_STREAM_CAPACITY, fan_out_to_members};
 pub use outcome::{MemberOutcome, MulticastOutcome};
 
 /// A group of A2A agents addressable with one message.

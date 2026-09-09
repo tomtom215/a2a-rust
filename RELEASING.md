@@ -228,9 +228,9 @@ SDK, which is the failure mode this note exists to prevent.
 > Two things to settle before the first publish, neither of which blocks it:
 >
 > * **The crate declares no `rust-version`.** The four SDK crates inherit
->   `rust-version = "1.93"` from the workspace root; this crate is its own
+>   `rust-version = "1.88"` from the workspace root; this crate is its own
 >   workspace and inherits nothing, so it publishes without an MSRV. Its true
->   MSRV is at least 1.93 (it depends on crates that require it) and may be
+>   MSRV is at least 1.88 (it depends on crates that require it) and may be
 >   higher, because the `agntcy-slim-*` dependencies have their own floors.
 >   Measure it before declaring it — an MSRV that has not been built against is
 >   a claim, not a fact.

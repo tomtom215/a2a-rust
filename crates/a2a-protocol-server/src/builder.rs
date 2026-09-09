@@ -370,21 +370,21 @@ impl RequestHandlerBuilder {
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
         // Validate agent card if provided.
-        if let Some(ref card) = self.agent_card {
-            if card.supported_interfaces.is_empty() {
-                return Err(crate::error::ServerError::InvalidParams(
-                    "agent card must have at least one supported interface".into(),
-                ));
-            }
+        if let Some(ref card) = self.agent_card
+            && card.supported_interfaces.is_empty()
+        {
+            return Err(crate::error::ServerError::InvalidParams(
+                "agent card must have at least one supported interface".into(),
+            ));
         }
 
         // Validate executor timeout is not zero.
-        if let Some(timeout) = self.executor_timeout {
-            if timeout.is_zero() {
-                return Err(crate::error::ServerError::InvalidParams(
-                    "executor timeout must be greater than zero".into(),
-                ));
-            }
+        if let Some(timeout) = self.executor_timeout
+            && timeout.is_zero()
+        {
+            return Err(crate::error::ServerError::InvalidParams(
+                "executor timeout must be greater than zero".into(),
+            ));
         }
 
         // Validate handler limits are sensible (zero values cause all requests to fail).
