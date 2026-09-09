@@ -338,7 +338,11 @@ impl GrpcTransport {
     /// tonic's automatic `https` → TLS rule (that lives in `Endpoint::new`,
     /// which `from_shared` bypasses), so the TLS config is attached here
     /// explicitly.
-    #[cfg(feature = "grpc-tls")]
+    ///
+    /// One function with the feature split inside it rather than two
+    /// `#[cfg]`-gated twins: a twin compiled out under `--all-features` is
+    /// invisible to every test, and `cargo mutants` reports its mutants as
+    /// survivors that nothing can kill.
     fn apply_tls(
         endpoint: tonic::transport::Endpoint,
         endpoint_str: &str,
@@ -347,28 +351,24 @@ impl GrpcTransport {
         if !endpoint_str.starts_with("https://") {
             return Ok(endpoint);
         }
-        let tls = config
-            .tls_config
-            .clone()
-            .unwrap_or_else(|| tonic::transport::ClientTlsConfig::new().with_enabled_roots());
-        endpoint
-            .tls_config(tls)
-            .map_err(|e| ClientError::Transport(format!("gRPC TLS configuration rejected: {e}")))
-    }
-
-    #[cfg(not(feature = "grpc-tls"))]
-    fn apply_tls(
-        endpoint: tonic::transport::Endpoint,
-        endpoint_str: &str,
-        _config: &GrpcTransportConfig,
-    ) -> ClientResult<tonic::transport::Endpoint> {
-        if endpoint_str.starts_with("https://") {
-            return Err(ClientError::Transport(format!(
+        #[cfg(feature = "grpc-tls")]
+        {
+            let tls = config
+                .tls_config
+                .clone()
+                .unwrap_or_else(|| tonic::transport::ClientTlsConfig::new().with_enabled_roots());
+            endpoint.tls_config(tls).map_err(|e| {
+                ClientError::Transport(format!("gRPC TLS configuration rejected: {e}"))
+            })
+        }
+        #[cfg(not(feature = "grpc-tls"))]
+        {
+            let _ = (endpoint, config);
+            Err(ClientError::Transport(format!(
                 "gRPC over TLS needs the `grpc-tls` feature of a2a-protocol-client; \
                  this build has no TLS connector for {endpoint_str}"
-            )));
+            )))
         }
-        Ok(endpoint)
     }
 
     /// Bounds the wait for a stream's **first** event, separately from

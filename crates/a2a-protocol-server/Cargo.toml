@@ -121,6 +121,16 @@ axum      = { version = "0.8", features = ["json", "query", "tokio"] }
 # For the live-TLS end-to-end push-sender test (gated on `tls-rustls`): generate
 # a throwaway CA + server cert and run a real rustls HTTPS server on loopback.
 rcgen = "0.14"
+# rustls with its default provider (`aws-lc-rs`) alongside the `ring` the
+# `grpc-tls` feature links, so this crate's own test binaries link two
+# providers — the only configuration in which `GrpcDispatcher::with_tls`'s
+# install-when-absent guard is observable (with one provider linked, rustls
+# installs it implicitly on first use). `tests/grpc_tls_provider.rs` depends
+# on this. This crate's own `--all-features` graph links `ring` alone (the
+# workspace's links both, through the client's rustls), so without this the
+# guard would be dead code in every in-crate test and its mutant would
+# survive, as the PR's incremental sweep reported on 2026-09-09.
+rustls = { version = ">=0.23, <0.24" }
 tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
 
 [[bench]]
