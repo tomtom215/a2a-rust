@@ -56,7 +56,7 @@ requirement it corrects.
    one breaking minor per calendar month, rather than one per change. A fix
    that does not break anything ships whenever it is ready.
 3. **Label.** Every breaking change is listed in `CHANGELOG.md` under a
-   `### Breaking` heading for that release, with the migration in the same
+   `### Breaking Changes` heading for that release, with the migration in the same
    entry. The GitHub release notes are extracted from that section.
 4. **Prove it.** CI runs `cargo-semver-checks` against the previous release
    on every pull request. A finding on a change that is meant to be
