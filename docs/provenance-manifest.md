@@ -3,11 +3,11 @@
 
 # Provenance Manifest
 
-**Measured 2026-09-10 at `5a80685`. Regenerate with `scripts/provenance_manifest.sh`.**
+**Measured 2026-09-10 at `256d2ae`. Regenerate with `scripts/provenance_manifest.sh`.**
 
 > Re-measured for 0.12.0, as `release.yml` requires: it fails a release whose
 > manifest was measured at a different commit. The share of history that
-> passes the project's own DCO gate is **45.9%** (41.4% at 0.11.0, 19.4% at
+> passes the project's own DCO gate is **46.0%** (41.4% at 0.11.0, 19.4% at
 > `c008ab0` on 2026-08-11) — the figure moves with every signed-off commit,
 > and a document written for counsel that silently understates the project
 > is as much a defect as one that overstates it.
@@ -73,20 +73,20 @@ scripts/provenance_manifest.sh
 
 ## 1. What the history contains
 
-At `5a80685`, **1096 commits**, spanning **2026-03-15 to 2026-09-10**.
+At `256d2ae`, **1098 commits**, spanning **2026-03-15 to 2026-09-10**.
 
 | | Commits |
 |---|---:|
-| Total reachable | 1096 |
+| Total reachable | 1098 |
 | Merge commits (`dco.yml` does not examine these) | 112 |
-| **Non-merge commits — the population `dco.yml` grades** | **984** |
+| **Non-merge commits — the population `dco.yml` grades** | **986** |
 
-Git author field, all 1096 commits:
+Git author field, all 1098 commits:
 
 | Author | Commits |
 |---|---:|
 | `Claude <noreply@anthropic.com>` | 478 |
-| `Tom F. <tomf@tomtomtech.net>` | 453 |
+| `Tom F. <tomf@tomtomtech.net>` | 455 |
 | `Tom F <tomtom215@users.noreply.github.com>` | 126 |
 | `github-actions[bot] <41898282+…>` | 39 |
 
@@ -96,17 +96,17 @@ the 126 no-reply commits are merge commits created by GitHub's merge button.
 
 ## 2. Verdict under the project's own DCO gate
 
-Applying `dco.yml`'s rules to all 984 non-merge commits:
+Applying `dco.yml`'s rules to all 986 non-merge commits:
 
 | Outcome | Commits | Share |
 |---|---:|---:|
-| **Would pass** — human author, matching `Signed-off-by` | **452** | 45.9% |
-| Fail — author `noreply@anthropic.com` | 477 | 48.5% |
+| **Would pass** — human author, matching `Signed-off-by` | **454** | 46.0% |
+| Fail — author `noreply@anthropic.com` | 477 | 48.4% |
 | Fail — author `github-actions[bot]` | 39 | 4.0% |
 | Fail — human author, no matching `Signed-off-by` | 16 | 1.6% |
 
 The passing count has more than tripled since the 2026-08-11 measurement —
-126 to 452.
+126 to 454.
 The AI-authored count has not moved at all, which is the shape a closed pattern
 makes: that population is fixed and the compliant one grows past it.
 
@@ -124,12 +124,12 @@ authorship rule, which short-circuits before the sign-off check.
 
 **The pattern is closed, not ongoing.** The AI-authored commits run
 2026-03-15 to **2026-07-24** and stop there. `b416c1a` (2026-07-24, tagged
-`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **488 commits since**,
+`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **490 commits since**,
 **zero** are AI-authored:
 
-| Author, `b416c1a..5a80685` | Commits |
+| Author, `b416c1a..256d2ae` | Commits |
 |---|---:|
-| `Tom F. <tomf@tomtomtech.net>` | 453 |
+| `Tom F. <tomf@tomtomtech.net>` | 455 |
 | `Tom F <tomtom215@users.noreply.github.com>` | 19 |
 | `github-actions[bot]` | 16 |
 
@@ -224,11 +224,11 @@ mechanical. Its cost is not.
 
 **There is no partial rewrite.** The earliest commit failing `dco.yml` is
 `c6b33cb`, **the initial commit** (2026-03-15, "Initial commit", no sign-off).
-Amending it changes its SHA, and therefore the SHA of all 1095 descendants.
+Amending it changes its SHA, and therefore the SHA of all 1097 descendants.
 
 | | |
 |---|---|
-| Commits whose SHA changes | **1096 — all of them** |
+| Commits whose SHA changes | **1098 — all of them** |
 | Release tags that must be re-cut | **14** (`v0.2.0` … `v0.11.0`) |
 | Published crates.io releases whose source link breaks | 14 versions × 4 crates |
 | SLSA provenance attestations that stop resolving | all, for every published tag |
