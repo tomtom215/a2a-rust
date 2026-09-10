@@ -21,7 +21,12 @@ use std::time::Duration;
 ///     .with_max_id_length(2048)
 ///     .with_max_metadata_size(2 * 1024 * 1024);
 /// ```
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct HandlerLimits {
     /// Maximum allowed length for task/context IDs. Default: 1024.
     pub max_id_length: usize,

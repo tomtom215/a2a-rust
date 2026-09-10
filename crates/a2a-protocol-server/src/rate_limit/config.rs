@@ -8,7 +8,12 @@
 //! What the limiter is configured with, separate from what it does with it.
 
 /// Configuration for [`RateLimitInterceptor`](super::RateLimitInterceptor).
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct RateLimitConfig {
     /// Maximum number of requests allowed per window per caller key.
     ///
@@ -56,5 +61,38 @@ impl Default for RateLimitConfig {
             trusted_proxy_hops: 0,
             max_buckets: DEFAULT_MAX_BUCKETS,
         }
+    }
+}
+
+impl RateLimitConfig {
+    /// Sets the requests allowed per window per caller key. Must be non-zero.
+    #[must_use]
+    pub const fn with_requests_per_window(mut self, requests: u64) -> Self {
+        self.requests_per_window = requests;
+        self
+    }
+
+    /// Sets the window duration in seconds. Must be non-zero.
+    #[must_use]
+    pub const fn with_window_secs(mut self, secs: u64) -> Self {
+        self.window_secs = secs;
+        self
+    }
+
+    /// Sets the number of trusted reverse-proxy hops. See
+    /// [`trusted_proxy_hops`](Self::trusted_proxy_hops) for what trusting
+    /// `x-forwarded-for` means.
+    #[must_use]
+    pub const fn with_trusted_proxy_hops(mut self, hops: usize) -> Self {
+        self.trusted_proxy_hops = hops;
+        self
+    }
+
+    /// Sets the maximum number of caller buckets tracked at once. Must be
+    /// non-zero.
+    #[must_use]
+    pub const fn with_max_buckets(mut self, max: usize) -> Self {
+        self.max_buckets = max;
+        self
     }
 }

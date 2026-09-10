@@ -18,7 +18,12 @@
 ///     .with_max_message_size(8 * 1024 * 1024)
 ///     .with_concurrency_limit(128);
 /// ```
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct GrpcConfig {
     /// Maximum inbound message size in bytes. Default: 4 MiB.
     pub max_message_size: usize,

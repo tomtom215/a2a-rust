@@ -373,6 +373,11 @@ injection_for() {
             echo "package" ;;
         "cargo run -p agent-team"*)
             echo "dogfood" ;;
+        # The resilience example's own defect: two replicas that stop sharing
+        # the rate-limit counter. Every act still runs and every call still
+        # succeeds; only the scaling check's count notices.
+        "cargo run -p resilient-agent"*)
+            echo "resilient_scaling" ;;
         # Before the general incident-response arm: `-- harden` runs Act 5
         # alone, and its defect is a hardening one, not a matrix one.
         "cargo run -p incident-response"*"harden"*)
@@ -473,6 +478,7 @@ expected_marker() {
         dogfood)          echo "CLAIM TABLE DRIFT" ;;
         example_surface)  echo "matrix cell(s) never ran" ;;
         example_hardening) echo "partitions leak" ;;
+        resilient_scaling) echo "should admit" ;;
         postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
         ignored_suite)    echo "gate probe: injected failure in ${1##*:}" ;;
         spiffe_ignored)   echo "gate probe: injected failure in the SPIFFE suite" ;;
@@ -776,6 +782,23 @@ if s.count(needle) != 1:
 s = s.replace(needle, "Ok(resp) => { let _ = resp; }")
 open(p, "w").write(s)
 PY2
+            ;;
+        resilient_scaling)
+            # Replica B keeps its own counter instead of the shared one: both
+            # limiters admit their full allowance, so the shared check sees 10
+            # admitted where it requires 5, and says "should admit 5". A build
+            # error or a missing database exits non-zero with other words.
+            note_touched "examples/resilient-agent/src/scaling.rs"
+            python3 - <<'PY3'
+p = "examples/resilient-agent/src/scaling.rs"
+s = open(p).read()
+needle = "            limiter = limiter.with_shared_counter(counter);\n"
+if s.count(needle) != 1:
+    raise SystemExit(
+        f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
+    )
+open(p, "w").write(s.replace(needle, "            let _ = counter;\n"))
+PY3
             ;;
         example_hardening)
             # Remove the tenant resolver, which is the exact regression Act 5's

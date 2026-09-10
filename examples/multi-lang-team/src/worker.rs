@@ -31,7 +31,7 @@ use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor_helpers::EventEmitter;
 use a2a_protocol_server::handler::RequestHandler;
 use a2a_protocol_server::serve::serve_with_addr;
-use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::TaskState;
 
@@ -71,37 +71,15 @@ agent_executor!(RustWorker, |ctx, queue| async {
 /// this one does not, because no push store is configured here and a card
 /// should not claim what the agent behind it refuses.
 pub fn make_worker_card(url: &str) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Rust Echo Agent".into(),
-        description: "A2A echo worker agent implemented in Rust".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "echo".into(),
-            name: "Echo".into(),
-            description: "Echoes the input message back".into(),
-            tags: vec!["echo".into(), "test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none().with_streaming(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new("Rust Echo Agent", "1.0.0", AgentInterface::jsonrpc(url))
+        .with_description("A2A echo worker agent implemented in Rust")
+        .with_input_modes(["text/plain"])
+        .with_output_modes(["text/plain"])
+        .with_skill(
+            AgentSkill::new("echo", "Echo", "Echoes the input message back")
+                .with_tags(["echo", "test"]),
+        )
+        .with_streaming(true)
 }
 
 /// Serves the worker over JSON-RPC on `addr` and returns the bound address.

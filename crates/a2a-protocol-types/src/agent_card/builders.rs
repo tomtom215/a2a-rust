@@ -389,6 +389,25 @@ impl AgentCard {
         self
     }
 
+    /// Sets the streaming capability flag, leaving the other capabilities as
+    /// they are. The one flag nearly every agent sets, so it does not need
+    /// [`with_capabilities`](Self::with_capabilities) and an
+    /// [`AgentCapabilities`] of its own.
+    ///
+    /// ```
+    /// use a2a_protocol_types::agent_card::{AgentCard, AgentInterface};
+    ///
+    /// let card = AgentCard::new("a", "1.0.0", AgentInterface::jsonrpc("http://x"))
+    ///     .with_streaming(true);
+    /// assert_eq!(card.capabilities.streaming, Some(true));
+    /// assert_eq!(card.capabilities.push_notifications, None);
+    /// ```
+    #[must_use]
+    pub const fn with_streaming(mut self, streaming: bool) -> Self {
+        self.capabilities.streaming = Some(streaming);
+        self
+    }
+
     /// Sets the organisation publishing this agent.
     #[must_use]
     pub fn with_provider(mut self, provider: AgentProvider) -> Self {

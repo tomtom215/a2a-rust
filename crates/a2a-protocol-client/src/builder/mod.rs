@@ -106,8 +106,9 @@ pub struct ClientBuilder {
     /// How a bare `host:port` gRPC address is dialled by [`build_grpc`].
     ///
     /// Lives on the builder rather than on [`ClientConfig`] because it is a
-    /// dialling decision, not a per-request one, and [`ClientConfig`] is a
-    /// public-fields struct that every literal construction would break on.
+    /// dialling decision, not a per-request one. (Until 0.12 there was a
+    /// second reason — [`ClientConfig`] was a public-fields struct that every
+    /// literal construction would break on; it is `#[non_exhaustive]` now.)
     ///
     /// [`build_grpc`]: ClientBuilder::build_grpc
     pub(super) grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme,
@@ -275,6 +276,31 @@ impl ClientBuilder {
     pub const fn with_max_response_size(mut self, max_bytes: usize) -> Self {
         self.config.max_response_size = max_bytes;
         self
+    }
+
+    /// The card interface this builder will connect to, when it came from one.
+    ///
+    /// [`from_card`](Self::from_card) takes the first interface whose binding
+    /// the caller prefers, else the card's first, and
+    /// [`with_protocol_binding`](Self::with_protocol_binding) can move it.
+    /// This is the outcome of those rules, so a caller who needs a
+    /// constructor the builder does not drive itself — a
+    /// [`WebSocketTransport`](crate::WebSocketTransport) for
+    /// [`with_custom_transport`](Self::with_custom_transport), or
+    /// [`build_grpc`](Self::build_grpc) rather than [`build`](Self::build) —
+    /// reads the endpoint and binding here instead of re-implementing the
+    /// preference.
+    ///
+    /// `None` when the builder came from [`ClientBuilder::new`], and after
+    /// [`with_protocol_binding`](Self::with_protocol_binding) named a binding
+    /// the card does not advertise: the endpoint is then whatever the caller
+    /// set, which is not a card interface.
+    #[must_use]
+    pub fn chosen_interface(&self) -> Option<&AgentInterface> {
+        let binding = self.preferred_binding.as_deref()?;
+        self.card_interfaces
+            .iter()
+            .find(|i| i.protocol_binding.eq_ignore_ascii_case(binding) && i.url == self.endpoint)
     }
 
     /// Sets the protocol binding, overriding any derived from the agent card.
@@ -537,6 +563,37 @@ mod tests {
             .expect("from_card_preferring");
 
         assert_eq!(builder.endpoint, "http://localhost:1111");
+    }
+
+    /// `chosen_interface` reports the interface the rules picked, follows
+    /// `with_protocol_binding` when it moves the endpoint, and is `None`
+    /// where there is no card interface to report — so a caller choosing a
+    /// constructor from it is never told an interface the client will not
+    /// use.
+    #[test]
+    fn chosen_interface_is_the_one_from_card_picked() {
+        let builder = ClientBuilder::from_card(&jsonrpc_then_grpc()).expect("from_card");
+        let chosen = builder.chosen_interface().expect("came from a card");
+        assert_eq!(chosen.protocol_binding, BINDING_JSONRPC);
+        assert_eq!(chosen.url, "http://localhost:1111");
+
+        let moved = builder.with_protocol_binding(BINDING_GRPC);
+        let chosen = moved.chosen_interface().expect("GRPC is on the card");
+        assert_eq!(chosen.url, "http://localhost:2222", "follows the endpoint");
+
+        assert!(
+            moved
+                .with_protocol_binding(BINDING_HTTP_JSON)
+                .chosen_interface()
+                .is_none(),
+            "a binding the card does not advertise leaves no card interface to report"
+        );
+        assert!(
+            ClientBuilder::new("http://localhost:3333")
+                .chosen_interface()
+                .is_none(),
+            "no card, no interface"
+        );
     }
 
     #[test]

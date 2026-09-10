@@ -2,7 +2,7 @@
 
 The smallest A2A agent you can actually ship.
 
-[`hello-agent`](./hello-agent.md) is the smallest thing that answers A2A: 23
+[`hello-agent`](./hello-agent.md) is the smallest thing that answers A2A: 28
 lines, no configuration, bound to `127.0.0.1:3000`. It is the right first
 example and the wrong thing to deploy. `deploy-agent` is the same agent with
 the four things a container platform requires, and nothing else.

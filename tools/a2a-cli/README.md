@@ -328,22 +328,25 @@ above exercises the same two.
 ## What building it found
 
 This tool uses only the client crate's public surface, which makes it a check
-of that surface from the outside. Two things it ran into, reported rather
-than worked around:
+of that surface from the outside. Three things it ran into, reported rather
+than worked around, and all three closed in the 0.12 batch on 2026-09-10:
 
-* **`hello-agent` serves no agent card.** It never calls `with_agent_card`,
-  so the JSON-RPC dispatcher answers `404 {"error":"agent card not
-  configured"}` at the well-known path. The "smallest complete agent" is
-  therefore undiscoverable, and the default (discovery) path of this tool
-  fails against it — `--binding jsonrpc` is the way in, and the error message
-  says so. The transcript shows both.
-* **`resolve_agent_card` takes no headers.** `--header` reaches every method
-  call through a `CallInterceptor`, but discovery has no such hook, so a card
-  behind authentication cannot be fetched with this tool's flags. The
-  agent-card fetch also has its own fixed 30-second budget, independent of
-  `--timeout`.
-* **The builder does not say which interface it chose.** `ClientBuilder::
-  from_card` picks one, but the choice is not readable, and gRPC and WebSocket
-  need different constructors (`build_grpc`, a custom transport), so the tool
-  re-implements the same preference rule to know which to call. A `chosen_
-  interface()` accessor on the builder would remove that duplication.
+* ~~**`hello-agent` serves no agent card.**~~ It never called
+  `with_agent_card`, so the JSON-RPC dispatcher answered `404 {"error":"agent
+  card not configured"}` at the well-known path and the default (discovery)
+  path of this tool failed against it; `--binding jsonrpc` was the way in.
+  **Closed:** it publishes a card built with `AgentCard::new`, and a test
+  resolves it. The transcript above still shows the `--binding` form, which
+  remains the way to skip discovery on purpose.
+* ~~**`resolve_agent_card` takes no headers.**~~ `--header` reached every
+  method call through a `CallInterceptor`, but discovery had no such hook,
+  and the fetch had its own fixed 30-second budget independent of
+  `--timeout`. **Closed:** `resolve_agent_card_with_options` takes a
+  `CardFetchOptions` with headers and a budget; `connect.rs` passes
+  `--header` and `--timeout` through it.
+* ~~**The builder does not say which interface it chose.**~~ `ClientBuilder::
+  from_card` picked one, but the choice was not readable, and gRPC and
+  WebSocket need different constructors (`build_grpc`, a custom transport),
+  so the tool re-implemented the preference rule to know which to call.
+  **Closed:** `ClientBuilder::chosen_interface()`; the local copy of the
+  rule is gone.

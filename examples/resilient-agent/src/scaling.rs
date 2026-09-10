@@ -294,12 +294,10 @@ mod postgres {
         caller: &str,
         counter: Option<Arc<PostgresRateLimitCounter>>,
     ) -> Result<String, String> {
-        let config = RateLimitConfig {
-            requests_per_window: LIMIT,
+        let config = RateLimitConfig::default()
+            .with_requests_per_window(LIMIT)
             // Wide enough that the window cannot roll mid-check.
-            window_secs: 300,
-            ..RateLimitConfig::default()
-        };
+            .with_window_secs(300);
         let mut limiter = RateLimitInterceptor::new(config).map_err(|e| format!("limiter: {e}"))?;
         if let Some(counter) = counter {
             limiter = limiter.with_shared_counter(counter);

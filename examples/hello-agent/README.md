@@ -3,7 +3,7 @@
 
 # hello-agent
 
-The smallest complete A2A agent: **23 lines of code**, one dependency, one file.
+The smallest complete A2A agent: **28 lines of code**, one dependency, one file.
 
 ```sh
 cargo run -p hello-agent
@@ -51,6 +51,20 @@ agent_executor!(HelloAgent, |ctx, queue| async {
 });
 ```
 
+It also publishes the card a client discovers it by:
+
+```rust
+fn card(url: &str) -> AgentCard {
+    AgentCard::new("hello-agent", "0.0.0", AgentInterface::jsonrpc(url))
+        .with_description("Greets whoever sends it a message")
+}
+```
+
+so `curl localhost:3000/.well-known/agent-card.json` — or `a2a card
+http://127.0.0.1:3000` from [`tools/a2a-cli`](../../tools/a2a-cli) — answers,
+and a client built from that card reaches the agent. `AgentCard::new` takes
+the three things the type cannot invent; the other twelve fields default.
+
 Three things carry the weight:
 
 - **`agent_executor!`** writes the trait implementation, including the
@@ -80,4 +94,5 @@ cargo test -p hello-agent
 ```
 
 The tests start the agent on an ephemeral port and drive it with a real client,
-including the empty-message case that exercises the `unwrap_or("world")` path.
+including the empty-message case that exercises the `unwrap_or("world")` path
+and a discovery round trip: resolve the card, build a client from it, greet.

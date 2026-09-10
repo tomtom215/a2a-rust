@@ -94,12 +94,13 @@ Prevent unbounded memory growth:
 use a2a_protocol_sdk::server::TaskStoreConfig;
 
 RequestHandlerBuilder::new(executor)
-    .with_task_store_config(TaskStoreConfig {
-        max_capacity: Some(100_000),
-        task_ttl: Some(Duration::from_secs(3600)),
-        eviction_interval: 64,
-        max_page_size: 1000,
-    })
+    .with_task_store_config(
+        TaskStoreConfig::default()
+            .with_max_capacity(Some(100_000))
+            .with_task_ttl(Some(Duration::from_secs(3600)))
+            .with_eviction_interval(64)
+            .with_max_page_size(1000),
+    )
     .build()
 ```
 
@@ -127,14 +128,14 @@ use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
 
 RequestHandlerBuilder::new(executor)
     .with_interceptor(
-        RateLimitInterceptor::new(RateLimitConfig {
-            requests_per_window: 100,
-            window_secs: 60,
-            // Set to the number of trusted reverse proxies so the client IP
-            // is taken from X-Forwarded-For; 0 (default) ignores the header.
-            trusted_proxy_hops: 1,
-            ..RateLimitConfig::default()
-        })
+        RateLimitInterceptor::new(
+            RateLimitConfig::default()
+                .with_requests_per_window(100)
+                .with_window_secs(60)
+                // Set to the number of trusted reverse proxies so the client
+                // IP is taken from X-Forwarded-For; 0 (default) ignores it.
+                .with_trusted_proxy_hops(1),
+        )
         .expect("valid rate limit config"),
     )
     .build()

@@ -22,7 +22,12 @@ use super::context::TenantContext;
 // ── TenantAwareInMemoryTaskStore ────────────────────────────────────────────
 
 /// Configuration for [`TenantAwareInMemoryTaskStore`].
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct TenantStoreConfig {
     /// Store configuration for every tenant without an override set via
     /// [`TenantAwareInMemoryTaskStore::with_tenant_override`].
@@ -61,6 +66,23 @@ impl Default for TenantStoreConfig {
             per_tenant: TaskStoreConfig::default(),
             max_tenants: 1000,
         }
+    }
+}
+
+impl TenantStoreConfig {
+    /// Sets the store configuration every tenant without an override gets.
+    #[must_use]
+    pub const fn with_per_tenant(mut self, config: TaskStoreConfig) -> Self {
+        self.per_tenant = config;
+        self
+    }
+
+    /// Sets the maximum number of tenants. See
+    /// [`max_tenants`](Self::max_tenants) before raising it.
+    #[must_use]
+    pub const fn with_max_tenants(mut self, max: usize) -> Self {
+        self.max_tenants = max;
+        self
     }
 }
 
@@ -107,10 +129,11 @@ pub struct TenantAwareInMemoryTaskStore {
     /// Per-tenant store configuration, overriding `config.per_tenant`.
     ///
     /// A private field on this struct rather than a public one on
-    /// [`TenantStoreConfig`], and the reason is worth stating: that config is
-    /// exhaustively constructible through its public fields, so adding one
-    /// breaks every struct literal downstream. This struct's fields are
-    /// already private, so it can grow without breaking anything.
+    /// [`TenantStoreConfig`], and the reason is worth stating: when this was
+    /// added that config was exhaustively constructible through its public
+    /// fields, so adding one broke every struct literal downstream. It is
+    /// `#[non_exhaustive]` since 0.12, and the field stays here because the
+    /// store, not the config, is what a caller hands an override to.
     overrides: HashMap<String, TaskStoreConfig>,
 }
 
@@ -152,18 +175,15 @@ impl TenantAwareInMemoryTaskStore {
     ///
     /// Every field of `TaskStoreConfig` is overridden, not just capacity — a
     /// tenant can be given its own TTL, eviction interval and page cap too. The
-    /// override replaces the whole config rather than merging, so build it from
-    /// `per_tenant` with `..` if you mean to change one field:
+    /// override replaces the whole config rather than merging, so start from
+    /// `per_tenant` (or the default) and set the one field you mean to change:
     ///
     /// ```rust
     /// use a2a_protocol_server::{TaskStoreConfig, TenantAwareInMemoryTaskStore};
     ///
     /// let store = TenantAwareInMemoryTaskStore::new().with_tenant_override(
     ///     "small-fry",
-    ///     TaskStoreConfig {
-    ///         max_capacity: Some(100),
-    ///         ..TaskStoreConfig::default()
-    ///     },
+    ///     TaskStoreConfig::default().with_max_capacity(Some(100)),
     /// );
     /// ```
     ///

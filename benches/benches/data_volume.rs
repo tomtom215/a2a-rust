@@ -182,11 +182,9 @@ fn bench_save_at_scale(c: &mut Criterion) {
     // variance from the B-tree data structure, not measurement noise. This is an
     // acceptable tradeoff: the BTreeSet enables O(page_size) pagination queries
     // vs O(n) full scans, which matters far more at production scale.
-    let no_eviction_config = TaskStoreConfig {
-        max_capacity: None,
-        task_ttl: None,
-        ..TaskStoreConfig::default()
-    };
+    let no_eviction_config = TaskStoreConfig::default()
+        .with_max_capacity(None)
+        .with_task_ttl(None);
 
     let pre_fill_levels: &[usize] = &[0, 1_000, 10_000, 50_000];
 
@@ -252,11 +250,9 @@ fn bench_store_with_history(c: &mut Criterion) {
 
     // Disable eviction so we measure pure insert performance with varying
     // history sizes, not amortized eviction overhead.
-    let no_eviction_config = TaskStoreConfig {
-        max_capacity: None,
-        task_ttl: None,
-        ..TaskStoreConfig::default()
-    };
+    let no_eviction_config = TaskStoreConfig::default()
+        .with_max_capacity(None)
+        .with_task_ttl(None);
 
     let turn_counts: &[usize] = &[1, 5, 10, 20, 50];
 

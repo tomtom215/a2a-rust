@@ -203,7 +203,13 @@ makes, and it is a materially stronger position than the document was stating.
    found are recorded in `tools/a2a-cli/README.md` under "What building it
    found": `hello-agent` serves no agent card, so discovery against the
    smallest example fails, and `resolve_agent_card` cannot send headers, so a
-   card behind authentication cannot be discovered with `--header`.
+   card behind authentication cannot be discovered with `--header`. **Both
+   closed later the same day (2026-09-10), in the 0.12 batch:** `hello-agent`
+   publishes a card and a test resolves it; `resolve_agent_card_with_options`
+   takes headers and a budget, and the CLI passes `--header` and `--timeout`
+   through it. A third finding from the same README — the builder did not
+   say which interface `from_card` chose — is closed by
+   `ClientBuilder::chosen_interface`.
 10. ~~**No durability, failure-injection or horizontal-scaling example.**~~
     **Closed 2026-09-10.** The hardening checks proved each store and the
     client retry layer in isolation; nothing showed an adopter what a restart,

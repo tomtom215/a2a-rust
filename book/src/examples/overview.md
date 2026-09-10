@@ -6,7 +6,7 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
-| [Hello Agent](./hello-agent.md) | **Smallest complete agent** — 35 lines, one dependency, no feature flags | None | Beginner |
+| [Hello Agent](./hello-agent.md) | **Smallest complete agent** — 37 lines, one dependency, no feature flags | None | Beginner |
 | [Incident-Response Team](./incident-response.md) | Multi-turn input-required, delegation, streaming, cancellation | None (optional local model) |
 | [Echo Agent](./echo-agent.md) | Minimal echo agent with JSON-RPC + REST servers and 6 client demos | None | Beginner |
 | [Agent Team](./agent-team.md) | 4-agent team with 81+ E2E tests exercising every SDK feature | None | Advanced |

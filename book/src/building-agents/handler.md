@@ -33,11 +33,11 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
     .with_agent_card(make_agent_card())
 
     // Task storage
-    .with_task_store_config(TaskStoreConfig {
-        task_ttl: Some(Duration::from_secs(3600)),  // 1 hour TTL
-        max_capacity: Some(10_000),                 // Max 10k tasks
-        ..Default::default()
-    })
+    .with_task_store_config(
+        TaskStoreConfig::default()
+            .with_task_ttl(Some(Duration::from_secs(3600))) // 1 hour TTL
+            .with_max_capacity(Some(10_000)),               // Max 10k tasks
+    )
 
     // Push notifications
     .with_push_sender(HttpPushSender::new())
@@ -142,11 +142,9 @@ The default `InMemoryTaskStore` supports TTL and capacity limits:
 use a2a_protocol_sdk::server::TaskStoreConfig;
 use std::time::Duration;
 
-let config = TaskStoreConfig {
-    task_ttl: Some(Duration::from_secs(3600)),  // Tasks expire after 1 hour
-    max_capacity: Some(50_000),                 // Keep at most 50k tasks
-    ..Default::default()
-};
+let config = TaskStoreConfig::default()
+    .with_task_ttl(Some(Duration::from_secs(3600))) // Tasks expire after 1 hour
+    .with_max_capacity(Some(50_000));               // Keep at most 50k tasks
 
 RequestHandlerBuilder::new(executor)
     .with_task_store_config(config)

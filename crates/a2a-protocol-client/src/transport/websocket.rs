@@ -167,7 +167,12 @@ struct WriteCommand {
 // ── WebSocketTransportConfig ─────────────────────────────────────────────────
 
 /// Configuration for [`WebSocketTransport::connect_with_config`].
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct WebSocketTransportConfig {
     /// Timeout for unary responses and for the first frame of a stream.
     /// Default: 30 seconds.

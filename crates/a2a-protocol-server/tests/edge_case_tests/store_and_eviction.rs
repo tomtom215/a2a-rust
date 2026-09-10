@@ -10,11 +10,9 @@ use super::*;
 
 #[tokio::test]
 async fn task_store_eviction_on_write() {
-    let config = TaskStoreConfig {
-        max_capacity: Some(2),
-        task_ttl: None,
-        ..Default::default()
-    };
+    let config = TaskStoreConfig::default()
+        .with_max_capacity(Some(2))
+        .with_task_ttl(None);
     let store = InMemoryTaskStore::with_config(config);
 
     // Write 3 tasks, first two completed
@@ -71,11 +69,11 @@ async fn utc_now_iso8601_format() {
 
 #[tokio::test]
 async fn task_store_background_eviction() {
-    let store = InMemoryTaskStore::with_config(TaskStoreConfig {
-        max_capacity: Some(100),
-        task_ttl: Some(Duration::from_millis(1)),
-        ..Default::default()
-    });
+    let store = InMemoryTaskStore::with_config(
+        TaskStoreConfig::default()
+            .with_max_capacity(Some(100))
+            .with_task_ttl(Some(Duration::from_millis(1))),
+    );
 
     // Insert a completed task
     let task = Task {

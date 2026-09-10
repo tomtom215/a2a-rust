@@ -1,6 +1,6 @@
 # Hello Agent
 
-The smallest complete A2A agent: 35 lines, one dependency, no feature flags.
+The smallest complete A2A agent: 37 lines, one dependency, no feature flags.
 
 ```bash
 cargo run -p hello-agent
@@ -29,13 +29,23 @@ agent_executor!(HelloAgent, |ctx, queue| async {
     Ok(())
 });
 
+/// The card a client discovers at `/.well-known/agent-card.json`.
+fn card(url: &str) -> AgentCard {
+    AgentCard::new("hello-agent", "0.0.0", AgentInterface::jsonrpc(url))
+        .with_description("Greets whoever sends it a message")
+}
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let url = "http://127.0.0.1:3000";
     let handler = std::sync::Arc::new(
-        RequestHandlerBuilder::new(HelloAgent).build().expect("build handler"),
+        RequestHandlerBuilder::new(HelloAgent)
+            .with_agent_card(card(url))
+            .build()
+            .expect("build handler"),
     );
 
-    println!("hello-agent listening on http://127.0.0.1:3000");
+    println!("hello-agent listening on {url}");
     serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await
 }
 ```
@@ -71,6 +81,7 @@ wrong parsing.
 | `ctx.message.text()` | The first text part, or `None`. Non-text parts are skipped, not treated as the end of the search — a message that leads with a file attachment still yields its text. |
 | `serve` | Binds a listener and runs the accept loop, replacing roughly 25 lines of hyper wiring. |
 | `RequestHandlerBuilder` | Everything the agent does not configure gets a default: an in-memory task store, no auth, no push notifications. |
+| `AgentCard::new` | The card, from the three things the type cannot invent — name, version, one interface. The other twelve fields default, and `with_agent_card` makes the dispatcher serve it at the well-known path, so `a2a card http://127.0.0.1:3000` and `ClientBuilder::from_card` work against this agent. |
 
 ## Two rules keep it small
 
@@ -89,8 +100,8 @@ wrong parsing.
 
 ## What it deliberately leaves out
 
-No agent card, no streaming, no push notifications, no auth, no persistence,
-and one binding out of four. Those are the subject of the other examples:
+No streaming, no push notifications, no auth, no persistence, and one
+binding out of four. Those are the subject of the other examples:
 
 - [Echo Agent](./echo-agent.md) — every method over every binding, with a
   coverage matrix that fails the run if a cell is missing.
@@ -100,7 +111,7 @@ and one binding out of four. Those are the subject of the other examples:
 
 ## Tests
 
-Three tests live under `#[cfg(test)]` in the same file. Each boots the agent on
+Four tests live under `#[cfg(test)]` in the same file. Each boots the agent on
 an ephemeral port and drives it through a real `A2aClient`:
 
 - `greets_the_caller_by_the_text_they_sent` — the positive control. Without it,
@@ -110,6 +121,10 @@ an ephemeral port and drives it through a real `A2aClient`:
 - `finds_text_that_follows_a_file_part` — a leading non-text part must not hide
   the text behind it. This is the seam `Message::text()` exists to get right,
   exercised through the real server rather than against the type alone.
+- `publishes_a_card_a_client_can_discover_and_connect_with` — `resolve_agent_card`
+  gets the card from the well-known path, `ClientBuilder::from_card` builds a
+  client from it, and that client is greeted — so the interface the card
+  advertises is the one the agent is listening on.
 
 ```bash
 cargo test -p hello-agent

@@ -158,11 +158,9 @@ async fn task_store_delete_removes_task() {
 
 #[tokio::test]
 async fn task_store_ttl_eviction_removes_expired_terminal_tasks() {
-    let config = TaskStoreConfig {
-        max_capacity: None,
-        task_ttl: Some(Duration::from_millis(50)),
-        ..Default::default()
-    };
+    let config = TaskStoreConfig::default()
+        .with_max_capacity(None)
+        .with_task_ttl(Some(Duration::from_millis(50)));
     let store = InMemoryTaskStore::with_config(config);
 
     // Save a completed task.
@@ -198,11 +196,9 @@ async fn task_store_ttl_eviction_removes_expired_terminal_tasks() {
 
 #[tokio::test]
 async fn task_store_ttl_eviction_spares_non_terminal_tasks() {
-    let config = TaskStoreConfig {
-        max_capacity: None,
-        task_ttl: Some(Duration::from_millis(50)),
-        ..Default::default()
-    };
+    let config = TaskStoreConfig::default()
+        .with_max_capacity(None)
+        .with_task_ttl(Some(Duration::from_millis(50)));
     let store = InMemoryTaskStore::with_config(config);
 
     // Save a working (non-terminal) task.
@@ -232,11 +228,9 @@ async fn task_store_ttl_eviction_spares_non_terminal_tasks() {
 
 #[tokio::test]
 async fn task_store_capacity_eviction_removes_oldest_terminal_tasks() {
-    let config = TaskStoreConfig {
-        max_capacity: Some(3),
-        task_ttl: None,
-        ..Default::default()
-    };
+    let config = TaskStoreConfig::default()
+        .with_max_capacity(Some(3))
+        .with_task_ttl(None);
     let store = InMemoryTaskStore::with_config(config);
 
     // Fill the store with terminal tasks.

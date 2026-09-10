@@ -59,7 +59,7 @@ pub mod server {
 /// - **ID newtypes**: `TaskId`, `ContextId`, `MessageId`, `ArtifactId`
 /// - **Params**: `MessageSendParams`, `TaskQueryParams`, `ListTasksParams`
 /// - **Responses**: `SendMessageResponse`, `TaskListResponse`
-/// - **Client**: `A2aClient`, `ClientBuilder`, `EventStream`
+/// - **Client**: `A2aClient`, `ClientBuilder`, `EventStream`, `resolve_agent_card`
 /// - **Server**: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`,
 ///   `RequestContext`, `EventQueueWriter`, `JsonRpcDispatcher`, `RestDispatcher`
 /// - **Executor ergonomics**: `agent_executor!`, `boxed_future`, `EventEmitter`
@@ -87,6 +87,7 @@ pub mod prelude {
     pub use a2a_protocol_client::{
         A2aClient, BearerAuthInterceptor, ClientBuilder, ClientError, ClientResult, EventStream,
         OAuth2ClientCredentials, RetryPolicy, StaticTokenProvider, TokenProvider,
+        resolve_agent_card,
     };
 
     // ── Server ───────────────────────────────────────────────────────────

@@ -228,7 +228,8 @@ are rustdoc's job.
 
 | Function | Description |
 |----------|-------------|
-| `resolve_agent_card(base_url)` | `async` — fetches the `AgentCard` from the standard well-known path |
+| `resolve_agent_card(base_url)` | `async` — fetches the `AgentCard` from the standard well-known path; no headers, 30 s budget |
+| `resolve_agent_card_with_options(base_url, &options)` | `async` — the same with the headers and budget in a `CardFetchOptions` (`discovery` module; `fetch_card_from_url_with_options` for an absolute URL) |
 
 ### Client Methods
 
@@ -475,6 +476,16 @@ MessageId::new("msg-789")
 AgentCapabilities::none()
     .with_streaming(true)
     .with_push_notifications(false)
+
+// Agent cards: the three fields `validate` requires, the rest by `with_*`
+AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+    .with_description("Does one thing well")
+    .with_skill(AgentSkill::new("echo", "Echo", "Repeats").with_tags(["text"]))
+    .with_interface(AgentInterface::grpc("http://localhost:50051"))
+    .with_streaming(true)               // one flag; with_capabilities(..) for the rest
+
+// Client-side: which interface `from_card` picked
+ClientBuilder::from_card(&card)?.chosen_interface()   // Option<&AgentInterface>
 
 // Push configs
 TaskPushNotificationConfig::new("task-id", "https://webhook.url")

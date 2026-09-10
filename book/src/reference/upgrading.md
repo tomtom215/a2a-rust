@@ -134,7 +134,8 @@ already carries a wildcard arm and a new variant does not break it.
 
 0.12.0 is the deliberate breaking minor before the two clean minors that
 STABILITY.md §7 requires, so every "this struct should have been
-`#[non_exhaustive]`" fix lands here rather than one per release. Five items.
+`#[non_exhaustive]`" fix lands here rather than one per release. Five items;
+the fourth is the one most code will meet.
 
 ### `HandlerLimits` gains two fields
 
@@ -165,9 +166,10 @@ let limits = HandlerLimits::default()
 # let _ = limits;
 ```
 
-A literal that ended in `..HandlerLimits::default()` was never broken by
-this. Hand the result to `RequestHandlerBuilder::with_handler_limits` as
-before.
+A literal that ended in `..HandlerLimits::default()` was not broken by the
+new fields — but it is by the fourth item below, which makes the struct
+`#[non_exhaustive]`; the setter form above is the one that survives both.
+Hand the result to `RequestHandlerBuilder::with_handler_limits` as before.
 
 ### `WebSocketTransportConfig` (client) gains `max_pending_requests`
 
@@ -209,22 +211,69 @@ fn describe(err: &ClientError) -> String {
 }
 ```
 
-### `GrpcTransportConfig` (client) is `#[non_exhaustive]`
+### Fifteen configuration structs are `#[non_exhaustive]`
 
-It gained `bare_address_scheme` and, under the `grpc-tls` feature,
-`tls_config`, and it will not gain a field at your expense again. A struct
-literal of any shape — including `..Default::default()` — is now an error
-outside the crate:
+Server: `HandlerLimits`, `DispatchConfig`, `CorsConfig`, `GrpcConfig`,
+`CacheConfig`, `PushRetryPolicy`, `RateLimitConfig`, `TaskStoreConfig`,
+`TenantStoreConfig`, `PerTenantConfig`, `TenantLimits`. Client:
+`ClientConfig`, `RetryPolicy`, `WebSocketTransportConfig`,
+`GrpcTransportConfig`. (`ServeConfig` already was; the wire types in
+`a2a-protocol-types` are deliberately not on the list — a literal is how the
+spec's data types are meant to be built.) None of them will gain a field at
+your expense again.
+
+The rule is the same for all fifteen: a struct literal of any shape —
+`..Default::default()` included — is an error outside the crate, and every
+public field has a `with_<field>` setter. Before:
 
 ```text
 // 0.11
-let config = GrpcTransportConfig {
-    timeout: Duration::from_secs(30),
-    ..Default::default()
-};
+let limiter = RateLimitInterceptor::new(RateLimitConfig {
+    requests_per_window: 100,
+    window_secs: 60,
+    ..RateLimitConfig::default()
+})?;
 ```
 
-Every field has a setter:
+After — start from `Default` (or the documented constructor:
+`CorsConfig::new`/`permissive`, `CacheConfig::with_max_age`) and chain the
+setters for the fields you set:
+
+```rust
+use a2a_protocol_server::{RateLimitConfig, RateLimitInterceptor};
+# fn example() -> Result<(), a2a_protocol_server::ServerError> {
+let limiter = RateLimitInterceptor::new(
+    RateLimitConfig::default()
+        .with_requests_per_window(100)
+        .with_window_secs(60),
+)?;
+# let _ = limiter;
+# Ok(())
+# }
+```
+
+Some setters did not exist before this release and were added for it, so a
+missing one is a 0.11 build, not a missing field: `RateLimitConfig`'s four,
+`TaskStoreConfig`'s four (`with_max_capacity`, `with_task_ttl`,
+`with_eviction_interval`, `with_max_page_size`), `CorsConfig`'s four,
+`TenantStoreConfig::with_per_tenant`/`with_max_tenants`,
+`PerTenantConfig::with_default`/`with_overrides`/`with_override`,
+`TenantLimits::with_*` for each of its fields (its `builder()` still works),
+`DispatchConfig::with_require_version_header`, and ten on `ClientConfig`.
+The setters for `Option` fields take the `Option`, so `None` is spelled
+where the literal spelled it:
+
+```rust
+use a2a_protocol_server::TaskStoreConfig;
+
+let no_ttl = TaskStoreConfig::default()
+    .with_max_capacity(Some(50_000))
+    .with_task_ttl(None);
+# let _ = no_ttl;
+```
+
+`GrpcTransportConfig` also gained `bare_address_scheme` and, under the
+`grpc-tls` feature, `tls_config`; every field has a setter there too:
 
 ```rust
 use std::time::Duration;
@@ -240,9 +289,8 @@ let config = GrpcTransportConfig::default()
 # let _ = config;
 ```
 
-`with_tls_config(tonic::transport::ClientTlsConfig)` is the sixth setter,
-behind `grpc-tls`. No code in this repository, its examples or its bindings
-built the struct literally, so the changelog expects this to bite rarely.
+`with_tls_config(tonic::transport::ClientTlsConfig)` is its sixth setter,
+behind `grpc-tls`.
 
 ### `InMemoryQueueWriter` (server) is no longer `UnwindSafe` / `RefUnwindSafe`
 
@@ -365,10 +413,7 @@ use a2a_protocol_server::{TaskStoreConfig, TenantAwareInMemoryTaskStore};
 
 let store = TenantAwareInMemoryTaskStore::new().with_tenant_override(
     "acme",
-    TaskStoreConfig {
-        max_capacity: Some(500),
-        ..TaskStoreConfig::default()
-    },
+    TaskStoreConfig::default().with_max_capacity(Some(500)),
 );
 # let _ = store;
 ```

@@ -158,7 +158,12 @@ const DEFAULT_DNS_LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::fro
 ///         std::time::Duration::from_secs(4),
 ///     ]);
 /// ```
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct PushRetryPolicy {
     /// Maximum number of delivery attempts before giving up. Default: 3.
     pub max_attempts: usize,

@@ -105,7 +105,12 @@ use std::time::Duration;
 /// Every field here is enforced. See the [module documentation](self) for
 /// where each one is applied, and for the one limit that is not on this
 /// struct.
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TenantLimits {
     /// Maximum tasks this tenant may have executing at once. `None` =
     /// unlimited.
@@ -189,6 +194,49 @@ impl TenantLimits {
     pub fn builder() -> TenantLimitsBuilder {
         TenantLimitsBuilder::default()
     }
+
+    /// Sets the maximum concurrent tasks; `None` is unlimited.
+    #[must_use]
+    pub const fn with_max_concurrent_tasks(mut self, n: Option<usize>) -> Self {
+        self.max_concurrent_tasks = n;
+        self
+    }
+
+    /// Sets the executor timeout; `None` uses the handler's own.
+    #[must_use]
+    pub const fn with_executor_timeout(mut self, d: Option<Duration>) -> Self {
+        self.executor_timeout = d;
+        self
+    }
+
+    /// Sets the event queue capacity per stream; `None` uses the handler's own.
+    #[must_use]
+    pub const fn with_event_queue_capacity(mut self, n: Option<usize>) -> Self {
+        self.event_queue_capacity = n;
+        self
+    }
+
+    /// Sets the maximum stored tasks. **Deprecated and not enforced** — see
+    /// [`TenantLimits::max_stored_tasks`].
+    #[must_use]
+    #[deprecated(
+        since = "0.12.0",
+        note = "never enforced; use TenantAwareInMemoryTaskStore::with_tenant_override \
+                to give a tenant its own TaskStoreConfig::max_capacity"
+    )]
+    #[allow(deprecated)]
+    pub const fn with_max_stored_tasks(mut self, n: Option<usize>) -> Self {
+        self.max_stored_tasks = n;
+        self
+    }
+
+    /// Sets the tenant-wide rate limit in requests per second; `None` is no
+    /// tenant-level limit.
+    #[must_use]
+    pub const fn with_rate_limit_rps(mut self, rps: Option<u32>) -> Self {
+        self.rate_limit_rps = rps;
+        self
+    }
 }
 
 /// Builder for [`TenantLimits`].
@@ -268,7 +316,12 @@ impl TenantLimitsBuilder {
 ///
 /// Resolution is the whole of what this type does; nothing in the request path
 /// enforces what it resolves. See the [module documentation](self).
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct PerTenantConfig {
     /// Default configuration for tenants without specific overrides.
     pub default: TenantLimits,
@@ -286,6 +339,28 @@ impl PerTenantConfig {
     #[must_use]
     pub fn builder() -> PerTenantConfigBuilder {
         PerTenantConfigBuilder::default()
+    }
+
+    /// Sets the limits applied to every tenant without an override.
+    #[must_use]
+    pub const fn with_default(mut self, limits: TenantLimits) -> Self {
+        self.default = limits;
+        self
+    }
+
+    /// Replaces the per-tenant overrides. [`with_override`](Self::with_override)
+    /// adds one.
+    #[must_use]
+    pub fn with_overrides(mut self, overrides: HashMap<String, TenantLimits>) -> Self {
+        self.overrides = overrides;
+        self
+    }
+
+    /// Adds a per-tenant override.
+    #[must_use]
+    pub fn with_override(mut self, tenant_id: impl Into<String>, limits: TenantLimits) -> Self {
+        self.overrides.insert(tenant_id.into(), limits);
+        self
     }
 
     /// Returns the effective limits for the given tenant.

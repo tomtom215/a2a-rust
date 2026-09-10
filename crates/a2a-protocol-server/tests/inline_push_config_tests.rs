@@ -251,10 +251,7 @@ async fn inline_config_respects_the_per_task_quota() {
     let handler = RequestHandlerBuilder::new(NoopExecutor)
         .with_agent_card(push_card())
         .with_push_sender(HttpPushSender::new().allow_private_urls())
-        .with_handler_limits(HandlerLimits {
-            max_push_configs_per_task: 1,
-            ..Default::default()
-        })
+        .with_handler_limits(HandlerLimits::default().with_max_push_configs_per_task(1))
         .build()
         .expect("handler must build");
 

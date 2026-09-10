@@ -287,6 +287,44 @@ certificate under a live connection; everything runs on one machine, so real
 network loss, latency and NAT are untested; and static-token identity is
 supported via `with_identity` but has no test.
 
+## 0.12 — what the release branch closed, and what it opened — **2026-09-10**
+
+Landed on the branch that prepares 0.12.0, each verified as its commit
+message states:
+
+| Item | Where |
+|---|---|
+| Every dependency refreshed (both lockfiles, opentelemetry 0.32, tokio-tungstenite 0.30, rig-core 0.42); genai held at 0.5 because 0.6+ pulls the unmaintained `paste` | `deny.toml`, `CHANGELOG.md` |
+| The three proved-equivalent mutants carry `#[mutants::skip]`; the sweep's two files grade 38 mutants, 0 missed | ADR 0006 |
+| cargo-semver-checks on all four crates with all features; `dtolnay/rust-toolchain` pinned by SHA with an explicit toolchain on all 32 uses | `ci.yml` |
+| Gates B13 (reachability), B14 (timeout nesting), B21 (inert knobs), the reverse API-reference check, the weekly codecov-ignore check; DCO on pushes to `main` and over the benchmark bot's own commit | `scripts/`, `dco.yml`, `benchmarks.yml`, `coverage.yml` |
+| The four client "budget applied twice" defects B14 found, fixed with one deadline each; the blocking path reports every push outcome | `crates/a2a-protocol-client`, `sync_collector.rs` |
+| SLIMRPC binding under coverage, packaged with verification, a runnable example, a Backpressure section, a bounded slow-consumer stall | `bindings/a2a-protocol-slimrpc` |
+| Adoption edges: `tools/a2a-cli` (unpublished), a Rust worker in `multi-lang-team`, `examples/resilient-agent`, `book/src/reference/upgrading.md` | those paths |
+| `HandlerLimits::push_delivery_budget`, `executor_drain_timeout`; `WebSocketTransportConfig::max_pending_requests`; `GrpcDispatcher::with_max_connections`; DNS lookup timeout in `HttpPushSender` | `CHANGELOG.md` |
+
+Opened by that work — measured, not fixed, and each is a maintainer's call:
+
+* **An executor's error text does not reach a blocking caller.** The
+  `Failed` status event carries `metadata.error`, but `sync_collector.rs`
+  copies only `status.message` onto the task, so `SendMessage` returns a
+  `Failed` task with no message and no metadata; only streaming callers see
+  the text (`examples/resilient-agent`, Act 2). The send-path split below is
+  where this is fixed, since it is the same function.
+* **No executor resumes after a restart.** A task cut off mid-stream is
+  persisted as far as it got and stays `Working` on the new handler forever
+  (`examples/resilient-agent`, Act 1). Reconciliation of in-flight tasks at
+  start-up is a design, not a patch; recorded, not scheduled.
+* **The SLIMRPC agent side cannot see a client abandon a stream.** SLIMRPC
+  has no cancel frame, so after the client's bounded stall the agent keeps
+  publishing to completion. Upstream (`agntcy-slim-rpc`), stated in the
+  binding's README.
+* **`examples/resilient-agent`** reports `[NOT RUN]` for its PostgreSQL acts
+  when `A2A_TEST_POSTGRES_URL` is unset and still exits 0, exactly as
+  `incident-response` does; `RESILIENT_REQUIRE_ALL=1` turns that into exit 4.
+  CI does not yet run it with a database — `example-surface` runs the older
+  examples only.
+
 ## Verification debt
 
 Work where the project's own gates do not yet measure what they claim to.

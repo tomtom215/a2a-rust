@@ -332,11 +332,9 @@ fn bench_artifact_accumulation(c: &mut Criterion) {
 
     // Also measure task_store.save() with accumulated artifacts to capture
     // the full per-event cost (clone + index + HashMap insert).
-    let no_eviction = TaskStoreConfig {
-        max_capacity: None,
-        task_ttl: None,
-        ..TaskStoreConfig::default()
-    };
+    let no_eviction = TaskStoreConfig::default()
+        .with_max_capacity(None)
+        .with_task_ttl(None);
 
     for &n in artifact_counts {
         let mut task = fixtures::completed_task(0);

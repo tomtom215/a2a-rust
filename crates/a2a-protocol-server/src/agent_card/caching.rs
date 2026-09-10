@@ -161,7 +161,13 @@ fn etag_matches(header_value: &str, current: &str) -> bool {
 // ── Cache-Control config ─────────────────────────────────────────────────────
 
 /// Configuration for `Cache-Control` headers on agent card responses.
+///
+/// `#[non_exhaustive]`: build it with [`Default`] or
+/// [`CacheConfig::with_max_age`], which cover every field; a struct literal
+/// is not available outside this crate, so a field added later does not
+/// break callers.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub struct CacheConfig {
     /// `max-age` value in seconds.
     pub max_age: u32,

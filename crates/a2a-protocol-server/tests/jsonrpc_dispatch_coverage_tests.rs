@@ -1121,10 +1121,7 @@ fn with_config_constructor() {
     use a2a_protocol_server::dispatch::DispatchConfig;
 
     let handler = Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap());
-    let config = DispatchConfig {
-        max_request_body_size: 1024,
-        ..DispatchConfig::default()
-    };
+    let config = DispatchConfig::default().with_max_request_body_size(1024);
     let dispatcher = JsonRpcDispatcher::with_config(handler, config);
     let debug_str = format!("{:?}", dispatcher);
     assert!(debug_str.contains("JsonRpcDispatcher"));

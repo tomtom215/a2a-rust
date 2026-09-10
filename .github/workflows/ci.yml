@@ -881,3 +881,13 @@ jobs:
         run: cargo run -p rig-a2a-agent --release
       - name: multi-lang-team — coordinator surface over every binding
         run: cargo run -p multi-lang-team --release
+      # Durability over a SQLite restart, failure injection, and two replicas
+      # over the job's PostgreSQL service. `RESILIENT_REQUIRE_ALL` turns the
+      # example's honest `[NOT RUN]` into exit 4, for the same reason
+      # `INCIDENT_REQUIRE_ALL` does above: here the database is present, so
+      # an act that did not run is a failure, not a skip.
+      - name: resilient-agent — durability, failure injection, scaling against the live database
+        run: cargo run -p resilient-agent --release --all-features
+        env:
+          A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+          RESILIENT_REQUIRE_ALL: "1"

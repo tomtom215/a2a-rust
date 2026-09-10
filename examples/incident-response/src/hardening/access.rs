@@ -189,11 +189,11 @@ pub(super) async fn rate_limiting() -> Check {
     const ATTEMPTS: u64 = LIMIT + 2;
 
     let (listener, url) = bind().await;
-    let limiter = match RateLimitInterceptor::new(RateLimitConfig {
-        requests_per_window: LIMIT,
-        window_secs: 60,
-        ..Default::default()
-    }) {
+    let limiter = match RateLimitInterceptor::new(
+        RateLimitConfig::default()
+            .with_requests_per_window(LIMIT)
+            .with_window_secs(60),
+    ) {
         Ok(limiter) => limiter,
         Err(e) => return Check::fail(LABEL, format!("building the limiter: {e}")),
     };

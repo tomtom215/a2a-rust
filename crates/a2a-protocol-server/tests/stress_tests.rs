@@ -344,10 +344,7 @@ async fn task_store_eviction_under_load() {
     use a2a_protocol_types::params::ListTasksParams;
     use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
-    let config = TaskStoreConfig {
-        max_capacity: Some(50),
-        ..Default::default()
-    };
+    let config = TaskStoreConfig::default().with_max_capacity(Some(50));
     let store = InMemoryTaskStore::with_config(config);
 
     // Insert 200 tasks — should trigger eviction.

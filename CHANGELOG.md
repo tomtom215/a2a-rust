@@ -16,17 +16,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   breaks.** `HandlerLimits` gains `push_delivery_budget` and
   `executor_drain_timeout`; `WebSocketTransportConfig` (client) gains
   `max_pending_requests`. Code that built either as a struct literal must
-  add the fields or use `Default::default()` and the `with_*` setters. This
-  release is the deliberate breaking minor before the two clean minors
-  `STABILITY.md` §7 requires, so every such future-proofing change lands here
-  rather than one per release.
+  use `Default::default()` and the `with_*` setters — both structs are also
+  `#[non_exhaustive]` from this release (next entry), so adding the fields
+  to the literal is not the fix. This release is the deliberate breaking
+  minor before the two clean minors `STABILITY.md` §7 requires, so every such
+  future-proofing change lands here rather than one per release.
+- **Fifteen public configuration structs are `#[non_exhaustive]`**, so the
+  next field any of them gains is an addition rather than a break. Server:
+  `HandlerLimits`, `DispatchConfig`, `CorsConfig`, `GrpcConfig`,
+  `CacheConfig`, `PushRetryPolicy`, `RateLimitConfig`, `TaskStoreConfig`,
+  `TenantStoreConfig`, `PerTenantConfig`, `TenantLimits`. Client:
+  `ClientConfig`, `RetryPolicy`, `WebSocketTransportConfig`,
+  `GrpcTransportConfig`. (`ServeConfig` already was.) The wire types in
+  `a2a-protocol-types` are deliberately not included: they are the spec's
+  data types and a literal is their intended construction. **Migration:**
+  a struct literal of any shape, `..Default::default()` included, stops
+  compiling outside the crate; build the value with `Default` (or the
+  documented constructor — `CorsConfig::new`/`permissive`,
+  `CacheConfig::with_max_age`) and chain the `with_<field>` setter for each
+  field you set. Every public field on every struct in the list now has one;
+  the ones added for this are `DispatchConfig::with_require_version_header`,
+  `CorsConfig::with_allow_origin`/`with_allow_methods`/`with_allow_headers`/
+  `with_max_age_secs`, `RateLimitConfig::with_requests_per_window`/
+  `with_window_secs`/`with_trusted_proxy_hops`/`with_max_buckets`,
+  `TaskStoreConfig::with_max_capacity`/`with_task_ttl`/
+  `with_eviction_interval`/`with_max_page_size`,
+  `TenantStoreConfig::with_per_tenant`/`with_max_tenants`,
+  `PerTenantConfig::with_default`/`with_overrides`/`with_override`,
+  `TenantLimits::with_max_concurrent_tasks`/`with_executor_timeout`/
+  `with_event_queue_capacity`/`with_rate_limit_rps` (and a deprecated
+  `with_max_stored_tasks`, matching the field), and ten on `ClientConfig`
+  (`with_preferred_bindings`, `with_accepted_output_modes`,
+  `with_history_length`, `with_return_immediately`, `with_request_timeout`,
+  `with_stream_connect_timeout`, `with_connection_timeout`,
+  `with_max_response_size`, `with_tls`, `with_tenant`). The upgrading guide
+  has a before/after. `STABILITY.md` §4 no longer carries the "still
+  exhaustive as of 0.11" exception.
 - **`ClientError` gains `TooManyPendingRequests { limit }`.** The enum is
   `#[non_exhaustive]`, so exhaustive matches already carried a wildcard.
-- **`GrpcTransportConfig` is `#[non_exhaustive]`** (client). Code that built
-  it as a struct literal must use `GrpcTransportConfig::default()` and the
-  `with_*` setters, which cover every field. Listed under Changed below with
-  the fields it gained; repeated here because `cargo-semver-checks` grades
-  it a major change and this heading is where STABILITY.md says those go.
+- **`GrpcTransportConfig` is `#[non_exhaustive]`** (client) — one of the
+  fifteen above, listed on its own because it also gained fields
+  (`bare_address_scheme`, `tls_config`; under Changed below) and because
+  `cargo-semver-checks` grades the attribute a major change and this heading
+  is where STABILITY.md says those go.
 - **`InMemoryQueueWriter` is no longer `UnwindSafe` or `RefUnwindSafe`**
   (server). It now holds the `Arc<dyn Metrics>` it reports dropped events
   through, and a trait object without those bounds removes the auto-impls.
@@ -35,6 +67,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`AgentCard::with_streaming(bool)`** (types): the one capability nearly
+  every card sets, without a `with_capabilities(AgentCapabilities::none()
+  .with_streaming(true))` of its own. With it, `AgentCard::new(name, version,
+  interface)` and the `with_*` methods from 0.10 are enough to write every
+  card in this repository's examples: `examples/multi-lang-team`'s
+  `make_worker_card` is now eleven lines instead of a thirty-line literal,
+  and **`examples/hello-agent` publishes a card** — it had none, so the
+  "smallest complete agent" answered `404` at
+  `/.well-known/agent-card.json` and the CLI's discovery path could not
+  reach it (found building `tools/a2a-cli`). A fourth test resolves the card
+  and greets the agent through a client built from it. `resolve_agent_card`
+  is in `a2a_protocol_sdk::prelude` so that test, like the agent, needs no
+  fully-qualified path.
+- **`CardFetchOptions`, `resolve_agent_card_with_options` and
+  `fetch_card_from_url_with_options`** (client, `discovery`): headers and a
+  budget for the agent-card fetch. `resolve_agent_card` and
+  `fetch_card_from_url` sent no headers and allowed a fixed 30 seconds, so a
+  card behind authentication could not be fetched and the budget could not
+  be shortened; both now delegate to the `_with_options` variant with
+  `CardFetchOptions::default()`, which is those same values. Tests: a server
+  that answers `401` without an `Authorization` header refuses the plain
+  call and admits the options one; a server that sends headers at two thirds
+  of a 600 ms budget and then stalls fails at one budget, not two. The CLI's
+  discovery now carries `--header` and is bounded by `--timeout`.
+- **`ClientBuilder::chosen_interface()`** (client): the card interface
+  `from_card` picked — the first the caller prefers, else the card's first,
+  and following `with_protocol_binding` when that moves the endpoint —
+  as `Option<&AgentInterface>`, `None` for a builder from `ClientBuilder::new`
+  or after switching to a binding the card does not advertise. gRPC and
+  WebSocket need constructors other than `build()`, so a caller that has to
+  choose one no longer re-implements the preference rule to learn which; the
+  CLI's `connect.rs` had, and now reads it here.
+- **`tools/a2a-cli`** (unpublished, built from the repository): `a2a
+  card|send|stream|task get|cancel|list` over `a2a-protocol-client`, with
+  `--binding`, `--timeout`, `--header`, `--tenant` and `--grpc-plaintext`;
+  exit 0/1/2; eleven end-to-end tests against an in-process server. It
+  is the first client written against the SDK from outside, and the three
+  API gaps it hit are the `CardFetchOptions`, `chosen_interface` and
+  `with_streaming` entries above.
+- **`examples/resilient-agent`**: durability over a SQLite handler restart,
+  failure injection (an executor failing its first N attempts, a webhook
+  refusing its first M deliveries, a client retrying transport faults), and
+  two replicas over a shared PostgreSQL store and rate-limit counter — each
+  act measured and reported, with `[NOT RUN]` when the database is absent
+  and `RESILIENT_REQUIRE_ALL=1` to make that exit 4. Runs in CI's
+  `example-surface` job against its PostgreSQL service.
+- **A Rust worker in `examples/multi-lang-team`** (`--bin rust-worker`,
+  port 9104), so the example shows the worker side of the SDK next to the
+  coordinator; the coordinator's demo now prints the fan-out artifact.
+- **`book/src/reference/upgrading.md`**: one section per breaking boundary
+  from 0.7 to 0.12 with compiling "after" snippets, and how to read a
+  release's breaking section under STABILITY.md.
+- **SLIMRPC binding**: `SlimRpcTransportBuilder::with_slow_consumer_timeout`
+  (default 30 s) — a unicast stream whose consumer reads nothing for that
+  long is abandoned with one final `ClientError::Timeout` instead of the
+  process buffering the agent's frames without bound in the upstream
+  per-call channel; a runnable `examples/in_process.rs`; the binding's
+  tests under `coverage.yml` (measured 65.61% line coverage on
+  2026-09-10); packaging verified through a config-level `[patch]` of the
+  SDK pins rather than `--no-verify`; a README "Backpressure" section with
+  file:line evidence for every path.
 - **Four CI gates that the review backlog called for**, each proved able
   to fail by `scripts/prove_gates_fail.sh` injections:
   `check_gate_reachability.py` (every gate runs on the events that can
@@ -84,6 +177,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **One deadline per token request and per stream start** (client).
+  `OAuth2ClientCredentials::refresh` and `discover_token_endpoint` read the
+  body under a second full request timeout after the headers had spent
+  most of one, and the JSON-RPC and REST streaming transports read a
+  failed stream start's error body under a second full
+  `stream_connect_timeout`: a server that answered late and then stalled
+  held the caller for close to twice the documented bound. Found by
+  `scripts/check_timeout_nesting.py`; each path now takes one deadline for
+  headers and body, with a regression test that fails against the old
+  code (1.0 s against a 600 ms bound).
+- **The blocking path reports every push outcome** (server). Push
+  deliveries made for a blocking `SendMessage` reported nothing but trace
+  lines, which a default build compiles away; they now report
+  `delivered`, `failed`, `timeout`/`timeout_truncated` and `skipped`
+  through `Metrics::on_push_delivery` exactly as the background path does.
+- **DCO ran on pull requests only.** A commit reaching `main` by a direct
+  push, a merge made outside a pull request, or a workflow's own push was
+  never graded; `dco.yml` now runs on pushes to `main` too, and
+  `benchmarks.yml` grades its own commit before pushing it (see the
+  `scripts/check_dco.sh` entry above).
 - **`Arc<T>` forwards every `Metrics` hook.** The blanket impl for `Arc<T>`
   forwarded six of the eight methods and defaulted `on_persistence_error` and
   `on_push_delivery` to no-ops, so a handler built with an `Arc<dyn Metrics>`

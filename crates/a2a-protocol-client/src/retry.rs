@@ -81,7 +81,12 @@ use crate::transport::Transport;
 /// `PushSender::max_delivery_duration`, which exists because the server needed
 /// to *budget* against it. A client has no equivalent because nothing else in
 /// the process needs the number — only the person calling does.)
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct RetryPolicy {
     /// Maximum number of retry attempts (not counting the initial attempt).
     pub max_retries: u32,

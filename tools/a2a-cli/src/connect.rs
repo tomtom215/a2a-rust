@@ -7,20 +7,21 @@
 //!
 //! This is the part of the tool that an application author would otherwise
 //! write by hand, so it deliberately uses only the library's public surface:
-//! [`resolve_agent_card`], [`ClientBuilder::from_card`], the binding
-//! constants, a [`CallInterceptor`] for headers, and the per-transport
-//! constructors the builder cannot drive itself (WebSocket).
+//! [`resolve_agent_card_with_options`], [`ClientBuilder::from_card`] and
+//! [`ClientBuilder::chosen_interface`], the binding constants, a
+//! [`CallInterceptor`] for headers, and the per-transport constructors the
+//! builder cannot drive itself (WebSocket).
 
 use std::collections::HashMap;
 use std::time::Duration;
 
-use a2a_protocol_client::config::{BINDING_GRPC, BINDING_JSONRPC};
+use a2a_protocol_client::config::BINDING_GRPC;
+use a2a_protocol_client::discovery::{CardFetchOptions, resolve_agent_card_with_options};
 use a2a_protocol_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
 use a2a_protocol_client::{
     A2aClient, ClientBuilder, ClientResult, GrpcBareAddressScheme, WebSocketTransport,
-    WebSocketTransportConfig, resolve_agent_card,
+    WebSocketTransportConfig,
 };
-use a2a_protocol_types::{AgentCard, AgentInterface};
 
 use crate::cli::GlobalOpts;
 use crate::error::CliError;
@@ -57,17 +58,6 @@ impl CallInterceptor for HeaderInterceptor {
     }
 }
 
-/// The interface [`ClientBuilder::from_card`] would pick: the first the
-/// client prefers (`JSONRPC`, per `ClientConfig::default`), else the card's
-/// first. Mirrored here because the builder does not expose its choice, and
-/// this tool needs it to know which constructor to call.
-fn chosen_interface(card: &AgentCard) -> Option<&AgentInterface> {
-    card.supported_interfaces
-        .iter()
-        .find(|i| i.protocol_binding.eq_ignore_ascii_case(BINDING_JSONRPC))
-        .or_else(|| card.supported_interfaces.first())
-}
-
 /// Where a client will connect and how, resolved from the flags.
 struct Target {
     /// The endpoint for the binding — the card's URL for it, or `<URL>` as
@@ -79,8 +69,20 @@ struct Target {
     builder: ClientBuilder,
 }
 
+/// The `--header` values as a map.
+fn header_map(opts: &GlobalOpts) -> HashMap<String, String> {
+    opts.headers
+        .iter()
+        .map(|h| (h.name.clone(), h.value.clone()))
+        .collect()
+}
+
 /// Resolves the target: discovery when `--binding` is absent, the URL as
 /// given otherwise.
+///
+/// Discovery carries `--header` and is bounded by `--timeout`, like every
+/// call after it: a card behind authentication is reachable, and a stalled
+/// card endpoint fails inside the budget the caller set.
 async fn resolve_target(url: &str, opts: &GlobalOpts) -> Result<Target, CliError> {
     if let Some(binding) = opts.binding {
         return Ok(Target {
@@ -90,22 +92,26 @@ async fn resolve_target(url: &str, opts: &GlobalOpts) -> Result<Target, CliError
         });
     }
 
-    let card = resolve_agent_card(url)
+    let options = CardFetchOptions::default()
+        .with_headers(header_map(opts))
+        .with_timeout(Duration::from_secs(opts.timeout));
+    let card = resolve_agent_card_with_options(url, &options)
         .await
         .map_err(|source| CliError::Discovery {
             url: url.to_owned(),
             source,
         })?;
-    let iface = chosen_interface(&card).ok_or_else(|| {
+    // `from_card` applies the client's binding preference (`JSONRPC` when the
+    // card offers it, else the card's first interface) and moves endpoint and
+    // tenant to that interface as a pair; `chosen_interface` reports which,
+    // so this tool knows which constructor to call without re-deriving it.
+    let builder = ClientBuilder::from_card(&card)?;
+    let iface = builder.chosen_interface().ok_or_else(|| {
         CliError::Client(a2a_protocol_client::ClientError::InvalidEndpoint(format!(
             "agent card at {url} advertises no interfaces"
         )))
     })?;
     let (endpoint, binding) = (iface.url.clone(), iface.protocol_binding.clone());
-    // `from_card` then `with_protocol_binding` is the documented way to land
-    // on a specific interface of a card: the second call moves the endpoint
-    // and tenant to that interface as a pair.
-    let builder = ClientBuilder::from_card(&card)?.with_protocol_binding(&binding);
     Ok(Target {
         endpoint,
         binding,
@@ -127,11 +133,7 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
     } = resolve_target(url, opts).await?;
 
     let timeout = Duration::from_secs(opts.timeout);
-    let headers: HashMap<String, String> = opts
-        .headers
-        .iter()
-        .map(|h| (h.name.clone(), h.value.clone()))
-        .collect();
+    let headers = header_map(opts);
 
     let mut builder = builder
         .with_timeout(timeout)
@@ -171,48 +173,36 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
 mod tests {
     use super::*;
     use crate::cli::Binding;
-    use a2a_protocol_types::AgentCapabilities;
+    use a2a_protocol_types::{AgentCard, AgentInterface};
 
-    fn card(interfaces: Vec<AgentInterface>) -> AgentCard {
-        AgentCard {
-            url: None,
-            name: "t".into(),
-            version: "1".into(),
-            description: String::new(),
-            supported_interfaces: interfaces,
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            signatures: None,
-        }
+    /// A card with `first` and then `second`; `new` needs one interface and
+    /// `with_interface` appends, which keeps the order the test relies on.
+    fn card(first: AgentInterface, second: AgentInterface) -> AgentCard {
+        AgentCard::new("t", "1", first).with_interface(second)
     }
 
-    /// The default must be what `--help` says it is: JSONRPC when offered,
-    /// even when the card lists it second.
+    /// What the library reports as chosen is what `--help` says the default
+    /// is: JSONRPC when offered, even when the card lists it second. This
+    /// pins the tool's reading of the builder, not the builder's rule — that
+    /// is tested where it lives.
     #[test]
     fn prefers_jsonrpc_wherever_the_card_lists_it() {
-        let c = card(vec![
+        let c = card(
             AgentInterface::rest("http://r"),
             AgentInterface::jsonrpc("http://j"),
-        ]);
-        let i = chosen_interface(&c).expect("some");
-        assert_eq!(i.url, "http://j");
+        );
+        let b = ClientBuilder::from_card(&c).expect("card has interfaces");
+        assert_eq!(b.chosen_interface().expect("some").url, "http://j");
     }
 
     #[test]
     fn falls_back_to_the_cards_first_interface() {
-        let c = card(vec![
+        let c = card(
             AgentInterface::grpc("g:1"),
             AgentInterface::rest("http://r"),
-        ]);
-        assert_eq!(chosen_interface(&c).expect("some").url, "g:1");
-        assert!(chosen_interface(&card(vec![])).is_none());
+        );
+        let b = ClientBuilder::from_card(&c).expect("card has interfaces");
+        assert_eq!(b.chosen_interface().expect("some").url, "g:1");
     }
 
     #[test]
