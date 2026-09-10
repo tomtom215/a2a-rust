@@ -61,7 +61,8 @@ CI if upstream gains a specification nobody here has triaged.
 The target has since moved further. On 2026-09-03 the branch that held
 `spec/v1/slimrpc-collaborative-channel.md` (`feat/slimrpc-collaborative-channel`)
 replaced it with `spec/v1/slimrpc-broadcast-live.md` (and on 2026-09-10 split
-its transport-independent half into `spec/v1/a2a-broadcast-live.md`), a different design: a
+its transport-independent half into `spec/v1/a2a-broadcast-live.md`, with the
+`spec/v1/a2a-shared-task.md` extension it builds on), a different design: a
 broadcast routing mode for A2A 1.1's `SendLiveMessage` (its §3 requires A2A 1.1
 and that method), which no released A2A specification defines. The official
 crate, at 0.2.7 on `a2a-rs` `main`, still ships `Collaborate` against the
