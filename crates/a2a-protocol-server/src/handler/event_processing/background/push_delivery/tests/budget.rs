@@ -221,3 +221,35 @@ async fn a_sender_that_wants_exactly_the_bound_is_not_reported_as_truncated() {
         "a schedule equal to the bound was not cut short by it"
     );
 }
+
+/// The per-event budget is `HandlerLimits::push_delivery_budget`, not a
+/// literal: doubling it doubles the configs a slow estate reaches. Kills the
+/// mutant that replaces the field read with the old constant.
+#[tokio::test(start_paused = true)]
+async fn a_raised_budget_reaches_more_configs() {
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let task_id = TaskId::new("t-budget");
+    let event = make_status_event("t-budget", TaskState::Working);
+    let store = store_with_configs("t-budget", 100).await;
+    let limits = HandlerLimits::default()
+        .with_push_delivery_timeout(Duration::from_secs(5))
+        .with_push_delivery_budget(Duration::from_secs(60));
+
+    let metrics = CountingMetrics::default();
+    deliver_push_bg(
+        &task_id,
+        &event,
+        &store,
+        Some(&SlowPushSender),
+        &limits,
+        &metrics,
+    )
+    .await;
+
+    // 60s / 5s: the twelfth send starts at t=55s and ends at t=60s; the
+    // thirteenth finds the budget spent.
+    assert_eq!(metrics.delivered.load(Ordering::Relaxed), 12);
+    assert_eq!(metrics.skipped.load(Ordering::Relaxed), 88);
+}

@@ -98,10 +98,9 @@ pub async fn test_cancel_task(url: &str, binding: &str) -> Result<(), String> {
     let result = match binding {
         "jsonrpc" | "websocket" => {
             let params = serde_json::json!({"id": task_id});
-            let resp = helpers::rpc(url, binding, "CancelTask", params).await?;
             // Cancel may return an error if the task is already completed or not cancelable
             // Both are valid conformance behaviors
-            resp
+            helpers::rpc(url, binding, "CancelTask", params).await?
         }
         "rest" => {
             let body = serde_json::json!({});

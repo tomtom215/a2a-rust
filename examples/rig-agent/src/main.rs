@@ -4,12 +4,17 @@
 //! Example: wrapping a [`rig`](https://github.com/0xPlaygrounds/rig) agent
 //! behind the A2A protocol.
 //!
-//! A real `rig-core` agent (OpenAI-compatible provider) serves A2A traffic:
-//! incoming `SendMessage` text is passed to [`rig_core::completion::Prompt`],
-//! and the completion comes back as an A2A artifact. The executor is
-//! generic over [`rig_core::completion::CompletionModel`], so the same bridge
-//! works with any rig provider (Anthropic, Gemini, Ollama, …) — swap the
-//! client construction in `main` and nothing else changes.
+//! A real `rig-core` model (OpenAI-compatible provider) serves A2A traffic:
+//! incoming `SendMessage` text is sent as a completion request carrying the
+//! agent's preamble, and the completion comes back as an A2A artifact. The
+//! executor is generic over [`rig_core::completion::CompletionModel`], so the
+//! same bridge works with any rig provider (Anthropic, Gemini, Ollama, …) —
+//! swap the client construction in `main` and nothing else changes.
+//!
+//! rig-core 0.41 moved its `Agent` run loop into the separate `rig-agent`
+//! crate; this example stays on `rig-core` alone, and [`RigAgent`] is the
+//! single-turn, tool-less slice of that agent it needs: a preamble plus one
+//! completion per prompt.
 //!
 //! # Architecture
 //!
@@ -20,7 +25,7 @@
 //!               RigAgentExecutor<M>
 //!                     │
 //!                     ▼
-//!               rig_core::agent::Agent<M> ──→ LLM provider
+//!               RigAgent<M> (preamble + CompletionModel) ──→ LLM provider
 //! ```
 //!
 //! # Setup
@@ -67,23 +72,59 @@ use a2a_protocol_types::message::{Part, PartContent};
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
 use rig_core::client::CompletionClient;
-use rig_core::completion::Prompt;
+use rig_core::completion::{AssistantContent, CompletionError, CompletionModel};
 use rig_core::providers::openai;
 
-/// An A2A `AgentExecutor` that delegates to a rig [`Agent`].
+/// A single-turn agent: a preamble and the model that answers under it.
+///
+/// This is what `rig_core::agent::Agent` was for this example before the run
+/// loop moved to the `rig-agent` crate — one completion request per prompt,
+/// no tools, no history — expressed over rig-core's `CompletionModel` alone.
+pub struct RigAgent<M> {
+    model: M,
+    preamble: String,
+}
+
+impl<M: CompletionModel + Clone> RigAgent<M> {
+    pub fn new(model: M, preamble: &str) -> Self {
+        Self {
+            model,
+            preamble: preamble.to_owned(),
+        }
+    }
+
+    /// Sends `text` as the user turn and returns the model's text blocks,
+    /// concatenated in order — the same shape the old `Agent::prompt` gave.
+    pub async fn prompt(&self, text: &str) -> Result<String, CompletionError> {
+        let response = self
+            .model
+            .completion_request(text)
+            .preamble(self.preamble.clone())
+            .send()
+            .await?;
+        Ok(response
+            .choice
+            .iter()
+            .filter_map(|content| match content {
+                AssistantContent::Text(text) => Some(text.text.as_str()),
+                _ => None,
+            })
+            .collect())
+    }
+}
+
+/// An A2A `AgentExecutor` that delegates to a [`RigAgent`].
 ///
 /// Generic over the rig completion model, so any provider rig supports can
 /// sit behind the same A2A bridge.
-///
-/// [`Agent`]: rig_core::agent::Agent
 /// Message-text prefix that makes the executor pause mid-task.
 ///
 /// `SubscribeToTask` is refused on a terminal task, correctly, so without a
 /// slow turn its success path is unreachable and only the refusal is observed.
 const SLOW_PREFIX: &str = "slow:";
 
-struct RigAgentExecutor<M: rig_core::completion::CompletionModel> {
-    agent: rig_core::agent::Agent<M>,
+struct RigAgentExecutor<M: CompletionModel> {
+    agent: RigAgent<M>,
     /// When `true`, a provider error produces a labelled mechanical reply
     /// instead of failing the task. Set only for the surface run, so the A2A
     /// protocol can be measured with no model reachable. Server mode leaves it
@@ -93,7 +134,7 @@ struct RigAgentExecutor<M: rig_core::completion::CompletionModel> {
 
 impl<M> AgentExecutor for RigAgentExecutor<M>
 where
-    M: rig_core::completion::CompletionModel + 'static,
+    M: CompletionModel + Clone + 'static,
 {
     fn execute<'a>(
         &'a self,
@@ -123,7 +164,7 @@ where
                 }))
                 .await?;
 
-            // 3. Run the rig agent. Provider errors propagate so the server
+            // 3. Run the rig model. Provider errors propagate so the server
             //    marks the task TASK_STATE_FAILED.
             if user_text.starts_with(SLOW_PREFIX) {
                 tokio::time::sleep(std::time::Duration::from_millis(400)).await;
@@ -273,10 +314,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let client = builder
             .build()
             .map_err(|e| format!("failed to build the rig OpenAI client: {e}"))?;
-        Ok(client
-            .agent(model)
-            .preamble("You are a helpful A2A protocol agent.")
-            .build())
+        Ok(RigAgent::new(
+            client.completion_model(model),
+            "You are a helpful A2A protocol agent.",
+        ))
     };
 
     // ── Server-only mode ─────────────────────────────────────────────────

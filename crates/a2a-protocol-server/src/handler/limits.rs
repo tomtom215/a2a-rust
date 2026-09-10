@@ -50,7 +50,8 @@ pub struct HandlerLimits {
     ///
     /// **The shipped defaults contradict each other.** `HttpPushSender::new()`
     /// is three attempts at a 30-second request timeout with `[1s, 2s]`
-    /// backoff — 93 seconds — against this 5-second bound. Measured
+    /// backoff after a 5-second DNS bound — 98 seconds — against this
+    /// 5-second bound. Measured
     /// 2026-08-19 against a real socket: **one of the three attempts reaches
     /// the webhook, and the bound fires at 5.001s.** So `max_attempts` and
     /// `backoff` are, at the defaults, configuration that cannot take effect.
@@ -76,6 +77,36 @@ pub struct HandlerLimits {
     /// [`PushSender::send`]: crate::push::PushSender::send
     /// [`PushSender::max_delivery_duration`]: crate::push::PushSender::max_delivery_duration
     pub push_delivery_timeout: Duration,
+    /// Total time one event's push deliveries may take, across every
+    /// registered config. Default: 30 seconds.
+    ///
+    /// This is the amplification ceiling: a task with `max_push_configs_per_task`
+    /// webhooks that all time out would otherwise spend `configs x
+    /// push_delivery_timeout x attempts` per event. Deliveries run one after
+    /// another, so the configs an event reaches is
+    /// `min(configs, push_delivery_budget / push_delivery_timeout)`; the rest
+    /// are counted as [`push_outcome::SKIPPED`](crate::metrics::push_outcome::SKIPPED).
+    /// On the blocking send path the same budget covers the whole batch of
+    /// events a request produced, not each event, because that delivery is
+    /// spawned once per request.
+    ///
+    /// Until 0.12 this was a `Duration::from_secs(30)` literal in two places
+    /// and the term deciding which webhooks were called was not a knob.
+    pub push_delivery_budget: Duration,
+    /// How long the blocking send path waits, after the executor has
+    /// finished, for the event queue to close. Default: 5 seconds.
+    ///
+    /// Once the executor returns, everything it wrote is already buffered and
+    /// is drained immediately; the only thing left to wait for is the
+    /// queue closing, which `EventQueueManager::destroy` does from the cleanup
+    /// guard's `Drop`. An executor that returns without reaching a terminal
+    /// or interrupted state, on a queue that never closes, used to hold the
+    /// blocking `SendMessage` open forever. When this bound elapses the
+    /// response is the task as collected so far, exactly what a closed queue
+    /// would have produced, and
+    /// [`Metrics::on_error`](crate::metrics::Metrics::on_error) is called with
+    /// `error_kind = "executor_drain_timeout"`.
+    pub executor_drain_timeout: Duration,
     /// Maximum number of artifacts per task. Default: 1000.
     ///
     /// Prevents unbounded memory growth and O(n²) serialization cost when
@@ -147,6 +178,8 @@ impl Default for HandlerLimits {
             max_cancellation_tokens: 10_000,
             max_token_age: Duration::from_secs(3600),
             push_delivery_timeout: Duration::from_secs(5),
+            push_delivery_budget: Duration::from_secs(30),
+            executor_drain_timeout: Duration::from_secs(5),
             max_artifacts_per_task: 1000,
             max_context_locks: 10_000,
             max_push_configs_per_task: 100,
@@ -208,6 +241,23 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets the total push-delivery budget per event (per request batch on
+    /// the blocking path). See [`push_delivery_budget`](Self::push_delivery_budget).
+    #[must_use]
+    pub const fn with_push_delivery_budget(mut self, budget: Duration) -> Self {
+        self.push_delivery_budget = budget;
+        self
+    }
+
+    /// Sets how long the blocking send path waits for the event queue to
+    /// close after the executor finished. See
+    /// [`executor_drain_timeout`](Self::executor_drain_timeout).
+    #[must_use]
+    pub const fn with_executor_drain_timeout(mut self, timeout: Duration) -> Self {
+        self.executor_drain_timeout = timeout;
+        self
+    }
+
     /// Sets the maximum number of artifacts per task.
     #[must_use]
     pub const fn with_max_artifacts_per_task(mut self, max: usize) -> Self {
@@ -257,8 +307,27 @@ mod tests {
         assert_eq!(limits.max_cancellation_tokens, 10_000);
         assert_eq!(limits.max_token_age, Duration::from_secs(3600));
         assert_eq!(limits.push_delivery_timeout, Duration::from_secs(5));
+        assert_eq!(limits.push_delivery_budget, Duration::from_secs(30));
+        assert_eq!(limits.executor_drain_timeout, Duration::from_secs(5));
         assert_eq!(limits.max_artifacts_per_task, 1000);
         assert_eq!(limits.max_context_locks, 10_000);
+        assert_eq!(limits.max_push_configs_per_task, 100);
+        assert_eq!(limits.max_parts_per_artifact, 10_000);
+        assert_eq!(limits.max_total_push_configs, 100_000);
+        assert_eq!(
+            limits.subscribe_reattach_interval,
+            Duration::from_millis(250)
+        );
+        assert_eq!(limits.subscribe_max_idle, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn with_push_delivery_budget_and_executor_drain_timeout_set_their_values() {
+        let limits = HandlerLimits::default()
+            .with_push_delivery_budget(Duration::from_secs(90))
+            .with_executor_drain_timeout(Duration::from_millis(750));
+        assert_eq!(limits.push_delivery_budget, Duration::from_secs(90));
+        assert_eq!(limits.executor_drain_timeout, Duration::from_millis(750));
     }
 
     #[test]
@@ -323,6 +392,8 @@ mod tests {
         assert!(debug.contains("max_cancellation_tokens"));
         assert!(debug.contains("max_token_age"));
         assert!(debug.contains("push_delivery_timeout"));
+        assert!(debug.contains("push_delivery_budget"));
+        assert!(debug.contains("executor_drain_timeout"));
         assert!(debug.contains("max_artifacts_per_task"));
         assert!(debug.contains("max_context_locks"));
     }

@@ -617,7 +617,14 @@ This is the category most worth clearing before any external review.
   the repository already treats "is this gate pointed at what it claims to
   cover?" as a separate question from "can this gate fail?"
   (`scripts/check_mutation_scope.sh`), and this is the same question again.
-* **The blocking send path's post-executor drain has no bound.** Noted while
+* **~~The blocking send path's post-executor drain has no bound.~~ Done
+  2026-09-10** — bounded by `HandlerLimits::executor_drain_timeout` (default
+  5 s). The answer when it elapses is the task as collected so far — exactly
+  what a closed queue would have produced, which is the protocol answer the
+  note below said was missing — and `Metrics::on_error` is called with
+  `executor_drain_timeout`. Pinned by
+  `a_drain_that_never_closes_is_bounded_and_answers_with_the_task_so_far`
+  on paused time. The original note, kept for the reasoning: noted while
   proving out the `destroy` mutant, and left as an observation rather than a
   change. `SyncCollector::collect` breaks on a terminal or interrupted state, or
   on the reader returning `None`; that `None` requires the event queue to close,
@@ -690,12 +697,18 @@ This is the category most worth clearing before any external review.
   ratchet by `scripts/check_file_lengths.sh`: the 77 are recorded in
   `.file-length-baseline` and the list may only shrink, so no further file can
   cross 500 lines unnoticed the way this one did.
-* **Decide whether `A2aRouter` should route `/tenants/{tenant}/…`.** The
-  built-in REST dispatcher strips that prefix and threads the tenant
-  through; the axum adapter registers no such routes. Verified to fail
-  closed — such a request 404s rather than being served from the default
-  partition — and pinned by a test, but the asymmetry between the two
-  dispatchers is undocumented behaviour that a user will eventually hit.
+* **~~Decide whether `A2aRouter` should route `/tenants/{tenant}/…`.~~
+  Decided 2026-09-10: it does not, by design.** The built-in REST dispatcher
+  strips that prefix and threads the tenant through; the axum adapter
+  registers no such routes and resolves tenants through the configured
+  `TenantResolver` instead, which is authoritative over any client-supplied
+  value. The split is intentional: an adapter that a host mounts under an
+  arbitrary prefix cannot know where `/tenants/{tenant}` sits in the host's
+  URL space, while a header resolver works wherever the router is mounted.
+  Fails closed (404, never the default partition), pinned by a test, and
+  documented in the adapter's module docs under "Multi-tenancy: use a
+  resolver, not the URL prefix". Recorded as decided rather than left as the
+  open question it was in "Open questions" below.
 
 ## Release engineering and supply chain
 
@@ -891,9 +904,10 @@ Genuinely undecided — listed so they are not mistaken for oversights.
   [`STABILITY.md`](STABILITY.md#5-minimum-supported-rust-version). Going
   lower (a2a-rs is at 1.85) would mean holding `time`, `serde_with` and
   `darling` at older releases, which is the remaining open trade-off.
-* Whether the axum adapter should reach parity with the REST dispatcher on
+* ~~Whether the axum adapter should reach parity with the REST dispatcher on
   tenant routing, or whether the split is intentional and should simply be
-  documented as such.
+  documented as such.~~ **Decided 2026-09-10:** intentional, documented; see
+  the "Verification debt" entry above.
 
 ## Maintaining this file
 

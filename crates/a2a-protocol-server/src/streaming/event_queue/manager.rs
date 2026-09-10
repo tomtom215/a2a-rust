@@ -146,6 +146,15 @@ impl EventQueueManager {
         self
     }
 
+    /// Hands the manager's metrics handle to a writer, so a dropped
+    /// persistence event is reported where queue depth already is.
+    fn observed(&self, writer: InMemoryQueueWriter) -> InMemoryQueueWriter {
+        match &self.metrics {
+            Some(metrics) => writer.with_metrics(Arc::clone(metrics)),
+            None => writer,
+        }
+    }
+
     /// Sets the maximum number of concurrent event queues.
     ///
     /// When the limit is reached, new queue creation will return an error
@@ -239,7 +248,7 @@ impl EventQueueManager {
                 self.max_event_size,
                 self.write_timeout,
             );
-            let writer = Arc::new(writer);
+            let writer = Arc::new(self.observed(writer));
             map.insert(task_id.clone(), Arc::clone(&writer));
             (writer, Some(reader), Some(persistence_rx))
         };
@@ -290,7 +299,7 @@ impl EventQueueManager {
                 self.max_event_size,
                 self.write_timeout,
             );
-            let writer = Arc::new(writer);
+            let writer = Arc::new(self.observed(writer));
             map.insert(task_id.clone(), Arc::clone(&writer));
             QueueLease::Created {
                 writer,

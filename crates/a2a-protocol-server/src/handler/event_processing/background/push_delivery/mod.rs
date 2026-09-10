@@ -27,8 +27,9 @@ use crate::push::{PushConfigStore, PushSender};
 /// an investigation.
 ///
 /// At the shipped defaults it is the second. Measured 2026-08-19 against a real
-/// socket: `HttpPushSender::new()` schedules 93 seconds of work against a
-/// 5-second bound, and exactly one of its three attempts reaches the webhook.
+/// socket: `HttpPushSender::new()` schedules 98 seconds of work (a 5-second
+/// DNS bound, then 93 of requests and backoff) against a 5-second bound, and
+/// exactly one of its three attempts reaches the webhook.
 ///
 /// A sender that reports nothing stays a plain `TIMEOUT` — nothing is *known*
 /// to have been truncated, and claiming it would be inventing a diagnosis.
@@ -72,11 +73,12 @@ pub(super) async fn deliver_push_bg(
         return;
     };
 
-    // FIX(#4): Cap total push delivery time per event to prevent amplification
-    // attacks. With 100 configs × 5s timeout × 3 retries, unbounded delivery
-    // could take 25+ minutes. Cap at 30 seconds total per event.
-    let max_total_push_time = std::time::Duration::from_secs(30);
-    let deadline = tokio::time::Instant::now() + max_total_push_time;
+    // The per-event amplification cap. With 100 configs × 5s timeout × 3
+    // retries, unbounded delivery could take 25+ minutes; the budget bounds it.
+    // A `Duration::from_secs(30)` literal until 0.12 — now
+    // `HandlerLimits::push_delivery_budget`, so the term that decides how many
+    // of an operator's webhooks are called is a knob they can turn.
+    let deadline = tokio::time::Instant::now() + limits.push_delivery_budget;
 
     // There is no concurrency to limit. Deliveries below run one after another,
     // so the only bound that does anything is `deadline`. A `Semaphore::new(16)`

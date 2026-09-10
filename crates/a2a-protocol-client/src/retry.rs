@@ -143,10 +143,15 @@ impl ClientError {
     /// - HTTP connection/transport errors
     /// - Timeouts
     /// - Server errors (HTTP 502, 503, 504, 429)
+    /// - The client's own in-flight cap (`TooManyPendingRequests`), which
+    ///   clears as responses arrive
     #[must_use]
     pub const fn is_retryable(&self) -> bool {
         match self {
-            Self::Http(_) | Self::HttpClient(_) | Self::Timeout(_) => true,
+            Self::Http(_)
+            | Self::HttpClient(_)
+            | Self::Timeout(_)
+            | Self::TooManyPendingRequests { .. } => true,
             Self::UnexpectedStatus { status, .. } => {
                 matches!(status, 429 | 502 | 503 | 504)
             }

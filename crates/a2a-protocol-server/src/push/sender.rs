@@ -115,7 +115,8 @@ pub trait PushSender: Send + Sync + 'static {
     /// [`HandlerLimits::push_delivery_timeout`], and a sender whose own
     /// schedule is longer than that bound never finishes it. At the shipped
     /// defaults the two contradict: [`HttpPushSender`] promises three attempts
-    /// at 30s each with `[1s, 2s]` backoff — 93s — against a 5-second bound.
+    /// at 30s each with `[1s, 2s]` backoff, after a 5s DNS bound — 98s —
+    /// against a 5-second bound.
     /// **Measured 2026-08-19 against a real socket: exactly one of the three
     /// attempts reaches the webhook, and the outer timeout fires at 5.001s.**
     /// `max_attempts` and `backoff` are, at the defaults, configuration that
@@ -136,6 +137,10 @@ pub trait PushSender: Send + Sync + 'static {
 
 /// Default per-request timeout for push notification delivery.
 const DEFAULT_PUSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Default bound on the SSRF pre-flight's DNS lookup. See
+/// [`HttpPushSender::with_dns_timeout`].
+const DEFAULT_DNS_LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Retry policy for push notification delivery.
 ///
@@ -233,6 +238,8 @@ pub struct HttpPushSender {
     client: PushHttpClient,
     request_timeout: std::time::Duration,
     retry_policy: PushRetryPolicy,
+    /// Bound on the SSRF pre-flight's hostname resolution.
+    dns_timeout: std::time::Duration,
     /// Whether to skip SSRF URL validation (for testing only).
     allow_private_urls: bool,
 }
@@ -259,6 +266,7 @@ impl HttpPushSender {
             client,
             request_timeout,
             retry_policy: PushRetryPolicy::default(),
+            dns_timeout: DEFAULT_DNS_LOOKUP_TIMEOUT,
             allow_private_urls: false,
         }
     }
@@ -280,8 +288,25 @@ impl HttpPushSender {
             client: build_push_https_client(tls_config),
             request_timeout: DEFAULT_PUSH_REQUEST_TIMEOUT,
             retry_policy: PushRetryPolicy::default(),
+            dns_timeout: DEFAULT_DNS_LOOKUP_TIMEOUT,
             allow_private_urls: false,
         }
+    }
+
+    /// Bounds the SSRF pre-flight's DNS lookup. Default: 5 seconds.
+    ///
+    /// `send` resolves the webhook's hostname before its first request so the
+    /// resolved address can be checked against the private ranges and pinned.
+    /// That lookup had no bound of its own until 0.12: a resolver that hung
+    /// spent the whole `push_delivery_timeout` before any request was made,
+    /// and `timeout_outcome` then reported `TIMEOUT` — "go and look at the
+    /// endpoint" — for a resolver problem. A lookup past this bound fails the
+    /// delivery with an error naming the hostname and the bound, and the
+    /// bound is counted in [`max_delivery_duration`](PushSender::max_delivery_duration).
+    #[must_use]
+    pub const fn with_dns_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.dns_timeout = timeout;
+        self
     }
 
     /// Sets a custom retry policy for push notification delivery.
@@ -537,7 +562,29 @@ fn webhook_port(uri: &hyper::Uri) -> u16 {
     }
 }
 
-pub(crate) async fn validate_webhook_url_with_dns(url: &str) -> A2aResult<Option<SocketAddr>> {
+pub(crate) async fn validate_webhook_url_with_dns(
+    url: &str,
+    dns_timeout: std::time::Duration,
+) -> A2aResult<Option<SocketAddr>> {
+    validate_webhook_url_with_resolver(url, dns_timeout, |addr| async move {
+        tokio::net::lookup_host(addr).await.map(Iterator::collect)
+    })
+    .await
+}
+
+/// [`validate_webhook_url_with_dns`] with the resolver as a parameter, so the
+/// timeout path can be tested with a resolver that never answers — a slow real
+/// resolver cannot be produced on demand (this container's answers NXDOMAIN in
+/// milliseconds), which is why the bound went unmeasured for a month.
+async fn validate_webhook_url_with_resolver<F, Fut>(
+    url: &str,
+    dns_timeout: std::time::Duration,
+    resolve: F,
+) -> A2aResult<Option<SocketAddr>>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = std::io::Result<Vec<SocketAddr>>>,
+{
     // Run synchronous checks first.
     validate_webhook_url(url)?;
 
@@ -563,11 +610,18 @@ pub(crate) async fn validate_webhook_url_with_dns(url: &str) -> A2aResult<Option
     let port = webhook_port(&uri);
 
     let addr = format!("{host_bare}:{port}");
-    let resolved = tokio::net::lookup_host(&addr).await.map_err(|e| {
-        A2aError::invalid_params(format!(
-            "webhook URL hostname could not be resolved: {host_bare}: {e}"
-        ))
-    })?;
+    let resolved = tokio::time::timeout(dns_timeout, resolve(addr))
+        .await
+        .map_err(|_elapsed| {
+            A2aError::invalid_params(format!(
+                "webhook URL hostname resolution timed out after {dns_timeout:?}: {host_bare}"
+            ))
+        })?
+        .map_err(|e| {
+            A2aError::invalid_params(format!(
+                "webhook URL hostname could not be resolved: {host_bare}: {e}"
+            ))
+        })?;
 
     let mut pinned: Option<SocketAddr> = None;
     for socket_addr in resolved {
@@ -684,9 +738,12 @@ impl PushSender for HttpPushSender {
         if attempts == 0 {
             return Some(std::time::Duration::ZERO);
         }
+        // The SSRF pre-flight's lookup runs once, before the first attempt,
+        // and is bounded by `dns_timeout`; it is part of what `send` may take.
         let mut total = self
             .request_timeout
-            .saturating_mul(u32::try_from(attempts).unwrap_or(u32::MAX));
+            .saturating_mul(u32::try_from(attempts).unwrap_or(u32::MAX))
+            .saturating_add(self.dns_timeout);
         for attempt in 0..attempts.saturating_sub(1) {
             if let Some(delay) = self
                 .retry_policy
@@ -737,7 +794,7 @@ impl PushSender for HttpPushSender {
             let pinned_addr = if self.allow_private_urls {
                 None
             } else {
-                validate_webhook_url_with_dns(url).await?
+                validate_webhook_url_with_dns(url, self.dns_timeout).await?
             };
 
             // Pin the validated IP for `http://` only: rewrite the URI to the
@@ -1145,24 +1202,30 @@ mod tests {
     fn max_delivery_duration_matches_the_retry_loop_it_describes() {
         use std::time::Duration;
 
-        // 3 attempts at 30s, with [1s, 2s] between them.
+        // 3 attempts at 30s, with [1s, 2s] between them, after a 5s DNS bound.
         let sender = HttpPushSender::new();
         assert_eq!(
             sender.max_delivery_duration(),
-            Some(Duration::from_secs(30 + 1 + 30 + 2 + 30)),
-            "the default schedule is 93 seconds"
+            Some(Duration::from_secs(5 + 30 + 1 + 30 + 2 + 30)),
+            "the default schedule is 98 seconds: 5 of DNS, then 93 of requests and backoff"
         );
 
         // One attempt has no backoff at all.
         let one = HttpPushSender::with_timeout(Duration::from_secs(7))
-            .with_retry_policy(PushRetryPolicy::default().with_max_attempts(1));
-        assert_eq!(one.max_delivery_duration(), Some(Duration::from_secs(7)));
+            .with_retry_policy(PushRetryPolicy::default().with_max_attempts(1))
+            .with_dns_timeout(Duration::from_secs(1));
+        assert_eq!(
+            one.max_delivery_duration(),
+            Some(Duration::from_secs(1 + 7))
+        );
 
         // More attempts than backoff entries: the loop repeats the last entry,
         // and this arithmetic has to agree with it.
-        let many = HttpPushSender::with_timeout(Duration::from_secs(1)).with_retry_policy(
-            PushRetryPolicy::default().with_max_attempts(5), // backoff [1s, 2s]
-        );
+        let many = HttpPushSender::with_timeout(Duration::from_secs(1))
+            .with_retry_policy(
+                PushRetryPolicy::default().with_max_attempts(5), // backoff [1s, 2s]
+            )
+            .with_dns_timeout(Duration::ZERO);
         assert_eq!(
             many.max_delivery_duration(),
             Some(Duration::from_secs(5 + 1 + 2 + 2 + 2)),
@@ -1385,37 +1448,100 @@ mod tests {
         assert!(validate_webhook_url("http://[fe80::1]:8080/webhook").is_err());
     }
 
+    /// The production validator at the default DNS bound, for the tests below
+    /// that are about what is rejected rather than how long resolution may take.
+    async fn validate_webhook_url_with_dns_default(url: &str) -> A2aResult<Option<SocketAddr>> {
+        validate_webhook_url_with_dns(url, DEFAULT_DNS_LOOKUP_TIMEOUT).await
+    }
+
+    /// A resolver that never answers is cut off at `dns_timeout`, with an
+    /// error that names resolution rather than the endpoint. Kills the mutant
+    /// that removes the bound (the test would hang) and pins the message the
+    /// operator sees.
+    #[tokio::test(start_paused = true)]
+    async fn a_hung_resolver_is_bounded_by_the_dns_timeout() {
+        let started = tokio::time::Instant::now();
+        let err = validate_webhook_url_with_resolver(
+            "https://webhook.example/hook",
+            std::time::Duration::from_secs(3),
+            |_addr| std::future::pending::<std::io::Result<Vec<SocketAddr>>>(),
+        )
+        .await
+        .expect_err("a lookup that never returns must not hold the delivery");
+        assert_eq!(started.elapsed(), std::time::Duration::from_secs(3));
+        assert!(
+            err.message.contains("resolution timed out after 3s")
+                && err.message.contains("webhook.example"),
+            "got: {}",
+            err.message
+        );
+    }
+
+    /// The resolver seam carries the same private-range check and the same
+    /// pinning as the real lookup: a hostname answered with a private address
+    /// is refused, a public one is pinned.
+    #[tokio::test]
+    async fn the_resolver_seam_checks_and_pins_what_it_is_given() {
+        let private = validate_webhook_url_with_resolver(
+            "http://webhook.example/hook",
+            std::time::Duration::from_secs(1),
+            |_addr| async { Ok(vec!["10.0.0.7:80".parse().unwrap()]) },
+        )
+        .await
+        .expect_err("a private answer is refused");
+        assert!(
+            private.message.contains("private/loopback"),
+            "got: {}",
+            private.message
+        );
+
+        let pinned = validate_webhook_url_with_resolver(
+            "http://webhook.example/hook",
+            std::time::Duration::from_secs(1),
+            |addr| async move {
+                assert_eq!(
+                    addr, "webhook.example:80",
+                    "the lookup carries the scheme's port"
+                );
+                Ok(vec!["203.0.113.9:80".parse().unwrap()])
+            },
+        )
+        .await
+        .expect("a public answer is accepted");
+        assert_eq!(pinned, Some("203.0.113.9:80".parse().unwrap()));
+    }
+
     // ── validate_webhook_url_with_dns ────────────────────────────────────
 
     #[tokio::test]
     async fn dns_rejects_loopback_ip_literal() {
         // IP literals skip DNS resolution but still get checked by validate_webhook_url.
-        let result = validate_webhook_url_with_dns("http://127.0.0.1:8080/webhook").await;
+        let result = validate_webhook_url_with_dns_default("http://127.0.0.1:8080/webhook").await;
         assert!(result.is_err(), "loopback IP should be rejected");
     }
 
     #[tokio::test]
     async fn dns_rejects_private_ip_literal() {
-        let result = validate_webhook_url_with_dns("http://10.0.0.1/webhook").await;
+        let result = validate_webhook_url_with_dns_default("http://10.0.0.1/webhook").await;
         assert!(result.is_err(), "private IP should be rejected");
     }
 
     #[tokio::test]
     async fn dns_rejects_localhost_hostname() {
         // localhost is rejected by the synchronous check before DNS resolution.
-        let result = validate_webhook_url_with_dns("http://localhost:8080/webhook").await;
+        let result = validate_webhook_url_with_dns_default("http://localhost:8080/webhook").await;
         assert!(result.is_err(), "localhost should be rejected");
     }
 
     #[tokio::test]
     async fn dns_rejects_invalid_scheme() {
-        let result = validate_webhook_url_with_dns("ftp://example.com/webhook").await;
+        let result = validate_webhook_url_with_dns_default("ftp://example.com/webhook").await;
         assert!(result.is_err(), "ftp scheme should be rejected");
     }
 
     #[tokio::test]
     async fn dns_rejects_missing_host() {
-        let result = validate_webhook_url_with_dns("http:///path").await;
+        let result = validate_webhook_url_with_dns_default("http:///path").await;
         assert!(result.is_err(), "missing host should be rejected");
     }
 
@@ -1429,7 +1555,7 @@ mod tests {
                 .enable_all()
                 .build()
                 .unwrap();
-            let result = rt.block_on(validate_webhook_url_with_dns(
+            let result = rt.block_on(validate_webhook_url_with_dns_default(
                 "https://this-hostname-definitely-does-not-exist-a2a-test.invalid/webhook",
             ));
             let _ = tx.send(result);
@@ -1449,7 +1575,7 @@ mod tests {
     async fn dns_accepts_ip_literal_public() {
         // A public IP literal should pass (no DNS needed), and must return
         // `None` for the pinned address because no DNS resolution happens.
-        let result = validate_webhook_url_with_dns("https://203.0.113.1/webhook").await;
+        let result = validate_webhook_url_with_dns_default("https://203.0.113.1/webhook").await;
         assert!(
             matches!(result, Ok(None)),
             "public IP literal should be accepted with no pinning (got {result:?})",

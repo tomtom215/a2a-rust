@@ -326,3 +326,88 @@ async fn serve_binds_the_address_and_speaks_http2() {
 
     server.abort();
 }
+
+/// Opens a raw connection, sends the HTTP/2 client preface, and returns the
+/// socket plus whether the server answered with its SETTINGS frame within
+/// `wait` — which is the observable difference between "accepted and served"
+/// and "held in the listen backlog".
+async fn preface_answered(
+    addr: std::net::SocketAddr,
+    wait: std::time::Duration,
+) -> (tokio::net::TcpStream, bool) {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let mut stream = tokio::net::TcpStream::connect(addr)
+        .await
+        .expect("the kernel completes the TCP handshake from its backlog");
+    stream
+        .write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+        .await
+        .expect("preface");
+    stream
+        .write_all(&[0, 0, 0, 0x04, 0, 0, 0, 0, 0])
+        .await
+        .expect("empty SETTINGS");
+    let mut header = [0_u8; 9];
+    let answered = tokio::time::timeout(wait, stream.read_exact(&mut header))
+        .await
+        .is_ok_and(|read| read.is_ok() && header[3] == 0x04);
+    (stream, answered)
+}
+
+/// `with_max_connections(1)`: the first peer is served, the second is left
+/// in the backlog — its TCP handshake completes (the kernel's doing) but no
+/// HTTP/2 SETTINGS comes back — until the first connection ends, at which
+/// point it is served. Kills the mutant that never takes the permit and the
+/// one that never releases it.
+#[tokio::test(flavor = "multi_thread")]
+async fn max_connections_bounds_served_connections_and_releases_on_close() {
+    let addr = GrpcDispatcher::new(build_handler(), GrpcConfig::default())
+        .with_max_connections(1)
+        .serve_with_addr("127.0.0.1:0")
+        .await
+        .expect("bind");
+
+    let (first, first_served) = preface_answered(addr, std::time::Duration::from_secs(5)).await;
+    assert!(
+        first_served,
+        "the first connection is within the ceiling and is served"
+    );
+
+    let (second, second_served) =
+        preface_answered(addr, std::time::Duration::from_millis(500)).await;
+    assert!(
+        !second_served,
+        "the second connection must wait in the backlog while the first holds the only permit"
+    );
+
+    drop(first);
+    // The permit is released when tonic drops the first socket; the backlog
+    // entry is then accepted and answered.
+    use tokio::io::AsyncReadExt as _;
+    let mut second = second;
+    let mut header = [0_u8; 9];
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        second.read_exact(&mut header),
+    )
+    .await
+    .expect("served within 5s of the first connection closing")
+    .expect("read the server's SETTINGS");
+    assert_eq!(
+        header[3], 0x04,
+        "the freed permit lets the waiting peer be served"
+    );
+}
+
+/// Without the knob two connections are served at once: the default is no
+/// ceiling, and this pins that the gate is inert unless asked for.
+#[tokio::test(flavor = "multi_thread")]
+async fn without_max_connections_every_connection_is_served() {
+    let addr = GrpcDispatcher::new(build_handler(), GrpcConfig::default())
+        .serve_with_addr("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let (_first, first_served) = preface_answered(addr, std::time::Duration::from_secs(5)).await;
+    let (_second, second_served) = preface_answered(addr, std::time::Duration::from_secs(5)).await;
+    assert!(first_served && second_served, "no ceiling by default");
+}

@@ -195,6 +195,7 @@ reach it. Its equivalents are the three above:
 | `connect_timeout` | 10s | the whole handshake — a server that accepts TCP and never upgrades |
 | `request_timeout` | 30s | waiting for one response on an established connection |
 | `max_message_size` | 32 MiB | an incoming frame, at the protocol level |
+| `max_pending_requests` | 64 | requests awaiting a response on one connection; the next is refused with `ClientError::TooManyPendingRequests` (retryable) rather than queued |
 
 ### When to Use WebSocket
 

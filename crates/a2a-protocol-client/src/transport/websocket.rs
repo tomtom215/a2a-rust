@@ -130,12 +130,26 @@ impl PendingGuard {
     /// entry with no owner. Insert-then-hand-off keeps both ends in one place,
     /// and still satisfies the ordering the writer needed — the entry exists
     /// before the frame is queued, let alone sent.
-    fn register(pending: &Arc<PendingMap>, request_id: String, request: PendingRequest) -> Self {
-        lock_pending(pending).insert(request_id.clone(), request);
-        Self {
+    ///
+    /// Refuses the registration when `max_pending` entries are already
+    /// awaiting responses — checked and inserted under the same lock, so two
+    /// racing callers cannot both slip past a one-slot gap.
+    fn register(
+        pending: &Arc<PendingMap>,
+        max_pending: usize,
+        request_id: String,
+        request: PendingRequest,
+    ) -> ClientResult<Self> {
+        let mut map = lock_pending(pending);
+        if map.len() >= max_pending {
+            return Err(ClientError::TooManyPendingRequests { limit: max_pending });
+        }
+        map.insert(request_id.clone(), request);
+        drop(map);
+        Ok(Self {
             pending: Arc::clone(pending),
             request_id,
-        }
+        })
     }
 }
 
@@ -193,6 +207,17 @@ pub struct WebSocketTransportConfig {
     /// changes one, and the person who tightens a limit is the person who
     /// decided the default was wrong for them. Set the bound here.
     pub max_message_size: usize,
+    /// How many requests may be awaiting a response on this connection at
+    /// once, unary and streaming together. Default:
+    /// [`DEFAULT_MAX_PENDING_REQUESTS`].
+    ///
+    /// The pending map holds a sender per in-flight request and a WebSocket
+    /// connection is meant to be long-lived, so without a cap a caller that
+    /// issued requests faster than the server answered them grew it without
+    /// bound. The `N+1`-st request is refused up front with
+    /// [`ClientError::TooManyPendingRequests`] rather than queued invisibly;
+    /// it is retryable, and a later attempt finds room once responses arrive.
+    pub max_pending_requests: usize,
 }
 
 impl Default for WebSocketTransportConfig {
@@ -202,11 +227,27 @@ impl Default for WebSocketTransportConfig {
             connect_timeout: Duration::from_secs(10),
             extra_headers: HashMap::new(),
             max_message_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
+            max_pending_requests: DEFAULT_MAX_PENDING_REQUESTS,
         }
     }
 }
 
+/// Default for [`WebSocketTransportConfig::max_pending_requests`].
+///
+/// The same 64 the server's WebSocket binding admits per connection before
+/// answering `-32000 server busy`, so a client at the default refuses locally
+/// exactly where the server would have refused it anyway.
+pub const DEFAULT_MAX_PENDING_REQUESTS: usize = 64;
+
 impl WebSocketTransportConfig {
+    /// Sets how many requests may be awaiting a response on this connection
+    /// at once. See [`max_pending_requests`](Self::max_pending_requests).
+    #[must_use]
+    pub const fn with_max_pending_requests(mut self, max: usize) -> Self {
+        self.max_pending_requests = max;
+        self
+    }
+
     /// Sets the request timeout.
     #[must_use]
     pub const fn with_request_timeout(mut self, timeout: Duration) -> Self {
@@ -267,6 +308,8 @@ struct Inner {
     closed: Arc<AtomicBool>,
     endpoint: String,
     request_timeout: Duration,
+    /// See [`WebSocketTransportConfig::max_pending_requests`].
+    max_pending_requests: usize,
     /// Background reader task, aborted on drop.
     reader_handle: tokio::task::JoinHandle<()>,
     /// Background writer task, aborted on drop.
@@ -464,6 +507,7 @@ impl WebSocketTransport {
                 closed,
                 endpoint,
                 request_timeout: config.request_timeout,
+                max_pending_requests: config.max_pending_requests,
                 reader_handle,
                 writer_handle,
             }),
@@ -504,9 +548,10 @@ impl WebSocketTransport {
         // carry the only explicit removal; cancellation ran none of it.
         let _entry = PendingGuard::register(
             &self.inner.pending,
+            self.inner.max_pending_requests,
             request_id.clone(),
             PendingRequest::Unary(tx),
-        );
+        )?;
 
         self.inner
             .write_tx
@@ -585,9 +630,10 @@ impl WebSocketTransport {
         // away, and that path removed nothing at all.
         let entry = PendingGuard::register(
             &self.inner.pending,
+            self.inner.max_pending_requests,
             request_id,
             PendingRequest::Streaming(tx),
-        );
+        )?;
 
         self.inner
             .write_tx
@@ -1413,6 +1459,58 @@ mod tests {
 
     /// A WebSocket server that completes the handshake, swallows every frame,
     /// and never answers.
+    /// The `N+1`-st in-flight request on one connection is refused up front,
+    /// not queued: a stream holds the single slot, a unary request is turned
+    /// away with the limit it hit, and once the stream is dropped the slot is
+    /// free again. Kills the mutant that drops the `>=` check (the unary
+    /// request would then wait out its timeout instead of being refused).
+    #[tokio::test]
+    async fn the_pending_map_is_capped_at_max_pending_requests() {
+        let addr = spawn_silent_ws_server().await;
+        let transport = WebSocketTransport::connect_with_config(
+            format!("ws://{addr}"),
+            WebSocketTransportConfig::default()
+                .with_request_timeout(Duration::from_millis(200))
+                .with_max_pending_requests(1),
+        )
+        .await
+        .expect("connect");
+
+        let stream = transport
+            .send_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({ "id": "holds-the-slot" }),
+                &HashMap::new(),
+            )
+            .await
+            .expect("the first request takes the only slot");
+
+        let started = std::time::Instant::now();
+        let refused = transport
+            .send_request("GetTask", serde_json::json!({ "id": "t" }), &HashMap::new())
+            .await
+            .expect_err("the second request must be refused, not queued");
+        assert!(
+            matches!(refused, ClientError::TooManyPendingRequests { limit: 1 }),
+            "got: {refused:?}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_millis(100),
+            "refused up front, not after the request timeout"
+        );
+        assert!(refused.is_retryable(), "room appears as responses arrive");
+
+        drop(stream);
+        let after = transport
+            .send_request("GetTask", serde_json::json!({ "id": "t" }), &HashMap::new())
+            .await
+            .expect_err("a silent server answers nothing, so this times out");
+        assert!(
+            matches!(after, ClientError::Timeout(_)),
+            "the slot is free again; the request is sent and waits: {after:?}"
+        );
+    }
+
     async fn spawn_silent_ws_server() -> std::net::SocketAddr {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

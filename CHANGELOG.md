@@ -10,7 +10,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Public configuration structs gain fields; struct-literal construction
+  breaks.** `HandlerLimits` gains `push_delivery_budget` and
+  `executor_drain_timeout`; `WebSocketTransportConfig` (client) gains
+  `max_pending_requests`. Code that built either as a struct literal must
+  add the fields or use `Default::default()` and the `with_*` setters. This
+  release is the deliberate breaking minor before the two clean minors
+  `STABILITY.md` §7 requires, so every such future-proofing change lands here
+  rather than one per release.
+- **`ClientError` gains `TooManyPendingRequests { limit }`.** The enum is
+  `#[non_exhaustive]`, so exhaustive matches already carried a wildcard.
+
+### Added
+
+- **`HandlerLimits::push_delivery_budget`** (default 30 s): the total time
+  one event's push deliveries may take across every registered config, per
+  request batch on the blocking path. It was a `Duration::from_secs(30)`
+  literal in two places, so the term that decided how many of an operator's
+  webhooks were called was not a knob (review backlog B3).
+- **`HandlerLimits::executor_drain_timeout`** (default 5 s): a blocking
+  `SendMessage` whose executor returned without a terminal state, on an event
+  queue that never closed, used to wait forever. It now answers with the task
+  as collected — what a closed queue would have produced — and reports
+  `Metrics::on_error("SendMessage", "executor_drain_timeout")`.
+- **`GrpcDispatcher::with_max_connections`**: a ceiling on served gRPC
+  connections, the one bound `with_http2_keepalive` and
+  `with_max_connection_age` did not provide. The permit is taken before
+  `accept()`, as the WebSocket dispatcher's has been, and rides with the
+  socket until tonic drops it.
+- **`WebSocketTransportConfig::max_pending_requests`** (client, default 64):
+  the `N+1`-st request awaiting a response on one connection is refused up
+  front with the new retryable `ClientError::TooManyPendingRequests` rather
+  than queued invisibly in an unbounded map (B17).
+- **`HttpPushSender::with_dns_timeout`** (default 5 s): the SSRF pre-flight's
+  hostname lookup had no bound of its own, so a hung resolver spent the whole
+  `push_delivery_timeout` before any request was made and was then reported
+  as a webhook timeout. The bound is counted in `max_delivery_duration`, so
+  the shipped default schedule is now 98 seconds against the 5-second
+  `push_delivery_timeout`, not 93.
+- **A dropped persistence event is counted.** When the background
+  processor is gone, `InMemoryQueueWriter` reports the drop through
+  `Metrics::on_persistence_error("queue_handoff", "channel_closed")`; until
+  now the only report was a trace line that compiles to nothing without the
+  `tracing` feature (B18).
+
 ### Fixed
+
+- **`Arc<T>` forwards every `Metrics` hook.** The blanket impl for `Arc<T>`
+  forwarded six of the eight methods and defaulted `on_persistence_error` and
+  `on_push_delivery` to no-ops, so a handler built with an `Arc<dyn Metrics>`
+  — which `RequestHandlerBuilder::with_metrics` accepts through that impl —
+  dropped every persistence error and every push outcome silently. Found by a
+  test that passed against a bare implementation and failed against an `Arc`
+  of the same.
 
 - **An empty `contextId` or `taskId` on an incoming message is "unset", not
   an invalid id.** The A2A JSON bindings are ProtoJSON, and both fields are
@@ -49,6 +103,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Dependencies refreshed for 0.12.** Both lockfiles updated
+  (`cargo update`: 238 workspace entries, 57 in the SLIMRPC binding), and
+  the majors: opentelemetry/opentelemetry_sdk/opentelemetry-otlp 0.32
+  (the SDK's removed `rt-tokio` feature is the only change needed),
+  tokio-tungstenite 0.30 everywhere it appears (tungstenite 0.30 rejects
+  malformed `Sec-WebSocket-Key` server-side), rig-core 0.42 (the example's
+  `Agent` moved out of rig-core; a thirty-line local shim keeps the example
+  tool-less and behaviour-identical) and genai 0.6. base64 stays at 0.22
+  because hyper-util still requires it and `deny.toml` denies duplicate
+  versions. `deny.toml` gains seven reviewed skips for splits the ecosystem
+  is mid-way through (RustCrypto digest 0.10/0.11 via tungstenite against
+  sqlx, syn 2/3 via async-trait, base64 through the examples' reqwest and
+  rcgen, redox_syscall through libredox) and loses the two `thiserror` skips
+  that no longer matched anything.
 - **MSRV lowered from 1.93 to 1.88; edition 2024.** The workspace had
   never needed anything newer than 1.88 — `cargo check --workspace
   --all-features --all-targets` on 1.88.0 passed without a code change —
@@ -4393,30 +4461,4 @@ kept for the record, with resolution notes:
 - `ClientError::Timeout` variant for distinct timeout errors.
 - Separate `stream_connect_timeout` configuration for SSE connections.
 - Server benchmarks for task store and event queue operations.
-- Cargo-fuzz target for JSON deserialization of all major protocol types.
-- `docs/implementation/plan.md` documenting planned beyond-spec extensions (request IDs,
-  metrics, rate limiting, WebSocket, multi-tenancy, persistent store).
-- Pitfalls catalog (`book/src/reference/pitfalls.md`) with entries for serde,
-  hyper, SSE, push notifications, async/tokio, workspace, and testing gotchas.
-
-### Changed
-
-- Eliminated unnecessary `serde_json::Value` clones in 8 client methods by
-  moving the value into `ClientResponse` and extracting it after interceptors run.
-
-- **Breaking:** `AgentExecutor` trait is now object-safe — methods return
-  `Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>` instead of
-  `impl Future`. This eliminates the generic parameter `E: AgentExecutor` from
-  `RequestHandler`, `RequestHandlerBuilder`, `JsonRpcDispatcher`, and
-  `RestDispatcher`, enabling dynamic dispatch via `Arc<dyn AgentExecutor>`.
-- `InMemoryTaskStore` now performs TTL-based eviction of terminal tasks (default
-  1 hour) and enforces a maximum capacity (default 10,000 tasks).
-
-### Fixed
-
-- Invalid state transitions (e.g. Submitted → Completed) are now rejected with `InvalidStateTransition` error.
-- Push notification delivery now properly times out instead of hanging indefinitely.
-
-### Removed
-
-- (Nothing removed — this is the initial release.)
+- Carg

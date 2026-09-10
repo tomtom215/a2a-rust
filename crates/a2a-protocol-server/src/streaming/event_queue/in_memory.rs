@@ -54,7 +54,7 @@ impl std::io::Write for CountingWriter {
 /// Broadcast sends are non-blocking: if a reader falls behind, it will
 /// receive a lagged notification and skip missed events rather than blocking
 /// the writer.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct InMemoryQueueWriter {
     tx: broadcast::Sender<A2aResult<StreamResponse>>,
     /// Optional dedicated channel for the background persistence processor.
@@ -71,6 +71,20 @@ pub struct InMemoryQueueWriter {
     /// Applies to `persistence_tx` only; the broadcast send below cannot block.
     /// See [`super::DEFAULT_WRITE_TIMEOUT`] for why this exists.
     write_timeout: std::time::Duration,
+    /// Where a dropped event is reported. `None` for the sync-mode queue,
+    /// which has no persistence channel to drop from.
+    metrics: Option<Arc<dyn crate::metrics::Metrics>>,
+}
+
+impl std::fmt::Debug for InMemoryQueueWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InMemoryQueueWriter")
+            .field("persistence", &self.persistence_tx.is_some())
+            .field("max_event_size", &self.max_event_size)
+            .field("write_timeout", &self.write_timeout)
+            .field("metrics", &self.metrics.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl InMemoryQueueWriter {
@@ -85,6 +99,7 @@ impl InMemoryQueueWriter {
             persistence_tx: None,
             max_event_size,
             write_timeout,
+            metrics: None,
         }
     }
 
@@ -100,7 +115,16 @@ impl InMemoryQueueWriter {
             persistence_tx: Some(persistence_tx),
             max_event_size,
             write_timeout,
+            metrics: None,
         }
+    }
+
+    /// Reports dropped events to `metrics` — see
+    /// [`persistence_operation::QUEUE_HANDOFF`](crate::metrics::persistence_operation::QUEUE_HANDOFF).
+    #[must_use]
+    pub(crate) fn with_metrics(mut self, metrics: Arc<dyn crate::metrics::Metrics>) -> Self {
+        self.metrics = Some(metrics);
+        self
     }
 
     /// Creates a new reader that will receive all future events from this writer.
@@ -164,6 +188,16 @@ impl EventQueueWriter for InMemoryQueueWriter {
                     Ok(()) => {}
                     Err(mpsc::error::SendTimeoutError::Closed(_)) => {
                         trace_warn!("persistence channel closed, event not persisted");
+                        // The one report that survives a default build. Until
+                        // 0.12 the trace line above was the whole signal, and
+                        // it compiles to nothing without the `tracing`
+                        // feature (backlog B18).
+                        if let Some(metrics) = &self.metrics {
+                            metrics.on_persistence_error(
+                                crate::metrics::persistence_operation::QUEUE_HANDOFF,
+                                crate::metrics::queue_handoff_error::CHANNEL_CLOSED,
+                            );
+                        }
                     }
                     Err(mpsc::error::SendTimeoutError::Timeout(_)) => {
                         trace_warn!(
@@ -1023,6 +1057,54 @@ mod tests {
         assert!(
             start.elapsed() < std::time::Duration::from_millis(50),
             "a closed channel must be detected immediately, not waited out"
+        );
+    }
+
+    /// A closed persistence channel is reported through `Metrics`, so the loss
+    /// is visible on a build with no non-default features. Kills the mutant
+    /// that deletes the report: the trace line beside it compiles to nothing
+    /// here, and nothing else about the write changes.
+    #[tokio::test]
+    async fn a_dropped_event_moves_the_persistence_error_counter() {
+        #[derive(Default)]
+        struct Seen(std::sync::Mutex<Vec<(String, String)>>);
+        impl crate::metrics::Metrics for Seen {
+            fn on_persistence_error(&self, operation: &str, error_kind: &str) {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push((operation.to_owned(), error_kind.to_owned()));
+            }
+        }
+        let seen = Arc::new(Seen::default());
+        let (writer, _sse, persistence_rx) = new_in_memory_queue_with_persistence(
+            16,
+            DEFAULT_MAX_EVENT_SIZE,
+            std::time::Duration::from_millis(50),
+        );
+        let writer = writer.with_metrics(Arc::clone(&seen) as Arc<dyn crate::metrics::Metrics>);
+
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .expect("an open channel takes the event");
+        assert!(
+            seen.0.lock().unwrap().is_empty(),
+            "nothing is dropped while the processor is alive"
+        );
+
+        drop(persistence_rx);
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .expect("a closed channel still does not fail the write");
+        assert_eq!(
+            *seen.0.lock().unwrap(),
+            vec![(
+                crate::metrics::persistence_operation::QUEUE_HANDOFF.to_owned(),
+                crate::metrics::queue_handoff_error::CHANNEL_CLOSED.to_owned()
+            )],
+            "the dropped event is counted, once, with the bounded labels"
         );
     }
 }
