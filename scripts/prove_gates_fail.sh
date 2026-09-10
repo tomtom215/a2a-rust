@@ -462,7 +462,7 @@ expected_marker() {
         block_scalars)    echo "MISMATCH" ;;
         cancellation_release) echo "no \`Drop\` that releases it" ;;
         doc_escapes)      echo "containing a literal" ;;
-        gate_reachability) echo "UNREACHABLE ci.yml" ;;
+        gate_reachability) echo "unreachable:ci.yml" ;;
         timeout_nesting)  echo "push_delivery_timeout / HttpPushSender" ;;
         inert_bounds)     echo "max_probe_rows" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
