@@ -82,20 +82,20 @@ webpki-roots   = { version = ">=1.0, <2", optional = true }
 ring           = { version = "0.17", optional = true }
 base64         = { version = "0.22", optional = true }
 sqlx           = { workspace = true, optional = true }
-tokio-tungstenite = { version = ">=0.29, <0.30", optional = true }
+tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
 tonic             = { workspace = true, optional = true }
 tonic-prost       = { workspace = true, optional = true }
 tonic-types       = { workspace = true, optional = true }
 prost             = { workspace = true, optional = true }
 tokio-stream      = { workspace = true, optional = true }
-opentelemetry     = { version = "0.31", optional = true }
+opentelemetry     = { version = "0.32", optional = true }
 # `experimental_metrics_custom_reader` exposes `ManualReader` + the `MetricReader`
 # trait for the unit tests in `src/otel/mod.rs` that verify instrument emission
 # end-to-end. The feature only *adds* API surface — it does not change runtime
 # behaviour — so its "experimental" status only matters to the test code.
-opentelemetry_sdk = { version = "0.31", optional = true, features = ["rt-tokio", "metrics", "experimental_metrics_custom_reader"] }
-opentelemetry-otlp = { version = "0.31", optional = true, default-features = false, features = ["grpc-tonic", "metrics"] }
+opentelemetry_sdk = { version = "0.32", optional = true, features = ["metrics", "experimental_metrics_custom_reader"] }
+opentelemetry-otlp = { version = "0.32", optional = true, default-features = false, features = ["grpc-tonic", "metrics"] }
 axum = { version = "0.8", optional = true, default-features = false, features = ["json", "query", "tokio"] }
 
 [build-dependencies]
