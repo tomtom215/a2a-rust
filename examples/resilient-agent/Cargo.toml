@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "resilient-agent"
+version     = "0.0.0"
+description = "Durability across a restart, failure injection with the numbers the SDK reports, and two replicas over a shared store — each asserted, each honest about what the SDK does not do"
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[features]
+## Both stores on, so the documented `cargo run -p resilient-agent` runs every
+## act. A narrowed build still reports honestly — an act compiled out prints
+## `[NOT BUILT]` with the feature it needs instead of disappearing.
+default = ["sqlite", "postgres"]
+## Act 1: `SqliteTaskStore` + `SqlitePushConfigStore` re-opened by a fresh
+## handler over the same file.
+sqlite = ["a2a-protocol-server/sqlite"]
+## Act 3: `PostgresTaskStore` and `PostgresRateLimitCounter` shared by two
+## replicas. Reports `[NOT RUN]` unless `A2A_TEST_POSTGRES_URL` names a
+## reachable server — one this example cannot start for itself.
+postgres = ["a2a-protocol-server/postgres"]
+
+[dependencies]
+a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
+a2a-protocol-client = { path = "../../crates/a2a-protocol-client" }
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }
+
+serde_json     = { workspace = true }
+tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+# The fault injectors — a webhook sink that refuses the first M deliveries and
+# a proxy that drops or 503s the first K requests — are plain hyper servers so
+# the faults are injected on a real socket, in front of a real agent.
+hyper          = { workspace = true }
+hyper-util     = { workspace = true, features = ["server", "server-auto"] }
+http-body-util = { workspace = true }
+bytes          = "1"
+uuid           = { workspace = true }

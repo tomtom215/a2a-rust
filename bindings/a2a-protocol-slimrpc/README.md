@@ -251,7 +251,7 @@ Every frame a peer sends crosses five hops on its way to an `EventStream`:
 | app → session controller (`agntcy-slim-session` `session_builder.rs:595`, `session_controller.rs:568-580`) | 256 | blocks |
 | session controller → app receiver (`session_layer.rs:561`, `session_controller.rs:274`) | **unbounded** | never |
 | `agntcy-slim-rpc` dispatcher → the call's own channel (`channel.rs:89`, `:102`, `:144`) | **unbounded** | never |
-| this crate's bridge task → `EventStream` (`src/client/mod.rs:43`, `:420`, `:439`) | 64 | `send().await` parks the bridge task |
+| this crate's bridge task → `EventStream` (`src/client/bridge.rs:50`, `:80`, `:90`) | 64 | `send().await` parks the bridge task — for at most `slow_consumer_timeout`, then the call is abandoned |
 
 The receiving session layer acks a frame the moment it arrives
 (`session_receiver.rs:129` builds the ack before `:154` hands the frame to the
@@ -261,40 +261,65 @@ anything ever reads the frame.
 ### (a) A unicast stream whose consumer stops reading
 
 **Mechanism.** `SlimRpcTransport` spawns one bridge task per streaming call
-(`src/client/mod.rs:421`) that pulls frames from `Channel::unary_stream` and
-pushes them into a 64-slot channel with `send().await` (`:439`). When the
-consumer stops reading, the bridge parks on the 65th frame and is no longer
-polling the SLIM stream, so every further frame the agent sends is delivered by
-the dispatcher task into the channel `agntcy-slim-rpc` registered for the call
-(`channel.rs:550`), which is unbounded (`:89`).
+(`src/client/mod.rs:465`, `src/client/bridge.rs:80`) that pulls frames from
+`Channel::unary_stream` and pushes them into a 64-slot channel with
+`send().await` (`bridge.rs:90`). When the consumer stops reading, the bridge
+parks on the 65th frame and is no longer polling the SLIM stream, so every
+further frame the agent sends is delivered by the dispatcher task into the
+channel `agntcy-slim-rpc` registered for the call (`channel.rs:550`), which is
+unbounded (`:89`).
 
-**Bound.** None by count. Frames accumulate there until the consumer resumes,
-drops the stream, or the RPC deadline — `with_timeout`, otherwise `MAX_TIMEOUT`
-= 36 000 s (`agntcy-slim-rpc` `lib.rs:208`) — is observed. The deadline is a
-`select!` branch inside the stream (`channel.rs:539`, `:583`) and is checked
-only when the stream is polled, so a parked consumer's frames are not discarded
-when it passes; on resume the stream yields either the buffered frames or
-`DeadlineExceeded`, in whichever order `select!` picks. Dropping the
-`EventStream` closes the bridge's channel, the parked `send` returns an error,
-the bridge exits, and its `DispatcherGuard` unregisters the call's channel and
-frees what it held (`channel.rs:123-136`).
+**Bound.** `slow_consumer_timeout` —
+`SlimRpcTransportBuilder::with_slow_consumer_timeout` (`src/client/mod.rs:158`),
+default 30 s (`bridge.rs:68`, the figure `ClientConfig` already allows a server
+to produce a first event). The bridge's `send` runs under that timeout
+(`bridge.rs:90`). When it expires the bridge drops the SLIM stream (`:99`):
+the stream's `DispatcherGuard` (`channel.rs:132`) unregisters the call, and
+every frame that still arrives for it is discarded by the dispatcher on
+arrival (`channel.rs:150`) instead of kept. The bridge then offers the
+consumer one `ClientError::Timeout` naming the setting (`:101`), which
+waits behind the buffered events and is followed by the end of the stream.
+What a stalled consumer can hold is therefore 64 events in the bridge channel,
+64 in the `EventStream`'s own re-framing hop
+(`crates/a2a-protocol-client/src/streaming/event_stream.rs:52`), one in
+flight between them, and whatever the agent sent inside the window — not
+everything it sends until the RPC deadline. That deadline — `with_timeout`,
+otherwise `MAX_TIMEOUT` = 36 000 s (`agntcy-slim-rpc` `lib.rs:208`) — still
+bounds the call as a whole, but it is a `select!` branch inside the stream
+(`channel.rs:539`, `:583`) checked only when the stream is polled, which a
+parked bridge does not do; before 2026-09-10 it was the only bound, and a peer
+that streamed without end grew the client without limit for as long as the
+consumer was not reading. Dropping the `EventStream` closes the bridge's
+channel, the parked `send` returns an error, the bridge exits, and its
+`DispatcherGuard` unregisters the call's channel and frees what it held
+(`channel.rs:123-136`).
 
-**Consequence.** A slow or stalled consumer costs the *client* memory in
-proportion to what the agent sends, and costs the agent nothing: its frames are
+**Consequence.** A consumer slower than its agent but reading — one event
+per window is enough — costs the *client* memory in proportion to what the
+agent sends and loses nothing, and costs the agent nothing: its frames are
 acked on receipt, its `send_response_stream` completes, and other calls on the
 same channel — which share the session and the dispatcher task — are
-unaffected. A peer that streams without end therefore grows a client's memory
-without limit for as long as the client's consumer is slower than the peer;
-nothing in the stack drops or refuses frames on the client's behalf, and the
-client's controls are `with_timeout`, reading, and dropping the stream.
+unaffected. A consumer that stops costs at most 129 events plus one window of
+the agent's output, and is then told, in place of the events it was not
+reading. What the agent is *not* told is that the call was abandoned: SLIMRPC
+has no client-to-server cancel frame, so the agent streams on to completion or
+its own deadline, each frame acked by the client's session layer and dropped
+by the dispatcher. That is the agent's send-side work, not the client's
+memory, and it is upstream's to remove.
 
 Measured: with one stream held unread, the agent's execution completes, a
 second stream of 301 events is delivered in full, a unary call completes, and
-the held stream delivers all 301 events with no lag report once read
-(`tests/unicast_backpressure.rs`, both tests). The second test fails — 129 of
-300 delivered — when the bridge is changed to drop on a full channel, which is
-the trade multicast makes (`src/multicast/fanout.rs:116`). Unicast buffers
-instead because the bridge task is private to the call and parks nobody else.
+the held stream delivers all 301 events with no lag report once read within
+the window (`tests/unicast_backpressure.rs`, first two tests). A consumer
+away for five 200 ms windows gets 129 events — the two 64-slot hops and the
+one in flight — then the one error, then the end, milliseconds after it
+starts reading rather than at the 20 s deadline (third test). The second test
+fails — 129 of 300 delivered — when the bridge is changed to drop on a full
+channel, which is the trade multicast makes (`src/multicast/fanout.rs:116`);
+the third fails — all 302 delivered, no error — when the timeout around the
+bridge's `send` is removed. Unicast buffers instead of dropping because the
+bridge task is private to the call and parks nobody else; it stops buffering
+after the window because nothing else was ever going to.
 
 ### (b) A server streaming to a peer that stops acking
 

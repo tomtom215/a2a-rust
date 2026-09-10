@@ -15,15 +15,20 @@
 //! * multicast **drops** a lagging member's events and reports the gap,
 //!   because one loop serves every member and a parked send stalls them all;
 //! * unicast **buffers** them, because nothing else shares the loop — the
-//!   bridge task in `client/mod.rs` parks on its full 64-slot channel, and
+//!   bridge task in `client/bridge.rs` parks on its full 64-slot channel, and
 //!   every frame the agent goes on sending queues behind it in the per-RPC
-//!   channel `agntcy-slim-rpc` allocates for the call, which is unbounded.
+//!   channel `agntcy-slim-rpc` allocates for the call, which is unbounded —
+//!   **for `slow_consumer_timeout`**, after which the bridge abandons the call
+//!   and the consumer gets what was buffered, one error, and the end.
 //!
 //! So a held unicast stream must (1) not stall the agent or any other call on
-//! the same channel, and (2) deliver every event, in order and without a lag
-//! report, once its consumer resumes. The first without the second would also
-//! pass for a stream that drops; the second without the first would pass for
-//! one that blocks the world.
+//! the same channel, (2) deliver every event, in order and without a lag
+//! report, once its consumer resumes inside the window, and (3) stop
+//! buffering, and say so, once the consumer has been away longer than the
+//! window. The first without the second would also pass for a stream that
+//! drops; the second without the first would pass for one that blocks the
+//! world; the second without the third passes for the unbounded growth that
+//! was the 2026-09-10 finding.
 
 mod common;
 
@@ -134,6 +139,12 @@ impl ChattyFabric {
             transport,
             completed,
         }
+    }
+
+    /// Replaces the transport's slow-consumer window (default 30 s).
+    fn with_slow_consumer_timeout(mut self, window: Duration) -> Self {
+        self.transport = self.transport.with_slow_consumer_timeout(window);
+        self
     }
 
     async fn open_stream(&self, text: &str) -> a2a_protocol_client::EventStream {
@@ -265,6 +276,82 @@ async fn a_consumer_that_resumes_reading_gets_every_event_it_missed() {
     assert!(
         seen >= CHATTY_EVENTS,
         "every event must survive the pause; {seen} of at least {CHATTY_EVENTS} arrived"
+    );
+
+    fabric.shutdown().await;
+}
+
+/// A consumer that stays away longer than `slow_consumer_timeout` is handed
+/// the events that were buffered, then one error naming the setting, and
+/// then the end of the stream — promptly, not at the RPC deadline.
+///
+/// This is the bound the 2026-09-10 finding asked for. The window is set to
+/// 200 ms so the test runs in seconds; the agent's 301 events all arrive
+/// within it, so what the consumer must *not* receive is the whole set — the
+/// bridge's 64 slots and the `EventStream`'s own re-framing hop hold about
+/// 130, and the rest must have been discarded when the bridge dropped the
+/// call. A binding that had merely resumed delivery after the window would
+/// deliver all 301 and fail here.
+///
+/// Only the client side is asserted. The agent side exposes nothing to
+/// assert: SLIMRPC has no client-to-server cancel frame, so an abandoned call
+/// looks to the agent exactly like a read one — its frames are acked on
+/// arrival by the client's session layer and discarded by the dispatcher
+/// (`agntcy-slim-rpc` `channel.rs:150`), and `SlimRpcServer` has no per-call
+/// hook that could observe either. The agent's completion is checked so the
+/// abandonment is at least shown not to break it.
+#[tokio::test]
+async fn a_consumer_away_longer_than_the_window_gets_an_error_and_the_end() {
+    const WINDOW: Duration = Duration::from_millis(200);
+    let fabric = ChattyFabric::new("uc-abandon")
+        .await
+        .with_slow_consumer_timeout(WINDOW);
+
+    let mut stream = fabric.open_stream("outlast me").await;
+
+    let agent_done = tokio::time::timeout(Duration::from_secs(10), async {
+        while fabric.completed.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    assert!(
+        agent_done.is_ok(),
+        "the agent must finish while nobody reads"
+    );
+    // Well past the window: the bridge has stalled, timed out, dropped the
+    // call and queued its error behind the buffered events.
+    tokio::time::sleep(WINDOW * 5).await;
+
+    let started = std::time::Instant::now();
+    let (seen, errors) = drain(&mut stream).await;
+    let elapsed = started.elapsed();
+    eprintln!("abandoned stream: {seen} buffered events, then {errors:?}, in {elapsed:?}");
+
+    assert!(
+        seen > 0 && seen < CHATTY_EVENTS,
+        "the consumer gets what was buffered and nothing that arrived after the \
+         window closed; it got {seen} of {CHATTY_EVENTS}"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "exactly one error, after the buffered events: {errors:?}"
+    );
+    assert!(
+        errors[0].contains("slow_consumer_timeout"),
+        "the error must name the setting that ended the stream: {}",
+        errors[0]
+    );
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "the stream must end when read, not at the 20 s RPC deadline; draining \
+         took {elapsed:?}"
+    );
+    assert_eq!(
+        fabric.completed.load(Ordering::SeqCst),
+        1,
+        "abandoning the call must not disturb the agent"
     );
 
     fabric.shutdown().await;

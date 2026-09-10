@@ -308,6 +308,22 @@ cargo run -p a2a-tck -- --url http://localhost:8080 --binding jsonrpc
 docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
 ```
 
+## Command line
+
+`a2a` is a command-line client over `a2a-protocol-client`: fetch a card, send
+or stream a message, get, cancel and list tasks, all as JSON, over any of the
+four bindings. It is **unpublished** — a `publish = false` workspace member,
+built from this repository, not on crates.io:
+
+```bash
+cargo run -p a2a-cli -- card http://127.0.0.1:3111
+cargo run -p a2a-cli -- send http://127.0.0.1:3111 "hello"
+cargo run -p a2a-cli -- stream http://127.0.0.1:3111 "hello"
+```
+
+Commands, flags, a captured transcript and the exit-code table are in
+[`tools/a2a-cli/README.md`](tools/a2a-cli/README.md).
+
 ## Architecture
 
 ```

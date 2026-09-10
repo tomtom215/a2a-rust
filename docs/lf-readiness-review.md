@@ -189,6 +189,39 @@ makes, and it is a materially stronger position than the document was stating.
    delegation round-trip in this example that CI exercises rather than
    reports as `not reachable`. The other four still need their toolchains and
    still say so.
+9. ~~**No CLI.** Evaluating this SDK meant writing Rust and compiling first;
+   the official SDKs ship `a2acli`. Recorded as an adoption gap in
+   `docs/v0.9.0-post-release-review.md` (§4.3 and its recommendations), not in
+   this review's first draft — noted here so the two documents agree on what
+   is open.~~ **Closed 2026-09-10.** `tools/a2a-cli` is a `publish = false`
+   workspace member: `a2a card|send|stream|task get|cancel|list`, JSON out,
+   any of the four bindings by `--binding` or by discovery from the card,
+   `--header` for auth, exit codes 0/1/2. Built only from the client crate's
+   public surface, so it is also the first outside-in check of that surface;
+   it is driven end to end by an integration test that starts the SDK's own
+   server in-process and runs the built binary against it. Two things it
+   found are recorded in `tools/a2a-cli/README.md` under "What building it
+   found": `hello-agent` serves no agent card, so discovery against the
+   smallest example fails, and `resolve_agent_card` cannot send headers, so a
+   card behind authentication cannot be discovered with `--header`.
+10. ~~**No durability, failure-injection or horizontal-scaling example.**~~
+    **Closed 2026-09-10.** The hardening checks proved each store and the
+    client retry layer in isolation; nothing showed an adopter what a restart,
+    an injected fault, or a second replica actually *does* to a task.
+    `examples/resilient-agent` now runs the three as asserted acts, each with
+    the numbers and a stated gap: a completed task comes back byte-identical
+    from a fresh handler over the same SQLite file (store lag behind the
+    stream measured at ~12 ms), while a task cut off mid-stream is persisted as
+    far as it got and **not resumed**; an executor failing its first N attempts
+    produces N `Failed` tasks the SDK does **not** retry, with the error text
+    only on the streamed status event; a webhook refusing its first M
+    deliveries yields exactly M `failed` outcomes from `Metrics::on_push_delivery`
+    with no redelivery; two in-memory replicas cannot see each other's tasks,
+    two `PostgresTaskStore` replicas can (B's subscriber sees the end but 0 of
+    A's 2 artifact frames), and two limiters at 5/window admit 10 alone and 5
+    sharing `PostgresRateLimitCounter`. `[NOT RUN]` follows
+    `incident-response`'s convention exactly: exit 0, or 4 under
+    `RESILIENT_REQUIRE_ALL`.
 
 ## 4a. Every example, run end to end against a real model
 
