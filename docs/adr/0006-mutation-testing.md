@@ -138,7 +138,11 @@ three conditions:
    trusts when cargo-mutants runs. The alternative, three permanent survivors
    in every sweep, would have made "zero missed" a figure that needed a
    footnote forever. Verified: `cargo mutants --list` over the two files drops
-   from 12 and 29 mutants to 10 and 28, the three named mutants and no others.
+   from 12 and 29 mutants to 10 and 28, the three named mutants and no others;
+   and graded with the sweep's own command line the same day
+   (`--file` on both, nextest, `--all-features --run-ignored all`, live
+   PostgreSQL): 38 mutants, 11 caught, 27 unviable, 0 missed, 0 timeouts,
+   exit 0.
 
 3. **Do not use `mutants.toml` for this.** Config-level `exclude_globs` and
    `exclude_re` are for whole categories that are never worth mutating —

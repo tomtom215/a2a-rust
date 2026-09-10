@@ -710,6 +710,62 @@ def build_registry() -> dict[str, Probe | Exempt]:
         ],
     )
 
+    # ── coverage.yml ─────────────────────────────────────────────────────────
+    #
+    # The step reads the live report for `main`; the probe hands it a saved
+    # tree through the script's `CODECOV_REPORT_FILE` knob and runs from the
+    # repo so `codecov.yml` and `git ls-files` resolve. The healthy tree is a
+    # report that counts only library files; the defects are the two the
+    # script exists to catch — a path an ignore entry names is still counted,
+    # and no report at all — plus the tree with no files, which must be a
+    # read failure and not "nothing matched".
+    def _codecov_tree(paths):
+        def setup(d):
+            root: dict = {"name": "", "children": []}
+            for path in paths:
+                node = root
+                parts = path.split("/")
+                for part in parts[:-1]:
+                    nxt = next((c for c in node["children"] if c["name"] == part), None)
+                    if nxt is None:
+                        nxt = {"name": part, "children": []}
+                        node["children"].append(nxt)
+                    node = nxt
+                node["children"].append({"name": parts[-1], "lines": 100, "misses": 40})
+            f = d / "tree.json"
+            f.write_text(json.dumps([root]), encoding="utf-8")
+            return {"__cwd__": str(REPO), "__env__": {"CODECOV_REPORT_FILE": str(f)}}
+
+        return setup
+
+    LIBRARY_ONLY = [
+        "crates/a2a-protocol-types/src/lib.rs",
+        "crates/a2a-protocol-server/src/lib.rs",
+    ]
+    reg["coverage.yml::ignores-applied::Ignore patterns match nothing Codecov counts"] = Probe(
+        healthy=_codecov_tree(LIBRARY_ONLY),
+        defects=[
+            Defect(
+                "a file under an ignored path is still in the report",
+                _codecov_tree(LIBRARY_ONLY + ["tck/src/main.rs"]),
+                "still being counted",
+            ),
+            Defect(
+                "the report has no files at all",
+                _codecov_tree([]),
+                "no files at all",
+            ),
+            Defect(
+                "the report could not be read",
+                lambda d: {
+                    "__cwd__": str(REPO),
+                    "__env__": {"CODECOV_REPORT_FILE": str(d / "absent.json")},
+                },
+                "could not read",
+            ),
+        ],
+    )
+
     # ── benchmarks.yml ───────────────────────────────────────────────────────
     #
     # The healthy fixture is the measured post-fix curve; the defect is the

@@ -420,7 +420,8 @@ reported a score over work they had not done. As of 2026-09-09 all but three
 of the 55 are killed (measured over their functions with the sweep's own
 command line: 133 mutants, 3 missed); the three that remain are equivalents
 by construction, named in `ROADMAP.md`, and since 2026-09-10 carry
-`#[mutants::skip]` in source (ADR 0006 records the dependency decision).
+`#[mutants::skip]` in source (ADR 0006 records the dependency decision), so
+the same measurement over their two files now reads 38 mutants, 0 missed.
 
 The score and its history are in
 [`book/src/reference/mutation-history.md`](book/src/reference/mutation-history.md),

@@ -103,6 +103,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`a2a-protocol-server` depends on `mutants`** (0.0.4, MIT, zero
+  dependencies, attribute macros that return their input unchanged) so the
+  three mutants no test can distinguish — `TenantLimits::builder`,
+  `PerTenantConfig::builder`, `SseBodyWriter::close` — carry
+  `#[mutants::skip]` in source with the equivalence argument as the comment,
+  instead of surviving every sweep. ADR 0006 records the supply-chain
+  review; the two files grade at 38 mutants, 0 missed with the sweep's own
+  command line.
 - **Dependencies refreshed for 0.12.** Both lockfiles updated
   (`cargo update`: 238 workspace entries, 57 in the SLIMRPC binding), and
   the majors: opentelemetry/opentelemetry_sdk/opentelemetry-otlp 0.32

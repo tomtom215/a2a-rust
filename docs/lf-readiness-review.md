@@ -166,11 +166,13 @@ makes, and it is a materially stronger position than the document was stating.
    `CompletionModel`, so a fake that *answers* makes the success path testable
    with no provider at all.
 
-6. **`docs/rust-sdk-assessment.md` is a dated deliverable addressed to "Linux
+6. ~~**`docs/rust-sdk-assessment.md` is a dated deliverable addressed to "Linux
    Foundation / A2A project technical leadership"** whose figures (608 commits,
-   ten tags) are superseded. It carries its date, which is defensible, but a
-   reviewer handed it today will read stale numbers. It needs a supersession
-   note pointing at the manifest.
+   ten tags) are superseded.~~ **Closed 2026-09-10.** It carries its date,
+   which is defensible, but a reviewer handed it today would read stale
+   numbers. It now opens with a status note that says which figures are
+   frozen at which commit and points at `docs/provenance-manifest.md`,
+   `CHANGELOG.md`, `STABILITY.md` and this review for the current ones.
 7. **Seven examples still have no tests.** `harness` at 920 lines is the next
    one worth doing, because the other examples depend on it.
 
