@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than one per release.
 - **`ClientError` gains `TooManyPendingRequests { limit }`.** The enum is
   `#[non_exhaustive]`, so exhaustive matches already carried a wildcard.
+- **`GrpcTransportConfig` is `#[non_exhaustive]`** (client). Code that built
+  it as a struct literal must use `GrpcTransportConfig::default()` and the
+  `with_*` setters, which cover every field. Listed under Changed below with
+  the fields it gained; repeated here because `cargo-semver-checks` grades
+  it a major change and this heading is where STABILITY.md says those go.
+- **`InMemoryQueueWriter` is no longer `UnwindSafe` or `RefUnwindSafe`**
+  (server). It now holds the `Arc<dyn Metrics>` it reports dropped events
+  through, and a trait object without those bounds removes the auto-impls.
+  Only code that wrapped a writer in `catch_unwind` or `AssertUnwindSafe`
+  can notice; the handler that owns the writer never had either bound.
 
 ### Added
 

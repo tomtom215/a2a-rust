@@ -9,9 +9,44 @@ from the code on each deploy — see the [generated API documentation](/api/).
 
 Every name below is checked against the crates by
 `scripts/check_api_reference.py` in CI, so a type that gets renamed cannot leave
-a stale entry here.
+a stale entry here. The same script checks the other direction at the crate
+roots: every item a crate re-exports from its `lib.rs` — the names you reach as
+`use a2a_protocol_types::X` — must have a row on this page. Deeper module items
+are rustdoc's job.
 
 ## Wire Types (`a2a-protocol-types`)
+
+### Modules
+
+| Module | Contents |
+|--------|----------|
+| `agent_card` | Agent card and capability discovery types |
+| `artifact` | Artifact types for the A2A protocol |
+| `error` | A2A protocol error types |
+| `events` | Server-sent event types for A2A streaming |
+| `extensions` | Agent extension and card-signature types |
+| `jsonrpc` | JSON-RPC 2.0 envelope types |
+| `message` | Message types for the A2A protocol |
+| `method` | The A2A v1.0 service methods, mirrored from the ratified specification |
+| `params` | JSON-RPC method parameter types |
+| `proto` | Canonical A2A protobuf message types (`lf.a2a.v1`) and conversions (`proto` feature) |
+| `push` | Push notification configuration types |
+| `responses` | RPC method response types |
+| `security` | Security scheme types for A2A agent authentication |
+| `serde_helpers` | Serialization helpers for reducing allocation overhead |
+| `signing` | Agent card signing and verification (spec §10) (`signing` feature) |
+| `task` | Task types for the A2A protocol |
+
+### Protocol Constants
+
+| Constant | Description |
+|----------|-------------|
+| `A2A_VERSION` | A2A protocol version string, in the `Major.Minor` wire form (`"1.0"`) |
+| `A2A_CONTENT_TYPE` | The registered A2A media type (spec §14.1.1), accepted on ingress by the HTTP bindings alongside `JSON_CONTENT_TYPE` |
+| `JSON_CONTENT_TYPE` | Content type emitted by the JSON-RPC and REST bindings (`application/json`) |
+| `A2A_VERSION_HEADER` | HTTP header name for the A2A protocol version (`A2A-Version`) |
+| `A2A_EXTENSIONS_HEADER` | HTTP header name for extension activation (spec §14.2.2) |
+| `WEBSOCKET_BINDING_URI` | This project's identifier for its §12 WebSocket binding, as `AgentInterface::protocol_binding` |
 
 ### Core Types
 
@@ -33,6 +68,7 @@ a stale entry here.
 | `MessageRole` | Enum: Unspecified, User, Agent |
 | `Part` | Content unit: text, raw, url, or data |
 | `PartContent` | Enum: Text, Raw, Url, Data |
+| `FileContent` | Content of a file part. Deprecated: exists for backward compatibility with v0.3; in v1.0 use `Part::raw` or `Part::url` |
 
 ### Artifacts
 
@@ -59,6 +95,34 @@ a stale entry here.
 | `AgentSkill` | Discrete agent capability |
 | `AgentProvider` | Organization info |
 
+### Extensions
+
+| Type | Description |
+|------|-------------|
+| `AgentExtension` | Describes an optional extension that an agent supports |
+| `AgentCardSignature` | A cryptographic signature over an `AgentCard` |
+
+### Security Schemes
+
+| Type | Description |
+|------|-------------|
+| `SecurityScheme` | A security scheme supported by an agent |
+| `NamedSecuritySchemes` | A map from security scheme name to its definition, as used in `AgentCard.securitySchemes` |
+| `SecurityRequirement` | A security requirement object mapping scheme names to their required scopes |
+| `StringList` | A list of strings used within a `SecurityRequirement` map value |
+| `ApiKeySecurityScheme` | API key security scheme: a token sent in a header, query parameter, or cookie |
+| `ApiKeyLocation` | Where an API key is placed in the request |
+| `HttpAuthSecurityScheme` | HTTP authentication security scheme (Bearer, Basic, etc.) |
+| `OAuth2SecurityScheme` | OAuth 2.0 security scheme |
+| `OAuthFlows` | Available OAuth 2.0 flows for an `OAuth2SecurityScheme` |
+| `AuthorizationCodeFlow` | OAuth 2.0 authorization code flow |
+| `ClientCredentialsFlow` | OAuth 2.0 client credentials flow |
+| `DeviceCodeFlow` | OAuth 2.0 device authorization flow (RFC 8628) |
+| `ImplicitFlow` | OAuth 2.0 implicit flow (deprecated; retained for compatibility) |
+| `PasswordOAuthFlow` | OAuth 2.0 resource owner password credentials flow (deprecated but in spec) |
+| `OpenIdConnectSecurityScheme` | OpenID Connect security scheme |
+| `MutualTlsSecurityScheme` | Mutual TLS security scheme |
+
 ### Parameters
 
 | Type | Description |
@@ -73,6 +137,7 @@ a stale entry here.
 | `DeletePushConfigParams` | DeleteTaskPushNotificationConfig input |
 | `ListPushConfigsParams` | ListTaskPushNotificationConfigs input |
 | `GetExtendedAgentCardParams` | GetExtendedAgentCard input |
+| `AcceptedFields` | Trait: the JSON keys a request type accepts, in both protobuf spellings |
 
 ### Push Notifications
 
@@ -98,6 +163,14 @@ a stale entry here.
 | `deser_from_str` | Borrowed deserialization from `&str` (~15-25% fewer allocations) |
 | `deser_from_slice` | Borrowed deserialization from `&[u8]` (~15-25% fewer allocations) |
 
+### Timestamps
+
+| Function | Description |
+|----------|-------------|
+| `utc_now_iso8601()` | Returns the current UTC time as an ISO 8601 string with millisecond precision |
+| `unix_millis_to_iso8601(millis)` | Formats Unix-epoch milliseconds as an ISO 8601 UTC string with millisecond precision; pre-epoch clamps to the epoch |
+| `parse_iso8601_to_unix_millis(s)` | Parses an ISO 8601 / RFC 3339 timestamp into milliseconds since the Unix epoch; `None` for anything structurally invalid |
+
 ### Errors
 
 | Type | Description |
@@ -113,8 +186,31 @@ a stale entry here.
 | `JsonRpcRequest` | JSON-RPC 2.0 request envelope |
 | `JsonRpcError` | JSON-RPC error object |
 | `JsonRpcVersion` | Version marker (`"2.0"`) |
+| `JsonRpcResponse` | JSON-RPC 2.0 response: either a success with a `result` or an error with an `error` object |
+| `JsonRpcSuccessResponse` | A successful JSON-RPC 2.0 response |
+| `JsonRpcErrorResponse` | An error JSON-RPC 2.0 response |
+| `JsonRpcRequestId` | A JSON-RPC 2.0 request identifier with three distinct states |
+| `JsonRpcId` | A JSON-RPC 2.0 response identifier |
 
 ## Client (`a2a-protocol-client`)
+
+### Modules
+
+| Module | Contents |
+|--------|----------|
+| `auth` | Authentication interceptor and credential storage |
+| `builder` | Fluent builder for `A2aClient` |
+| `client` | The `A2aClient` itself |
+| `config` | Client configuration types |
+| `discovery` | Agent card discovery with HTTP caching |
+| `error` | Client error types |
+| `interceptor` | Request/response interceptor infrastructure |
+| `methods` | Per-method client helpers |
+| `retry` | Configurable retry policy for transient client errors |
+| `streaming` | SSE client-side streaming support |
+| `tls` | TLS connector via rustls (`tls-rustls` feature) |
+| `token_provider` | Token acquisition: `TokenProvider`, OAuth 2.0 client-credentials, and OIDC discovery |
+| `transport` | Transport abstraction for A2A client requests |
 
 ### Core Types
 
@@ -122,8 +218,17 @@ a stale entry here.
 |------|-------------|
 | `A2aClient` | Main client for calling remote agents |
 | `ClientBuilder` | Fluent builder for client configuration |
+| `ClientConfig` | Configuration for an `A2aClient` instance |
 | `EventStream` | Async SSE event stream |
 | `RetryPolicy` | Configurable retry with exponential backoff |
+| `ClientError` | Errors that can occur during A2A client operations |
+| `ClientResult<T>` | Alias for `Result<T, ClientError>` |
+
+### Discovery
+
+| Function | Description |
+|----------|-------------|
+| `resolve_agent_card(base_url)` | `async` — fetches the `AgentCard` from the standard well-known path |
 
 ### Client Methods
 
@@ -147,6 +252,21 @@ a stale entry here.
 |------|-------------|
 | `CallInterceptor` | Request/response hook trait |
 | `InterceptorChain` | Ordered interceptor sequence |
+| `ClientRequest` | A logical A2A request as seen by interceptors |
+| `ClientResponse` | A logical A2A response as seen by interceptors |
+
+### Authentication
+
+| Type | Description |
+|------|-------------|
+| `AuthInterceptor` | A `CallInterceptor` that injects Authorization headers from a `CredentialsStore` |
+| `CredentialsStore` | Persistent storage for auth credentials, keyed by session + scheme |
+| `InMemoryCredentialsStore` | An in-memory `CredentialsStore` backed by an `RwLock<HashMap>` |
+| `SessionId` | Opaque identifier for a client authentication session |
+| `TokenProvider` | A source of bearer access tokens |
+| `StaticTokenProvider` | A `TokenProvider` that always returns the same fixed token |
+| `OAuth2ClientCredentials` | A `TokenProvider` implementing the OAuth 2.0 client credentials grant (RFC 6749 §4.4) with caching and proactive refresh |
+| `BearerAuthInterceptor` | A `CallInterceptor` that injects a bearer token from a `TokenProvider` before every request |
 
 ### Transport
 
@@ -156,10 +276,43 @@ a stale entry here.
 | `JsonRpcTransport` | JSON-RPC 2.0 transport |
 | `RestTransport` | REST/HTTP transport |
 | `WebSocketTransport` | WebSocket transport (`websocket` feature) |
+| `WebSocketTransportConfig` | Configuration for `WebSocketTransport::connect_with_config` (`websocket` feature) |
 | `GrpcTransport` | gRPC transport (`grpc` feature); dials `host:port` targets and `http(s)://` URLs |
 | `GrpcBareAddressScheme` | How a bare `host:port` gRPC target is dialled: TLS except loopback (default), always TLS, or always plaintext |
 
 ## Server (`a2a-protocol-server`)
+
+### Modules
+
+| Module | Contents |
+|--------|----------|
+| `agent_card` | Agent card HTTP handlers (static, dynamic, and caching utilities) |
+| `auth` | Server-side authentication interceptors |
+| `builder` | Builder for `RequestHandler` |
+| `call_context` | Call context for server-side interceptors |
+| `dispatch` | HTTP dispatch layer — JSON-RPC and REST routing |
+| `error` | Server-specific error types |
+| `executor` | Agent executor trait |
+| `executor_helpers` | Ergonomic helpers for implementing `AgentExecutor` |
+| `handler` | Core request handler — protocol logic layer |
+| `interceptor` | Server-side interceptor chain |
+| `metrics` | Metrics hooks for observing handler activity |
+| `otel` | OpenTelemetry integration for the A2A server (`otel` feature) |
+| `push` | Push notification configuration storage and delivery |
+| `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
+| `request_context` | Request context passed to the `AgentExecutor` |
+| `serve` | `serve()`, `serve_with_addr`, `Dispatcher` |
+| `store` | Task storage backend |
+| `streaming` | Streaming infrastructure for SSE responses and event queues |
+| `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
+| `tenant_resolver` | Tenant resolution for multi-tenant A2A servers |
+
+### Constants
+
+| Constant | Description |
+|----------|-------------|
+| `CORS_ALLOW_ALL` | CORS Access-Control-Allow-Origin header value for public agent cards |
+| `A2A_VERSION_METADATA_KEY` | The service parameter naming the A2A protocol version, spelled the way a non-HTTP binding carries it |
 
 ### Core Types
 
@@ -170,15 +323,11 @@ a stale entry here.
 | `RequestContext` | Per-execution context (task ID, message, etc.) |
 | `CallContext` | Per-request metadata (request ID, headers, tenant) |
 | `HandlerLimits` | Configurable validation limits |
+| `SendMessageResult` | Result of `RequestHandler::on_send_message`: a synchronous response or a streaming reader |
+| `ShutdownReport` | What a shutdown actually managed to do (queues force-destroyed, whether executor cleanup completed) |
+| `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 
 ### Traits
-
-| Trait | Description |
-|-------|-------------|
-| `Metrics` | Pluggable metrics observer (requests, latency, errors) |
-| `TenantResolver` | Extracts tenant from request context |
-
-### Core Traits
 
 | Trait | Description |
 |-------|-------------|
@@ -189,6 +338,9 @@ a stale entry here.
 | `ServerInterceptor` | Server-side middleware |
 | `AgentCardProducer` | Dynamic agent card generation |
 | `Dispatcher` | HTTP dispatch trait (for `serve()`) |
+| `Metrics` | Pluggable metrics observer (requests, latency, errors) |
+| `TenantResolver` | Extracts tenant from request context |
+| `RateLimitCounter` | A request counter every replica shares |
 
 ### Dispatchers
 
@@ -202,10 +354,23 @@ a stale entry here.
 
 ### Server Startup
 
-| Function | Description |
-|----------|-------------|
+| Name | Description |
+|------|-------------|
 | `serve(addr, dispatcher) -> io::Result<()>` | `async` — binds and drives the accept loop until the future is dropped |
 | `serve_with_addr(addr, dispatcher) -> io::Result<SocketAddr>` | `async` — binds, spawns the accept loop, returns the bound `SocketAddr` (useful for port-0 in tests) |
+| `Server` | A bound listener that has not started accepting yet; binding is separated from serving so the caller can learn the address |
+| `ServeConfig` | Limits applied to a `Server` |
+| `ServeReport` | What the socket layer did, and whether it finished |
+| `DispatchConfig` | Configuration for dispatch-layer limits shared by both JSON-RPC and REST dispatchers |
+| `GrpcConfig` | Configuration for the gRPC dispatcher (`grpc` feature) |
+| `validate_version_metadata(metadata, required)` | Validates the A2A version carried in a binding's request metadata |
+
+### Executor Helpers
+
+| Name | Description |
+|------|-------------|
+| `agent_executor!` | Macro: generates an `AgentExecutor` implementation from a closure-like syntax |
+| `boxed_future` | Wraps an async expression into a pinned, boxed, `Send` future |
 
 ### Built-in Implementations
 
@@ -232,7 +397,13 @@ a stale entry here.
 | `BearerTokenTenantResolver` | `TenantResolver` that extracts tenant claims from a JWT bearer token |
 | `PathSegmentTenantResolver` | `TenantResolver` that parses tenant from a configurable path segment |
 | `RateLimitInterceptor` | Per-caller rate limiting interceptor |
-| `HttpPushSender` | HTTP webhook delivery with SSRF protection (built-in `PushSender` impl) |
+| `PostgresRateLimitCounter` | A `RateLimitCounter` backed by a PostgreSQL table (`postgres` feature) |
+| `ApiKeyAuthInterceptor` | Rejects requests whose API-key header is absent or not in the allowed set |
+| `BearerTokenAuthInterceptor` | Rejects requests whose bearer token is absent or not in the allowed set |
+| `ServerInterceptorChain` | An ordered chain of `ServerInterceptor` instances |
+| `Migration` | A single SQLite schema migration (`sqlite` feature) |
+| `MigrationRunner` | Runs schema migrations against a SQLite database (`sqlite` feature) |
+| `PgMigration` | A single PostgreSQL schema migration (`postgres` feature) |
 | `NoopMetrics` | No-op metrics implementation (default) |
 | `OtelMetrics` | OpenTelemetry metrics (`otel` feature) |
 
@@ -253,6 +424,12 @@ a stale entry here.
 |------|-------------|
 | `CorsConfig` | Cross-origin policy |
 | `TaskStoreConfig` | TTL and capacity for in-memory store |
+| `TenantStoreConfig` | Configuration for `TenantAwareInMemoryTaskStore` |
+| `TenantContext` | Thread-safe tenant context for scoping store operations |
+| `PerTenantConfig` | Per-tenant configuration for timeouts, capacity limits, and executor selection |
+| `TenantLimits` | Resource limits declared for a single tenant |
+| `RateLimitConfig` | Configuration for `RateLimitInterceptor` |
+| `PushRetryPolicy` | Retry policy for push notification delivery |
 | `ServerError` | Server-level error type |
 | `ServerResult<T>` | Alias for `Result<T, ServerError>` |
 

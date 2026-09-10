@@ -430,7 +430,12 @@ expected_marker() {
         benchmark_prose)  echo "DRIFT" ;;
         book_code)        echo "GREW" ;;
         sitemap)          echo "out of sync with SUMMARY.md" ;;
-        api_reference)    echo "are not defined in crates/" ;;
+        # Since 2026-09-10 the gate runs both directions, and the rename
+        # below is both defects at once: `TaskRevision` is a name no crate
+        # defines (stale), and `TaskVersion` is a root export the page no
+        # longer names (unlisted). The closing tally is the marker so a run
+        # that reports only one of the two is INCONCLUSIVE, not proven.
+        api_reference)    echo "FAIL (stale=1, unlisted=1)" ;;
         otel_coverage)    echo "the bundled exporter drops" ;;
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
@@ -567,7 +572,9 @@ PROBE
             # moment something is renamed, and it goes stale silently, in the
             # page a reader trusts precisely because they do not yet know the
             # API well enough to catch it. `sed` rather than a heredoc so this
-            # arm stays a one-liner like its neighbours.
+            # arm stays a one-liner like its neighbours. One rename is also
+            # one root export gone missing, so the same edit exercises the
+            # reverse direction the gate gained on 2026-09-10 (see the marker).
             note_touched "book/src/reference/api-reference.md"
             sed -i 's/`TaskVersion`/`TaskRevision`/' \
                 book/src/reference/api-reference.md
