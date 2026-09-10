@@ -119,13 +119,21 @@ makes, and it is a materially stronger position than the document was stating.
    fail the project's own DCO gate on arrival. Adding an automation whose output
    is permanently red is worse than not adding it. The options are an explicit
    bot exemption in `dco.yml`, or a documented human re-authoring step.
-2. **`dtolnay/rust-toolchain` is the only action not SHA-pinned** — three refs
-   (`@stable`, `@nightly`, `@master`). Not pinned here on purpose: the pin must
-   be applied together with an explicit `toolchain:` on every job, and getting
-   that wrong silently redirects the MSRV leg of the matrix at the wrong
-   compiler — an MSRV job that no longer checks the MSRV. That is a worse defect
-   than the one being fixed, and a silent one. It should be done deliberately,
-   with CI observed.
+2. ~~**`dtolnay/rust-toolchain` is the only action not SHA-pinned** — three refs
+   (`@stable`, `@nightly`, `@master`).~~ **Closed 2026-09-10.** Not pinned
+   earlier on purpose: the pin must be applied together with an explicit
+   `toolchain:` on every job, and getting that wrong silently redirects the
+   MSRV leg of the matrix at the wrong compiler — an MSRV job that no longer
+   checks the MSRV. Done as one change: all 32 uses across 11 workflows now
+   pin `master` at `d1031067` (2026-09-03), whose `action.yml` makes
+   `toolchain` a *required* input, so a use without one fails at the step
+   rather than defaulting to anything. The 26 former `@stable` uses carry
+   `toolchain: stable`, the one `@nightly` carries `toolchain: nightly`, and
+   the five `@master` uses already named their toolchain (the MSRV and
+   release matrices read `${{ matrix.rust }}` / `${{ matrix.toolchain }}`,
+   unchanged). The input goes to `rustup toolchain install`, so a pinned
+   action still installs whatever version the input names; the pin fixes
+   the installer script, not the compiler.
 3. **Release tags are not signed.** Annotation is now enforced and working;
    signing needs a maintainer key and a documented way for adopters to obtain
    it. Already stated honestly in `SECURITY.md` and `ROADMAP.md`.

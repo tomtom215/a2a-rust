@@ -73,4 +73,4 @@ opentelemetry_sdk = { version = "0.32", optional = true, features = ["metrics", 
 
 # genai — multi-provider LLM client; unknown model names route to the local
 # Ollama-compatible endpoint on :11434 (llama-server / Ollama).
-genai = "0.6"
+genai = "0.5"

@@ -368,9 +368,10 @@ burden is "no test can distinguish it", not "no test occurred to me".
 > the reasoning is what makes the retirement checkable.
 
 Neither was marked with `#[mutants::skip]`: that attribute resolves through the
-`mutants` crate, which this workspace does not depend on, and adding a regular
-dependency to a published crate is a decision to take deliberately rather than
-in passing. With nothing left to skip, nothing now rides on that decision.
+`mutants` crate, which this workspace did not then depend on, and adding a
+regular dependency to a published crate is a decision to take deliberately
+rather than in passing. It was taken on 2026-09-10 for the three equivalents
+named in the 2026-09-07 row (see ADR 0006).
 
 ### How the last equivalents were retired
 
@@ -557,8 +558,10 @@ reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
 | `a2a-protocol-client` (whole crate) | 804 | 357 | 10 | 437 | 2 | 10 |
 
 Across these `a2a-server` files: **57 survivors addressed, none remaining.**
-Every one of the nine reports exit 0, and nothing is excluded anywhere in the
-project — no `--exclude-re`, no `#[mutants::skip]`, no baselined exception.
+Every one of the nine reports exit 0, and nothing was excluded anywhere in the
+project at the time — no `--exclude-re`, no `#[mutants::skip]`, no baselined
+exception. (Since 2026-09-10 there are exactly three `#[mutants::skip]`
+attributes, none in these nine files; see ADR 0006.)
 
 **What that sentence does not cover.** Nine files is not the crate.
 `a2a-server` has 2113 mutants; these nine account for 487 of them. Treat "zero

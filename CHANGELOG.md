@@ -110,7 +110,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tokio-tungstenite 0.30 everywhere it appears (tungstenite 0.30 rejects
   malformed `Sec-WebSocket-Key` server-side), rig-core 0.42 (the example's
   `Agent` moved out of rig-core; a thirty-line local shim keeps the example
-  tool-less and behaviour-identical) and genai 0.6. base64 stays at 0.22
+  tool-less and behaviour-identical). genai stays at 0.5: every 0.6.x and
+  the 0.7 betas depend on the unmaintained `paste` (RUSTSEC-2024-0436),
+  which `cargo deny check advisories` rejects. base64 stays at 0.22
   because hyper-util still requires it and `deny.toml` denies duplicate
   versions. `deny.toml` gains seven reviewed skips for splits the ecosystem
   is mid-way through (RustCrypto digest 0.10/0.11 via tungstenite against

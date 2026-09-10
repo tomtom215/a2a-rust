@@ -26,7 +26,7 @@ bytes          = "1"
 uuid           = { workspace = true }
 
 # genai — multi-provider LLM client (https://crates.io/crates/genai)
-genai = "0.6"
+genai = "0.5"
 
 [dev-dependencies]
 # `start_paused` for the slow-marker test, so it asserts on a virtual clock

@@ -42,11 +42,16 @@ was sound reasoning over a stale number, and the number moved.
 ADR 0006 sets the target at zero surviving mutants "with the single
 documented exception" of mutants that no test can kill, and requires that an
 equivalence claim be *proved* rather than asserted. Three came up while
-burning down the 2026-08-13 sweep. They are recorded here rather than skipped
-in source, because the `#[mutants::skip]` attribute needs the `mutants` crate
-as a **runtime** dependency of published crates — a supply-chain decision the
-ADR says must be raised on its own terms, not settled inside a test PR.
-Decision taken 2026-08-14: keep them documented, add no dependency.
+burning down the 2026-08-13 sweep. Until 2026-09-10 they were recorded here
+rather than skipped in source, because the `#[mutants::skip]` attribute needs
+the `mutants` crate as a **runtime** dependency of published crates — a
+supply-chain decision the ADR says must be raised on its own terms, not
+settled inside a test PR. Decision taken 2026-08-14: keep them documented, add
+no dependency. **Reversed 2026-09-10**, once every other survivor was killed
+and these three were the whole gap between the sweep and zero:
+`a2a-protocol-server` now depends on `mutants` (0.0.4, MIT, zero
+dependencies) and the three carry `#[mutants::skip]` with the argument below
+as the comment. ADR 0006 records the review.
 
 | Mutant | Why no test can kill it |
 |---|---|
@@ -681,6 +686,10 @@ This is the category most worth clearing before any external review.
   folding the split inside one function.) So the decision ADR 0006 defers —
   take the `mutants` crate as a dependency of a published crate, or carry
   three known survivors in every sweep — is waiting on someone after all.
+
+  **Taken 2026-09-10: the dependency.** See "Mutants no test can kill" above
+  and ADR 0006. Measured with `cargo mutants --list`: `tenant_config.rs` 12 →
+  10 mutants, `streaming/sse.rs` 29 → 28, exactly the three.
 * **Raise coverage on the genuinely weak files.** After the 2026-07-31 pass,
   the weakest are `handler/event_processing/background/mod.rs` (54.2%),
   `serve.rs` (67.5%), and `background/push_delivery.rs` (72.8%). The first

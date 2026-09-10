@@ -63,6 +63,11 @@ auth-jwt = ["dep:ring", "dep:base64"]
 [dependencies]
 a2a-protocol-types      = { version = "0.11.0", path = "../a2a-protocol-types" }
 serde           = { workspace = true }
+# `#[mutants::skip]` for the three mutants no test can distinguish (ADR 0006,
+# "Equivalent mutants"). Attribute-only, zero transitive dependencies, MIT,
+# published by the cargo-mutants author; a regular dependency because
+# cargo-mutants builds the library outside `cfg(test)`.
+mutants         = { version = ">=0.0.4, <0.1" }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }

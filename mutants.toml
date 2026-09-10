@@ -213,9 +213,13 @@ exclude_re = [
 # Both are often fixable in the source, which is strictly better than a gate
 # agreeing not to look. Try that before adding an exclusion here.
 #
-# It also retires the open question of whether to take `mutants` as a
-# dependency of a published crate for in-source `#[mutants::skip]` (ADR 0006,
-# ROADMAP.md): with nothing left to skip, nothing rides on that decision.
+# It also retired, for a time, the open question of whether to take `mutants`
+# as a dependency of a published crate for in-source `#[mutants::skip]`
+# (ADR 0006, ROADMAP.md). The question came back with three equivalents that
+# no rewrite removes without a semver break, and was settled 2026-09-10:
+# `a2a-protocol-server` depends on `mutants` and those three functions carry
+# `#[mutants::skip]` with the argument as a comment. In-source is the only
+# place an exemption lives; this file still excludes nothing.
 
 # Previously this list held workarounds for equivalent mutations in
 # grpc_code_to_error_code (DeadlineExceeded|Cancelled arms) and

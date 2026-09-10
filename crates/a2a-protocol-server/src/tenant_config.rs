@@ -179,6 +179,11 @@ pub struct TenantLimits {
 
 impl TenantLimits {
     /// Returns a builder for constructing [`TenantLimits`].
+    // Equivalent mutant: cargo-mutants replaces the body with
+    // `Default::default()`, which in a function returning `TenantLimitsBuilder`
+    // resolves to `<TenantLimitsBuilder as Default>::default()` — the very call
+    // written here. No test can distinguish the two (ADR 0006).
+    #[mutants::skip]
     #[must_use]
     pub fn builder() -> TenantLimitsBuilder {
         TenantLimitsBuilder::default()
@@ -273,6 +278,10 @@ pub struct PerTenantConfig {
 
 impl PerTenantConfig {
     /// Returns a builder for constructing [`PerTenantConfig`].
+    // Equivalent mutant: the `Default::default()` replacement resolves to
+    // `<PerTenantConfigBuilder as Default>::default()`, the call written here
+    // (ADR 0006).
+    #[mutants::skip]
     #[must_use]
     pub fn builder() -> PerTenantConfigBuilder {
         PerTenantConfigBuilder::default()

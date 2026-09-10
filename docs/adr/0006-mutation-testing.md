@@ -38,8 +38,8 @@ orchestration flows.
 
 2. **Target**: Zero surviving mutants across all four library crates
    (`a2a-protocol-types`, `a2a-protocol-client`, `a2a-protocol-server`,
-   `a2a-protocol-sdk`), with the single documented exception in
-   [Equivalent mutants](#equivalent-mutants) below.
+   `a2a-protocol-sdk`), with the documented exception of the three equivalent
+   mutants in [Equivalent mutants](#equivalent-mutants) below.
 
    The target is unconditional; the *enforcement* is scoped. A PR must add no
    survivors to the lines it changes, and that is blocking. The workspace
@@ -119,15 +119,26 @@ three conditions:
    builds the library normally, so the attribute must resolve in a non-test
    build.
 
-   This workspace does **not** currently depend on `mutants`, and adding it to
-   a crate published on crates.io puts it in every downstream user's
-   dependency tree — a supply-chain decision for a project that maintains a
-   `deny.toml`, an SBOM and SLSA provenance. So the first genuinely equivalent
-   mutant is also the trigger for that decision, and should be raised as one
-   rather than settled inside an unrelated PR.
+   Adding it to a crate published on crates.io puts it in every downstream
+   user's dependency tree — a supply-chain decision for a project that
+   maintains a `deny.toml`, an SBOM and SLSA provenance — so it was deferred
+   until the first genuinely equivalent mutant forced the question rather than
+   settled inside an unrelated PR.
 
-   Until then the target has been met the ordinary way, by writing tests. No
-   exemption has yet been needed.
+   *Decided 2026-09-10.* `a2a-protocol-server` depends on `mutants`
+   (`>=0.0.4, <0.1`) and carries exactly three `#[mutants::skip]` attributes:
+   `TenantLimits::builder`, `PerTenantConfig::builder` and
+   `SseBodyWriter::close`, each with its equivalence argument in a comment
+   above the attribute (the argument is recorded in `ROADMAP.md`, "Mutants no
+   test can kill"). The supply-chain review that the deferral asked for:
+   `mutants` 0.0.4 is MIT, declares **zero** dependencies (crates.io
+   dependency listing, 2026-09-10), is published from the cargo-mutants
+   repository by its author, and its only content is attribute macros that
+   return their input unchanged — the same code every downstream build already
+   trusts when cargo-mutants runs. The alternative, three permanent survivors
+   in every sweep, would have made "zero missed" a figure that needed a
+   footnote forever. Verified: `cargo mutants --list` over the two files drops
+   from 12 and 29 mutants to 10 and 28, the three named mutants and no others.
 
 3. **Do not use `mutants.toml` for this.** Config-level `exclude_globs` and
    `exclude_re` are for whole categories that are never worth mutating —
