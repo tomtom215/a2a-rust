@@ -195,10 +195,9 @@ async fn server_survives_sustained_load_without_leaking() {
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(WorkingExec)
-            .with_task_store(InMemoryTaskStore::with_config(TaskStoreConfig {
-                max_capacity: Some(STORE_CAPACITY),
-                ..TaskStoreConfig::default()
-            }))
+            .with_task_store(InMemoryTaskStore::with_config(
+                TaskStoreConfig::default().with_max_capacity(Some(STORE_CAPACITY)),
+            ))
             .build()
             .expect("handler builds"),
     );

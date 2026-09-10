@@ -313,11 +313,17 @@ silent were all accepted, and the oldest was still alive twelve seconds later.
 # let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).build().expect("handler"));
 let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default())
     .with_http2_keepalive(Duration::from_secs(30), Duration::from_secs(10))
-    .with_max_connection_age(Duration::from_secs(600));
+    .with_max_connection_age(Duration::from_secs(600))
+    .with_max_connections(1024);
 # }
 ```
 
-Both are opt-in. HTTP/2 keepalive PINGs an idle connection and closes it if the
+All three are opt-in. `with_max_connections` is the ceiling the other two do
+not provide — keepalive closes a peer that stops answering, and nothing bounded
+how many peers could be answering at once. As on the WebSocket dispatcher, the
+permit is taken before `accept()`, so load past the ceiling waits in the
+kernel's listen backlog and is refused by the kernel when that fills, rather
+than being accepted and then dropped. The other two: HTTP/2 keepalive PINGs an idle connection and closes it if the
 peer does not answer — and a conformant client's HTTP/2 stack answers without
 the application being involved, so this closes peers that are **unresponsive**,
 not peers that are merely quiet. A streaming RPC waiting for its next event is

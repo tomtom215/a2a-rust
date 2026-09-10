@@ -41,11 +41,11 @@ use std::time::Duration;
 let store = InMemoryTaskStore::new();
 
 // With custom limits
-let store = InMemoryTaskStore::with_config(TaskStoreConfig {
-    task_ttl: Some(Duration::from_secs(7200)),  // 2 hour TTL
-    max_capacity: Some(50_000),
-    ..Default::default()
-});
+let store = InMemoryTaskStore::with_config(
+    TaskStoreConfig::default()
+        .with_task_ttl(Some(Duration::from_secs(7200))) // 2 hour TTL
+        .with_max_capacity(Some(50_000)),
+);
 ```
 
 Features:

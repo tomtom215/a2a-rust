@@ -427,7 +427,13 @@ impl OAuth2ClientCredentials {
         check_endpoint_reachable(&self.token_url, "token endpoint")?;
 
         let req = self.build_token_request()?;
-        let resp = tokio::time::timeout(self.request_timeout, self.client.request(req))
+        // One deadline for headers and body together. Until 2026-09-10 the
+        // body read took a fresh `request_timeout` after the headers had
+        // already spent one, so "the token-request timeout (default 30 s)"
+        // was a 60 s worst case — the applied-twice shape
+        // `scripts/check_timeout_nesting.py` exists to catch.
+        let deadline = tokio::time::Instant::now() + self.request_timeout;
+        let resp = tokio::time::timeout_at(deadline, self.client.request(req))
             .await
             .map_err(|_| ClientError::Timeout("token endpoint request timed out".into()))?
             .map_err(|e| ClientError::Transport(format!("token endpoint request failed: {e}")))?;
@@ -436,7 +442,7 @@ impl OAuth2ClientCredentials {
         let body = crate::transport::collect_response_limited(
             resp,
             MAX_TOKEN_RESPONSE_SIZE,
-            self.request_timeout,
+            deadline.saturating_duration_since(tokio::time::Instant::now()),
         )
         .await?;
         if !status.is_success() {
@@ -566,6 +572,18 @@ struct OAuth2ErrorBody {
 /// Returns a [`ClientError`] when the document cannot be fetched, is not
 /// valid JSON, or omits `token_endpoint`.
 pub async fn discover_token_endpoint(issuer: &str) -> ClientResult<String> {
+    discover_token_endpoint_within(issuer, DEFAULT_TOKEN_REQUEST_TIMEOUT).await
+}
+
+/// [`discover_token_endpoint`] with the whole request — headers and body —
+/// bounded by `budget`. Until 2026-09-10 the body read took a fresh
+/// [`DEFAULT_TOKEN_REQUEST_TIMEOUT`] after the headers had spent one, so
+/// discovery could take twice the documented timeout; the server's JWKS fetch
+/// had the same defect and the same fix (`JWKS_FETCH_BUDGET`).
+pub(crate) async fn discover_token_endpoint_within(
+    issuer: &str,
+    budget: Duration,
+) -> ClientResult<String> {
     #[derive(serde::Deserialize)]
     struct Discovery {
         token_endpoint: Option<String>,
@@ -584,7 +602,8 @@ pub async fn discover_token_endpoint(issuer: &str) -> ClientResult<String> {
         .body(Full::new(Bytes::new()))
         .map_err(|e| ClientError::Transport(format!("discovery request build failed: {e}")))?;
 
-    let resp = tokio::time::timeout(DEFAULT_TOKEN_REQUEST_TIMEOUT, client.request(req))
+    let deadline = tokio::time::Instant::now() + budget;
+    let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
         .map_err(|_| ClientError::Timeout("OIDC discovery request timed out".into()))?
         .map_err(|e| ClientError::Transport(format!("OIDC discovery request failed: {e}")))?;
@@ -593,7 +612,7 @@ pub async fn discover_token_endpoint(issuer: &str) -> ClientResult<String> {
     let body = crate::transport::collect_response_limited(
         resp,
         MAX_TOKEN_RESPONSE_SIZE,
-        DEFAULT_TOKEN_REQUEST_TIMEOUT,
+        deadline.saturating_duration_since(tokio::time::Instant::now()),
     )
     .await?;
     if !status.is_success() {
@@ -939,6 +958,57 @@ mod tests {
             }
         });
         addr
+    }
+
+    use crate::transport::test_support::spawn_stalling_server;
+
+    /// Runs `fut`, returning its error and the wall time it took; fails the
+    /// test if it succeeded.
+    async fn timed_failure<T: std::fmt::Debug>(
+        fut: impl std::future::Future<Output = ClientResult<T>>,
+    ) -> (ClientError, Duration) {
+        let started = Instant::now();
+        let err = fut.await.expect_err("a stalled body must not succeed");
+        (err, started.elapsed())
+    }
+
+    /// The token request's timeout bounds headers and body together. Before
+    /// 2026-09-10 the body read took a fresh `request_timeout` after the
+    /// headers had spent most of one, so a server that answered late and
+    /// then stalled held `refresh` for close to twice the documented bound:
+    /// headers at 2/3 T, body for another T. One deadline ends at T.
+    #[tokio::test]
+    async fn a_stalled_token_body_is_bounded_by_one_request_timeout() {
+        let timeout = Duration::from_millis(600);
+        let addr = spawn_stalling_server("HTTP/1.1 200 OK", timeout * 2 / 3).await;
+        let p = OAuth2ClientCredentials::new(format!("http://{addr}/token"), "cid", "csec")
+            .with_request_timeout(timeout);
+
+        let (err, elapsed) = timed_failure(p.refresh()).await;
+        assert!(matches!(err, ClientError::Timeout(_)), "{err:?}");
+        assert!(
+            elapsed >= timeout && elapsed < timeout * 3 / 2,
+            "one budget, not two: took {elapsed:?} against {timeout:?}"
+        );
+    }
+
+    /// The same bound for OIDC discovery, whose body read also used to take a
+    /// second full `DEFAULT_TOKEN_REQUEST_TIMEOUT`.
+    #[tokio::test]
+    async fn a_stalled_discovery_body_is_bounded_by_one_budget() {
+        let budget = Duration::from_millis(600);
+        let addr = spawn_stalling_server("HTTP/1.1 200 OK", budget * 2 / 3).await;
+
+        let (err, elapsed) = timed_failure(discover_token_endpoint_within(
+            &format!("http://{addr}"),
+            budget,
+        ))
+        .await;
+        assert!(matches!(err, ClientError::Timeout(_)), "{err:?}");
+        assert!(
+            elapsed >= budget && elapsed < budget * 3 / 2,
+            "one budget, not two: took {elapsed:?} against {budget:?}"
+        );
     }
 
     fn token_body(token: &str, expires_in: Option<u64>) -> String {

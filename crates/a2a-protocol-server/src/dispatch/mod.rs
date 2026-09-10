@@ -38,7 +38,12 @@ pub use websocket::WebSocketDispatcher;
 ///     .with_max_request_body_size(8 * 1024 * 1024)
 ///     .with_body_read_timeout(std::time::Duration::from_secs(60));
 /// ```
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct DispatchConfig {
     /// Maximum request body size in bytes. Default: 4 MiB.
     pub max_request_body_size: usize,
@@ -134,6 +139,16 @@ impl DispatchConfig {
     #[must_use]
     pub const fn with_max_batch_size(mut self, size: usize) -> Self {
         self.max_batch_size = size;
+        self
+    }
+
+    /// Sets whether data-plane requests must carry an `A2A-Version` header.
+    /// See [`require_version_header`](Self::require_version_header);
+    /// [`accept_missing_version_header`](Self::accept_missing_version_header)
+    /// is the same switch spelled for the one value most callers want.
+    #[must_use]
+    pub const fn with_require_version_header(mut self, require: bool) -> Self {
+        self.require_version_header = require;
         self
     }
 
@@ -401,5 +416,12 @@ mod tests {
             validate_version_metadata(&md, false).is_ok(),
             "no version key present, and require=false accepts that"
         );
+    }
+
+    #[test]
+    fn with_require_version_header_sets_the_field() {
+        let default = DispatchConfig::default().require_version_header;
+        let cfg = DispatchConfig::default().with_require_version_header(!default);
+        assert_eq!(cfg.require_version_header, !default);
     }
 }

@@ -20,10 +20,12 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
 use a2a_protocol_types::task::{TaskId, TaskState};
 use rig_core::completion::{
-    CompletionError, CompletionModel, CompletionRequest, CompletionResponse,
+    AssistantContent, CompletionError, CompletionModel, CompletionRequest, CompletionResponse,
+    Usage,
 };
+use rig_core::streaming::StreamingCompletionResponse;
 
-use crate::{RigAgentExecutor, SLOW_PREFIX, make_agent_card};
+use crate::{RigAgent, RigAgentExecutor, SLOW_PREFIX, make_agent_card};
 
 // ── Two models, neither of which has a provider ──────────────────────────────
 
@@ -38,76 +40,49 @@ struct AnsweringModel(&'static str);
 const ANSWER: &str = "the model's own words";
 
 impl CompletionModel for FailingModel {
-    type Response = ();
-    type StreamingResponse = ();
-    type Client = ();
-
-    fn make(_client: &Self::Client, _model: impl Into<String>) -> Self {
-        Self
-    }
-
     async fn completion(
         &self,
         _request: CompletionRequest,
-    ) -> Result<CompletionResponse<Self::Response>, CompletionError> {
+    ) -> Result<CompletionResponse, CompletionError> {
         Err(CompletionError::ProviderError("no provider".to_owned()))
     }
 
     async fn stream(
         &self,
         _request: CompletionRequest,
-    ) -> Result<
-        rig_core::streaming::StreamingCompletionResponse<Self::StreamingResponse>,
-        CompletionError,
-    > {
+    ) -> Result<StreamingCompletionResponse, CompletionError> {
         Err(CompletionError::ProviderError("no provider".to_owned()))
     }
 }
 
 impl CompletionModel for AnsweringModel {
-    type Response = ();
-    type StreamingResponse = ();
-    type Client = ();
-
-    fn make(_client: &Self::Client, _model: impl Into<String>) -> Self {
-        Self(ANSWER)
-    }
-
     async fn completion(
         &self,
         _request: CompletionRequest,
-    ) -> Result<CompletionResponse<Self::Response>, CompletionError> {
-        Ok(CompletionResponse {
-            choice: rig_core::OneOrMany::one(
-                rig_core::completion::message::AssistantContent::text(self.0),
-            ),
-            usage: rig_core::completion::Usage::new(),
-            raw_response: (),
-            message_id: None,
-        })
+    ) -> Result<CompletionResponse, CompletionError> {
+        Ok(CompletionResponse::new(
+            vec![AssistantContent::text(self.0)],
+            Usage::new(),
+            "answering-fake",
+        ))
     }
 
     async fn stream(
         &self,
         _request: CompletionRequest,
-    ) -> Result<
-        rig_core::streaming::StreamingCompletionResponse<Self::StreamingResponse>,
-        CompletionError,
-    > {
+    ) -> Result<StreamingCompletionResponse, CompletionError> {
         Err(CompletionError::ProviderError(
             "streaming not faked".to_owned(),
         ))
     }
 }
 
-fn executor<M: CompletionModel + 'static>(
+fn executor<M: CompletionModel + Clone + 'static>(
     model: M,
     fallback_on_error: bool,
 ) -> RigAgentExecutor<M> {
     RigAgentExecutor {
-        agent: rig_core::agent::AgentBuilder::new(model)
-            .preamble("You are a helpful A2A protocol agent.")
-            .build(),
+        agent: RigAgent::new(model, "You are a helpful A2A protocol agent."),
         fallback_on_error,
     }
 }

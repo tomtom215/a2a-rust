@@ -1,0 +1,22 @@
+# Recorded justifications for scripts/check_timeout_nesting.py.
+#
+# One pair per line:  path | fn | kind | inner | outer | reason
+# `kind` is nested / deadline / twice; `inner` and `outer` are the identities the
+# script prints (a knob or const name, or a literal such as `30s`). The push
+# pairing takes no entry here — its reason has to be code (see the script).
+#
+# A line nothing matches any more fails the check, so a fixed defect cannot
+# leave a stale exemption behind. A reason beginning `KNOWN DEFECT` is a
+# recorded debt, not a justification; the gate prints it on every run.
+#
+# Empty since 2026-09-10. The four entries this file opened with were all the
+# "budget applied twice" shape Addendum 8 of docs/v0.9.0-post-release-review.md
+# measured at 2x in discovery (55 s for a 30 s budget): the client's
+# `OAuth2ClientCredentials::refresh` and `discover_token_endpoint` read the
+# body under a second full request timeout, and the JSON-RPC and REST
+# streaming transports read a failed stream start's error body under a second
+# full `stream_connect_timeout`. Each now takes one deadline for headers and
+# body, with a regression test against a server that answers and then stalls
+# (`a_stalled_*` in token_provider.rs, transport/jsonrpc.rs and
+# transport/rest/mod.rs). Prefer that route — one deadline, remainder for the
+# body, as transport/jsonrpc.rs::execute_request did first — to a line here.

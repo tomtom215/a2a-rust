@@ -12,7 +12,7 @@ happen before a `1.0`. [ROADMAP.md](ROADMAP.md) tracks the open items;
 
 ## 1. Where the project is
 
-The crates are at `0.11`. Between `0.7.0` (2026-07-24) and `0.11.0`
+The crates are at `0.12` (prepared 2026-09-10). Between `0.7.0` (2026-07-24) and `0.11.0`
 (2026-08-30) there were four minor releases in five weeks, and the changelog
 for that span names nine breaking changes. That cadence was appropriate while
 the A2A `v1.0` wire contract, the tenant model and the four bindings were
@@ -80,13 +80,16 @@ removing an unsafe surface; those are documented as such.
   revision is a patch-level addition. The two deliberate exceptions are
   closed sets fixed by their underlying standards: `ApiKeyLocation` and
   `JsonRpcResponse` stay exhaustive so consumers can match them completely.
-- **`GrpcTransportConfig` and `ServeConfig`** are `#[non_exhaustive]` with
-  builder-style `with_*` methods, so a new option there is additive. The
-  other configuration structs (`GrpcConfig`, `DispatchConfig`,
-  `RateLimitConfig` and their siblings) are still exhaustive as of `0.11`: adding a field to one
-  is a breaking change under §2 and is batched accordingly. Converting them
-  is on the roadmap for the next breaking minor, so that this exception
-  disappears rather than being restated.
+- **The configuration structs** (`HandlerLimits`, `DispatchConfig`,
+  `CorsConfig`, `GrpcConfig`, `CacheConfig`, `PushRetryPolicy`,
+  `RateLimitConfig`, `TaskStoreConfig`, `TenantStoreConfig`,
+  `PerTenantConfig`, `TenantLimits`, `ServeConfig`; `ClientConfig`,
+  `RetryPolicy`, `WebSocketTransportConfig`, `GrpcTransportConfig`) are
+  `#[non_exhaustive]` with `Default` (or a documented constructor) and a
+  `with_*` setter per field, so a new option on any of them is additive.
+  Until `0.12.0` most of them were exhaustive and adding a field was a
+  breaking change under §2; that conversion was the bulk of the `0.12.0`
+  breaking batch, and this exception no longer exists.
 - **Feature flags** are additive: enabling a feature never removes or changes
   an API that is available without it.
 

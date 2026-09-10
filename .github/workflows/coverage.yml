@@ -20,6 +20,15 @@ on:
   # signal; a signal that cannot be tested until it is already live is the
   # same problem the Codecov comment below describes.
   workflow_dispatch:
+  # Weekly, for the `ignores-applied` job only: `codecov.yml`'s ignore list
+  # was, from 2026-08-06 to 2026-09-09, a record of an exclusion that Codecov
+  # never applied, and nothing ran the script that could have said so. The
+  # report the API serves is the settled one for `main`, which is why this is
+  # a schedule and not a step after the upload above: an upload is processed
+  # asynchronously, and reading the tree straight after it reads the previous
+  # commit's report.
+  schedule:
+    - cron: "17 6 * * 1"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -37,6 +46,9 @@ jobs:
   coverage:
     name: Test coverage
     runs-on: ubuntu-latest
+    # The schedule exists for `ignores-applied` below; an upload from a
+    # scheduled run would publish nothing new.
+    if: github.event_name != 'schedule'
     # The seven PostgreSQL store files only execute against a live server.
     # Until 2026-09-09 they were meant to be excluded from the dashboard
     # instead, and the exclusion never worked (see codecov.yml): 957 of the
@@ -60,8 +72,9 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
+          toolchain: stable
           components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -92,6 +105,29 @@ jobs:
       - name: Generate coverage report
         run: cargo llvm-cov report --lcov --output-path lcov.info
 
+      # The SLIMRPC binding is not a workspace member (ci.yml's
+      # `slimrpc-binding` job says why), so `--workspace` above never sees it
+      # and until 2026-09-10 nothing measured it — docs/v0.9.0-post-release-
+      # review.md §2.5 recorded it as "outside coverage and mutation". This is
+      # the suite ci.yml runs there — unit, end-to-end over an in-process SLIM
+      # datapath, and the node topologies on loopback — under instrumentation,
+      # single-threaded for the same reason. The three SPIFFE suites stay
+      # #[ignore]d: they need real SPIRE, which this job does not install.
+      # Measured 2026-09-10 before this step existed: 65.61% line coverage,
+      # 1013 of 1544 lines, across the twelve files under src/.
+      - name: Run the SLIMRPC binding's tests under instrumentation
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo llvm-cov --lcov --output-path lcov.info -- --test-threads=1
+
+      # cargo-llvm-cov writes absolute `SF:` paths rooted at the checkout.
+      # Codecov files a path relative to the repository root, so the prefix is
+      # stripped here rather than left to Codecov's own path fixing, which
+      # nothing in this repository has verified against a nested workspace.
+      # Measured locally: twelve records, all `bindings/a2a-protocol-slimrpc/
+      # src/...` after this step.
+      - name: Make the binding's coverage paths repository-relative
+        run: sed -i "s|^SF:${GITHUB_WORKSPACE}/|SF:|" bindings/a2a-protocol-slimrpc/lcov.info
+
       - name: Upload to Codecov
         # RESOLVED (2026-07-30): the 2026-06-10 outage that motivated the
         # `continue-on-error` this replaces was Codecov permanently losing
@@ -119,8 +155,30 @@ jobs:
         # standing as a stale warning.
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
-          files: lcov.info
+          files: lcov.info,bindings/a2a-protocol-slimrpc/lcov.info
           # A failed upload must be visible, not silently green — otherwise
           # the coverage signal can disappear without anyone noticing.
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  # Every `ignore:` entry in codecov.yml is checked against the files Codecov
+  # is actually counting for `main`. An entry that still matches a counted
+  # file is a failure: the file claims an exclusion that is not in effect,
+  # which is exactly what it claimed for five PostgreSQL store paths for five
+  # weeks (see codecov.yml). Measured 2026-09-10 before this job existed:
+  # 3 patterns, 146 files in the report, no match. PyYAML is installed
+  # explicitly for the same reason ci.yml installs it: a checker that cannot
+  # parse its input must fail, not skip.
+  ignores-applied:
+    name: codecov.yml ignores are applied
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet pyyaml
+      - name: Ignore patterns match nothing Codecov counts
+        run: python3 scripts/check_codecov_ignores.py

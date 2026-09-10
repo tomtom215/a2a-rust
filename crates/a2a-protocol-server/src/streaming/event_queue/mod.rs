@@ -164,9 +164,15 @@ pub fn new_in_memory_queue_with_options(
 ///   persisted and only the caller can decide to stop.
 /// * **Closed** — the event is dropped and `write` returns `Ok`. Deliberate:
 ///   the processor is gone, and the stream can still serve live subscribers.
-///   It is reported only by a `trace_warn!`, which compiles to nothing without
-///   the non-default `tracing` feature, so on a default build this loss is
-///   silent. Backlog **B18**.
+///   Reported through [`Metrics::on_persistence_error`] as
+///   [`persistence_operation::QUEUE_HANDOFF`] / `channel_closed` when the
+///   writer carries a metrics handle (every writer the
+///   [`EventQueueManager`] creates does), so the loss is visible on a default
+///   build; the `trace_warn!` beside it needs the `tracing` feature.
+///
+/// [`Metrics::on_persistence_error`]: crate::metrics::Metrics::on_persistence_error
+/// [`persistence_operation::QUEUE_HANDOFF`]: crate::metrics::persistence_operation::QUEUE_HANDOFF
+/// [`EventQueueManager`]: super::EventQueueManager
 #[must_use]
 pub fn new_in_memory_queue_with_persistence(
     capacity: usize,

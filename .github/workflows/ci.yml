@@ -48,8 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
+          toolchain: stable
           components: rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -174,6 +175,20 @@ jobs:
       - name: Workflow verdict gates can fail
         run: python3 -m pip install --quiet pyyaml && ./scripts/prove_workflow_gates_fail.py
 
+      # The two provers above ask whether a gate *can* fail. This asks whether
+      # it *runs on the commits that can break it* — the question that had a
+      # bad answer twice, and both times a human found it by reading `on:`
+      # blocks: dco.yml triggered on `pull_request` only, and benchmarks.yml
+      # pushes book/src/reference/benchmarks.md with GITHUB_TOKEN, which
+      # creates no workflow run, so the one job that rewrote the page was the
+      # one job that never checked it (Q6, B13 of
+      # docs/v0.9.0-post-release-review.md). It reads every workflow's
+      # triggers, `if:` conditions and in-workflow `git push`, and fails if a
+      # gate is unreachable from an event that changes its inputs. Uses the
+      # PyYAML the step above installed.
+      - name: Every gate runs on the events that can break it
+        run: python3 scripts/check_gate_reachability.py
+
       # `scripts/lib/ci_gates.sh` parses this file into the gate list that
       # preflight.sh and prove_gates_fail.sh run, using its own block-scalar
       # reader written in awk — because both scripts must work with nothing
@@ -213,6 +228,21 @@ jobs:
       - name: Doc comments contain no literal escapes
         run: python3 scripts/check_doc_escapes.py
 
+      # An inner timeout larger than the one enclosing it never fires: the
+      # outer bound's cleanup and reporting path is what runs, and the inner
+      # number is configuration that cannot take effect. Addendum 8 of
+      # docs/v0.9.0-post-release-review.md counted eight shipped instances of
+      # that class — `shutdown_with_timeout` taking 2x, discovery taking 55 s
+      # on a 30 s budget, `HttpPushSender` promising three attempts of which
+      # one ever ran — three of them the same defect the client's JSON-RPC
+      # transport had already fixed and written down. A fix written down is
+      # not a lesson learned; this is the check (B14). It pairs every
+      # non-test timeout with what encloses it, computes the push sender's
+      # schedule against `push_delivery_timeout` from the same constants the
+      # code uses, and fails when a pair has no recorded reason.
+      - name: Timeouts fit inside the bounds that enclose them
+        run: python3 scripts/check_timeout_nesting.py
+
       # The question an adopter of a protocol library actually has is whether a
       # malformed peer can take their process down. Until this gate existed the
       # answer was unquotable — a grep for `.unwrap()` counts matches in doc
@@ -222,6 +252,23 @@ jobs:
       # set makes adding one a reviewed act rather than an accident.
       - name: Panic surface of the published crates is unchanged
         run: python3 scripts/check_panic_paths.py
+
+      # A configurable bound whose default masks its own absence: dropped,
+      # half-applied, or never read, and nothing notices because the fallback
+      # has the same value as the default. It is inert until somebody
+      # *tightens* it, and the person who tightens a limit is the person who
+      # decided the default was wrong for them. Five shipped that way before
+      # `scripts/audit/find_inert_bounds.py` existed; `max_page_size`, read by
+      # the in-memory store and no other, is the shape.
+      #
+      # The audit script reports 20 candidates for 5 worth reading and always
+      # exits 0, which is a check people learn to skip. This runs the same two
+      # signatures against `scripts/inert_bounds_allowlist.txt`, where every
+      # legitimately partial pair carries a reason somebody verified by reading
+      # the code, and fails only on a *new* one — or on an entry that no longer
+      # matches anything, the same rule deny.toml's skip list follows (B21).
+      - name: Configurable bounds are honoured by every sibling, or allowlisted with a reason
+        run: python3 scripts/check_inert_bounds.py
 
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
@@ -248,7 +295,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
           toolchain: ${{ matrix.rust }}
           components: clippy
@@ -300,8 +347,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
+          toolchain: stable
           components: clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Install cargo-hack
@@ -325,7 +373,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -388,7 +436,9 @@ jobs:
       A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Test (postgres integration, live database)
         run: cargo test -p a2a-protocol-server --features postgres --test postgres_store_tests -- --ignored
@@ -408,6 +458,17 @@ jobs:
           cargo test -p a2a-protocol-server --features postgres \
             --test multi_replica -- --ignored --test-threads=1
 
+      # The shared rate-limit counter's sweep cadence: no sweep on a counter's
+      # first count, a sweep on count SWEEP_INTERVAL that clears past windows
+      # only. These are lib tests, not a `--test` binary, so the module is
+      # named: a bare `--ignored` would also select every other ignored lib
+      # test, and those are ignored for reasons a database does not fix. Each
+      # test creates and drops its own scratch database, so no thread limit.
+      - name: Test (Postgres rate-limit counter, live database)
+        run: |
+          cargo test -p a2a-protocol-server --features postgres --lib \
+            rate_limit::shared -- --ignored
+
   # ── Nightly CI ──────────────────────────────────────────────────────────
   nightly:
     name: Nightly (informational)
@@ -417,8 +478,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       # Deliberately un-pinned: this informational canary exists to surface
       # upcoming toolchain breakage early, so it must float with nightly.
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
+          toolchain: nightly
           components: clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # protoc is bundled via the `protoc-bin-vendored` crate (see above).
@@ -445,7 +507,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Build docs (zero warnings)
         run: cargo doc --workspace --no-deps
@@ -491,21 +555,34 @@ jobs:
   # 0.9.0 and crates.io has 0.9.0, so between releases the baseline is the
   # version being developed against.
   #
-  # Scope worth knowing rather than assuming: `feature-group: default-features`
-  # checks the default surface only, so a break behind `signing`, `grpc`,
-  # `postgres` or any other optional feature is outside what this can see.
+  # Scope: all four published crates, `feature-group: all-features`, since
+  # 2026-09-10. Until then this was three crates at `default-features`, so a
+  # break behind `signing`, `grpc`, `postgres` or any other optional feature
+  # was outside what the gate could see, and the `a2a-protocol-sdk` facade was
+  # not checked at all — the STABILITY.md 1.0 criterion says "all published
+  # crates with all features", and the gate now measures what the criterion
+  # names. Verified locally with cargo-semver-checks 0.50.0 on 2026-09-10
+  # against the 0.11.0 baselines, all features: types and sdk 196 checks
+  # pass; client and server exit 100 on exactly the four deliberate 0.12
+  # breaks the changelog lists (`WebSocketTransportConfig` and
+  # `HandlerLimits` gain fields, `GrpcTransportConfig` is non_exhaustive,
+  # `InMemoryQueueWriter` loses `UnwindSafe`) — two of which this job's
+  # previous scope could not have seen. With every crate at 0.12.0 both
+  # report "no semver update required", exit 0.
   semver:
     name: cargo-semver-checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Check semver (types, client, server)
+      - name: Check semver (types, client, server, sdk; all features)
         uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae # v2.8
         with:
-          package: a2a-protocol-types, a2a-protocol-client, a2a-protocol-server
-          feature-group: default-features
+          package: a2a-protocol-types, a2a-protocol-client, a2a-protocol-server, a2a-protocol-sdk
+          feature-group: all-features
 
   # ── Package validation ──────────────────────────────────────────────────
   #
@@ -519,10 +596,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
+        run: cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli
 
   # ── SDK dogfood (examples/agent-team) ────────────────────────────────────
   #
@@ -575,7 +654,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Run the dogfood suite
         run: cargo run -p agent-team --release --all-features
@@ -626,7 +707,7 @@ jobs:
     # node or network is needed here.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
           toolchain: stable
           components: clippy, rustfmt
@@ -665,21 +746,25 @@ jobs:
       # in its Cargo.toml keeps the test fixtures out of the tarball), which is
       # exactly the kind of thing that breaks silently between releases.
       #
-      # `--no-verify` is required rather than convenient. The binding depends on
-      # the workspace crates as `version = "0.10", path = "../.."`, and packaging
-      # strips the path — so the verification build resolves `a2a-protocol-server`
-      # from crates.io, i.e. the *last released* version. Any API added in the
-      # same change as the binding that uses it would fail verification until
-      # that release ships. Building the binding against the local server is
-      # what the Build and Test steps above already do.
+      # The wrapper runs `cargo package --allow-dirty` with a config-level
+      # `[patch]` that supplies the three SDK pins from `crates/`, so the
+      # tarball is built and verified against the same crates the Build and
+      # Test steps use. Without it, packaging strips the `path` from
+      # `version = "0.11", path = "../../crates/..."` and verification resolves
+      # the SDK from crates.io — the *last released* version, which fails on
+      # any API added in the same change — and during a release the pinned
+      # version is not on the index at all, so one commit per cycle could not
+      # pass in either direction (B23). Until 2026-09-10 that was answered
+      # with `--no-verify` plus a `cargo package --list` fallback for the
+      # window; the patch answers both, because a patch may name a version
+      # the index does not have. Measured: a consumer pinned to an
+      # unpublished 0.99.0 fails plain `cargo package` and verifies with it.
       #
-      # The wrapper exists because stripping the path also breaks the *pin*
-      # during a release: the version being prepared is not on the index yet, so
-      # one commit per cycle could not pass this step in either direction — and
-      # reverting the pin breaks the binding's build instead (B23). It skips
-      # registry resolution for exactly that state, proves the rest of packaging
-      # with `cargo package --list`, and fails on everything else, a typo'd pin
-      # included. Its decision table is self-tested on every run.
+      # What the wrapper still decides itself: a pin that does not name the
+      # in-tree version is refused before cargo runs — cargo would leave the
+      # patch unused, warn, and verify against the published crate — and an
+      # unused-patch warning after the fact fails the step. Both rules are
+      # self-tested on every run.
       - name: Package validation
         run: ./scripts/package_binding.py
       # Six topologies: in-process, multicast group, one node over TCP, that
@@ -690,6 +775,15 @@ jobs:
       - name: Test (unit, end-to-end, and doc)
         working-directory: bindings/a2a-protocol-slimrpc
         run: cargo test -- --test-threads=1
+
+      # The README's "Example" section, runnable: an agent and a client on one
+      # in-process datapath, one blocking and one streaming call, exit 0. It
+      # goes through `ClientBuilder::with_custom_transport` and the typed
+      # client methods rather than the raw `Transport` trait the tests use, so
+      # it is the one place the documented client path is executed.
+      - name: Example (in-process agent and client)
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo run --example in_process
 
       # The SPIFFE suite runs against a real spire-server and spire-agent, not
       # a stub — SPIFFE identity means nothing unless the credential comes from
@@ -742,7 +836,9 @@ jobs:
           - 5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: echo-agent — every method over every binding
         run: cargo run -p echo-agent --release
@@ -785,3 +881,13 @@ jobs:
         run: cargo run -p rig-a2a-agent --release
       - name: multi-lang-team — coordinator surface over every binding
         run: cargo run -p multi-lang-team --release
+      # Durability over a SQLite restart, failure injection, and two replicas
+      # over the job's PostgreSQL service. `RESILIENT_REQUIRE_ALL` turns the
+      # example's honest `[NOT RUN]` into exit 4, for the same reason
+      # `INCIDENT_REQUIRE_ALL` does above: here the database is present, so
+      # an act that did not run is a failure, not a skip.
+      - name: resilient-agent — durability, failure injection, scaling against the live database
+        run: cargo run -p resilient-agent --release --all-features
+        env:
+          A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+          RESILIENT_REQUIRE_ALL: "1"

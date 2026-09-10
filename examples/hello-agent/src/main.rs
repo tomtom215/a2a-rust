@@ -6,7 +6,8 @@
 //! The smallest complete A2A agent.
 //!
 //! Everything above the `#[cfg(test)]` line is the whole agent: it greets
-//! whoever sends it a message, over JSON-RPC (§9), on one port.
+//! whoever sends it a message, over JSON-RPC (§9), on one port, and publishes
+//! the card (§8) that lets a client find it there.
 //!
 //! The sibling examples answer "how deep does this go" — `echo-agent` drives
 //! every method over every binding, `agent-team` runs a multi-agent topology.
@@ -43,36 +44,60 @@ agent_executor!(HelloAgent, |ctx, queue| async {
     Ok(())
 });
 
+/// The card a client discovers at `/.well-known/agent-card.json`: the three
+/// things the type cannot invent — a name, a version, where to reach it —
+/// and the rest left at its defaults.
+fn card(url: &str) -> AgentCard {
+    AgentCard::new("hello-agent", "0.0.0", AgentInterface::jsonrpc(url))
+        .with_description("Greets whoever sends it a message")
+}
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let url = "http://127.0.0.1:3000";
     let handler = std::sync::Arc::new(
         RequestHandlerBuilder::new(HelloAgent)
+            .with_agent_card(card(url))
             .build()
             .expect("handler config is static, so this cannot fail at runtime"),
     );
 
-    println!("hello-agent listening on http://127.0.0.1:3000");
+    println!("hello-agent listening on {url}");
     serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::HelloAgent;
+    use super::{HelloAgent, card};
     use a2a_protocol_sdk::prelude::*;
     use std::sync::Arc;
 
-    /// Boots the agent on an ephemeral port and returns a client pointed at it.
-    async fn spawn_agent() -> A2aClient {
+    /// Boots the agent on an ephemeral port and returns its base URL. The
+    /// card has to carry the port that is actually bound, and the handler
+    /// serving the card is built before the socket is, so the port is learned
+    /// with a probe bind first.
+    async fn spawn_agent_url() -> String {
+        let probe = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("probe bind");
+        let addr = probe.local_addr().expect("local_addr");
+        drop(probe);
+        let url = format!("http://{addr}");
         let handler = Arc::new(
             RequestHandlerBuilder::new(HelloAgent)
+                .with_agent_card(card(&url))
                 .build()
                 .expect("build handler"),
         );
-        let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
+        serve_with_addr(addr, JsonRpcDispatcher::new(handler))
             .await
             .expect("bind ephemeral port");
+        url
+    }
 
-        ClientBuilder::new(format!("http://{addr}"))
+    /// Boots the agent and returns a client pointed at it.
+    async fn spawn_agent() -> A2aClient {
+        ClientBuilder::new(spawn_agent_url().await)
             .build()
             .expect("build client")
     }
@@ -124,6 +149,24 @@ mod tests {
         let client = spawn_agent().await;
         let greeting = greet(&client, vec![Part::url("https://example.com/f.pdf")]).await;
         assert_eq!(greeting.as_deref(), Some("Hello, world!"));
+    }
+
+    /// The agent must be discoverable: `GET /.well-known/agent-card.json`
+    /// answers with a card a client can be built from, and that client
+    /// reaches the agent — so the interface the card advertises is real.
+    #[tokio::test]
+    async fn publishes_a_card_a_client_can_discover_and_connect_with() {
+        let url = spawn_agent_url().await;
+        let card = resolve_agent_card(&url)
+            .await
+            .expect("the well-known path answers");
+        assert_eq!(card.name, "hello-agent");
+        let client = ClientBuilder::from_card(&card)
+            .expect("the card advertises an interface")
+            .build()
+            .expect("build client");
+        let greeting = greet(&client, vec![Part::text("Ada")]).await;
+        assert_eq!(greeting.as_deref(), Some("Hello, Ada!"));
     }
 
     /// A leading non-text part must not hide the text behind it. This is the

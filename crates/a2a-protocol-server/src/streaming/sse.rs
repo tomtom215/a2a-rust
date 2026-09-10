@@ -132,6 +132,10 @@ impl SseBodyWriter {
     }
 
     /// Closes the SSE stream by dropping the sender.
+    // Equivalent mutant: the body is `drop(self)` and `self` is taken by value,
+    // so a body of `()` drops it at scope end just the same, and nothing runs
+    // in between. No test can distinguish the two (ADR 0006).
+    #[mutants::skip]
     pub fn close(self) {
         drop(self);
     }

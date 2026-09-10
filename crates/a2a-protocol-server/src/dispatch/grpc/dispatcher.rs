@@ -9,6 +9,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::bounded_incoming::BoundedIncoming;
 use super::native::A2aServiceImpl;
 use super::{A2aServiceServer, GrpcConfig};
 use crate::handler::RequestHandler;
@@ -27,6 +28,7 @@ pub struct GrpcDispatcher {
     config: GrpcConfig,
     keepalive: Option<(Duration, Duration)>,
     max_connection_age: Option<Duration>,
+    max_connections: Option<usize>,
     #[cfg(feature = "grpc-tls")]
     tls: Option<tonic::transport::ServerTlsConfig>,
 }
@@ -40,9 +42,34 @@ impl GrpcDispatcher {
             config,
             keepalive: None,
             max_connection_age: None,
+            max_connections: None,
             #[cfg(feature = "grpc-tls")]
             tls: None,
         }
+    }
+
+    /// Caps the connections served at once. Default: **unbounded**.
+    ///
+    /// The same knob the WebSocket binding has had since 2026-08-19
+    /// ([`with_max_connections`](crate::dispatch::websocket::WebSocketDispatcher::with_max_connections)),
+    /// and the gap the measurement under [`with_http2_keepalive`](Self::with_http2_keepalive)
+    /// left open: keepalive closes a peer that stops *answering*, and nothing
+    /// bounded how many peers could be answering at once. tonic's server has
+    /// no connection ceiling of its own — `concurrency_limit` is per
+    /// connection — so this one is enforced in front of it: the permit is
+    /// taken **before** `accept()`, and load past the ceiling waits in the
+    /// kernel's listen backlog until a served connection ends, or is refused
+    /// by the kernel when that fills. The permit travels with the accepted
+    /// socket and is released when tonic drops it, so it covers TLS, HTTP/2
+    /// and the RPCs on it alike.
+    ///
+    /// Applied by every `serve*` method. [`into_service`](Self::into_service)
+    /// hands the service to a server the caller runs, and that server's
+    /// accept loop is the caller's to bound.
+    #[must_use]
+    pub const fn with_max_connections(mut self, max: usize) -> Self {
+        self.max_connections = Some(max);
+        self
     }
 
     /// Serves TLS on the listener itself instead of relying on a terminating
@@ -141,8 +168,13 @@ impl GrpcDispatcher {
             "A2A gRPC server listening"
         );
 
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        let incoming = BoundedIncoming::new(listener, self.max_connections);
         let router = self.build_router()?;
-        router.serve(addr).await.map_err(std::io::Error::other)
+        router
+            .serve_with_incoming(incoming)
+            .await
+            .map_err(std::io::Error::other)
     }
 
     /// Starts a gRPC server and returns the bound [`SocketAddr`].
@@ -178,7 +210,7 @@ impl GrpcDispatcher {
         listener: tokio::net::TcpListener,
     ) -> std::io::Result<SocketAddr> {
         let local_addr = listener.local_addr()?;
-        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
+        let incoming = BoundedIncoming::new(listener, self.max_connections);
 
         trace_info!(
             %local_addr,
@@ -265,7 +297,8 @@ impl std::fmt::Debug for GrpcDispatcher {
         s.field("handler", &"RequestHandler { .. }")
             .field("config", &self.config)
             .field("keepalive", &self.keepalive)
-            .field("max_connection_age", &self.max_connection_age);
+            .field("max_connection_age", &self.max_connection_age)
+            .field("max_connections", &self.max_connections);
         #[cfg(feature = "grpc-tls")]
         s.field("tls", &self.tls.is_some());
         s.finish()

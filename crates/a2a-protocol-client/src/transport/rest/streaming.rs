@@ -29,23 +29,24 @@ impl RestTransport {
 
         let req = self.build_request(method, &params, extra_headers, true)?;
 
-        let resp = tokio::time::timeout(
-            self.inner.stream_connect_timeout,
-            self.inner.client.request(req),
-        )
-        .await
-        .map_err(|_| {
-            trace_error!(method, "stream connect timed out");
-            ClientError::Timeout("stream connect timed out".into())
-        })?
-        .map_err(|e| {
-            trace_error!(method, error = %e, "HTTP client error");
-            ClientError::HttpClient(e.to_string())
-        })?;
+        // One deadline for the headers and, when the answer is not a stream,
+        // the error body — see the JSON-RPC transport for why.
+        let deadline = tokio::time::Instant::now() + self.inner.stream_connect_timeout;
+        let resp = tokio::time::timeout_at(deadline, self.inner.client.request(req))
+            .await
+            .map_err(|_| {
+                trace_error!(method, "stream connect timed out");
+                ClientError::Timeout("stream connect timed out".into())
+            })?
+            .map_err(|e| {
+                trace_error!(method, error = %e, "HTTP client error");
+                ClientError::HttpClient(e.to_string())
+            })?;
 
         let status = resp.status();
         if !status.is_success() {
-            return Err(self.stream_error_status(status, resp).await);
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            return Err(self.stream_error_status(status, resp, remaining).await);
         }
 
         // A non-SSE 200 (e.g. an `application/json` error envelope or a proxy
@@ -62,7 +63,7 @@ impl RestTransport {
             let body_bytes = super::super::collect_response_limited(
                 resp,
                 self.inner.max_response_size,
-                self.inner.stream_connect_timeout,
+                deadline.saturating_duration_since(tokio::time::Instant::now()),
             )
             .await?;
             return Err(super::super::jsonrpc::non_sse_stream_response_error(
@@ -94,16 +95,19 @@ impl RestTransport {
     /// response-size cap during the read — a hostile server answering with an
     /// endless chunked error body previously buffered without bound. Mirrors
     /// the JSON-RPC transport.
+    /// `remaining` is what is left of the connect deadline once the headers
+    /// have arrived, so the body read cannot spend a second full budget.
     async fn stream_error_status(
         &self,
         status: hyper::StatusCode,
         resp: hyper::Response<hyper::body::Incoming>,
+        remaining: std::time::Duration,
     ) -> ClientError {
         let retry_after = crate::error::parse_retry_after(resp.headers());
         let body_bytes = match super::super::collect_response_limited(
             resp,
             self.inner.max_response_size,
-            self.inner.stream_connect_timeout,
+            remaining,
         )
         .await
         {

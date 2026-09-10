@@ -351,6 +351,23 @@ mod tests {
         assert_eq!(rows[1].1, 2);
     }
 
+    /// A delta claiming every part the artifact has is the ordinary first
+    /// delta of a new artifact, and it journals them all from position zero.
+    /// Kills `parts.len() < count` → `<=`, which refuses it and quietly
+    /// switches every artifact's first event to a whole-record write.
+    #[test]
+    fn an_append_of_every_part_is_journalled_from_position_zero() {
+        let task = task_with_parts(&["a", "b"]);
+
+        let rows = rows_for_append(&task, 0, 2)
+            .expect("build rows")
+            .expect("a delta covering the whole artifact describes it");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].1, 0);
+        assert_eq!(rows[1].1, 1);
+    }
+
     /// Every refusal means "write the task whole instead". They exist because
     /// journalling a delta the document cannot be reconciled with is worse than
     /// being slow.

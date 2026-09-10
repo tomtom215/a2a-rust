@@ -24,11 +24,11 @@ async fn builder_build_with_all_defaults_succeeds() {
 
 #[tokio::test]
 async fn builder_with_task_store_uses_custom_store() {
-    let custom_store = InMemoryTaskStore::with_config(TaskStoreConfig {
-        max_capacity: Some(5),
-        task_ttl: None,
-        ..Default::default()
-    });
+    let custom_store = InMemoryTaskStore::with_config(
+        TaskStoreConfig::default()
+            .with_max_capacity(Some(5))
+            .with_task_ttl(None),
+    );
 
     let handler = RequestHandlerBuilder::new(QuickExecutor)
         .with_task_store(custom_store)

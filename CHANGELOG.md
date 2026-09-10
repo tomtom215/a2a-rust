@@ -10,7 +10,220 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.12.0] - 2026-09-10
+
+### Breaking Changes
+
+- **Public configuration structs gain fields; struct-literal construction
+  breaks.** `HandlerLimits` gains `push_delivery_budget` and
+  `executor_drain_timeout`; `WebSocketTransportConfig` (client) gains
+  `max_pending_requests`. Code that built either as a struct literal must
+  use `Default::default()` and the `with_*` setters — both structs are also
+  `#[non_exhaustive]` from this release (next entry), so adding the fields
+  to the literal is not the fix. This release is the deliberate breaking
+  minor before the two clean minors `STABILITY.md` §7 requires, so every such
+  future-proofing change lands here rather than one per release.
+- **Fifteen public configuration structs are `#[non_exhaustive]`**, so the
+  next field any of them gains is an addition rather than a break. Server:
+  `HandlerLimits`, `DispatchConfig`, `CorsConfig`, `GrpcConfig`,
+  `CacheConfig`, `PushRetryPolicy`, `RateLimitConfig`, `TaskStoreConfig`,
+  `TenantStoreConfig`, `PerTenantConfig`, `TenantLimits`. Client:
+  `ClientConfig`, `RetryPolicy`, `WebSocketTransportConfig`,
+  `GrpcTransportConfig`. (`ServeConfig` already was.) The wire types in
+  `a2a-protocol-types` are deliberately not included: they are the spec's
+  data types and a literal is their intended construction. **Migration:**
+  a struct literal of any shape, `..Default::default()` included, stops
+  compiling outside the crate; build the value with `Default` (or the
+  documented constructor — `CorsConfig::new`/`permissive`,
+  `CacheConfig::with_max_age`) and chain the `with_<field>` setter for each
+  field you set. Every public field on every struct in the list now has one;
+  the ones added for this are `DispatchConfig::with_require_version_header`,
+  `CorsConfig::with_allow_origin`/`with_allow_methods`/`with_allow_headers`/
+  `with_max_age_secs`, `RateLimitConfig::with_requests_per_window`/
+  `with_window_secs`/`with_trusted_proxy_hops`/`with_max_buckets`,
+  `TaskStoreConfig::with_max_capacity`/`with_task_ttl`/
+  `with_eviction_interval`/`with_max_page_size`,
+  `TenantStoreConfig::with_per_tenant`/`with_max_tenants`,
+  `PerTenantConfig::with_default`/`with_overrides`/`with_override`,
+  `TenantLimits::with_max_concurrent_tasks`/`with_executor_timeout`/
+  `with_event_queue_capacity`/`with_rate_limit_rps` (and a deprecated
+  `with_max_stored_tasks`, matching the field), and ten on `ClientConfig`
+  (`with_preferred_bindings`, `with_accepted_output_modes`,
+  `with_history_length`, `with_return_immediately`, `with_request_timeout`,
+  `with_stream_connect_timeout`, `with_connection_timeout`,
+  `with_max_response_size`, `with_tls`, `with_tenant`). The upgrading guide
+  has a before/after. `STABILITY.md` §4 no longer carries the "still
+  exhaustive as of 0.11" exception.
+- **`ClientError` gains `TooManyPendingRequests { limit }`.** The enum is
+  `#[non_exhaustive]`, so exhaustive matches already carried a wildcard.
+- **`GrpcTransportConfig` is `#[non_exhaustive]`** (client) — one of the
+  fifteen above, listed on its own because it also gained fields
+  (`bare_address_scheme`, `tls_config`; under Changed below) and because
+  `cargo-semver-checks` grades the attribute a major change and this heading
+  is where STABILITY.md says those go.
+- **`InMemoryQueueWriter` is no longer `UnwindSafe` or `RefUnwindSafe`**
+  (server). It now holds the `Arc<dyn Metrics>` it reports dropped events
+  through, and a trait object without those bounds removes the auto-impls.
+  Only code that wrapped a writer in `catch_unwind` or `AssertUnwindSafe`
+  can notice; the handler that owns the writer never had either bound.
+
+### Added
+
+- **`AgentCard::with_streaming(bool)`** (types): the one capability nearly
+  every card sets, without a `with_capabilities(AgentCapabilities::none()
+  .with_streaming(true))` of its own. With it, `AgentCard::new(name, version,
+  interface)` and the `with_*` methods from 0.10 are enough to write every
+  card in this repository's examples: `examples/multi-lang-team`'s
+  `make_worker_card` is now eleven lines instead of a thirty-line literal,
+  and **`examples/hello-agent` publishes a card** — it had none, so the
+  "smallest complete agent" answered `404` at
+  `/.well-known/agent-card.json` and the CLI's discovery path could not
+  reach it (found building `tools/a2a-cli`). A fourth test resolves the card
+  and greets the agent through a client built from it. `resolve_agent_card`
+  is in `a2a_protocol_sdk::prelude` so that test, like the agent, needs no
+  fully-qualified path.
+- **`CardFetchOptions`, `resolve_agent_card_with_options` and
+  `fetch_card_from_url_with_options`** (client, `discovery`): headers and a
+  budget for the agent-card fetch. `resolve_agent_card` and
+  `fetch_card_from_url` sent no headers and allowed a fixed 30 seconds, so a
+  card behind authentication could not be fetched and the budget could not
+  be shortened; both now delegate to the `_with_options` variant with
+  `CardFetchOptions::default()`, which is those same values. Tests: a server
+  that answers `401` without an `Authorization` header refuses the plain
+  call and admits the options one; a server that sends headers at two thirds
+  of a 600 ms budget and then stalls fails at one budget, not two. The CLI's
+  discovery now carries `--header` and is bounded by `--timeout`.
+- **`ClientBuilder::chosen_interface()`** (client): the card interface
+  `from_card` picked — the first the caller prefers, else the card's first,
+  and following `with_protocol_binding` when that moves the endpoint —
+  as `Option<&AgentInterface>`, `None` for a builder from `ClientBuilder::new`
+  or after switching to a binding the card does not advertise. gRPC and
+  WebSocket need constructors other than `build()`, so a caller that has to
+  choose one no longer re-implements the preference rule to learn which; the
+  CLI's `connect.rs` had, and now reads it here.
+- **`tools/a2a-cli`** (unpublished, built from the repository): `a2a
+  card|send|stream|task get|cancel|list` over `a2a-protocol-client`, with
+  `--binding`, `--timeout`, `--header`, `--tenant` and `--grpc-plaintext`;
+  exit 0/1/2; eleven end-to-end tests against an in-process server. It
+  is the first client written against the SDK from outside, and the three
+  API gaps it hit are the `CardFetchOptions`, `chosen_interface` and
+  `with_streaming` entries above.
+- **`examples/resilient-agent`**: durability over a SQLite handler restart,
+  failure injection (an executor failing its first N attempts, a webhook
+  refusing its first M deliveries, a client retrying transport faults), and
+  two replicas over a shared PostgreSQL store and rate-limit counter — each
+  act measured and reported, with `[NOT RUN]` when the database is absent
+  and `RESILIENT_REQUIRE_ALL=1` to make that exit 4. Runs in CI's
+  `example-surface` job against its PostgreSQL service.
+- **A Rust worker in `examples/multi-lang-team`** (`--bin rust-worker`,
+  port 9104), so the example shows the worker side of the SDK next to the
+  coordinator; the coordinator's demo now prints the fan-out artifact.
+- **`book/src/reference/upgrading.md`**: one section per breaking boundary
+  from 0.7 to 0.12 with compiling "after" snippets, and how to read a
+  release's breaking section under STABILITY.md.
+- **SLIMRPC binding**: `SlimRpcTransportBuilder::with_slow_consumer_timeout`
+  (default 30 s) — a unicast stream whose consumer reads nothing for that
+  long is abandoned with one final `ClientError::Timeout` instead of the
+  process buffering the agent's frames without bound in the upstream
+  per-call channel; a runnable `examples/in_process.rs`; the binding's
+  tests under `coverage.yml` (measured 65.61% line coverage on
+  2026-09-10); packaging verified through a config-level `[patch]` of the
+  SDK pins rather than `--no-verify`; a README "Backpressure" section with
+  file:line evidence for every path.
+- **Four CI gates that the review backlog called for**, each proved able
+  to fail by `scripts/prove_gates_fail.sh` injections:
+  `check_gate_reachability.py` (every gate runs on the events that can
+  break it — B13), `check_timeout_nesting.py` (an inner timeout fits the
+  bound enclosing it, the push sender's schedule included — B14),
+  `check_inert_bounds.py` with a reasoned allowlist (a configurable bound
+  honoured by one sibling and not the others — B21), and the reverse
+  direction of `check_api_reference.py` (every root-level export is on the
+  API Quick Reference, which gained 123 rows).
+- **`scripts/check_dco.sh`**, the DCO check as a script. `dco.yml` now runs
+  it on every push to `main` as well as every pull request — the
+  reachability gate's first finding was that a commit reaching `main` by
+  any other route than a pull request was never graded — and
+  `benchmarks.yml` runs it over the commit it pushes with `GITHUB_TOKEN`,
+  which creates no workflow run. That bot identity is exempt only while the
+  commit touches the two generated benchmark pages (PROVENANCE.md §3.2).
+- **`HandlerLimits::push_delivery_budget`** (default 30 s): the total time
+  one event's push deliveries may take across every registered config, per
+  request batch on the blocking path. It was a `Duration::from_secs(30)`
+  literal in two places, so the term that decided how many of an operator's
+  webhooks were called was not a knob (review backlog B3).
+- **`HandlerLimits::executor_drain_timeout`** (default 5 s): a blocking
+  `SendMessage` whose executor returned without a terminal state, on an event
+  queue that never closed, used to wait forever. It now answers with the task
+  as collected — what a closed queue would have produced — and reports
+  `Metrics::on_error("SendMessage", "executor_drain_timeout")`.
+- **`GrpcDispatcher::with_max_connections`**: a ceiling on served gRPC
+  connections, the one bound `with_http2_keepalive` and
+  `with_max_connection_age` did not provide. The permit is taken before
+  `accept()`, as the WebSocket dispatcher's has been, and rides with the
+  socket until tonic drops it.
+- **`WebSocketTransportConfig::max_pending_requests`** (client, default 64):
+  the `N+1`-st request awaiting a response on one connection is refused up
+  front with the new retryable `ClientError::TooManyPendingRequests` rather
+  than queued invisibly in an unbounded map (B17).
+- **`HttpPushSender::with_dns_timeout`** (default 5 s): the SSRF pre-flight's
+  hostname lookup had no bound of its own, so a hung resolver spent the whole
+  `push_delivery_timeout` before any request was made and was then reported
+  as a webhook timeout. The bound is counted in `max_delivery_duration`, so
+  the shipped default schedule is now 98 seconds against the 5-second
+  `push_delivery_timeout`, not 93.
+- **A dropped persistence event is counted.** When the background
+  processor is gone, `InMemoryQueueWriter` reports the drop through
+  `Metrics::on_persistence_error("queue_handoff", "channel_closed")`; until
+  now the only report was a trace line that compiles to nothing without the
+  `tracing` feature (B18).
+
 ### Fixed
+
+- **A blocking caller sees the executor's error text** (server). When an
+  executor returned `Err`, the `Failed` status update carried the text only
+  as `metadata.error` on the streamed event; `sync_collector.rs` copies
+  `status.message` onto the task and nothing else, so a blocking
+  `SendMessage` returned a `Failed` task with no message and no metadata,
+  and `GetTask` afterwards said no more (`examples/resilient-agent`, Act 2).
+  The failure event's `status.message` is now an agent-role `Message` with
+  one text part holding the error — the spec's field for "additional status
+  updates for the client" — so the blocking response, the stored task and
+  every `GetTask` after it carry the text; `metadata.error` stays on the
+  event for streaming callers. An executor timeout reports the same way.
+  Found and fixed while splitting `handler/messaging/mod.rs`'s
+  `send_message_inner` into phases (`validation`, `continuation`,
+  `admission`, `eviction`, `create`, `execute`), which took the file off
+  `.file-length-baseline`; the split changes no error, message, metric or
+  eviction order.
+- **One deadline per token request and per stream start** (client).
+  `OAuth2ClientCredentials::refresh` and `discover_token_endpoint` read the
+  body under a second full request timeout after the headers had spent
+  most of one, and the JSON-RPC and REST streaming transports read a
+  failed stream start's error body under a second full
+  `stream_connect_timeout`: a server that answered late and then stalled
+  held the caller for close to twice the documented bound. Found by
+  `scripts/check_timeout_nesting.py`; each path now takes one deadline for
+  headers and body, with a regression test that fails against the old
+  code (1.0 s against a 600 ms bound).
+- **The blocking path reports every push outcome** (server). Push
+  deliveries made for a blocking `SendMessage` reported nothing but trace
+  lines, which a default build compiles away; they now report
+  `delivered`, `failed`, `timeout`/`timeout_truncated` and `skipped`
+  through `Metrics::on_push_delivery` exactly as the background path does.
+- **DCO ran on pull requests only.** A commit reaching `main` by a direct
+  push, a merge made outside a pull request, or a workflow's own push was
+  never graded; `dco.yml` now runs on pushes to `main` too, and
+  `benchmarks.yml` grades its own commit before pushing it (see the
+  `scripts/check_dco.sh` entry above).
+- **`Arc<T>` forwards every `Metrics` hook.** The blanket impl for `Arc<T>`
+  forwarded six of the eight methods and defaulted `on_persistence_error` and
+  `on_push_delivery` to no-ops, so a handler built with an `Arc<dyn Metrics>`
+  — which `RequestHandlerBuilder::with_metrics` accepts through that impl —
+  dropped every persistence error and every push outcome silently. Found by a
+  test that passed against a bare implementation and failed against an `Arc`
+  of the same.
 
 - **An empty `contextId` or `taskId` on an incoming message is "unset", not
   an invalid id.** The A2A JSON bindings are ProtoJSON, and both fields are
@@ -26,9 +239,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for "unset". Regression test in
   `a2a-protocol-server/tests/proto3_empty_ids.rs` posts the raw JSON-RPC
   body the Java client sends.
+- **The weekly mutation sweep's 55 survivors are addressed** (run
+  34078555778 at `d3ebb72`, all in `a2a-protocol-server`). Twenty-six sat in
+  `parse_numeric_ipv4`, merged on 2026-08-27 while the per-PR gate was
+  passing over a failed baseline (the defect `db795c2` fixed); the function
+  is rewritten to fill the leading octets and bound the tail, which retires
+  the shift-and-or operators whose mutants were equivalent, and its packing
+  is pinned by a table naming the exact address of every `inet_aton` form
+  and the first value each part cannot hold. `labelled_constant_time_match`
+  selects with an XOR-swap for the same reason, still branchless.
+  `build_jwks_client` is one function with the feature split inside it, so
+  its plaintext body is no longer a `#[cfg]` twin that `--all-features`
+  compiles out. The rest are tests named for the mutant each kills: the
+  tenant-slot sweep, the Postgres rate-limit counter's sweep cadence (live
+  database, `#[ignore]`d like the store suite), the WebSocket keepalive sent
+  once per silence, `IdleTimeout` forwarding flush and shutdown, the push
+  truncation boundary, the SQLite delta payload and statement choice, and
+  `rows_for_append` on a delta covering every part. Three survivors remain
+  by construction — `TenantLimits::builder`, `PerTenantConfig::builder`,
+  `SseBodyWriter::close` — and the ledger, `CONTRIBUTING.md`, ADR 0006 and
+  `ROADMAP.md` now carry the current figures and the two false-green sweeps.
 
 ### Changed
 
+- **`a2a-protocol-server` depends on `mutants`** (0.0.4, MIT, zero
+  dependencies, attribute macros that return their input unchanged) so the
+  three mutants no test can distinguish — `TenantLimits::builder`,
+  `PerTenantConfig::builder`, `SseBodyWriter::close` — carry
+  `#[mutants::skip]` in source with the equivalence argument as the comment,
+  instead of surviving every sweep. ADR 0006 records the supply-chain
+  review; the two files grade at 38 mutants, 0 missed with the sweep's own
+  command line.
+- **Dependencies refreshed for 0.12.** Both lockfiles updated
+  (`cargo update`: 238 workspace entries, 57 in the SLIMRPC binding), and
+  the majors: opentelemetry/opentelemetry_sdk/opentelemetry-otlp 0.32
+  (the SDK's removed `rt-tokio` feature is the only change needed),
+  tokio-tungstenite 0.30 everywhere it appears (tungstenite 0.30 rejects
+  malformed `Sec-WebSocket-Key` server-side), rig-core 0.42 (the example's
+  `Agent` moved out of rig-core; a thirty-line local shim keeps the example
+  tool-less and behaviour-identical). genai stays at 0.5: every 0.6.x and
+  the 0.7 betas depend on the unmaintained `paste` (RUSTSEC-2024-0436),
+  which `cargo deny check advisories` rejects. base64 stays at 0.22
+  because hyper-util still requires it and `deny.toml` denies duplicate
+  versions. `deny.toml` gains seven reviewed skips for splits the ecosystem
+  is mid-way through (RustCrypto digest 0.10/0.11 via tungstenite against
+  sqlx, syn 2/3 via async-trait, base64 through the examples' reqwest and
+  rcgen, redox_syscall through libredox) and loses the two `thiserror` skips
+  that no longer matched anything.
 - **MSRV lowered from 1.93 to 1.88; edition 2024.** The workspace had
   never needed anything newer than 1.88 — `cargo check --workspace
   --all-features --all-targets` on 1.88.0 passed without a code change —
@@ -4373,30 +4630,4 @@ kept for the record, with resolution notes:
 - `ClientError::Timeout` variant for distinct timeout errors.
 - Separate `stream_connect_timeout` configuration for SSE connections.
 - Server benchmarks for task store and event queue operations.
-- Cargo-fuzz target for JSON deserialization of all major protocol types.
-- `docs/implementation/plan.md` documenting planned beyond-spec extensions (request IDs,
-  metrics, rate limiting, WebSocket, multi-tenancy, persistent store).
-- Pitfalls catalog (`book/src/reference/pitfalls.md`) with entries for serde,
-  hyper, SSE, push notifications, async/tokio, workspace, and testing gotchas.
-
-### Changed
-
-- Eliminated unnecessary `serde_json::Value` clones in 8 client methods by
-  moving the value into `ClientResponse` and extracting it after interceptors run.
-
-- **Breaking:** `AgentExecutor` trait is now object-safe — methods return
-  `Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>` instead of
-  `impl Future`. This eliminates the generic parameter `E: AgentExecutor` from
-  `RequestHandler`, `RequestHandlerBuilder`, `JsonRpcDispatcher`, and
-  `RestDispatcher`, enabling dynamic dispatch via `Arc<dyn AgentExecutor>`.
-- `InMemoryTaskStore` now performs TTL-based eviction of terminal tasks (default
-  1 hour) and enforces a maximum capacity (default 10,000 tasks).
-
-### Fixed
-
-- Invalid state transitions (e.g. Submitted → Completed) are now rejected with `InvalidStateTransition` error.
-- Push notification delivery now properly times out instead of hanging indefinitely.
-
-### Removed
-
-- (Nothing removed — this is the initial release.)
+- Carg

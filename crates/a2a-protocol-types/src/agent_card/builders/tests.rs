@@ -233,3 +233,27 @@ fn skill_setters_replace_their_lists() {
         Some(&["application/json".to_owned()][..])
     );
 }
+
+/// `with_streaming` touches one flag. A card that declared push support
+/// through `with_capabilities` keeps it — the shortcut must not reset the
+/// struct it reaches into.
+#[test]
+fn with_streaming_sets_only_the_streaming_flag() {
+    let card = AgentCard::new("a", "1.0.0", AgentInterface::jsonrpc("http://x"))
+        .with_capabilities(AgentCapabilities::none().with_push_notifications(true))
+        .with_streaming(true);
+    assert_eq!(card.capabilities.streaming, Some(true));
+    assert_eq!(
+        card.capabilities.push_notifications,
+        Some(true),
+        "the other flags are untouched"
+    );
+    assert_eq!(
+        AgentCard::new("a", "1.0.0", AgentInterface::jsonrpc("http://x"))
+            .with_streaming(false)
+            .capabilities
+            .streaming,
+        Some(false),
+        "false is an explicit declaration, not an absence"
+    );
+}

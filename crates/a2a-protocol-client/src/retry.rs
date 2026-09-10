@@ -81,7 +81,12 @@ use crate::transport::Transport;
 /// `PushSender::max_delivery_duration`, which exists because the server needed
 /// to *budget* against it. A client has no equivalent because nothing else in
 /// the process needs the number — only the person calling does.)
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct RetryPolicy {
     /// Maximum number of retry attempts (not counting the initial attempt).
     pub max_retries: u32,
@@ -143,10 +148,15 @@ impl ClientError {
     /// - HTTP connection/transport errors
     /// - Timeouts
     /// - Server errors (HTTP 502, 503, 504, 429)
+    /// - The client's own in-flight cap (`TooManyPendingRequests`), which
+    ///   clears as responses arrive
     #[must_use]
     pub const fn is_retryable(&self) -> bool {
         match self {
-            Self::Http(_) | Self::HttpClient(_) | Self::Timeout(_) => true,
+            Self::Http(_)
+            | Self::HttpClient(_)
+            | Self::Timeout(_)
+            | Self::TooManyPendingRequests { .. } => true,
             Self::UnexpectedStatus { status, .. } => {
                 matches!(status, 429 | 502 | 503 | 504)
             }

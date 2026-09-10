@@ -242,12 +242,11 @@ fn bench_eviction_pressure(c: &mut Criterion) {
             BenchmarkId::new("save_at_capacity", cap),
             &cap,
             |b, &cap| {
-                let config = TaskStoreConfig {
-                    max_capacity: Some(cap),
-                    task_ttl: Some(Duration::from_millis(1)),
-                    eviction_interval: 1, // Evict on every write
-                    max_page_size: 1000,
-                };
+                let config = TaskStoreConfig::default()
+                    .with_max_capacity(Some(cap))
+                    .with_task_ttl(Some(Duration::from_millis(1)))
+                    .with_eviction_interval(1) // Evict on every write
+                    .with_max_page_size(1000);
                 let store = InMemoryTaskStore::with_config(config);
                 // Fill to capacity with terminal tasks.
                 for i in 0..cap {
@@ -269,12 +268,11 @@ fn bench_eviction_pressure(c: &mut Criterion) {
     // Measure run_eviction() sweep duration at various store sizes.
     for &cap in capacities {
         group.bench_with_input(BenchmarkId::new("sweep_duration", cap), &cap, |b, &cap| {
-            let config = TaskStoreConfig {
-                max_capacity: None, // No auto-eviction
-                task_ttl: Some(Duration::from_millis(1)),
-                eviction_interval: u64::MAX,
-                max_page_size: 1000,
-            };
+            let config = TaskStoreConfig::default()
+                .with_max_capacity(None) // No auto-eviction
+                .with_task_ttl(Some(Duration::from_millis(1)))
+                .with_eviction_interval(u64::MAX)
+                .with_max_page_size(1000);
             let store = InMemoryTaskStore::with_config(config);
             for i in 0..cap {
                 rt.block_on(store.save(&fixtures::completed_task(i)))
@@ -316,11 +314,9 @@ fn bench_rate_limiting(c: &mut Criterion) {
     });
 
     // With rate limiting (high limit so we don't get rejected)
-    let rate_config = a2a_protocol_server::RateLimitConfig {
-        requests_per_window: 100_000,
-        window_secs: 60,
-        ..a2a_protocol_server::RateLimitConfig::default()
-    };
+    let rate_config = a2a_protocol_server::RateLimitConfig::default()
+        .with_requests_per_window(100_000)
+        .with_window_secs(60);
     let rate_limiter =
         a2a_protocol_server::RateLimitInterceptor::new(rate_config).expect("valid config");
 

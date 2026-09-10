@@ -30,7 +30,7 @@ use a2a_protocol_server::handler::RequestHandler;
 use a2a_protocol_server::push::{HttpPushSender, InMemoryPushConfigStore};
 use a2a_protocol_types::agent_card::AgentCapabilities;
 
-use crate::{RigAgentExecutor, make_agent_card};
+use crate::{RigAgent, RigAgentExecutor, make_agent_card};
 
 type BoxErr = Box<dyn std::error::Error>;
 
@@ -43,10 +43,10 @@ async fn bind() -> Result<(tokio::net::TcpListener, SocketAddr), BoxErr> {
 /// Starts the agent on all four bindings, with the mechanical fallback on.
 pub async fn start<M>(
     model: &str,
-    agent: impl Fn() -> Result<rig_core::agent::Agent<M>, String>,
+    agent: impl Fn() -> Result<RigAgent<M>, String>,
 ) -> Result<Endpoints, BoxErr>
 where
-    M: rig_core::completion::CompletionModel + 'static,
+    M: rig_core::completion::CompletionModel + Clone + 'static,
 {
     let (http_l, http_a) = bind().await?;
     let (grpc_l, grpc_a) = bind().await?;
@@ -133,10 +133,10 @@ fn serve_combined(listener: tokio::net::TcpListener, handler: Arc<RequestHandler
 /// An agent advertising no optional capabilities, for the counter-tests.
 pub async fn start_restricted<M>(
     model: &str,
-    agent: impl Fn() -> Result<rig_core::agent::Agent<M>, String>,
+    agent: impl Fn() -> Result<RigAgent<M>, String>,
 ) -> Result<String, BoxErr>
 where
-    M: rig_core::completion::CompletionModel + 'static,
+    M: rig_core::completion::CompletionModel + Clone + 'static,
 {
     let (listener, addr) = bind().await?;
     let url = format!("http://{addr}");

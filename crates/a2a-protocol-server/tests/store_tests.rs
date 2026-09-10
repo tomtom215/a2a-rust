@@ -228,11 +228,9 @@ async fn list_filters_by_context_and_status() {
 
 #[tokio::test]
 async fn capacity_eviction_removes_oldest_terminal_tasks() {
-    let config = TaskStoreConfig {
-        max_capacity: Some(3),
-        task_ttl: None,
-        ..Default::default()
-    };
+    let config = TaskStoreConfig::default()
+        .with_max_capacity(Some(3))
+        .with_task_ttl(None);
     let store = InMemoryTaskStore::with_config(config);
 
     // Add 3 terminal tasks.
@@ -312,11 +310,9 @@ async fn list_empty_store_returns_empty() {
 
 #[tokio::test]
 async fn ttl_eviction_removes_terminal_tasks() {
-    let config = TaskStoreConfig {
-        max_capacity: None,
-        task_ttl: Some(Duration::from_millis(1)),
-        ..Default::default()
-    };
+    let config = TaskStoreConfig::default()
+        .with_max_capacity(None)
+        .with_task_ttl(Some(Duration::from_millis(1)));
     let store = InMemoryTaskStore::with_config(config);
 
     store

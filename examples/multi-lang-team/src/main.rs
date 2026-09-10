@@ -4,8 +4,9 @@
 //! Multi-language agent team example.
 //!
 //! Demonstrates a Rust coordinator agent that delegates work to worker agents
-//! implemented in Python, JavaScript, Go, and Java — proving end-to-end
-//! cross-language A2A interoperability.
+//! implemented in Python, JavaScript, Go, Java — and Rust, so the package
+//! shows both halves of this SDK: the coordinator is the client side, and
+//! `src/bin/rust-worker.rs` (with `worker.rs`) is the server side.
 //!
 //! # Architecture
 //!
@@ -13,22 +14,22 @@
 //! ┌─────────────────────┐
 //! │   Rust Coordinator   │  ← accepts user requests via A2A
 //! │   (a2a-protocol-sdk) │
-//! └──────┬──┬──┬──┬─────┘
-//!        │  │  │  │
-//!   ┌────┘  │  │  └────┐
-//!   ▼       ▼  ▼       ▼
-//! Python   JS  Go    Java    ← worker agents (each language)
-//! :9100  :9101 :9102 :9103
+//! └──┬──┬──┬──┬──┬──────┘
+//!    │  │  │  │  │
+//!    ▼  ▼  ▼  ▼  ▼
+//!  Py  JS  Go Java Rust      ← worker agents (each language)
+//! :9100 :9101 :9102 :9103 :9104
 //! ```
 //!
 //! # Running
 //!
-//! 1. Start the worker agents (from `itk/agents/`):
+//! 1. Start the worker agents (four from `itk/agents/`, one from this package):
 //!    ```bash
 //!    cd itk/agents/python && python agent.py &
 //!    cd itk/agents/js-agent && node index.js &
 //!    cd itk/agents/go-agent && go run . &
 //!    cd itk/agents/java-agent && mvn compile exec:java &
+//!    cargo run -p multi-lang-team --bin rust-worker &
 //!    ```
 //!
 //! 2. Run this coordinator:
@@ -42,7 +43,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
@@ -50,6 +51,10 @@ mod surface;
 
 #[cfg(test)]
 mod tests;
+/// The Rust worker, compiled into the coordinator only for its tests; the
+/// binary that serves it is `src/bin/rust-worker.rs`.
+#[cfg(test)]
+mod worker;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
@@ -85,6 +90,11 @@ const WORKERS: &[Worker] = &[
         language: "Java",
         url: "http://127.0.0.1:9103",
     },
+    // `cargo run -p multi-lang-team --bin rust-worker`; see `worker.rs`.
+    Worker {
+        language: "Rust",
+        url: "http://127.0.0.1:9104",
+    },
 ];
 
 fn extract_text(parts: &[Part]) -> String {
@@ -98,20 +108,15 @@ fn extract_text(parts: &[Part]) -> String {
         .join(" ")
 }
 
-/// Sends `user_text` to one worker agent and renders its reply (or the
-/// failure) as a single line for the combined artifact.
-async fn call_worker(worker: &Worker, user_text: &str) -> String {
-    let client = match ClientBuilder::new(worker.url).build() {
-        Ok(c) => c,
-        Err(e) => return format!("[{}] Error connecting: {}", worker.language, e),
-    };
-
-    let params = MessageSendParams {
+/// A one-part user message, as both the fan-out and the demo round-trip
+/// send it.
+fn user_message(text: &str) -> MessageSendParams {
+    MessageSendParams {
         tenant: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,
-            parts: vec![Part::text(user_text)],
+            parts: vec![Part::text(text)],
             task_id: None,
             context_id: None,
             reference_task_ids: None,
@@ -120,9 +125,19 @@ async fn call_worker(worker: &Worker, user_text: &str) -> String {
         },
         configuration: None,
         metadata: None,
+    }
+}
+
+/// Sends `user_text` to one worker agent and renders its reply (or the
+/// failure) as a single line for the combined artifact.
+async fn call_worker(worker: &Worker, user_text: &str) -> String {
+    let client = match ClientBuilder::new(worker.url).build() {
+        Ok(c) => c,
+        Err(e) => return format!("[{}] Error connecting: {}", worker.language, e),
     };
 
-    match tokio::time::timeout(Duration::from_secs(10), client.send_message(params)).await {
+    let send = client.send_message(user_message(user_text));
+    match tokio::time::timeout(Duration::from_secs(10), send).await {
         Ok(Ok(response)) => match response {
             SendMessageResponse::Task(task) => task
                 .artifacts
@@ -138,6 +153,31 @@ async fn call_worker(worker: &Worker, user_text: &str) -> String {
     }
 }
 
+/// What the demo round-trip asks the team; every reachable worker echoes it.
+const DEMO_TEXT: &str = "Hello from the multi-language team demo!";
+
+/// One request through the coordinator's own front door, returning the
+/// combined artifact's text.
+///
+/// The surface sweep reports `SendMessage` as a task id, which proves the
+/// method works and shows nothing of what the fan-out produced. This is the
+/// call that shows it: one `[<Language> Echo] …` line per worker that
+/// answered, or the disclosure that nobody was delegated to.
+async fn demo_round_trip(client: &A2aClient) -> Result<String, Box<dyn std::error::Error>> {
+    match client.send_message(user_message(DEMO_TEXT)).await? {
+        SendMessageResponse::Task(task) => Ok(task
+            .artifacts
+            .as_deref()
+            .and_then(|arts| arts.first())
+            .map(|a| extract_text(&a.parts))
+            .unwrap_or_else(|| "(the coordinator produced no artifact)".to_owned())),
+        other => Err(format!(
+            "the coordinator answered with something other than a task: {other:?}"
+        )
+        .into()),
+    }
+}
+
 /// Message-text prefix that makes the coordinator pause mid-task.
 ///
 /// `SubscribeToTask` is refused on a terminal task, correctly, so without a
@@ -148,7 +188,7 @@ const SLOW_PREFIX: &str = "slow:";
 struct CoordinatorExecutor {
     /// Workers found reachable at startup.
     ///
-    /// Probed once rather than discovered per request. With all four down, a
+    /// Probed once rather than discovered per request. With all five down, a
     /// per-request fan-out costs a full timeout window on *every* call, which
     /// makes the surface sweep take minutes and tells the reader nothing they
     /// were not told at startup. Empty means "delegate to nobody" — and the
@@ -243,7 +283,8 @@ fn make_coordinator_card(url: &str) -> AgentCard {
     AgentCard {
         url: None,
         name: "Multi-Language Coordinator".into(),
-        description: "Coordinator that delegates to Python, JS, Go, and Java worker agents".into(),
+        description: "Coordinator that delegates to Python, JS, Go, Java and Rust worker agents"
+            .into(),
         version: "1.0.0".into(),
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
@@ -256,7 +297,7 @@ fn make_coordinator_card(url: &str) -> AgentCard {
         skills: vec![AgentSkill {
             id: "coordinate".into(),
             name: "Cross-Language Coordination".into(),
-            description: "Delegates work to agents in 4 languages".into(),
+            description: "Delegates work to agents in 5 languages".into(),
             tags: vec!["multi-lang".into(), "coordination".into()],
             examples: None,
             input_modes: None,
@@ -355,6 +396,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  JS:     cd itk/agents/js-agent  && node index.js");
         println!("  Go:     cd itk/agents/go-agent  && go run .");
         println!("  Java:   cd itk/agents/java-agent && mvn compile exec:java");
+        println!("  Rust:   cargo run -p multi-lang-team --bin rust-worker");
     }
     println!();
 
@@ -402,6 +444,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let main_client = ClientBuilder::new(&ep.jsonrpc).build()?;
     let restricted_client = ClientBuilder::new(&restricted).build()?;
+
+    println!("=== Demo round-trip: one SendMessage, fanned out to every reachable worker ===\n");
+    println!("  Artifact: cross-lang-result");
+    for line in demo_round_trip(&main_client).await?.lines() {
+        println!("    {line}");
+    }
+    println!();
 
     println!("=== Coverage: every A2A method over every binding ===\n");
     let outcome = a2a_example_harness::run_surface(a2a_example_harness::SurfaceRun {

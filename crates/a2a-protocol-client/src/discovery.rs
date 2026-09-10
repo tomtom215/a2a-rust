@@ -14,6 +14,7 @@
 //! Per spec §8.3, the client supports HTTP caching via `ETag` and
 //! `If-None-Match` / `If-Modified-Since` conditional request headers.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -71,10 +72,84 @@ pub(crate) const fn exceeds_card_body_size(len: u64, max: u64) -> bool {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/// What a card fetch sends and how long it may take.
+///
+/// [`resolve_agent_card`] and [`fetch_card_from_url`] send no headers and
+/// allow the whole call 30 seconds. Both were fixed until 0.12, which meant a
+/// card behind authentication could not be fetched at all and the budget
+/// could not be shortened for a peer that is expected to answer at once. The
+/// `_with_options` variants take one of these instead.
+///
+/// The timeout is one deadline for connect, headers and body together — see
+/// the note on the default — not a per-phase bound.
+///
+/// ```
+/// use std::time::Duration;
+/// use a2a_protocol_client::discovery::CardFetchOptions;
+///
+/// let options = CardFetchOptions::default()
+///     .with_header("authorization", "Bearer s3cret")
+///     .with_timeout(Duration::from_secs(5));
+/// assert_eq!(options.timeout(), Duration::from_secs(5));
+/// assert_eq!(options.headers().len(), 1);
+/// ```
+#[derive(Debug, Clone)]
+pub struct CardFetchOptions {
+    headers: HashMap<String, String>,
+    timeout: Duration,
+}
+
+impl Default for CardFetchOptions {
+    /// No headers; the 30-second budget the plain functions use.
+    fn default() -> Self {
+        Self {
+            headers: HashMap::new(),
+            timeout: CARD_FETCH_BUDGET,
+        }
+    }
+}
+
+impl CardFetchOptions {
+    /// Adds one header to the request. An invalid name or value is reported
+    /// by the fetch as [`ClientError::Transport`], not here.
+    #[must_use]
+    pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.headers.insert(name.into(), value.into());
+        self
+    }
+
+    /// Replaces the headers sent with the request.
+    #[must_use]
+    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
+        self.headers = headers;
+        self
+    }
+
+    /// Sets the budget for the whole fetch: connect, headers and body.
+    #[must_use]
+    pub const fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// The headers the request will carry.
+    #[must_use]
+    pub const fn headers(&self) -> &HashMap<String, String> {
+        &self.headers
+    }
+
+    /// The budget for the whole fetch.
+    #[must_use]
+    pub const fn timeout(&self) -> Duration {
+        self.timeout
+    }
+}
+
 /// Fetches the [`AgentCard`] from the standard well-known path.
 ///
 /// Appends `/.well-known/agent-card.json` to `base_url` and performs an
-/// HTTP GET.
+/// HTTP GET with no headers and a 30-second budget;
+/// [`resolve_agent_card_with_options`] takes both.
 ///
 /// # Errors
 ///
@@ -84,9 +159,23 @@ pub(crate) const fn exceeds_card_body_size(len: u64, max: u64) -> bool {
 /// - [`ClientError::Serialization`] — response body is not a valid
 ///   [`AgentCard`].
 pub async fn resolve_agent_card(base_url: &str) -> ClientResult<AgentCard> {
+    resolve_agent_card_with_options(base_url, &CardFetchOptions::default()).await
+}
+
+/// [`resolve_agent_card`] with the headers and budget in `options`.
+///
+/// # Errors
+///
+/// Same conditions as [`resolve_agent_card`], plus [`ClientError::Transport`]
+/// when the budget elapses or a header in `options` is not a valid HTTP
+/// header.
+pub async fn resolve_agent_card_with_options(
+    base_url: &str,
+    options: &CardFetchOptions,
+) -> ClientResult<AgentCard> {
     trace_info!(base_url, "resolving agent card");
     let url = build_card_url(base_url, AGENT_CARD_PATH)?;
-    fetch_card(&url, None).await
+    fetch_card(&url, None, options).await
 }
 
 /// Fetches the [`AgentCard`] from a custom path.
@@ -99,19 +188,32 @@ pub async fn resolve_agent_card(base_url: &str) -> ClientResult<AgentCard> {
 /// Same conditions as [`resolve_agent_card`].
 pub async fn resolve_agent_card_with_path(base_url: &str, path: &str) -> ClientResult<AgentCard> {
     let url = build_card_url(base_url, path)?;
-    fetch_card(&url, None).await
+    fetch_card(&url, None, &CardFetchOptions::default()).await
 }
 
 /// Fetches the [`AgentCard`] from an absolute URL.
 ///
 /// The URL must be a complete `http://` or `https://` URL pointing directly
-/// at the agent card JSON resource.
+/// at the agent card JSON resource. No headers, 30-second budget;
+/// [`fetch_card_from_url_with_options`] takes both.
 ///
 /// # Errors
 ///
 /// Same conditions as [`resolve_agent_card`].
 pub async fn fetch_card_from_url(url: &str) -> ClientResult<AgentCard> {
-    fetch_card(url, None).await
+    fetch_card_from_url_with_options(url, &CardFetchOptions::default()).await
+}
+
+/// [`fetch_card_from_url`] with the headers and budget in `options`.
+///
+/// # Errors
+///
+/// Same conditions as [`resolve_agent_card_with_options`].
+pub async fn fetch_card_from_url_with_options(
+    url: &str,
+    options: &CardFetchOptions,
+) -> ClientResult<AgentCard> {
+    fetch_card(url, None, options).await
 }
 
 // ── Cached Discovery ─────────────────────────────────────────────────────────
@@ -176,7 +278,8 @@ impl CachingCardResolver {
         trace_info!(url = %self.url, "resolving agent card (cached)");
         let cached = self.cache.read().await.clone();
         let (card, etag, last_modified) =
-            fetch_card_with_metadata(&self.url, cached.as_ref()).await?;
+            fetch_card_with_metadata(&self.url, cached.as_ref(), &CardFetchOptions::default())
+                .await?;
 
         // Update cache with new metadata.
         {
@@ -220,8 +323,12 @@ fn build_card_url(base_url: &str, path: &str) -> ClientResult<String> {
     Ok(format!("{base}{path}"))
 }
 
-async fn fetch_card(url: &str, cached: Option<&CachedCard>) -> ClientResult<AgentCard> {
-    let (card, _, _) = fetch_card_with_metadata(url, cached).await?;
+async fn fetch_card(
+    url: &str,
+    cached: Option<&CachedCard>,
+    options: &CardFetchOptions,
+) -> ClientResult<AgentCard> {
+    let (card, _, _) = fetch_card_with_metadata(url, cached, options).await?;
     Ok(card)
 }
 
@@ -229,6 +336,7 @@ async fn fetch_card(url: &str, cached: Option<&CachedCard>) -> ClientResult<Agen
 async fn fetch_card_with_metadata(
     url: &str,
     cached: Option<&CachedCard>,
+    options: &CardFetchOptions,
 ) -> ClientResult<(AgentCard, Option<String>, Option<String>)> {
     #[cfg(not(feature = "tls-rustls"))]
     let client: Client<HttpConnector, Full<Bytes>> = {
@@ -246,6 +354,12 @@ async fn fetch_card_with_metadata(
         .uri(url)
         .header(header::ACCEPT, "application/json");
 
+    // The caller's headers — an `Authorization` for a card behind auth. An
+    // invalid name or value poisons the builder and surfaces from `body()`.
+    for (name, value) in &options.headers {
+        builder = builder.header(name.as_str(), value.as_str());
+    }
+
     // Add conditional request headers if we have cached data.
     if let Some(cached) = cached {
         if let Some(ref etag) = cached.etag {
@@ -260,8 +374,9 @@ async fn fetch_card_with_metadata(
         .body(Full::new(Bytes::new()))
         .map_err(|e| ClientError::Transport(e.to_string()))?;
 
-    // One deadline for the whole fetch. See CARD_FETCH_BUDGET.
-    let deadline = tokio::time::Instant::now() + CARD_FETCH_BUDGET;
+    // One deadline for the whole fetch. See CARD_FETCH_BUDGET, whose value
+    // `options.timeout` is unless the caller chose otherwise.
+    let deadline = tokio::time::Instant::now() + options.timeout;
 
     let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
@@ -358,6 +473,11 @@ async fn fetch_card_with_metadata(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// No headers, the default budget: what the plain functions send.
+    fn no_options() -> CardFetchOptions {
+        CardFetchOptions::default()
+    }
 
     #[test]
     fn build_card_url_standard() {
@@ -500,7 +620,7 @@ mod tests {
         });
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let result = fetch_card_with_metadata(&url, None).await;
+        let result = fetch_card_with_metadata(&url, None, &no_options()).await;
         assert!(result.is_err());
         match result.unwrap_err() {
             ClientError::UnexpectedStatus { status, body, .. } => {
@@ -565,7 +685,9 @@ mod tests {
         };
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let (card, etag, _) = fetch_card_with_metadata(&url, Some(&cached)).await.unwrap();
+        let (card, etag, _) = fetch_card_with_metadata(&url, Some(&cached), &no_options())
+            .await
+            .unwrap();
         assert_eq!(card.name, "cached-agent");
         assert_eq!(etag, Some("\"abc123\"".into()));
     }
@@ -573,30 +695,14 @@ mod tests {
     /// Test `fetch_card_with_metadata` succeeds on 200 and parses the card.
     #[tokio::test]
     async fn fetch_card_with_metadata_200_parses_card() {
-        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
+        use a2a_protocol_types::{AgentCard, AgentInterface};
 
-        let card = AgentCard {
-            url: None,
-            name: "test-agent".into(),
-            version: "1.0".into(),
-            description: "A test".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:9090".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            signatures: None,
-        };
+        let card = AgentCard::new(
+            "test-agent",
+            "1.0",
+            AgentInterface::jsonrpc("http://localhost:9090"),
+        )
+        .with_description("A test");
         let card_json = serde_json::to_string(&card).unwrap();
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -632,7 +738,9 @@ mod tests {
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
         let (parsed_card, etag, last_modified) =
-            fetch_card_with_metadata(&url, None).await.unwrap();
+            fetch_card_with_metadata(&url, None, &no_options())
+                .await
+                .unwrap();
         assert_eq!(parsed_card.name, "test-agent");
         assert_eq!(etag, Some("\"xyz\"".into()));
         assert_eq!(last_modified, Some("Mon, 01 Jan 2026 00:00:00 GMT".into()));
@@ -892,7 +1000,7 @@ mod tests {
         });
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let result = fetch_card_with_metadata(&url, None).await;
+        let result = fetch_card_with_metadata(&url, None, &no_options()).await;
         match result {
             Err(ClientError::Transport(msg)) => {
                 assert!(
@@ -937,7 +1045,7 @@ mod tests {
         });
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let result = fetch_card_with_metadata(&url, None).await;
+        let result = fetch_card_with_metadata(&url, None, &no_options()).await;
 
         // Should NOT get a "too large" error. Any other error (HTTP, parse) is fine.
         match &result {
@@ -986,7 +1094,7 @@ mod tests {
         });
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let result = fetch_card_with_metadata(&url, None).await;
+        let result = fetch_card_with_metadata(&url, None, &no_options()).await;
 
         match result {
             Err(ClientError::Transport(msg)) => {
@@ -1052,7 +1160,9 @@ mod tests {
         };
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let (card, _, last_modified) = fetch_card_with_metadata(&url, Some(&cached)).await.unwrap();
+        let (card, _, last_modified) = fetch_card_with_metadata(&url, Some(&cached), &no_options())
+            .await
+            .unwrap();
         assert_eq!(card.name, "lm-cached");
         assert_eq!(last_modified, Some("Mon, 01 Jan 2026 00:00:00 GMT".into()));
     }
@@ -1092,5 +1202,154 @@ mod tests {
         assert!(exceeds_card_body_size(11, 10));
         assert!(!exceeds_card_body_size(10, 10));
         assert!(!exceeds_card_body_size(9, 10));
+    }
+
+    /// Serves `card_json` at every path, but only to a request carrying
+    /// `name: value`; anything else is `401`.
+    async fn spawn_gated_card_server(
+        card_json: String,
+        name: &'static str,
+        value: &'static str,
+    ) -> std::net::SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let body = card_json.clone();
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
+                        let body = body.clone();
+                        async move {
+                            let admitted = req
+                                .headers()
+                                .get(name)
+                                .and_then(|v| v.to_str().ok())
+                                .is_some_and(|v| v == value);
+                            let (status, body) = if admitted {
+                                (200, body)
+                            } else {
+                                (401, "{\"error\":\"unauthorized\"}".to_owned())
+                            };
+                            Ok::<_, hyper::Error>(
+                                hyper::Response::builder()
+                                    .status(status)
+                                    .body(http_body_util::Full::new(hyper::body::Bytes::from(body)))
+                                    .unwrap(),
+                            )
+                        }
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+        addr
+    }
+
+    /// A card behind an auth header: the plain resolver is refused, and the
+    /// `_with_options` variant carries the header and gets the card. Both
+    /// halves matter — the first proves the server really gates, so the
+    /// second is not passing against an open door.
+    #[tokio::test]
+    async fn a_card_behind_a_required_header_needs_the_options_variant() {
+        use a2a_protocol_types::{AgentCard, AgentInterface};
+
+        let card = AgentCard::new(
+            "gated",
+            "1.0",
+            AgentInterface::jsonrpc("http://localhost:9090"),
+        );
+        let addr = spawn_gated_card_server(
+            serde_json::to_string(&card).unwrap(),
+            "authorization",
+            "Bearer s3cret",
+        )
+        .await;
+        let base = format!("http://127.0.0.1:{}", addr.port());
+
+        let refused = resolve_agent_card(&base).await;
+        assert!(
+            matches!(
+                refused,
+                Err(ClientError::UnexpectedStatus { status: 401, .. })
+            ),
+            "no header, so the server must refuse: {refused:?}"
+        );
+
+        let options = CardFetchOptions::default().with_header("authorization", "Bearer s3cret");
+        let fetched = resolve_agent_card_with_options(&base, &options)
+            .await
+            .expect("the header admits the fetch");
+        assert_eq!(fetched.name, "gated");
+
+        // The absolute-URL variant carries them too.
+        let url = format!("{base}{AGENT_CARD_PATH}");
+        let fetched = fetch_card_from_url_with_options(&url, &options)
+            .await
+            .expect("same header, same door");
+        assert_eq!(fetched.name, "gated");
+    }
+
+    /// The configured budget is the whole budget. Headers arrive at two
+    /// thirds of it and the body never does, so a second budget on the body
+    /// read — the shape `CARD_FETCH_BUDGET`'s note records — would show as
+    /// an elapsed time past one and a half budgets. It must also be *this*
+    /// budget: at the 30-second default the test could not finish.
+    #[tokio::test]
+    async fn the_card_fetch_budget_is_the_configured_one() {
+        let budget = Duration::from_millis(600);
+        let addr = crate::transport::test_support::spawn_stalling_server(
+            "HTTP/1.1 200 OK",
+            budget * 2 / 3,
+        )
+        .await;
+        let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
+        let options = CardFetchOptions::default().with_timeout(budget);
+
+        let started = std::time::Instant::now();
+        let result = fetch_card_from_url_with_options(&url, &options).await;
+        let elapsed = started.elapsed();
+
+        assert!(
+            matches!(&result, Err(ClientError::Transport(msg)) if msg.contains("timed out")),
+            "{result:?}"
+        );
+        assert!(
+            elapsed >= budget && elapsed < budget * 3 / 2,
+            "one budget, not two: took {elapsed:?} against {budget:?}"
+        );
+    }
+
+    /// `with_headers` replaces the whole map and `with_header` adds one entry;
+    /// both against a non-empty starting point so a body of
+    /// `Default::default()` cannot pass.
+    #[test]
+    fn card_fetch_options_setters_set_their_fields() {
+        let mut map = HashMap::new();
+        map.insert("authorization".to_owned(), "Bearer t".to_owned());
+        let opts = CardFetchOptions::default()
+            .with_header("x-first", "1")
+            .with_headers(map)
+            .with_header("x-second", "2")
+            .with_timeout(Duration::from_millis(250));
+        assert_eq!(
+            opts.headers().len(),
+            2,
+            "with_headers replaces, with_header adds"
+        );
+        assert_eq!(
+            opts.headers().get("authorization").map(String::as_str),
+            Some("Bearer t")
+        );
+        assert_eq!(
+            opts.headers().get("x-second").map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(opts.timeout(), Duration::from_millis(250));
     }
 }

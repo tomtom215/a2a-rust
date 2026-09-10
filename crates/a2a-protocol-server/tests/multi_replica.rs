@@ -413,11 +413,9 @@ async fn intermediate_events_do_not_cross_replicas() {
 async fn independent_limiters_admit_their_limit_each() {
     const LIMIT: u64 = 5;
 
-    let config = RateLimitConfig {
-        requests_per_window: LIMIT,
-        window_secs: 300,
-        ..RateLimitConfig::default()
-    };
+    let config = RateLimitConfig::default()
+        .with_requests_per_window(LIMIT)
+        .with_window_secs(300);
     let a = RateLimitInterceptor::new(config.clone()).expect("limiter A");
     let b = RateLimitInterceptor::new(config).expect("limiter B");
 
@@ -448,13 +446,11 @@ async fn limiters_sharing_a_counter_enforce_one_global_limit() {
             .expect("counter connects and migrates"),
     );
 
-    let config = RateLimitConfig {
-        requests_per_window: LIMIT,
+    let config = RateLimitConfig::default()
+        .with_requests_per_window(LIMIT)
         // Wide enough that the window cannot roll mid-test and hand out a
         // second budget, which would look exactly like the bug being fixed.
-        window_secs: 300,
-        ..RateLimitConfig::default()
-    };
+        .with_window_secs(300);
     let a = RateLimitInterceptor::new(config.clone())
         .expect("limiter A")
         .with_shared_counter(counter.clone());
@@ -495,11 +491,11 @@ async fn a_shared_counter_still_separates_callers() {
             .await
             .expect("counter connects"),
     );
-    let limiter = RateLimitInterceptor::new(RateLimitConfig {
-        requests_per_window: LIMIT,
-        window_secs: 300,
-        ..RateLimitConfig::default()
-    })
+    let limiter = RateLimitInterceptor::new(
+        RateLimitConfig::default()
+            .with_requests_per_window(LIMIT)
+            .with_window_secs(300),
+    )
     .expect("limiter")
     .with_shared_counter(counter);
 

@@ -21,9 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_client::{ClientError, ClientResult, EventStream};
-use a2a_protocol_types::StreamResponse;
 use a2a_protocol_types::proto as pb;
-use futures::StreamExt;
 use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
 use slim_auth::shared_secret::SharedSecret;
 use slim_config::component::id::{ID, Kind};
@@ -31,6 +29,7 @@ use slim_rpc::{Channel, Metadata};
 use slim_service::app::App as SlimApp;
 use slim_service::service::Service;
 
+mod bridge;
 mod dispatch;
 mod push_config;
 
@@ -38,9 +37,6 @@ use crate::SlimName;
 use crate::binding::A2A_SERVICE_NAME;
 use crate::codec::Pb;
 use crate::error::rpc_error_to_client_error;
-
-/// Buffer depth for the task bridging SLIMRPC frames into an [`EventStream`].
-const STREAM_CHANNEL_CAPACITY: usize = 64;
 
 /// Why a SLIMRPC transport could not be created.
 #[derive(Debug, thiserror::Error)]
@@ -83,6 +79,7 @@ pub struct SlimRpcTransportBuilder {
     local: SlimName,
     identity: Option<(AuthProvider, AuthVerifier)>,
     timeout: Option<Duration>,
+    slow_consumer_timeout: Duration,
 }
 
 impl SlimRpcTransportBuilder {
@@ -134,6 +131,35 @@ impl SlimRpcTransportBuilder {
         self
     }
 
+    /// Bounds how long a streaming call's events wait for a consumer that is
+    /// not reading. Default: 30 s.
+    ///
+    /// Each streaming call is bridged into its [`EventStream`] through a
+    /// 64-slot channel. When that channel is full and *stays* full — the
+    /// consumer has not taken one event for this long — the call is abandoned:
+    /// the SLIM stream is dropped, so frames the agent goes on sending are
+    /// discarded on arrival instead of accumulating in the unbounded per-call
+    /// channel `agntcy-slim-rpc` keeps for the call (its `channel.rs:89`); the
+    /// consumer receives the events already buffered, then one
+    /// [`ClientError::Timeout`] naming this setting, and then the stream ends.
+    /// Memory held on behalf of a stalled consumer is therefore bounded by 64
+    /// events plus whatever the agent sends within this window, rather than by
+    /// [`with_timeout`](Self::with_timeout), which is hours by default.
+    ///
+    /// A consumer that resumes inside the window loses nothing: every event is
+    /// delivered, in order, with no gap. The bound is on the wait, not on
+    /// throughput — a consumer that takes one event per window never trips it.
+    ///
+    /// Why thirty seconds: it is `ClientConfig::request_timeout` and
+    /// `stream_connect_timeout`, the time the SDK's client already allows a
+    /// server to produce a stream's first event; this is the same allowance
+    /// extended to the consumer. See README, "Backpressure".
+    #[must_use]
+    pub const fn with_slow_consumer_timeout(mut self, timeout: Duration) -> Self {
+        self.slow_consumer_timeout = timeout;
+        self
+    }
+
     /// Creates the SLIM service, app and channel.
     ///
     /// # Errors
@@ -155,6 +181,7 @@ impl SlimRpcTransportBuilder {
         let transport = SlimRpcTransport::from_app(Arc::new(app), self.remote)?;
         Ok(transport
             .with_timeout_opt(self.timeout)
+            .with_slow_consumer_timeout(self.slow_consumer_timeout)
             .with_owned_service(service))
     }
 }
@@ -194,6 +221,7 @@ pub struct SlimRpcTransport {
     channel: Channel,
     remote: SlimName,
     timeout: Option<Duration>,
+    slow_consumer_timeout: Duration,
     /// Held so a service the builder created outlives the transport.
     owned_service: Option<Arc<Service>>,
 }
@@ -203,6 +231,7 @@ impl std::fmt::Debug for SlimRpcTransport {
         f.debug_struct("SlimRpcTransport")
             .field("remote", &self.remote.to_string())
             .field("timeout", &self.timeout)
+            .field("slow_consumer_timeout", &self.slow_consumer_timeout)
             .finish_non_exhaustive()
     }
 }
@@ -221,6 +250,7 @@ impl SlimRpcTransport {
             local,
             identity: None,
             timeout: None,
+            slow_consumer_timeout: bridge::DEFAULT_SLOW_CONSUMER_TIMEOUT,
         }
     }
 
@@ -297,6 +327,7 @@ impl SlimRpcTransport {
             channel,
             remote,
             timeout: None,
+            slow_consumer_timeout: bridge::DEFAULT_SLOW_CONSUMER_TIMEOUT,
             owned_service: None,
         })
     }
@@ -305,6 +336,15 @@ impl SlimRpcTransport {
     #[must_use]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
+        self
+    }
+
+    /// Bounds how long a streaming call's events wait for a consumer that is
+    /// not reading. See
+    /// [`SlimRpcTransportBuilder::with_slow_consumer_timeout`].
+    #[must_use]
+    pub const fn with_slow_consumer_timeout(mut self, timeout: Duration) -> Self {
+        self.slow_consumer_timeout = timeout;
         self
     }
 
@@ -393,6 +433,9 @@ impl SlimRpcTransport {
     }
 
     /// Opens a streaming call and bridges its frames into an [`EventStream`].
+    ///
+    /// The bridge, and what it does when the consumer stops reading, is
+    /// [`bridge::run`].
     fn streaming<DomainParams, ProtoReq>(
         &self,
         method_name: &str,
@@ -416,8 +459,9 @@ impl SlimRpcTransport {
         let channel = self.channel.clone();
         let method_owned = method_name.to_string();
         let timeout = self.timeout;
+        let slow_consumer_timeout = self.slow_consumer_timeout;
 
-        let (tx, rx) = tokio::sync::mpsc::channel(STREAM_CHANNEL_CAPACITY);
+        let (tx, rx) = tokio::sync::mpsc::channel(bridge::STREAM_CHANNEL_CAPACITY);
         tokio::spawn(async move {
             let frames = channel.unary_stream::<_, Pb<pb::StreamResponse>>(
                 A2A_SERVICE_NAME,
@@ -426,20 +470,7 @@ impl SlimRpcTransport {
                 timeout,
                 metadata,
             );
-            futures::pin_mut!(frames);
-            while let Some(frame) = frames.next().await {
-                // A decode failure is delivered rather than swallowed: a
-                // consumer that just stops receiving events cannot tell a
-                // finished stream from a broken one.
-                let event = match frame {
-                    Ok(pb_event) => StreamResponse::try_from(pb_event.into_inner())
-                        .map_err(|e| ClientError::Transport(format!("malformed event: {e}"))),
-                    Err(e) => Err(rpc_error_to_client_error(&e)),
-                };
-                if tx.send(event).await.is_err() {
-                    break; // the consumer dropped the stream
-                }
-            }
+            bridge::run(frames, tx, slow_consumer_timeout).await;
         });
 
         Ok(EventStream::from_event_channel(rx))

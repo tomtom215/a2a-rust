@@ -105,7 +105,12 @@ use std::time::Duration;
 /// Every field here is enforced. See the [module documentation](self) for
 /// where each one is applied, and for the one limit that is not on this
 /// struct.
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TenantLimits {
     /// Maximum tasks this tenant may have executing at once. `None` =
     /// unlimited.
@@ -152,6 +157,7 @@ pub struct TenantLimits {
     ///
     /// [`TaskStoreConfig`]: crate::TaskStoreConfig
     #[deprecated(
+        since = "0.10.0",
         note = "never enforced; use TenantAwareInMemoryTaskStore::with_tenant_override \
                 to give a tenant its own TaskStoreConfig::max_capacity"
     )]
@@ -179,9 +185,57 @@ pub struct TenantLimits {
 
 impl TenantLimits {
     /// Returns a builder for constructing [`TenantLimits`].
+    // Equivalent mutant: cargo-mutants replaces the body with
+    // `Default::default()`, which in a function returning `TenantLimitsBuilder`
+    // resolves to `<TenantLimitsBuilder as Default>::default()` — the very call
+    // written here. No test can distinguish the two (ADR 0006).
+    #[mutants::skip]
     #[must_use]
     pub fn builder() -> TenantLimitsBuilder {
         TenantLimitsBuilder::default()
+    }
+
+    /// Sets the maximum concurrent tasks; `None` is unlimited.
+    #[must_use]
+    pub const fn with_max_concurrent_tasks(mut self, n: Option<usize>) -> Self {
+        self.max_concurrent_tasks = n;
+        self
+    }
+
+    /// Sets the executor timeout; `None` uses the handler's own.
+    #[must_use]
+    pub const fn with_executor_timeout(mut self, d: Option<Duration>) -> Self {
+        self.executor_timeout = d;
+        self
+    }
+
+    /// Sets the event queue capacity per stream; `None` uses the handler's own.
+    #[must_use]
+    pub const fn with_event_queue_capacity(mut self, n: Option<usize>) -> Self {
+        self.event_queue_capacity = n;
+        self
+    }
+
+    /// Sets the maximum stored tasks. **Deprecated and not enforced** — see
+    /// [`TenantLimits::max_stored_tasks`].
+    #[must_use]
+    #[deprecated(
+        since = "0.12.0",
+        note = "never enforced; use TenantAwareInMemoryTaskStore::with_tenant_override \
+                to give a tenant its own TaskStoreConfig::max_capacity"
+    )]
+    #[allow(deprecated)]
+    pub const fn with_max_stored_tasks(mut self, n: Option<usize>) -> Self {
+        self.max_stored_tasks = n;
+        self
+    }
+
+    /// Sets the tenant-wide rate limit in requests per second; `None` is no
+    /// tenant-level limit.
+    #[must_use]
+    pub const fn with_rate_limit_rps(mut self, rps: Option<u32>) -> Self {
+        self.rate_limit_rps = rps;
+        self
     }
 }
 
@@ -262,7 +316,12 @@ impl TenantLimitsBuilder {
 ///
 /// Resolution is the whole of what this type does; nothing in the request path
 /// enforces what it resolves. See the [module documentation](self).
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct PerTenantConfig {
     /// Default configuration for tenants without specific overrides.
     pub default: TenantLimits,
@@ -273,9 +332,35 @@ pub struct PerTenantConfig {
 
 impl PerTenantConfig {
     /// Returns a builder for constructing [`PerTenantConfig`].
+    // Equivalent mutant: the `Default::default()` replacement resolves to
+    // `<PerTenantConfigBuilder as Default>::default()`, the call written here
+    // (ADR 0006).
+    #[mutants::skip]
     #[must_use]
     pub fn builder() -> PerTenantConfigBuilder {
         PerTenantConfigBuilder::default()
+    }
+
+    /// Sets the limits applied to every tenant without an override.
+    #[must_use]
+    pub const fn with_default(mut self, limits: TenantLimits) -> Self {
+        self.default = limits;
+        self
+    }
+
+    /// Replaces the per-tenant overrides. [`with_override`](Self::with_override)
+    /// adds one.
+    #[must_use]
+    pub fn with_overrides(mut self, overrides: HashMap<String, TenantLimits>) -> Self {
+        self.overrides = overrides;
+        self
+    }
+
+    /// Adds a per-tenant override.
+    #[must_use]
+    pub fn with_override(mut self, tenant_id: impl Into<String>, limits: TenantLimits) -> Self {
+        self.overrides.insert(tenant_id.into(), limits);
+        self
     }
 
     /// Returns the effective limits for the given tenant.
@@ -323,88 +408,4 @@ impl PerTenantConfigBuilder {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_limits_are_all_none() {
-        let limits = TenantLimits::default();
-        assert_eq!(limits.max_concurrent_tasks, None);
-        assert_eq!(limits.executor_timeout, None);
-        assert_eq!(limits.event_queue_capacity, None);
-        assert_eq!(limits.rate_limit_rps, None);
-    }
-
-    #[test]
-    fn builder_sets_all_fields() {
-        let limits = TenantLimits::builder()
-            .max_concurrent_tasks(10)
-            .executor_timeout(Duration::from_secs(30))
-            .event_queue_capacity(256)
-            .rate_limit_rps(100)
-            .build();
-
-        assert_eq!(limits.max_concurrent_tasks, Some(10));
-        assert_eq!(limits.executor_timeout, Some(Duration::from_secs(30)));
-        assert_eq!(limits.event_queue_capacity, Some(256));
-        assert_eq!(limits.rate_limit_rps, Some(100));
-    }
-
-    #[test]
-    fn per_tenant_config_returns_override() {
-        let config = PerTenantConfig::builder()
-            .default_limits(TenantLimits::builder().max_concurrent_tasks(10).build())
-            .with_override(
-                "premium",
-                TenantLimits::builder().max_concurrent_tasks(1000).build(),
-            )
-            .build();
-
-        assert_eq!(config.get("premium").max_concurrent_tasks, Some(1000));
-    }
-
-    #[test]
-    fn per_tenant_config_falls_back_to_default() {
-        let config = PerTenantConfig::builder()
-            .default_limits(TenantLimits::builder().rate_limit_rps(50).build())
-            .build();
-
-        assert_eq!(config.get("unknown-tenant").rate_limit_rps, Some(50));
-    }
-
-    #[test]
-    fn per_tenant_config_default_is_empty() {
-        let config = PerTenantConfig::default();
-        let limits = config.get("any");
-        assert_eq!(*limits, TenantLimits::default());
-    }
-
-    #[test]
-    fn multiple_overrides() {
-        let config = PerTenantConfig::builder()
-            .default_limits(TenantLimits::default())
-            .with_override("a", TenantLimits::builder().rate_limit_rps(10).build())
-            .with_override("b", TenantLimits::builder().rate_limit_rps(20).build())
-            .build();
-
-        assert_eq!(config.get("a").rate_limit_rps, Some(10));
-        assert_eq!(config.get("b").rate_limit_rps, Some(20));
-        assert_eq!(config.get("c").rate_limit_rps, None);
-    }
-
-    #[test]
-    fn tenant_limits_builder_returns_functional_builder() {
-        // Verifies TenantLimits::builder() returns a real builder (not Default::default()).
-        let limits = TenantLimits::builder().max_concurrent_tasks(42).build();
-        assert_eq!(limits.max_concurrent_tasks, Some(42));
-    }
-
-    #[test]
-    fn per_tenant_config_builder_returns_functional_builder() {
-        // Verifies PerTenantConfig::builder() returns a real builder (not Default::default()).
-        let config = PerTenantConfig::builder()
-            .default_limits(TenantLimits::builder().rate_limit_rps(99).build())
-            .build();
-        assert_eq!(config.get("any").rate_limit_rps, Some(99));
-    }
-}
+mod tests;

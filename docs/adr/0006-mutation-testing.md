@@ -38,13 +38,14 @@ orchestration flows.
 
 2. **Target**: Zero surviving mutants across all four library crates
    (`a2a-protocol-types`, `a2a-protocol-client`, `a2a-protocol-server`,
-   `a2a-protocol-sdk`), with the single documented exception in
-   [Equivalent mutants](#equivalent-mutants) below.
+   `a2a-protocol-sdk`), with the documented exception of the three equivalent
+   mutants in [Equivalent mutants](#equivalent-mutants) below.
 
    The target is unconditional; the *enforcement* is scoped. A PR must add no
    survivors to the lines it changes, and that is blocking. The workspace
-   figure is a tracked standing target — **94%, 125 surviving, as of
-   2026-08-10** — burned down over time rather than waived. There is
+   figure is a tracked standing target — **97%, 55 surviving, as of
+   2026-09-07** (94%, 125 on 2026-08-10) — burned down over time rather than
+   waived. There is
    deliberately no baseline or allowlist file: the incremental gate already
    prevents the count from growing, so a mechanism whose only purpose is to
    turn a red result green would buy nothing and cost the signal.
@@ -118,15 +119,30 @@ three conditions:
    builds the library normally, so the attribute must resolve in a non-test
    build.
 
-   This workspace does **not** currently depend on `mutants`, and adding it to
-   a crate published on crates.io puts it in every downstream user's
-   dependency tree — a supply-chain decision for a project that maintains a
-   `deny.toml`, an SBOM and SLSA provenance. So the first genuinely equivalent
-   mutant is also the trigger for that decision, and should be raised as one
-   rather than settled inside an unrelated PR.
+   Adding it to a crate published on crates.io puts it in every downstream
+   user's dependency tree — a supply-chain decision for a project that
+   maintains a `deny.toml`, an SBOM and SLSA provenance — so it was deferred
+   until the first genuinely equivalent mutant forced the question rather than
+   settled inside an unrelated PR.
 
-   Until then the target has been met the ordinary way, by writing tests. No
-   exemption has yet been needed.
+   *Decided 2026-09-10.* `a2a-protocol-server` depends on `mutants`
+   (`>=0.0.4, <0.1`) and carries exactly three `#[mutants::skip]` attributes:
+   `TenantLimits::builder`, `PerTenantConfig::builder` and
+   `SseBodyWriter::close`, each with its equivalence argument in a comment
+   above the attribute (the argument is recorded in `ROADMAP.md`, "Mutants no
+   test can kill"). The supply-chain review that the deferral asked for:
+   `mutants` 0.0.4 is MIT, declares **zero** dependencies (crates.io
+   dependency listing, 2026-09-10), is published from the cargo-mutants
+   repository by its author, and its only content is attribute macros that
+   return their input unchanged — the same code every downstream build already
+   trusts when cargo-mutants runs. The alternative, three permanent survivors
+   in every sweep, would have made "zero missed" a figure that needed a
+   footnote forever. Verified: `cargo mutants --list` over the two files drops
+   from 12 and 29 mutants to 10 and 28, the three named mutants and no others;
+   and graded with the sweep's own command line the same day
+   (`--file` on both, nextest, `--all-features --run-ignored all`, live
+   PostgreSQL): 38 mutants, 11 caught, 27 unviable, 0 missed, 0 timeouts,
+   exit 0.
 
 3. **Do not use `mutants.toml` for this.** Config-level `exclude_globs` and
    `exclude_re` are for whole categories that are never worth mutating —

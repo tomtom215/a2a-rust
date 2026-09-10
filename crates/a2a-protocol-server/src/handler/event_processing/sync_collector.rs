@@ -5,6 +5,7 @@
 
 //! Synchronous event collection for non-streaming mode.
 
+use crate::metrics::push_outcome;
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
@@ -90,6 +91,13 @@ fn revert_artifact_append(
     }
 }
 
+/// The bounded, low-cardinality `error_kind` reported to
+/// [`Metrics::on_error`](crate::metrics::Metrics::on_error) when
+/// [`HandlerLimits::executor_drain_timeout`](crate::handler::HandlerLimits::executor_drain_timeout)
+/// elapses. A constant so the label cannot drift between the emitter and a
+/// dashboard that filters on it.
+pub const EXECUTOR_DRAIN_TIMEOUT: &str = "executor_drain_timeout";
+
 impl RequestHandler {
     /// Collects events until stream closes, updating the task store and
     /// delivering push notifications.
@@ -123,9 +131,19 @@ impl RequestHandler {
         loop {
             if executor_done {
                 // Executor finished — drain any remaining buffered events.
-                match reader.read().await {
-                    Some(event) => self.process_event(event, &task_id, &mut state).await?,
-                    None => break,
+                // Bounded: everything the executor wrote is already in the
+                // queue, so the only thing this can wait on is the queue
+                // *closing*, and a queue that never closes (an executor that
+                // returned without a terminal state, and a `destroy` that
+                // never ran) used to hold the blocking response open forever.
+                match tokio::time::timeout(self.limits.executor_drain_timeout, reader.read()).await
+                {
+                    Ok(Some(event)) => self.process_event(event, &task_id, &mut state).await?,
+                    Ok(None) => break,
+                    Err(_elapsed) => {
+                        self.on_drain_timeout(&task_id);
+                        break;
+                    }
                 }
             } else {
                 tokio::select! {
@@ -372,6 +390,19 @@ impl RequestHandler {
     /// path already delivers this way — this makes the two consistent.
     ///
     /// Empty inputs (no sender, no events) spawn nothing.
+    /// The queue did not close within `executor_drain_timeout`: report it on
+    /// both channels and let the caller answer with what it has.
+    fn on_drain_timeout(&self, _task_id: &TaskId) {
+        trace_warn!(
+            task_id = %_task_id,
+            timeout_ms = u64::try_from(self.limits.executor_drain_timeout.as_millis())
+                .unwrap_or(u64::MAX),
+            "event queue did not close after the executor finished; \
+             answering with the task as collected"
+        );
+        self.metrics.on_error("SendMessage", EXECUTOR_DRAIN_TIMEOUT);
+    }
+
     fn spawn_push_delivery(&self, task_id: TaskId, events: Vec<StreamResponse>) {
         let Some(sender) = self.push_sender.clone() else {
             return;
@@ -379,58 +410,102 @@ impl RequestHandler {
         if events.is_empty() {
             return;
         }
-        let store = std::sync::Arc::clone(&self.push_config_store);
-        let per_delivery_timeout = self.limits.push_delivery_timeout;
+        // Every outcome is reported through `Metrics::on_push_delivery`,
+        // exactly as the background path reports its own; until 2026-09-10
+        // this path only wrote trace lines, which a default build compiles
+        // away, so a blocking request's pushes were invisible. The timeout
+        // label is decided once: `timeout_truncated` when the sender's own
+        // schedule does not fit `push_delivery_timeout`, `timeout` otherwise.
+        let timeout_label = super::background::timeout_outcome(sender.as_ref(), &self.limits);
+        let job = SyncPushJob {
+            store: std::sync::Arc::clone(&self.push_config_store),
+            sender,
+            task_id,
+            events,
+            push_delivery_timeout: self.limits.push_delivery_timeout,
+            push_delivery_budget: self.limits.push_delivery_budget,
+            metrics: std::sync::Arc::clone(&self.metrics),
+            timeout_label,
+        };
         // `task_local` tenant context does not cross `tokio::spawn`, so capture
         // it explicitly, exactly as the streaming background processor does.
         let tenant = crate::store::tenant::TenantContext::current();
         tokio::spawn(crate::store::tenant::TenantContext::scope(
             tenant,
-            async move {
-                let Ok(configs) = store.list(task_id.as_ref()).await else {
-                    return;
-                };
-                if configs.is_empty() {
-                    return;
-                }
-                // FIX(#4): cap total push delivery time to prevent amplification.
-                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-                for event in &events {
-                    for config in &configs {
-                        if tokio::time::Instant::now() >= deadline {
-                            trace_warn!(
-                                task_id = %task_id,
-                                "push delivery deadline exceeded; skipping remaining"
-                            );
-                            return;
-                        }
-                        match tokio::time::timeout(
-                            per_delivery_timeout,
-                            sender.send(&config.url, event, config),
-                        )
-                        .await
-                        {
-                            Ok(Err(_err)) => {
-                                trace_warn!(
-                                    task_id = %task_id,
-                                    url = %config.url,
-                                    error = %_err,
-                                    "push notification delivery failed"
-                                );
-                            }
-                            Err(_) => {
-                                trace_warn!(
-                                    task_id = %task_id,
-                                    url = %config.url,
-                                    "push notification delivery timed out"
-                                );
-                            }
-                            Ok(Ok(())) => {}
-                        }
-                    }
-                }
-            },
+            job.run(),
         ));
+    }
+}
+
+/// The blocking path's push deliveries for one request: every collected
+/// event to every config of the task, sequentially, under one budget.
+struct SyncPushJob {
+    store: std::sync::Arc<dyn crate::push::PushConfigStore>,
+    sender: std::sync::Arc<dyn crate::push::PushSender>,
+    task_id: TaskId,
+    events: Vec<StreamResponse>,
+    push_delivery_timeout: std::time::Duration,
+    push_delivery_budget: std::time::Duration,
+    metrics: std::sync::Arc<dyn crate::metrics::Metrics>,
+    timeout_label: &'static str,
+}
+
+impl SyncPushJob {
+    async fn run(self) {
+        let Ok(configs) = self.store.list(self.task_id.as_ref()).await else {
+            return;
+        };
+        if configs.is_empty() {
+            return;
+        }
+        // The amplification cap, covering every event of this request
+        // against every config. See `HandlerLimits::push_delivery_budget`.
+        let deadline = tokio::time::Instant::now() + self.push_delivery_budget;
+        for (event_index, event) in self.events.iter().enumerate() {
+            for (reached, config) in configs.iter().enumerate() {
+                if tokio::time::Instant::now() >= deadline {
+                    trace_warn!(
+                        task_id = %self.task_id,
+                        "push delivery deadline exceeded; skipping remaining"
+                    );
+                    // One count per (event, config) pair that will not be
+                    // contacted: the rest of this event's configs, then every
+                    // config of every later event.
+                    let remaining = (configs.len() - reached)
+                        + configs.len() * (self.events.len() - event_index - 1);
+                    for _ in 0..remaining {
+                        self.metrics.on_push_delivery(push_outcome::SKIPPED);
+                    }
+                    return;
+                }
+                let outcome = match tokio::time::timeout(
+                    self.push_delivery_timeout,
+                    self.sender.send(&config.url, event, config),
+                )
+                .await
+                {
+                    Ok(Ok(())) => push_outcome::DELIVERED,
+                    Ok(Err(_err)) => {
+                        trace_warn!(
+                            task_id = %self.task_id,
+                            url = %config.url,
+                            error = %_err,
+                            "push notification delivery failed"
+                        );
+                        push_outcome::FAILED
+                    }
+                    Err(_) => {
+                        trace_warn!(
+                            task_id = %self.task_id,
+                            url = %config.url,
+                            "push notification delivery timed out"
+                        );
+                        self.timeout_label
+                    }
+                };
+                self.metrics.on_push_delivery(outcome);
+            }
+        }
     }
 }
 
@@ -440,12 +515,14 @@ impl RequestHandler {
 mod tests {
     use std::sync::Arc;
 
+    use super::EXECUTOR_DRAIN_TIMEOUT;
     use super::revert_artifact_append;
     use a2a_protocol_types::events::StreamResponse;
     use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
     use crate::agent_executor;
     use crate::builder::RequestHandlerBuilder;
+    use crate::metrics::{Metrics, push_outcome};
     use crate::store::{InMemoryTaskStore, TaskStore};
     use crate::streaming::EventQueueWriter;
     use crate::streaming::event_queue::new_in_memory_queue;
@@ -1294,6 +1371,237 @@ mod tests {
             final_task.task.status.state,
             TaskState::Completed,
             "task should drain remaining events after executor completes"
+        );
+    }
+
+    /// An executor that returns without a terminal state, on a queue that
+    /// never closes, no longer holds the blocking response open forever: the
+    /// drain gives up after `executor_drain_timeout` and answers with the task
+    /// as collected. Kills the mutant that removes the bound (the test would
+    /// hang and be killed by nextest) and pins what the response then is.
+    #[tokio::test(start_paused = true)]
+    async fn a_drain_that_never_closes_is_bounded_and_answers_with_the_task_so_far() {
+        use crate::handler::HandlerLimits;
+        use crate::metrics::Metrics;
+        use std::time::Duration;
+
+        #[derive(Default)]
+        struct DrainErrors(std::sync::Mutex<Vec<(String, String)>>);
+        impl Metrics for DrainErrors {
+            fn on_error(&self, method: &str, error_kind: &str) {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push((method.to_owned(), error_kind.to_owned()));
+            }
+        }
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-stuck-drain");
+        task_store
+            .save(&make_task("t-stuck-drain", TaskState::Submitted))
+            .await
+            .unwrap();
+        let errors = Arc::new(DrainErrors::default());
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .with_handler_limits(
+                HandlerLimits::default().with_executor_drain_timeout(Duration::from_secs(2)),
+            )
+            .with_metrics(Arc::clone(&errors) as Arc<dyn Metrics>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        // The executor reports progress but never a terminal state, and the
+        // original writer is kept alive for the whole test so the queue never
+        // closes — the shape that used to wait forever.
+        let writer_clone = writer.clone();
+        let executor_handle = tokio::spawn(async move {
+            writer_clone
+                .write(make_status_event("t-stuck-drain", TaskState::Working))
+                .await
+                .unwrap();
+        });
+
+        let started = tokio::time::Instant::now();
+        let collected = handler
+            .collect_events(reader, task_id.clone(), executor_handle)
+            .await
+            .expect("the drain gives up rather than failing the request");
+        let waited = started.elapsed();
+
+        assert_eq!(
+            collected.task.status.state,
+            TaskState::Working,
+            "the answer is the task as collected: the Working update, and no invented terminal state"
+        );
+        assert!(
+            waited >= Duration::from_secs(2) && waited < Duration::from_secs(3),
+            "the drain waits exactly the configured bound, waited {waited:?}"
+        );
+        assert_eq!(
+            *errors.0.lock().unwrap(),
+            vec![("SendMessage".to_owned(), EXECUTOR_DRAIN_TIMEOUT.to_owned())],
+            "giving up is reported through Metrics::on_error with the bounded label"
+        );
+        drop(writer);
+    }
+
+    /// A push sender that takes exactly one second per delivery.
+    struct OneSecondSender(Arc<std::sync::atomic::AtomicU64>);
+
+    impl crate::push::PushSender for OneSecondSender {
+        fn send<'a>(
+            &'a self,
+            _url: &'a str,
+            _event: &'a StreamResponse,
+            _config: &'a a2a_protocol_types::push::TaskPushNotificationConfig,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Box::pin(async {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                Ok(())
+            })
+        }
+    }
+
+    /// Runs the blocking path's push delivery for one event against ten
+    /// configs at one second each, and reports how many were contacted
+    /// before `budget` ran out. Paused time: the caller's runtime must be
+    /// `start_paused`.
+    async fn configs_reached_with_budget(budget: std::time::Duration) -> u64 {
+        use crate::handler::HandlerLimits;
+        use crate::push::{InMemoryPushConfigStore, PushConfigStore};
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        let store = InMemoryPushConfigStore::new();
+        for i in 0..10 {
+            store
+                .set(a2a_protocol_types::push::TaskPushNotificationConfig {
+                    tenant: None,
+                    id: Some(format!("cfg-{i}")),
+                    task_id: Some("t-budget".to_owned()),
+                    url: format!("https://example.com/hook{i}"),
+                    token: None,
+                    authentication: None,
+                })
+                .await
+                .unwrap();
+        }
+        let sent = Arc::new(AtomicU64::new(0));
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_config_store(store)
+            .with_push_sender(OneSecondSender(Arc::clone(&sent)))
+            .with_handler_limits(
+                HandlerLimits::default()
+                    .with_push_delivery_timeout(std::time::Duration::from_secs(5))
+                    .with_push_delivery_budget(budget),
+            )
+            .build()
+            .unwrap();
+        handler.spawn_push_delivery(
+            TaskId::new("t-budget"),
+            vec![make_status_event("t-budget", TaskState::Working)],
+        );
+        // Let the spawned delivery run to its deadline: 10 configs at 1s
+        // each is longer than any budget a caller passes.
+        tokio::time::sleep(std::time::Duration::from_secs(12)).await;
+        sent.load(Ordering::Relaxed)
+    }
+
+    /// Counts `Metrics::on_push_delivery` labels.
+    #[derive(Default)]
+    struct PushOutcomes(std::sync::Mutex<std::collections::BTreeMap<String, u64>>);
+    impl Metrics for PushOutcomes {
+        fn on_push_delivery(&self, outcome: &str) {
+            *self
+                .0
+                .lock()
+                .unwrap()
+                .entry(outcome.to_owned())
+                .or_default() += 1;
+        }
+    }
+
+    /// The blocking path reports every push outcome, as the background path
+    /// does: with a 1s sender, a 5s per-delivery timeout and a 4s budget over
+    /// three configs and four events, four are `delivered` (all of the first
+    /// event, one of the second) and the eight (event, config) pairs never
+    /// contacted are `skipped` — the two remaining configs of the second
+    /// event plus three for each of the two events after it. The shape is
+    /// chosen so every operator in the skip count is observable: the
+    /// deadline lands inside a later event with more than one event still
+    /// to come, and 3 × 2 differs from 3 + 2, 3 / 2 and 3 − 2. Until
+    /// 2026-09-10 this path reported nothing — a blocking request's pushes
+    /// were trace lines a default build compiles away.
+    #[tokio::test(start_paused = true)]
+    async fn the_sync_path_reports_every_push_outcome() {
+        use crate::handler::HandlerLimits;
+        use crate::push::{InMemoryPushConfigStore, PushConfigStore};
+        use std::sync::atomic::AtomicU64;
+
+        let store = InMemoryPushConfigStore::new();
+        for i in 0..3 {
+            store
+                .set(a2a_protocol_types::push::TaskPushNotificationConfig {
+                    tenant: None,
+                    id: Some(format!("cfg-{i}")),
+                    task_id: Some("t-outcomes".to_owned()),
+                    url: format!("https://example.com/hook{i}"),
+                    token: None,
+                    authentication: None,
+                })
+                .await
+                .unwrap();
+        }
+        let outcomes = Arc::new(PushOutcomes::default());
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_config_store(store)
+            .with_push_sender(OneSecondSender(Arc::new(AtomicU64::new(0))))
+            .with_metrics(Arc::clone(&outcomes))
+            .with_handler_limits(
+                HandlerLimits::default()
+                    .with_push_delivery_timeout(std::time::Duration::from_secs(5))
+                    .with_push_delivery_budget(std::time::Duration::from_secs(4)),
+            )
+            .build()
+            .unwrap();
+        handler.spawn_push_delivery(
+            TaskId::new("t-outcomes"),
+            vec![
+                make_status_event("t-outcomes", TaskState::Submitted),
+                make_status_event("t-outcomes", TaskState::Working),
+                make_status_event("t-outcomes", TaskState::Working),
+                make_status_event("t-outcomes", TaskState::Completed),
+            ],
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(25)).await;
+
+        let counts = outcomes.0.lock().unwrap().clone();
+        assert_eq!(counts.get(push_outcome::DELIVERED), Some(&4), "{counts:?}");
+        assert_eq!(counts.get(push_outcome::SKIPPED), Some(&8), "{counts:?}");
+        assert_eq!(counts.values().sum::<u64>(), 12, "{counts:?}");
+    }
+
+    /// The blocking path's push deliveries stop at `push_delivery_budget`,
+    /// not at a literal. With a 1s per-delivery cost, a 3s budget reaches 3
+    /// configs and a 6s budget reaches 6.
+    #[tokio::test(start_paused = true)]
+    async fn the_sync_push_budget_is_the_configured_one() {
+        use std::time::Duration;
+
+        assert_eq!(configs_reached_with_budget(Duration::from_secs(3)).await, 3);
+        assert_eq!(
+            configs_reached_with_budget(Duration::from_secs(6)).await,
+            6,
+            "a raised budget reaches more configs: the field, not a literal, is the bound"
         );
     }
 

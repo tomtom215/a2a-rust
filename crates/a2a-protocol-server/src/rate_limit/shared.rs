@@ -280,6 +280,184 @@ mod postgres {
             })
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use sqlx::postgres::PgPool;
+
+        const URL_ENV: &str = "A2A_TEST_POSTGRES_URL";
+
+        /// `Debug` names the type and elides the pool. Needs no server: a
+        /// lazy pool never connects, so this runs in every configuration.
+        #[tokio::test]
+        async fn debug_names_the_counter_and_elides_the_pool() {
+            let counter = PostgresRateLimitCounter {
+                pool: PgPool::connect_lazy("postgres://nobody@127.0.0.1:1/nowhere")
+                    .expect("a lazy pool needs no server"),
+                counted: AtomicU64::new(0),
+            };
+            let shown = format!("{counter:?}");
+            assert!(
+                shown.starts_with("PostgresRateLimitCounter"),
+                "Debug must name the type, got: {shown}"
+            );
+            assert!(
+                shown.contains(".."),
+                "the pool is elided rather than dumped, got: {shown}"
+            );
+        }
+
+        /// A scratch database for one test, dropped at the end. Per test and
+        /// per process, because the sweep deletes every stale row in the
+        /// table regardless of caller, so two tests sharing a table would
+        /// each sweep the other's seed.
+        struct ScratchDb {
+            admin_url: String,
+            name: String,
+        }
+
+        impl ScratchDb {
+            async fn create(tag: &str) -> Self {
+                let admin_url = std::env::var(URL_ENV)
+                    .unwrap_or_else(|_| panic!("{URL_ENV} must be set for the Postgres suite"));
+                let name = format!("a2a_rl_counter_{tag}_{}", std::process::id());
+                let pool = PgPool::connect(&admin_url)
+                    .await
+                    .expect("connect to admin database");
+                let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name}"))
+                    .execute(&pool)
+                    .await;
+                sqlx::query(&format!("CREATE DATABASE {name}"))
+                    .execute(&pool)
+                    .await
+                    .expect("create scratch database");
+                pool.close().await;
+                Self { admin_url, name }
+            }
+
+            fn url(&self) -> String {
+                let base = self.admin_url.rsplit_once('/').expect("url has a path").0;
+                format!("{base}/{}", self.name)
+            }
+
+            async fn drop_db(self) {
+                if let Ok(pool) = PgPool::connect(&self.admin_url).await {
+                    let _ = sqlx::query(&format!(
+                        "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
+                        self.name
+                    ))
+                    .execute(&pool)
+                    .await;
+                    pool.close().await;
+                }
+            }
+        }
+
+        const STALE_WINDOW: i64 = 1;
+        const LIVE_WINDOW: u64 = 7;
+
+        /// A row from a window long past, which only a sweep removes.
+        async fn seed_stale_row(pool: &PgPool) {
+            sqlx::query(
+                "INSERT INTO a2a_rate_limit (caller, window_no, request_count) VALUES ('stale', $1, 1)",
+            )
+            .bind(STALE_WINDOW)
+            .execute(pool)
+            .await
+            .expect("seed a stale window");
+        }
+
+        async fn stale_rows(pool: &PgPool) -> i64 {
+            sqlx::query_scalar("SELECT count(*) FROM a2a_rate_limit WHERE window_no = $1")
+                .bind(STALE_WINDOW)
+                .fetch_one(pool)
+                .await
+                .expect("count stale rows")
+        }
+
+        /// The first count of a counter's life does not sweep: `n > 0` is
+        /// what keeps `0.is_multiple_of(SWEEP_INTERVAL)` — which is true —
+        /// from firing a table scan on every fresh replica's first request.
+        /// Kills `>` → `>=`/`==` and `&&` → `||`, all of which sweep at zero.
+        #[tokio::test]
+        #[ignore = "needs a live PostgreSQL (see the module docs)"]
+        async fn the_first_count_does_not_sweep() {
+            let db = ScratchDb::create("first").await;
+            let counter = PostgresRateLimitCounter::new(&db.url())
+                .await
+                .expect("counter connects");
+            seed_stale_row(&counter.pool).await;
+
+            let seen = counter
+                .count("caller", LIVE_WINDOW, 60)
+                .await
+                .expect("first count");
+            assert_eq!(seen, 1, "the first count in a window is 1");
+            assert_eq!(
+                stale_rows(&counter.pool).await,
+                1,
+                "the stale window survives the first count: no sweep is due yet"
+            );
+
+            db.drop_db().await;
+        }
+
+        /// The sweep runs on the `SWEEP_INTERVAL`-th count and not before,
+        /// and it removes the stale window while leaving the live one intact.
+        /// Kills `>` → `<` (never sweeps) and `sweep` → `()` (sweeps nothing),
+        /// which no number of counts distinguishes from a working sweep unless
+        /// the table is inspected directly.
+        #[tokio::test]
+        #[ignore = "needs a live PostgreSQL (see the module docs)"]
+        async fn the_sweep_runs_on_the_interval_and_only_clears_past_windows() {
+            let db = ScratchDb::create("interval").await;
+            let counter = PostgresRateLimitCounter::new(&db.url())
+                .await
+                .expect("counter connects");
+            seed_stale_row(&counter.pool).await;
+
+            // Counts numbered 0 ..= SWEEP_INTERVAL - 1 are all before the
+            // first sweep.
+            for _ in 0..SWEEP_INTERVAL {
+                counter
+                    .count("caller", LIVE_WINDOW, 60)
+                    .await
+                    .expect("count");
+            }
+            assert_eq!(
+                stale_rows(&counter.pool).await,
+                1,
+                "SWEEP_INTERVAL counts have been made and the sweep has not yet run"
+            );
+
+            // Count number SWEEP_INTERVAL is the first multiple above zero.
+            let seen = counter
+                .count("caller", LIVE_WINDOW, 60)
+                .await
+                .expect("count");
+            assert_eq!(seen, SWEEP_INTERVAL + 1);
+            assert_eq!(
+                stale_rows(&counter.pool).await,
+                0,
+                "the sweep on count SWEEP_INTERVAL removes the stale window"
+            );
+            let live: i64 = sqlx::query_scalar(
+                "SELECT request_count FROM a2a_rate_limit WHERE caller = 'caller' AND window_no = $1",
+            )
+            .bind(i64::try_from(LIVE_WINDOW).expect("fits"))
+            .fetch_one(&counter.pool)
+            .await
+            .expect("the live window's row");
+            assert_eq!(
+                u64::try_from(live).expect("non-negative"),
+                SWEEP_INTERVAL + 1,
+                "the sweep only clears windows before the current one"
+            );
+
+            db.drop_db().await;
+        }
+    }
 }
 
 #[cfg(feature = "postgres")]

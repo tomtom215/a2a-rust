@@ -19,10 +19,12 @@ members = [
     "examples/rig-agent",
     "examples/genai-agent",
     "examples/incident-response",
+    "examples/resilient-agent",
     "benches",
     "book-tests",
     "tck",
     "tck/sut",
+    "tools/a2a-cli",
 ]
 
 [workspace.package]

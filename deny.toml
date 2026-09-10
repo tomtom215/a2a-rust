@@ -78,6 +78,16 @@ ignore    = []
 # says "duplicates of this crate are known and accepted", while still catching
 # any crate not on the list. cargo-deny flags unused skip entries, so an entry
 # that stops being needed surfaces rather than rotting.
+#
+# Direct dependencies added to a *published* crate since the 2026-07-31 audit,
+# each reviewed here so the review is next to the policy it answers to:
+#
+#   * `mutants` 0.0.4 in `a2a-protocol-server` (2026-09-10). MIT; declares
+#     zero dependencies (crates.io dependency listing, same day); published
+#     from the cargo-mutants repository by its author; attribute macros that
+#     return their input unchanged. Present so three proved-equivalent mutants
+#     can be marked `#[mutants::skip]` in source (ADR 0006). It introduces no
+#     duplicate version and no new license.
 multiple-versions = "deny"
 wildcards         = "warn"
 
@@ -110,30 +120,33 @@ skip = [
     { crate = "rand_core", reason = "fanout of the rand 0.8 -> 0.9 migration" },
     { crate = "r-efi", reason = "pulled by the split getrandom versions" },
 
-    # --- thiserror 1 -> 2 migration (2) ---
-    { crate = "thiserror", reason = "transitive deps still on 1.x; workspace is on 2.x" },
-    { crate = "thiserror-impl", reason = "fanout of the thiserror 1 -> 2 migration" },
-
-    # --- TOML parsing stack, via proc-macro tooling (3) ---
-    { crate = "toml_edit", reason = "proc-macro-crate 1.x vs 3.x pull different toml_edit" },
-    { crate = "toml_datetime", reason = "fanout of the toml_edit split" },
-    { crate = "winnow", reason = "fanout of the toml_edit split" },
-    { crate = "proc-macro-crate", reason = "1.x from older derive macros, 3.x from newer" },
-
-    # --- Ordinary build-tooling version skew in transitive trees (7) ---
+    # --- Ordinary build-tooling version skew in transitive trees (4) ---
+    # Six entries were retired 2026-09-10 on cargo-deny's own
+    # `unnecessary-skip` warning after the dependency refresh for 0.12: the
+    # TOML stack (`toml_edit`, `toml_datetime`, `winnow`, `proc-macro-crate`)
+    # and `heck`, `strsim` each resolve to one version now.
     { crate = "convert_case", reason = "derive-macro helper skew in transitive deps" },
     { crate = "core-foundation", reason = "macOS-only; 0.9 vs 0.10 skew in TLS stacks" },
     { crate = "hashbrown", reason = "indexmap generations pull 0.15 and 0.17" },
-    { crate = "heck", reason = "0.4 from older derive macros, 0.5 from newer" },
     { crate = "itertools", reason = "0.13 vs 0.14 skew across transitive crates" },
-    { crate = "strsim", reason = "clap/derive tooling skew" },
+    # Added 2026-09-10 with the dependency refresh for 0.12. Each is a
+    # transition another crate is mid-way through, measured from the full
+    # `cargo deny check bans` output on that day:
+    { crate = "base64", reason = "0.22 in the published crates (hyper-util, tonic, sqlx still require it); 0.23 only through the examples' reqwest 0.13 and rcgen's pem 4" },
+    { crate = "digest", reason = "RustCrypto 0.10 -> 0.11: tungstenite 0.30 moved sha1 to 0.11 while sqlx 0.8's hmac/hkdf/sha2 stay on 0.10" },
+    { crate = "block-buffer", reason = "follows digest (RustCrypto 0.10 -> 0.11)" },
+    { crate = "crypto-common", reason = "follows digest (RustCrypto 0.10 -> 0.11)" },
+    { crate = "cpufeatures", reason = "sha1 0.11 and chacha20 0.10 on 0.3; sha2 0.10 still on 0.2" },
+    { crate = "syn", reason = "syn 2 -> 3: async-trait 0.1.92 (via tonic) is on 3 while every derive crate is on 2" },
+    { crate = "redox_syscall", reason = "parking_lot_core 0.9 pins 0.5; libredox 0.1.23 (via whoami, sqlx-postgres) is on 0.9; only compiled for the redox target" },
 ]
-# Deliberately NOT skipped: `redox_syscall` duplicates only in the
-# `--all-features` graph, and `[graph] all-features = false` above means this
-# check does not resolve that graph. cargo-deny reported the entry as
-# `unmatched-skip`, so it was removed rather than left as decoration — an
-# exemption for something that is not happening is how a skip list starts
-# rotting into a blanket waiver.
+# `redox_syscall` used to be deliberately absent from the list: it duplicated
+# only in the `--all-features` graph, which this check does not resolve, and
+# cargo-deny reported the entry as `unmatched-skip`. Since libredox 0.1.23
+# (2026-09) it duplicates in the default graph too, so it is back on the list
+# with a reason. The rule stands: an exemption for something that is not
+# happening is how a skip list starts rotting into a blanket waiver, and
+# cargo-deny's `unnecessary-skip` warning is what says when to take it off.
 
 deny = [
     # reqwest carries 30+ transitive deps we do not need.

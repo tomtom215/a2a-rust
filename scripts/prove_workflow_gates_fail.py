@@ -407,8 +407,11 @@ def incremental_shards(root: Path, n: int, *, missed_in: int = 0) -> None:
         (d / "missed.txt").write_text("src/lib.rs:2: replace bar\n" * (missed_in if i == 0 else 0))
 
 
-def git_repo(root: Path, commits: list[tuple[str, str, str]]) -> tuple[str, str]:
-    """A throwaway repo. `commits` is (message, author_name, author_email).
+def git_repo(root: Path, commits: list[tuple]) -> tuple[str, str]:
+    """A throwaway repo. `commits` is (message, author_name, author_email) or
+    (message, author_name, author_email, paths) — the files the commit
+    touches, default `["f"]`, so a probe can build a commit that touches the
+    generated benchmark pages and one that reaches outside them.
 
     Returns (base_sha, head_sha) spanning every commit after the first.
     """
@@ -423,9 +426,13 @@ def git_repo(root: Path, commits: list[tuple[str, str, str]]) -> tuple[str, str]
     run("add", "f")
     run("commit", "-q", "-m", "base")
     base = run("rev-parse", "HEAD").stdout.strip()
-    for i, (msg, name, email) in enumerate(commits, start=1):
-        (root / "f").write_text(f"{i}\n")
-        run("add", "f")
+    for i, commit in enumerate(commits, start=1):
+        msg, name, email = commit[:3]
+        paths = commit[3] if len(commit) > 3 else ["f"]
+        for path in paths:
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_text(f"{i}\n")
+            run("add", path)
         run(
             "-c", f"user.name={name}", "-c", f"user.email={email}",
             "commit", "-q", "-m", msg,
@@ -710,6 +717,62 @@ def build_registry() -> dict[str, Probe | Exempt]:
         ],
     )
 
+    # ── coverage.yml ─────────────────────────────────────────────────────────
+    #
+    # The step reads the live report for `main`; the probe hands it a saved
+    # tree through the script's `CODECOV_REPORT_FILE` knob and runs from the
+    # repo so `codecov.yml` and `git ls-files` resolve. The healthy tree is a
+    # report that counts only library files; the defects are the two the
+    # script exists to catch — a path an ignore entry names is still counted,
+    # and no report at all — plus the tree with no files, which must be a
+    # read failure and not "nothing matched".
+    def _codecov_tree(paths):
+        def setup(d):
+            root: dict = {"name": "", "children": []}
+            for path in paths:
+                node = root
+                parts = path.split("/")
+                for part in parts[:-1]:
+                    nxt = next((c for c in node["children"] if c["name"] == part), None)
+                    if nxt is None:
+                        nxt = {"name": part, "children": []}
+                        node["children"].append(nxt)
+                    node = nxt
+                node["children"].append({"name": parts[-1], "lines": 100, "misses": 40})
+            f = d / "tree.json"
+            f.write_text(json.dumps([root]), encoding="utf-8")
+            return {"__cwd__": str(REPO), "__env__": {"CODECOV_REPORT_FILE": str(f)}}
+
+        return setup
+
+    LIBRARY_ONLY = [
+        "crates/a2a-protocol-types/src/lib.rs",
+        "crates/a2a-protocol-server/src/lib.rs",
+    ]
+    reg["coverage.yml::ignores-applied::Ignore patterns match nothing Codecov counts"] = Probe(
+        healthy=_codecov_tree(LIBRARY_ONLY),
+        defects=[
+            Defect(
+                "a file under an ignored path is still in the report",
+                _codecov_tree(LIBRARY_ONLY + ["tck/src/main.rs"]),
+                "still being counted",
+            ),
+            Defect(
+                "the report has no files at all",
+                _codecov_tree([]),
+                "no files at all",
+            ),
+            Defect(
+                "the report could not be read",
+                lambda d: {
+                    "__cwd__": str(REPO),
+                    "__env__": {"CODECOV_REPORT_FILE": str(d / "absent.json")},
+                },
+                "could not read",
+            ),
+        ],
+    )
+
     # ── benchmarks.yml ───────────────────────────────────────────────────────
     #
     # The healthy fixture is the measured post-fix curve; the defect is the
@@ -752,6 +815,15 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "scripts/prove_gates_fail.sh already proves check_benchmark_prose.sh "
         "can fail, from its ci.yml call site; a second proof of one script is "
         "the duplicate ownership this harness's header rules out"
+    )
+
+    # The same script dco.yml runs, over the commit the job just made; the
+    # dco.yml probe above proves it can fail (including the bot commit that
+    # reaches outside the generated pages), and one script gets one proof.
+    reg["benchmarks.yml::bench::Generated commit passes DCO"] = Exempt(
+        "runs scripts/check_dco.sh, which the dco.yml probe proves can fail, "
+        "bot-commit exemption included; a second proof of one script is the "
+        "duplicate ownership this harness's header rules out"
     )
 
     reg["benchmarks.yml::bench::Streaming must stay linear in event count"] = Probe(
@@ -908,20 +980,53 @@ def build_registry() -> dict[str, Probe | Exempt]:
     )
 
     # ── dco.yml ──────────────────────────────────────────────────────────────
-    def dco(commits: list[tuple[str, str, str]]) -> Setup:
+    # The step body is `scripts/check_dco.sh` run from the checked-out tree,
+    # so the probe points GITHUB_WORKSPACE at this repository and runs it
+    # inside a throwaway one. The range expressions fall back from the pull
+    # request's SHAs to the push event's, and `substitute` resolves the whole
+    # expression text, so both forms are declared.
+    BENCH_BOT = "41898282+github-actions[bot]@users.noreply.github.com"
+    BENCH_PAGES = [
+        "book/src/reference/benchmarks.md",
+        "book/src/reference/benchmark-dashboard.html",
+    ]
+
+    def dco(commits: list[tuple]) -> Setup:
         def setup(d: Path) -> dict[str, str]:
             base, head = git_repo(d / "r", commits)
             return {
-                "github.event.pull_request.base.sha": base,
-                "github.event.pull_request.head.sha": head,
+                "github.event.pull_request.base.sha || github.event.before": base,
+                "github.event.pull_request.head.sha || github.sha": head,
                 "__cwd__": str(d / "r"),
+                "__env__": {"GITHUB_WORKSPACE": str(REPO)},
             }
 
         return setup
 
     reg["dco.yml::dco::Check sign-off and authorship"] = Probe(
-        healthy=dco([(f"feat: a thing\n\n{SIGNED}", "A Human", "human@example.com")]),
+        healthy=dco(
+            [
+                (f"feat: a thing\n\n{SIGNED}", "A Human", "human@example.com"),
+                # The Benchmarks workflow's own commit: exempt while it
+                # touches the generated pages and nothing else.
+                ("chore: update benchmark results", "github-actions[bot]", BENCH_BOT, BENCH_PAGES),
+            ]
+        ),
         defects=[
+            Defect(
+                "the benchmark bot's commit reaches a file outside the generated pages",
+                dco(
+                    [
+                        (
+                            "chore: update benchmark results",
+                            "github-actions[bot]",
+                            BENCH_BOT,
+                            BENCH_PAGES + ["crates/a2a-protocol-types/src/lib.rs"],
+                        )
+                    ]
+                ),
+                "outside the generated benchmark pages",
+            ),
             Defect(
                 "a commit with no Signed-off-by",
                 dco([("feat: no sign-off", "A Human", "human@example.com")]),

@@ -10,9 +10,13 @@ Until 2026-09-09 `codecov.yml` tried to exclude the PostgreSQL stores, because
 they only execute against a live server and would otherwise report 0% forever.
 The exclusion never worked, and the file recorded a fix that was applied and
 never checked. Since 2026-09-09 those files are measured instead — the coverage
-workflow runs the live-database suites under instrumentation — and the only
-remaining ignore is `tck/**`. This script stays as the instrument for whatever
-is listed: an entry Codecov is still counting is a failure. The history:
+workflow runs the live-database suites under instrumentation — and the
+remaining ignores are `tck/**`, `examples/**` and `itk/**`, none of them
+library code. This script stays as the instrument for whatever is listed: an
+entry Codecov is still counting is a failure. Since 2026-09-10 it runs weekly
+in `coverage.yml` (`ignores-applied`); until then nothing ran it, so "the
+exclusion is applied" was, again, a claim with no check behind it. Measured
+that day: 3 patterns, 146 files in the report, no match. The history:
 
     # These five were previously listed as bare paths, and Codecov did not
     # apply them. Verified 2026-08-06 against Codecov's own API for `615d01f8`:
@@ -55,6 +59,9 @@ part of `--explain`.
 
     check_codecov_ignores.py [--repo owner/name] [--explain]
 
+    CODECOV_REPORT_FILE=<tree.json>  read a saved report tree instead of the
+                                     API (for the workflow-gate harness only)
+
 Exit codes:
     0  no ignored path appears in the report
     1  an ignored path is still being counted
@@ -65,6 +72,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import urllib.error
@@ -101,26 +109,46 @@ def glob_to_regex(pattern: str) -> re.Pattern[str]:
     return re.compile(f"(?s:{''.join(out)})\\Z")
 
 
-def report_files(repo: str) -> list[tuple[str, int, int]]:
-    """Every leaf file in the current Codecov report: (path, lines, misses)."""
-    owner, name = repo.split("/", 1)
-    url = API.format(owner=owner, repo=name)
-    try:
-        with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310
-            data = json.load(resp)
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        print(f"check_codecov_ignores: could not read {url}: {exc}", file=sys.stderr)
-        raise SystemExit(2) from exc
+def report_files(repo: str, report_file: str | None) -> list[tuple[str, int, int]]:
+    """Every leaf file in the current Codecov report: (path, lines, misses).
+
+    `report_file` (the `CODECOV_REPORT_FILE` knob) reads a saved copy of the
+    same tree instead of the API. It exists so `prove_workflow_gates_fail.py`
+    can hand this script a synthetic report and watch it fail; it is not for
+    CI, where the live report is the only one that means anything.
+    """
+    if report_file:
+        source = report_file
+        try:
+            data = json.loads(Path(report_file).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"check_codecov_ignores: could not read {source}: {exc}", file=sys.stderr)
+            raise SystemExit(2) from exc
+    else:
+        owner, name = repo.split("/", 1)
+        source = API.format(owner=owner, repo=name)
+        try:
+            with urllib.request.urlopen(source, timeout=60) as resp:  # noqa: S310
+                data = json.load(resp)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            print(f"check_codecov_ignores: could not read {source}: {exc}", file=sys.stderr)
+            raise SystemExit(2) from exc
 
     leaves: list[tuple[str, int, int]] = []
 
+    # A node carrying a `children` key is a directory even when the list is
+    # empty; only a node without one is a file. Until 2026-09-10 an empty
+    # directory was counted as a file named "" — so a report with no files
+    # at all produced one phantom leaf and the "no files" check below never
+    # fired. Found by `prove_workflow_gates_fail.py` the day the gate was
+    # registered, which is the reason that harness exists.
     def walk(node: dict, prefix: str = "") -> None:
         path = f"{prefix}/{node['name']}".lstrip("/")
         children = node.get("children")
-        if children:
+        if children is not None:
             for child in children:
                 walk(child, path)
-        else:
+        elif path:
             leaves.append((path, node.get("lines") or 0, node.get("misses") or 0))
 
     for node in data if isinstance(data, list) else [data]:
@@ -174,7 +202,7 @@ def main() -> int:
     args = parser.parse_args()
 
     patterns = [(entry, glob_to_regex(entry)) for entry in ignores()]
-    leaves = report_files(args.repo)
+    leaves = report_files(args.repo, os.environ.get("CODECOV_REPORT_FILE"))
 
     violations: list[tuple[str, str, int, int]] = []
     for path, lines, misses in leaves:

@@ -139,6 +139,21 @@ pub mod persistence_operation {
     pub const FAILED_STATE: &str = "failed_state";
     /// Persisting an agent message appended to the task's history.
     pub const HISTORY_APPEND: &str = "history_append";
+    /// Handing an event from the executor's queue to the persistence processor.
+    ///
+    /// Reported with `error_kind = "channel_closed"` when the processor is
+    /// gone and the event was dropped: the stream still serves live
+    /// subscribers, but the task's stored state stops advancing, and until
+    /// 0.12 a default build said nothing about it.
+    pub const QUEUE_HANDOFF: &str = "queue_handoff";
+}
+
+/// Error kinds passed to [`Metrics::on_persistence_error`] for
+/// [`persistence_operation::QUEUE_HANDOFF`].
+pub mod queue_handoff_error {
+    /// The persistence channel's receiver was dropped; the event was not
+    /// persisted.
+    pub const CHANNEL_CLOSED: &str = "channel_closed";
 }
 
 /// Outcome labels passed to [`Metrics::on_push_delivery`].
@@ -156,7 +171,7 @@ pub mod push_outcome {
     /// the time it was given. This one is a *configuration* result: the sender
     /// reports (via `PushSender::max_delivery_duration`) that it wanted longer
     /// than the handler allows, so retries it advertises can never run. At the
-    /// shipped defaults that is exactly the case — 93 seconds of schedule
+    /// shipped defaults that is exactly the case — 98 seconds of schedule
     /// against a 5-second bound, measured at one attempt of three — and it is
     /// worth its own label because the fix is a config change, not a webhook
     /// investigation.
@@ -206,6 +221,20 @@ impl<T: Metrics + ?Sized> Metrics for Arc<T> {
 
     fn on_connection_pool_stats(&self, stats: &ConnectionPoolStats) {
         (**self).on_connection_pool_stats(stats);
+    }
+
+    // The two hooks below were missing from this impl until 0.12, so a handler
+    // built with `Arc<dyn Metrics>` (which `RequestHandlerBuilder::with_metrics`
+    // accepts through this very impl) silently dropped every persistence error
+    // and every push outcome on the floor. Found while wiring the queue
+    // hand-off report: the test that asserted it moved a counter passed
+    // against a bare implementation and failed against an `Arc` of the same.
+    fn on_persistence_error(&self, operation: &str, error_kind: &str) {
+        (**self).on_persistence_error(operation, error_kind);
+    }
+
+    fn on_push_delivery(&self, outcome: &str) {
+        (**self).on_push_delivery(outcome);
     }
 }
 
@@ -304,5 +333,42 @@ mod tests {
         let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
         arc_metrics.on_connection_pool_stats(&ConnectionPoolStats::default());
         assert_eq!(inner.pool_stats.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn arc_delegates_on_persistence_error_and_on_push_delivery() {
+        #[derive(Default)]
+        struct Seen {
+            persistence: std::sync::Mutex<Vec<(String, String)>>,
+            push: std::sync::Mutex<Vec<String>>,
+        }
+        impl Metrics for Seen {
+            fn on_persistence_error(&self, operation: &str, error_kind: &str) {
+                self.persistence
+                    .lock()
+                    .unwrap()
+                    .push((operation.to_owned(), error_kind.to_owned()));
+            }
+            fn on_push_delivery(&self, outcome: &str) {
+                self.push.lock().unwrap().push(outcome.to_owned());
+            }
+        }
+        let seen = Arc::new(Seen::default());
+        let via_arc: Arc<dyn Metrics> = Arc::clone(&seen) as Arc<dyn Metrics>;
+        // Called on the `Arc<dyn Metrics>` itself, which is what a handler holds.
+        Metrics::on_persistence_error(&via_arc, persistence_operation::QUEUE_HANDOFF, "closed");
+        Metrics::on_push_delivery(&via_arc, push_outcome::SKIPPED);
+        assert_eq!(
+            *seen.persistence.lock().unwrap(),
+            vec![(
+                persistence_operation::QUEUE_HANDOFF.to_owned(),
+                "closed".to_owned()
+            )],
+            "an Arc must forward persistence errors, not default them to nothing"
+        );
+        assert_eq!(
+            *seen.push.lock().unwrap(),
+            vec![push_outcome::SKIPPED.to_owned()]
+        );
     }
 }

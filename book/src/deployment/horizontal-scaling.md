@@ -64,11 +64,11 @@ when you have one replica and most when you have twenty.
 # use a2a_protocol_server::{PostgresRateLimitCounter, RateLimitConfig, RateLimitInterceptor};
 # async fn example(database_url: String) -> Result<(), Box<dyn std::error::Error>> {
 let counter = Arc::new(PostgresRateLimitCounter::new(&database_url).await?);
-let limiter = RateLimitInterceptor::new(RateLimitConfig {
-    requests_per_window: 100,
-    window_secs: 60,
-    ..Default::default()
-})?
+let limiter = RateLimitInterceptor::new(
+    RateLimitConfig::default()
+        .with_requests_per_window(100)
+        .with_window_secs(60),
+)?
 .with_shared_counter(counter);
 # Ok(())
 # }

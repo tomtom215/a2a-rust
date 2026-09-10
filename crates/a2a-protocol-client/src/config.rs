@@ -100,7 +100,12 @@ pub enum GrpcBareAddressScheme {
 ///
 /// Build via [`crate::ClientBuilder`]. Reasonable defaults are provided for all
 /// fields; most users only need to set the agent URL.
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ClientConfig {
     /// Ordered list of preferred protocol bindings.
     ///
@@ -216,6 +221,80 @@ impl Default for ClientConfig {
     }
 }
 
+impl ClientConfig {
+    /// Sets the ordered binding preference list.
+    #[must_use]
+    pub fn with_preferred_bindings(mut self, bindings: Vec<String>) -> Self {
+        self.preferred_bindings = bindings;
+        self
+    }
+
+    /// Sets the MIME types advertised in `acceptedOutputModes`.
+    #[must_use]
+    pub fn with_accepted_output_modes(mut self, modes: Vec<String>) -> Self {
+        self.accepted_output_modes = modes;
+        self
+    }
+
+    /// Sets the history length requested; `None` uses the agent's default.
+    #[must_use]
+    pub const fn with_history_length(mut self, length: Option<u32>) -> Self {
+        self.history_length = length;
+        self
+    }
+
+    /// Sets whether `send_message` returns as soon as the task is submitted.
+    #[must_use]
+    pub const fn with_return_immediately(mut self, val: bool) -> Self {
+        self.return_immediately = val;
+        self
+    }
+
+    /// Sets the per-request timeout for non-streaming calls.
+    #[must_use]
+    pub const fn with_request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
+        self
+    }
+
+    /// Sets the timeout for establishing the SSE stream.
+    #[must_use]
+    pub const fn with_stream_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.stream_connect_timeout = timeout;
+        self
+    }
+
+    /// Sets the TCP connection timeout (DNS + handshake).
+    #[must_use]
+    pub const fn with_connection_timeout(mut self, timeout: Duration) -> Self {
+        self.connection_timeout = timeout;
+        self
+    }
+
+    /// Sets the buffered response body cap. See
+    /// [`max_response_size`](Self::max_response_size) for which transports
+    /// it reaches.
+    #[must_use]
+    pub const fn with_max_response_size(mut self, max_bytes: usize) -> Self {
+        self.max_response_size = max_bytes;
+        self
+    }
+
+    /// Sets the TLS configuration.
+    #[must_use]
+    pub const fn with_tls(mut self, tls: TlsConfig) -> Self {
+        self.tls = tls;
+        self
+    }
+
+    /// Sets the default tenant; `None` sends none unless a request names one.
+    #[must_use]
+    pub fn with_tenant(mut self, tenant: Option<String>) -> Self {
+        self.tenant = tenant;
+        self
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -276,5 +355,35 @@ mod tests {
         assert_eq!(BINDING_HTTP_JSON, "HTTP+JSON");
         assert_eq!(BINDING_REST, "REST");
         assert_eq!(BINDING_GRPC, "GRPC");
+    }
+
+    /// Every setter writes its own field and nothing else. One assertion per
+    /// field against a value that differs from the default, so a setter whose
+    /// body became `Default::default()` (cargo-mutants' replacement) fails
+    /// here; the incremental gate found three such setters unpinned on
+    /// 2026-09-10.
+    #[test]
+    fn every_setter_sets_its_field() {
+        let cfg = ClientConfig::default()
+            .with_preferred_bindings(vec!["GRPC".to_owned()])
+            .with_accepted_output_modes(vec!["image/png".to_owned()])
+            .with_history_length(Some(7))
+            .with_return_immediately(true)
+            .with_request_timeout(Duration::from_secs(1))
+            .with_stream_connect_timeout(Duration::from_secs(2))
+            .with_connection_timeout(Duration::from_secs(3))
+            .with_max_response_size(4)
+            .with_tls(TlsConfig::Disabled)
+            .with_tenant(Some("acme".to_owned()));
+        assert_eq!(cfg.preferred_bindings, vec!["GRPC".to_owned()]);
+        assert_eq!(cfg.accepted_output_modes, vec!["image/png".to_owned()]);
+        assert_eq!(cfg.history_length, Some(7));
+        assert!(cfg.return_immediately);
+        assert_eq!(cfg.request_timeout, Duration::from_secs(1));
+        assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(2));
+        assert_eq!(cfg.connection_timeout, Duration::from_secs(3));
+        assert_eq!(cfg.max_response_size, 4);
+        assert!(matches!(cfg.tls, TlsConfig::Disabled));
+        assert_eq!(cfg.tenant.as_deref(), Some("acme"));
     }
 }

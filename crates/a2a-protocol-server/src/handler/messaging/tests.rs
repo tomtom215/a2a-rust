@@ -8,13 +8,21 @@
 //! destroy/`CleanupGuard` coupling — the part most worth being able to read
 //! without scrolling past a test suite three times its length.
 
+use super::decisions::{
+    evict_aged_token, second_send_blocked, shape_response_history, token_aged,
+    token_still_evictable,
+};
 use super::*;
+use a2a_protocol_types::events::TaskStatusUpdateEvent;
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
-use a2a_protocol_types::task::ContextId;
+use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
 use crate::agent_executor;
 use crate::builder::RequestHandlerBuilder;
+use crate::error::ServerError;
+use crate::handler::CancellationEntry;
+use crate::streaming::EventQueueReader as _;
 
 struct DummyExecutor;
 agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
@@ -1424,13 +1432,23 @@ async fn executor_timeout_returns_failed_task() {
         .unwrap();
 
     let params = make_params(None);
-    // The executor times out; collect_events should see a Failed status update.
-    let result = handler.on_send_message(params, false, None).await;
-    // The result should be Ok with a completed/failed task (the timeout writes a failed event).
+    // The executor times out; collect_events sees the Failed status update,
+    // which names the timeout so the blocking caller learns why.
+    let task = match handler.on_send_message(params, false, None).await {
+        Ok(SendMessageResult::Response(SendMessageResponse::Task(t))) => t,
+        other => panic!("executor timeout should still return a task, got {other:?}"),
+    };
+    assert_eq!(task.status.state, TaskState::Failed);
+    let text = status_text(&task).expect("the Failed status carries a message");
     assert!(
-        result.is_ok(),
-        "executor timeout should still return a task result"
+        text.contains("executor timed out after 0s"),
+        "the status message names the timeout, got {text:?}"
     );
+}
+
+/// The text of a task's `status.message`, if it carries one.
+fn status_text(task: &Task) -> Option<&str> {
+    task.status.message.as_ref().and_then(Message::text)
 }
 
 #[tokio::test]
@@ -1453,11 +1471,47 @@ async fn executor_failure_writes_failed_event() {
     let handler = RequestHandlerBuilder::new(FailExecutor).build().unwrap();
     let params = make_params(None);
 
-    let result = handler.on_send_message(params, false, None).await;
-    // collect_events should see the failed status update.
+    // The blocking caller sees the executor's error on the Failed task
+    // itself: the failure event's `status.message` is what the sync
+    // collector copies onto the task. Until 2026-09-10 the text rode only on
+    // the event's `metadata.error`, which a blocking caller never receives
+    // (`examples/resilient-agent`, Act 2).
+    let task = match handler.on_send_message(params, false, None).await {
+        Ok(SendMessageResult::Response(SendMessageResponse::Task(t))) => t,
+        other => panic!("executor failure should produce a task result, got {other:?}"),
+    };
+    assert_eq!(task.status.state, TaskState::Failed);
+    let message = task
+        .status
+        .message
+        .as_ref()
+        .expect("the Failed status carries the error as a message");
+    assert_eq!(message.role, MessageRole::Agent);
+    assert_eq!(message.task_id.as_ref(), Some(&task.id));
+    assert_eq!(message.context_id.as_ref(), Some(&task.context_id));
+    let text = message.text().expect("one text part");
     assert!(
-        result.is_ok(),
-        "executor failure should produce a task result"
+        text.contains("executor exploded"),
+        "the status message carries the executor's error, got {text:?}"
+    );
+
+    // And it is persisted, so `GetTask` after the fact says the same.
+    let fetched = handler
+        .on_get_task(
+            a2a_protocol_types::params::TaskQueryParams {
+                tenant: None,
+                id: task.id.0.clone(),
+                history_length: None,
+            },
+            None,
+        )
+        .await
+        .expect("the task is fetchable after it failed");
+    assert_eq!(fetched.status.state, TaskState::Failed);
+    assert_eq!(
+        status_text(&fetched),
+        Some(text),
+        "GetTask returns the same status message the send did"
     );
 }
 
@@ -1581,11 +1635,40 @@ async fn streaming_executor_failure_writes_error_event() {
     let handler = RequestHandlerBuilder::new(FailExecutor).build().unwrap();
     let params = make_params(None);
 
-    let result = handler.on_send_message(params, true, None).await;
+    let Ok(SendMessageResult::Stream(mut reader)) =
+        handler.on_send_message(params, true, None).await
+    else {
+        panic!("streaming executor failure should still return stream");
+    };
+    // The streamed Failed event carries the error twice: as `metadata.error`,
+    // where streaming callers have always read it, and as `status.message`,
+    // which is what reaches a blocking caller and the store.
+    let mut failed = None;
+    while let Some(event) = reader.read().await {
+        if let Ok(StreamResponse::StatusUpdate(update)) = event
+            && update.status.state == TaskState::Failed
+        {
+            failed = Some(update);
+        }
+    }
+    let update = failed.expect("the stream ends with a Failed status update");
+    let metadata_error = update
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("error"))
+        .and_then(serde_json::Value::as_str)
+        .expect("metadata.error is still set for streaming callers");
     assert!(
-        matches!(result, Ok(SendMessageResult::Stream(_))),
-        "streaming executor failure should still return stream"
+        metadata_error.contains("streaming fail"),
+        "{metadata_error:?}"
     );
+    let message_text = update
+        .status
+        .message
+        .as_ref()
+        .and_then(Message::text)
+        .expect("status.message carries the same text");
+    assert_eq!(message_text, metadata_error);
 }
 
 #[tokio::test]
@@ -1624,6 +1707,200 @@ async fn input_required_continuation_reuses_task_id() {
         }
         _ => panic!("expected Response(Task)"),
     }
+}
+
+// ── phases with an observable difference only a direct test can see ─────
+
+/// The in-flight check refuses a resend on the strength of a live token
+/// alone. The existing in-flight test cannot tell this check from the queue
+/// lease behind it — a running executor has both a token and a queue, and
+/// the lease refuses with the same error — so this plants a live token with
+/// no queue, which only the token check can see.
+#[tokio::test]
+async fn a_live_token_alone_refuses_a_resend() {
+    let handler = make_handler();
+    let task_id = TaskId::new("in-flight-by-token");
+    handler
+        .task_store
+        .save(&Task {
+            id: task_id.clone(),
+            context_id: ContextId::new("ctx-token-only"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        })
+        .await
+        .unwrap();
+    handler.cancellation_tokens.write().await.insert(
+        task_id.clone(),
+        CancellationEntry {
+            token: tokio_util::sync::CancellationToken::new(),
+            created_at: Instant::now(),
+        },
+    );
+
+    let mut resend = make_params(Some("ctx-token-only"));
+    resend.message.task_id = Some(task_id.clone());
+    let result = handler.on_send_message(resend, false, None).await;
+    assert!(
+        matches!(result, Err(ServerError::UnsupportedOperation(_))),
+        "a live token means an executor is in flight, got {result:?}"
+    );
+    assert!(
+        !handler.event_queue_manager.has_queue(&task_id).await,
+        "refused before a queue was leased"
+    );
+}
+
+/// SPEC §3.4.3: a message carrying only a `taskId` continues that task in
+/// the task's own context. A constant context in its place would find no
+/// stored task there and refuse the continuation as a cross-context send.
+#[tokio::test]
+async fn a_task_id_only_continuation_infers_the_context() {
+    let handler = make_handler();
+    let task_id = TaskId::new("infer-my-context");
+    handler
+        .task_store
+        .save(&Task {
+            id: task_id.clone(),
+            context_id: ContextId::new("ctx-inferred"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        })
+        .await
+        .unwrap();
+
+    let mut params = make_params(None);
+    params.message.task_id = Some(task_id.clone());
+    let task = match handler.on_send_message(params, false, None).await {
+        Ok(SendMessageResult::Response(SendMessageResponse::Task(t))) => t,
+        other => panic!("expected the continuation to be accepted, got {other:?}"),
+    };
+    assert_eq!(task.id, task_id, "the named task is continued");
+    assert_eq!(
+        task.context_id.0, "ctx-inferred",
+        "the context comes from the stored task, not from the message"
+    );
+}
+
+/// An inline push config that cannot be registered — here because no push
+/// sender is configured — fails the send and releases the queue and token
+/// admitted for it, exactly as a store failure does. A leaked queue would
+/// hold a concurrent-stream slot for a task that never runs.
+#[tokio::test]
+async fn a_refused_inline_push_config_releases_the_queue_and_token() {
+    let handler = make_handler();
+    let mut params = make_params(Some("ctx-push"));
+    params.configuration = Some(SendMessageConfiguration {
+        accepted_output_modes: vec!["text/plain".into()],
+        task_push_notification_config: Some(a2a_protocol_types::push::TaskPushNotificationConfig {
+            tenant: None,
+            id: None,
+            task_id: None,
+            url: "https://example.com/hook".into(),
+            token: None,
+            authentication: None,
+        }),
+        history_length: None,
+        return_immediately: None,
+    });
+
+    let result = handler.on_send_message(params, false, None).await;
+    assert!(
+        matches!(result, Err(ServerError::PushNotSupported)),
+        "no push sender is configured, got {result:?}"
+    );
+    assert_eq!(
+        handler.event_queue_manager.active_count().await,
+        0,
+        "the leased queue is released"
+    );
+    assert!(
+        handler.cancellation_tokens.read().await.is_empty(),
+        "the registered token is released"
+    );
+}
+
+/// Seeds one live token that is already older than `max_token_age`, so the
+/// sweep sees it as aged rather than cancelled.
+///
+/// "Older" is two seconds against the one-second `max_token_age` that
+/// [`handler_with_token_cap`] configures, not an hour: `Instant::checked_sub`
+/// returns `None` when the monotonic clock's epoch is younger than the
+/// amount subtracted, and a freshly booted Windows CI runner is younger than
+/// an hour. Measured 2026-09-10 on `Test (1.88, windows-latest)`, where the
+/// hour-ago form panicked in both sweep tests.
+async fn seed_aged_token(handler: &RequestHandler, id: &str) -> TaskId {
+    let id = TaskId::new(id);
+    handler.cancellation_tokens.write().await.insert(
+        id.clone(),
+        CancellationEntry {
+            token: tokio_util::sync::CancellationToken::new(),
+            created_at: Instant::now()
+                .checked_sub(std::time::Duration::from_secs(2))
+                .expect("two seconds ago is representable on any booted host"),
+        },
+    );
+    id
+}
+
+fn handler_with_token_cap(max: usize) -> RequestHandler {
+    RequestHandlerBuilder::new(DummyExecutor)
+        .with_handler_limits(
+            crate::handler::limits::HandlerLimits::default()
+                .with_max_cancellation_tokens(max)
+                .with_max_token_age(std::time::Duration::from_secs(1)),
+        )
+        .build()
+        .expect("build should succeed")
+}
+
+/// An aged token is evicted only once its event queue is gone — the executor
+/// finished and the token lingered. `stale_cancellation_tokens_cleaned_up`
+/// drives this path but asserts nothing, and the cancelled-token sweep test
+/// never produces an aged candidate, so the confirmation step that turns
+/// "aged" into "evictable" was pinned by neither.
+#[tokio::test]
+async fn the_sweep_evicts_an_aged_token_whose_queue_is_gone() {
+    let handler = handler_with_token_cap(1);
+    let aged = seed_aged_token(&handler, "aged-no-queue").await;
+
+    let _ = handler
+        .on_send_message(make_params(None), false, None)
+        .await;
+
+    assert!(
+        !handler.cancellation_tokens.read().await.contains_key(&aged),
+        "an aged token with no queue behind it is swept"
+    );
+}
+
+/// The counterpart: an aged token whose queue is still registered belongs to
+/// a live, long-running executor, and evicting it would make that task
+/// uncancelable.
+#[tokio::test]
+async fn the_sweep_keeps_an_aged_token_whose_queue_is_live() {
+    let handler = handler_with_token_cap(1);
+    let aged = seed_aged_token(&handler, "aged-live-queue").await;
+    let crate::streaming::QueueLease::Created { writer, .. } =
+        handler.event_queue_manager.lease(&aged, false, None).await
+    else {
+        panic!("a fresh id leases a queue");
+    };
+
+    let _ = handler
+        .on_send_message(make_params(None), false, None)
+        .await;
+
+    assert!(
+        handler.cancellation_tokens.read().await.contains_key(&aged),
+        "an aged token whose queue is live is kept"
+    );
+    drop(writer);
+    handler.event_queue_manager.destroy(&aged).await;
 }
 
 // ── Send-path decision helpers ────────────────────────────────────────

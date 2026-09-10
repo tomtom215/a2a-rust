@@ -29,7 +29,13 @@ use http_body_util::{BodyExt, Full};
 /// // Restrict to a specific origin.
 /// let cors = CorsConfig::new("https://my-app.example.com");
 /// ```
+///
+/// `#[non_exhaustive]`: build it with [`CorsConfig::new`] or
+/// [`CorsConfig::permissive`] and the `with_*` setters, which cover every
+/// field; a struct literal is not available outside this crate, so a field
+/// added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct CorsConfig {
     /// The `Access-Control-Allow-Origin` value.
     pub allow_origin: String,
@@ -69,6 +75,36 @@ impl CorsConfig {
     #[must_use]
     pub fn permissive() -> Self {
         Self::new("*")
+    }
+
+    /// Sets the `Access-Control-Allow-Origin` value.
+    #[must_use]
+    pub fn with_allow_origin(mut self, origin: impl Into<String>) -> Self {
+        self.allow_origin = origin.into();
+        self
+    }
+
+    /// Sets the `Access-Control-Allow-Methods` value.
+    #[must_use]
+    pub fn with_allow_methods(mut self, methods: impl Into<String>) -> Self {
+        self.allow_methods = methods.into();
+        self
+    }
+
+    /// Sets the `Access-Control-Allow-Headers` value, replacing the default
+    /// list — include `content-type`, `a2a-version` and whatever your clients
+    /// send, or their preflight fails.
+    #[must_use]
+    pub fn with_allow_headers(mut self, headers: impl Into<String>) -> Self {
+        self.allow_headers = headers.into();
+        self
+    }
+
+    /// Sets the `Access-Control-Max-Age` value in seconds.
+    #[must_use]
+    pub const fn with_max_age_secs(mut self, secs: u32) -> Self {
+        self.max_age_secs = secs;
+        self
     }
 
     /// Applies CORS headers to an existing HTTP response.
@@ -274,5 +310,20 @@ mod tests {
             "0",
             "max-age of 0 should be set correctly"
         );
+    }
+
+    /// Every setter writes its own field, checked against values that differ
+    /// from both constructors' defaults.
+    #[test]
+    fn every_setter_sets_its_field() {
+        let cors = CorsConfig::permissive()
+            .with_allow_origin("https://example.com")
+            .with_allow_methods("GET")
+            .with_allow_headers("x-custom")
+            .with_max_age_secs(7);
+        assert_eq!(cors.allow_origin, "https://example.com");
+        assert_eq!(cors.allow_methods, "GET");
+        assert_eq!(cors.allow_headers, "x-custom");
+        assert_eq!(cors.max_age_secs, 7);
     }
 }

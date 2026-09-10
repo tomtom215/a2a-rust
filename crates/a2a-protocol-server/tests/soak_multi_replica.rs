@@ -205,11 +205,11 @@ async fn spawn_replica(
     let store = PostgresTaskStore::new(db_url)
         .await
         .expect("replica task store");
-    let limiter = RateLimitInterceptor::new(RateLimitConfig {
-        requests_per_window: REQUESTS_PER_WINDOW,
-        window_secs: WINDOW_SECS,
-        ..RateLimitConfig::default()
-    })
+    let limiter = RateLimitInterceptor::new(
+        RateLimitConfig::default()
+            .with_requests_per_window(REQUESTS_PER_WINDOW)
+            .with_window_secs(WINDOW_SECS),
+    )
     .expect("limiter")
     .with_shared_counter(counter);
 

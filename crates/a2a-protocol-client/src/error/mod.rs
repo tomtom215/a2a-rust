@@ -58,6 +58,15 @@ pub enum ClientError {
     /// A request or stream connection timed out.
     Timeout(String),
 
+    /// The connection already has `limit` requests awaiting responses, and
+    /// this one was refused up front rather than queued. Retryable: room
+    /// appears as responses arrive. See
+    /// `WebSocketTransportConfig::max_pending_requests`.
+    TooManyPendingRequests {
+        /// The configured cap that was hit.
+        limit: usize,
+    },
+
     /// The server appears to use a different protocol binding than the client.
     ///
     /// For example, a JSON-RPC client connected to a REST-only server (or
@@ -82,6 +91,12 @@ impl fmt::Display for ClientError {
                 write!(f, "authentication required for task: {task_id}")
             }
             Self::Timeout(msg) => write!(f, "timeout: {msg}"),
+            Self::TooManyPendingRequests { limit } => {
+                write!(
+                    f,
+                    "too many pending requests on this connection (limit {limit})"
+                )
+            }
             Self::ProtocolBindingMismatch(msg) => {
                 write!(
                     f,

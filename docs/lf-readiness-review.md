@@ -119,13 +119,21 @@ makes, and it is a materially stronger position than the document was stating.
    fail the project's own DCO gate on arrival. Adding an automation whose output
    is permanently red is worse than not adding it. The options are an explicit
    bot exemption in `dco.yml`, or a documented human re-authoring step.
-2. **`dtolnay/rust-toolchain` is the only action not SHA-pinned** — three refs
-   (`@stable`, `@nightly`, `@master`). Not pinned here on purpose: the pin must
-   be applied together with an explicit `toolchain:` on every job, and getting
-   that wrong silently redirects the MSRV leg of the matrix at the wrong
-   compiler — an MSRV job that no longer checks the MSRV. That is a worse defect
-   than the one being fixed, and a silent one. It should be done deliberately,
-   with CI observed.
+2. ~~**`dtolnay/rust-toolchain` is the only action not SHA-pinned** — three refs
+   (`@stable`, `@nightly`, `@master`).~~ **Closed 2026-09-10.** Not pinned
+   earlier on purpose: the pin must be applied together with an explicit
+   `toolchain:` on every job, and getting that wrong silently redirects the
+   MSRV leg of the matrix at the wrong compiler — an MSRV job that no longer
+   checks the MSRV. Done as one change: all 32 uses across 11 workflows now
+   pin `master` at `d1031067` (2026-09-03), whose `action.yml` makes
+   `toolchain` a *required* input, so a use without one fails at the step
+   rather than defaulting to anything. The 26 former `@stable` uses carry
+   `toolchain: stable`, the one `@nightly` carries `toolchain: nightly`, and
+   the five `@master` uses already named their toolchain (the MSRV and
+   release matrices read `${{ matrix.rust }}` / `${{ matrix.toolchain }}`,
+   unchanged). The input goes to `rustup toolchain install`, so a pinned
+   action still installs whatever version the input names; the pin fixes
+   the installer script, not the compiler.
 3. **Release tags are not signed.** Annotation is now enforced and working;
    signing needs a maintainer key and a documented way for adopters to obtain
    it. Already stated honestly in `SECURITY.md` and `ROADMAP.md`.
@@ -158,13 +166,68 @@ makes, and it is a materially stronger position than the document was stating.
    `CompletionModel`, so a fake that *answers* makes the success path testable
    with no provider at all.
 
-6. **`docs/rust-sdk-assessment.md` is a dated deliverable addressed to "Linux
+6. ~~**`docs/rust-sdk-assessment.md` is a dated deliverable addressed to "Linux
    Foundation / A2A project technical leadership"** whose figures (608 commits,
-   ten tags) are superseded. It carries its date, which is defensible, but a
-   reviewer handed it today will read stale numbers. It needs a supersession
-   note pointing at the manifest.
+   ten tags) are superseded.~~ **Closed 2026-09-10.** It carries its date,
+   which is defensible, but a reviewer handed it today would read stale
+   numbers. It now opens with a status note that says which figures are
+   frozen at which commit and points at `docs/provenance-manifest.md`,
+   `CHANGELOG.md`, `STABILITY.md` and this review for the current ones.
 7. **Seven examples still have no tests.** `harness` at 920 lines is the next
    one worth doing, because the other examples depend on it.
+8. ~~**No Rust worker in `multi-lang-team`.** The example shows the client
+   half of the SDK — a coordinator that dials four workers — and every worker
+   is in another language, so a reader who wants to see what a *worker* looks
+   like in this SDK has nothing to run.~~ **Closed 2026-09-10.** The package
+   now has a second binary, `--bin rust-worker` (`src/worker.rs`, about forty
+   lines with the SDK's `agent_executor!` and `EventEmitter`), on `:9104` with
+   the same card shape and `[Rust Echo] <text>` reply the `itk/agents/` workers
+   give, and the coordinator's table dials it. Because it is in the package it
+   is the one worker the tests can start: two new tests boot it in-process on
+   an ephemeral port, run the coordinator's own reachability probe against it,
+   and assert the fan-out's combined artifact carries its reply — the first
+   delegation round-trip in this example that CI exercises rather than
+   reports as `not reachable`. The other four still need their toolchains and
+   still say so.
+9. ~~**No CLI.** Evaluating this SDK meant writing Rust and compiling first;
+   the official SDKs ship `a2acli`. Recorded as an adoption gap in
+   `docs/v0.9.0-post-release-review.md` (§4.3 and its recommendations), not in
+   this review's first draft — noted here so the two documents agree on what
+   is open.~~ **Closed 2026-09-10.** `tools/a2a-cli` is a `publish = false`
+   workspace member: `a2a card|send|stream|task get|cancel|list`, JSON out,
+   any of the four bindings by `--binding` or by discovery from the card,
+   `--header` for auth, exit codes 0/1/2. Built only from the client crate's
+   public surface, so it is also the first outside-in check of that surface;
+   it is driven end to end by an integration test that starts the SDK's own
+   server in-process and runs the built binary against it. Two things it
+   found are recorded in `tools/a2a-cli/README.md` under "What building it
+   found": `hello-agent` serves no agent card, so discovery against the
+   smallest example fails, and `resolve_agent_card` cannot send headers, so a
+   card behind authentication cannot be discovered with `--header`. **Both
+   closed later the same day (2026-09-10), in the 0.12 batch:** `hello-agent`
+   publishes a card and a test resolves it; `resolve_agent_card_with_options`
+   takes headers and a budget, and the CLI passes `--header` and `--timeout`
+   through it. A third finding from the same README — the builder did not
+   say which interface `from_card` chose — is closed by
+   `ClientBuilder::chosen_interface`.
+10. ~~**No durability, failure-injection or horizontal-scaling example.**~~
+    **Closed 2026-09-10.** The hardening checks proved each store and the
+    client retry layer in isolation; nothing showed an adopter what a restart,
+    an injected fault, or a second replica actually *does* to a task.
+    `examples/resilient-agent` now runs the three as asserted acts, each with
+    the numbers and a stated gap: a completed task comes back byte-identical
+    from a fresh handler over the same SQLite file (store lag behind the
+    stream measured at ~12 ms), while a task cut off mid-stream is persisted as
+    far as it got and **not resumed**; an executor failing its first N attempts
+    produces N `Failed` tasks the SDK does **not** retry, with the error text
+    only on the streamed status event; a webhook refusing its first M
+    deliveries yields exactly M `failed` outcomes from `Metrics::on_push_delivery`
+    with no redelivery; two in-memory replicas cannot see each other's tasks,
+    two `PostgresTaskStore` replicas can (B's subscriber sees the end but 0 of
+    A's 2 artifact frames), and two limiters at 5/window admit 10 alone and 5
+    sharing `PostgresRateLimitCounter`. `[NOT RUN]` follows
+    `incident-response`'s convention exactly: exit 0, or 4 under
+    `RESILIENT_REQUIRE_ALL`.
 
 ## 4a. Every example, run end to end against a real model
 

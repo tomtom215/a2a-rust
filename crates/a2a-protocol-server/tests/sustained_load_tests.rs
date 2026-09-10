@@ -73,10 +73,9 @@ agent_executor!(LoadAgent, |ctx, queue| async {
 });
 
 fn handler_with_capacity(max_tasks: usize) -> Arc<RequestHandler> {
-    let store = InMemoryTaskStore::with_config(a2a_protocol_server::store::TaskStoreConfig {
-        max_capacity: Some(max_tasks),
-        ..Default::default()
-    });
+    let store = InMemoryTaskStore::with_config(
+        a2a_protocol_server::store::TaskStoreConfig::default().with_max_capacity(Some(max_tasks)),
+    );
     Arc::new(
         RequestHandlerBuilder::new(LoadAgent)
             .with_task_store(store)

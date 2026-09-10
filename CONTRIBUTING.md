@@ -406,12 +406,22 @@ scopes. Know which one applies to you:
 surviving mutants to the code it touches. That check is required and it works.
 
 The workspace sweep is a different matter, and honesty about it belongs here
-rather than in a footnote. **It is currently red: 125 surviving mutants,
-94% caught**, measured 2026-08-10 (was 183 / 92% on 2026-08-07). That is
-pre-existing debt in code no recent
-PR has touched, not a bar newcomers are being held to, and it is being burned
-down rather than suppressed — there is deliberately no baseline file, because
-the incremental gate above already prevents the count from growing.
+rather than in a footnote. **It is currently red: 55 surviving mutants,
+97% caught**, measured 2026-09-07 (run 34078555778 at `d3ebb72`; the figure
+was 125 / 94% on 2026-08-10 and 4 / 99% on 2026-08-14). Twenty-six of the 55
+are one function, `parse_numeric_ipv4`, merged on 2026-08-27 while the
+incremental gate was passing over a failed baseline — the defect fixed in
+`db795c2` three days later, and the reason "the gate prevents the count from
+growing" is a claim with a dated exception. The rest are boundary mutants in
+code whose tests covered the behaviour but not the exact comparison. It is
+being burned down rather than suppressed — there is deliberately no baseline
+file — and the ledger below records each sweep, including the two that
+reported a score over work they had not done. As of 2026-09-09 all but three
+of the 55 are killed (measured over their functions with the sweep's own
+command line: 133 mutants, 3 missed); the three that remain are equivalents
+by construction, named in `ROADMAP.md`, and since 2026-09-10 carry
+`#[mutants::skip]` in source (ADR 0006 records the dependency decision), so
+the same measurement over their two files now reads 38 mutants, 0 missed.
 
 The score and its history are in
 [`book/src/reference/mutation-history.md`](book/src/reference/mutation-history.md),

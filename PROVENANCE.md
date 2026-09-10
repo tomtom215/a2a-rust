@@ -309,6 +309,18 @@ review and merge, which branch protection still requires. The exemption is by
 exact address rather than by the `[bot]` suffix, so no other automation
 inherits it, and the assistant identities above remain rejected.
 
+**A second, narrower one: the Benchmarks workflow's own commit.** Since
+2026-09-10 `scripts/check_dco.sh` (the check both `dco.yml` and
+`benchmarks.yml` run) passes a commit authored by the workflow's identity
+(`41898282+github-actions[bot]@users.noreply.github.com`) only while it
+touches `book/src/reference/benchmarks.md` and
+`book/src/reference/benchmark-dashboard.html` and nothing else — the two
+pages `benchmarks.yml` regenerates from measurements. A bot commit that
+reaches any other file fails. The commit is pushed with `GITHUB_TOKEN`,
+which creates no workflow run, so `benchmarks.yml` grades it itself before
+the push; until that date no gate saw it at all. The same date `dco.yml`
+began running on every push to `main`, not only on pull requests.
+
 ### 3.3 Disclosure is maintained
 
 Section 1 of this document is kept current. Material changes in how the project

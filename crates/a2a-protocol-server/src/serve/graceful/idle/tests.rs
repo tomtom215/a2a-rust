@@ -335,3 +335,76 @@ async fn a_zero_length_vectored_write_does_not_count_as_activity() {
     let err = outcome.expect_err("a peer that only sends empty vectored writes is idle");
     assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
 }
+
+/// An inner transport that records what the wrapper forwards to it and
+/// answers `is_write_vectored` with `false`, which a real socket on Linux
+/// never does. Reads are never ready, so the idle deadline is the only thing
+/// that can wake a reader.
+#[derive(Default)]
+struct Recorder {
+    flushes: usize,
+    shutdowns: usize,
+}
+
+impl AsyncRead for Recorder {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Poll::Pending
+    }
+}
+
+impl AsyncWrite for Recorder {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.flushes += 1;
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.shutdowns += 1;
+        Poll::Ready(Ok(()))
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        false
+    }
+}
+
+/// `flush` and `shutdown` reach the transport. A wrapper that answered them
+/// itself with `Ready(Ok(()))` would report a flush that never happened and a
+/// shutdown that never closed the socket — indistinguishable over a duplex
+/// pipe, whose own flush is a no-op, so the inner here counts the calls.
+#[tokio::test]
+async fn flush_and_shutdown_are_forwarded_to_the_transport() {
+    let mut io = IdleTimeout::new(Recorder::default(), Some(Duration::from_secs(75)));
+
+    io.flush().await.expect("flush");
+    assert_eq!(io.inner.flushes, 1, "flush must reach the transport");
+    assert_eq!(io.inner.shutdowns, 0);
+
+    io.shutdown().await.expect("shutdown");
+    assert_eq!(io.inner.shutdowns, 1, "shutdown must reach the transport");
+    assert_eq!(
+        io.inner.flushes, 1,
+        "shutdown does not flush on the wrapper's behalf"
+    );
+}
+
+/// The vectored-write answer is the transport's, in both directions. The
+/// socket test above pins `true` on Linux; this pins `false`, so a wrapper
+/// that hard-coded either answer fails one of them.
+#[tokio::test]
+async fn a_transport_without_vectored_writes_is_reported_as_such() {
+    let io = IdleTimeout::new(Recorder::default(), Some(Duration::from_secs(75)));
+    assert!(!io.is_write_vectored());
+}

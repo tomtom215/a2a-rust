@@ -129,6 +129,50 @@ fn delta_claiming_all_parts_is_accepted_and_overclaiming_is_not() {
 }
 
 /// A zero-part delta describes nothing and must fall back.
+/// The payload is the *tail* — the last `count` parts — and not a slice from
+/// any other offset. Kills `len - count` → `len / count`: with five parts and
+/// a count of two the two arithmetics differ (start at 3 versus 2), and the
+/// wrong slice would splice `p2, p3` into the record as the parts that were
+/// just appended, silently dropping `p4`.
+#[test]
+fn the_payload_is_exactly_the_last_count_parts() {
+    let task = task_with_parts(5);
+    let stmt = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 2 })
+        .expect("no error")
+        .expect("incremental");
+    let parts: Vec<serde_json::Value> =
+        serde_json::from_str(&stmt.payload).expect("the payload is a JSON array");
+    let texts: Vec<&str> = parts
+        .iter()
+        .map(|p| p["text"].as_str().expect("a text part"))
+        .collect();
+    assert_eq!(texts, ["p3", "p4"], "the last two parts, in order");
+}
+
+/// One part per event takes the constant-text statement, whose prepared plan
+/// is shared across every stream; a batch takes the generated one. Kills
+/// `count == 1` → `!=`, which swaps the two and changes no stored byte — the
+/// generated statement is correct for one part too, only slower.
+#[test]
+fn a_single_part_takes_the_prepared_statement_and_a_batch_does_not() {
+    let task = task_with_parts(3);
+
+    let one = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+        .expect("no error")
+        .expect("incremental");
+    assert_eq!(one.sql, APPEND_ONE_PART_SQL);
+    assert_eq!(one.index, Some(0), "the prepared statement binds the index");
+
+    let two = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 2 })
+        .expect("no error")
+        .expect("incremental");
+    assert_ne!(two.sql, APPEND_ONE_PART_SQL);
+    assert_eq!(
+        two.index, None,
+        "the generated statement carries its index in the text"
+    );
+}
+
 #[test]
 fn zero_count_delta_falls_back() {
     let task = task_with_parts(3);

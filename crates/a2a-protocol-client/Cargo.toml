@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-client"
-version     = "0.11.0"
+version     = "0.12.0"
 description = "Agent2Agent (A2A) protocol v1.0 — HTTP client (hyper-backed)"
 readme      = "README.md"
 
@@ -49,7 +49,7 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 grpc-tls = ["grpc", "tonic?/tls-ring", "tonic?/tls-webpki-roots"]
 
 [dependencies]
-a2a-protocol-types = { version = "0.11.0", path = "../a2a-protocol-types" }
+a2a-protocol-types = { version = "0.12.0", path = "../a2a-protocol-types" }
 serde          = { workspace = true }
 serde_json     = { workspace = true }
 # RFC 6749 §2.3.1 Basic client authentication for the token_provider module.
@@ -62,7 +62,7 @@ hyper-util     = { workspace = true }
 tokio          = { workspace = true }
 uuid           = { workspace = true }
 tracing        = { workspace = true, optional = true }
-tokio-tungstenite = { version = ">=0.29, <0.30", optional = true }
+tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
 hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features = false, features = ["ring", "http1", "http2", "webpki-tokio"] }
 rustls         = { version = ">=0.23, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
@@ -94,8 +94,8 @@ rustls-pki-types = { version = ">=1.7, <2" }
 hyper = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util = { workspace = true, features = ["server", "server-auto"] }
-a2a-protocol-types = { version = "0.11.0", path = "../a2a-protocol-types" }
-a2a-protocol-server = { version = "0.11.0", path = "../a2a-protocol-server", features = ["websocket"] }
+a2a-protocol-types = { version = "0.12.0", path = "../a2a-protocol-types" }
+a2a-protocol-server = { version = "0.12.0", path = "../a2a-protocol-server", features = ["websocket"] }
 futures-util = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink"] }
 
 [[bench]]

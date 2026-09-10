@@ -51,7 +51,8 @@ ignore:
   # the same day. `scripts/check_codecov_ignores.py` remains the instrument
   # for any pattern that is listed here: it fails on an entry Codecov is
   # still counting, so a future exclusion cannot be recorded as applied
-  # without being applied.
+  # without being applied. Since 2026-09-10 coverage.yml runs it weekly
+  # (`ignores-applied`); before that, nothing ran it.
   # Examples are not library code.
   - "examples/**"
   # ITK (interop test kit) agents are not library code.

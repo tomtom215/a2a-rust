@@ -455,3 +455,44 @@ mod tests {
         assert_eq!(bytes.len(), BODY);
     }
 }
+
+/// Test support shared by the transports and the token provider.
+#[cfg(test)]
+pub(crate) mod test_support {
+    /// A server that answers every request with `status_line` after
+    /// `header_delay`, with a `content-length` it never honours: the headers
+    /// arrive late, the body never does, and the connection stays open. What
+    /// a slow-then-stalled upstream looks like from the client's side. The
+    /// delay is the point: a second timeout on the body read only shows once
+    /// the headers have spent most of the first, which is how the doubled
+    /// bound went unnoticed by every test that answered at once.
+    pub async fn spawn_stalling_server(
+        status_line: &'static str,
+        header_delay: std::time::Duration,
+    ) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    // Read the request head, answer with headers only, then
+                    // hold the socket until the peer gives up.
+                    let mut buf = [0u8; 4096];
+                    let _ = stream.read(&mut buf).await;
+                    tokio::time::sleep(header_delay).await;
+                    let head = format!(
+                        "{status_line}\r\ncontent-type: application/json\r\n\
+                         content-length: 4096\r\n\r\n"
+                    );
+                    let _ = stream.write_all(head.as_bytes()).await;
+                    let _ = stream.read(&mut buf).await;
+                });
+            }
+        });
+        addr
+    }
+}

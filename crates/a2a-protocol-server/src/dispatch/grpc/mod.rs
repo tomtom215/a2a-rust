@@ -47,6 +47,7 @@
 //! # }
 //! ```
 
+mod bounded_incoming;
 mod config;
 mod dispatcher;
 mod helpers;

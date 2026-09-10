@@ -33,11 +33,11 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
     .with_agent_card(make_agent_card())
 
     // Task storage
-    .with_task_store_config(TaskStoreConfig {
-        task_ttl: Some(Duration::from_secs(3600)),  // 1 hour TTL
-        max_capacity: Some(10_000),                 // Max 10k tasks
-        ..Default::default()
-    })
+    .with_task_store_config(
+        TaskStoreConfig::default()
+            .with_task_ttl(Some(Duration::from_secs(3600))) // 1 hour TTL
+            .with_max_capacity(Some(10_000)),               // Max 10k tasks
+    )
 
     // Push notifications
     .with_push_sender(HttpPushSender::new())
@@ -97,6 +97,8 @@ The `HandlerLimits` struct configures per-handler bounds:
 | `max_cancellation_tokens` | `usize` | 10,000 | Max cancellation token map entries before cleanup |
 | `max_token_age` | `Duration` | 1 hour | Maximum age for cancellation tokens |
 | `push_delivery_timeout` | `Duration` | 5 seconds | Timeout for individual push webhook deliveries |
+| `push_delivery_budget` | `Duration` | 30 seconds | Total push-delivery time per event across every registered config (per request batch on the blocking path); the rest are counted `skipped` |
+| `executor_drain_timeout` | `Duration` | 5 seconds | How long a blocking `SendMessage` waits for the event queue to close after the executor finished; then answers with the task as collected |
 | `max_artifacts_per_task` | `usize` | 1000 | Maximum artifacts per task (prevents unbounded growth) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
 | `max_push_configs_per_task` | `usize` | 100 | Maximum push configs per task (uniform across store backends) |
@@ -140,11 +142,9 @@ The default `InMemoryTaskStore` supports TTL and capacity limits:
 use a2a_protocol_sdk::server::TaskStoreConfig;
 use std::time::Duration;
 
-let config = TaskStoreConfig {
-    task_ttl: Some(Duration::from_secs(3600)),  // Tasks expire after 1 hour
-    max_capacity: Some(50_000),                 // Keep at most 50k tasks
-    ..Default::default()
-};
+let config = TaskStoreConfig::default()
+    .with_task_ttl(Some(Duration::from_secs(3600))) // Tasks expire after 1 hour
+    .with_max_capacity(Some(50_000));               // Keep at most 50k tasks
 
 RequestHandlerBuilder::new(executor)
     .with_task_store_config(config)

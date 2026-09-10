@@ -356,6 +356,21 @@ mod tests {
             .await
             .expect("delete should succeed");
     }
+    /// Every setter writes its own field, against values that differ from
+    /// the defaults.
+    #[test]
+    fn every_config_setter_sets_its_field() {
+        let d = TaskStoreConfig::default();
+        let cfg = TaskStoreConfig::default()
+            .with_max_capacity(Some(d.max_capacity.unwrap_or(0) + 11))
+            .with_task_ttl(Some(Duration::from_secs(12)))
+            .with_eviction_interval(d.eviction_interval + 1)
+            .with_max_page_size(d.max_page_size + 1);
+        assert_eq!(cfg.max_capacity, Some(d.max_capacity.unwrap_or(0) + 11));
+        assert_eq!(cfg.task_ttl, Some(Duration::from_secs(12)));
+        assert_eq!(cfg.eviction_interval, d.eviction_interval + 1);
+        assert_eq!(cfg.max_page_size, d.max_page_size + 1);
+    }
 }
 
 /// The largest page a `list` call may return, when nothing narrower is asked
@@ -391,7 +406,12 @@ mod tests {
 pub const DEFAULT_MAX_PAGE_SIZE: u32 = 1000;
 
 /// Configuration for [`InMemoryTaskStore`].
+///
+/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
+/// which cover every field; a struct literal is not available outside this
+/// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct TaskStoreConfig {
     /// Maximum number of tasks to keep in the store. Once exceeded, the oldest
     /// terminal (completed/failed/canceled/rejected) tasks are evicted first.
@@ -431,5 +451,36 @@ impl Default for TaskStoreConfig {
             eviction_interval: 64,
             max_page_size: DEFAULT_MAX_PAGE_SIZE,
         }
+    }
+}
+
+impl TaskStoreConfig {
+    /// Sets the maximum number of tasks kept; `None` is no limit. See
+    /// [`max_capacity`](Self::max_capacity) for what happens past it.
+    #[must_use]
+    pub const fn with_max_capacity(mut self, max: Option<usize>) -> Self {
+        self.max_capacity = max;
+        self
+    }
+
+    /// Sets the time-to-live for terminal tasks; `None` disables TTL eviction.
+    #[must_use]
+    pub const fn with_task_ttl(mut self, ttl: Option<Duration>) -> Self {
+        self.task_ttl = ttl;
+        self
+    }
+
+    /// Sets the number of writes between eviction sweeps.
+    #[must_use]
+    pub const fn with_eviction_interval(mut self, writes: u64) -> Self {
+        self.eviction_interval = writes;
+        self
+    }
+
+    /// Sets the maximum page size for list queries.
+    #[must_use]
+    pub const fn with_max_page_size(mut self, max: u32) -> Self {
+        self.max_page_size = max;
+        self
     }
 }

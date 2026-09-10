@@ -1,64 +1,82 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
-"""Package the SLIMRPC binding, tolerating the one state `cargo package` cannot.
+"""Package the SLIMRPC binding and build its tarball against the in-tree SDK.
 
 The binding lives outside the workspace and depends on the SDK crates by
 `version` *and* `path`. Locally the path wins, so its build, clippy and test
 steps are green against the in-tree crates. `cargo package` strips the path, so
-the `version` requirement resolves against the crates.io index instead — and
-during a release that index does not yet carry the version being prepared.
+the `version` requirement resolves against the crates.io index instead — the
+*last released* SDK, not the tree — and during a release that index does not
+yet carry the version being prepared.
 
-That makes one commit in every release cycle unpassable, in both directions:
+That had two costs. One commit in every release cycle was unpassable, in both
+directions:
 
     pin      in-tree   build / clippy / test        cargo package
-    ^0.10    0.10.0    pass                         fails — 0.10.0 not published
-    ^0.9     0.10.0    fails — didn't match 0.10.0  fails
+    ^0.11    0.11.0    pass                         fails — 0.11.0 not published
+    ^0.10    0.11.0    fails — didn't match 0.11.0  fails
 
-Reverting the pin does not rescue it; it breaks the build too. A range would
-admit both and is refused where the pin is declared, because these are *public*
-dependencies — a consumer resolving the binding against an older SDK is the
-failure the tight pin exists to prevent. RELEASING.md bumps the pin only after
-publication, but the SDK version bump that must precede the tag is the same
-commit that puts the binding out of resolution, so there is no green tree in
-between. See docs/v0.9.0-post-release-review.md, B23.
+And, until 2026-09-10, the gate ran `cargo package --no-verify` the rest of the
+time, so the tarball was listed and its manifest checked but it was never
+built: verification would have compiled the binding against the published SDK,
+which is not what Build and Test compile it against, and any API the binding
+used from the same change would have failed until that release shipped.
 
-This wrapper teaches the step the single state it cannot otherwise verify —
+Both have one cause — registry resolution of the SDK pins — and one fix: Cargo's
+`[patch]`, applied at the config level so the manifest is untouched:
 
-    every pin names the version that is in the tree, and the version cargo
-    could not resolve is absent from the index
+    cargo package --allow-dirty \\
+        --config 'patch.crates-io.a2a-protocol-types.path="/abs/crates/a2a-protocol-types"' \\
+        --config 'patch.crates-io.a2a-protocol-client.path="…"' \\
+        --config 'patch.crates-io.a2a-protocol-server.path="…"'
 
-— and nothing else. A typo'd pin naming a version that is neither in-tree nor
-published still fails, because such a pin does not match the in-tree crate,
-which is the condition checked here.
+A patch supplies a version of a crates.io crate from a path, including a version
+the index does not have — Cargo's own "prepublishing a breaking change" case. So
+verification builds the tarball against the in-tree SDK, exactly what Build and
+Test do, and the release window stops being a state at all: the pin names the
+in-tree version, the patch supplies it, and the index is not asked for it.
 
-Three properties are deliberate:
+Measured 2026-09-10. On a synthetic consumer pinned `version = "0.99", path`
+to an unpublished `a2a-protocol-types 0.99.0`, plain `cargo package` fails with
+`failed to select a version for the requirement`, and the same command with the
+patch packages and verifies. On the binding itself the patched verification
+compiled the packaged crate against the tree in 17.5s. The one visible
+difference from an unpatched tarball is the regenerated `Cargo.lock` inside it,
+which records the SDK crates without a registry `source` line; nothing consumes
+that file — the gate's tarball is never the published one — but it is why this
+script must not be mistaken for the release step.
 
-  * **The skip is not a blind spot.** `cargo package --list` runs every check
-    except registry resolution — it still rejects a missing `readme`, a bad
-    `exclude`, an unreadable target (all three measured). It runs on the skip
-    path, so the release window loses registry resolution alone rather than the
-    whole gate.
+What the patch does not do, and this script still must:
 
-  * **A failed index query fails the gate.** The skip requires positive proof
-    that the version is absent; an unreachable index proves nothing. The query
-    happens only after `cargo package` has already failed, having reached that
-    same index to do so — so this cannot turn a network flake green. It can
-    only leave red what was already red.
+  * **Refuse a pin that does not name the in-tree version, before cargo runs.**
+    A patch is used only when its version satisfies the requirement. A stale
+    `0.10` against an in-tree 0.11.0 leaves the patch unused; cargo *warns*,
+    resolves 0.10.0 from crates.io, and verification builds against the
+    published SDK — passing or failing on the wrong crate either way
+    (measured: the synthetic consumer, re-pinned to a published version,
+    verified against the registry crate and failed on an API only the patch
+    had). The pin check is the one the previous decision table had, kept and
+    self-tested.
 
-  * **Cargo's own error is not trusted for the absence proof.** It prints
-    `candidate versions found which didn't match: 0.9.0, 0.8.0, 0.7.0, ...` —
-    truncated, so the list cannot show that a version is missing. Only the
-    crate name is taken from it; the index is asked directly.
+  * **Treat an unused patch as a failure, not a warning.** Belt and braces on
+    the above, so a mismatch this script's semver arithmetic did not predict
+    is still red rather than a line in the log.
+
+Removed the same day: the `cargo package --list --no-verify` fallback and the
+crates.io index query behind it. They existed to tell a release window from a
+broken manifest when the window could not be verified; with the patch it can,
+so there was nothing left for them to cover. See
+docs/v0.9.0-post-release-review.md, B23 and §2.5.
 
 Usage:
-    scripts/package_binding.py              package the binding
-    scripts/package_binding.py --self-test  check the decision table alone
+    scripts/package_binding.py              package and verify the binding
+    scripts/package_binding.py --self-test  check the pin rules alone
 
-The self-test runs on every invocation as well, before any judgement is made.
+The self-test runs on every invocation as well, before cargo is called.
 
-Exit 0 if the binding packages, or if it fails solely because the release it is
-pinned to has not been published yet. Non-zero otherwise.
+Exit 0 if the binding packages and its tarball builds against the in-tree SDK.
+Non-zero otherwise.
 """
 
 from __future__ import annotations
@@ -69,65 +87,31 @@ import re
 import subprocess
 import sys
 import tomllib
-import urllib.error
-import urllib.request
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 BINDING = ROOT / "bindings" / "a2a-protocol-slimrpc"
 
-# Cargo normalises a bare `version = "0.10"` to `^0.10` when it reports a
-# resolution failure. Only the crate name is used; see the module docstring on
-# why the candidate list that follows this line is not.
-UNRESOLVED = re.compile(
-    r"failed to select a version for the requirement `([A-Za-z0-9_-]+) = \"([^\"]+)\"`"
-)
-
 # A bare `X`, `X.Y` or `X.Y.Z`. Anything carrying an operator, a comma or a
-# wildcard is not a pin this script will certify — see `analyse`.
+# wildcard is not a pin this script will certify — see `check_pins`.
 BARE_REQ = re.compile(r"^\d+(\.\d+){0,2}$")
 EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 
-
-class IndexUnavailable(Exception):
-    """The registry index could not be asked. Never grounds for a skip."""
-
-
-def sparse_index_path(name: str) -> str:
-    """crates.io sparse-index layout: 1/, 2/, 3/f/, then first-two/next-two."""
-    n = name.lower()
-    if len(n) <= 2:
-        return f"{len(n)}/{n}"
-    if len(n) == 3:
-        return f"3/{n[0]}/{n}"
-    return f"{n[0:2]}/{n[2:4]}/{n}"
+# Cargo's exact wording for a patch the resolver did not select, e.g.
+#   warning: patch `a2a-protocol-types v0.11.0 (/path)` was not used in the crate graph
+UNUSED_PATCH = re.compile(r"patch `([A-Za-z0-9_-]+) v[^`]*` was not used in the crate graph")
 
 
-def published_versions(name: str) -> dict[str, bool]:
-    """Map version -> yanked, as the index reports it. Raises IndexUnavailable."""
-    url = f"https://index.crates.io/{sparse_index_path(name)}"
-    try:
-        with urllib.request.urlopen(url, timeout=30) as resp:
-            body = resp.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        # 404 is the index's answer for "no such crate", which is a fact, not a
-        # failure: an unpublished crate has no versions.
-        if exc.code == 404:
-            return {}
-        raise IndexUnavailable(f"{url}: HTTP {exc.code}") from exc
-    except Exception as exc:  # noqa: BLE001 — any transport failure is the same answer
-        raise IndexUnavailable(f"{url}: {type(exc).__name__}: {exc}") from exc
+class Pin(NamedTuple):
+    """One dependency declared with both `version` and `path`."""
 
-    out: dict[str, bool] = {}
-    for line in body.splitlines():
-        if not line.strip():
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise IndexUnavailable(f"{url}: malformed index line") from exc
-        out[entry["vers"]] = bool(entry.get("yanked", False))
-    return out
+    req: str
+    """The requirement as written, e.g. `0.11`."""
+    in_tree: str
+    """The version in the crate's own manifest at `path`, e.g. `0.11.0`."""
+    path: str
+    """Absolute path to that crate, for the patch."""
 
 
 def caret_bounds(req: str) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
@@ -160,40 +144,19 @@ def req_matches(req: str, version: str) -> bool:
     return lower <= v < upper
 
 
-def analyse(
-    stderr: str,
-    pins: dict[str, tuple[str, str]],
-    published: dict[str, dict[str, bool]],
-) -> tuple[bool, str]:
-    """Decide whether a failed `cargo package` is the release window.
+def check_pins(pins: dict[str, tuple[str, str]]) -> tuple[bool, str]:
+    """Decide whether the pins are ones a patch will actually be used for.
 
     `pins` maps crate name -> (requirement as written, version found in tree).
-    `published` maps crate name -> the index's version table, and is consulted
-    only for the crate cargo actually named.
-
-    Returns (skip_is_justified, human-readable reason). Kept free of I/O so
-    `--self-test` can walk every branch without a network or a cargo run.
+    Returns (pins_are_sound, human-readable reason). Kept free of I/O so
+    `--self-test` can walk every branch without a cargo run.
     """
-    named = UNRESOLVED.findall(stderr)
-    if not named:
+    if not pins:
         return False, (
-            "the failure is not an unresolved version requirement, so it is a "
-            "real packaging error"
+            "the manifest declares no dependency with both `version` and `path`, "
+            "so there is nothing to patch — the shape this gate exists for has "
+            "changed and the gate needs rethinking, not skipping"
         )
-
-    # Cargo stops at the first unresolved requirement, so the crate it names is
-    # necessarily one of the pins; a name from anywhere else means this error
-    # is about some other dependency and is not the release window.
-    unknown = [n for n, _ in named if n not in pins]
-    if unknown:
-        return False, (
-            "cargo could not resolve " + ", ".join(sorted(set(unknown)))
-            + ", which is not one of the in-tree SDK pins"
-        )
-
-    # Every pin is checked, not just the one cargo stopped on: a release window
-    # that also carries a typo'd pin elsewhere must not be waved through on the
-    # strength of the one requirement cargo happened to report first.
     for crate, (req, in_tree) in sorted(pins.items()):
         if not BARE_REQ.match(req):
             return False, (
@@ -207,47 +170,44 @@ def analyse(
             )
         if not req_matches(req, in_tree):
             return False, (
-                f"{crate} is pinned `{req}` but is {in_tree} in tree — the pin "
-                "does not name the version being built, so this is a broken "
-                "manifest, not a release window"
+                f"{crate} is pinned `{req}` but is {in_tree} in tree — the patch "
+                "would go unused and verification would build against the "
+                "published crate instead of this one"
             )
-
-    # The absence proof, for the crate cargo actually failed on.
-    crate = named[0][0]
-    _, in_tree = pins[crate]
-    table = published[crate]
-    if in_tree in table:
-        state = "yanked" if table[in_tree] else "published"
-        return False, (
-            f"{crate} {in_tree} is already {state} on crates.io, so the pin "
-            "should have resolved — this failure is not the release window"
-        )
-
-    return True, (
-        f"{crate} {in_tree} is pinned by the binding, built from the tree, and "
-        "absent from crates.io"
-    )
+    return True, "every pin names the version that is in the tree"
 
 
-def read_pins() -> dict[str, tuple[str, str]]:
+def patch_args(paths: dict[str, str]) -> list[str]:
+    """The `--config` arguments that supply each pinned crate from its path.
+
+    `json.dumps` quotes the path as a TOML basic string; the two formats agree
+    on every escape a filesystem path can need.
+    """
+    args: list[str] = []
+    for crate, path in sorted(paths.items()):
+        args += ["--config", f"patch.crates-io.{crate}.path={json.dumps(path)}"]
+    return args
+
+
+def read_pins() -> dict[str, Pin]:
     """Every dependency declared with both `version` and `path`, and its in-tree version."""
     manifest = tomllib.loads((BINDING / "Cargo.toml").read_text())
-    pins: dict[str, tuple[str, str]] = {}
+    pins: dict[str, Pin] = {}
     for section in ("dependencies", "dev-dependencies", "build-dependencies"):
         for name, spec in (manifest.get(section) or {}).items():
             if not isinstance(spec, dict) or "path" not in spec or "version" not in spec:
                 continue
-            dep_manifest = (BINDING / spec["path"] / "Cargo.toml").resolve()
-            in_tree = tomllib.loads(dep_manifest.read_text())["package"]["version"]
-            pins[name] = (spec["version"], in_tree)
+            dep_dir = (BINDING / spec["path"]).resolve()
+            in_tree = tomllib.loads((dep_dir / "Cargo.toml").read_text())["package"]["version"]
+            pins[name] = Pin(spec["version"], in_tree, str(dep_dir))
     return pins
 
 
 def annotate(level: str, message: str) -> None:
-    """A skip has to be visible in the checks summary, not just the log."""
+    """A failure has to be visible in the checks summary, not just the log."""
     if os.environ.get("GITHUB_ACTIONS") == "true":
         print(f"::{level}::{message}")
-    print(message)
+    print(message, file=sys.stderr)
 
 
 def run(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -257,136 +217,95 @@ def run(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def main() -> int:
-    # The decision table is checked before it is used. This gate's whole value
-    # is telling a release window from a broken manifest, and a table that had
-    # drifted would get that wrong silently — in the direction of passing.
+    # The pin rules are checked before they are used. This gate's value is
+    # building the tarball against the tree, and a rule that had drifted would
+    # let a stale pin through to a build against the registry — silently, in
+    # the direction of passing.
     if self_test() != 0:
         return 1
 
-    packaged = run(["cargo", "package", "--no-verify", "--allow-dirty"])
+    pins = read_pins()
+    sound, reason = check_pins({name: (p.req, p.in_tree) for name, p in pins.items()})
+    if not sound:
+        annotate("error", f"package_binding: refusing to package — {reason}.")
+        return 1
+
+    args = ["cargo", "package", "--allow-dirty"]
+    args += patch_args({name: p.path for name, p in pins.items()})
+    print("package_binding: " + " ".join(args))
+
+    packaged = run(args)
     sys.stdout.write(packaged.stdout)
     sys.stderr.write(packaged.stderr)
-    if packaged.returncode == 0:
-        print("package_binding: the binding packages against the published SDK")
-        return 0
 
-    pins = read_pins()
-    named = UNRESOLVED.findall(packaged.stderr)
-    published: dict[str, dict[str, bool]] = {}
-    if named and named[0][0] in pins:
-        crate = named[0][0]
-        try:
-            published[crate] = published_versions(crate)
-        except IndexUnavailable as exc:
-            print(
-                f"\npackage_binding: cargo package failed, and the crates.io index "
-                f"could not be asked whether this is a release window ({exc}).\n"
-                "A skip needs positive proof that the pinned version is absent, so "
-                "this fails rather than guessing.",
-                file=sys.stderr,
-            )
-            return 1
-
-    skip, reason = analyse(packaged.stderr, pins, published)
-    if not skip:
-        print(
-            f"\npackage_binding: `cargo package` failed and this is not the "
-            f"release window — {reason}.",
-            file=sys.stderr,
+    if packaged.returncode != 0:
+        annotate(
+            "error",
+            "package_binding: `cargo package` failed. The in-tree SDK was supplied "
+            "by patch, so this is not the release window; it is a packaging error.",
         )
         return 1
 
-    # Registry resolution is the only thing that cannot be checked now. Prove
-    # the rest of packaging still holds rather than skipping the gate whole.
-    listed = run(["cargo", "package", "--list", "--no-verify", "--allow-dirty"])
-    if listed.returncode != 0:
-        sys.stderr.write(listed.stderr)
-        print(
-            "\npackage_binding: the SDK release is unpublished, but `cargo package "
-            "--list` fails for a second, unrelated reason. Fix that first.",
-            file=sys.stderr,
+    unused = sorted(set(UNUSED_PATCH.findall(packaged.stderr)))
+    if unused:
+        annotate(
+            "error",
+            "package_binding: cargo did not use the patch for "
+            + ", ".join(unused)
+            + ", so verification built against the published crate rather than "
+            "the tree. The pin check should have caught this; the arithmetic "
+            "and cargo disagree, and cargo is right.",
         )
         return 1
 
-    annotate(
-        "warning",
-        "package_binding: registry resolution SKIPPED — " + reason + ". "
-        "Everything `cargo package --list` covers still passed "
-        f"({len(listed.stdout.splitlines())} files). Re-run this gate after the "
-        "SDK is published; RELEASING.md step 4 is what closes the window.",
+    against = ", ".join(f"{name} {p.in_tree}" for name, p in sorted(pins.items()))
+    print(
+        "package_binding: the binding packages and its tarball builds against "
+        f"the in-tree SDK ({against})"
     )
     return 0
 
 
 # ── --self-test ──────────────────────────────────────────────────────────────
-# `analyse` is the whole of the new judgement, and the states it has to tell
-# apart are exactly the ones that are expensive to stage for real: a release
-# window needs an unpublished version, and a typo'd pin needs a broken tree.
-# The table below walks all of them in milliseconds and without a network.
-RESOLVE_ERR = (
-    "error: failed to prepare local package for uploading\n"
-    "\nCaused by:\n"
-    '  failed to select a version for the requirement `a2a-protocol-client = "^0.10"`\n'
-    "  candidate versions found which didn't match: 0.9.0, 0.8.0, 0.7.0, ...\n"
-    "  location searched: crates.io index\n"
-)
-README_ERR = "error: readme `NO_SUCH_README.md` does not appear to exist\n"
-
-WINDOW_PINS = {
-    "a2a-protocol-types": ("0.10", "0.10.0"),
-    "a2a-protocol-client": ("0.10", "0.10.0"),
-    "a2a-protocol-server": ("0.10", "0.10.0"),
+# `check_pins` is the whole of the judgement made before cargo runs, and the
+# state it exists to refuse — a pin that leaves the patch unused — is one cargo
+# reports as a warning and then builds past. The table below walks every branch
+# in milliseconds and without a cargo run.
+SOUND_PINS = {
+    "a2a-protocol-types": ("0.11", "0.11.0"),
+    "a2a-protocol-client": ("0.11", "0.11.0"),
+    "a2a-protocol-server": ("0.11", "0.11.0"),
 }
-PUBLISHED_09 = {"a2a-protocol-client": {"0.9.0": False, "0.8.0": False}}
 
-SELF_TEST_CASES: list[tuple[str, str, dict, dict, bool]] = [
+PIN_CASES: list[tuple[str, dict[str, tuple[str, str]], bool]] = [
+    ("every pin names the in-tree version", SOUND_PINS, True),
     (
-        "release window: pins name the in-tree version, which is unpublished",
-        RESOLVE_ERR, WINDOW_PINS, PUBLISHED_09, True,
+        "release window is not special: the pin names an in-tree version "
+        "whether or not the index has it",
+        {**SOUND_PINS, "a2a-protocol-types": ("0.12", "0.12.0")},
+        True,
     ),
     (
-        "typo'd pin: names a version neither in-tree nor published",
-        RESOLVE_ERR,
-        {**WINDOW_PINS, "a2a-protocol-types": ("0.42", "0.10.0")},
-        PUBLISHED_09, False,
+        "stale pin: in-tree bumped, pin left behind — the patch would go unused",
+        {**SOUND_PINS, "a2a-protocol-client": ("0.10", "0.11.0")},
+        False,
     ),
     (
-        "typo'd pin on the crate cargo named",
-        RESOLVE_ERR,
-        {**WINDOW_PINS, "a2a-protocol-client": ("0.11", "0.10.0")},
-        PUBLISHED_09, False,
-    ),
-    (
-        "stale pin: in-tree bumped, pin left behind",
-        RESOLVE_ERR,
-        {**WINDOW_PINS, "a2a-protocol-client": ("0.9", "0.10.0")},
-        PUBLISHED_09, False,
-    ),
-    (
-        "broken manifest: not a resolution failure at all",
-        README_ERR, WINDOW_PINS, PUBLISHED_09, False,
-    ),
-    (
-        "already published: the pin should have resolved",
-        RESOLVE_ERR, WINDOW_PINS,
-        {"a2a-protocol-client": {"0.10.0": False, "0.9.0": False}}, False,
-    ),
-    (
-        "published but yanked is not a release window",
-        RESOLVE_ERR, WINDOW_PINS,
-        {"a2a-protocol-client": {"0.10.0": True, "0.9.0": False}}, False,
+        "typo'd pin: names a version that is not in the tree",
+        {**SOUND_PINS, "a2a-protocol-types": ("0.42", "0.11.0")},
+        False,
     ),
     (
         "a range is not a pin this script will certify",
-        RESOLVE_ERR,
-        {**WINDOW_PINS, "a2a-protocol-server": (">=0.9, <0.11", "0.10.0")},
-        PUBLISHED_09, False,
+        {**SOUND_PINS, "a2a-protocol-server": (">=0.10, <0.12", "0.11.0")},
+        False,
     ),
     (
-        "unresolved crate that is not one of the pins",
-        RESOLVE_ERR.replace("a2a-protocol-client", "some-other-crate"),
-        WINDOW_PINS, PUBLISHED_09, False,
+        "a pre-release in tree is not a plain version",
+        {**SOUND_PINS, "a2a-protocol-server": ("0.11", "0.11.0-rc.1")},
+        False,
     ),
+    ("no pins at all is a changed shape, not a pass", {}, False),
 ]
 
 # Caret semantics, which the pin check leans on entirely.
@@ -397,6 +316,15 @@ CARET_CASES = [
     ("0", "0.42.0", True), ("0.42", "0.10.0", False),
 ]
 
+# The patch arguments, and the warning that means cargo ignored one. The
+# warning text is the one cargo 1.94 prints, captured from a run rather than
+# transcribed from documentation.
+UNUSED_WARNING = (
+    "warning: patch `a2a-protocol-types v0.99.0 (/tmp/x/a2a-protocol-types)` "
+    "was not used in the crate graph\n"
+    "help: Check that the patched package version and available features are compatible\n"
+)
+
 
 def self_test() -> int:
     failures = []
@@ -405,10 +333,26 @@ def self_test() -> int:
         if got != want:
             failures.append(f"caret: ^{req} vs {version} -> {got}, want {want}")
 
-    for name, stderr, pins, published, want in SELF_TEST_CASES:
-        got, reason = analyse(stderr, pins, published)
+    for name, pins, want in PIN_CASES:
+        got, reason = check_pins(pins)
         if got != want:
-            failures.append(f"{name}: skip={got}, want {want} ({reason})")
+            failures.append(f"{name}: sound={got}, want {want} ({reason})")
+
+    want_args = [
+        "--config", 'patch.crates-io.a2a-protocol-client.path="/r/crates/a2a-protocol-client"',
+        "--config", 'patch.crates-io.a2a-protocol-types.path="/r/crates/a2a-protocol-types"',
+    ]
+    got_args = patch_args({
+        "a2a-protocol-types": "/r/crates/a2a-protocol-types",
+        "a2a-protocol-client": "/r/crates/a2a-protocol-client",
+    })
+    if got_args != want_args:
+        failures.append(f"patch args: {got_args}")
+
+    if UNUSED_PATCH.findall(UNUSED_WARNING) != ["a2a-protocol-types"]:
+        failures.append("unused-patch warning not recognised")
+    if UNUSED_PATCH.findall("    Finished `dev` profile\n"):
+        failures.append("unused-patch regex matches a clean run")
 
     if failures:
         print("package_binding --self-test: FAILED\n")
@@ -416,8 +360,9 @@ def self_test() -> int:
             print(f"  {f}")
         return 1
     print(
-        f"package_binding --self-test: {len(CARET_CASES)} caret cases and "
-        f"{len(SELF_TEST_CASES)} decision cases pass"
+        f"package_binding --self-test: {len(CARET_CASES)} caret cases, "
+        f"{len(PIN_CASES)} pin cases, the patch arguments and the unused-patch "
+        "warning all pass"
     )
     return 0
 

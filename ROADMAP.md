@@ -3,7 +3,7 @@
 
 # Roadmap
 
-Current release: **0.11.0**. MSRV **1.88** (lowered from 1.93 on 2026-09-09; edition 2024).
+Current release: **0.12.0** (prepared 2026-09-10; the tag is the maintainer's act). MSRV **1.88** (lowered from 1.93 on 2026-09-09; edition 2024).
 
 ## What this file is
 
@@ -42,11 +42,16 @@ was sound reasoning over a stale number, and the number moved.
 ADR 0006 sets the target at zero surviving mutants "with the single
 documented exception" of mutants that no test can kill, and requires that an
 equivalence claim be *proved* rather than asserted. Three came up while
-burning down the 2026-08-13 sweep. They are recorded here rather than skipped
-in source, because the `#[mutants::skip]` attribute needs the `mutants` crate
-as a **runtime** dependency of published crates — a supply-chain decision the
-ADR says must be raised on its own terms, not settled inside a test PR.
-Decision taken 2026-08-14: keep them documented, add no dependency.
+burning down the 2026-08-13 sweep. Until 2026-09-10 they were recorded here
+rather than skipped in source, because the `#[mutants::skip]` attribute needs
+the `mutants` crate as a **runtime** dependency of published crates — a
+supply-chain decision the ADR says must be raised on its own terms, not
+settled inside a test PR. Decision taken 2026-08-14: keep them documented, add
+no dependency. **Reversed 2026-09-10**, once every other survivor was killed
+and these three were the whole gap between the sweep and zero:
+`a2a-protocol-server` now depends on `mutants` (0.0.4, MIT, zero
+dependencies) and the three carry `#[mutants::skip]` with the argument below
+as the comment. ADR 0006 records the review.
 
 | Mutant | Why no test can kill it |
 |---|---|
@@ -262,8 +267,16 @@ verified by reading declarations; the correction is recorded there.
    store-eviction path at steady state in one job — and it is the class of bug
    the current suite structurally cannot reach, since every test starts from an
    empty store.
-2. **Split `handler/messaging.rs`** (2,395 lines, still the worst file, still
-   holding the hot path and the destroy/`CleanupGuard` coupling).
+2. **~~Split `handler/messaging.rs`~~ Done 2026-09-10** — it was 2,395
+   lines, then `messaging/mod.rs` at 681 with `send_message_inner` carrying
+   the whole send path in one ~415-line function. The path is now a
+   sequence of phases, each a submodule named for what it does
+   (`validation`, `continuation`, `admission`, `eviction`, `create`,
+   `execute`), with `CleanupGuard` a documented type whose arm/disarm
+   lifetime is spelled out rather than inferred from scope; `mod.rs` is
+   354 lines and off `.file-length-baseline`. Mutation-tested file by file
+   before and after: 0 missed both times, with five tests added to pin the
+   phases whose no-op replacement the old suite could not see.
 3. **~~A 30-line `hello-agent`, and a deployment example.~~ Done 2026-08-16** —
    both ends of the funnel existed only as a gap: the smallest example was
    736 LOC and nothing showed how to ship one. `examples/hello-agent` is now
@@ -281,6 +294,48 @@ manual bundle exchange rather than a bundle endpoint; rotation covers JWT-SVIDs
 certificate under a live connection; everything runs on one machine, so real
 network loss, latency and NAT are untested; and static-token identity is
 supported via `with_identity` but has no test.
+
+## 0.12 — what the release branch closed, and what it opened — **2026-09-10**
+
+Landed on the branch that prepares 0.12.0, each verified as its commit
+message states:
+
+| Item | Where |
+|---|---|
+| Every dependency refreshed (both lockfiles, opentelemetry 0.32, tokio-tungstenite 0.30, rig-core 0.42); genai held at 0.5 because 0.6+ pulls the unmaintained `paste` | `deny.toml`, `CHANGELOG.md` |
+| The three proved-equivalent mutants carry `#[mutants::skip]`; the sweep's two files grade 38 mutants, 0 missed | ADR 0006 |
+| cargo-semver-checks on all four crates with all features; `dtolnay/rust-toolchain` pinned by SHA with an explicit toolchain on all 32 uses | `ci.yml` |
+| Gates B13 (reachability), B14 (timeout nesting), B21 (inert knobs), the reverse API-reference check, the weekly codecov-ignore check; DCO on pushes to `main` and over the benchmark bot's own commit | `scripts/`, `dco.yml`, `benchmarks.yml`, `coverage.yml` |
+| The four client "budget applied twice" defects B14 found, fixed with one deadline each; the blocking path reports every push outcome | `crates/a2a-protocol-client`, `sync_collector.rs` |
+| SLIMRPC binding under coverage, packaged with verification, a runnable example, a Backpressure section, a bounded slow-consumer stall | `bindings/a2a-protocol-slimrpc` |
+| Adoption edges: `tools/a2a-cli` (unpublished), a Rust worker in `multi-lang-team`, `examples/resilient-agent`, `book/src/reference/upgrading.md` | those paths |
+| `HandlerLimits::push_delivery_budget`, `executor_drain_timeout`; `WebSocketTransportConfig::max_pending_requests`; `GrpcDispatcher::with_max_connections`; DNS lookup timeout in `HttpPushSender` | `CHANGELOG.md` |
+
+Opened by that work — measured, not fixed, and each is a maintainer's call:
+
+* **~~An executor's error text does not reach a blocking caller.~~ Done
+  2026-09-10** — the `Failed` status event carried `metadata.error`, but
+  `sync_collector.rs` copies only `status.message` onto the task, so
+  `SendMessage` returned a `Failed` task with no message and no metadata;
+  only streaming callers saw the text (`examples/resilient-agent`, Act 2).
+  Fixed in the send-path split, as predicted: the failure event's
+  `status.message` now carries the text as an agent-role message, so the
+  blocking response and every `GetTask` after it say why, and
+  `metadata.error` stays for streaming callers. The example's Act 2 asserts
+  the message is present and reads it back through `GetTask`.
+* **No executor resumes after a restart.** A task cut off mid-stream is
+  persisted as far as it got and stays `Working` on the new handler forever
+  (`examples/resilient-agent`, Act 1). Reconciliation of in-flight tasks at
+  start-up is a design, not a patch; recorded, not scheduled.
+* **The SLIMRPC agent side cannot see a client abandon a stream.** SLIMRPC
+  has no cancel frame, so after the client's bounded stall the agent keeps
+  publishing to completion. Upstream (`agntcy-slim-rpc`), stated in the
+  binding's README.
+* **`examples/resilient-agent`** reports `[NOT RUN]` for its PostgreSQL acts
+  when `A2A_TEST_POSTGRES_URL` is unset and still exits 0, exactly as
+  `incident-response` does; `RESILIENT_REQUIRE_ALL=1` turns that into exit 4.
+  CI does not yet run it with a database — `example-surface` runs the older
+  examples only.
 
 ## Verification debt
 
@@ -617,7 +672,14 @@ This is the category most worth clearing before any external review.
   the repository already treats "is this gate pointed at what it claims to
   cover?" as a separate question from "can this gate fail?"
   (`scripts/check_mutation_scope.sh`), and this is the same question again.
-* **The blocking send path's post-executor drain has no bound.** Noted while
+* **~~The blocking send path's post-executor drain has no bound.~~ Done
+  2026-09-10** — bounded by `HandlerLimits::executor_drain_timeout` (default
+  5 s). The answer when it elapses is the task as collected so far — exactly
+  what a closed queue would have produced, which is the protocol answer the
+  note below said was missing — and `Metrics::on_error` is called with
+  `executor_drain_timeout`. Pinned by
+  `a_drain_that_never_closes_is_bounded_and_answers_with_the_task_so_far`
+  on paused time. The original note, kept for the reasoning: noted while
   proving out the `destroy` mutant, and left as an observation rather than a
   change. `SyncCollector::collect` breaks on a terminal or interrupted state, or
   on the reader returning `None`; that `None` requires the event queue to close,
@@ -661,6 +723,23 @@ This is the category most worth clearing before any external review.
   25 mutants → 17, all 17 caught (exit 0); the old pattern matches 0 of the
   crate's 2097 mutants. With nothing left to skip, taking the `mutants` crate as
   a dependency of a published crate is no longer a decision anyone is waiting on.
+
+  **Reopened by measurement, 2026-08-14 and every sweep since.** Three
+  survivors are equivalent by construction and no rewrite removes them
+  without a breaking change: `TenantLimits::builder` and
+  `PerTenantConfig::builder` return `<Builder>::default()`, which is textually
+  the `Default::default()` the mutant substitutes, and dropping the derived
+  `Default` from a public builder is a semver break; `SseBodyWriter::close(self)`
+  is `drop(self)`, and a body of `()` drops `self` at scope end just the same,
+  while removing a public method is a break too. (A fourth, `build_jwks_client`,
+  was a `#[cfg]` twin compiled out under `--all-features` and is retired by
+  folding the split inside one function.) So the decision ADR 0006 defers —
+  take the `mutants` crate as a dependency of a published crate, or carry
+  three known survivors in every sweep — is waiting on someone after all.
+
+  **Taken 2026-09-10: the dependency.** See "Mutants no test can kill" above
+  and ADR 0006. Measured with `cargo mutants --list`: `tenant_config.rs` 12 →
+  10 mutants, `streaming/sse.rs` 29 → 28, exactly the three.
 * **Raise coverage on the genuinely weak files.** After the 2026-07-31 pass,
   the weakest are `handler/event_processing/background/mod.rs` (54.2%),
   `serve.rs` (67.5%), and `background/push_delivery.rs` (72.8%). The first
@@ -677,12 +756,18 @@ This is the category most worth clearing before any external review.
   ratchet by `scripts/check_file_lengths.sh`: the 77 are recorded in
   `.file-length-baseline` and the list may only shrink, so no further file can
   cross 500 lines unnoticed the way this one did.
-* **Decide whether `A2aRouter` should route `/tenants/{tenant}/…`.** The
-  built-in REST dispatcher strips that prefix and threads the tenant
-  through; the axum adapter registers no such routes. Verified to fail
-  closed — such a request 404s rather than being served from the default
-  partition — and pinned by a test, but the asymmetry between the two
-  dispatchers is undocumented behaviour that a user will eventually hit.
+* **~~Decide whether `A2aRouter` should route `/tenants/{tenant}/…`.~~
+  Decided 2026-09-10: it does not, by design.** The built-in REST dispatcher
+  strips that prefix and threads the tenant through; the axum adapter
+  registers no such routes and resolves tenants through the configured
+  `TenantResolver` instead, which is authoritative over any client-supplied
+  value. The split is intentional: an adapter that a host mounts under an
+  arbitrary prefix cannot know where `/tenants/{tenant}` sits in the host's
+  URL space, while a header resolver works wherever the router is mounted.
+  Fails closed (404, never the default partition), pinned by a test, and
+  documented in the adapter's module docs under "Multi-tenancy: use a
+  resolver, not the URL prefix". Recorded as decided rather than left as the
+  open question it was in "Open questions" below.
 
 ## Release engineering and supply chain
 
@@ -878,9 +963,10 @@ Genuinely undecided — listed so they are not mistaken for oversights.
   [`STABILITY.md`](STABILITY.md#5-minimum-supported-rust-version). Going
   lower (a2a-rs is at 1.85) would mean holding `time`, `serde_with` and
   `darling` at older releases, which is the remaining open trade-off.
-* Whether the axum adapter should reach parity with the REST dispatcher on
+* ~~Whether the axum adapter should reach parity with the REST dispatcher on
   tenant routing, or whether the split is intentional and should simply be
-  documented as such.
+  documented as such.~~ **Decided 2026-09-10:** intentional, documented; see
+  the "Verification debt" entry above.
 
 ## Maintaining this file
 

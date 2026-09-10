@@ -813,31 +813,37 @@ type JwksHttpClient = Client<HttpConnector, Full<Bytes>>;
 #[cfg(feature = "tls-rustls")]
 type JwksHttpClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
 
-#[cfg(not(feature = "tls-rustls"))]
+/// One function with the feature split *inside* it, not two `#[cfg]` twins.
+/// Under `--all-features` a `#[cfg(not(feature = "tls-rustls"))]` twin is
+/// compiled out, so a mutation applied to its body builds and passes every
+/// test — an unkillable survivor that measured nothing. With the split inside
+/// one function there is one body under test and one to review.
 fn build_jwks_client() -> JwksHttpClient {
-    let mut connector = HttpConnector::new();
-    connector.set_connect_timeout(Some(Duration::from_secs(10)));
-    Client::builder(TokioExecutor::new()).build(connector)
-}
-
-#[cfg(feature = "tls-rustls")]
-fn build_jwks_client() -> JwksHttpClient {
-    let mut roots = rustls::RootCertStore::empty();
-    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let tls = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
-        rustls::crypto::ring::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .expect("ring provider supports the default protocol versions")
-    .with_root_certificates(roots)
-    .with_no_client_auth();
-    let https = hyper_rustls::HttpsConnectorBuilder::new()
-        .with_tls_config(tls)
-        .https_or_http()
-        .enable_http1()
-        .enable_http2()
-        .build();
-    Client::builder(TokioExecutor::new()).build(https)
+    #[cfg(not(feature = "tls-rustls"))]
+    {
+        let mut connector = HttpConnector::new();
+        connector.set_connect_timeout(Some(Duration::from_secs(10)));
+        Client::builder(TokioExecutor::new()).build(connector)
+    }
+    #[cfg(feature = "tls-rustls")]
+    {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let tls = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports the default protocol versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+        let https = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_tls_config(tls)
+            .https_or_http()
+            .enable_http1()
+            .enable_http2()
+            .build();
+        Client::builder(TokioExecutor::new()).build(https)
+    }
 }
 
 async fn http_get_json(client: &JwksHttpClient, url: &str, what: &str) -> A2aResult<Vec<u8>> {

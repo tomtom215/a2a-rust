@@ -274,9 +274,11 @@ SERVER_LIB=crates/a2a-protocol-server/src/lib.rs
 SLIMRPC_DIR=bindings/a2a-protocol-slimrpc
 SLIMRPC_LIB=$SLIMRPC_DIR/src/lib.rs
 SLIMRPC_BIN=$SLIMRPC_DIR/src/bin/slim_node.rs
+SLIMRPC_EXAMPLE=$SLIMRPC_DIR/examples/in_process.rs
 SLIMRPC_TOML=$SLIMRPC_DIR/Cargo.toml
 SLIMRPC_SPIFFE=$SLIMRPC_DIR/tests/spiffe.rs
 MULTI_REPLICA=crates/a2a-protocol-server/tests/multi_replica.rs
+RATE_LIMIT_SHARED=crates/a2a-protocol-server/src/rate_limit/shared.rs
 
 # Maps a gate command to the injection that must break it. Matched by
 # substring against the full command, longest match wins, so
@@ -302,6 +304,9 @@ injection_for() {
                 "cargo fmt"*)     echo "fmt:$SLIMRPC_LIB" ;;
                 "cargo clippy"*)  echo "clippy_always:$SLIMRPC_LIB" ;;
                 "cargo build"*)   echo "build_bin:$SLIMRPC_BIN" ;;
+                # The example is compiled by nothing else in the job: `cargo
+                # test` builds tests and doc-tests, not examples.
+                "cargo run --example"*) echo "build_bin:$SLIMRPC_EXAMPLE" ;;
                 "cargo test"*)    echo "test_always:$SLIMRPC_LIB" ;;
                 *)                echo "" ;;
             esac
@@ -343,16 +348,36 @@ injection_for() {
             echo "doc_escapes" ;;
         *"check_panic_paths.py"*)
             echo "panic_path:$TYPES_LIB" ;;
+        *"check_gate_reachability.py"*)
+            echo "gate_reachability" ;;
+        *"check_timeout_nesting.py"*)
+            echo "timeout_nesting" ;;
+        *"check_inert_bounds.py"*)
+            echo "inert_bounds" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
             echo "ignored_suite:$MULTI_REPLICA:the multi-replica suite" ;;
+        # The Postgres rate-limit counter's tests are inline in the module,
+        # so the probe is appended to the module file and the step's filter
+        # is the module path, which selects the probe too.
+        *"rate_limit::shared"*)
+            echo "ignored_suite:$RATE_LIMIT_SHARED:the Postgres rate-limit counter suite" ;;
+        # Every feature set compiles the types crate's lib.rs, so a lint there
+        # is seen by every one of cargo-hack's invocations.
+        "cargo hack clippy"*)
+            echo "clippy_always:$TYPES_LIB" ;;
         "cargo doc"*)
             echo "doc" ;;
         "cargo package"*)
             echo "package" ;;
         "cargo run -p agent-team"*)
             echo "dogfood" ;;
+        # The resilience example's own defect: two replicas that stop sharing
+        # the rate-limit counter. Every act still runs and every call still
+        # succeeds; only the scaling check's count notices.
+        "cargo run -p resilient-agent"*)
+            echo "resilient_scaling" ;;
         # Before the general incident-response arm: `-- harden` runs Act 5
         # alone, and its defect is a hardening one, not a matrix one.
         "cargo run -p incident-response"*"harden"*)
@@ -430,13 +455,21 @@ expected_marker() {
         benchmark_prose)  echo "DRIFT" ;;
         book_code)        echo "GREW" ;;
         sitemap)          echo "out of sync with SUMMARY.md" ;;
-        api_reference)    echo "are not defined in crates/" ;;
+        # Since 2026-09-10 the gate runs both directions, and the rename
+        # below is both defects at once: `TaskRevision` is a name no crate
+        # defines (stale), and `TaskVersion` is a root export the page no
+        # longer names (unlisted). The closing tally is the marker so a run
+        # that reports only one of the two is INCONCLUSIVE, not proven.
+        api_reference)    echo "FAIL (stale=1, unlisted=1)" ;;
         otel_coverage)    echo "the bundled exporter drops" ;;
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         block_scalars)    echo "MISMATCH" ;;
         cancellation_release) echo "no \`Drop\` that releases it" ;;
         doc_escapes)      echo "containing a literal" ;;
+        gate_reachability) echo "unreachable:ci.yml" ;;
+        timeout_nesting)  echo "push_delivery_timeout / HttpPushSender" ;;
+        inert_bounds)     echo "max_probe_rows" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         package_manifest) echo "NO_SUCH_README.md" ;;
@@ -445,6 +478,7 @@ expected_marker() {
         dogfood)          echo "CLAIM TABLE DRIFT" ;;
         example_surface)  echo "matrix cell(s) never ran" ;;
         example_hardening) echo "partitions leak" ;;
+        resilient_scaling) echo "should admit" ;;
         postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
         ignored_suite)    echo "gate probe: injected failure in ${1##*:}" ;;
         spiffe_ignored)   echo "gate probe: injected failure in the SPIFFE suite" ;;
@@ -567,7 +601,9 @@ PROBE
             # moment something is renamed, and it goes stale silently, in the
             # page a reader trusts precisely because they do not yet know the
             # API well enough to catch it. `sed` rather than a heredoc so this
-            # arm stays a one-liner like its neighbours.
+            # arm stays a one-liner like its neighbours. One rename is also
+            # one root export gone missing, so the same edit exercises the
+            # reverse direction the gate gained on 2026-09-10 (see the marker).
             note_touched "book/src/reference/api-reference.md"
             sed -i 's/`TaskVersion`/`TaskRevision`/' \
                 book/src/reference/api-reference.md
@@ -583,6 +619,53 @@ PROBE
             # this arm stays a one-liner like its neighbours.
             note_touched "$OTEL_RS"
             perl -0pi -e 's/\n    fn on_push_delivery\(.*?\n    \}\n/\n/s' "$OTEL_RS"
+            ;;
+        gate_reachability)
+            # The defect is the review's "Done when" verbatim: drop ci.yml's
+            # `push` trigger, leaving `pull_request` only. Every gate in this
+            # file then runs on proposed trees and never on main — the shape
+            # dco.yml had until 2026-09-10. The marker names ci.yml so a
+            # checker that crashed, or failed on some other workflow, does not
+            # read as proven.
+            note_touched ".github/workflows/ci.yml"
+            python3 - <<'PY'
+import pathlib, sys
+p = pathlib.Path(".github/workflows/ci.yml")
+s = p.read_text()
+old = 'on:\n  push:\n    branches: ["main", "claude/**"]\n  pull_request:'
+if s.count(old) != 1:
+    sys.exit(f"expected exactly one ci.yml on: block; found {s.count(old)}")
+p.write_text(s.replace(old, "on:\n  pull_request:"))
+PY
+            ;;
+        timeout_nesting)
+            # Reintroduce the push_delivery_timeout / HttpPushSender
+            # contradiction in the form Addendum 8 found it: the sender's 98 s
+            # schedule still runs inside the handler's 5 s bound, but the
+            # deliverer stops comparing the two, so a truncated schedule is
+            # once again reported as a slow webhook.
+            local pd=crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs
+            note_touched "$pd"
+            sed -i 's/\.is_some_and(|wanted| wanted > limits\.push_delivery_timeout)/.is_some()/' "$pd"
+            grep -q 'max_delivery_duration()' "$pd" \
+                || { echo "timeout_nesting: anchor not found in $pd" >&2; return 1; }
+            ;;
+        inert_bounds)
+            # A `max_*` bound one TaskStore honours and its five siblings do
+            # not — the shape B21 promoted the sweep to a gate for. The field
+            # goes on `TaskStoreConfig` and its only read into the in-memory
+            # store, so signature A (a knob nothing reads) stays silent and
+            # signature C is what has to object. Three lines rather than one
+            # so the library still compiles with the probe in it.
+            local cfg=crates/a2a-protocol-server/src/store/task_store/mod.rs
+            local mem=crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs
+            inject_after "$cfg" "    pub max_page_size: u32," \
+                "    pub max_probe_rows: usize,"
+            inject_after "$cfg" "            max_page_size: DEFAULT_MAX_PAGE_SIZE," \
+                "            max_probe_rows: 0,"
+            inject_after "$mem" \
+                "let capacity = config.max_capacity.unwrap_or(DEFAULT_INITIAL_CAPACITY);" \
+                "        let _ = config.max_probe_rows;"
             ;;
         package_excludes)
             # Drop one `publish = false` member from ci.yml's exclude list.
@@ -699,6 +782,25 @@ if s.count(needle) != 1:
 s = s.replace(needle, "Ok(resp) => { let _ = resp; }")
 open(p, "w").write(s)
 PY2
+            ;;
+        resilient_scaling)
+            # Replica B keeps its own counter instead of the shared one: both
+            # limiters admit their full allowance, so the shared check sees 10
+            # admitted where it requires 5, and says "should admit 5". A build
+            # error or a missing database exits non-zero with other words.
+            note_touched "examples/resilient-agent/src/scaling.rs"
+            python3 - <<'PY3'
+p = "examples/resilient-agent/src/scaling.rs"
+s = open(p).read()
+needle = "            limiter = limiter.with_shared_counter(counter);\n"
+if s.count(needle) != 1:
+    raise SystemExit(
+        f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
+    )
+# `limiter` stays assigned, or `-D warnings` fails the build on an
+# unused `mut` before the check can run and the probe proves nothing.
+open(p, "w").write(s.replace(needle, "            limiter = { let _ = counter; limiter };\n"))
+PY3
             ;;
         example_hardening)
             # Remove the tenant resolver, which is the exact regression Act 5's

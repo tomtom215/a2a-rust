@@ -171,10 +171,11 @@ async fn tenant_task_store_default_tenant() {
 
 #[tokio::test]
 async fn tenant_task_store_max_tenants() {
-    let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
-        per_tenant: TaskStoreConfig::default(),
-        max_tenants: 2,
-    });
+    let store = TenantAwareInMemoryTaskStore::with_config(
+        TenantStoreConfig::default()
+            .with_per_tenant(TaskStoreConfig::default())
+            .with_max_tenants(2),
+    );
 
     TenantContext::scope("t1", async { store.save(&make_task("a")).await.unwrap() }).await;
     TenantContext::scope("t2", async { store.save(&make_task("b")).await.unwrap() }).await;

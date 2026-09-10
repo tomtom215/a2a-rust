@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "a2a-cli"
+version     = "0.0.0"
+description = "Command-line client for A2A agents, built on a2a-protocol-client"
+# Unpublished, like the examples: it depends on the client crate by bare
+# `path`, and it exists to exercise the SDK from the outside — a released
+# binary would be a separate decision with its own release process.
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[[bin]]
+name = "a2a"
+path = "src/main.rs"
+
+[dependencies]
+a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
+# All four bindings, unconditionally: `--binding` offers each of them, and a
+# flag the binary rejects at runtime with "requires feature X" would be a
+# `--help` that lies. `grpc-tls` because the client's default policy dials a
+# bare non-loopback gRPC address over TLS and refuses to without the feature.
+a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc", "grpc-tls"] }
+# Pinned in the workspace style. `derive` for the declarative definitions;
+# the default feature set (help, suggestions, color) is what a user-facing
+# binary wants. Reviewed against `cargo deny check` on 2026-09-10: `clap`
+# 4.6.6 was already in the lockfile through `criterion`, and `clap_derive`'s
+# helpers (`heck` 0.5, `syn` 2, `proc-macro2`, `quote`) all resolve to the
+# versions already present — no duplicate and no new license.
+clap       = { version = ">=4.5, <5", features = ["derive"] }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros"] }
+uuid       = { workspace = true }
+
+[dev-dependencies]
+# The integration test starts a real A2A server in-process and drives the
+# built binary against it.
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
+hyper      = { workspace = true }
+hyper-util = { workspace = true, features = ["server", "server-auto"] }

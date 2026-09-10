@@ -155,11 +155,11 @@ use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
 use std::sync::Arc;
 
 let limiter = Arc::new(
-    RateLimitInterceptor::new(RateLimitConfig {
-        requests_per_window: 100,
-        window_secs: 60,
-        ..RateLimitConfig::default()
-    })
+    RateLimitInterceptor::new(
+        RateLimitConfig::default()
+            .with_requests_per_window(100)
+            .with_window_secs(60),
+    )
     .expect("valid rate limit config"),
 );
 
