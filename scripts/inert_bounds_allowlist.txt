@@ -1,0 +1,101 @@
+# scripts/inert_bounds_allowlist.txt — read by scripts/check_inert_bounds.py
+#
+# Configurable bounds that scripts/audit/find_inert_bounds.py reports as
+# honoured by some implementations of a trait and not by the rest (signature
+# C), or as read by nothing at all (signature A), and that a person has read
+# the code and found to be legitimately partial. Each line is that reading.
+# This file is the audit; the gate only subtracts it.
+#
+# Format — one entry per line, whitespace-separated, matched exactly:
+#
+#   FAMILY  KNOB  NOT_IN  # reason
+#
+#   FAMILY  the trait (signature C), or `-` for a signature-A hit
+#   KNOB    the config field, as declared
+#   NOT_IN  comma-separated, no spaces: every member that does not honour the
+#           knob; `-` for signature A
+#   reason  required. Which member honours it and why the others legitimately
+#           do not, verified by reading the code — cite the file. Begin with
+#           `KNOWN-GAP:` when a sibling should honour it and does not, so the
+#           entry reads as a recorded debt and not as a verdict.
+#
+# Exact on all three columns, deliberately. A new implementation that ignores
+# an allowlisted knob is a new partial bound, not a covered one: the entry
+# stops matching, and whoever added the type says why it is right not to. And
+# an entry that matches no candidate fails the gate — the knob became
+# universal, was renamed, or the family changed — because an exemption for
+# something that is not happening is how a skip list rots into a blanket
+# waiver. deny.toml says so of its `skip` list; scripts/prove_gates_fail.sh
+# refuses a SKIP_STEPS pattern that names no step. Same rule here.
+# `python3 scripts/check_inert_bounds.py --explain` prints every candidate in
+# this form with the entry that covers it.
+#
+# Two blind spots of the audit script recur below, both measured and
+# documented in its header: a knob honoured under another NAME (the builder
+# renames `request_timeout` to `GrpcTransportConfig::timeout`), and a knob
+# honoured by DELEGATION from a sibling file (a tenant-aware store forwards to
+# a per-tenant store that reads it). Neither is a defect; both are named.
+#
+# Measured 2026-09-10: 1 signature-A and 20 signature-C candidates.
+
+# ── Signature A: a field nothing reads ───────────────────────────────────────
+
+-  max_stored_tasks  -  # `#[deprecated]` on TenantLimits (tenant_config.rs:150-158), note "never enforced": it sits on PerTenantConfig, which the handler holds and a store never sees, so nothing can read it. Kept because removing a pub field is a semver break (see RELEASING.md); the working replacement is TenantAwareInMemoryTaskStore::with_tenant_override (store/tenant/store.rs:148). Drop this entry with the field at the next major.
+
+# ── CallInterceptor: AuthInterceptor, BearerAuthInterceptor ──────────────────
+
+CallInterceptor  request_timeout  AuthInterceptor  # Name collision, not a bound. The "read" is OAuth2ClientCredentials::request_timeout (token_provider.rs:253, applied at :430), the token-endpoint call's own timeout, which happens to live in the file holding `impl CallInterceptor for BearerAuthInterceptor`. Neither interceptor reads ClientConfig::request_timeout; AuthInterceptor copies a stored credential into a header (auth.rs:226) and makes no request to time out.
+
+# ── PushConfigStore: InMemory, Sqlite, Postgres, and the TenantAware three ───
+
+PushConfigStore  max_connections  InMemoryPushConfigStore,SqlitePushConfigStore,TenantAwareInMemoryPushConfigStore,TenantAwareSqlitePushConfigStore  # Name collision. The knob is ServeConfig::max_connections, a listener permit ceiling (serve/graceful/mod.rs:153, :314); the two "honouring" stores call sqlx's PgPoolOptions::max_connections(10) (push/postgres_config_store.rs:52, push/tenant_postgres_config_store.rs:55), a pool size with the same name. The SQLite stores size their pool in sqlite_pool.rs:59; the in-memory stores have no connections.
+
+PushConfigStore  max_tenants  InMemoryPushConfigStore,PostgresPushConfigStore,SqlitePushConfigStore,TenantAwarePostgresPushConfigStore,TenantAwareSqlitePushConfigStore  # Caps the in-memory map of per-tenant stores (push/tenant_config_store.rs:47, enforced at :94). The tenant-aware SQL stores keep one `tenant_push_configs` table keyed (tenant_id, task_id, id) and build no per-tenant structure to cap (tenant_sqlite_config_store.rs:70, tenant_postgres_config_store.rs:71); the non-tenant stores hold one partition.
+
+# ── ServerInterceptor: RateLimit, ApiKeyAuth, BearerTokenAuth, JwtAuth ───────
+
+ServerInterceptor  max_buckets  ApiKeyAuthInterceptor,BearerTokenAuthInterceptor,JwtAuthInterceptor  # RateLimitConfig::max_buckets (rate_limit/config.rs:45) caps the limiter's per-caller bucket map (rate_limit/window.rs:128) and is validated in RateLimitInterceptor::new (rate_limit/mod.rs:182). The auth interceptors keep no per-caller map: they verify a credential per request (auth/mod.rs:233, :336; auth/jwt.rs:700) and have nothing to cap.
+
+ServerInterceptor  requests_per_window  ApiKeyAuthInterceptor,BearerTokenAuthInterceptor,JwtAuthInterceptor  # RateLimitConfig::requests_per_window (rate_limit/config.rs:16) is the allowance RateLimitInterceptor::before checks against (rate_limit/mod.rs:308); the auth interceptors count nothing and admit or reject on the credential alone.
+
+# ── TaskStore: InMemory, Sqlite, Postgres, and the TenantAware three ─────────
+
+TaskStore  max_capacity  PostgresTaskStore,SqliteTaskStore,TenantAwareInMemoryTaskStore,TenantAwarePostgresTaskStore,TenantAwareSqliteTaskStore  # TaskStoreConfig is "Configuration for InMemoryTaskStore" (store/task_store/mod.rs:393): an in-memory row cap driving eviction (in_memory/eviction/mod.rs:128, :176). TenantAwareInMemoryTaskStore honours it by DELEGATION — every partition is InMemoryTaskStore::with_config(per_tenant) (store/tenant/store.rs:208-213). The SQL stores bound rows through purge_expired(&RetentionPolicy) (sqlite_store/mod.rs:219, postgres_store/mod.rs:178, tenant_sqlite_store.rs, tenant_postgres_store.rs) rather than a count.
+
+TaskStore  max_connections  InMemoryTaskStore,PostgresTaskStore,SqliteTaskStore,TenantAwareInMemoryTaskStore,TenantAwareSqliteTaskStore  # Name collision, as for PushConfigStore: the knob is ServeConfig::max_connections; the "honouring" is sqlx's PgPoolOptions::max_connections(10) in tenant_postgres_store.rs:77. PostgresTaskStore makes the same call in postgres_store/pool.rs:28 — the sibling-file blind spot the audit script documents — so it shows here as not honouring. SQLite pools are sized in sqlite_pool.rs:59; the in-memory stores have no connections.
+
+TaskStore  max_page_size  TenantAwareInMemoryTaskStore  # DELEGATION. TenantAwareInMemoryTaskStore::list forwards to the current tenant's InMemoryTaskStore (store/tenant/store.rs:297-306), which clamps to self.config.max_page_size (in_memory/mod.rs:480) from the per_tenant config it was built with. Tested in store/tenant/store.rs ("the caller asked for 100; per_tenant.max_page_size is 2"). The five direct readers each carry their own copy of the knob, by design (tenant_sqlite_store.rs:75-79).
+
+TaskStore  max_tenants  InMemoryTaskStore,PostgresTaskStore,SqliteTaskStore,TenantAwarePostgresTaskStore,TenantAwareSqliteTaskStore  # TenantStoreConfig::max_tenants (store/tenant/store.rs:55) caps the in-memory map of per-tenant partitions (enforced at :201). The tenant-aware SQL stores keep one `tenant_tasks` table keyed (tenant_id, id) and build no per-tenant structure (tenant_sqlite_store.rs:100-110, tenant_postgres_store.rs:90-100); the non-tenant stores hold one partition.
+
+# ── Transport: Grpc, JsonRpc, Rest, Retry, SlimRpc, WebSocket ────────────────
+#
+# Three of these six never see a ClientConfig, which explains most of the
+# column below. RetryTransport is a decorator over Box<dyn Transport> that owns
+# a RetryPolicy and nothing else (retry.rs:227-230). WebSocketTransport is
+# handed to with_custom_transport and carries its own WebSocketTransportConfig
+# (websocket.rs:171, and the doc on each field saying so). SlimRpcTransport is
+# built on a SLIM Channel from an app the caller owns and carries one
+# `timeout: Option<Duration>` (bindings/a2a-protocol-slimrpc/src/client/mod.rs:194-197).
+
+Transport  connect_timeout  JsonRpcTransport,RestTransport,RetryTransport,SlimRpcTransport  # GrpcTransportConfig's and WebSocketTransportConfig's NAME for the TCP+handshake bound (grpc.rs:305, websocket.rs:436). JSON-RPC and REST honour the same bound as ClientConfig::connection_timeout (jsonrpc.rs:134, rest/mod.rs:159). RetryTransport opens no socket. SlimRpcTransport connects nothing itself: the SLIM app and its channel are the caller's (client/mod.rs from_app, open_channel).
+
+Transport  connection_timeout  GrpcTransport,RetryTransport,SlimRpcTransport,WebSocketTransport  # The ClientConfig name for the bound above. gRPC receives it RENAMED — the builder calls with_connect_timeout(config.connection_timeout) (builder/transport_factory.rs:147) — the rename blind spot the audit script documents. WebSocket bounds the connect with its own connect_timeout and is documented as unreachable from ClientConfig (websocket.rs:181-194). RetryTransport opens no socket; SlimRpcTransport connects nothing itself.
+
+Transport  initial_backoff  GrpcTransport,JsonRpcTransport,RestTransport,SlimRpcTransport,WebSocketTransport  # RetryPolicy field (retry.rs:89), read by the retry loop RetryTransport wraps around any inner transport (retry.rs:250, :306). The wrapped transports carry no retry loop by design — that is what the decorator is for.
+
+Transport  max_backoff  GrpcTransport,JsonRpcTransport,RestTransport,SlimRpcTransport,WebSocketTransport  # RetryPolicy field (retry.rs:91), applied in retry_delay (retry.rs:222) from RetryTransport's loop (retry.rs:259, :315). Same decorator argument as initial_backoff.
+
+Transport  max_retries  GrpcTransport,JsonRpcTransport,RestTransport,SlimRpcTransport,WebSocketTransport  # RetryPolicy field (retry.rs:87), the bound of RetryTransport's attempt loop (retry.rs:257, :313). Same decorator argument as initial_backoff.
+
+Transport  max_message_size  JsonRpcTransport,RestTransport,RetryTransport,SlimRpcTransport  # GrpcTransportConfig's and WebSocketTransportConfig's NAME for the inbound byte cap (grpc.rs:428-429, websocket.rs:429-430). JSON-RPC and REST honour the same cap as max_response_size (jsonrpc.rs:251, rest/request.rs:174), and the builder feeds ClientConfig::max_response_size into gRPC's max_message_size (transport_factory.rs:151). RetryTransport buffers nothing. SlimRpcTransport's receive cap is tonic's inherited 4 MiB, fixed inside agntcy-slim-datapath and not settable from this tree (client/mod.rs:175-190, and ClientConfig::max_response_size's doc) — bounded, tighter than the default, documented, not configurable.
+
+Transport  max_pending_requests  GrpcTransport,JsonRpcTransport,RestTransport,RetryTransport,SlimRpcTransport  # WebSocketTransportConfig::max_pending_requests (websocket.rs:220) caps the map of requests in flight on one long-lived multiplexed socket (PendingGuard::register, websocket.rs:551 unary, :633 streaming). The HTTP transports hold no such map — one hyper request per call, bounded by request_timeout; gRPC's multiplexing is h2 flow control inside tonic; SlimRpc issues one Channel::unary per call under its timeout; RetryTransport is a decorator.
+
+Transport  max_response_size  GrpcTransport,RetryTransport,SlimRpcTransport,WebSocketTransport  # The ClientConfig name for the inbound byte cap. gRPC receives it RENAMED as max_message_size (transport_factory.rs:151). WebSocket has its own max_message_size and is documented as unreachable from ClientConfig — same default constant, not the same setting (config.rs doc on this field; websocket.rs:196-209). RetryTransport buffers nothing. SlimRpc: tonic's fixed 4 MiB, documented as not settable (see max_message_size above).
+
+Transport  request_timeout  GrpcTransport,RetryTransport,SlimRpcTransport  # gRPC honours it RENAMED as GrpcTransportConfig::timeout via with_timeout(config.request_timeout) (transport_factory.rs:146) — the rename blind spot the audit script names. SlimRpcTransport honours it as its own `timeout`, passed to every Channel::unary and unary_stream (client/mod.rs:345, :383, :426), set by SlimRpcTransportBuilder::with_timeout. RetryTransport bounds nothing itself; each attempt is bounded by the inner transport.
+
+Transport  stream_channel_capacity  JsonRpcTransport,RestTransport,RetryTransport,SlimRpcTransport,WebSocketTransport  # GrpcTransportConfig::stream_channel_capacity (grpc.rs:101) sizes the mpsc buffer between the gRPC reader task and the EventStream (grpc.rs:726). Every sibling that streams has the same buffer with a fixed size of 64: jsonrpc.rs:383, rest/streaming.rs:75, websocket.rs:623, and STREAM_CHANNEL_CAPACITY in the SLIMRPC client (client/mod.rs:43). Bounded everywhere; configurable only on gRPC. RetryTransport forwards the inner stream.
+
+Transport  stream_connect_timeout  RetryTransport,SlimRpcTransport,WebSocketTransport  # WebSocket bounds stream establishment with its own request_timeout as the first-event timeout (websocket.rs:649) — the same bound under the config it does see. SlimRpc passes its `timeout` to unary_stream (client/mod.rs:426). RetryTransport forwards the inner stream, whose establishment the inner transport already bounded.

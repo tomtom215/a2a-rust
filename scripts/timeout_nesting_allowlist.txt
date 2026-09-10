@@ -1,0 +1,41 @@
+# Recorded justifications for scripts/check_timeout_nesting.py.
+#
+# One pair per line:  path | fn | kind | inner | outer | reason
+# `kind` is nested / deadline / twice; `inner` and `outer` are the identities the
+# script prints (a knob or const name, or a literal such as `30s`). The push
+# pairing takes no entry here — its reason has to be code (see the script).
+#
+# A line nothing matches any more fails the check, so a fixed defect cannot
+# keep its exemption. Every entry below is a KNOWN DEFECT awaiting a decision,
+# not a justification: each is the "budget applied twice" shape that Addendum 8
+# measured at 2x in discovery (55 s for a 30 s budget) and that
+# transport/jsonrpc.rs::execute_request fixed with one deadline. None of these
+# four is documented as per-phase; each is documented as one timeout.
+
+# `with_request_timeout` says "Sets the token-request timeout (default 30 s)".
+# `refresh` bounds `client.request` with it (:430) and then hands the same
+# full value to `collect_response_limited` for the body (:436-439): headers
+# 30 s, then body 30 s again. On the request path — a `kid` miss or an expired
+# token forces this fetch inside a call. KNOWN DEFECT awaiting a fix: one
+# deadline, remainder for the body, as jsonrpc.rs:229-251 does.
+crates/a2a-protocol-client/src/token_provider.rs | refresh | twice | request_timeout | request_timeout | KNOWN DEFECT awaiting a fix: header fetch and body read each get the full request_timeout; worst case 2x the documented timeout
+
+# `discover_token_endpoint` does the same with DEFAULT_TOKEN_REQUEST_TIMEOUT
+# (:587, then :593-596): OIDC discovery can take 60 s against a 30 s constant.
+# Same shape the server's http_get_json had (Addendum 8, instance 8) and fixed
+# with JWKS_FETCH_BUDGET. KNOWN DEFECT awaiting a fix.
+crates/a2a-protocol-client/src/token_provider.rs | discover_token_endpoint | twice | DEFAULT_TOKEN_REQUEST_TIMEOUT | DEFAULT_TOKEN_REQUEST_TIMEOUT | KNOWN DEFECT awaiting a fix: OIDC discovery bounds headers and then the body with the same 30 s constant; worst case 60 s
+
+# `execute_streaming_request` bounds the connect with stream_connect_timeout
+# (:328) and, on a non-2xx (:348) or a non-SSE 200 (:373), reads the error body
+# under a fresh stream_connect_timeout. Error paths only, and the two body reads
+# are alternatives, so the worst case is 2x on a failed stream start. The knob
+# is documented as the bound on "establishing the SSE stream", which this
+# exceeds. KNOWN DEFECT awaiting a decision: one deadline, or document that a
+# failed establishment may take up to 2x.
+crates/a2a-protocol-client/src/transport/jsonrpc.rs | execute_streaming_request | twice | stream_connect_timeout | stream_connect_timeout | KNOWN DEFECT awaiting a decision: a failed stream start reads the error body under a second full stream_connect_timeout; worst case 2x on the error path
+
+# The REST mirror of the line above: connect at :32, non-SSE body at :62, and
+# the non-2xx body inside `stream_error_status` (:103), reached from the same
+# call. Same shape, same knob, same worst case. KNOWN DEFECT awaiting a decision.
+crates/a2a-protocol-client/src/transport/rest/streaming.rs | execute_streaming_request | twice | stream_connect_timeout | stream_connect_timeout | KNOWN DEFECT awaiting a decision: a failed stream start reads the error body under a second full stream_connect_timeout; worst case 2x on the error path

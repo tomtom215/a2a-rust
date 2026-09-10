@@ -35,6 +35,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Four CI gates that the review backlog called for**, each proved able
+  to fail by `scripts/prove_gates_fail.sh` injections:
+  `check_gate_reachability.py` (every gate runs on the events that can
+  break it — B13), `check_timeout_nesting.py` (an inner timeout fits the
+  bound enclosing it, the push sender's schedule included — B14),
+  `check_inert_bounds.py` with a reasoned allowlist (a configurable bound
+  honoured by one sibling and not the others — B21), and the reverse
+  direction of `check_api_reference.py` (every root-level export is on the
+  API Quick Reference, which gained 123 rows).
+- **`scripts/check_dco.sh`**, the DCO check as a script. `dco.yml` now runs
+  it on every push to `main` as well as every pull request — the
+  reachability gate's first finding was that a commit reaching `main` by
+  any other route than a pull request was never graded — and
+  `benchmarks.yml` runs it over the commit it pushes with `GITHUB_TOKEN`,
+  which creates no workflow run. That bot identity is exempt only while the
+  commit touches the two generated benchmark pages (PROVENANCE.md §3.2).
 - **`HandlerLimits::push_delivery_budget`** (default 30 s): the total time
   one event's push deliveries may take across every registered config, per
   request batch on the blocking path. It was a `Duration::from_secs(30)`

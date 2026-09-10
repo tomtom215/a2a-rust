@@ -175,6 +175,20 @@ jobs:
       - name: Workflow verdict gates can fail
         run: python3 -m pip install --quiet pyyaml && ./scripts/prove_workflow_gates_fail.py
 
+      # The two provers above ask whether a gate *can* fail. This asks whether
+      # it *runs on the commits that can break it* — the question that had a
+      # bad answer twice, and both times a human found it by reading `on:`
+      # blocks: dco.yml triggered on `pull_request` only, and benchmarks.yml
+      # pushes book/src/reference/benchmarks.md with GITHUB_TOKEN, which
+      # creates no workflow run, so the one job that rewrote the page was the
+      # one job that never checked it (Q6, B13 of
+      # docs/v0.9.0-post-release-review.md). It reads every workflow's
+      # triggers, `if:` conditions and in-workflow `git push`, and fails if a
+      # gate is unreachable from an event that changes its inputs. Uses the
+      # PyYAML the step above installed.
+      - name: Every gate runs on the events that can break it
+        run: python3 scripts/check_gate_reachability.py
+
       # `scripts/lib/ci_gates.sh` parses this file into the gate list that
       # preflight.sh and prove_gates_fail.sh run, using its own block-scalar
       # reader written in awk — because both scripts must work with nothing
@@ -214,6 +228,21 @@ jobs:
       - name: Doc comments contain no literal escapes
         run: python3 scripts/check_doc_escapes.py
 
+      # An inner timeout larger than the one enclosing it never fires: the
+      # outer bound's cleanup and reporting path is what runs, and the inner
+      # number is configuration that cannot take effect. Addendum 8 of
+      # docs/v0.9.0-post-release-review.md counted eight shipped instances of
+      # that class — `shutdown_with_timeout` taking 2x, discovery taking 55 s
+      # on a 30 s budget, `HttpPushSender` promising three attempts of which
+      # one ever ran — three of them the same defect the client's JSON-RPC
+      # transport had already fixed and written down. A fix written down is
+      # not a lesson learned; this is the check (B14). It pairs every
+      # non-test timeout with what encloses it, computes the push sender's
+      # schedule against `push_delivery_timeout` from the same constants the
+      # code uses, and fails when a pair has no recorded reason.
+      - name: Timeouts fit inside the bounds that enclose them
+        run: python3 scripts/check_timeout_nesting.py
+
       # The question an adopter of a protocol library actually has is whether a
       # malformed peer can take their process down. Until this gate existed the
       # answer was unquotable — a grep for `.unwrap()` counts matches in doc
@@ -223,6 +252,23 @@ jobs:
       # set makes adding one a reviewed act rather than an accident.
       - name: Panic surface of the published crates is unchanged
         run: python3 scripts/check_panic_paths.py
+
+      # A configurable bound whose default masks its own absence: dropped,
+      # half-applied, or never read, and nothing notices because the fallback
+      # has the same value as the default. It is inert until somebody
+      # *tightens* it, and the person who tightens a limit is the person who
+      # decided the default was wrong for them. Five shipped that way before
+      # `scripts/audit/find_inert_bounds.py` existed; `max_page_size`, read by
+      # the in-memory store and no other, is the shape.
+      #
+      # The audit script reports 20 candidates for 5 worth reading and always
+      # exits 0, which is a check people learn to skip. This runs the same two
+      # signatures against `scripts/inert_bounds_allowlist.txt`, where every
+      # legitimately partial pair carries a reason somebody verified by reading
+      # the code, and fails only on a *new* one — or on an entry that no longer
+      # matches anything, the same rule deny.toml's skip list follows (B21).
+      - name: Configurable bounds are honoured by every sibling, or allowlisted with a reason
+        run: python3 scripts/check_inert_bounds.py
 
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
@@ -516,9 +562,13 @@ jobs:
   # not checked at all — the STABILITY.md 1.0 criterion says "all published
   # crates with all features", and the gate now measures what the criterion
   # names. Verified locally with cargo-semver-checks 0.50.0 on 2026-09-10
-  # against the 0.11.0 baselines: the run sees the deliberate 0.12 breaks
-  # (fields added to `HandlerLimits` and `WebSocketTransportConfig`) and
-  # nothing else, and exits 0 once the crate versions read 0.12.0.
+  # against the 0.11.0 baselines, all features: types and sdk 196 checks
+  # pass; client and server exit 100 on exactly the four deliberate 0.12
+  # breaks the changelog lists (`WebSocketTransportConfig` and
+  # `HandlerLimits` gain fields, `GrpcTransportConfig` is non_exhaustive,
+  # `InMemoryQueueWriter` loses `UnwindSafe`) — two of which this job's
+  # previous scope could not have seen. With every crate at 0.12.0 both
+  # report "no semver update required", exit 0.
   semver:
     name: cargo-semver-checks
     runs-on: ubuntu-latest

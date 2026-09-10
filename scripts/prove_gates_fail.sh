@@ -343,6 +343,12 @@ injection_for() {
             echo "doc_escapes" ;;
         *"check_panic_paths.py"*)
             echo "panic_path:$TYPES_LIB" ;;
+        *"check_gate_reachability.py"*)
+            echo "gate_reachability" ;;
+        *"check_timeout_nesting.py"*)
+            echo "timeout_nesting" ;;
+        *"check_inert_bounds.py"*)
+            echo "inert_bounds" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
@@ -442,6 +448,9 @@ expected_marker() {
         block_scalars)    echo "MISMATCH" ;;
         cancellation_release) echo "no \`Drop\` that releases it" ;;
         doc_escapes)      echo "containing a literal" ;;
+        gate_reachability) echo "UNREACHABLE ci.yml" ;;
+        timeout_nesting)  echo "push_delivery_timeout / HttpPushSender" ;;
+        inert_bounds)     echo "max_probe_rows" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         package_manifest) echo "NO_SUCH_README.md" ;;
@@ -590,6 +599,53 @@ PROBE
             # this arm stays a one-liner like its neighbours.
             note_touched "$OTEL_RS"
             perl -0pi -e 's/\n    fn on_push_delivery\(.*?\n    \}\n/\n/s' "$OTEL_RS"
+            ;;
+        gate_reachability)
+            # The defect is the review's "Done when" verbatim: drop ci.yml's
+            # `push` trigger, leaving `pull_request` only. Every gate in this
+            # file then runs on proposed trees and never on main — the shape
+            # dco.yml had until 2026-09-10. The marker names ci.yml so a
+            # checker that crashed, or failed on some other workflow, does not
+            # read as proven.
+            note_touched ".github/workflows/ci.yml"
+            python3 - <<'PY'
+import pathlib, sys
+p = pathlib.Path(".github/workflows/ci.yml")
+s = p.read_text()
+old = 'on:\n  push:\n    branches: ["main", "claude/**"]\n  pull_request:'
+if s.count(old) != 1:
+    sys.exit(f"expected exactly one ci.yml on: block; found {s.count(old)}")
+p.write_text(s.replace(old, "on:\n  pull_request:"))
+PY
+            ;;
+        timeout_nesting)
+            # Reintroduce the push_delivery_timeout / HttpPushSender
+            # contradiction in the form Addendum 8 found it: the sender's 98 s
+            # schedule still runs inside the handler's 5 s bound, but the
+            # deliverer stops comparing the two, so a truncated schedule is
+            # once again reported as a slow webhook.
+            local pd=crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs
+            note_touched "$pd"
+            sed -i 's/\.is_some_and(|wanted| wanted > limits\.push_delivery_timeout)/.is_some()/' "$pd"
+            grep -q 'max_delivery_duration()' "$pd" \
+                || { echo "timeout_nesting: anchor not found in $pd" >&2; return 1; }
+            ;;
+        inert_bounds)
+            # A `max_*` bound one TaskStore honours and its five siblings do
+            # not — the shape B21 promoted the sweep to a gate for. The field
+            # goes on `TaskStoreConfig` and its only read into the in-memory
+            # store, so signature A (a knob nothing reads) stays silent and
+            # signature C is what has to object. Three lines rather than one
+            # so the library still compiles with the probe in it.
+            local cfg=crates/a2a-protocol-server/src/store/task_store/mod.rs
+            local mem=crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs
+            inject_after "$cfg" "    pub max_page_size: u32," \
+                "    pub max_probe_rows: usize,"
+            inject_after "$cfg" "            max_page_size: DEFAULT_MAX_PAGE_SIZE," \
+                "            max_probe_rows: 0,"
+            inject_after "$mem" \
+                "let capacity = config.max_capacity.unwrap_or(DEFAULT_INITIAL_CAPACITY);" \
+                "        let _ = config.max_probe_rows;"
             ;;
         package_excludes)
             # Drop one `publish = false` member from ci.yml's exclude list.
