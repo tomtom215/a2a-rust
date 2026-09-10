@@ -134,8 +134,8 @@ fn parse_header(raw: &str) -> Result<Header, String> {
 pub enum Command {
     /// Fetch the agent card and print it.
     ///
-    /// <URL> is the agent's base URL; the card is read from
-    /// <URL>/.well-known/agent-card.json. A <URL> that already ends in
+    /// `URL` is the agent's base URL; the card is read from
+    /// `URL`/.well-known/agent-card.json. A `URL` that already ends in
     /// `agent-card.json` is fetched as-is.
     Card {
         /// Agent base URL, for example `http://127.0.0.1:3000`.
