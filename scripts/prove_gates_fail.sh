@@ -797,7 +797,9 @@ if s.count(needle) != 1:
     raise SystemExit(
         f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
     )
-open(p, "w").write(s.replace(needle, "            let _ = counter;\n"))
+# `limiter` stays assigned, or `-D warnings` fails the build on an
+# unused `mut` before the check can run and the probe proves nothing.
+open(p, "w").write(s.replace(needle, "            limiter = { let _ = counter; limiter };\n"))
 PY3
             ;;
         example_hardening)

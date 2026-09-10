@@ -42,28 +42,47 @@ Topological order over **all** dependency edges: server precedes client
 because the client has a versioned dev-dependency on the server, which
 `cargo publish` resolves against the crates.io index.
 
-## Unreleased (v0.7.0)
+## v0.12.0 (2026-09-10)
 
-Highlights of the upcoming release — see [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md) for the full list:
+The deliberate breaking minor before the two clean minors
+[STABILITY.md](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md)
+requires; the migration for every item is in
+[Upgrading Between Minor Versions](./upgrading.md). Highlights — see
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md)
+for the full list:
 
-- **Protobuf-native gRPC** — the transport speaks the canonical
-  `lf.a2a.v1.A2AService` with fully-typed messages, wire-compatible with the
-  official A2A SDKs and proven against official-SDK golden fixtures in both
-  directions (ADR 0009). The pre-0.7 JSON tunnel was deprecated behind
-  `grpc-legacy-json` in 0.7 and removed in 0.8.
-- **WebSocket is a full-surface, authenticated transport** — all 11 methods
-  routed, upgrade-request headers drive auth and tenant resolution, handshake
-  timeout, accept-loop resilience, and a configurable client
-  (`WebSocketTransportConfig`).
-- **TLS first-class** — `tls-rustls` is a default client/SDK feature; the
-  bundled push sender delivers to `https://` webhooks.
-- **Cross-SDK wire fixes** — ProtoJSON absent-as-empty parsing on all repeated
-  fields, canonical `/{tenant}/` REST bindings, the
-  `X-A2A-Notification-Token` push header, and the `A2A-Extensions` header
-  parsed into `CallContext`.
-- **Streaming robustness** — first-event timeouts on every transport,
-  `Retry-After` preserved on streaming errors, and full WHATWG SSE
-  line-terminator support.
+- **Fifteen public configuration structs are `#[non_exhaustive]`** with a
+  `with_*` setter for every field, so a field can be added later without a
+  break; `HandlerLimits` gains `push_delivery_budget` and
+  `executor_drain_timeout`, the client's `WebSocketTransportConfig` gains
+  `max_pending_requests`.
+- **Bounds that were missing** — a drain that never closes, the push
+  delivery budget, DNS lookups in the push sender, in-flight WebSocket
+  requests, served gRPC connections (`with_max_connections`), and the
+  SLIMRPC binding's slow-consumer stall.
+- **Every dependency refreshed**, and the weekly mutation sweep's survivors
+  addressed: the three proved equivalent carry `#[mutants::skip]`.
+- **An executor's error text reaches a blocking caller** on the Failed
+  task's status message; **the blocking path reports every push outcome**;
+  **one deadline per token request and per stream start** in the client.
+- **Adoption**: `tools/a2a-cli` (unpublished), a Rust worker in
+  `multi-lang-team`, `examples/resilient-agent`, the upgrade guide, and
+  `AgentCard::with_streaming`, `CardFetchOptions`,
+  `ClientBuilder::chosen_interface`.
+- **Gates**: reachability, timeout nesting, inert knobs, the reverse
+  API-reference check, the weekly codecov-ignore check; DCO on every push
+  to `main`; cargo-semver-checks over all four crates with all features;
+  the toolchain action pinned by SHA.
+
+## v0.8.0 to v0.11.0
+
+Not summarised here; each release's section in
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md)
+is the record, and the breaking items are in
+[Upgrading Between Minor Versions](./upgrading.md). (This page carried a
+"v0.7.0 upcoming" section until 2026-09-10, four releases after 0.7.0
+shipped — the decay the sitemap and API-reference gates exist to catch, and
+which nothing checks for this page.)
 
 ## v0.6.0 (2026-06-10)
 

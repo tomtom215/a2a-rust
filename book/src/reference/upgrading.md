@@ -1,8 +1,8 @@
 # Upgrading Between Minor Versions
 
-As of 2026-09-10 (pre-0.12.0). The crates are at 0.11; the next release is
-0.12.0, and its breaking section is already written under `## [Unreleased]`
-in [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
+As of 2026-09-10, with 0.12.0 prepared. Its breaking section is
+`## [0.12.0]` in
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
 
 This page is the migration guide the 191 KB changelog is not. One section per
 minor boundary that broke something, newest first; each names what breaks,
@@ -68,7 +68,7 @@ way:
   admonition at the top for the one that can cause an outage.
 
 From 0.12.0 onward, every breaking change is under `### Breaking Changes`,
-including ones also listed elsewhere; the Unreleased section already does this.
+including ones also listed elsewhere; the 0.12.0 section does this.
 
 ## How to check your own code
 
