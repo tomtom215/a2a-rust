@@ -1324,4 +1324,32 @@ mod tests {
             "one budget, not two: took {elapsed:?} against {budget:?}"
         );
     }
+
+    /// `with_headers` replaces the whole map and `with_header` adds one entry;
+    /// both against a non-empty starting point so a body of
+    /// `Default::default()` cannot pass.
+    #[test]
+    fn card_fetch_options_setters_set_their_fields() {
+        let mut map = HashMap::new();
+        map.insert("authorization".to_owned(), "Bearer t".to_owned());
+        let opts = CardFetchOptions::default()
+            .with_header("x-first", "1")
+            .with_headers(map)
+            .with_header("x-second", "2")
+            .with_timeout(Duration::from_millis(250));
+        assert_eq!(
+            opts.headers().len(),
+            2,
+            "with_headers replaces, with_header adds"
+        );
+        assert_eq!(
+            opts.headers().get("authorization").map(String::as_str),
+            Some("Bearer t")
+        );
+        assert_eq!(
+            opts.headers().get("x-second").map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(opts.timeout(), Duration::from_millis(250));
+    }
 }

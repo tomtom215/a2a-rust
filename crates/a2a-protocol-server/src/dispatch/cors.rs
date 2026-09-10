@@ -311,4 +311,19 @@ mod tests {
             "max-age of 0 should be set correctly"
         );
     }
+
+    /// Every setter writes its own field, checked against values that differ
+    /// from both constructors' defaults.
+    #[test]
+    fn every_setter_sets_its_field() {
+        let cors = CorsConfig::permissive()
+            .with_allow_origin("https://example.com")
+            .with_allow_methods("GET")
+            .with_allow_headers("x-custom")
+            .with_max_age_secs(7);
+        assert_eq!(cors.allow_origin, "https://example.com");
+        assert_eq!(cors.allow_methods, "GET");
+        assert_eq!(cors.allow_headers, "x-custom");
+        assert_eq!(cors.max_age_secs, 7);
+    }
 }

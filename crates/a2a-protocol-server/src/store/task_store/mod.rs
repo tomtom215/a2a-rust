@@ -356,6 +356,21 @@ mod tests {
             .await
             .expect("delete should succeed");
     }
+    /// Every setter writes its own field, against values that differ from
+    /// the defaults.
+    #[test]
+    fn every_config_setter_sets_its_field() {
+        let d = TaskStoreConfig::default();
+        let cfg = TaskStoreConfig::default()
+            .with_max_capacity(Some(d.max_capacity.unwrap_or(0) + 11))
+            .with_task_ttl(Some(Duration::from_secs(12)))
+            .with_eviction_interval(d.eviction_interval + 1)
+            .with_max_page_size(d.max_page_size + 1);
+        assert_eq!(cfg.max_capacity, Some(d.max_capacity.unwrap_or(0) + 11));
+        assert_eq!(cfg.task_ttl, Some(Duration::from_secs(12)));
+        assert_eq!(cfg.eviction_interval, d.eviction_interval + 1);
+        assert_eq!(cfg.max_page_size, d.max_page_size + 1);
+    }
 }
 
 /// The largest page a `list` call may return, when nothing narrower is asked

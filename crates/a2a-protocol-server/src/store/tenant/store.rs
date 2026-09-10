@@ -1023,4 +1023,16 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn every_tenant_store_config_setter_sets_its_field() {
+        let d = TenantStoreConfig::default();
+        let per_tenant =
+            TaskStoreConfig::default().with_max_page_size(d.per_tenant.max_page_size + 1);
+        let cfg = TenantStoreConfig::default()
+            .with_per_tenant(per_tenant)
+            .with_max_tenants(d.max_tenants + 1);
+        assert_eq!(cfg.per_tenant.max_page_size, d.per_tenant.max_page_size + 1);
+        assert_eq!(cfg.max_tenants, d.max_tenants + 1);
+    }
 }

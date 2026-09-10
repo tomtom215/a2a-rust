@@ -1826,6 +1826,13 @@ async fn a_refused_inline_push_config_releases_the_queue_and_token() {
 
 /// Seeds one live token that is already older than `max_token_age`, so the
 /// sweep sees it as aged rather than cancelled.
+///
+/// "Older" is two seconds against the one-second `max_token_age` that
+/// [`handler_with_token_cap`] configures, not an hour: `Instant::checked_sub`
+/// returns `None` when the monotonic clock's epoch is younger than the
+/// amount subtracted, and a freshly booted Windows CI runner is younger than
+/// an hour. Measured 2026-09-10 on `Test (1.88, windows-latest)`, where the
+/// hour-ago form panicked in both sweep tests.
 async fn seed_aged_token(handler: &RequestHandler, id: &str) -> TaskId {
     let id = TaskId::new(id);
     handler.cancellation_tokens.write().await.insert(
@@ -1833,8 +1840,8 @@ async fn seed_aged_token(handler: &RequestHandler, id: &str) -> TaskId {
         CancellationEntry {
             token: tokio_util::sync::CancellationToken::new(),
             created_at: Instant::now()
-                .checked_sub(std::time::Duration::from_secs(3600))
-                .expect("an hour ago is representable"),
+                .checked_sub(std::time::Duration::from_secs(2))
+                .expect("two seconds ago is representable on any booted host"),
         },
     );
     id

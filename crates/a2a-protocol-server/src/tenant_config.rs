@@ -492,4 +492,40 @@ mod tests {
             .build();
         assert_eq!(config.get("any").rate_limit_rps, Some(99));
     }
+
+    /// Every `TenantLimits` setter writes its own field (all default to
+    /// `None`), and every `PerTenantConfig` setter writes its own.
+    #[test]
+    #[allow(deprecated)]
+    fn every_setter_sets_its_field() {
+        let limits = TenantLimits::default()
+            .with_max_concurrent_tasks(Some(1))
+            .with_executor_timeout(Some(Duration::from_secs(2)))
+            .with_event_queue_capacity(Some(3))
+            .with_max_stored_tasks(Some(4))
+            .with_rate_limit_rps(Some(5));
+        assert_eq!(limits.max_concurrent_tasks, Some(1));
+        assert_eq!(limits.executor_timeout, Some(Duration::from_secs(2)));
+        assert_eq!(limits.event_queue_capacity, Some(3));
+        assert_eq!(limits.max_stored_tasks, Some(4));
+        assert_eq!(limits.rate_limit_rps, Some(5));
+
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "a".to_owned(),
+            TenantLimits::default().with_rate_limit_rps(Some(9)),
+        );
+        let cfg = PerTenantConfig::default()
+            .with_default(limits)
+            .with_overrides(overrides)
+            .with_override("b", TenantLimits::default().with_rate_limit_rps(Some(8)));
+        assert_eq!(cfg.default.max_concurrent_tasks, Some(1));
+        assert_eq!(
+            cfg.overrides.len(),
+            2,
+            "with_overrides replaces, with_override adds"
+        );
+        assert_eq!(cfg.overrides["a"].rate_limit_rps, Some(9));
+        assert_eq!(cfg.overrides["b"].rate_limit_rps, Some(8));
+    }
 }

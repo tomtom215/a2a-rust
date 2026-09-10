@@ -417,4 +417,11 @@ mod tests {
             "no version key present, and require=false accepts that"
         );
     }
+
+    #[test]
+    fn with_require_version_header_sets_the_field() {
+        let default = DispatchConfig::default().require_version_header;
+        let cfg = DispatchConfig::default().with_require_version_header(!default);
+        assert_eq!(cfg.require_version_header, !default);
+    }
 }

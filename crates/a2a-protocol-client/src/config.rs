@@ -356,4 +356,34 @@ mod tests {
         assert_eq!(BINDING_REST, "REST");
         assert_eq!(BINDING_GRPC, "GRPC");
     }
+
+    /// Every setter writes its own field and nothing else. One assertion per
+    /// field against a value that differs from the default, so a setter whose
+    /// body became `Default::default()` (cargo-mutants' replacement) fails
+    /// here; the incremental gate found three such setters unpinned on
+    /// 2026-09-10.
+    #[test]
+    fn every_setter_sets_its_field() {
+        let cfg = ClientConfig::default()
+            .with_preferred_bindings(vec!["GRPC".to_owned()])
+            .with_accepted_output_modes(vec!["image/png".to_owned()])
+            .with_history_length(Some(7))
+            .with_return_immediately(true)
+            .with_request_timeout(Duration::from_secs(1))
+            .with_stream_connect_timeout(Duration::from_secs(2))
+            .with_connection_timeout(Duration::from_secs(3))
+            .with_max_response_size(4)
+            .with_tls(TlsConfig::Disabled)
+            .with_tenant(Some("acme".to_owned()));
+        assert_eq!(cfg.preferred_bindings, vec!["GRPC".to_owned()]);
+        assert_eq!(cfg.accepted_output_modes, vec!["image/png".to_owned()]);
+        assert_eq!(cfg.history_length, Some(7));
+        assert!(cfg.return_immediately);
+        assert_eq!(cfg.request_timeout, Duration::from_secs(1));
+        assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(2));
+        assert_eq!(cfg.connection_timeout, Duration::from_secs(3));
+        assert_eq!(cfg.max_response_size, 4);
+        assert!(matches!(cfg.tls, TlsConfig::Disabled));
+        assert_eq!(cfg.tenant.as_deref(), Some("acme"));
+    }
 }

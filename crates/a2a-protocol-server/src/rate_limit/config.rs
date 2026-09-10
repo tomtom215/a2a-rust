@@ -96,3 +96,24 @@ impl RateLimitConfig {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::RateLimitConfig;
+
+    /// Every setter writes its own field, against values that differ from
+    /// the defaults, so a setter reduced to `Default::default()` fails here.
+    #[test]
+    fn every_setter_sets_its_field() {
+        let d = RateLimitConfig::default();
+        let cfg = RateLimitConfig::default()
+            .with_requests_per_window(d.requests_per_window + 1)
+            .with_window_secs(d.window_secs + 1)
+            .with_trusted_proxy_hops(d.trusted_proxy_hops + 1)
+            .with_max_buckets(d.max_buckets + 1);
+        assert_eq!(cfg.requests_per_window, d.requests_per_window + 1);
+        assert_eq!(cfg.window_secs, d.window_secs + 1);
+        assert_eq!(cfg.trusted_proxy_hops, d.trusted_proxy_hops + 1);
+        assert_eq!(cfg.max_buckets, d.max_buckets + 1);
+    }
+}
