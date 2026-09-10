@@ -1,21 +1,24 @@
 # Files over 500 lines, recorded so the list can only shrink.
 # Regenerate with scripts/check_file_lengths.sh --update.
 # See CONTRIBUTING.md "500-line maximum per file".
-# handler/messaging/ is mid-split, and these two entries record where it got to
-# rather than where it should end up:
+# handler/messaging/ is split, and one entry remains from it:
 #
 #   messaging.rs was 2,395 lines. 1,674 of those were its test module, now
 #   messaging/tests.rs — long, and legitimately so; the suite covers the
-#   destroy/CleanupGuard coupling case by case.
+#   destroy/CleanupGuard coupling case by case, and grew again on 2026-09-10
+#   with the tests that pin each phase of the split below on its own.
 #
-#   messaging/mod.rs is 644, down from 721 after the pure decision helpers moved
-#   to messaging/decisions.rs. It is still over the limit, and the reason is one
-#   function: `send_message_inner` is ~530 lines carrying the whole send path —
-#   interceptors, extension and streaming checks, id and metadata validation,
-#   capacity admission, three-phase stale-token eviction, and task creation.
-#   Splitting *that* is the remaining work, and it is a hot-path refactor rather
-#   than a file move, so it is recorded here instead of being done badly under
-#   time pressure.
+#   messaging/mod.rs came OFF this list on 2026-09-10. It was 681, and the
+#   reason was one function: `send_message_inner` was ~415 lines carrying the
+#   whole send path. That path is now a sequence of phases, each in a
+#   submodule named for what it does — validation.rs (ids, parts, metadata),
+#   continuation.rs (which context and task), admission.rs (in-flight
+#   rejection and the queue lease), eviction.rs (the three-phase stale-token
+#   sweep and the insert), create.rs (the task, its request context, the
+#   store write and the inline push config, with the rollback), execute.rs
+#   (the spawned executor and CleanupGuard, whose arm/disarm lifetime is now
+#   spelled out on the type) — and mod.rs holds the sequence itself, 354
+#   lines. Every one of those files is under the limit; none is listed here.
 #
 # store/sqlite_store.rs became store/sqlite_store/ when the artifact journal was
 # added — those entries are renamed, not new:
@@ -87,7 +90,6 @@ crates/a2a-protocol-server/src/handler/event_processing/background/state_machine
 crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs
 crates/a2a-protocol-server/src/handler/helpers.rs
 crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs
-crates/a2a-protocol-server/src/handler/messaging/mod.rs
 crates/a2a-protocol-server/src/handler/messaging/tests.rs
 crates/a2a-protocol-server/src/handler/push_config.rs
 crates/a2a-protocol-server/src/push/config_store.rs

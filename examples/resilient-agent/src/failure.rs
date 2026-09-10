@@ -8,10 +8,11 @@
 //!
 //! 1. An **executor** that fails its first N attempts. Finding: the SDK does
 //!    not retry an executor. Each failure is a task in `TASK_STATE_FAILED`
-//!    carrying the error in `metadata.error`; the retry is the caller's, and
-//!    it is a *new task* — a follow-up message on the failed one is refused.
-//!    A client `RetryPolicy` does not change that: a `Failed` task is a
-//!    successful RPC.
+//!    whose status message carries the error text (and whose streamed status
+//!    event carries it again as `metadata.error`); the retry is the caller's,
+//!    and it is a *new task* — a follow-up message on the failed one is
+//!    refused. A client `RetryPolicy` does not change that: a `Failed` task
+//!    is a successful RPC.
 //! 2. A **webhook** that refuses its first M deliveries. The
 //!    [`Metrics::on_push_delivery`] hook reports one outcome per event per
 //!    config, and the act puts those outcomes beside the webhook's own tally.
@@ -84,6 +85,7 @@ async fn executor_failures_inner() -> Result<String, String> {
     let sends = EXECUTOR_FAILURES + 1;
     let mut states = Vec::new();
     let mut first_failed_id = None;
+    let mut first_failed_text = None;
     for n in 1..=sends {
         let task = expect_task(
             client
@@ -91,19 +93,25 @@ async fn executor_failures_inner() -> Result<String, String> {
                 .await
                 .map_err(|e| format!("send {n}: the RPC itself failed: {e}"))?,
         )?;
+        // What a blocking caller has to go on: the state and the status
+        // message. Since 2026-09-10 the executor's error text is the status
+        // message of the Failed task (an agent-role message with one text
+        // part), so a blocking caller learns why without streaming.
+        let status_text = task
+            .status
+            .message
+            .as_ref()
+            .and_then(|m| m.text())
+            .map(str::to_owned);
         if task.status.state == TaskState::Failed && first_failed_id.is_none() {
             first_failed_id = Some(task.id.0.clone());
+            first_failed_text.clone_from(&status_text);
         }
-        // What a blocking caller has to go on: the state, the status message
-        // and the task metadata. The finding is that for an executor error
-        // the last two are empty — the error text rides on the streamed
-        // status event's metadata (checked below), and nowhere else.
-        let carried_text = task.status.message.is_some() || task.metadata.is_some();
-        states.push((task.status.state, carried_text));
+        states.push((task.status.state, status_text));
     }
 
-    // The first N are Failed, the last is Completed.
-    for (n, (state, carried_text)) in states.iter().enumerate() {
+    // The first N are Failed and say why; the last is Completed.
+    for (n, (state, status_text)) in states.iter().enumerate() {
         let expected = if n < EXECUTOR_FAILURES as usize {
             TaskState::Failed
         } else {
@@ -115,11 +123,14 @@ async fn executor_failures_inner() -> Result<String, String> {
                 n + 1
             ));
         }
-        if expected == TaskState::Failed && *carried_text {
+        if expected == TaskState::Failed
+            && !status_text
+                .as_deref()
+                .is_some_and(|t| t.contains("injected"))
+        {
             return Err(format!(
-                "send {}: the Failed task now carries a status message or metadata — the SDK has \
-                 started surfacing the executor's error on the task, and the README's finding \
-                 that a blocking caller gets only the state needs rewriting",
+                "send {}: the Failed task's status message should carry the executor's error \
+                 text, got {status_text:?} — a blocking caller is back to seeing only the state",
                 n + 1
             ));
         }
@@ -150,16 +161,41 @@ async fn executor_failures_inner() -> Result<String, String> {
         Err(e) => return Err(format!("the follow-up never reached the server: {e}")),
     }
 
-    // Where the error text goes: on the streamed terminal status event, as
-    // `metadata.error`. A blocking caller never sees that event.
+    // The same text, read back through GetTask after the fact: the status
+    // message is persisted with the task, not only returned from the send.
+    let fetched = client
+        .get_task(TaskQueryParams {
+            tenant: None,
+            id: failed_id.clone(),
+            history_length: None,
+        })
+        .await
+        .map_err(|e| format!("GetTask on the Failed task: {e}"))?;
+    let fetched_text = fetched
+        .status
+        .message
+        .as_ref()
+        .and_then(|m| m.text())
+        .map(str::to_owned);
+    if fetched_text != first_failed_text {
+        return Err(format!(
+            "GetTask on Failed task {failed_id} returned status message {fetched_text:?}, the \
+             send returned {first_failed_text:?} — the error text is not persisted"
+        ));
+    }
+    let failed_text = first_failed_text.unwrap_or_default();
+
+    // Streaming callers still get the text where they always did: as
+    // `metadata.error` on the terminal status event.
     let streamed_error = streamed_failure_text().await?;
 
     Ok(format!(
         "N={EXECUTOR_FAILURES}: sends 1..={EXECUTOR_FAILURES} -> Failed, send {sends} -> \
          Completed; executor invoked {invocations}x for {sends} sends with a {retries}-retry \
          client policy (a Failed task is a successful RPC); a follow-up on the Failed task is \
-         refused. The Failed task carries no status message and no metadata — the error text \
-         ({streamed_error:?}) appears only as metadata.error on the streamed status event"
+         refused. The Failed task's status message carries the error text ({failed_text:?}), \
+         GetTask returns the same, and the streamed status event still carries it as \
+         metadata.error ({streamed_error:?})"
     ))
 }
 

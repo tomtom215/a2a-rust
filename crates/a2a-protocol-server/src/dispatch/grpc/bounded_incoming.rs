@@ -54,8 +54,15 @@ impl tokio_stream::Stream for BoundedIncoming {
     type Item = io::Result<Permitted>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if self.permit.is_none() {
-            let this = &mut *self;
+        let this = &mut *self;
+        // The permit is taken into a local before accept is polled and put
+        // back on every path that does not hand it to a connection, so there
+        // is no state in which accept is polled without one — and no
+        // `expect` saying so (the published crates' panic surface is a
+        // ratchet, `scripts/check_panic_paths.py`).
+        let permit = if let Some(permit) = this.permit.take() {
+            permit
+        } else {
             let limiter = &this.limiter;
             let acquiring = this
                 .acquiring
@@ -68,27 +75,27 @@ impl tokio_stream::Stream for BoundedIncoming {
                 // it ever were.
                 Poll::Ready(Err(_closed)) => return Poll::Ready(None),
                 Poll::Ready(Ok(permit)) => {
-                    self.acquiring = None;
-                    self.permit = Some(permit);
+                    this.acquiring = None;
+                    permit
                 }
             }
-        }
-        match self.listener.poll_accept(cx) {
-            Poll::Pending => Poll::Pending,
+        };
+        match this.listener.poll_accept(cx) {
+            Poll::Pending => {
+                this.permit = Some(permit);
+                Poll::Pending
+            }
             // A failed accept (EMFILE, a reset in the backlog) is reported and
             // the permit kept for the next attempt; tonic's incoming loop logs
             // the error and keeps polling.
-            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
-            Poll::Ready(Ok((inner, _peer))) => {
-                let permit = self
-                    .permit
-                    .take()
-                    .expect("a permit is held whenever accept is polled");
-                Poll::Ready(Some(Ok(Permitted {
-                    inner,
-                    _permit: permit,
-                })))
+            Poll::Ready(Err(e)) => {
+                this.permit = Some(permit);
+                Poll::Ready(Some(Err(e)))
             }
+            Poll::Ready(Ok((inner, _peer))) => Poll::Ready(Some(Ok(Permitted {
+                inner,
+                _permit: permit,
+            }))),
         }
     }
 }

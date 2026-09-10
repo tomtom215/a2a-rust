@@ -20,7 +20,7 @@ fails and the sentence has to be rewritten rather than quietly becoming a lie.
 | Act | What it demonstrates (asserted) | What the SDK does **not** do (also asserted) |
 |---|---|---|
 | **1 — Durability** | A task streamed to completion through one handler comes back **byte-identical** (`serde_json` value equality: status, history, artifacts, timestamps) from a *fresh* handler with fresh `SqliteTaskStore` / `SqlitePushConfigStore` pools over the same file, and its push config is still listed. Zero `Metrics::on_persistence_error` reports along the way | Resume an executor. A task whose executor was cut off after its first artifact chunk reads back `Working` with exactly that chunk — and is still `Working` 500 ms later on the new handler. Restarting with tasks in flight leaves them in flight forever unless something outside the SDK reconciles them |
-| **2 — Failure injection** | An executor failing its first N attempts yields N `Failed` tasks then a `Completed` one; the executor is invoked exactly once per send even with a 5-retry client `RetryPolicy`; a follow-up message on a `Failed` task is refused. A webhook refusing its first M deliveries produces exactly M `failed` outcomes at `Metrics::on_push_delivery` with a one-attempt sender, and M+1 attempts absorb them. A proxy faulting its first K requests: `GetTask` over dropped connections is retried, `SendMessage` over 503s is retried | Retry the executor — the retry is the caller's, and it is a **new task**. Put the error text anywhere a blocking caller can see it — the `Failed` task has no status message and no metadata; `metadata.error` exists only on the *streamed* status event. Re-queue a `failed` push delivery. Retry `SendMessage` over a dropped connection (ambiguous: the work may have run). At the shipped defaults, run the push sender's own retries at all: `HttpPushSender::new()` schedules 98 s per delivery against a 5 s `push_delivery_timeout` |
+| **2 — Failure injection** | An executor failing its first N attempts yields N `Failed` tasks then a `Completed` one, each `Failed` task's status message carrying the executor's error text, and `GetTask` returning the same; the executor is invoked exactly once per send even with a 5-retry client `RetryPolicy`; a follow-up message on a `Failed` task is refused. A webhook refusing its first M deliveries produces exactly M `failed` outcomes at `Metrics::on_push_delivery` with a one-attempt sender, and M+1 attempts absorb them. A proxy faulting its first K requests: `GetTask` over dropped connections is retried, `SendMessage` over 503s is retried | Retry the executor — the retry is the caller's, and it is a **new task**. Re-queue a `failed` push delivery. Retry `SendMessage` over a dropped connection (ambiguous: the work may have run). At the shipped defaults, run the push sender's own retries at all: `HttpPushSender::new()` schedules 98 s per delivery against a 5 s `push_delivery_timeout` |
 | **3 — Horizontal scaling** | Two replicas with in-memory stores: `GetTask` on B for A's task is `TaskNotFound`. Two over a shared `PostgresTaskStore`: B reads A's task, identical to A's read; B's subscription to a task running on A ends with `Completed`. Two limiters at 5 per window admit 10 alone and **5** sharing `PostgresRateLimitCounter` | Share event queues. B's subscriber sees the terminal state and **0** of the 2 artifact frames A streamed — a client that reconnects to the other replica mid-stream keeps a correct task and loses the frames in between |
 
 A "replica" or a "restart" here is a second `RequestHandler` with its own
@@ -71,7 +71,7 @@ Act 1 — Durability: a task outlives its handler
 
 Act 2 — Failure injection: what the SDK reports, and what it does not do
 -------------------------------------------------------------------------
-  [ok]        Executor failing its first N attempts: the SDK does not retry it N=2: sends 1..=2 -> Failed, send 3 -> Completed; executor invoked 3x for 3 sends with a 5-retry client policy (a Failed task is a successful RPC); a follow-up on the Failed task is refused. The Failed task carries no status message and no metadata — the error text ("[-32603] injected failure on attempt 1") appears only as metadata.error on the streamed status event
+  [ok]        Executor failing its first N attempts: the SDK does not retry it N=2: sends 1..=2 -> Failed, send 3 -> Completed; executor invoked 3x for 3 sends with a 5-retry client policy (a Failed task is a successful RPC); a follow-up on the Failed task is refused. The Failed task's status message carries the error text ("[-32603] injected failure on attempt 1"), GetTask returns the same, and the streamed status event still carries it as metadata.error ("[-32603] injected failure on attempt 1")
   [ok]        Push webhook refusing its first M deliveries: what Metrics reports M=2, 4 events: sender with 1 attempt -> delivered=2, failed=2 (webhook refused 2, accepted 2); sender with 3 attempts -> delivered=4 (webhook refused 2, accepted 4, 4 delivered after in-sender retries). A `failed` delivery is not re-queued. Defaults: HttpPushSender::new() schedules 98s per delivery against push_delivery_timeout=5s, so its retries are cut short (`timeout_truncated`)
   [ok]        Client RetryPolicy: transport faults retried only where a re-send is safe K=2: GetTask over dropped connections -> ok (proxy faulted 2, forwarded 1); SendMessage over dropped connections -> error to caller (faulted 1, forwarded 0: not retried, ambiguous); SendMessage over 503s -> ok (faulted 2, forwarded 1); executor ran 2x
 
@@ -141,10 +141,13 @@ nothing in `RetryTransport` or the handler re-runs it
 (`crates/a2a-protocol-server/src/handler/messaging/mod.rs` writes a `Failed`
 status and stops). A follow-up on the failed task's id is refused: terminal
 tasks accept no new messages, so "retry" means "new task". The executor's
-error text rides on the failing `TaskStatusUpdateEvent`'s `metadata.error`,
-which the sync collector does not copy onto the task — a blocking caller
-receives `state: Failed` and nothing else. The act streams a second failing
-send to show where the text *is*.
+error text is the `Failed` task's status message — an agent-role `Message`
+with one text part, which the sync collector copies onto the task and the
+store persists — so a blocking caller, and a `GetTask` after the fact, both
+read why. (Until 2026-09-10 the text rode only on the failing
+`TaskStatusUpdateEvent`'s `metadata.error`, and a blocking caller received
+`state: Failed` and nothing else.) The act streams a second failing send to
+show the event still carries `metadata.error` for streaming callers.
 
 **Webhook refusing its first M deliveries** (`webhook_sink`, M=2, answering
 `503`). A recording `Metrics` collects `on_push_delivery` outcomes; the sink

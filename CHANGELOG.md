@@ -177,6 +177,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A blocking caller sees the executor's error text** (server). When an
+  executor returned `Err`, the `Failed` status update carried the text only
+  as `metadata.error` on the streamed event; `sync_collector.rs` copies
+  `status.message` onto the task and nothing else, so a blocking
+  `SendMessage` returned a `Failed` task with no message and no metadata,
+  and `GetTask` afterwards said no more (`examples/resilient-agent`, Act 2).
+  The failure event's `status.message` is now an agent-role `Message` with
+  one text part holding the error — the spec's field for "additional status
+  updates for the client" — so the blocking response, the stored task and
+  every `GetTask` after it carry the text; `metadata.error` stays on the
+  event for streaming callers. An executor timeout reports the same way.
+  Found and fixed while splitting `handler/messaging/mod.rs`'s
+  `send_message_inner` into phases (`validation`, `continuation`,
+  `admission`, `eviction`, `create`, `execute`), which took the file off
+  `.file-length-baseline`; the split changes no error, message, metric or
+  eviction order.
 - **One deadline per token request and per stream start** (client).
   `OAuth2ClientCredentials::refresh` and `discover_token_endpoint` read the
   body under a second full request timeout after the headers had spent

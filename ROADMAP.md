@@ -267,8 +267,16 @@ verified by reading declarations; the correction is recorded there.
    store-eviction path at steady state in one job — and it is the class of bug
    the current suite structurally cannot reach, since every test starts from an
    empty store.
-2. **Split `handler/messaging.rs`** (2,395 lines, still the worst file, still
-   holding the hot path and the destroy/`CleanupGuard` coupling).
+2. **~~Split `handler/messaging.rs`~~ Done 2026-09-10** — it was 2,395
+   lines, then `messaging/mod.rs` at 681 with `send_message_inner` carrying
+   the whole send path in one ~415-line function. The path is now a
+   sequence of phases, each a submodule named for what it does
+   (`validation`, `continuation`, `admission`, `eviction`, `create`,
+   `execute`), with `CleanupGuard` a documented type whose arm/disarm
+   lifetime is spelled out rather than inferred from scope; `mod.rs` is
+   354 lines and off `.file-length-baseline`. Mutation-tested file by file
+   before and after: 0 missed both times, with five tests added to pin the
+   phases whose no-op replacement the old suite could not see.
 3. **~~A 30-line `hello-agent`, and a deployment example.~~ Done 2026-08-16** —
    both ends of the funnel existed only as a gap: the smallest example was
    736 LOC and nothing showed how to ship one. `examples/hello-agent` is now
@@ -305,12 +313,16 @@ message states:
 
 Opened by that work — measured, not fixed, and each is a maintainer's call:
 
-* **An executor's error text does not reach a blocking caller.** The
-  `Failed` status event carries `metadata.error`, but `sync_collector.rs`
-  copies only `status.message` onto the task, so `SendMessage` returns a
-  `Failed` task with no message and no metadata; only streaming callers see
-  the text (`examples/resilient-agent`, Act 2). The send-path split below is
-  where this is fixed, since it is the same function.
+* **~~An executor's error text does not reach a blocking caller.~~ Done
+  2026-09-10** — the `Failed` status event carried `metadata.error`, but
+  `sync_collector.rs` copies only `status.message` onto the task, so
+  `SendMessage` returned a `Failed` task with no message and no metadata;
+  only streaming callers saw the text (`examples/resilient-agent`, Act 2).
+  Fixed in the send-path split, as predicted: the failure event's
+  `status.message` now carries the text as an agent-role message, so the
+  blocking response and every `GetTask` after it say why, and
+  `metadata.error` stays for streaming callers. The example's Act 2 asserts
+  the message is present and reads it back through `GetTask`.
 * **No executor resumes after a restart.** A task cut off mid-stream is
   persisted as far as it got and stays `Working` on the new handler forever
   (`examples/resilient-agent`, Act 1). Reconciliation of in-flight tasks at
