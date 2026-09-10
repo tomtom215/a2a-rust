@@ -6,9 +6,14 @@
 //!
 //! The interesting half of this example is what happens when the workers are
 //! *not* running, which is the state a reader who has only cloned the repo is
-//! in. Every test here runs in that state deliberately: no worker is started,
+//! in. Most tests here run in that state deliberately: no worker is started,
 //! and the assertions are about the coordinator reporting that honestly rather
 //! than presenting an empty fan-out as a successful round-trip.
+//!
+//! The exception is the Rust worker, which is in this package and so *can* be
+//! started in-process. The last section does, and asserts that the fan-out
+//! carries its reply — the round-trip the other four languages can only get
+//! from a reader who installed their toolchains.
 
 use std::collections::BTreeSet;
 
@@ -23,7 +28,7 @@ use a2a_protocol_types::task::{TaskId, TaskState};
 
 use crate::{
     CoordinatorExecutor, SLOW_PREFIX, WORKERS, Worker, call_worker, extract_text,
-    make_coordinator_card,
+    make_coordinator_card, worker,
 };
 
 // ── Harness ──────────────────────────────────────────────────────────────────
@@ -83,12 +88,12 @@ fn artifacts(events: &[StreamResponse]) -> Vec<(String, String)> {
 
 // ── The worker table ─────────────────────────────────────────────────────────
 
-/// Four languages, four ports, no collisions. Two workers sharing a port
+/// Five languages, five ports, no collisions. Two workers sharing a port
 /// would mean one language's answer silently attributed to the other, and the
 /// combined artifact would still look complete.
 #[test]
-fn the_worker_table_is_four_distinct_languages_on_four_distinct_ports() {
-    assert_eq!(WORKERS.len(), 4);
+fn the_worker_table_is_five_distinct_languages_on_five_distinct_ports() {
+    assert_eq!(WORKERS.len(), 5);
 
     let languages: BTreeSet<_> = WORKERS.iter().map(|w| w.language).collect();
     assert_eq!(
@@ -236,4 +241,95 @@ fn the_card_advertises_the_capabilities_the_sweep_requires() {
     );
     assert!(!card.skills.is_empty(), "a card with no skills");
     assert!(!card.name.is_empty());
+}
+
+// ── The Rust worker ──────────────────────────────────────────────────────────
+
+/// The coordinator dials the table's address; the binary listens on
+/// `DEFAULT_ADDR`. If the two drift apart, the coordinator reports a running
+/// Rust worker as `not reachable` and the reader blames the wrong side.
+#[test]
+fn the_worker_table_dials_the_address_the_rust_worker_binds_by_default() {
+    let rust = WORKERS
+        .iter()
+        .find(|w| w.language == "Rust")
+        .expect("the worker table has no Rust row");
+    assert_eq!(rust.url, format!("http://{}", worker::DEFAULT_ADDR));
+}
+
+/// Starts the worker on an ephemeral port and returns a table entry for it.
+///
+/// `Worker` holds `&'static str` because the real table is a `const`; a
+/// leaked string is the honest way to give a test-time address the same
+/// lifetime, and a test process does not outlive the leak.
+async fn start_rust_worker() -> &'static Worker {
+    let addr = worker::start("127.0.0.1:0")
+        .await
+        .expect("the Rust worker did not start on an ephemeral port");
+    Box::leak(Box::new(Worker {
+        language: "Rust",
+        url: Box::leak(format!("http://{addr}").into_boxed_str()),
+    }))
+}
+
+/// The startup probe is `resolve_agent_card` against the worker's base URL.
+/// The other four workers answer it from a hand-written card; this one must
+/// answer it from the SDK's own card route, or it would never be delegated
+/// to at all.
+#[tokio::test]
+async fn the_rust_worker_answers_the_probe_the_coordinator_uses() {
+    let rust = start_rust_worker().await;
+    let card = a2a_protocol_client::resolve_agent_card(rust.url)
+        .await
+        .expect("the coordinator's reachability probe failed against the Rust worker");
+    assert_eq!(card.name, "Rust Echo Agent");
+    assert!(
+        card.skills.iter().any(|s| s.id == "echo"),
+        "the card does not advertise the echo skill: {:?}",
+        card.skills
+    );
+    assert_eq!(
+        card.supported_interfaces[0].url, rust.url,
+        "the card names an address other than the one it was served from"
+    );
+}
+
+/// The whole round-trip, against a real worker: the coordinator's executor
+/// fans out over the wire to the in-process Rust worker and the combined
+/// artifact carries its reply, in the `[<Language> Echo] <text>` shape the
+/// other workers use. This is the test the other four languages cannot have
+/// without their toolchains, and the one that makes "cross-language
+/// delegation" a tested claim rather than a README one.
+#[tokio::test]
+async fn the_fan_out_carries_the_rust_workers_reply() {
+    let rust = start_rust_worker().await;
+    let exec = CoordinatorExecutor {
+        reachable: vec![rust],
+    };
+    let (result, events) = drive(&exec, &ctx("Hello from the multi-language team demo!")).await;
+
+    assert!(
+        result.is_ok(),
+        "delegating to a live worker failed: {result:?}"
+    );
+    assert_eq!(
+        states(&events),
+        vec![TaskState::Working, TaskState::Completed]
+    );
+
+    let arts = artifacts(&events);
+    assert_eq!(arts.len(), 1);
+    assert_eq!(arts[0].0, "cross-lang-result");
+    assert_eq!(
+        arts[0].1,
+        format!(
+            "{}Hello from the multi-language team demo!",
+            worker::REPLY_PREFIX
+        ),
+        "the combined artifact is not the Rust worker's reply"
+    );
+    assert!(
+        !arts[0].1.contains("no worker agents reachable"),
+        "a live worker was reported as nobody"
+    );
 }

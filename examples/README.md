@@ -24,7 +24,7 @@ cargo run -p agent-team
 | [**agent-team**](agent-team/) | 4-agent team with 100 E2E tests; the SDK's dogfood suite | None | Advanced |
 | [**genai-agent**](genai-agent/) | LLM-powered agent via [genai](https://crates.io/crates/genai); all four bindings, full surface matrix | Optional model | Intermediate |
 | [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the TCK 20/20 |
-| [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go and Java agents; all four bindings, full surface matrix | Optional workers | Advanced |
+| [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go, Java and Rust worker agents (the Rust worker is a second binary, `--bin rust-worker`); all four bindings, full surface matrix | Optional workers | Advanced |
 
 ## What to start with
 
@@ -58,7 +58,7 @@ cargo run -p agent-team
 
 - **Integrating an LLM?** See [`genai-agent`](genai-agent/) or [`rig-agent`](rig-agent/) for patterns that bridge LLM frameworks with A2A's `AgentExecutor` trait.
 
-- **Cross-language interop?** See [`multi-lang-team`](multi-lang-team/) for a Rust coordinator that talks to agents in 4 other languages.
+- **Cross-language interop?** See [`multi-lang-team`](multi-lang-team/) for a Rust coordinator that talks to agents in 4 other languages, plus a Rust worker to run beside them.
 
 ## Common patterns
 

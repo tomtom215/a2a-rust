@@ -4,8 +4,12 @@
 [package]
 name        = "multi-lang-team"
 version     = "0.0.0"
-description = "Multi-language agent team: Rust coordinator + Python/JS/Go/Java worker agents"
+description = "Multi-language agent team: Rust coordinator + Python/JS/Go/Java/Rust worker agents"
 publish     = false
+# Two binaries: the coordinator (`src/main.rs`) and the Rust worker
+# (`src/bin/rust-worker.rs`). `cargo run -p multi-lang-team` keeps meaning
+# the coordinator, as every workflow and README that names it assumes.
+default-run = "multi-lang-team"
 
 edition.workspace    = true
 rust-version.workspace = true

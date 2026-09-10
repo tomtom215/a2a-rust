@@ -175,6 +175,20 @@ makes, and it is a materially stronger position than the document was stating.
    `CHANGELOG.md`, `STABILITY.md` and this review for the current ones.
 7. **Seven examples still have no tests.** `harness` at 920 lines is the next
    one worth doing, because the other examples depend on it.
+8. ~~**No Rust worker in `multi-lang-team`.** The example shows the client
+   half of the SDK — a coordinator that dials four workers — and every worker
+   is in another language, so a reader who wants to see what a *worker* looks
+   like in this SDK has nothing to run.~~ **Closed 2026-09-10.** The package
+   now has a second binary, `--bin rust-worker` (`src/worker.rs`, about forty
+   lines with the SDK's `agent_executor!` and `EventEmitter`), on `:9104` with
+   the same card shape and `[Rust Echo] <text>` reply the `itk/agents/` workers
+   give, and the coordinator's table dials it. Because it is in the package it
+   is the one worker the tests can start: two new tests boot it in-process on
+   an ephemeral port, run the coordinator's own reachability probe against it,
+   and assert the fan-out's combined artifact carries its reply — the first
+   delegation round-trip in this example that CI exercises rather than
+   reports as `not reachable`. The other four still need their toolchains and
+   still say so.
 
 ## 4a. Every example, run end to end against a real model
 
