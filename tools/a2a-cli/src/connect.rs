@@ -46,15 +46,23 @@ struct HeaderInterceptor {
 }
 
 impl CallInterceptor for HeaderInterceptor {
-    async fn before(&self, req: &mut ClientRequest) -> ClientResult<()> {
+    // Neither hook awaits anything, so each returns a ready future rather
+    // than an `async fn` (clippy 1.98's `unused_async_trait_impl`).
+    fn before<'a>(
+        &'a self,
+        req: &'a mut ClientRequest,
+    ) -> impl Future<Output = ClientResult<()>> + Send + 'a {
         for (name, value) in &self.headers {
             req.extra_headers.insert(name.clone(), value.clone());
         }
-        Ok(())
+        std::future::ready(Ok(()))
     }
 
-    async fn after(&self, _resp: &ClientResponse) -> ClientResult<()> {
-        Ok(())
+    fn after<'a>(
+        &'a self,
+        _resp: &'a ClientResponse,
+    ) -> impl Future<Output = ClientResult<()>> + Send + 'a {
+        std::future::ready(Ok(()))
     }
 }
 
