@@ -50,6 +50,7 @@ pub async fn run() -> Vec<Check> {
 
 /// The environment variable naming a database to run the shared checks
 /// against. Same name `ci.yml`'s `test-postgres` job sets.
+#[cfg(feature = "postgres")]
 pub const POSTGRES_URL_ENV: &str = "A2A_TEST_POSTGRES_URL";
 
 fn query(id: &str) -> TaskQueryParams {

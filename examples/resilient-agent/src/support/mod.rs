@@ -107,6 +107,9 @@ pub fn expect_task(response: SendMessageResponse) -> Result<Task, String> {
 }
 
 /// Every text part of `parts`, joined.
+// Read by Act 1 and its unit test; a build without `sqlite` keeps it for the
+// test alone.
+#[cfg_attr(not(feature = "sqlite"), allow(dead_code))]
 pub fn text_of(parts: &[Part]) -> String {
     parts
         .iter()
@@ -137,6 +140,7 @@ pub fn is_refusal(error: &ClientError) -> bool {
 ///
 /// Per run and removed by the caller, so a later run cannot pass on a row an
 /// earlier one left behind.
+#[cfg(feature = "sqlite")]
 pub fn scratch_dir(tag: &str) -> Result<std::path::PathBuf, String> {
     let dir = std::env::temp_dir().join(format!("a2a-resilient-{tag}-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
@@ -150,6 +154,9 @@ pub fn scratch_dir(tag: &str) -> Result<std::path::PathBuf, String> {
 /// outlives the process, so a per-run identity is what keeps one run's count
 /// from bleeding into the next — the same job an auth interceptor does in a
 /// real deployment, minus the authentication.
+// Constructed by Act 3 and its unit test; a build without `postgres` keeps
+// it for the test alone.
+#[cfg_attr(not(feature = "postgres"), allow(dead_code))]
 pub struct FixedIdentity(pub String);
 
 impl ServerInterceptor for FixedIdentity {

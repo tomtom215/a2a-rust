@@ -335,6 +335,33 @@ mod sqlite {
             Err(_) => return Err("A: no artifact chunk within 5s".to_owned()),
         }
         let task_id = task_id.ok_or("A: the stream named no task")?;
+
+        // As in check 1: the stream reader and the persister are separate
+        // subscribers, so the chunk the client just saw may not be in the
+        // store yet. The crash this scene stages happens after that write
+        // lands — the executor is parked, so nothing else will follow it.
+        // Measured, not assumed: on a macOS runner the first version of this
+        // check dropped handler A straight away and handler B read back an
+        // empty artifact.
+        let started = std::time::Instant::now();
+        loop {
+            let task = get(&client_a, &task_id).await?;
+            let text: String = task
+                .artifacts
+                .iter()
+                .flatten()
+                .map(|a| text_of(&a.parts))
+                .collect();
+            if text == CHUNK_ONE {
+                break;
+            }
+            if started.elapsed() > Duration::from_secs(3) {
+                return Err(format!(
+                    "A: the client saw the first chunk but the store holds {text:?} after 3s"
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
         require_no_lost_writes("A", &metrics_a)?;
         drop(stream);
         drop(client_a);

@@ -38,6 +38,10 @@ impl RecordingMetrics {
     }
 
     /// `(operation, error_kind)` for every persistence failure reported.
+    ///
+    /// Read by Act 1 and its unit test; a build without `sqlite` keeps it
+    /// for the test alone.
+    #[cfg_attr(not(feature = "sqlite"), allow(dead_code))]
     pub fn persistence_errors(&self) -> Vec<(String, String)> {
         self.persistence_errors
             .lock()
