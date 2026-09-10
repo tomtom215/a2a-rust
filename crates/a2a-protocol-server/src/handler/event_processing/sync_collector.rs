@@ -1531,11 +1531,14 @@ mod tests {
     }
 
     /// The blocking path reports every push outcome, as the background path
-    /// does: with a 1s sender, a 5s per-delivery timeout and a 3s budget over
-    /// ten configs and two events, three are `delivered` and the seventeen
-    /// (event, config) pairs never contacted are `skipped` — the seven
-    /// remaining configs of the first event plus all ten of the second, so
-    /// the skip count's arithmetic is pinned, not only its total. Until
+    /// does: with a 1s sender, a 5s per-delivery timeout and a 4s budget over
+    /// three configs and four events, four are `delivered` (all of the first
+    /// event, one of the second) and the eight (event, config) pairs never
+    /// contacted are `skipped` — the two remaining configs of the second
+    /// event plus three for each of the two events after it. The shape is
+    /// chosen so every operator in the skip count is observable: the
+    /// deadline lands inside a later event with more than one event still
+    /// to come, and 3 × 2 differs from 3 + 2, 3 / 2 and 3 − 2. Until
     /// 2026-09-10 this path reported nothing — a blocking request's pushes
     /// were trace lines a default build compiles away.
     #[tokio::test(start_paused = true)]
@@ -1545,7 +1548,7 @@ mod tests {
         use std::sync::atomic::AtomicU64;
 
         let store = InMemoryPushConfigStore::new();
-        for i in 0..10 {
+        for i in 0..3 {
             store
                 .set(a2a_protocol_types::push::TaskPushNotificationConfig {
                     tenant: None,
@@ -1566,13 +1569,15 @@ mod tests {
             .with_handler_limits(
                 HandlerLimits::default()
                     .with_push_delivery_timeout(std::time::Duration::from_secs(5))
-                    .with_push_delivery_budget(std::time::Duration::from_secs(3)),
+                    .with_push_delivery_budget(std::time::Duration::from_secs(4)),
             )
             .build()
             .unwrap();
         handler.spawn_push_delivery(
             TaskId::new("t-outcomes"),
             vec![
+                make_status_event("t-outcomes", TaskState::Submitted),
+                make_status_event("t-outcomes", TaskState::Working),
                 make_status_event("t-outcomes", TaskState::Working),
                 make_status_event("t-outcomes", TaskState::Completed),
             ],
@@ -1580,9 +1585,9 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_secs(25)).await;
 
         let counts = outcomes.0.lock().unwrap().clone();
-        assert_eq!(counts.get(push_outcome::DELIVERED), Some(&3), "{counts:?}");
-        assert_eq!(counts.get(push_outcome::SKIPPED), Some(&17), "{counts:?}");
-        assert_eq!(counts.values().sum::<u64>(), 20, "{counts:?}");
+        assert_eq!(counts.get(push_outcome::DELIVERED), Some(&4), "{counts:?}");
+        assert_eq!(counts.get(push_outcome::SKIPPED), Some(&8), "{counts:?}");
+        assert_eq!(counts.values().sum::<u64>(), 12, "{counts:?}");
     }
 
     /// The blocking path's push deliveries stop at `push_delivery_budget`,
