@@ -1532,9 +1532,12 @@ mod tests {
 
     /// The blocking path reports every push outcome, as the background path
     /// does: with a 1s sender, a 5s per-delivery timeout and a 3s budget over
-    /// ten configs, three are `delivered` and the seven never contacted are
-    /// `skipped`. Until 2026-09-10 this path reported nothing — a blocking
-    /// request's pushes were trace lines a default build compiles away.
+    /// ten configs and two events, three are `delivered` and the seventeen
+    /// (event, config) pairs never contacted are `skipped` — the seven
+    /// remaining configs of the first event plus all ten of the second, so
+    /// the skip count's arithmetic is pinned, not only its total. Until
+    /// 2026-09-10 this path reported nothing — a blocking request's pushes
+    /// were trace lines a default build compiles away.
     #[tokio::test(start_paused = true)]
     async fn the_sync_path_reports_every_push_outcome() {
         use crate::handler::HandlerLimits;
@@ -1569,14 +1572,17 @@ mod tests {
             .unwrap();
         handler.spawn_push_delivery(
             TaskId::new("t-outcomes"),
-            vec![make_status_event("t-outcomes", TaskState::Working)],
+            vec![
+                make_status_event("t-outcomes", TaskState::Working),
+                make_status_event("t-outcomes", TaskState::Completed),
+            ],
         );
-        tokio::time::sleep(std::time::Duration::from_secs(12)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(25)).await;
 
         let counts = outcomes.0.lock().unwrap().clone();
         assert_eq!(counts.get(push_outcome::DELIVERED), Some(&3), "{counts:?}");
-        assert_eq!(counts.get(push_outcome::SKIPPED), Some(&7), "{counts:?}");
-        assert_eq!(counts.values().sum::<u64>(), 10, "{counts:?}");
+        assert_eq!(counts.get(push_outcome::SKIPPED), Some(&17), "{counts:?}");
+        assert_eq!(counts.values().sum::<u64>(), 20, "{counts:?}");
     }
 
     /// The blocking path's push deliveries stop at `push_delivery_budget`,

@@ -617,6 +617,27 @@ mod tests {
         );
     }
 
+    /// The writer's `Debug` is hand-written to elide the channel and report
+    /// the decision-carrying fields; a body of `Ok(Default::default())`
+    /// prints nothing, which the 2026-09-10 incremental sweep found unpinned.
+    #[tokio::test]
+    async fn writer_debug_reports_the_decision_carrying_fields() {
+        let (writer, _reader) = new_in_memory_queue();
+        let rendered = format!("{writer:?}");
+        assert!(
+            rendered.contains("InMemoryQueueWriter"),
+            "the type name must appear: {rendered}"
+        );
+        assert!(
+            rendered.contains("persistence: false"),
+            "the persistence hand-off must be visible: {rendered}"
+        );
+        assert!(
+            rendered.contains("metrics: false"),
+            "the metrics hook must be visible: {rendered}"
+        );
+    }
+
     /// Kills the whole-method replacement of the reader's `Debug` impl. It
     /// deliberately elides the channel and reports only the fields that carry
     /// decisions, so a `Default` implementation would silently drop the
