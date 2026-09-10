@@ -55,7 +55,7 @@ serde_json     = { workspace = true }
 # RFC 6749 §2.3.1 Basic client authentication for the token_provider module.
 # Tiny, zero transitive deps; also already in-tree via the types crate's
 # `signing` feature.
-base64         = "0.22"
+base64         = "0.23"
 hyper          = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util     = { workspace = true }

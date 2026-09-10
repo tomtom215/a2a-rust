@@ -60,7 +60,7 @@ uuid           = { workspace = true }
 # is requested here rather than relied on from the server's feature set, so this
 # example does not depend on another crate's choices to compile.
 ring              = { version = "0.17", optional = true }
-base64            = { version = "0.22", optional = true }
+base64            = { version = "0.23", optional = true }
 # HTTPS push: `rcgen` mints the throwaway certificate, `tokio-rustls` runs
 # the TLS webhook sink, and `rustls` builds the trust store the sender is
 # handed. All four are already in the workspace lockfile via the server.
