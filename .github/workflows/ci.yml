@@ -467,7 +467,7 @@ jobs:
       - name: Test (Postgres rate-limit counter, live database)
         run: |
           cargo test -p a2a-protocol-server --features postgres --lib \
-            rate_limit::shared::postgres -- --ignored
+            rate_limit::shared -- --ignored
 
   # ── Nightly CI ──────────────────────────────────────────────────────────
   nightly:

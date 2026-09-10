@@ -278,6 +278,7 @@ SLIMRPC_EXAMPLE=$SLIMRPC_DIR/examples/in_process.rs
 SLIMRPC_TOML=$SLIMRPC_DIR/Cargo.toml
 SLIMRPC_SPIFFE=$SLIMRPC_DIR/tests/spiffe.rs
 MULTI_REPLICA=crates/a2a-protocol-server/tests/multi_replica.rs
+RATE_LIMIT_SHARED=crates/a2a-protocol-server/src/rate_limit/shared.rs
 
 # Maps a gate command to the injection that must break it. Matched by
 # substring against the full command, longest match wins, so
@@ -357,6 +358,15 @@ injection_for() {
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
             echo "ignored_suite:$MULTI_REPLICA:the multi-replica suite" ;;
+        # The Postgres rate-limit counter's tests are inline in the module,
+        # so the probe is appended to the module file and the step's filter
+        # is the module path, which selects the probe too.
+        *"rate_limit::shared"*)
+            echo "ignored_suite:$RATE_LIMIT_SHARED:the Postgres rate-limit counter suite" ;;
+        # Every feature set compiles the types crate's lib.rs, so a lint there
+        # is seen by every one of cargo-hack's invocations.
+        "cargo hack clippy"*)
+            echo "clippy_always:$TYPES_LIB" ;;
         "cargo doc"*)
             echo "doc" ;;
         "cargo package"*)

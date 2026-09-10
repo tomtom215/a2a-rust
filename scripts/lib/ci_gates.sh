@@ -22,7 +22,7 @@ GATE_JOBS='^(fmt|clippy|features|test|test-postgres|doc|package|dogfood|example-
 
 NON_GATE_JOBS='^(nightly|deny|semver)$'
 
-SKIP_STEPS='^(Install SPIRE)$'
+SKIP_STEPS='^(Install SPIRE|Install cargo-hack)$'
 
 # Emits one gate per line as "<prefix>\t<command>". The two fields are
 # separate because prove_gates_fail.sh looks its injection up by the bare
