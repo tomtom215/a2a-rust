@@ -175,7 +175,7 @@ mod tests {
             Some("ctx")
         );
         assert_eq!(p.message.task_id.as_ref().map(|t| t.0.as_str()), Some("t1"));
-        assert!(!p.message.id.0.is_empty());
+        assert_ne!(p.message.id.0, "", "a message id is generated");
         assert!(p.configuration.is_none(), "no config unless asked");
     }
 

@@ -8,6 +8,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+
+use super::claim_one;
 use std::time::Duration;
 
 use a2a_protocol_server::executor::AgentExecutor;
@@ -115,10 +117,7 @@ impl AgentExecutor for FlakyExecutor {
             emit.status(TaskState::Working).await?;
             // Decrement-if-positive, so concurrent invocations cannot drive
             // the counter below zero.
-            let inject = tally
-                .failures_left
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-                .is_ok();
+            let inject = claim_one(&tally.failures_left);
             if inject {
                 return Err(A2aError::internal(format!(
                     "injected failure on attempt {attempt}"

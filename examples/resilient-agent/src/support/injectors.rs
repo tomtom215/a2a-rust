@@ -12,6 +12,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use super::claim_one;
+
 use bytes::Bytes;
 use http_body_util::{BodyExt as _, Full};
 use hyper::body::Incoming;
@@ -83,10 +85,7 @@ pub async fn webhook_sink(refusals: u32, status: StatusCode) -> (String, Arc<Sin
                         // Read the body so the sender's request completes
                         // normally either way.
                         let _ = req.into_body().collect().await;
-                        let refuse = tally
-                            .refusals_left
-                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-                            .is_ok();
+                        let refuse = claim_one(&tally.refusals_left);
                         let resp = if refuse {
                             tally.refused.fetch_add(1, Ordering::SeqCst);
                             text_response(status, "not now")
@@ -132,10 +131,7 @@ impl ProxyTally {
     /// Claims one of the remaining faults, counting it. `false` once they
     /// are spent.
     fn take_fault(&self) -> bool {
-        let taken = self
-            .faults_left
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-            .is_ok();
+        let taken = claim_one(&self.faults_left);
         if taken {
             self.faulted.fetch_add(1, Ordering::SeqCst);
         }
