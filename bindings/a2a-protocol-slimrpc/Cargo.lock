@@ -26,6 +26,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "mutants",
  "serde",
  "serde_json",
  "tokio",
@@ -2705,6 +2706,12 @@ checksum = "a198f9589efc03f544388dfc4a19fe8af4323662b62f598b8dcfdac62c14771c"
 dependencies = [
  "byteorder",
 ]
+
+[[package]]
+name = "mutants"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "add0ac067452ff1aca8c5002111bd6b1c895baee6e45fcbc44e0193aea17be56"
 
 [[package]]
 name = "nom"

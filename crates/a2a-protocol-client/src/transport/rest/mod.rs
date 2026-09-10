@@ -279,6 +279,37 @@ mod tests {
         assert!(result.is_ok(), "send_request via trait should succeed");
     }
 
+    /// `stream_connect_timeout` is one budget for the headers and, when the
+    /// answer is not a stream, the error body — the REST mirror of the
+    /// JSON-RPC transport's test of the same name.
+    #[tokio::test]
+    async fn a_stalled_error_body_is_bounded_by_the_connect_timeout() {
+        let connect = Duration::from_millis(600);
+        let addr = crate::transport::test_support::spawn_stalling_server(
+            "HTTP/1.1 500 Internal Server Error",
+            connect * 2 / 3,
+        )
+        .await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport =
+            RestTransport::with_timeouts(&url, Duration::from_secs(30), connect).unwrap();
+
+        let started = std::time::Instant::now();
+        let result = transport
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
+            .await;
+        let elapsed = started.elapsed();
+        assert!(matches!(result, Err(ClientError::Timeout(_))), "{result:?}");
+        assert!(
+            elapsed >= connect && elapsed < connect * 3 / 2,
+            "one budget, not two: took {elapsed:?} against {connect:?}"
+        );
+    }
+
     /// Test `send_streaming_request` via Transport trait delegation (covers lines 195-202).
     #[tokio::test]
     async fn send_streaming_request_via_trait_delegation() {

@@ -14,6 +14,7 @@
 //! | [`push_delivery`] | Push notification delivery to webhook endpoints |
 
 mod push_delivery;
+pub use push_delivery::timeout_outcome;
 mod state_machine;
 
 use std::sync::Arc;

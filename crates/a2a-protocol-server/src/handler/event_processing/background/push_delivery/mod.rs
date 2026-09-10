@@ -35,7 +35,7 @@ use crate::push::{PushConfigStore, PushSender};
 /// to have been truncated, and claiming it would be inventing a diagnosis.
 ///
 /// [`PushSender::max_delivery_duration`]: crate::push::PushSender::max_delivery_duration
-fn timeout_outcome(sender: &dyn PushSender, limits: &HandlerLimits) -> &'static str {
+pub fn timeout_outcome(sender: &dyn PushSender, limits: &HandlerLimits) -> &'static str {
     if sender
         .max_delivery_duration()
         .is_some_and(|wanted| wanted > limits.push_delivery_timeout)

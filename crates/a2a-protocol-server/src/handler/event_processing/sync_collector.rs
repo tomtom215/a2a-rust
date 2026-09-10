@@ -5,6 +5,7 @@
 
 //! Synchronous event collection for non-streaming mode.
 
+use crate::metrics::push_outcome;
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
@@ -409,60 +410,102 @@ impl RequestHandler {
         if events.is_empty() {
             return;
         }
-        let store = std::sync::Arc::clone(&self.push_config_store);
-        let per_delivery_timeout = self.limits.push_delivery_timeout;
-        let push_delivery_budget = self.limits.push_delivery_budget;
+        // Every outcome is reported through `Metrics::on_push_delivery`,
+        // exactly as the background path reports its own; until 2026-09-10
+        // this path only wrote trace lines, which a default build compiles
+        // away, so a blocking request's pushes were invisible. The timeout
+        // label is decided once: `timeout_truncated` when the sender's own
+        // schedule does not fit `push_delivery_timeout`, `timeout` otherwise.
+        let timeout_label = super::background::timeout_outcome(sender.as_ref(), &self.limits);
+        let job = SyncPushJob {
+            store: std::sync::Arc::clone(&self.push_config_store),
+            sender,
+            task_id,
+            events,
+            push_delivery_timeout: self.limits.push_delivery_timeout,
+            push_delivery_budget: self.limits.push_delivery_budget,
+            metrics: std::sync::Arc::clone(&self.metrics),
+            timeout_label,
+        };
         // `task_local` tenant context does not cross `tokio::spawn`, so capture
         // it explicitly, exactly as the streaming background processor does.
         let tenant = crate::store::tenant::TenantContext::current();
         tokio::spawn(crate::store::tenant::TenantContext::scope(
             tenant,
-            async move {
-                let Ok(configs) = store.list(task_id.as_ref()).await else {
-                    return;
-                };
-                if configs.is_empty() {
-                    return;
-                }
-                // The amplification cap, covering every event of this request
-                // against every config. See `HandlerLimits::push_delivery_budget`.
-                let deadline = tokio::time::Instant::now() + push_delivery_budget;
-                for event in &events {
-                    for config in &configs {
-                        if tokio::time::Instant::now() >= deadline {
-                            trace_warn!(
-                                task_id = %task_id,
-                                "push delivery deadline exceeded; skipping remaining"
-                            );
-                            return;
-                        }
-                        match tokio::time::timeout(
-                            per_delivery_timeout,
-                            sender.send(&config.url, event, config),
-                        )
-                        .await
-                        {
-                            Ok(Err(_err)) => {
-                                trace_warn!(
-                                    task_id = %task_id,
-                                    url = %config.url,
-                                    error = %_err,
-                                    "push notification delivery failed"
-                                );
-                            }
-                            Err(_) => {
-                                trace_warn!(
-                                    task_id = %task_id,
-                                    url = %config.url,
-                                    "push notification delivery timed out"
-                                );
-                            }
-                            Ok(Ok(())) => {}
-                        }
-                    }
-                }
-            },
+            job.run(),
         ));
+    }
+}
+
+/// The blocking path's push deliveries for one request: every collected
+/// event to every config of the task, sequentially, under one budget.
+struct SyncPushJob {
+    store: std::sync::Arc<dyn crate::push::PushConfigStore>,
+    sender: std::sync::Arc<dyn crate::push::PushSender>,
+    task_id: TaskId,
+    events: Vec<StreamResponse>,
+    push_delivery_timeout: std::time::Duration,
+    push_delivery_budget: std::time::Duration,
+    metrics: std::sync::Arc<dyn crate::metrics::Metrics>,
+    timeout_label: &'static str,
+}
+
+impl SyncPushJob {
+    async fn run(self) {
+        let Ok(configs) = self.store.list(self.task_id.as_ref()).await else {
+            return;
+        };
+        if configs.is_empty() {
+            return;
+        }
+        // The amplification cap, covering every event of this request
+        // against every config. See `HandlerLimits::push_delivery_budget`.
+        let deadline = tokio::time::Instant::now() + self.push_delivery_budget;
+        for (event_index, event) in self.events.iter().enumerate() {
+            for (reached, config) in configs.iter().enumerate() {
+                if tokio::time::Instant::now() >= deadline {
+                    trace_warn!(
+                        task_id = %self.task_id,
+                        "push delivery deadline exceeded; skipping remaining"
+                    );
+                    // One count per (event, config) pair that will not be
+                    // contacted: the rest of this event's configs, then every
+                    // config of every later event.
+                    let remaining = (configs.len() - reached)
+                        + configs.len() * (self.events.len() - event_index - 1);
+                    for _ in 0..remaining {
+                        self.metrics.on_push_delivery(push_outcome::SKIPPED);
+                    }
+                    return;
+                }
+                let outcome = match tokio::time::timeout(
+                    self.push_delivery_timeout,
+                    self.sender.send(&config.url, event, config),
+                )
+                .await
+                {
+                    Ok(Ok(())) => push_outcome::DELIVERED,
+                    Ok(Err(_err)) => {
+                        trace_warn!(
+                            task_id = %self.task_id,
+                            url = %config.url,
+                            error = %_err,
+                            "push notification delivery failed"
+                        );
+                        push_outcome::FAILED
+                    }
+                    Err(_) => {
+                        trace_warn!(
+                            task_id = %self.task_id,
+                            url = %config.url,
+                            "push notification delivery timed out"
+                        );
+                        self.timeout_label
+                    }
+                };
+                self.metrics.on_push_delivery(outcome);
+            }
+        }
     }
 }
 
@@ -479,6 +522,7 @@ mod tests {
 
     use crate::agent_executor;
     use crate::builder::RequestHandlerBuilder;
+    use crate::metrics::{Metrics, push_outcome};
     use crate::store::{InMemoryTaskStore, TaskStore};
     use crate::streaming::EventQueueWriter;
     use crate::streaming::event_queue::new_in_memory_queue;
@@ -1470,6 +1514,69 @@ mod tests {
         // each is longer than any budget a caller passes.
         tokio::time::sleep(std::time::Duration::from_secs(12)).await;
         sent.load(Ordering::Relaxed)
+    }
+
+    /// Counts `Metrics::on_push_delivery` labels.
+    #[derive(Default)]
+    struct PushOutcomes(std::sync::Mutex<std::collections::BTreeMap<String, u64>>);
+    impl Metrics for PushOutcomes {
+        fn on_push_delivery(&self, outcome: &str) {
+            *self
+                .0
+                .lock()
+                .unwrap()
+                .entry(outcome.to_owned())
+                .or_default() += 1;
+        }
+    }
+
+    /// The blocking path reports every push outcome, as the background path
+    /// does: with a 1s sender, a 5s per-delivery timeout and a 3s budget over
+    /// ten configs, three are `delivered` and the seven never contacted are
+    /// `skipped`. Until 2026-09-10 this path reported nothing — a blocking
+    /// request's pushes were trace lines a default build compiles away.
+    #[tokio::test(start_paused = true)]
+    async fn the_sync_path_reports_every_push_outcome() {
+        use crate::handler::HandlerLimits;
+        use crate::push::{InMemoryPushConfigStore, PushConfigStore};
+        use std::sync::atomic::AtomicU64;
+
+        let store = InMemoryPushConfigStore::new();
+        for i in 0..10 {
+            store
+                .set(a2a_protocol_types::push::TaskPushNotificationConfig {
+                    tenant: None,
+                    id: Some(format!("cfg-{i}")),
+                    task_id: Some("t-outcomes".to_owned()),
+                    url: format!("https://example.com/hook{i}"),
+                    token: None,
+                    authentication: None,
+                })
+                .await
+                .unwrap();
+        }
+        let outcomes = Arc::new(PushOutcomes::default());
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_config_store(store)
+            .with_push_sender(OneSecondSender(Arc::new(AtomicU64::new(0))))
+            .with_metrics(Arc::clone(&outcomes))
+            .with_handler_limits(
+                HandlerLimits::default()
+                    .with_push_delivery_timeout(std::time::Duration::from_secs(5))
+                    .with_push_delivery_budget(std::time::Duration::from_secs(3)),
+            )
+            .build()
+            .unwrap();
+        handler.spawn_push_delivery(
+            TaskId::new("t-outcomes"),
+            vec![make_status_event("t-outcomes", TaskState::Working)],
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(12)).await;
+
+        let counts = outcomes.0.lock().unwrap().clone();
+        assert_eq!(counts.get(push_outcome::DELIVERED), Some(&3), "{counts:?}");
+        assert_eq!(counts.get(push_outcome::SKIPPED), Some(&7), "{counts:?}");
+        assert_eq!(counts.values().sum::<u64>(), 10, "{counts:?}");
     }
 
     /// The blocking path's push deliveries stop at `push_delivery_budget`,

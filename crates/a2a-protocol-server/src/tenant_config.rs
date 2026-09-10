@@ -152,6 +152,7 @@ pub struct TenantLimits {
     ///
     /// [`TaskStoreConfig`]: crate::TaskStoreConfig
     #[deprecated(
+        since = "0.10.0",
         note = "never enforced; use TenantAwareInMemoryTaskStore::with_tenant_override \
                 to give a tenant its own TaskStoreConfig::max_capacity"
     )]

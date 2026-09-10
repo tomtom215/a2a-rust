@@ -274,6 +274,7 @@ SERVER_LIB=crates/a2a-protocol-server/src/lib.rs
 SLIMRPC_DIR=bindings/a2a-protocol-slimrpc
 SLIMRPC_LIB=$SLIMRPC_DIR/src/lib.rs
 SLIMRPC_BIN=$SLIMRPC_DIR/src/bin/slim_node.rs
+SLIMRPC_EXAMPLE=$SLIMRPC_DIR/examples/in_process.rs
 SLIMRPC_TOML=$SLIMRPC_DIR/Cargo.toml
 SLIMRPC_SPIFFE=$SLIMRPC_DIR/tests/spiffe.rs
 MULTI_REPLICA=crates/a2a-protocol-server/tests/multi_replica.rs
@@ -302,6 +303,9 @@ injection_for() {
                 "cargo fmt"*)     echo "fmt:$SLIMRPC_LIB" ;;
                 "cargo clippy"*)  echo "clippy_always:$SLIMRPC_LIB" ;;
                 "cargo build"*)   echo "build_bin:$SLIMRPC_BIN" ;;
+                # The example is compiled by nothing else in the job: `cargo
+                # test` builds tests and doc-tests, not examples.
+                "cargo run --example"*) echo "build_bin:$SLIMRPC_EXAMPLE" ;;
                 "cargo test"*)    echo "test_always:$SLIMRPC_LIB" ;;
                 *)                echo "" ;;
             esac

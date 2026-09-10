@@ -42,7 +42,7 @@ before you choose:
 |---|---|---|
 | Eleven A2A methods | yes | yes |
 | Multicast (`spec/v1/slimrpc-multicast.md`, on upstream `main`) | **yes** | no |
-| Collaborate (`spec/v1/slimrpc-collaborative-channel.md`, on an unmerged upstream branch) | **no** | yes |
+| Collaborate (`Collaborate` on `experimental.slimrpc.collaborative_channel.v1.CollaborativeChannelService`; its document no longer exists on any upstream branch — see below) | **no** | yes, at 0.2.7 |
 | Channel moderator (`spec/v1/slimrpc-channel-moderator.md`, unmerged branch) | no | no |
 
 Multicast and Collaborate are different operations, not two names for one. This
@@ -58,8 +58,19 @@ statement that it does not matter — the tracking item is B24 in
 `docs/v0.9.0-post-release-review.md`, and `scripts/check_slimrpc_spec.sh` fails
 CI if upstream gains a specification nobody here has triaged.
 
-Verified 2026-08-26 by reading both sources and all upstream branch tips, not by
-comparing feature lists.
+The target has since moved further. On 2026-09-03 the branch that held
+`spec/v1/slimrpc-collaborative-channel.md` (`feat/slimrpc-collaborative-channel`)
+replaced it with `spec/v1/slimrpc-broadcast-live.md`, a different design: a
+broadcast routing mode for A2A 1.1's `SendLiveMessage` (its §3 requires A2A 1.1
+and that method), which no released A2A specification defines. The official
+crate, at 0.2.7 on `a2a-rs` `main`, still ships `Collaborate` against the
+withdrawn document. So the row above now records an implementation of a
+specification that upstream has retracted, on both sides of the comparison.
+
+Verified 2026-08-26 and re-verified 2026-09-10 by reading both sources and all
+upstream branch tips, not by comparing feature lists. On the second date
+`check_slimrpc_spec.sh` reported 2 files on upstream `main`, all vendored and
+matching, and 5 branch-only specifications, all triaged.
 
 ## Why it is not in the workspace
 
@@ -221,6 +232,140 @@ Two failure kinds are kept distinct, because they call for different responses:
 SLIM's interleaved source-tagged frames, so one agent's stream ending does not
 affect another's.
 
+## Backpressure
+
+The SLIMRPC specification says nothing about it. What follows is what the code
+does, examined 2026-09-10 by reading `agntcy-slim-rpc` 2.3.0,
+`agntcy-slim-session` 0.7.10, `agntcy-slim-datapath` 0.18.7 and
+`agntcy-slim-service` 0.12.10 — the versions in `Cargo.lock`; line numbers are
+theirs — and measured in-process where a test can reach it
+(`tests/unicast_backpressure.rs`, `tests/multicast_backpressure.rs`).
+
+### The receive path
+
+Every frame a peer sends crosses five hops on its way to an `EventStream`:
+
+| Hop | Depth | When full |
+|---|---|---|
+| datapath → app connection (`agntcy-slim-datapath` `message_processing.rs:615`, `connection.rs:270`) | 512 | `send().await` blocks the datapath |
+| app → session controller (`agntcy-slim-session` `session_builder.rs:595`, `session_controller.rs:568-580`) | 256 | blocks |
+| session controller → app receiver (`session_layer.rs:561`, `session_controller.rs:274`) | **unbounded** | never |
+| `agntcy-slim-rpc` dispatcher → the call's own channel (`channel.rs:89`, `:102`, `:144`) | **unbounded** | never |
+| this crate's bridge task → `EventStream` (`src/client/mod.rs:43`, `:420`, `:439`) | 64 | `send().await` parks the bridge task |
+
+The receiving session layer acks a frame the moment it arrives
+(`session_receiver.rs:129` builds the ack before `:154` hands the frame to the
+app), so the sender's reliable-delivery state is released whether or not
+anything ever reads the frame.
+
+### (a) A unicast stream whose consumer stops reading
+
+**Mechanism.** `SlimRpcTransport` spawns one bridge task per streaming call
+(`src/client/mod.rs:421`) that pulls frames from `Channel::unary_stream` and
+pushes them into a 64-slot channel with `send().await` (`:439`). When the
+consumer stops reading, the bridge parks on the 65th frame and is no longer
+polling the SLIM stream, so every further frame the agent sends is delivered by
+the dispatcher task into the channel `agntcy-slim-rpc` registered for the call
+(`channel.rs:550`), which is unbounded (`:89`).
+
+**Bound.** None by count. Frames accumulate there until the consumer resumes,
+drops the stream, or the RPC deadline — `with_timeout`, otherwise `MAX_TIMEOUT`
+= 36 000 s (`agntcy-slim-rpc` `lib.rs:208`) — is observed. The deadline is a
+`select!` branch inside the stream (`channel.rs:539`, `:583`) and is checked
+only when the stream is polled, so a parked consumer's frames are not discarded
+when it passes; on resume the stream yields either the buffered frames or
+`DeadlineExceeded`, in whichever order `select!` picks. Dropping the
+`EventStream` closes the bridge's channel, the parked `send` returns an error,
+the bridge exits, and its `DispatcherGuard` unregisters the call's channel and
+frees what it held (`channel.rs:123-136`).
+
+**Consequence.** A slow or stalled consumer costs the *client* memory in
+proportion to what the agent sends, and costs the agent nothing: its frames are
+acked on receipt, its `send_response_stream` completes, and other calls on the
+same channel — which share the session and the dispatcher task — are
+unaffected. A peer that streams without end therefore grows a client's memory
+without limit for as long as the client's consumer is slower than the peer;
+nothing in the stack drops or refuses frames on the client's behalf, and the
+client's controls are `with_timeout`, reading, and dropping the stream.
+
+Measured: with one stream held unread, the agent's execution completes, a
+second stream of 301 events is delivered in full, a unary call completes, and
+the held stream delivers all 301 events with no lag report once read
+(`tests/unicast_backpressure.rs`, both tests). The second test fails — 129 of
+300 delivered — when the bridge is changed to drop on a full channel, which is
+the trade multicast makes (`src/multicast/fanout.rs:116`). Unicast buffers
+instead because the bridge task is private to the call and parks nobody else.
+
+### (b) A server streaming to a peer that stops acking
+
+**Mechanism.** `event_stream` (`src/server/methods/mod.rs:402`) pulls domain
+events from the handler's queue as `agntcy-slim-rpc`'s `send_response_stream`
+(`rpc_session.rs:219`) asks for them. That function publishes each frame with
+`publish().await` and does not wait for its acknowledgement: it keeps one
+`CompletionHandle` per frame in a `Vec` (`:234`, `:239`) and awaits them all
+after the EOS (`:259`). `publish` puts the frame on the controller's 256-slot
+channel (`session_controller.rs:568-580`); the controller's reliable sender
+retains a copy in a 512-entry ring, oldest evicted (`session_sender.rs:106`),
+starts a timer per frame (`:279`) with the session's settings — 1 s interval,
+10 retries, chosen by the initiating client (`agntcy-slim-rpc`
+`channel.rs:416-417`; defaults at `session_config.rs:71-72`) — and hands the
+frame to the datapath's 512-slot connection channel (`session_controller.rs:269`,
+`message_processing.rs:610`).
+
+**Bound.** Everything on the send side is bounded and blocking: 256 + 512
+frames of channel depth, 512 retained frames, and per-frame timer state that
+lives at most `interval × retries` = 10 s. If the datapath stops draining — a
+stalled node link — `publish().await` blocks, `event_stream` stops pulling, the
+handler's broadcast queue overruns at `DEFAULT_QUEUE_CAPACITY` = 256
+(`crates/a2a-protocol-server/src/streaming/event_queue/mod.rs:45`), and the
+reader is handed a lag error (`in_memory.rs:424`) that `event_stream` turns into
+an `InternalError` ending the stream. If the datapath drains but the peer never
+acks — it has gone away — each frame's timer expires after ten retries;
+`on_timer_failure` → `on_failure` (`session_sender.rs:485`, `:454`) clears the
+state, the participant marks the peer offline and removes it as an endpoint
+(`session_participant.rs:292`), and the frame's `CompletionHandle` resolves
+**`Ok(())`** (`session_sender.rs:478`: a missing ack is read as the peer being
+unreachable, not as a failed send). The whole handler is additionally bounded
+by the RPC deadline (`rpc_session.rs:102`, `:116`), 10 h when the client sent
+none. The `usize::MAX` in the message-size table on `SlimRpcTransport` is
+tonic's *encoder* limit, a size, not a queue depth; it plays no part here.
+
+**Consequence.** A server streaming to a peer that has vanished neither grows
+without bound nor hangs: it finishes about 10 s after its last frame and
+reports success. `SendStreamingMessage` toward a dead peer completes as `Ok` on
+the agent side with nothing delivered; the agent cannot tell the two apart, and
+the task's stored state is what records that the work happened. This path is
+read, not run: an in-process test cannot kill the peer's session layer without
+killing the datapath both ends share.
+
+### (c) A multicast request (`send_message`)
+
+**Mechanism.** `multicast_unary` (`src/multicast/mod.rs:193`) is the same
+response stream as unicast, over a group session, and its frames arrive through
+the same unbounded per-call channel (`channel.rs:89`). The consumer is
+`send_message`'s own loop, which polls continuously — there is no application
+consumer in between — and files one decoded response per source into a map
+keyed by member (`:208`, `:227`), a later response from a member replacing its
+earlier one.
+
+**Bound.** One map entry per responding member. The loop ends when every
+member has sent EOS, on `DeadlineExceeded` (`:250`) — `with_timeout`, otherwise
+10 h — or on an interaction-level error, and `collect_outcomes` (`:308`) then
+emits exactly one outcome per invited member. The per-call channel holds only
+what arrives between two polls of a loop that does nothing else.
+
+**Consequence.** Bounded by member count and by time. The knob that matters is
+`with_timeout`: without it a silent member holds the call open for
+`MAX_TIMEOUT`. The silent-member case is covered by `tests/multicast.rs`
+(`a_silent_agent_is_a_failed_outcome_not_a_missing_one`).
+
+### Not covered here
+
+Admission. Each new `rpc-id` on a session spawns a handler task
+(`agntcy-slim-rpc` `server.rs:337`) with no concurrency cap in SLIMRPC itself;
+the `RequestHandler`'s own `HandlerLimits` apply per call. That is request-rate
+control rather than stream backpressure, and this section does not examine it.
+
 ## Identity
 
 `with_identity` takes SLIM's own `AuthProvider` and `AuthVerifier`, so every
@@ -302,14 +447,48 @@ Bringing up a node otherwise means installing the full AGNTCY SLIM
 distribution, which is a large ask for someone who only wants to try the
 binding.
 
+## Example
+
+`examples/in_process.rs` is the smallest complete deployment: one in-process
+SLIM `Service`, an agent served by `SlimRpcServer` on a `RequestHandler`, and
+an ordinary `A2aClient` built on `SlimRpcTransport` through
+`with_custom_transport`. The client sends one blocking message and one
+streaming message, prints what comes back, shuts both ends down and exits 0.
+No node, no network, no credential beyond a shared secret.
+
+```
+cargo run --example in_process
+```
+
+```
+agent  slim://org/demo/echo_agent serving 11 methods
+client slim://org/demo/caller dialling slim://org/demo/echo_agent
+
+SendMessage("hello")
+  task 9d91def0-f5c7-4b7a-b10d-f3a0ddb927b6 is Completed
+  artifact echo: echo: hello
+
+SendStreamingMessage("hello, streaming")
+  task e177f82b-e2c6-478e-a6e3-13fa08a8bd9a Submitted
+  status Working
+  artifact echo: echo: hello, streaming
+  status Completed
+  stream ended
+```
+
+The setup is the one `tests/e2e.rs` uses, copied rather than shared so the
+file is complete on its own. CI runs it after the test step, so the example
+cannot rot while the tests stay green.
+
 ## Tests
 
 ```
-cargo test                                          # 56 tests
+cargo test -- --test-threads=1                      # 72 tests, plus the doc tests
 SPIRE_BIN_DIR=... cargo test -- --ignored           # + 9 against real SPIRE
 ```
 
-65 tests across ten topologies. None are mocked, and each topology exists
+81 tests across ten topologies — 39 unit, 33 integration, 9 needing SPIRE,
+counted from the 2026-09-10 run. None are mocked, and each topology exists
 because it can fail in a way the ones above it cannot.
 
 | Suite | Topology | What only this can catch |
@@ -324,6 +503,12 @@ because it can fail in a way the ones above it cannot.
 | `spiffe.rs` | **real SPIRE** server + agent | workload identity from a real attesting authority |
 | `spiffe_federation.rs` | **two** SPIRE deployments | that a trust domain is a boundary, and that federation crosses it |
 | `spiffe_rotation.rs` | SPIRE with 40-second SVIDs | an agent outliving the credential it started with |
+
+Two further suites reuse the first two topologies to measure a property
+rather than a method: `unicast_backpressure.rs` holds a point-to-point stream
+unread and checks that the agent, the other calls on the channel, and every
+event survive it; `multicast_backpressure.rs` does the same in a group, where
+the answer is different. Both are explained under Backpressure above.
 
 The three SPIFFE suites are `#[ignore]`d because they need `spire-server` and
 `spire-agent` on `PATH` or in `SPIRE_BIN_DIR`; CI installs them and runs

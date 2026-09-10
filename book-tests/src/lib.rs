@@ -217,3 +217,6 @@ pub mod page_reference_pitfalls {}
 
 #[doc = include_str!("../../book/src/reference/regression-gate.md")]
 pub mod page_reference_regression_gate {}
+
+#[doc = include_str!("../../book/src/reference/upgrading.md")]
+pub mod page_reference_upgrading {}

@@ -325,19 +325,22 @@ impl JsonRpcTransport {
 
         let (_request_id, req) = self.build_request(method, params, extra_headers, true)?;
 
-        let resp = tokio::time::timeout(
-            self.inner.stream_connect_timeout,
-            self.inner.client.request(req),
-        )
-        .await
-        .map_err(|_| {
-            trace_error!(method, "stream connect timed out");
-            ClientError::Timeout("stream connect timed out".into())
-        })?
-        .map_err(|e| {
-            trace_error!(method, error = %e, "HTTP client error");
-            ClientError::HttpClient(e.to_string())
-        })?;
+        // `stream_connect_timeout` bounds establishing the stream: headers,
+        // and — when the answer is not a stream — the error body too, from
+        // one deadline. A fresh timeout on the body read would let a server
+        // that answers 500 and then stalls hold the caller for twice the
+        // documented bound (`scripts/check_timeout_nesting.py`).
+        let deadline = tokio::time::Instant::now() + self.inner.stream_connect_timeout;
+        let resp = tokio::time::timeout_at(deadline, self.inner.client.request(req))
+            .await
+            .map_err(|_| {
+                trace_error!(method, "stream connect timed out");
+                ClientError::Timeout("stream connect timed out".into())
+            })?
+            .map_err(|e| {
+                trace_error!(method, error = %e, "HTTP client error");
+                ClientError::HttpClient(e.to_string())
+            })?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -348,7 +351,7 @@ impl JsonRpcTransport {
             let body_bytes = super::collect_response_limited(
                 resp,
                 self.inner.max_response_size,
-                self.inner.stream_connect_timeout,
+                deadline.saturating_duration_since(tokio::time::Instant::now()),
             )
             .await?;
             let body_str = String::from_utf8_lossy(&body_bytes);
@@ -373,7 +376,7 @@ impl JsonRpcTransport {
             let body_bytes = super::collect_response_limited(
                 resp,
                 self.inner.max_response_size,
-                self.inner.stream_connect_timeout,
+                deadline.saturating_duration_since(tokio::time::Instant::now()),
             )
             .await?;
             return Err(non_sse_stream_response_error(&content_type, &body_bytes));
@@ -774,6 +777,37 @@ mod tests {
             }
             other => panic!("expected UnexpectedStatus, got {other:?}"),
         }
+    }
+
+    /// `stream_connect_timeout` is one budget for the headers and, when the
+    /// answer is not a stream, the error body. Before 2026-09-10 a server
+    /// that answered 500 and then stalled held the caller for two.
+    #[tokio::test]
+    async fn a_stalled_error_body_is_bounded_by_the_connect_timeout() {
+        let connect = Duration::from_millis(600);
+        let addr = crate::transport::test_support::spawn_stalling_server(
+            "HTTP/1.1 500 Internal Server Error",
+            connect * 2 / 3,
+        )
+        .await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport =
+            JsonRpcTransport::with_timeouts(&url, Duration::from_secs(30), connect).unwrap();
+
+        let started = std::time::Instant::now();
+        let result = transport
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
+            .await;
+        let elapsed = started.elapsed();
+        assert!(matches!(result, Err(ClientError::Timeout(_))), "{result:?}");
+        assert!(
+            elapsed >= connect && elapsed < connect * 3 / 2,
+            "one budget, not two: took {elapsed:?} against {connect:?}"
+        );
     }
 
     /// Test JSON-RPC error response handling (covers lines 258-265).

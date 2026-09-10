@@ -105,6 +105,29 @@ jobs:
       - name: Generate coverage report
         run: cargo llvm-cov report --lcov --output-path lcov.info
 
+      # The SLIMRPC binding is not a workspace member (ci.yml's
+      # `slimrpc-binding` job says why), so `--workspace` above never sees it
+      # and until 2026-09-10 nothing measured it — docs/v0.9.0-post-release-
+      # review.md §2.5 recorded it as "outside coverage and mutation". This is
+      # the suite ci.yml runs there — unit, end-to-end over an in-process SLIM
+      # datapath, and the node topologies on loopback — under instrumentation,
+      # single-threaded for the same reason. The three SPIFFE suites stay
+      # #[ignore]d: they need real SPIRE, which this job does not install.
+      # Measured 2026-09-10 before this step existed: 65.61% line coverage,
+      # 1013 of 1544 lines, across the twelve files under src/.
+      - name: Run the SLIMRPC binding's tests under instrumentation
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo llvm-cov --lcov --output-path lcov.info -- --test-threads=1
+
+      # cargo-llvm-cov writes absolute `SF:` paths rooted at the checkout.
+      # Codecov files a path relative to the repository root, so the prefix is
+      # stripped here rather than left to Codecov's own path fixing, which
+      # nothing in this repository has verified against a nested workspace.
+      # Measured locally: twelve records, all `bindings/a2a-protocol-slimrpc/
+      # src/...` after this step.
+      - name: Make the binding's coverage paths repository-relative
+        run: sed -i "s|^SF:${GITHUB_WORKSPACE}/|SF:|" bindings/a2a-protocol-slimrpc/lcov.info
+
       - name: Upload to Codecov
         # RESOLVED (2026-07-30): the 2026-06-10 outage that motivated the
         # `continue-on-error` this replaces was Codecov permanently losing
@@ -132,7 +155,7 @@ jobs:
         # standing as a stale warning.
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
-          files: lcov.info
+          files: lcov.info,bindings/a2a-protocol-slimrpc/lcov.info
           # A failed upload must be visible, not silently green — otherwise
           # the coverage signal can disappear without anyone noticing.
           fail_ci_if_error: true

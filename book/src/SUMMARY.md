@@ -77,3 +77,4 @@
 - [API Quick Reference](./reference/api-reference.md)
 - [Generated API Docs](./reference/api-docs.md)
 - [Changelog](./reference/changelog.md)
+- [Upgrading Between Minor Versions](./reference/upgrading.md)

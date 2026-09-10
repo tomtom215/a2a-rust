@@ -7,7 +7,9 @@ All notable changes to a2a-rust are documented in the project's [CHANGELOG.md](h
 a2a-rust follows [Semantic Versioning](https://semver.org/):
 
 - **Major** (1.0.0) — Breaking API changes
-- **Minor** (0.2.0) — New features, backward compatible
+- **Minor** (0.2.0) — New features; before `1.0` a minor may also carry
+  breaking changes, batched and labelled as [STABILITY.md](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md)
+  requires — see [Upgrading Between Minor Versions](./upgrading.md)
 - **Patch** (0.2.1) — Bug fixes, backward compatible
 
 All four workspace crates share the same version number and are released together.

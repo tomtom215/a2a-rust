@@ -61,7 +61,7 @@ merged, and the first of them is the reason this survey exists at all:
 
 | branch | file | status |
 |---|---|---|
-| `feat/slimrpc-collaborative-channel` | `spec/v1/slimrpc-collaborative-channel.md` | **not implemented here.** The official `a2a-slimrpc` crate (v0.2.6) implements it — `experimental.slimrpc.collaborative_channel.v1.CollaborativeChannelService`, `Collaborate`, and `slim-src` sender attribution are all present in its source. |
+| `feat/slimrpc-collaborative-channel` | `spec/v1/slimrpc-broadcast-live.md` (since 2026-09-03; it replaced `spec/v1/slimrpc-collaborative-channel.md` on this branch, which now exists on no upstream branch) | **not implemented here.** Its §3 requires A2A 1.1 and `SendLiveMessage`, which no released A2A specification defines. The official `a2a-slimrpc` crate (v0.2.7) still implements the withdrawn Collaborate design — `experimental.slimrpc.collaborative_channel.v1.CollaborativeChannelService`, `Collaborate`, and `slim-src` sender attribution are all present in its source. Triaged in `scripts/check_slimrpc_spec.sh`. |
 | `feat/slimrpc-channel-moderator` | `spec/v1/slimrpc-channel-moderator.md` | not implemented by this binding or by the official crate. |
 
 Three further branches (`feat/slimrpc-multicast-spec`, `feat/spec-versioning`,

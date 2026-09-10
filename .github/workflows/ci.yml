@@ -746,21 +746,25 @@ jobs:
       # in its Cargo.toml keeps the test fixtures out of the tarball), which is
       # exactly the kind of thing that breaks silently between releases.
       #
-      # `--no-verify` is required rather than convenient. The binding depends on
-      # the workspace crates as `version = "0.10", path = "../.."`, and packaging
-      # strips the path — so the verification build resolves `a2a-protocol-server`
-      # from crates.io, i.e. the *last released* version. Any API added in the
-      # same change as the binding that uses it would fail verification until
-      # that release ships. Building the binding against the local server is
-      # what the Build and Test steps above already do.
+      # The wrapper runs `cargo package --allow-dirty` with a config-level
+      # `[patch]` that supplies the three SDK pins from `crates/`, so the
+      # tarball is built and verified against the same crates the Build and
+      # Test steps use. Without it, packaging strips the `path` from
+      # `version = "0.11", path = "../../crates/..."` and verification resolves
+      # the SDK from crates.io — the *last released* version, which fails on
+      # any API added in the same change — and during a release the pinned
+      # version is not on the index at all, so one commit per cycle could not
+      # pass in either direction (B23). Until 2026-09-10 that was answered
+      # with `--no-verify` plus a `cargo package --list` fallback for the
+      # window; the patch answers both, because a patch may name a version
+      # the index does not have. Measured: a consumer pinned to an
+      # unpublished 0.99.0 fails plain `cargo package` and verifies with it.
       #
-      # The wrapper exists because stripping the path also breaks the *pin*
-      # during a release: the version being prepared is not on the index yet, so
-      # one commit per cycle could not pass this step in either direction — and
-      # reverting the pin breaks the binding's build instead (B23). It skips
-      # registry resolution for exactly that state, proves the rest of packaging
-      # with `cargo package --list`, and fails on everything else, a typo'd pin
-      # included. Its decision table is self-tested on every run.
+      # What the wrapper still decides itself: a pin that does not name the
+      # in-tree version is refused before cargo runs — cargo would leave the
+      # patch unused, warn, and verify against the published crate — and an
+      # unused-patch warning after the fact fails the step. Both rules are
+      # self-tested on every run.
       - name: Package validation
         run: ./scripts/package_binding.py
       # Six topologies: in-process, multicast group, one node over TCP, that
@@ -771,6 +775,15 @@ jobs:
       - name: Test (unit, end-to-end, and doc)
         working-directory: bindings/a2a-protocol-slimrpc
         run: cargo test -- --test-threads=1
+
+      # The README's "Example" section, runnable: an agent and a client on one
+      # in-process datapath, one blocking and one streaming call, exit 0. It
+      # goes through `ClientBuilder::with_custom_transport` and the typed
+      # client methods rather than the raw `Transport` trait the tests use, so
+      # it is the one place the documented client path is executed.
+      - name: Example (in-process agent and client)
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo run --example in_process
 
       # The SPIFFE suite runs against a real spire-server and spire-agent, not
       # a stub — SPIFFE identity means nothing unless the credential comes from
