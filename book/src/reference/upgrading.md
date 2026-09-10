@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Upgrading Between Minor Versions
 
 As of 2026-09-10, with 0.12.0 prepared. Its breaking section is
