@@ -1,6 +1,8 @@
 /target
-# Out-of-workspace binding crates keep their own target/ (and their own lock).
+# Out-of-workspace binding and integration crates keep their own target/ (and
+# their own lock).
 bindings/*/target/
+integrations/*/target/
 
 # mdBook build output
 /book/book
