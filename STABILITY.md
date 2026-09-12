@@ -107,8 +107,15 @@ README badge, which CI keeps consistent.
 
 ## 6. What is explicitly not covered
 
-- Anything under `examples/`, `benches/`, `tck/`, `itk/`, `book-tests/` or
-  `bindings/`: those are not published crates.
+- Anything under `examples/`, `benches/`, `tck/`, `itk/` or `book-tests/`:
+  those are not published crates.
+- `bindings/a2a-protocol-slimrpc`. This bullet used to lump the binding in with
+  the line above as "not a published crate", which is not why it is excluded:
+  it *is* publishable, [`RELEASING.md`](RELEASING.md) documents how to publish
+  it, and the book tells readers to depend on it. It is outside this guarantee
+  because it is versioned independently and has not earned the guarantee — not
+  because it cannot be published. (Separately, and as that document records
+  with the evidence, it has in fact never been published to crates.io yet.)
 - The `--no-default-features` build of the client without any TLS feature,
   which exists for tests and proxies and is documented as such.
 - Types re-exported from dependencies (`tonic`, `hyper`, `rustls`,
