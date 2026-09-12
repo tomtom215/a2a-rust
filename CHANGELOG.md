@@ -38,6 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check clones `--depth 1`, so a tip is all it can see. The live documents now
   cite `daddfb2` (2026-09-02); the released 0.12.0 entry is left as published.
 
+### Internal
+
+- **`check_slimrpc_spec.sh` now prints only the remedy that applies.** Every
+  failure — including a branch-only specification nobody has triaged, which
+  touches no vendored file — ended with "read the diff above",
+  `./scripts/check_slimrpc_spec.sh --update` and "refresh the hashes". The
+  2026-09-12 nightly failed exactly that way: no diff, every vendored copy
+  matching, and instructions to re-vendor. The vendored-copy verdict is now
+  tracked separately from the run's overall verdict, so that block prints only
+  when a vendored file really has drifted. Exit codes are unchanged, and both
+  paths were exercised: removing a `KNOWN_BRANCH_SPECS` entry exits 1 with the
+  triage instructions and no re-vendor advice; appending a line to
+  `spec/slimrpc_v1/slimrpc.md` exits 1 with the diff and the re-vendor advice.
+
 ## [0.12.0] - 2026-09-10
 
 ### Breaking Changes

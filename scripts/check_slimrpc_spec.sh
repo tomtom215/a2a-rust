@@ -97,6 +97,14 @@ if [ "${#MAIN_SPECS[@]}" -eq 0 ]; then
     exit 1
 fi
 
+# Two independent verdicts, because they need two different remedies and the
+# script used to print both for either. `vendor_drift` is "a vendored copy no
+# longer matches upstream main", whose fix is `--update` plus new hashes;
+# `drift` is "this run failed" for any reason, including a branch-only spec
+# nobody has triaged, whose fix is a KNOWN_BRANCH_SPECS entry and touches no
+# vendored file at all. Collapsing them sent the 2026-09-12 nightly's reader to
+# `--update` and a hash refresh for a run in which every vendored copy matched.
+vendor_drift=0
 drift=0
 
 # Computed once. Deriving it inside a test with `... | grep -q` instead cost a
@@ -143,6 +151,7 @@ for path in "${MAIN_SPECS[@]}"; do
     if [ ! -f "$local_file" ]; then
         printf 'check_slimrpc_spec: upstream main carries %s, which is NOT vendored\n' "$path" >&2
         printf '  this is the case the previous version of this check could not see\n' >&2
+        vendor_drift=1
         drift=1
         continue
     fi
@@ -154,6 +163,7 @@ for path in "${MAIN_SPECS[@]}"; do
         printf '  upstream: %s\n' "$(sha256sum "$tmp/$name" | cut -d' ' -f1)" >&2
         printf '  diff (vendored -> upstream):\n' >&2
         diff -u "$local_file" "$tmp/$name" | head -60 >&2 || true
+        vendor_drift=1
         drift=1
     fi
 done
@@ -166,6 +176,7 @@ for local_file in "$VENDOR_DIR"/*.md; do
         printf 'check_slimrpc_spec: %s is vendored but no longer exists on upstream main\n' "$name" >&2
         printf '  it was renamed, moved or withdrawn; the binding may be implementing a\n' >&2
         printf '  document that upstream has retracted\n' >&2
+        vendor_drift=1
         drift=1
     fi
 done
@@ -202,13 +213,16 @@ if [ "$untriaged" = "1" ]; then
     drift=1
 fi
 
-if [ "$drift" = "1" ]; then
+if [ "$vendor_drift" = "1" ]; then
     printf '\nThe SLIMRPC binding claims to implement this specification. Upstream has\n' >&2
     printf 'moved, so that claim is now unverified.\n\n' >&2
     printf '  1. Read the diff above.\n' >&2
     printf '  2. Decide whether bindings/a2a-protocol-slimrpc must follow.\n' >&2
     printf '  3. ./scripts/check_slimrpc_spec.sh --update, refresh the hashes in\n' >&2
     printf '     spec/slimrpc_v1/README.md, and record the decision in the same commit.\n' >&2
+fi
+
+if [ "$drift" = "1" ]; then
     exit 1
 fi
 
