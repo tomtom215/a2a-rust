@@ -14,6 +14,7 @@ use super::*;
 
 use std::sync::{Arc, Mutex, OnceLock};
 use tracing::Level;
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::Registry;
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 
@@ -80,7 +81,24 @@ impl AgentExecutor for HangingExecutor {
 /// Serialises these tests, because they share one global subscriber.
 static CAPTURE_LOCK: Mutex<()> = Mutex::new(());
 
-static INSTALLED: OnceLock<()> = OnceLock::new();
+/// Whether the global subscriber this file installs is the one that won.
+///
+/// `set_global_default` fails when something else in the binary got there
+/// first, and discarding that error is how a broken capture becomes a silent
+/// `[]`: `WarnCapture` is then not in the dispatcher at all, no WARN can reach
+/// the sink, and every assertion here fails with `got []` — a message that
+/// names nothing and points the reader at the shutdown code, which is not
+/// where the fault would be. An earlier comment here argued the error was safe
+/// to ignore because "the sink below is what decides whether we capture
+/// anyway". That is false: with someone else's subscriber installed, the sink
+/// cannot fill from any event. The result is kept so `warnings_during` can say
+/// which of the two things happened.
+static INSTALLED: OnceLock<Result<(), String>> = OnceLock::new();
+
+/// A WARN this file emits itself, to prove the capture path works before the
+/// code under test runs. It deliberately shares no substring with what
+/// `mentions_cleanup` matches, so it can never be mistaken for a real hit.
+const CANARY: &str = "warn-capture canary";
 
 /// Runs `f` and returns every WARN message it emitted.
 ///
@@ -122,17 +140,48 @@ where
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-    INSTALLED.get_or_init(|| {
+    if let Err(why) = INSTALLED.get_or_init(|| {
         let subscriber = Registry::default().with(WarnCapture);
-        // Ignore an error: another test binary component may have set one,
-        // and the sink below is what decides whether we capture anyway.
-        let _ = tracing::subscriber::set_global_default(subscriber);
-    });
+        tracing::subscriber::set_global_default(subscriber).map_err(|e| e.to_string())
+    }) {
+        panic!(
+            "the global tracing subscriber in this binary is not the one this file \
+             installs ({why}), so WarnCapture is not in the dispatcher and every \
+             capture here can only return []. Whatever installs one first has to \
+             stop, or these tests have to observe it instead."
+        );
+    }
 
     let sink: Sink = Arc::new(Mutex::new(Vec::new()));
     *ACTIVE_SINK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Arc::clone(&sink));
+
+    // The canary runs with the sink armed and before `f()`, so a broken
+    // capture is reported here rather than as `got []` about the code under
+    // test. It is a *different callsite* from the one in
+    // `shutdown_with_timeout`, and that is the point rather than a weakness:
+    // it proves the subscriber, the sink and the level filter, and nothing
+    // about whether that other callsite's interest is cached as enabled. So
+    // canary seen + warning missing narrows the fault to that callsite's
+    // interest cache — the 2026-08-19 failure documented above — while canary
+    // missing says the capture itself never worked.
+    tracing::warn!("{CANARY}");
+    let canary_seen = {
+        let captured = sink.lock().expect("warn log");
+        captured.iter().any(|w| w.contains(CANARY))
+    };
+    assert!(
+        canary_seen,
+        "the WARN capture is not working: this file's own canary never reached \
+         the sink (LevelFilter::current() == {}). Any `got []` from these tests \
+         is about the capture, not about shutdown.",
+        LevelFilter::current()
+    );
+    // Drop it before `f()` runs. A canary left in the sink is a warning the
+    // caller never emitted, and every assertion here reads the whole vector.
+    sink.lock().expect("warn log").clear();
+
     f();
     *ACTIVE_SINK
         .lock()

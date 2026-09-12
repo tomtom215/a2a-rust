@@ -51,6 +51,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   paths were exercised: removing a `KNOWN_BRANCH_SPECS` entry exits 1 with the
   triage instructions and no re-vendor advice; appending a line to
   `spec/slimrpc_v1/slimrpc.md` exits 1 with the diff and the re-vendor advice.
+- **The shutdown warning tests now say why a capture failed.** `Test (stable,
+  windows-latest)` in
+  [34679831264](https://github.com/tomtom215/a2a-rust/actions/runs/34679831264)
+  failed `hung_cleanup_is_warned_about` with `got []`, while the behavioural
+  half of that same test passed — the timeout fired and the report was correct,
+  and only the WARN capture came back empty. Two guards replace that message.
+  `warnings_during` no longer discards the result of `set_global_default`: if
+  another global subscriber won the race, `WarnCapture` is not in the dispatcher
+  and no capture can ever fill. The comment there denied this ("the sink below
+  is what decides whether we capture anyway"); it is false, and it is now a
+  panic that names the cause. Second, a canary WARN emitted from the test file
+  with the sink armed, and cleared before the code under test runs, separates
+  "the capture never worked" from "the callsite under test emitted nothing" —
+  the latter being the 2026-08-19 interest-cache failure the file already
+  documents. The canary is deliberately a different callsite, so it proves the
+  subscriber, sink and level filter and nothing about that callsite's cached
+  interest. Both guards proven to fire by injection: dropping every event in the
+  layer trips the canary; installing a competing global subscriber first trips
+  the install check. **The intermittent Windows failure itself is neither fixed
+  nor explained by this** — fifteen runs of the full `--all-features` lib suite
+  on Linux (nine before the change, six after) did not reproduce it — so the
+  next occurrence will say which half is broken instead of `got []`.
 
 ## [0.12.0] - 2026-09-10
 
