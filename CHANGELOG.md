@@ -10,7 +10,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **SLIMRPC branch-spec triage: the broadcast-live design is now
+  *collaborative task*.** The nightly `Official TCK` run of 2026-09-12
+  ([34671180590](https://github.com/tomtom215/a2a-rust/actions/runs/34671180590))
+  failed at `scripts/check_slimrpc_spec.sh`, as designed, on two untriaged
+  files. Upstream `cb245fc` (2026-09-11) reframed the design on
+  `feat/slimrpc-collaborative-channel`: `spec/v1/a2a-broadcast-live.md` gave way
+  to `spec/v1/a2a-collaborative-task.md`, `spec/v1/slimrpc-broadcast-live.md`
+  was renamed `spec/v1/slimrpc-collaborative-task.md`, and the profile was
+  rewritten seven further times the same day. Both are triaged as not followed —
+  but the SLIMRPC profile's **reason has changed and the old one is not
+  reused**: its §§3.1 and 4 now accept 1.0's `SendStreamingMessage` as the
+  activation call, so "requires A2A 1.1 and `SendLiveMessage`" is no longer true
+  of that text. What blocks it now is the base spec's §4.3, which makes
+  appending peer messages to A2A 1.1's `timeline` as `TimelineEntry(Message)` a
+  MUST; its native mode's requirement for SLIM shared-responses group channels,
+  which this binding does not implement; and the document never having reached
+  upstream `main`. Recorded in `KNOWN_BRANCH_SPECS`, the vendored spec's README
+  table, the binding's README and the book chapter.
+- **Correction: the 2026-09-02 rename was `daddfb2`, not `0c38776`.** Entries
+  written for the previous triage — including the 0.12.0 note below — credited
+  the `slimrpc-collaborative-channel.md` -> `slimrpc-broadcast-live.md` rename
+  to `0c38776` (2026-09-03), which changes only upstream's `examples/` tree. It
+  was the branch *tip* when `check_slimrpc_spec.sh` observed the move, and that
+  check clones `--depth 1`, so a tip is all it can see. The live documents now
+  cite `daddfb2` (2026-09-02); the released 0.12.0 entry is left as published.
 
 ## [0.12.0] - 2026-09-10
 
