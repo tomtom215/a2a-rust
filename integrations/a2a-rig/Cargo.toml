@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+# Deliberately NOT a member of the root workspace, with its own Cargo.lock, for
+# the same reasons as `bindings/a2a-protocol-slimrpc`: `rig-core` brings a large
+# transitive tree that does not belong in the lockfile, the `deny.toml`
+# allow-list, or the audit surface of the four published crates, none of which
+# depend on this one. The dependency arrow points one way.
+#
+# It also decouples the release cadence, which matters more here than anywhere
+# else in this repository: `rig-core` ships breaking minors often, and this crate
+# has to follow them without dragging the SDK's release train along.
+
+[workspace]
+
+[package]
+name         = "a2a-rig"
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.88"
+license      = "Apache-2.0"
+authors      = ["Tom F."]
+repository   = "https://github.com/tomtom215/a2a-rust"
+homepage     = "https://a2a-rust.com"
+description  = "Serve a rig agent over the Agent2Agent (A2A) protocol — a rig-core CompletionModel behind an A2A AgentExecutor"
+keywords     = ["a2a", "agent2agent", "rig", "llm", "agent"]
+categories   = ["network-programming", "api-bindings"]
+readme       = "README.md"
+publish      = true
+
+[dependencies]
+# Both SDK crates are PUBLIC dependencies: `RigExecutor` implements
+# `a2a_protocol_server::AgentExecutor` and the card builder returns an
+# `a2a_protocol_types::AgentCard`, so a caller must compile against the same SDK
+# version this crate did. A range would let cargo link two copies and hand the
+# caller "expected AgentExecutor, found AgentExecutor", so the requirement is a
+# tight `0.12` and every SDK minor bump means a release here.
+a2a-protocol-types  = { version = "0.12", path = "../../crates/a2a-protocol-types" }
+a2a-protocol-server = { version = "0.12", path = "../../crates/a2a-protocol-server", default-features = false }
+
+# rig is a public dependency too — `RigExecutor<M>` is generic over
+# `rig_core::completion::CompletionModel`, which appears in its public bounds.
+# Same reasoning, same tight requirement.
+rig-core = "0.42"
+
+# Only for `select!`, to race the completion against the cancellation token.
+# No runtime, no I/O, no timers pulled in.
+tokio = { version = "1", default-features = false, features = ["macros"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+serde_json = "1"
