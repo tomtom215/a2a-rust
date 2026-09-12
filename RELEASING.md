@@ -181,7 +181,7 @@ above, and `release.yml` does not touch it. It lives outside the workspace with
 its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
 run from `bindings/a2a-protocol-slimrpc/`.
 
-It is versioned independently — currently `0.3.0` against the SDK's `0.11.0`. Numbering it
+It is versioned independently — currently `0.4.0` against the SDK's `0.12.0`. Numbering it
 to match would claim API stability it has not earned and force a bump on every
 SDK release even when nothing in it changed.
 
@@ -191,7 +191,7 @@ easy to get wrong:
 > `SlimRpcServer::builder` takes `Arc<RequestHandler>` and `agent_interface()`
 > returns an `AgentInterface`, so `a2a-protocol-server` and
 > `a2a-protocol-types` are **public dependencies**. Its requirement on them is
-> therefore a tight `0.10`, not a range — allow two and cargo links both, and
+> therefore a tight `0.12`, not a range — allow two and cargo links both, and
 > callers get `expected RequestHandler, found RequestHandler`.
 
 So **every SDK minor release requires a follow-up release of the binding**:
@@ -212,10 +212,22 @@ SDK, which is the failure mode this note exists to prevent.
 > # {"errors":[{"detail":"crate `a2a-protocol-slimrpc` does not exist"}]}
 > ```
 >
-> Steps 1–3 have been kept up: the four SDK crates are published at `0.11.0`,
-> the binding's requirements read `0.11`, and its own version has moved
-> `0.1.0` → `0.2.0` → `0.3.0` alongside them. Only the publish has never
-> happened, through three SDK releases.
+> Steps 1–3 have been kept up: the four SDK crates are published at `0.12.0`,
+> the binding's requirements read `0.12`, and its own version has moved
+> `0.1.0` → `0.2.0` → `0.3.0` → `0.4.0` alongside them. Only the publish has
+> never happened, through four SDK releases — the binding's
+> `a2a-protocol-server` requirement has tracked `0.9` → `0.10` → `0.11` →
+> `0.12`, which is where that count comes from.
+>
+> Every number in this section was refreshed on 2026-09-12 against the
+> manifests, because they had rotted: the section said `0.3.0` against
+> `0.11.0` and quoted the requirement as `0.10` while the tree held `0.4.0`,
+> `0.12.0` and `0.12`. That has happened at each of the last four bumps — the
+> prose ran a minor behind the manifest every time. Nothing checks it, which
+> is the whole reason it rots; a check comparing these four numbers to the
+> manifests would end it. The crates.io observation above was **not** re-run
+> on that date (crates.io is unreachable from the sandbox this was edited in,
+> HTTP 403 via its proxy), so it stands as dated: 2026-09-01.
 >
 > This is recorded here rather than only in
 > `docs/v0.9.0-post-release-review.md`, where it was first observed at 0.9.0
@@ -223,7 +235,7 @@ SDK, which is the failure mode this note exists to prevent.
 > note above describes — "the newest binding on crates.io pinned to a
 > superseded SDK" — understates it: there is no binding on crates.io to be
 > pinned to anything, so nobody outside this repository can depend on it, and
-> the `0.3.0` in its manifest is a number no consumer has ever seen.
+> the `0.4.0` in its manifest is a number no consumer has ever seen.
 >
 > Two things to settle before the first publish, neither of which blocks it:
 >

@@ -39,14 +39,16 @@ directions:
 | Collaborate — many-to-many channel, members see each other's traffic, attributed by `slim-src` | **no** | yes, at 0.2.7 |
 
 Multicast's specification is on upstream `main`. Collaborate's never reached
-`main`, and on 2026-09-03 the branch that held it replaced the document with a
-different design (`slimrpc-broadcast-live.md`, which requires A2A 1.1's
-`SendLiveMessage`, a method no released A2A specification defines); the
-official crate still ships `Collaborate` against the withdrawn text. That is
-why it is not implemented here — the tracking item is B24 in the post-release
-review, and the binding's README carries the dated detail. Pick on which of
-the two shapes your deployment needs, not on which crate looks more complete
-— neither is.
+`main`, and the branch that held it has renamed the design twice since —
+`slimrpc-broadcast-live.md` on 2026-09-02, then `slimrpc-collaborative-task.md`
+on 2026-09-11 — while the official crate still ships `Collaborate` against the
+withdrawn text. The current design is not implemented here because it profiles
+an A2A extension whose timeline semantics are A2A 1.1's, which no released A2A
+specification defines, and because its native mode needs SLIM shared-responses
+group channels this crate does not have. The tracking item is B24 in the
+post-release review, and the binding's README carries the dated detail. Pick on
+which of the two shapes your deployment needs, not on which crate looks more
+complete — neither is.
 
 ## Installation
 
