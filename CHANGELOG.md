@@ -73,6 +73,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nor explained by this** — fifteen runs of the full `--all-features` lib suite
   on Linux (nine before the change, six after) did not reproduce it — so the
   next occurrence will say which half is broken instead of `got []`.
+- **Fixed: the shutdown warning capture collected other threads' events.**
+  The guards above did their job on the first try. `Test (1.88,
+  windows-latest)` in
+  [34681613416](https://github.com/tomtom215/a2a-rust/actions/runs/34681613416)
+  failed `clean_shutdown_warns_about_nothing` with `got ["executor cleanup did
+  not finish within the shutdown timeout"]` — and the canary did not fire, so
+  the capture was working. That narrowed it to one thing: the warning was not
+  this test's. Its own `shutdown_with_timeout` reported
+  `executor_cleanup_completed == true`, so the code under test never reached
+  that `trace_warn!`. The sink is process-wide and the subscriber global, while
+  `CAPTURE_LOCK` serialises only the tests in that one file — so a WARN from
+  any of the other ~1100 tests running in parallel landed in it. `ACTIVE_SINK`
+  now records the capturing thread alongside the sink and the layer ignores
+  events from any other thread; the subscriber stays global, which is what the
+  callsite-interest reasoning there requires. Regression test
+  `a_warning_from_another_thread_is_not_captured` reproduces the CI failure
+  exactly — without the fix it fails with the identical message. Note the
+  constraint this adds, recorded at the static: every test in that file drives
+  a current-thread runtime, so a future test on a multi-threaded runtime would
+  have to widen the check. **The earlier `got []` failure in run 34679831264 is
+  a different symptom and is still unexplained** — it is not this bug, since an
+  empty sink is not a contaminated one.
 
 ## [0.12.0] - 2026-09-10
 
