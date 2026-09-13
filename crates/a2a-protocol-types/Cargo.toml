@@ -36,7 +36,7 @@ proto = [
 [dependencies]
 serde       = { workspace = true }
 serde_json  = { workspace = true }
-base64      = { version = "0.22", optional = true }
+base64      = { version = "0.23", optional = true }
 ring        = { version = "0.17", optional = true }
 prost       = { workspace = true, optional = true }
 prost-types = { workspace = true, optional = true }
@@ -54,7 +54,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 proptest  = "1"
 criterion = { workspace = true }
 ring      = "0.17"
-base64    = "0.22"
+base64    = "0.23"
 
 [[bench]]
 name = "json_serde"

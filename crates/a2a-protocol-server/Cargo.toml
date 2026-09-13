@@ -85,7 +85,7 @@ webpki-roots   = { version = ">=1.0, <2", optional = true }
 # types crate's `signing` feature already uses; `base64` is tiny with no
 # transitive deps.
 ring           = { version = "0.17", optional = true }
-base64         = { version = "0.22", optional = true }
+base64         = { version = "0.23", optional = true }
 sqlx           = { workspace = true, optional = true }
 tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
