@@ -36,5 +36,6 @@ The agents keep serving after the demo:
 
 ```bash
 curl http://127.0.0.1:9200/.well-known/agent-card.json
-cargo run -p a2a-tck -- --url http://127.0.0.1:9200 --binding jsonrpc   # 20/20
+# measured 2026-09-13: 21/21 graded, 1 N/A. Not CI-gated.
+cargo run -p a2a-tck -- --url http://127.0.0.1:9200 --binding jsonrpc
 ```

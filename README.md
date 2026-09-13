@@ -281,10 +281,11 @@ cargo run -p multi-lang-team
 
 ### AI Framework Integrations
 
-Real LLM agents behind the A2A protocol — both pass the TCK 20/20 and run
-against hosted providers or any local OpenAI-compatible server, with
-honest failure semantics (provider errors fail the task; they are never
-disguised as successful artifacts):
+Real LLM agents behind the A2A protocol — both pass the in-repo TCK (measured
+2026-09-13, JSON-RPC binding: 21/21 graded, 1 N/A; no CI job gates it) and run
+against hosted providers or any local OpenAI-compatible server, with honest
+failure semantics (provider errors fail the task; they are never disguised as
+successful artifacts):
 
 ```bash
 # rig AI framework (https://github.com/0xPlaygrounds/rig)

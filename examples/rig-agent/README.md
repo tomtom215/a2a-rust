@@ -4,10 +4,11 @@
 # Rig Agent — A2A Protocol Bridge for rig
 
 A real [rig](https://github.com/0xPlaygrounds/rig) agent served over the A2A
-protocol. Incoming A2A messages are passed to a `rig_core::agent::Agent`
+protocol. Incoming A2A messages are passed to `RigAgent`, a single-turn agent
+this example defines over `rig_core::completion::CompletionModel`
 (OpenAI-compatible provider), and the completion is returned as an A2A
-artifact. The executor is generic over `rig_core::completion::CompletionModel`,
-so swapping providers (Anthropic, Gemini, Ollama, …) only changes the client
+artifact. The executor is generic over that same `CompletionModel`, so
+swapping providers (Anthropic, Gemini, Ollama, …) only changes the client
 construction in `main` — the A2A bridge is untouched.
 
 ## Architecture
@@ -19,14 +20,14 @@ A2A Client ──→ A2A Server (JSON-RPC)
               RigAgentExecutor<M>
                     │
                     ▼
-              rig_core::agent::Agent<M> ──→ LLM provider
+              RigAgent<M> ──→ LLM provider
 ```
 
 ## Running against hosted OpenAI
 
 ```bash
 export OPENAI_API_KEY=sk-...
-cargo run -p rig-a2a-agent              # defaults to gpt-4o-mini
+RIG_MODEL=gpt-4o-mini cargo run -p rig-a2a-agent   # RIG_MODEL defaults to qwen3.5:0.8b
 RIG_MODEL=gpt-4o cargo run -p rig-a2a-agent
 ```
 
@@ -92,7 +93,8 @@ curl -X POST http://127.0.0.1:<port> -H 'Content-Type: application/json' -H 'A2A
              "parts": [{"text": "What is the capital of France?"}]}}
 }'
 
-# Full conformance suite (passes 20/20 against this agent)
+# Full conformance suite — measured 2026-09-13: 21/21 graded, 1 N/A on this
+# binding. No CI job gates this; the command below is the evidence.
 cargo run -p a2a-tck -- --url http://127.0.0.1:<port> --binding jsonrpc
 ```
 

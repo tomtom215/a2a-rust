@@ -24,7 +24,7 @@ cargo run -p agent-team
 | [**echo-agent**](echo-agent/) | All four bindings; drives every A2A method over each and asserts the coverage matrix | None | Beginner |
 | [**agent-team**](agent-team/) | 4-agent team with 100 E2E tests; the SDK's dogfood suite | None | Advanced |
 | [**genai-agent**](genai-agent/) | LLM-powered agent via [genai](https://crates.io/crates/genai); all four bindings, full surface matrix | Optional model | Intermediate |
-| [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the TCK 20/20 |
+| [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the in-repo TCK (21/21 graded, 1 N/A, measured 2026-09-13; not CI-gated) |
 | [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go, Java and Rust worker agents (the Rust worker is a second binary, `--bin rust-worker`); all four bindings, full surface matrix | Optional workers | Advanced |
 
 ## What to start with
