@@ -1,0 +1,636 @@
+From 6e2a67d343cac504606c74e4144f1f88f6f0f562 Mon Sep 17 00:00:00 2001
+From: "Tom F." <tomf@tomtomtech.net>
+Date: Sat, 12 Sep 2026 08:55:51 +0000
+Subject: [PATCH] fix(a2a): upgrade a2a-protocol-types to 0.12
+
+The `a2a-v1` feature has pinned 0.5 since the integration landed in #273;
+upstream is at 0.12.0. Three breaking changes affect this crate, all from
+0.7.0; 0.8.0 through 0.12.0 are additive for the types used here.
+
+- `JsonRpcRequest.id` is now the `JsonRpcRequestId` enum, which separates an
+  absent id (a JSON-RPC notification) from an explicit null (a call). All
+  twelve sites in `jsonrpc_handler.rs` build a *response* id, so each uses
+  the `to_response_id()` method added upstream for that purpose.
+
+- `AuthenticationInfo.credentials` is now `Option<String>`. The push sender
+  omits the `Authorization` header when no credential is present rather than
+  sending an empty `Bearer `.
+
+- `TaskPushNotificationConfig.task_id` is now `Option<String>`. The REST
+  binding assigns it from the path. The JSON-RPC binding has no path, so a
+  standalone `CreateTaskPushNotificationConfig` whose body omits `taskId` is
+  rejected with -32602 INVALID_PARAMS; without that guard the handler looks
+  up the empty task id and answers -32001 TASK_NOT_FOUND.
+
+Two user-visible corrections follow, both recorded in CHANGELOG.md: the
+agent card no longer emits the v0.3 top-level `url` that the A2A v1.0 JSON
+schema rejects, and the push-config error above.
+
+No example source changes were needed. The two example manifests that pin
+the crate directly move to 0.12 and resolve to one version, since both take
+adk-server by path.
+
+Signed-off-by: Tom F. <tomf@tomtomtech.net>
+Co-Authored-By: Claude <noreply@anthropic.com>
+---
+ CHANGELOG.md                                  | 16 ++++++
+ Cargo.lock                                    |  4 +-
+ adk-server/Cargo.toml                         |  2 +-
+ adk-server/src/a2a/v1/jsonrpc_handler.rs      | 53 ++++++++++++++-----
+ adk-server/src/a2a/v1/push.rs                 | 14 +++--
+ adk-server/src/a2a/v1/request_handler.rs      |  2 +-
+ adk-server/src/a2a/v1/rest_handler.rs         |  2 +-
+ examples/a2a-research-agent/Cargo.lock        |  4 +-
+ examples/a2a-research-agent/Cargo.toml        |  2 +-
+ examples/a2a-writing-agent/Cargo.lock         |  4 +-
+ examples/a2a-writing-agent/Cargo.toml         |  2 +-
+ examples/a2a_quickstart/Cargo.lock            |  4 +-
+ examples/anthropic_server_tools/Cargo.lock    |  4 +-
+ examples/competitive_ergonomics/Cargo.lock    |  4 +-
+ examples/crate_adoption_feedback/Cargo.lock   |  4 +-
+ examples/developer_ergonomics/Cargo.lock      |  4 +-
+ examples/gemini3_builtin_tools/Cargo.lock     |  4 +-
+ examples/gemini_audio/Cargo.lock              |  4 +-
+ examples/mcp_elicitation/Cargo.lock           |  4 +-
+ examples/mcp_resources/Cargo.lock             |  4 +-
+ examples/mcp_sampling/Cargo.lock              |  4 +-
+ .../multi_perspective_analysis/Cargo.lock     |  4 +-
+ .../multimodal_function_response/Cargo.lock   |  4 +-
+ examples/ollama_qwen/Cargo.lock               |  4 +-
+ examples/openai_server_tools/Cargo.lock       |  4 +-
+ examples/tier_examples/Cargo.lock             |  4 +-
+ 26 files changed, 106 insertions(+), 59 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index eb8ffe7c..a398480c 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -23,6 +23,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+   use `with_reasoning_replay_field(ReasoningReplayField::Reasoning)` to send
+   `reasoning`. Replay emits only the selected field; standard OpenAI and
+   Azure requests omit both fields by default.
++
++- **Spec-compliant agent card** (`adk-server`, `a2a-v1`): the card served at
++  `/.well-known/agent.json` no longer emits the v0.3 top-level `url`, which the
++  A2A v1.0 JSON schema rejects (`'url' does not match any of the regexes`).
++  `supportedInterfaces` already carries the address. This follows from the
++  `a2a-protocol-types` 0.5 -> 0.12 upgrade, which stopped serializing the field
++  while still parsing it, so cards published by v0.3 peers still load.
++
++- **Correct error for a push config with no task ID** (`adk-server`, `a2a-v1`):
++  `CreateTaskPushNotificationConfig` over JSON-RPC now returns `-32602`
++  `INVALID_PARAMS` when the config body omits `taskId`, instead of looking up the
++  empty task id and reporting `-32001` `TASK_NOT_FOUND` with the message
++  `Task not found: `. `taskId` became optional on the wire type in
++  `a2a-protocol-types` 0.7.0 because a config nested in `SendMessageConfiguration`
++  legitimately omits it; a standalone create still requires one, and the REST
++  binding supplies it from the path.
+ - **Open Responses argument identity** (`adk-model`): conflicting item or call
+   identities terminate compatible streams before cached arguments can cross
+   tool calls. Blank completed snapshots restore matching streamed arguments
+diff --git a/Cargo.lock b/Cargo.lock
+index 8c46e358..b3ae67a4 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -14,9 +14,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/adk-server/Cargo.toml b/adk-server/Cargo.toml
+index 1aab35dd..117ceca6 100644
+--- a/adk-server/Cargo.toml
++++ b/adk-server/Cargo.toml
+@@ -46,7 +46,7 @@ rust-embed = "8.9.0"
+ mime_guess = "2.0.5"
+ reqwest.workspace = true
+ tokio-util = { version = "0.7", features = ["rt"] }
+-a2a-protocol-types = { version = "0.5", optional = true }
++a2a-protocol-types = { version = "0.12", optional = true }
+ # Optional: YAML agent definition parsing
+ serde_yaml = { version = "0.9", optional = true }
+ # Optional: filesystem watcher for hot reload
+diff --git a/adk-server/src/a2a/v1/jsonrpc_handler.rs b/adk-server/src/a2a/v1/jsonrpc_handler.rs
+index f20efff7..67bb8f92 100644
+--- a/adk-server/src/a2a/v1/jsonrpc_handler.rs
++++ b/adk-server/src/a2a/v1/jsonrpc_handler.rs
+@@ -36,7 +36,7 @@ pub async fn jsonrpc_handler(
+     State(handler): State<Arc<RequestHandler>>,
+     Json(request): Json<JsonRpcRequest>,
+ ) -> Response {
+-    let request_id = request.id.clone();
++    let request_id = request.id.to_response_id();
+ 
+     match request.method.as_str() {
+         "SendMessage" => handle_send_message(handler, request).await,
+@@ -94,7 +94,7 @@ fn a2a_json_response(value: serde_json::Value) -> Response {
+ // ── Method handlers ──────────────────────────────────────────────────────────
+ 
+ async fn handle_send_message(handler: Arc<RequestHandler>, request: JsonRpcRequest) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     let params: MessageSendParams = match parse_params(request.params) {
+         Ok(p) => p,
+         Err(e) => return a2a_json_response(make_error_response(id, &e)),
+@@ -110,7 +110,7 @@ async fn handle_send_streaming_message(
+     handler: Arc<RequestHandler>,
+     request: JsonRpcRequest,
+ ) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     let params: MessageSendParams = match parse_params(request.params) {
+         Ok(p) => p,
+         Err(e) => return a2a_json_response(make_error_response(id, &e)),
+@@ -150,7 +150,7 @@ async fn handle_send_streaming_message(
+ }
+ 
+ async fn handle_get_task(handler: Arc<RequestHandler>, request: JsonRpcRequest) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     let params: TaskQueryParams = match parse_params(request.params) {
+         Ok(p) => p,
+         Err(e) => return a2a_json_response(make_error_response(id, &e)),
+@@ -163,7 +163,7 @@ async fn handle_get_task(handler: Arc<RequestHandler>, request: JsonRpcRequest)
+ }
+ 
+ async fn handle_cancel_task(handler: Arc<RequestHandler>, request: JsonRpcRequest) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     let params: CancelTaskParams = match parse_params(request.params) {
+         Ok(p) => p,
+         Err(e) => return a2a_json_response(make_error_response(id, &e)),
+@@ -176,7 +176,7 @@ async fn handle_cancel_task(handler: Arc<RequestHandler>, request: JsonRpcReques
+ }
+ 
+ async fn handle_list_tasks(handler: Arc<RequestHandler>, request: JsonRpcRequest) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     let params: a2a_protocol_types::params::ListTasksParams = match parse_params(request.params) {
+         Ok(p) => p,
+         Err(e) => return a2a_json_response(make_error_response(id, &e)),
+@@ -203,7 +203,7 @@ async fn handle_subscribe_to_task(
+     handler: Arc<RequestHandler>,
+     request: JsonRpcRequest,
+ ) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     let params: TaskIdParams = match parse_params(request.params) {
+         Ok(p) => p,
+         Err(e) => return a2a_json_response(make_error_response(id, &e)),
+@@ -246,13 +246,22 @@ async fn handle_push_config_create(
+     handler: Arc<RequestHandler>,
+     request: JsonRpcRequest,
+ ) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     let config: TaskPushNotificationConfig = match parse_params(request.params) {
+         Ok(p) => p,
+         Err(e) => return a2a_json_response(make_error_response(id, &e)),
+     };
+ 
+-    let task_id = config.task_id.clone();
++    // `taskId` is optional in the A2A schema because the REST binding carries it
++    // in the path. The JSON-RPC binding has no path, so the config body is the
++    // only source: reject a config without one instead of looking up the empty
++    // task id, which would surface a misleading TaskNotFound.
++    let Some(task_id) = config.task_id.clone() else {
++        let err = A2aError::InvalidParams {
++            message: "taskId is required in the push notification config".to_string(),
++        };
++        return a2a_json_response(make_error_response(id, &err));
++    };
+     match handler.push_config_create(&task_id, config).await {
+         Ok(created) => a2a_json_response(make_success_response(id, &created)),
+         Err(e) => a2a_json_response(make_error_response(id, &e)),
+@@ -260,7 +269,7 @@ async fn handle_push_config_create(
+ }
+ 
+ async fn handle_push_config_get(handler: Arc<RequestHandler>, request: JsonRpcRequest) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     let params: GetPushConfigParams = match parse_params(request.params) {
+         Ok(p) => p,
+         Err(e) => return a2a_json_response(make_error_response(id, &e)),
+@@ -276,7 +285,7 @@ async fn handle_push_config_list(
+     handler: Arc<RequestHandler>,
+     request: JsonRpcRequest,
+ ) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     let params: ListPushConfigsParams = match parse_params(request.params) {
+         Ok(p) => p,
+         Err(e) => return a2a_json_response(make_error_response(id, &e)),
+@@ -292,7 +301,7 @@ async fn handle_push_config_delete(
+     handler: Arc<RequestHandler>,
+     request: JsonRpcRequest,
+ ) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     let params: DeletePushConfigParams = match parse_params(request.params) {
+         Ok(p) => p,
+         Err(e) => return a2a_json_response(make_error_response(id, &e)),
+@@ -308,7 +317,7 @@ async fn handle_get_extended_agent_card(
+     handler: Arc<RequestHandler>,
+     request: JsonRpcRequest,
+ ) -> Response {
+-    let id = request.id.clone();
++    let id = request.id.to_response_id();
+     // GetExtendedAgentCard params are optional
+     let _params: Option<GetExtendedAgentCardParams> =
+         request.params.and_then(|v| serde_json::from_value(v).ok());
+@@ -587,4 +596,22 @@ mod tests {
+         .await;
+         assert_eq!(list_resp2["result"].as_array().unwrap().len(), 0);
+     }
++
++    #[tokio::test]
++    async fn push_config_create_without_task_id_is_invalid_params() {
++        let handler = make_handler();
++        // `taskId` is optional on the wire type, but the JSON-RPC binding has no
++        // path segment to supply it, so a standalone create without one is a
++        // client error. -32602 is the assertion that matters: without the guard
++        // the handler looks up the empty task id and answers -32001 TaskNotFound.
++        let resp = call_handler(
++            handler,
++            "CreateTaskPushNotificationConfig",
++            serde_json::json!({ "url": "https://example.com/webhook" }),
++        )
++        .await;
++
++        assert!(resp["error"].is_object(), "expected an error, got: {resp}");
++        assert_eq!(resp["error"]["code"], -32602, "expected InvalidParams, got: {resp}");
++    }
+ }
+diff --git a/adk-server/src/a2a/v1/push.rs b/adk-server/src/a2a/v1/push.rs
+index 612148f7..32a6ac6f 100644
+--- a/adk-server/src/a2a/v1/push.rs
++++ b/adk-server/src/a2a/v1/push.rs
+@@ -102,9 +102,13 @@ impl HttpPushNotificationSender {
+         for attempt in 0..=MAX_RETRIES {
+             let mut request = self.client.post(url).json(body);
+ 
+-            // Add Bearer auth if configured
+-            if let Some(ref auth) = config.authentication {
+-                request = request.header("Authorization", format!("Bearer {}", auth.credentials));
++            // Add Bearer auth if configured. `credentials` is optional in the A2A
++            // schema, since a scheme need not carry an explicit value, so omit the
++            // header when it is absent rather than sending an empty `Bearer `.
++            if let Some(credentials) =
++                config.authentication.as_ref().and_then(|auth| auth.credentials.as_deref())
++            {
++                request = request.header("Authorization", format!("Bearer {credentials}"));
+             }
+ 
+             // Add notification token if configured
+@@ -359,7 +363,7 @@ mod tests {
+         let mut config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
+         config.authentication = Some(AuthenticationInfo {
+             scheme: "bearer".to_string(),
+-            credentials: "my-token".to_string(),
++            credentials: Some("my-token".to_string()),
+         });
+         let event = make_status_event();
+         assert!(
+@@ -384,7 +388,7 @@ mod tests {
+         let mut config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
+         config.authentication = Some(AuthenticationInfo {
+             scheme: "bearer".to_string(),
+-            credentials: "my-token".to_string(),
++            credentials: Some("my-token".to_string()),
+         });
+         config.token = Some("notification-secret".to_string());
+         let event = make_status_event();
+diff --git a/adk-server/src/a2a/v1/request_handler.rs b/adk-server/src/a2a/v1/request_handler.rs
+index 45f4392d..fedb5d74 100644
+--- a/adk-server/src/a2a/v1/request_handler.rs
++++ b/adk-server/src/a2a/v1/request_handler.rs
+@@ -681,7 +681,7 @@ impl RequestHandler {
+         if config.id.is_none() {
+             config.id = Some(uuid::Uuid::new_v4().to_string());
+         }
+-        config.task_id = task_id.to_string();
++        config.task_id = Some(task_id.to_string());
+ 
+         // Add to the task's push configs
+         entry.push_configs.push(config.clone());
+diff --git a/adk-server/src/a2a/v1/rest_handler.rs b/adk-server/src/a2a/v1/rest_handler.rs
+index 1be8d4db..06334bd0 100644
+--- a/adk-server/src/a2a/v1/rest_handler.rs
++++ b/adk-server/src/a2a/v1/rest_handler.rs
+@@ -213,7 +213,7 @@ async fn handle_push_config_create(
+     Path(task_id): Path<String>,
+     Json(mut config): Json<TaskPushNotificationConfig>,
+ ) -> Response {
+-    config.task_id = task_id.clone();
++    config.task_id = Some(task_id.clone());
+     match handler.push_config_create(&task_id, config).await {
+         Ok(created) => a2a_json_response(&created),
+         Err(e) => error_response(&e),
+diff --git a/examples/a2a-research-agent/Cargo.lock b/examples/a2a-research-agent/Cargo.lock
+index 895c3afb..83938fc4 100644
+--- a/examples/a2a-research-agent/Cargo.lock
++++ b/examples/a2a-research-agent/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/a2a-research-agent/Cargo.toml b/examples/a2a-research-agent/Cargo.toml
+index 5dace9a7..70d8ace1 100644
+--- a/examples/a2a-research-agent/Cargo.toml
++++ b/examples/a2a-research-agent/Cargo.toml
+@@ -13,7 +13,7 @@ adk-model = { path = "../../adk-model", features = ["gemini", "openai"] }
+ adk-runner = { path = "../../adk-runner" }
+ adk-session = { path = "../../adk-session" }
+ adk-core = { path = "../../adk-core" }
+-a2a-protocol-types = "0.5"
++a2a-protocol-types = "0.12"
+ tokio = { version = "1", features = ["full"] }
+ axum = "0.8"
+ serde = { version = "1", features = ["derive"] }
+diff --git a/examples/a2a-writing-agent/Cargo.lock b/examples/a2a-writing-agent/Cargo.lock
+index f6e8aa5c..c16c567b 100644
+--- a/examples/a2a-writing-agent/Cargo.lock
++++ b/examples/a2a-writing-agent/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/a2a-writing-agent/Cargo.toml b/examples/a2a-writing-agent/Cargo.toml
+index 379d78a7..152de6a0 100644
+--- a/examples/a2a-writing-agent/Cargo.toml
++++ b/examples/a2a-writing-agent/Cargo.toml
+@@ -17,7 +17,7 @@ adk-model = { path = "../../adk-model", features = ["gemini", "openai"] }
+ adk-runner = { path = "../../adk-runner" }
+ adk-session = { path = "../../adk-session" }
+ adk-core = { path = "../../adk-core" }
+-a2a-protocol-types = "0.5"
++a2a-protocol-types = "0.12"
+ tokio = { version = "1", features = ["full"] }
+ axum = "0.8"
+ serde = { version = "1", features = ["derive"] }
+diff --git a/examples/a2a_quickstart/Cargo.lock b/examples/a2a_quickstart/Cargo.lock
+index 66d36074..b8d81381 100644
+--- a/examples/a2a_quickstart/Cargo.lock
++++ b/examples/a2a_quickstart/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/anthropic_server_tools/Cargo.lock b/examples/anthropic_server_tools/Cargo.lock
+index 839f0035..69c44ee3 100644
+--- a/examples/anthropic_server_tools/Cargo.lock
++++ b/examples/anthropic_server_tools/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/competitive_ergonomics/Cargo.lock b/examples/competitive_ergonomics/Cargo.lock
+index 25aa7ec4..9760eab0 100644
+--- a/examples/competitive_ergonomics/Cargo.lock
++++ b/examples/competitive_ergonomics/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/crate_adoption_feedback/Cargo.lock b/examples/crate_adoption_feedback/Cargo.lock
+index 7c6f0936..50bbd8cf 100644
+--- a/examples/crate_adoption_feedback/Cargo.lock
++++ b/examples/crate_adoption_feedback/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/developer_ergonomics/Cargo.lock b/examples/developer_ergonomics/Cargo.lock
+index 696de3a2..4fcca867 100644
+--- a/examples/developer_ergonomics/Cargo.lock
++++ b/examples/developer_ergonomics/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/gemini3_builtin_tools/Cargo.lock b/examples/gemini3_builtin_tools/Cargo.lock
+index 6c6c9532..076f8710 100644
+--- a/examples/gemini3_builtin_tools/Cargo.lock
++++ b/examples/gemini3_builtin_tools/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/gemini_audio/Cargo.lock b/examples/gemini_audio/Cargo.lock
+index 3df2a67d..fddc63c4 100644
+--- a/examples/gemini_audio/Cargo.lock
++++ b/examples/gemini_audio/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/mcp_elicitation/Cargo.lock b/examples/mcp_elicitation/Cargo.lock
+index b9bf49ad..517ee336 100644
+--- a/examples/mcp_elicitation/Cargo.lock
++++ b/examples/mcp_elicitation/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/mcp_resources/Cargo.lock b/examples/mcp_resources/Cargo.lock
+index 4d673134..1f148afd 100644
+--- a/examples/mcp_resources/Cargo.lock
++++ b/examples/mcp_resources/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/mcp_sampling/Cargo.lock b/examples/mcp_sampling/Cargo.lock
+index 4dbbf709..1df6b5c0 100644
+--- a/examples/mcp_sampling/Cargo.lock
++++ b/examples/mcp_sampling/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/multi_perspective_analysis/Cargo.lock b/examples/multi_perspective_analysis/Cargo.lock
+index de7d053e..80d53be1 100644
+--- a/examples/multi_perspective_analysis/Cargo.lock
++++ b/examples/multi_perspective_analysis/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/multimodal_function_response/Cargo.lock b/examples/multimodal_function_response/Cargo.lock
+index 91430edc..f966d021 100644
+--- a/examples/multimodal_function_response/Cargo.lock
++++ b/examples/multimodal_function_response/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/ollama_qwen/Cargo.lock b/examples/ollama_qwen/Cargo.lock
+index 361e6e04..67a97eea 100644
+--- a/examples/ollama_qwen/Cargo.lock
++++ b/examples/ollama_qwen/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/openai_server_tools/Cargo.lock b/examples/openai_server_tools/Cargo.lock
+index 7be64709..53ccd1d3 100644
+--- a/examples/openai_server_tools/Cargo.lock
++++ b/examples/openai_server_tools/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+diff --git a/examples/tier_examples/Cargo.lock b/examples/tier_examples/Cargo.lock
+index 5b8cf2fb..371027f7 100644
+--- a/examples/tier_examples/Cargo.lock
++++ b/examples/tier_examples/Cargo.lock
+@@ -4,9 +4,9 @@ version = 4
+ 
+ [[package]]
+ name = "a2a-protocol-types"
+-version = "0.5.0"
++version = "0.12.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "47e4fe91cf2436cef079cf2f00bb208344d63a5a8030fc77c96812b304404e8b"
++checksum = "3ab7106234e1b6d56f9477134dafd46716e42e02d0607b2c833f3bc57214c8f5"
+ dependencies = [
+  "serde",
+  "serde_json",
+-- 
+2.43.0
+
