@@ -19,12 +19,12 @@ cargo run -p agent-team
 
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
-| [`incident-response/`](incident-response/) | **Start here** — three-agent team: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation, then the full surface matrix and sixteen production-hardening checks (tenancy, four auth mechanisms, limits, retries, three task stores, signing, telemetry, HTTPS push, shutdown); runs fully local |
+| [`incident-response/`](incident-response/) | **Start here** — three-agent team: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation, then the full surface matrix and sixteen production-hardening checks (tenancy, four auth mechanisms, limits, retries, three task stores, signing, telemetry, HTTPS push, shutdown); runs fully local | Optional model, PostgreSQL | Intermediate |
 | [`resilient-agent/`](resilient-agent/) | Durability across a handler restart (`SqliteTaskStore` + `SqlitePushConfigStore` re-opened by a fresh handler, including a task cut off mid-stream), failure injection with the numbers the SDK reports (an executor failing its first N attempts, a webhook refusing its first M deliveries, a proxy faulting its first K requests), and two replicas over in-memory vs shared PostgreSQL stores plus a shared rate-limit counter — each asserted, each stating what the SDK does **not** do (no executor retry or resume, no push redelivery, no cross-replica events) | Optional PostgreSQL | Intermediate |
 | [**echo-agent**](echo-agent/) | All four bindings; drives every A2A method over each and asserts the coverage matrix | None | Beginner |
 | [**agent-team**](agent-team/) | 4-agent team with 100 E2E tests; the SDK's dogfood suite | None | Advanced |
 | [**genai-agent**](genai-agent/) | LLM-powered agent via [genai](https://crates.io/crates/genai); all four bindings, full surface matrix | Optional model | Intermediate |
-| [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the in-repo TCK (21/21 graded, 1 N/A, measured 2026-09-13; not CI-gated) |
+| [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the in-repo TCK (21/21 graded, 1 N/A, measured 2026-09-13; not CI-gated) | Optional model | Intermediate |
 | [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go, Java and Rust worker agents (the Rust worker is a second binary, `--bin rust-worker`); all four bindings, full surface matrix | Optional workers | Advanced |
 
 ## What to start with
