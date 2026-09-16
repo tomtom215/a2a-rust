@@ -24,9 +24,12 @@
 # How this differs from the root policy, and why
 # ---------------------------------------------------------------------------
 #
-# Everything that bears on security is as strict here as at the root, or
-# stricter: advisories deny, yanked crates deny, unknown registries and git
-# sources deny, and the license allowlist is the root's.
+# Everything that bears on security is set as strict here as at the root:
+# advisories deny, yanked crates deny, unknown registries and git sources
+# deny, and the license allowlist is the root's. There is one documented
+# advisory exception, added 2026-09-16 — see `[advisories].ignore` below.
+# It exists because the SLIM tree forecloses the fix, not because the policy
+# is looser here.
 #
 # The one deliberate relaxation is `multiple-versions`, and the reason is that
 # the root's justification for "deny" does not transfer. There, a reviewed skip
@@ -39,7 +42,10 @@
 # binary-size concern; the security concerns are the ones set to deny above.
 #
 # Measured 2026-08-17 with cargo-deny 0.19.0 against the committed Cargo.lock:
-# advisories **ok** — no known vulnerability in any of the 379. Licenses: one
+# advisories **ok** — no known vulnerability in any of the 379. (That reading
+# is history: RUSTSEC-2026-0285 was published since, and is the ignore below.
+# Re-measured 2026-09-16 with cargo-deny 0.20.2: all four checks ok with that
+# one entry in place.) Licenses: one
 # addition to the root allowlist, `MIT-0`, noted below. Sources: ok. Bans:
 # 14 crates duplicated (base64, block-buffer, const-oid, cpufeatures,
 # crypto-common, der, digest, foldhash, num-bigint, reqwest, shlex, spin, syn,
@@ -84,10 +90,58 @@ allow = [
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked  = "deny"
-# No active ignores. The graph was clean when this file was added, so the list
-# starts empty and any entry added later is a real exception with a real date
-# rather than something inherited.
-ignore  = []
+# One active ignore, added 2026-09-16. The graph was clean when this file was
+# written; this entry is a real exception with a real date rather than
+# something inherited.
+#
+# RUSTSEC-2026-0285 (rustls < 0.23.45) — why this binding cannot take the fix
+# while the root workspace already has:
+#
+#   The root workspace resolved to rustls 0.23.45 on the same day with a
+#   one-line lockfile change, because its crates ask for rustls with
+#   `default-features = false, features = ["std", "tls12", "ring"]` — the
+#   ring backend, no aws-lc-rs. This binding gets rustls transitively with
+#   default features, so aws-lc-rs is in its graph, and two upstream
+#   requirements are then irreconcilable:
+#
+#     rustls 0.23.45          requires  aws-lc-rs ^1.18   (1.18.0, 1.18.1)
+#     mls-rs-crypto-awslc 0.23.0  requires  aws-lc-rs =1.16.2
+#
+#   reached as slim-auth ^0.15 (locked 0.15.4) -> mls-rs-crypto-awslc ^0.23,
+#   and slim-config ^0.16 (locked 0.16.1) -> rustls ^0.23.31.
+#
+#   Checked against the crates.io index on 2026-09-16, not assumed:
+#     * rustls        — 0.23.45 is the newest 0.23.x; there is no later
+#                       release to move to, and it is the fixed version.
+#     * agntcy-slim-auth — 0.15.4 is the newest release; already in use.
+#     * mls-rs-crypto-awslc — 0.23.0 is the ONLY release in the ^0.23 range
+#                       that slim-auth admits, and it carries the `=1.16.2`
+#                       pin. There is no 0.24.x at all; 0.25.0 exists but is
+#                       out of slim-auth's range.
+#
+#   So no lockfile change, and no dependency bump available to this
+#   repository, removes the advisory. `cargo update -p rustls --precise
+#   0.23.45` in this directory fails with the aws-lc-rs conflict above.
+#
+# Severity as the advisory itself states it: rustls accepted TLS 1.3
+# handshake messages sent at the wrong encryption level when they followed a
+# key-changing message in the same record, contrary to RFC 8446 §5.1. "The
+# handshake transcript is still authenticated, so a network-position attacker
+# cannot use this to alter or complete a handshake; the practical effect is
+# that a peer could send handshake messages that should be encrypted in
+# plaintext without rustls rejecting the connection." It is a conformance
+# failure, not a handshake-forgery or confidentiality break.
+#
+# Remove this entry when either of these becomes true — re-check at the next
+# binding release, whichever comes first:
+#   * agntcy-slim-auth publishes a release depending on an mls-rs-crypto-awslc
+#     that allows aws-lc-rs >= 1.18, or
+#   * mls-rs-crypto-awslc publishes a 0.23.x that relaxes `=1.16.2`.
+# Verify with `cargo update -p rustls --precise 0.23.45` from this directory:
+# when it succeeds, delete this entry and commit the lockfile instead.
+ignore  = [
+    { id = "RUSTSEC-2026-0285", reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; slim-auth 0.15.4 -> mls-rs-crypto-awslc 0.23.0 pins aws-lc-rs =1.16.2. No upstream release resolves this yet (checked 2026-09-16). See the note above." },
+]
 
 # ---------------------------------------------------------------------------
 # Banned crates

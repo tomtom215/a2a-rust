@@ -10,6 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`rustls` advanced to 0.23.45 (RUSTSEC-2026-0285).** rustls below 0.23.45
+  accepted TLS 1.3 handshake messages sent at the wrong encryption level when
+  they followed a key-changing message in the same record, contrary to
+  RFC 8446 §5.1, which requires terminating the connection with
+  `unexpected_message`. The advisory states the handshake transcript stays
+  authenticated, so this is a conformance failure rather than a
+  handshake-forgery or confidentiality break. The workspace lockfile moves
+  0.23.44 → 0.23.45; no manifest changed, because every crate here already
+  requests `rustls = ">=0.23, <0.24"`.
+- **The SLIMRPC binding cannot take that upgrade yet, and now says so.**
+  `bindings/a2a-protocol-slimrpc` reaches rustls with default features, so
+  `aws-lc-rs` is in its graph, and rustls 0.23.45 requires `aws-lc-rs ^1.18`
+  while `mls-rs-crypto-awslc 0.23.0` — the only release in the `^0.23` range
+  that `agntcy-slim-auth 0.15.4` admits — pins `aws-lc-rs =1.16.2`. No
+  published version of either resolves it, verified against the crates.io
+  index rather than assumed. The binding's `deny.toml` therefore carries a
+  dated `RUSTSEC-2026-0285` ignore recording the full chain, the severity as
+  the advisory states it, and the two upstream releases that would let the
+  entry be deleted. The four published crates are unaffected: they select the
+  `ring` backend and are on 0.23.45.
+
 ### Fixed
 
 - **A new task on an existing context no longer inherits the previous
