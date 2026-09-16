@@ -10,7 +10,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A new task on an existing context no longer inherits the previous
+  task's artifacts, history and metadata** (server). When a client sent a
+  second message on a context without a `taskId`, the server minted a fresh
+  task id — correctly, that is a new round — and then built that task with
+  the previous task's `artifacts`, `history` and `metadata` copied in. The
+  agent's own output was merged on top, so every round after the first
+  returned the whole context's accumulated artifacts, growing by one each
+  turn ([#130](https://github.com/tomtom215/a2a-rust/issues/130)).
+  `a2a.proto` scopes all three fields to the task, not the
+  context: artifacts are "a set of output artifacts for a `Task`", history
+  "the history of interactions from a `Task`", metadata "custom metadata
+  about a task". `build_initial_task` had keyed the carry-forward on "a task
+  exists for this context" when `resolve_task_id` had already decided the
+  opposite; it now carries state forward only when the ids match — a genuine
+  `InputRequired` continuation of the same task (A2A spec §3.4.3), where
+  wiping the accumulated state would be the bug. Only `artifacts` was
+  visible on the send response, because history is omitted from it unless
+  the client asks for a `history_length`; `history` and `metadata` leaked
+  the same way and are observable through `GetTask`. Affects 0.11.0 and
+  0.12.0. Executors are unaffected: a multi-turn executor reads the previous
+  task from `RequestContext::stored_task`, which is passed to it separately.
+  This changes the wire shape for a given input and is therefore
+  patch-eligible only as the specification correction `STABILITY.md` §2
+  carves out; the requirement it corrects is `Task.artifacts`,
+  `Task.history` and `Task.metadata` being task-scoped in `a2a.proto`.
 
 ## [0.12.0] - 2026-09-10
 
