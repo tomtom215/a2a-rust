@@ -17,7 +17,7 @@ Last updated 2026-09-16.
 
 | Branch | Head | What it is |
 |---|---|---|
-| `claude/friendly-keller-edrezx` | `5ee3cfb` | The working branch. Four documentation commits, then the handoff, then one code fix (issue #130). |
+| `claude/friendly-keller-edrezx` | *see `git log`* | The working branch: four documentation commits, the issue-130 fix `5ee3cfb`, and revisions of this file. Its head moves every time this file is edited, so it is not pinned here. |
 | `claude/a2a-rig-held` | `caa8774` | Storage. The unpublished `a2a-rig` crate, one commit on top of `caac0ec`. |
 | `claude/adk-rust-0.12-patch` | `6fbdd2f` | Storage. The outbound adk-rust patch as a file, one commit on top of `caac0ec`. |
 
