@@ -27,7 +27,7 @@ landed somewhere better.
 
 ### Position relative to `main`
 
-`origin/main` is at `c5d1379`. The working branch is **6 ahead, 6 behind**, and
+`origin/main` is at `c5d1379`. The working branch is **9 ahead, 6 behind**, and
 the merge **conflicts in exactly one file**: both sides replaced `CHANGELOG.md`'s
 `## [Unreleased]` / "Nothing yet." with their own entries — `main` with the
 SLIMRPC branch-spec triage, this branch with the issue-130 fix. The resolution is
@@ -89,6 +89,25 @@ carries no reply.
 The fix is on this branch only. It is in `CHANGELOG.md` under `[Unreleased]`,
 classified there as the `STABILITY.md` §2 specification correction, which is
 what makes it patch-eligible rather than a minor bump.
+
+## RUSTSEC-2026-0285 — fixed in the workspace, waived in the binding
+
+The advisory (rustls below 0.23.45 accepting TLS 1.3 handshake messages at the
+wrong encryption level) was published after `main`'s last green CI run and
+turned both `cargo-deny` jobs red on this branch without any change here
+causing it. `main` fails the same way if re-run.
+
+Fixed for the four published crates in `eaf038c`: the workspace lockfile moves
+rustls 0.23.44 to 0.23.45, two lines, no manifest change.
+
+**Not fixed for `bindings/a2a-protocol-slimrpc`, and it cannot be from here.**
+rustls 0.23.45 needs `aws-lc-rs ^1.18`; `mls-rs-crypto-awslc 0.23.0` — the only
+release in the range `agntcy-slim-auth 0.15.4` admits — pins `aws-lc-rs
+=1.16.2`. The binding's `deny.toml` carries a dated ignore with the full chain.
+**Re-check it at the next binding release**: run `cargo update -p rustls
+--precise 0.23.45` from `bindings/a2a-protocol-slimrpc/`; when it succeeds,
+delete the ignore and commit the lockfile instead. Do not let the waiver
+outlive the constraint.
 
 ## What to pick up first
 
