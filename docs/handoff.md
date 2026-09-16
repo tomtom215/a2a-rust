@@ -11,13 +11,13 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-13.
+Last updated 2026-09-16.
 
 ## Branches
 
 | Branch | Head | What it is |
 |---|---|---|
-| `claude/friendly-keller-edrezx` | `caac0ec` | The working branch. Four documentation commits, no code. |
+| `claude/friendly-keller-edrezx` | `5ee3cfb` | The working branch. Four documentation commits, then the handoff, then one code fix (issue #130). |
 | `claude/a2a-rig-held` | `caa8774` | Storage. The unpublished `a2a-rig` crate, one commit on top of `caac0ec`. |
 | `claude/adk-rust-0.12-patch` | `6fbdd2f` | Storage. The outbound adk-rust patch as a file, one commit on top of `caac0ec`. |
 
@@ -27,10 +27,12 @@ landed somewhere better.
 
 ### Position relative to `main`
 
-`origin/main` is at `c5d1379`. The working branch is **4 ahead, 6 behind**. None
-of the six commits on `main` touches a file this session edited, so a merge is
-clean on our side — verified with `git diff --name-only 518bac6..origin/main --`
-over the edited paths, which returns nothing.
+`origin/main` is at `c5d1379`. The working branch is **6 ahead, 6 behind**, and
+the merge **conflicts in exactly one file**: both sides replaced `CHANGELOG.md`'s
+`## [Unreleased]` / "Nothing yet." with their own entries — `main` with the
+SLIMRPC branch-spec triage, this branch with the issue-130 fix. The resolution is
+to keep both sections; nothing else overlaps. (Until `5ee3cfb` there was no
+overlap at all, which is what an earlier revision of this file recorded.)
 
 ### `claude/a2a-rig-held`
 
@@ -74,9 +76,27 @@ publishing later costs nothing, maintaining now costs immediately.
   `:35`) and `a2a-tck-sut` (`:118`) — and that is a CI-cost decision nobody has
   made.
 
+## Issue #130 — fixed on this branch, not yet released
+
+[#130](https://github.com/tomtom215/a2a-rust/issues/130) (`valliscooper`,
+2026-09-15): a second message on an existing context, sent without a `taskId`,
+returned a *new* task already carrying the previous task's artifacts, so each
+round returned the whole context's accumulated set. Confirmed, reproduced, and
+fixed in `5ee3cfb`; `history` and `metadata` leaked the same way and are fixed
+with it. The reporter has not been answered yet — the issue is still open and
+carries no reply.
+
+The fix is on this branch only. It is in `CHANGELOG.md` under `[Unreleased]`,
+classified there as the `STABILITY.md` §2 specification correction, which is
+what makes it patch-eligible rather than a minor bump.
+
 ## What to pick up first
 
-1. Merge `main` into the working branch, or rebase onto it. Six commits behind,
-   no overlap, should be uneventful.
+1. Merge `main` into the working branch, or rebase onto it, resolving the
+   `CHANGELOG.md` `[Unreleased]` conflict above by keeping both sections. Or, if
+   the issue-130 fix should go out on its own, cherry-pick `5ee3cfb` onto a
+   branch off `main` and open that as its own pull request — `5ee3cfb` touches
+   only `CHANGELOG.md` and two files under
+   `crates/a2a-protocol-server/src/handler/messaging/`.
 2. Submit the adk-rust work if it is still wanted: issue first, then the patch.
 3. Decide the TCK gating question above, either way.
