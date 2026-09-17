@@ -62,9 +62,9 @@ UPSTREAM_URL="https://github.com/a2aproject/experimental-cpb-slimrpc"
 # each. Format: <branch>:<path>:<disposition>. Removing an entry is how you say
 # the branch is gone; adding one is how you say you have read the spec.
 KNOWN_BRANCH_SPECS=(
-    "feat/slimrpc-collaborative-channel:spec/v1/slimrpc-broadcast-live.md:broadcast SendLiveMessage over a SLIM group channel. Replaced spec/v1/slimrpc-collaborative-channel.md on this branch at 0c38776 (2026-09-03), which is why the previous entry stopped matching. Not followed by this binding, and that is a fact rather than a scope preference: its own section 3 requires A2A 1.1 and the SendLiveMessage method, and neither exists in any released A2A specification — a2aproject/A2A is tagged v1.0.1, SendLiveMessage appears nowhere in its docs, and this SDK implements the ratified 11-method v1.0 surface that scripts/check_method_denominator.py holds it to. Re-triage if A2A 1.1 ships."
-    "feat/slimrpc-collaborative-channel:spec/v1/a2a-broadcast-live.md:the transport-independent half of broadcast-live, split out of slimrpc-broadcast-live.md at 66ee9e0 (2026-09-10): an A2A 1.1 extension (its first sentence names v1.1.0) whose relay model can run over 1.0 SendMessage/SendStreamingMessage but whose semantics are 1.1's timeline (TimelineEntry) and whose native model requires SendLiveMessage; neither exists in any released A2A specification (a2aproject/A2A is at v1.0.1). Same decision as the SLIMRPC profile beside it: not followed; re-triage when A2A 1.1 ships."
-    "feat/slimrpc-collaborative-channel:spec/v1/a2a-shared-task.md:the shared-task extension added at 40c2360 (2026-09-10) as the foundation of a2a-broadcast-live.md: transport-independent (extension URI https://a2a-protocol.org/extensions/shared-task/v1, a task-sender metadata key, multi-sender rules) and nothing SLIMRPC-specific, so it is not this binding's to implement; its §3.3 preserves the sender on 1.1's TimelineEntry, which no released A2A specification defines. Not followed; re-triage with a2a-broadcast-live.md when A2A 1.1 ships."
+    "feat/slimrpc-collaborative-channel:spec/v1/slimrpc-collaborative-task.md:the SLIMRPC profile. Renamed from spec/v1/slimrpc-broadcast-live.md at cb245fc (2026-09-11; git scores the rename 54% similar) and rewritten through the branch tip 36b03a7 the same day, which is why the previous entry stopped matching. Not followed — but the predecessor entry's reason is deliberately NOT reused, because it is no longer true of this text: sections 3.1 and 4 now activate a session with SendLiveMessage OR 1.0's SendStreamingMessage, so this profile no longer requires an A2A 1.1 method. Three things block it instead. (1) It is normatively the profile of spec/v1/a2a-collaborative-task.md beside it, whose section 4.3 makes appending peer messages to 1.1's timeline as TimelineEntry(Message) a MUST. (2) Its native mode needs SLIM shared-responses group channels (section 3.1, Server.new_with_shared_responses_and_connection); this binding implements slimrpc-multicast.md from upstream main, which is a different operation, and carries no shared-responses support. (3) The document has never been on main and does not hold still: its identity changed twice in nine days (daddfb2, 2026-09-02, collaborative-channel -> broadcast-live; cb245fc, 2026-09-11, -> collaborative-task) and its text changed 7 further times on 2026-09-11 alone, through the tip 36b03a7. Note the SHA correction: entries here and in the two READMEs credited the first rename to 0c38776 (2026-09-03), which is an examples-only commit — it was the branch tip when this check observed the change, and the check clones --depth 1, so the tip is all it can see. Re-triage if it reaches upstream main."
+    "feat/slimrpc-collaborative-channel:spec/v1/a2a-collaborative-task.md:the transport-independent half, which replaced spec/v1/a2a-broadcast-live.md at cb245fc (2026-09-11): the same design reframed around a relay that joins each agent's task to its peers, under the extension URI https://a2a-protocol.org/extensions/collaborative-task/v1, with section 3 requiring the shared-task URI alongside it. Not this binding's to implement — it defers every transport question to the SLIMRPC profile beside it — and not implementable on the surface this SDK holds itself to: its section 4.3 makes appending peer messages to A2A 1.1's timeline as TimelineEntry(Message) a MUST, and the StreamRequest vocabulary its section 5.1 translation table is written in, TaskMessageUpdateEvent included, is absent from proto/a2a_v1/a2a.proto and from both vendored SLIMRPC specs. The objection is narrower than its predecessor's: section 2.1's basic relay tier does claim A2A 1.0+, so what blocks it is 4.3, not the method surface. Not followed; re-triage when A2A 1.1 ships."
+    "feat/slimrpc-collaborative-channel:spec/v1/a2a-shared-task.md:the shared-task extension added at 40c2360 (2026-09-10) as the foundation of what is now a2a-collaborative-task.md (a2a-broadcast-live.md when this entry was written): transport-independent (extension URI https://a2a-protocol.org/extensions/shared-task/v1, a message-sender metadata key — renamed from task-sender and namespaced under that URI at 1679a1b, 2026-09-10 — and multi-sender rules) and nothing SLIMRPC-specific, so it is not this binding's to implement; its §3.3 preserves the sender on 1.1's TimelineEntry, which no released A2A specification defines. Not followed; re-triage with a2a-collaborative-task.md when A2A 1.1 ships."
     "feat/slimrpc-channel-moderator:spec/v1/slimrpc-channel-moderator.md:invite-to-channel extension; implemented by neither this binding nor the official crate."
     "feat/slimrpc-multicast-spec:spec/slimrpc-multicast.md:pre-versioning layout of the multicast spec, superseded by spec/v1/ on main."
     "feat/slimrpc-multicast-spec:spec/slimrpc.md:pre-versioning layout of the base spec, superseded by spec/v1/ on main."
@@ -97,6 +97,14 @@ if [ "${#MAIN_SPECS[@]}" -eq 0 ]; then
     exit 1
 fi
 
+# Two independent verdicts, because they need two different remedies and the
+# script used to print both for either. `vendor_drift` is "a vendored copy no
+# longer matches upstream main", whose fix is `--update` plus new hashes;
+# `drift` is "this run failed" for any reason, including a branch-only spec
+# nobody has triaged, whose fix is a KNOWN_BRANCH_SPECS entry and touches no
+# vendored file at all. Collapsing them sent the 2026-09-12 nightly's reader to
+# `--update` and a hash refresh for a run in which every vendored copy matched.
+vendor_drift=0
 drift=0
 
 # Computed once. Deriving it inside a test with `... | grep -q` instead cost a
@@ -143,6 +151,7 @@ for path in "${MAIN_SPECS[@]}"; do
     if [ ! -f "$local_file" ]; then
         printf 'check_slimrpc_spec: upstream main carries %s, which is NOT vendored\n' "$path" >&2
         printf '  this is the case the previous version of this check could not see\n' >&2
+        vendor_drift=1
         drift=1
         continue
     fi
@@ -154,6 +163,7 @@ for path in "${MAIN_SPECS[@]}"; do
         printf '  upstream: %s\n' "$(sha256sum "$tmp/$name" | cut -d' ' -f1)" >&2
         printf '  diff (vendored -> upstream):\n' >&2
         diff -u "$local_file" "$tmp/$name" | head -60 >&2 || true
+        vendor_drift=1
         drift=1
     fi
 done
@@ -166,6 +176,7 @@ for local_file in "$VENDOR_DIR"/*.md; do
         printf 'check_slimrpc_spec: %s is vendored but no longer exists on upstream main\n' "$name" >&2
         printf '  it was renamed, moved or withdrawn; the binding may be implementing a\n' >&2
         printf '  document that upstream has retracted\n' >&2
+        vendor_drift=1
         drift=1
     fi
 done
@@ -202,13 +213,16 @@ if [ "$untriaged" = "1" ]; then
     drift=1
 fi
 
-if [ "$drift" = "1" ]; then
+if [ "$vendor_drift" = "1" ]; then
     printf '\nThe SLIMRPC binding claims to implement this specification. Upstream has\n' >&2
     printf 'moved, so that claim is now unverified.\n\n' >&2
     printf '  1. Read the diff above.\n' >&2
     printf '  2. Decide whether bindings/a2a-protocol-slimrpc must follow.\n' >&2
     printf '  3. ./scripts/check_slimrpc_spec.sh --update, refresh the hashes in\n' >&2
     printf '     spec/slimrpc_v1/README.md, and record the decision in the same commit.\n' >&2
+fi
+
+if [ "$drift" = "1" ]; then
     exit 1
 fi
 

@@ -10,28 +10,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
+### Changed
 
-- **`rustls` advanced to 0.23.45 (RUSTSEC-2026-0285).** rustls below 0.23.45
-  accepted TLS 1.3 handshake messages sent at the wrong encryption level when
-  they followed a key-changing message in the same record, contrary to
-  RFC 8446 §5.1, which requires terminating the connection with
-  `unexpected_message`. The advisory states the handshake transcript stays
-  authenticated, so this is a conformance failure rather than a
-  handshake-forgery or confidentiality break. The workspace lockfile moves
-  0.23.44 → 0.23.45; no manifest changed, because every crate here already
-  requests `rustls = ">=0.23, <0.24"`.
-- **The SLIMRPC binding cannot take that upgrade yet, and now says so.**
-  `bindings/a2a-protocol-slimrpc` reaches rustls with default features, so
-  `aws-lc-rs` is in its graph, and rustls 0.23.45 requires `aws-lc-rs ^1.18`
-  while `mls-rs-crypto-awslc 0.23.0` — the only release in the `^0.23` range
-  that `agntcy-slim-auth 0.15.4` admits — pins `aws-lc-rs =1.16.2`. No
-  published version of either resolves it, verified against the crates.io
-  index rather than assumed. The binding's `deny.toml` therefore carries a
-  dated `RUSTSEC-2026-0285` ignore recording the full chain, the severity as
-  the advisory states it, and the two upstream releases that would let the
-  entry be deleted. The four published crates are unaffected: they select the
-  `ring` backend and are on 0.23.45.
+- **SLIMRPC branch-spec triage: the broadcast-live design is now
+  *collaborative task*.** The nightly `Official TCK` run of 2026-09-12
+  ([34671180590](https://github.com/tomtom215/a2a-rust/actions/runs/34671180590))
+  failed at `scripts/check_slimrpc_spec.sh`, as designed, on two untriaged
+  files. Upstream `cb245fc` (2026-09-11) reframed the design on
+  `feat/slimrpc-collaborative-channel`: `spec/v1/a2a-broadcast-live.md` gave way
+  to `spec/v1/a2a-collaborative-task.md`, `spec/v1/slimrpc-broadcast-live.md`
+  was renamed `spec/v1/slimrpc-collaborative-task.md`, and the profile was
+  rewritten seven further times the same day. Both are triaged as not followed —
+  but the SLIMRPC profile's **reason has changed and the old one is not
+  reused**: its §§3.1 and 4 now accept 1.0's `SendStreamingMessage` as the
+  activation call, so "requires A2A 1.1 and `SendLiveMessage`" is no longer true
+  of that text. What blocks it now is the base spec's §4.3, which makes
+  appending peer messages to A2A 1.1's `timeline` as `TimelineEntry(Message)` a
+  MUST; its native mode's requirement for SLIM shared-responses group channels,
+  which this binding does not implement; and the document never having reached
+  upstream `main`. Recorded in `KNOWN_BRANCH_SPECS`, the vendored spec's README
+  table, the binding's README and the book chapter.
+- **Correction: the 2026-09-02 rename was `daddfb2`, not `0c38776`.** Entries
+  written for the previous triage — including the 0.12.0 note below — credited
+  the `slimrpc-collaborative-channel.md` -> `slimrpc-broadcast-live.md` rename
+  to `0c38776` (2026-09-03), which changes only upstream's `examples/` tree. It
+  was the branch *tip* when `check_slimrpc_spec.sh` observed the move, and that
+  check clones `--depth 1`, so a tip is all it can see. The live documents now
+  cite `daddfb2` (2026-09-02); the released 0.12.0 entry is left as published.
 
 ### Fixed
 
@@ -60,6 +65,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   patch-eligible only as the specification correction `STABILITY.md` §2
   carves out; the requirement it corrects is `Task.artifacts`,
   `Task.history` and `Task.metadata` being task-scoped in `a2a.proto`.
+- **Three wrong claims about the `rig-agent` example, and a stale TCK figure
+  in seven places.** The prose described messages being passed to
+  `rig_core::agent::Agent`, a type the example does not use — rig 0.41 moved
+  the run loop into a separate crate, so the example defines its own
+  single-turn `RigAgent<M>` over `rig_core::completion::CompletionModel`. The
+  quickstart said the model defaults to `gpt-4o-mini`; it defaults to
+  `qwen3.5:0.8b`. And "passes the TCK 20/20" was carried in seven places
+  against a measured 21/21 graded with 1 not applicable. Each TCK site now
+  carries a dated measurement, the reproducing command, and the fact that no
+  CI job gates it — which is how the figure drifted, since `tck.yml` points
+  only at `echo-agent` and `a2a-tck-sut`, never at the example agents.
+- **Six markdown table rows rendered with missing columns.** Four rows in the
+  two example tables (`examples/README.md`, `book/src/examples/overview.md`)
+  were short of the declared four columns; `benches/README.md` was missing a
+  bench module's File cell and had listed 14 of the 15 `[[bench]]` targets
+  registered in `benches/Cargo.toml`; and a retired waiver row in
+  `book/src/reference/conformance-history.md` had five cells against a
+  six-column header, its `Why` cell having swallowed the `Removable when`
+  content. A repo-wide scan that discounts pipes escaped inside code spans now
+  reports zero mismatched rows in any markdown file.
+
+### Security
+
+- **`rustls` advanced to 0.23.45 (RUSTSEC-2026-0285).** rustls below 0.23.45
+  accepted TLS 1.3 handshake messages sent at the wrong encryption level when
+  they followed a key-changing message in the same record, contrary to
+  RFC 8446 §5.1, which requires terminating the connection with
+  `unexpected_message`. The advisory states the handshake transcript stays
+  authenticated, so this is a conformance failure rather than a
+  handshake-forgery or confidentiality break. The workspace lockfile moves
+  0.23.44 → 0.23.45; no manifest changed, because every crate here already
+  requests `rustls = ">=0.23, <0.24"`.
+- **The SLIMRPC binding cannot take that upgrade yet, and now says so.**
+  `bindings/a2a-protocol-slimrpc` reaches rustls with default features, so
+  `aws-lc-rs` is in its graph, and rustls 0.23.45 requires `aws-lc-rs ^1.18`
+  while `mls-rs-crypto-awslc 0.23.0` — the only release in the `^0.23` range
+  that `agntcy-slim-auth 0.15.4` admits — pins `aws-lc-rs =1.16.2`. No
+  published version of either resolves it, verified against the crates.io
+  index rather than assumed. The binding's `deny.toml` therefore carries a
+  dated `RUSTSEC-2026-0285` ignore recording the full chain, the severity as
+  the advisory states it, and the two upstream releases that would let the
+  entry be deleted. The four published crates are unaffected: they select the
+  `ring` backend and are on 0.23.45.
+
+### Internal
+
+- **`check_slimrpc_spec.sh` now prints only the remedy that applies.** Every
+  failure — including a branch-only specification nobody has triaged, which
+  touches no vendored file — ended with "read the diff above",
+  `./scripts/check_slimrpc_spec.sh --update` and "refresh the hashes". The
+  2026-09-12 nightly failed exactly that way: no diff, every vendored copy
+  matching, and instructions to re-vendor. The vendored-copy verdict is now
+  tracked separately from the run's overall verdict, so that block prints only
+  when a vendored file really has drifted. Exit codes are unchanged, and both
+  paths were exercised: removing a `KNOWN_BRANCH_SPECS` entry exits 1 with the
+  triage instructions and no re-vendor advice; appending a line to
+  `spec/slimrpc_v1/slimrpc.md` exits 1 with the diff and the re-vendor advice.
+- **The shutdown warning tests now say why a capture failed.** `Test (stable,
+  windows-latest)` in
+  [34679831264](https://github.com/tomtom215/a2a-rust/actions/runs/34679831264)
+  failed `hung_cleanup_is_warned_about` with `got []`, while the behavioural
+  half of that same test passed — the timeout fired and the report was correct,
+  and only the WARN capture came back empty. Two guards replace that message.
+  `warnings_during` no longer discards the result of `set_global_default`: if
+  another global subscriber won the race, `WarnCapture` is not in the dispatcher
+  and no capture can ever fill. The comment there denied this ("the sink below
+  is what decides whether we capture anyway"); it is false, and it is now a
+  panic that names the cause. Second, a canary WARN emitted from the test file
+  with the sink armed, and cleared before the code under test runs, separates
+  "the capture never worked" from "the callsite under test emitted nothing" —
+  the latter being the 2026-08-19 interest-cache failure the file already
+  documents. The canary is deliberately a different callsite, so it proves the
+  subscriber, sink and level filter and nothing about that callsite's cached
+  interest. Both guards proven to fire by injection: dropping every event in the
+  layer trips the canary; installing a competing global subscriber first trips
+  the install check. **The intermittent Windows failure itself is neither fixed
+  nor explained by this** — fifteen runs of the full `--all-features` lib suite
+  on Linux (nine before the change, six after) did not reproduce it — so the
+  next occurrence will say which half is broken instead of `got []`.
+- **Fixed: the shutdown warning capture collected other threads' events.**
+  The guards above did their job on the first try. `Test (1.88,
+  windows-latest)` in
+  [34681613416](https://github.com/tomtom215/a2a-rust/actions/runs/34681613416)
+  failed `clean_shutdown_warns_about_nothing` with `got ["executor cleanup did
+  not finish within the shutdown timeout"]` — and the canary did not fire, so
+  the capture was working. That narrowed it to one thing: the warning was not
+  this test's. Its own `shutdown_with_timeout` reported
+  `executor_cleanup_completed == true`, so the code under test never reached
+  that `trace_warn!`. The sink is process-wide and the subscriber global, while
+  `CAPTURE_LOCK` serialises only the tests in that one file — so a WARN from
+  any of the other ~1100 tests running in parallel landed in it. `ACTIVE_SINK`
+  now records the capturing thread alongside the sink and the layer ignores
+  events from any other thread; the subscriber stays global, which is what the
+  callsite-interest reasoning there requires. Regression test
+  `a_warning_from_another_thread_is_not_captured` reproduces the CI failure
+  exactly — without the fix it fails with the identical message. Note the
+  constraint this adds, recorded at the static: every test in that file drives
+  a current-thread runtime, so a future test on a multi-threaded runtime would
+  have to widen the check. **The earlier `got []` failure in run 34679831264 is
+  a different symptom and is still unexplained** — it is not this bug, since an
+  empty sink is not a contaminated one.
 
 ## [0.12.0] - 2026-09-10
 

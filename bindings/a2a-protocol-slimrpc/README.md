@@ -58,21 +58,42 @@ statement that it does not matter — the tracking item is B24 in
 `docs/v0.9.0-post-release-review.md`, and `scripts/check_slimrpc_spec.sh` fails
 CI if upstream gains a specification nobody here has triaged.
 
-The target has since moved further. On 2026-09-03 the branch that held
-`spec/v1/slimrpc-collaborative-channel.md` (`feat/slimrpc-collaborative-channel`)
-replaced it with `spec/v1/slimrpc-broadcast-live.md` (and on 2026-09-10 split
-its transport-independent half into `spec/v1/a2a-broadcast-live.md`, with the
-`spec/v1/a2a-shared-task.md` extension it builds on), a different design: a
-broadcast routing mode for A2A 1.1's `SendLiveMessage` (its §3 requires A2A 1.1
-and that method), which no released A2A specification defines. The official
-crate, at 0.2.7 on `a2a-rs` `main`, still ships `Collaborate` against the
-withdrawn document. So the row above now records an implementation of a
-specification that upstream has retracted, on both sides of the comparison.
+The target has since moved further. On 2026-09-02 at `daddfb2` the branch that
+held `spec/v1/slimrpc-collaborative-channel.md`
+(`feat/slimrpc-collaborative-channel`) renamed it to
+`spec/v1/slimrpc-broadcast-live.md`; on 2026-09-10 that was split into a
+transport-independent half (`spec/v1/a2a-broadcast-live.md`) plus the
+`spec/v1/a2a-shared-task.md` extension it builds on; and on 2026-09-11 at
+`cb245fc` the whole design was reframed as *collaborative task* —
+`spec/v1/a2a-collaborative-task.md` and the profile
+`spec/v1/slimrpc-collaborative-task.md`, which the branch then rewrote seven
+more times the same day. The official crate, at 0.2.7 on `a2a-rs` `main`, still
+ships `Collaborate` against the document upstream retracted in the first of
+those moves. So the row above records an implementation of a withdrawn
+specification on one side and a deliberate abstention on the other.
+
+(Earlier revisions of this paragraph dated the first rename 2026-09-03 and
+credited it to `0c38776`. That commit changes only upstream's `examples/` tree.
+It was the branch *tip* when `check_slimrpc_spec.sh` observed the move, and that
+check clones `--depth 1`, so a tip is all it can see.)
+
+What that abstention now rests on is worth stating precisely, because the reason
+changed with the 2026-09-11 rewrite and the old one would be false if repeated:
+the profile no longer requires A2A 1.1's `SendLiveMessage`, since its §§3.1 and
+4 accept 1.0's `SendStreamingMessage` as the activation call. It is still not
+implemented here because it is the profile of `a2a-collaborative-task.md`, whose
+§4.3 makes appending peer messages to 1.1's `timeline` as `TimelineEntry(Message)`
+a MUST; because its native mode needs SLIM shared-responses group channels
+(`Server.new_with_shared_responses_and_connection`), which this crate does not
+implement; and because the document has never reached upstream `main`.
 
 Verified 2026-08-26 and re-verified 2026-09-10 by reading both sources and all
-upstream branch tips, not by comparing feature lists. On the second date
+upstream branch tips, not by comparing feature lists. The 2026-09-12 re-check
+covers the upstream half only: every branch tip enumerated and both new
+specification files read end to end. The official crate's source was not re-read
+that day, so the `0.2.7` row rests on the 2026-09-10 reading. On 2026-09-12
 `check_slimrpc_spec.sh` reported 2 files on upstream `main`, all vendored and
-matching, and 5 branch-only specifications, all triaged.
+matching, and 7 branch-only specifications, all triaged.
 
 ## Why it is not in the workspace
 
