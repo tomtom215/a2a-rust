@@ -28,7 +28,8 @@ cargo bench -p a2a-benchmarks --bench transport_throughput
 | Module | File | What it measures |
 |--------|------|------------------|
 | **Transport Throughput** | `transport_throughput.rs` | Messages/sec, bytes/sec through JSON-RPC and REST HTTP transports; SSE streaming drain latency; payload size scaling (up to 1MB) |
-| `coordinator_chain_under_fault` | Agent-level 5-hop coordinator chain under fault injection |
+| **Coordinator Chain Under Fault** | `coordinator_chain_under_fault.rs` | Agent-level 5-hop coordinator chain under fault injection |
+| **Send Latency Breakdown** | `send_latency_breakdown.rs` | Attributes blocking `message/send` latency to its parts rather than inferring them: runtime workers (multi vs single), executor event count (3-event echo vs 2-event noop), and the transport floor (`get_task` on a missing id, which shares the whole ingress path and does no executor work). Groups `diag/send` and `diag/floor`. |
 | **Protocol Overhead** | `protocol_overhead.rs` | Serde ser/de cost per A2A type (AgentCard, Task, Message, StreamResponse); JSON-RPC envelope overhead; batch scaling; `protocol/payload_scaling` isolation benchmarks (64B–1MB, `to_vec` vs `SerBuffer`, `from_slice` vs `from_str`) |
 | **Task Lifecycle** | `task_lifecycle.rs` | TaskStore save/get/list latency; EventQueue write→read throughput; end-to-end create→working→completed via HTTP |
 | **Concurrent Agents** | `concurrent_agents.rs` | N simultaneous sends/streams (1, 4, 16, 64); store contention; mixed send+get workloads |

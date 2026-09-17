@@ -19,19 +19,42 @@ use crate::request_context::RequestContext;
 /// The task as it is first saved: `Submitted`, with the incoming message
 /// appended to the (capped) history.
 ///
-/// A continuation carries the stored task's accumulated history, artifacts,
-/// and metadata forward — only the status returns to Submitted for the new
-/// turn. The incoming message is appended to `history` in both cases:
-/// `Task.history` is the conversation record that `GetTask`'s
-/// `historyLength` truncates, and multi-turn executors read prior turns from
-/// it via `RequestContext::stored_task`.
+/// Carried-forward state is scoped to the task it belongs to, which is not
+/// the same thing as the context it belongs to. `resolve_task_id` has
+/// already decided which of the two this send is: when it reuses the stored
+/// task's id — an `InputRequired` continuation, A2A spec §3.4.3 — that
+/// task's own history, artifacts and metadata come forward and only the
+/// status returns to Submitted for the new turn; when it mints a fresh id
+/// instead, this is a *new* task on an existing context and starts clean.
+/// The stored task found for the context is then a different, usually
+/// finished task, and its state is not this one's.
+///
+/// `a2a.proto` scopes all three fields to the task: artifacts are "a set of
+/// output artifacts for a `Task`", history "the history of interactions
+/// from a `Task`", metadata "custom metadata about a task". None of them is
+/// a context-level aggregate. Keying the carry-forward on "a task exists
+/// for this context" rather than "it is this task" made every round after
+/// the first return the whole context's accumulated artifacts, growing by
+/// one each turn ([#130]).
+///
+/// The incoming message is appended to `history` either way. `Task.history`
+/// is the conversation record that `GetTask`'s `historyLength` truncates; a
+/// multi-turn executor reads the *previous* task's turns from
+/// [`RequestContext::stored_task`], which `build_request_context` passes it
+/// separately and which this scoping does not touch.
+///
+/// [#130]: https://github.com/tomtom215/a2a-rust/issues/130
 pub(super) fn build_initial_task(
     task_id: &TaskId,
     context_id: &str,
     stored_task: Option<&Task>,
     message: &Message,
 ) -> Task {
-    let mut history = stored_task
+    // The task found for this context is this task's past only when the ids
+    // match; `resolve_task_id` returns the stored id for a continuation and a
+    // fresh uuid otherwise, so this equality is exactly that decision.
+    let continuation = stored_task.filter(|s| s.id == *task_id);
+    let mut history = continuation
         .and_then(|s| s.history.clone())
         .unwrap_or_default();
     history.push(message.clone());
@@ -48,8 +71,8 @@ pub(super) fn build_initial_task(
         context_id: ContextId::new(context_id),
         status: TaskStatus::with_timestamp(TaskState::Submitted),
         history: Some(history),
-        artifacts: stored_task.and_then(|s| s.artifacts.clone()),
-        metadata: stored_task.and_then(|s| s.metadata.clone()),
+        artifacts: continuation.and_then(|s| s.artifacts.clone()),
+        metadata: continuation.and_then(|s| s.metadata.clone()),
     }
 }
 

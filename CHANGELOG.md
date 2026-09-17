@@ -38,6 +38,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check clones `--depth 1`, so a tip is all it can see. The live documents now
   cite `daddfb2` (2026-09-02); the released 0.12.0 entry is left as published.
 
+### Fixed
+
+- **A new task on an existing context no longer inherits the previous
+  task's artifacts, history and metadata** (server). When a client sent a
+  second message on a context without a `taskId`, the server minted a fresh
+  task id — correctly, that is a new round — and then built that task with
+  the previous task's `artifacts`, `history` and `metadata` copied in. The
+  agent's own output was merged on top, so every round after the first
+  returned the whole context's accumulated artifacts, growing by one each
+  turn ([#130](https://github.com/tomtom215/a2a-rust/issues/130)).
+  `a2a.proto` scopes all three fields to the task, not the
+  context: artifacts are "a set of output artifacts for a `Task`", history
+  "the history of interactions from a `Task`", metadata "custom metadata
+  about a task". `build_initial_task` had keyed the carry-forward on "a task
+  exists for this context" when `resolve_task_id` had already decided the
+  opposite; it now carries state forward only when the ids match — a genuine
+  `InputRequired` continuation of the same task (A2A spec §3.4.3), where
+  wiping the accumulated state would be the bug. Only `artifacts` was
+  visible on the send response, because history is omitted from it unless
+  the client asks for a `history_length`; `history` and `metadata` leaked
+  the same way and are observable through `GetTask`. Affects 0.11.0 and
+  0.12.0. Executors are unaffected: a multi-turn executor reads the previous
+  task from `RequestContext::stored_task`, which is passed to it separately.
+  This changes the wire shape for a given input and is therefore
+  patch-eligible only as the specification correction `STABILITY.md` §2
+  carves out; the requirement it corrects is `Task.artifacts`,
+  `Task.history` and `Task.metadata` being task-scoped in `a2a.proto`.
+- **Three wrong claims about the `rig-agent` example, and a stale TCK figure
+  in seven places.** The prose described messages being passed to
+  `rig_core::agent::Agent`, a type the example does not use — rig 0.41 moved
+  the run loop into a separate crate, so the example defines its own
+  single-turn `RigAgent<M>` over `rig_core::completion::CompletionModel`. The
+  quickstart said the model defaults to `gpt-4o-mini`; it defaults to
+  `qwen3.5:0.8b`. And "passes the TCK 20/20" was carried in seven places
+  against a measured 21/21 graded with 1 not applicable. Each TCK site now
+  carries a dated measurement, the reproducing command, and the fact that no
+  CI job gates it — which is how the figure drifted, since `tck.yml` points
+  only at `echo-agent` and `a2a-tck-sut`, never at the example agents.
+- **Six markdown table rows rendered with missing columns.** Four rows in the
+  two example tables (`examples/README.md`, `book/src/examples/overview.md`)
+  were short of the declared four columns; `benches/README.md` was missing a
+  bench module's File cell and had listed 14 of the 15 `[[bench]]` targets
+  registered in `benches/Cargo.toml`; and a retired waiver row in
+  `book/src/reference/conformance-history.md` had five cells against a
+  six-column header, its `Why` cell having swallowed the `Removable when`
+  content. A repo-wide scan that discounts pipes escaped inside code spans now
+  reports zero mismatched rows in any markdown file.
+
+### Security
+
+- **`rustls` advanced to 0.23.45 (RUSTSEC-2026-0285).** rustls below 0.23.45
+  accepted TLS 1.3 handshake messages sent at the wrong encryption level when
+  they followed a key-changing message in the same record, contrary to
+  RFC 8446 §5.1, which requires terminating the connection with
+  `unexpected_message`. The advisory states the handshake transcript stays
+  authenticated, so this is a conformance failure rather than a
+  handshake-forgery or confidentiality break. The workspace lockfile moves
+  0.23.44 → 0.23.45; no manifest changed, because every crate here already
+  requests `rustls = ">=0.23, <0.24"`.
+- **The SLIMRPC binding cannot take that upgrade yet, and now says so.**
+  `bindings/a2a-protocol-slimrpc` reaches rustls with default features, so
+  `aws-lc-rs` is in its graph, and rustls 0.23.45 requires `aws-lc-rs ^1.18`
+  while `mls-rs-crypto-awslc 0.23.0` — the only release in the `^0.23` range
+  that `agntcy-slim-auth 0.15.4` admits — pins `aws-lc-rs =1.16.2`. No
+  published version of either resolves it, verified against the crates.io
+  index rather than assumed. The binding's `deny.toml` therefore carries a
+  dated `RUSTSEC-2026-0285` ignore recording the full chain, the severity as
+  the advisory states it, and the two upstream releases that would let the
+  entry be deleted. The four published crates are unaffected: they select the
+  `ring` backend and are on 0.23.45.
+
 ### Internal
 
 - **`check_slimrpc_spec.sh` now prints only the remedy that applies.** Every

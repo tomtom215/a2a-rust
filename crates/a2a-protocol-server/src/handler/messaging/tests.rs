@@ -1015,6 +1015,113 @@ async fn continuation_appends_history_and_preserves_artifacts() {
     );
 }
 
+/// Turn 1 of the issue-130 sequence: a completed task on `ctx-130` carrying
+/// an artifact, a history and metadata that are all its own.
+fn issue_130_completed_first_task() -> Task {
+    use a2a_protocol_types::artifact::Artifact;
+    Task {
+        id: TaskId::new("T1"),
+        context_id: ContextId::new("ctx-130"),
+        status: TaskStatus::new(TaskState::Completed),
+        history: Some(vec![Message {
+            id: MessageId::new("m-turn-1"),
+            role: MessageRole::User,
+            parts: vec![Part::text("yo")],
+            context_id: None,
+            task_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        }]),
+        artifacts: Some(vec![Artifact::new("A1", vec![Part::text("turn-1 output")])]),
+        metadata: Some(serde_json::json!({"belongs-to": "T1"})),
+    }
+}
+
+/// The other half of `continuation_appends_history_and_preserves_artifacts`:
+/// a *new* task on an existing context starts clean, where a continuation of
+/// the same task does not.
+///
+/// Issue #130. A client sent "yo" on a fresh context, the agent produced
+/// artifact `A1` and completed the task; the client then sent "yo2" on the
+/// same context with no `taskId`, so the server minted a new task id — and
+/// returned that new task already holding `A1`, to which the agent's `A2`
+/// delta was then merged. The reporter saw every round return the whole
+/// context's artifacts, growing by one each turn.
+///
+/// `build_initial_task` had keyed its carry-forward on "a task exists for
+/// this context" rather than "it is this task", so all three of `artifacts`,
+/// `history` and `metadata` leaked across the task boundary. Only
+/// `artifacts` was visible on the send response: history is omitted from it
+/// unless the client asks for a `history_length` (`shape_response_history`),
+/// which is why the report named artifacts alone. This asserts the stored
+/// task, where all three are observable.
+#[tokio::test]
+async fn new_task_on_existing_context_does_not_inherit_the_prior_task() {
+    let handler = make_handler();
+    let t1 = issue_130_completed_first_task();
+    handler.task_store.save(&t1).await.unwrap();
+
+    // Turn 2: same context, no task_id — a new round, so a new task id.
+    let result = handler
+        .on_send_message(make_params(Some("ctx-130")), false, None)
+        .await
+        .expect("a new round on an existing context should succeed");
+    let SendMessageResult::Response(SendMessageResponse::Task(t2)) = result else {
+        panic!("expected a Task response, got: {result:?}");
+    };
+    assert_ne!(
+        t2.id, t1.id,
+        "turn 2 must be a new task, not a continuation"
+    );
+    assert_eq!(
+        t2.context_id, t1.context_id,
+        "the new task stays on the same context"
+    );
+    assert!(
+        t2.artifacts.as_ref().is_none_or(Vec::is_empty),
+        "the response task must not carry T1's artifacts, got: {:?}",
+        t2.artifacts
+    );
+
+    // The stored task is where history and metadata are observable: the send
+    // response omits history unless the client requested a history_length.
+    let stored = handler
+        .task_store
+        .get(&t2.id)
+        .await
+        .expect("get")
+        .expect("the new task is stored");
+    assert!(
+        stored.artifacts.as_ref().is_none_or(Vec::is_empty),
+        "the stored task must not carry T1's artifacts, got: {:?}",
+        stored.artifacts
+    );
+    assert_eq!(
+        stored.metadata, None,
+        "the stored task must not carry T1's metadata"
+    );
+    let history = stored.history.expect("history holds the incoming message");
+    assert_eq!(
+        history.len(),
+        1,
+        "history starts at the incoming message, not T1's turns: {history:?}"
+    );
+    assert_eq!(history[0].id, MessageId::new("msg-1"));
+
+    // T1 is untouched by any of this.
+    let t1_after = handler
+        .task_store
+        .get(&t1.id)
+        .await
+        .expect("get")
+        .expect("T1 still stored");
+    assert!(
+        t1_after.artifacts.as_ref().is_some_and(|a| a.len() == 1),
+        "T1 keeps its own artifact"
+    );
+}
+
 #[tokio::test]
 async fn history_is_capped_at_max_messages() {
     // The oldest messages are dropped once the cap is reached.

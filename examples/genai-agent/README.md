@@ -117,7 +117,8 @@ curl -X POST http://127.0.0.1:<port> -H 'Content-Type: application/json' -H 'A2A
              "parts": [{"text": "What is 2+2?"}]}}
 }'
 
-# Full conformance suite (passes 20/20 against this agent)
+# Full conformance suite — measured 2026-09-13: 21/21 graded, 1 N/A on this
+# binding. No CI job gates this; the command below is the evidence.
 cargo run -p a2a-tck -- --url http://127.0.0.1:<port> --binding jsonrpc
 ```
 
