@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.12.1] - 2026-09-17
+
 ### Changed
 
 - **SLIMRPC branch-spec triage: the broadcast-live design is now

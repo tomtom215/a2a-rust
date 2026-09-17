@@ -3,8 +3,9 @@
 
 # Upgrading Between Minor Versions
 
-As of 2026-09-10, with 0.12.0 prepared. Its breaking section is
-`## [0.12.0]` in
+As of 2026-09-17, with 0.12.1 prepared. 0.12.1 is a patch and breaks nothing,
+so the newest minor boundary this page covers is still 0.12.0, whose breaking
+section is `## [0.12.0]` in
 [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
 
 This page is the migration guide the 191 KB changelog is not. One section per

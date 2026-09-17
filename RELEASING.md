@@ -76,6 +76,25 @@ git checkout -b release/vX.Y.Z main
 # crates/a2a-protocol-client/Cargo.toml
 # crates/a2a-protocol-server/Cargo.toml
 # crates/a2a-protocol-sdk/Cargo.toml
+#
+# ...and the inter-crate *dependency pins*, which are eight further version
+# strings in those same four files and are NOT what release.yml checks — it
+# reads only the first `^version` line per manifest. Leaving them stale does
+# not fail the release and does not fail the build, because `version =
+# "X.Y.Z"` means `^X.Y.Z`. What it does is publish, say, an sdk X.Y.Z+1 that
+# declares a dependency on server X.Y.Z, so a consumer who bumps only the sdk
+# against an existing lockfile keeps the old server and never receives the
+# fix. On a patch release whose whole content is a server fix, that defeats
+# the release. Find them all with:
+#     git grep -n 'a2a-protocol-\(types\|client\|server\|sdk\)\s*=' -- crates
+#
+# Then refresh BOTH lockfiles, which carry the crate versions:
+#     cargo metadata --format-version 1 >/dev/null          # root workspace
+#     (cd bindings/a2a-protocol-slimrpc && cargo metadata --format-version 1 >/dev/null)
+
+# Update ROADMAP.md's "Current release:" line, and add a section to
+# book/src/reference/changelog.md — neither is checked by anything, and both
+# have rotted before.
 
 # Update CHANGELOG.md: move [Unreleased] content to [X.Y.Z] with date
 # (the heading must be `## [X.Y.Z] - YYYY-MM-DD` — the release workflow
@@ -181,7 +200,7 @@ above, and `release.yml` does not touch it. It lives outside the workspace with
 its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
 run from `bindings/a2a-protocol-slimrpc/`.
 
-It is versioned independently — currently `0.4.0` against the SDK's `0.12.0`. Numbering it
+It is versioned independently — currently `0.4.0` against the SDK's `0.12.1`. Numbering it
 to match would claim API stability it has not earned and force a bump on every
 SDK release even when nothing in it changed.
 
@@ -212,8 +231,9 @@ SDK, which is the failure mode this note exists to prevent.
 > # {"errors":[{"detail":"crate `a2a-protocol-slimrpc` does not exist"}]}
 > ```
 >
-> Steps 1–3 have been kept up: the four SDK crates are published at `0.12.0`,
-> the binding's requirements read `0.12`, and its own version has moved
+> Steps 1–3 have been kept up: the four SDK crates are published at `0.12.1`,
+> the binding's requirements read `0.12` — which `0.12.1` satisfies, so a patch
+> moves neither them nor the binding's own version — and that version has moved
 > `0.1.0` → `0.2.0` → `0.3.0` → `0.4.0` alongside them. Only the publish has
 > never happened, through four SDK releases — the binding's
 > `a2a-protocol-server` requirement has tracked `0.9` → `0.10` → `0.11` →

@@ -19,9 +19,14 @@ All four workspace crates share the same version number and are released togethe
 Releases are triggered by pushing a version tag:
 
 ```bash
-git tag v0.3.0
+git tag -a v0.3.0 -m "Release v0.3.0"
 git push origin v0.3.0
 ```
+
+The tag must be **annotated** (`-a`). A lightweight tag records no tagger and
+no date, so the tag alone attests nothing about who cut the release; the
+release workflow runs `git cat-file -t` and stops if it does not print `tag`.
+Creating a release through the GitHub web UI produces a lightweight tag.
 
 The [release workflow](https://github.com/tomtom215/a2a-rust/blob/main/.github/workflows/release.yml) automatically:
 
@@ -41,6 +46,36 @@ a2a-protocol-types → a2a-protocol-server → a2a-protocol-client → a2a-proto
 Topological order over **all** dependency edges: server precedes client
 because the client has a versioned dev-dependency on the server, which
 `cargo publish` resolves against the crates.io index.
+
+## v0.12.1 (2026-09-17)
+
+A patch release: one specification correction, one security advisory, and
+documentation fixes. No API changes. Full detail in
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
+
+- **A new task on an existing context no longer inherits the previous task's
+  artifacts, history and metadata**
+  ([#130](https://github.com/tomtom215/a2a-rust/issues/130)). When a client
+  sent a second message on a context without a `taskId`, the server correctly
+  minted a new task id and then built that task from the previous task's
+  state, so every round returned the whole context's accumulated artifacts,
+  growing by one each turn. `a2a.proto` scopes all three fields to the task.
+  State now carries forward only when the ids match — the `input-required`
+  continuation (spec §3.4.3) the carry-forward was written for in v0.6.0,
+  where wiping accumulated state would be the bug. Affects 0.11.0 and 0.12.0.
+- **`rustls` advanced to 0.23.45**
+  ([RUSTSEC-2026-0285](https://rustsec.org/advisories/RUSTSEC-2026-0285)):
+  rustls accepted TLS 1.3 handshake messages sent at the wrong encryption
+  level when they followed a key-changing message in the same record,
+  contrary to RFC 8446 §5.1. The handshake transcript stays authenticated, so
+  this is a conformance failure rather than a forgery or confidentiality
+  break. The SLIMRPC binding cannot take the upgrade — an upstream
+  `aws-lc-rs` pin forecloses it — and carries a documented, dated waiver
+  instead; the four published crates use the `ring` backend and are on
+  0.23.45.
+- **Documentation corrections**: three wrong claims about the `rig-agent`
+  example, a TCK figure carried in seven places that measurement
+  contradicted, and six table rows rendering short of their declared columns.
 
 ## v0.12.0 (2026-09-10)
 
