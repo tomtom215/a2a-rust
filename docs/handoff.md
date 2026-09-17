@@ -11,7 +11,7 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-16.
+Last updated 2026-09-17.
 
 ## Branches
 
@@ -27,12 +27,12 @@ landed somewhere better.
 
 ### Position relative to `main`
 
-`origin/main` is at `c5d1379`. The working branch is **9 ahead, 6 behind**, and
-the merge **conflicts in exactly one file**: both sides replaced `CHANGELOG.md`'s
-`## [Unreleased]` / "Nothing yet." with their own entries — `main` with the
-SLIMRPC branch-spec triage, this branch with the issue-130 fix. The resolution is
-to keep both sections; nothing else overlaps. (Until `5ee3cfb` there was no
-overlap at all, which is what an earlier revision of this file recorded.)
+`main` is merged in as of `3ee6f95`. The working branch is **11 ahead, 0
+behind**, and there is nothing left to reconcile. The one conflict was
+`CHANGELOG.md` — both sides had replaced `## [Unreleased]` / "Nothing yet." with
+their own entries — resolved by keeping both and reordering the four sections to
+Changed, Fixed, Security, Internal, which is Keep a Changelog's order and
+0.11.0's.
 
 ### `claude/a2a-rig-held`
 
@@ -111,11 +111,51 @@ outlive the constraint.
 
 ## What to pick up first
 
-1. Merge `main` into the working branch, or rebase onto it, resolving the
-   `CHANGELOG.md` `[Unreleased]` conflict above by keeping both sections. Or, if
-   the issue-130 fix should go out on its own, cherry-pick `5ee3cfb` onto a
-   branch off `main` and open that as its own pull request — `5ee3cfb` touches
-   only `CHANGELOG.md` and two files under
-   `crates/a2a-protocol-server/src/handler/messaging/`.
-2. Submit the adk-rust work if it is still wanted: issue first, then the patch.
-3. Decide the TCK gating question above, either way.
+Release 0.12.1 as **two** pull requests, in this order. They cannot be one, and
+the reason is mechanical rather than stylistic — see below.
+
+1. **Content PR — this branch into `main`.** It is ready: 11 ahead, 0 behind,
+   `cargo test --workspace` 3257 passed / 0 failed / 175 ignored across 107
+   binaries, fmt clean, file-length ratchet clean, `cargo deny` clean on both
+   trees, and the blocking incremental-mutation gate clean (2 mutants from the
+   diff, 1 caught, 1 unviable, 0 missed). Everything in it sits under
+   `[Unreleased]`; no version number moves.
+2. **Release PR — `release/v0.12.1` cut from `main` after (1) merges**, per
+   `RELEASING.md` §1:
+   - version `0.12.1` in all four crate `Cargo.toml` files (release.yml fails
+     the tag unless all four match it);
+   - `CHANGELOG.md`: `## [Unreleased]` becomes `## [0.12.1] - <date>`, dated —
+     release.yml rejects an undated heading — plus a fresh empty `[Unreleased]`;
+   - `CITATION.cff`: `version` and `date-released`, both validated against the
+     tag; they still read `0.12.0` / `2026-09-10`;
+   - **last**, `scripts/provenance_manifest.sh HEAD` to regenerate
+     `docs/provenance-manifest.md`.
+3. Then `git tag -a v0.12.1` — annotated. release.yml rejects a lightweight tag,
+   and the GitHub release UI creates lightweight ones.
+
+**Why the release prep cannot ride in the content PR.**
+`check_provenance_manifest.py`, which release.yml runs against the tagged
+commit, passes only when the manifest's pinned commit is the release commit or
+differs from it by *nothing but the manifest file itself*. Regenerating it in
+the content PR and then landing version bumps on top puts four `Cargo.toml`
+files and `CHANGELOG.md` between the pin and the tag, and the check fails. It
+must therefore be the last substantive change before the tag. The check is in
+`release.yml` only — `ci.yml` does not run it — so a stale manifest does not
+redden the content PR.
+
+**The shallow-clone obstacle is gone.** An earlier note here said this could not
+be done from a session clone. `git fetch --unshallow` succeeded; the clone now
+carries full history (1120 commits) and `check_provenance_manifest.py` runs
+properly, correctly reporting the manifest as stale against the current tree.
+
+Two things the release does **not** need: `SECURITY.md` already covers `0.12.x`,
+and the SLIMRPC binding needs no follow-up release — `RELEASING.md` requires one
+after every SDK *minor*, and the binding's requirement on the three SDK crates
+is `version = "0.12"`, which `0.12.1` satisfies.
+
+## Still open, unrelated to the release
+
+1. Submit the adk-rust work if it is still wanted: issue first, then the patch.
+2. Decide the TCK gating question above, either way.
+3. The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
+   command that says when it can be deleted.
