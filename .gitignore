@@ -25,6 +25,11 @@ bindings/*/target/
 benches/results/*.json
 benches/results/*.md
 !benches/results/.gitkeep
+# The cross-language results are an exception: book/src/reference/
+# cross-language-benchmarks.md is generated from them and claims to be
+# auditable against them, which it is not if they are untracked. They are
+# ~11 KB each and are rewritten, not appended, by each run.
+!benches/results/cross-language-*.json
 
 # Python bytecode cache
 __pycache__/

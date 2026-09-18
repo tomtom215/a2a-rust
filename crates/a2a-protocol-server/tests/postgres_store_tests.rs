@@ -136,6 +136,27 @@ fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
 
 // ── TaskStore tests ──────────────────────────────────────────────────────────
 
+/// The send path reads `supports_idempotency` to decide whether to claim a key
+/// at all, so a tenant-aware store that silently answered `false` would route
+/// every keyed request down the unkeyed path — no error, no failing test, the
+/// guarantee simply absent. Nothing asserted it returned true.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_store_advertises_idempotency_support() {
+    let db = TestDb::create("tenant_idem_support").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+
+    assert!(
+        store.supports_idempotency(),
+        "the tenant-aware Postgres store implements claim_idempotency_key; \
+         it must advertise support"
+    );
+
+    db.drop_db().await;
+}
+
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn task_save_and_get() -> A2aResult<()> {
@@ -449,13 +470,17 @@ async fn migrations_apply_in_order_and_are_idempotent() {
             .await
             .expect("pending_migrations")
             .len(),
-        3,
+        4,
         "all built-in migrations should be pending"
     );
 
     let applied = runner.run_pending().await.expect("run_pending");
-    assert_eq!(applied, vec![1, 2, 3], "migrations apply in version order");
-    assert_eq!(runner.current_version().await.expect("current_version"), 3);
+    assert_eq!(
+        applied,
+        vec![1, 2, 3, 4],
+        "migrations apply in version order"
+    );
+    assert_eq!(runner.current_version().await.expect("current_version"), 4);
 
     // Pins the boundary in `pending_migrations`, which filters `version >
     // current`. Nothing else here observes it: `run_pending` walks
@@ -1332,4 +1357,272 @@ async fn retention_does_not_cross_tenants() -> A2aResult<()> {
 
     db.drop_db().await;
     Ok(())
+}
+
+// ── Idempotency keys ─────────────────────────────────────────────────────────
+
+const IDEM_KEY: &str = "8f14e45fceea167a5a36dedd4bea2543";
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn idempotency_claim_replay_and_conflict() {
+    use a2a_protocol_server::store::task_store::IdempotencyClaim;
+    use a2a_protocol_types::message::MessageId;
+
+    let db = TestDb::create("idem_claim").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    assert!(store.supports_idempotency());
+
+    assert_eq!(
+        store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("t1".into()))
+            .await
+            .expect("claim"),
+        IdempotencyClaim::Claimed
+    );
+
+    // The same message is a retry: it replays to the first task, whatever task
+    // id this attempt proposed.
+    assert_eq!(
+        store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("t2".into()))
+            .await
+            .expect("replay"),
+        IdempotencyClaim::Replay(TaskId("t1".into()))
+    );
+
+    // A different message reused the key. Returning t1 would answer a message
+    // that was never sent.
+    assert_eq!(
+        store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m2"), &TaskId("t3".into()))
+            .await
+            .expect("conflict"),
+        IdempotencyClaim::Conflict {
+            held_by: MessageId::new("m1")
+        }
+    );
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn idempotency_release_frees_the_key() {
+    use a2a_protocol_server::store::task_store::IdempotencyClaim;
+    use a2a_protocol_types::message::MessageId;
+
+    let db = TestDb::create("idem_release").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    store
+        .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("t1".into()))
+        .await
+        .expect("claim");
+    store
+        .release_idempotency_key(IDEM_KEY)
+        .await
+        .expect("release");
+
+    assert_eq!(
+        store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m2"), &TaskId("t2".into()))
+            .await
+            .expect("reclaim"),
+        IdempotencyClaim::Claimed,
+        "a released key must be free for anyone"
+    );
+
+    // Releasing what nobody holds is not an error: a failure path may run
+    // after another caller has taken over.
+    store
+        .release_idempotency_key("0123456789abcdef0123456789abcdef")
+        .await
+        .expect("release of an unheld key");
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn idempotency_key_survives_deletion_of_its_task() {
+    use a2a_protocol_server::store::task_store::IdempotencyClaim;
+    use a2a_protocol_types::message::MessageId;
+
+    // Deliberately no foreign key: a cascade would free the key when a
+    // retention sweep removed the task, and the next retry would execute the
+    // send a second time.
+    let db = TestDb::create("idem_survives").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    let task = make_task("t1", "ctx1");
+    store.save(&task).await.expect("save");
+    store
+        .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &task.id)
+        .await
+        .expect("claim");
+    store.delete(&task.id).await.expect("delete");
+
+    assert_eq!(
+        store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("t2".into()))
+            .await
+            .expect("claim after delete"),
+        IdempotencyClaim::Replay(TaskId("t1".into())),
+        "the key must still name the swept task, not be free to re-run"
+    );
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn idempotency_concurrent_claims_produce_exactly_one_winner() {
+    use a2a_protocol_server::store::task_store::IdempotencyClaim;
+    use a2a_protocol_types::message::MessageId;
+    use std::sync::Arc;
+
+    // The guarantee that matters: two racing claims must not both see the key
+    // free, or the send they guard executes twice.
+    let db = TestDb::create("idem_race").await;
+    let store = Arc::new(
+        PostgresTaskStore::with_migrations(&db.url)
+            .await
+            .expect("open postgres store"),
+    );
+
+    let mut claims = Vec::new();
+    for i in 0..16 {
+        let store = Arc::clone(&store);
+        claims.push(tokio::spawn(async move {
+            store
+                .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId(format!("t{i}")))
+                .await
+        }));
+    }
+
+    let mut claimed = 0;
+    let mut replays = 0;
+    for c in claims {
+        match c.await.expect("join").expect("claim must not error") {
+            IdempotencyClaim::Claimed => claimed += 1,
+            IdempotencyClaim::Replay(_) => replays += 1,
+            IdempotencyClaim::Conflict { held_by } => {
+                panic!("one message cannot conflict with itself (held_by {held_by})")
+            }
+        }
+    }
+    assert_eq!(claimed, 1, "exactly one claim may win");
+    assert_eq!(replays, 15);
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn idempotency_table_exists_on_both_schema_paths() {
+    use a2a_protocol_server::store::task_store::IdempotencyClaim;
+    use a2a_protocol_types::message::MessageId;
+
+    // The journal shipped created in `from_pool` and absent from the
+    // migrations, so the constructor documented as recommended for production
+    // was the one that did not work. Each path is exercised.
+    let migrated = TestDb::create("idem_migrated").await;
+    let via_migrations = PostgresTaskStore::with_migrations(&migrated.url)
+        .await
+        .expect("migrated store");
+    assert_eq!(
+        via_migrations
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("t1".into()))
+            .await
+            .expect("claim on migrated schema"),
+        IdempotencyClaim::Claimed
+    );
+    migrated.drop_db().await;
+
+    let pooled = TestDb::create("idem_pooled").await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&pooled.url)
+        .await
+        .expect("connect");
+    let via_from_pool = PostgresTaskStore::from_pool(pool)
+        .await
+        .expect("from_pool store");
+    assert_eq!(
+        via_from_pool
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("t1".into()))
+            .await
+            .expect("claim on from_pool schema"),
+        IdempotencyClaim::Claimed
+    );
+    pooled.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn idempotency_keys_are_scoped_per_tenant() {
+    use a2a_protocol_server::store::TenantContext;
+    use a2a_protocol_server::store::task_store::IdempotencyClaim;
+    use a2a_protocol_types::message::MessageId;
+
+    // The security property. Sharing one key space across tenants would let
+    // the second tenant's identical key replay to the first tenant's task — a
+    // cross-tenant read, not merely a missed deduplication.
+    let db = TestDb::create("idem_tenant").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant store");
+
+    let a = TenantContext::scope("tenant-a", async {
+        store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("task-a".into()))
+            .await
+            .expect("tenant-a claim")
+    })
+    .await;
+    assert_eq!(a, IdempotencyClaim::Claimed);
+
+    let b = TenantContext::scope("tenant-b", async {
+        store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("task-b".into()))
+            .await
+            .expect("tenant-b claim")
+    })
+    .await;
+    assert_eq!(
+        b,
+        IdempotencyClaim::Claimed,
+        "tenant-b must claim its own key, not replay tenant-a's task"
+    );
+
+    // And a release in one tenant leaves the other's identical key held.
+    TenantContext::scope("tenant-b", async {
+        store
+            .release_idempotency_key(IDEM_KEY)
+            .await
+            .expect("tenant-b release");
+    })
+    .await;
+    let still_held = TenantContext::scope("tenant-a", async {
+        store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("ignored".into()))
+            .await
+            .expect("tenant-a reclaim")
+    })
+    .await;
+    assert_eq!(
+        still_held,
+        IdempotencyClaim::Replay(TaskId("task-a".into())),
+        "a release must not reach across the tenant boundary"
+    );
+
+    db.drop_db().await;
 }

@@ -22,8 +22,9 @@ RIG_MODEL=qwen3.5:0.8b cargo run -p rig-a2a-agent
 
 Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port. The agent serves a
 discovery card at `/.well-known/agent-card.json`, supports push-config
-CRUD, and passes the in-repo TCK — measured 2026-09-13 on the JSON-RPC
-binding: 21/21 graded checks, 1 not applicable. No CI job gates that figure;
+CRUD, and passes the in-repo TCK: 21/21 graded checks, 1 not applicable, on
+the JSON-RPC binding. `tck.yml`'s `tck-example-agents` job gates that figure on
+every push and pull request, with no model configured;
 `cargo run -p a2a-tck -- --url <addr> --binding jsonrpc` reproduces it.
 
 ## Failure semantics

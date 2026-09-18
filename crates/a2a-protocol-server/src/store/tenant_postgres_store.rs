@@ -38,6 +38,8 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
+use super::tenant_idempotency as idem;
+
 use super::task_store::TaskStore;
 use super::tenant::TenantContext;
 
@@ -100,6 +102,15 @@ impl TenantAwarePostgresTaskStore {
         )
         .execute(&pool)
         .await?;
+
+        // Keyed `(tenant_id, key)` like `tenant_tasks` is keyed
+        // `(tenant_id, id)`. Without the tenant in the primary key, one
+        // tenant's key would collide with another's and the second tenant's
+        // send would replay to the first tenant's task — a cross-tenant read.
+        //
+        // No foreign key to `tenant_tasks`: a cascade would free the key when
+        // a sweep removed its task, letting that send run a second time.
+        sqlx::query(idem::PG_CREATE_TABLE).execute(&pool).await?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_ctx ON tenant_tasks(tenant_id, context_id)",
@@ -166,6 +177,82 @@ fn to_a2a_error(e: &sqlx::Error) -> A2aError {
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for TenantAwarePostgresTaskStore {
+    fn supports_idempotency(&self) -> bool {
+        true
+    }
+
+    fn claim_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+        message_id: &'a a2a_protocol_types::message::MessageId,
+        task_id: &'a TaskId,
+    ) -> Pin<
+        Box<dyn Future<Output = A2aResult<crate::store::task_store::IdempotencyClaim>> + Send + 'a>,
+    > {
+        use crate::store::task_store::IdempotencyClaim;
+        use sqlx::Row as _;
+
+        Box::pin(async move {
+            let tenant = TenantContext::current();
+            // One transaction, and `FOR UPDATE` on the read: without both, a
+            // release landing between the losing insert and the read would
+            // leave the claim seeing no holder, and a claim that neither
+            // inserted nor found a holder must never pass for a successful one.
+            let mut tx = self.pool.begin().await.map_err(|e| to_a2a_error(&e))?;
+
+            let inserted = sqlx::query(idem::PG_CLAIM)
+                .bind(&tenant)
+                .bind(key)
+                .bind(message_id.0.as_str())
+                .bind(task_id.0.as_str())
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| to_a2a_error(&e))?
+                .rows_affected();
+
+            if inserted == 1 {
+                tx.commit().await.map_err(|e| to_a2a_error(&e))?;
+                return Ok(IdempotencyClaim::Claimed);
+            }
+
+            let holder = sqlx::query(idem::PG_HOLDER)
+                .bind(&tenant)
+                .bind(key)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            tx.commit().await.map_err(|e| to_a2a_error(&e))?;
+
+            let Some(row) = holder else {
+                return Err(A2aError::internal(
+                    "idempotency key was neither claimed nor held; the row vanished \
+                     inside the claiming transaction",
+                ));
+            };
+
+            let held_by: String = row.try_get("message_id").map_err(|e| to_a2a_error(&e))?;
+            let held_task: String = row.try_get("task_id").map_err(|e| to_a2a_error(&e))?;
+
+            Ok(idem::outcome(held_by, held_task, message_id))
+        })
+    }
+
+    fn release_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let tenant = TenantContext::current();
+            sqlx::query(idem::PG_RELEASE)
+                .bind(&tenant)
+                .bind(key)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            Ok(())
+        })
+    }
+
     fn save<'a>(
         &'a self,
         task: &'a Task,

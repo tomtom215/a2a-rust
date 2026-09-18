@@ -33,7 +33,7 @@ a2a-protocol-sdk            ← umbrella re-export + prelude
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.7"
+a2a-protocol-sdk = "0.12"
 ```
 
 ```rust
@@ -44,21 +44,21 @@ use a2a_protocol_sdk::prelude::*;
 
 ```toml
 [dependencies]
-a2a-protocol-types = "0.7"
+a2a-protocol-types = "0.12"
 ```
 
 **Client only (orchestrators):**
 
 ```toml
 [dependencies]
-a2a-protocol-client = "0.7"
+a2a-protocol-client = "0.12"
 ```
 
 **Server only (agents):**
 
 ```toml
 [dependencies]
-a2a-protocol-server = "0.7"
+a2a-protocol-server = "0.12"
 ```
 
 ## Feature Flags

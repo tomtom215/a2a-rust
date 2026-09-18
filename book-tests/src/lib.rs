@@ -85,6 +85,9 @@ pub mod page_client_error_handling {}
 #[doc = include_str!("../../book/src/client/sending-messages.md")]
 pub mod page_client_sending_messages {}
 
+#[doc = include_str!("../../book/src/client/idempotency.md")]
+pub mod page_client_idempotency {}
+
 #[doc = include_str!("../../book/src/client/streaming.md")]
 pub mod page_client_streaming {}
 
@@ -196,6 +199,9 @@ pub mod page_reference_api_reference {}
 
 #[doc = include_str!("../../book/src/reference/benchmarks.md")]
 pub mod page_reference_benchmarks {}
+
+#[doc = include_str!("../../book/src/reference/cross-language-benchmarks.md")]
+pub mod page_reference_cross_language_benchmarks {}
 
 #[doc = include_str!("../../book/src/reference/changelog.md")]
 pub mod page_reference_changelog {}

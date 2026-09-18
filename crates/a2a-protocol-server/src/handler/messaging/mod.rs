@@ -41,6 +41,7 @@ mod create;
 mod decisions;
 mod eviction;
 mod execute;
+mod idempotency;
 mod validation;
 
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;
@@ -82,6 +83,24 @@ struct Started {
     persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<StreamResponse>>>,
     /// The spawned executor.
     executor_handle: JoinHandle<()>,
+}
+
+/// What committing a send produced.
+enum Committed {
+    /// A task was created and its executor spawned.
+    ///
+    /// Boxed to match `Replay`: leaving this variant inline makes the enum as
+    /// large as `Started`, which is what carried the send future past
+    /// clippy's `large_futures` threshold in the first place.
+    Started(Box<Started>),
+    /// The send carried an idempotency key already held by this same message.
+    /// The task the original send created, to be returned without executing
+    /// anything.
+    ///
+    /// Boxed so this cold variant does not set the size of every send's
+    /// future: a `Task` inline here pushed all three dispatch futures past
+    /// clippy's `large_futures` threshold.
+    Replay(Box<Task>),
 }
 
 impl RequestHandler {
@@ -146,15 +165,28 @@ impl RequestHandler {
         // extensions the agent card marks required.
         self.ensure_required_extensions(&call_ctx)?;
 
-        let (mode, started) = self.validate_and_commit(params, streaming).await?;
+        let (mode, committed) = self.validate_and_commit(params, streaming).await?;
 
         self.interceptors.run_after(&call_ctx).await?;
 
-        if mode.use_background {
-            Ok(self.respond_in_background(started, streaming, mode.response_history_length))
-        } else {
-            self.respond_blocking(started, mode.response_history_length)
-                .await
+        match committed {
+            // Boxed: a replay is the cold path, and inlining it here grows
+            // the future every ordinary send carries.
+            Committed::Replay(task) => {
+                Box::pin(self.respond_replay(*task, streaming, mode.response_history_length)).await
+            }
+            Committed::Started(started) => {
+                if mode.use_background {
+                    Ok(self.respond_in_background(
+                        *started,
+                        streaming,
+                        mode.response_history_length,
+                    ))
+                } else {
+                    self.respond_blocking(*started, mode.response_history_length)
+                        .await
+                }
+            }
         }
     }
 
@@ -174,7 +206,7 @@ impl RequestHandler {
         &self,
         mut params: MessageSendParams,
         streaming: bool,
-    ) -> ServerResult<(SendMode, Started)> {
+    ) -> ServerResult<(SendMode, Committed)> {
         let tenant_slot = self.acquire_tenant_slot().await?;
 
         // SPEC §3.3.4: a streaming send is only permitted when the configured
@@ -201,7 +233,7 @@ impl RequestHandler {
         params: MessageSendParams,
         use_background: bool,
         tenant_slot: Option<OwnedSemaphorePermit>,
-    ) -> ServerResult<Started> {
+    ) -> ServerResult<Committed> {
         let context_id = self.resolve_context_id(&params.message).await?;
 
         // The per-context lock serializes the find + save sequence for one
@@ -214,54 +246,136 @@ impl RequestHandler {
         let task_id = self
             .resolve_task_id(&params.message, stored_task.as_ref())
             .await?;
-        // Under the still-held per-context lock, so it is atomic with the
-        // token insert below.
-        self.reject_in_flight_send(&task_id).await?;
 
-        trace_debug!(
-            task_id = %task_id,
-            context_id = %context_id,
-            "creating task"
-        );
-        let task = create::build_initial_task(
-            &task_id,
-            &context_id,
-            stored_task.as_ref(),
-            &params.message,
-        );
-        let ctx = create::build_request_context(
-            params.message,
-            task_id.clone(),
-            context_id,
-            stored_task,
-            params.metadata,
-        );
+        // An idempotency key, if the send carries one, is claimed here: after
+        // everything that can reject the request on its own terms, and before
+        // the send's first side effect. Both halves matter. Claiming later
+        // would let two racing duplicates each lease a queue before either
+        // noticed the other; claiming earlier would burn a key on a request
+        // that was never going to run. Every failure below releases it, the
+        // same discipline the queue lease and cancellation token follow.
+        // Boxed for the same reason the inline push-config branch below is: a
+        // cold branch inlined here enlarges the send future for every send,
+        // and all three dispatch futures sit just under clippy's
+        // `large_futures` threshold.
+        let claimed_key = match Box::pin(self.claim_send_key(&params.message, &task_id)).await? {
+            idempotency::SendKey::Replay(task) => return Ok(Committed::Replay(task)),
+            idempotency::SendKey::Claimed(key) => Some(key),
+            idempotency::SendKey::Absent => None,
+        };
 
-        // From here on there is something to release on failure: the queue
-        // first, then the token, then the row.
-        let (writer, reader, persistence_rx) =
-            self.lease_event_queue(&task_id, use_background).await?;
-        self.register_cancellation_token(&task_id, ctx.cancellation_token.clone())
-            .await;
-        self.persist_initial_task(&task).await?;
+        // Boxed: this block holds the whole creation path's locals, and
+        // inlining it here puts the JSON-RPC and REST dispatch futures over
+        // clippy's `large_futures` threshold — the same reason the inline
+        // push-config branch inside it is boxed.
+        let started = Box::pin(async move {
+            // Under the still-held per-context lock, so it is atomic with the
+            // token insert below.
+            self.reject_in_flight_send(&task_id).await?;
 
-        // Subsequent requests for this context_id will now find the task via
-        // find_task_by_context.
-        drop(context_guard);
+            trace_debug!(
+                task_id = %task_id,
+                context_id = %context_id,
+                "creating task"
+            );
+            let task = create::build_initial_task(
+                &task_id,
+                &context_id,
+                stored_task.as_ref(),
+                &params.message,
+            );
+            let ctx = create::build_request_context(
+                params.message,
+                task_id.clone(),
+                context_id,
+                stored_task,
+                params.metadata,
+            );
 
-        // Boxed, and with every local confined to the helper, so this cold
-        // branch does not enlarge the send future for every send — inline it
-        // pushed all three dispatch futures past clippy's `large_futures`
-        // threshold.
-        Box::pin(self.register_inline_push_config(params.configuration.as_ref(), &task_id)).await?;
+            // From here on there is something to release on failure: the queue
+            // first, then the token, then the row.
+            let (writer, reader, persistence_rx) =
+                self.lease_event_queue(&task_id, use_background).await?;
+            self.register_cancellation_token(&task_id, ctx.cancellation_token.clone())
+                .await;
+            self.persist_initial_task(&task).await?;
 
-        let executor_handle = self.spawn_executor(ctx, writer, tenant_slot);
-        Ok(Started {
-            task,
-            reader,
-            persistence_rx,
-            executor_handle,
+            // Subsequent requests for this context_id will now find the task via
+            // find_task_by_context.
+            drop(context_guard);
+
+            // Boxed, and with every local confined to the helper, so this cold
+            // branch does not enlarge the send future for every send — inline it
+            // pushed all three dispatch futures past clippy's `large_futures`
+            // threshold.
+            Box::pin(self.register_inline_push_config(params.configuration.as_ref(), &task_id))
+                .await?;
+
+            let executor_handle = self.spawn_executor(ctx, writer, tenant_slot);
+            Ok(Started {
+                task,
+                reader,
+                persistence_rx,
+                executor_handle,
+            })
         })
+        .await;
+
+        match started {
+            Ok(started) => Ok(Committed::Started(Box::new(started))),
+            Err(err) => {
+                // The send failed after taking the key. Leaving it held would
+                // make the caller's legitimate retry replay to a task that
+                // was never created.
+                if let Some(key) = claimed_key {
+                    self.release_send_key(&key).await;
+                }
+                Err(err)
+            }
+        }
+    }
+
+    /// Answers a send whose idempotency key was already held by this same
+    /// message: a genuine retry, which must return the original task and
+    /// execute nothing.
+    async fn respond_replay(
+        &self,
+        task: Task,
+        streaming: bool,
+        response_history_length: Option<u32>,
+    ) -> ServerResult<SendMessageResult> {
+        let mut snapshot = task;
+        shape_response_history(&mut snapshot, response_history_length);
+
+        if !streaming {
+            return Ok(SendMessageResult::Response(SendMessageResponse::Task(
+                snapshot,
+            )));
+        }
+
+        // SPEC §3.1.2: the first event of a streaming response MUST be a Task
+        // representing the current state. For a replay that is the task the
+        // original send created.
+        let task_id = snapshot.id.clone();
+        let terminal = snapshot.status.state.is_terminal();
+        let first = a2a_protocol_types::events::StreamResponse::Task(snapshot);
+
+        let reader = if terminal {
+            // It will never emit again, and the status inside the snapshot
+            // says so, so one event and end is the whole truth.
+            InMemoryQueueReader::snapshot_then_end(first)
+        } else {
+            // Still running. Attach to its live queue so the caller sees the
+            // remaining events, exactly as `SubscribeToTask` would — ending
+            // the stream after the snapshot would read as a task that had
+            // finished emitting.
+            self.event_queue_manager
+                .subscribe_with_snapshot(&task_id, first.clone())
+                .await
+                .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(first))
+                .with_reattach(self.subscribe_reattach_hook(task_id.clone()))
+        };
+        Ok(SendMessageResult::Stream(reader))
     }
 
     /// The response for a streaming or fire-and-forget send, after spawning
@@ -350,5 +464,7 @@ impl RequestHandler {
     }
 }
 
+#[cfg(test)]
+mod idempotency_tests;
 #[cfg(test)]
 mod tests;

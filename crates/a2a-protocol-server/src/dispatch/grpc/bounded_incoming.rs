@@ -293,6 +293,10 @@ mod tests {
         assert_eq!(permitted.inner.vectored_calls, 1);
         assert_eq!(permitted.inner.flushes, 1);
         assert_eq!(permitted.inner.shutdowns, 1);
+        // Returns its permit before the second `Permitted` below asks for one,
+        // so the assertion that follows does not depend on the semaphore
+        // having had spare capacity.
+        drop(permitted);
 
         assert!(
             !Permitted {

@@ -58,6 +58,18 @@ impl A2aClient {
     ///
     /// [`Task`]: a2a_protocol_types::Task
     /// [`Message`]: a2a_protocol_types::Message
+    /// # Retrying an ambiguous failure
+    ///
+    /// A send whose connection drops after the request is on the wire is not
+    /// retried by default, because re-sending it could start a second task.
+    /// Attach a key with
+    /// [`a2a_protocol_types::idempotency::set_key`] and the retry becomes
+    /// safe: a server that honours it returns the task the first attempt
+    /// created, and one that cannot honour it refuses the send rather than
+    /// running it undeduplicated. Servers advertise support as
+    /// [`IDEMPOTENCY_EXTENSION_URI`](a2a_protocol_types::idempotency::IDEMPOTENCY_EXTENSION_URI)
+    /// on their agent card.
+    ///
     pub async fn send_message(
         &self,
         mut params: MessageSendParams,

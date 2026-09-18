@@ -290,6 +290,44 @@ impl TenantAwareInMemoryTaskStore {
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for TenantAwareInMemoryTaskStore {
+    /// Every tenant gets its own [`InMemoryTaskStore`], and that partition is
+    /// exactly the scope an idempotency key needs: one tenant's key can never
+    /// name another tenant's task, because it is never in the same index.
+    fn supports_idempotency(&self) -> bool {
+        true
+    }
+
+    fn claim_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+        message_id: &'a a2a_protocol_types::message::MessageId,
+        task_id: &'a TaskId,
+    ) -> Pin<
+        Box<dyn Future<Output = A2aResult<super::super::task_store::IdempotencyClaim>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            let store = self.get_store().await?;
+            store.claim_idempotency_key(key, message_id, task_id).await
+        })
+    }
+
+    fn release_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // No store for this tenant means no key was ever claimed under it,
+            // and releasing what is not held is not an error. Deliberately
+            // `get_existing_store`: a release must not be the thing that
+            // creates a tenant partition, or a failed send against an unknown
+            // tenant would count against the tenant cap.
+            match self.get_existing_store().await {
+                Some(store) => store.release_idempotency_key(key).await,
+                None => Ok(()),
+            }
+        })
+    }
+
     fn save<'a>(
         &'a self,
         task: &'a Task,
@@ -1024,6 +1062,21 @@ mod tests {
         }
     }
 
+    /// The tenant-aware store advertises idempotency support, and the send
+    /// path reads exactly this to decide whether to claim a key at all. A
+    /// store that silently answered `false` would make every keyed send fall
+    /// through to the unkeyed path — no error, no failing test, just the
+    /// guarantee quietly absent. Asserted because nothing else does.
+    #[test]
+    fn in_memory_tenant_store_advertises_idempotency_support() {
+        let store = TenantAwareInMemoryTaskStore::new();
+        assert!(
+            store.supports_idempotency(),
+            "the tenant-aware in-memory store partitions by tenant, which is \
+             exactly the scope a key needs; it must advertise support"
+        );
+    }
+
     #[test]
     fn every_tenant_store_config_setter_sets_its_field() {
         let d = TenantStoreConfig::default();
@@ -1034,5 +1087,75 @@ mod tests {
             .with_max_tenants(d.max_tenants + 1);
         assert_eq!(cfg.per_tenant.max_page_size, d.per_tenant.max_page_size + 1);
         assert_eq!(cfg.max_tenants, d.max_tenants + 1);
+    }
+}
+
+#[cfg(test)]
+mod idempotency_isolation_tests {
+    use super::*;
+    use crate::store::task_store::IdempotencyClaim;
+    use a2a_protocol_types::message::MessageId;
+
+    const KEY: &str = "8f14e45fceea167a5a36dedd4bea2543";
+
+    #[tokio::test]
+    async fn one_tenants_key_never_names_another_tenants_task() {
+        // A key is a handle to a task. If two tenants shared an index, the
+        // second tenant's identical key would replay to the first tenant's
+        // task — a cross-tenant read, not merely a missed deduplication.
+        let store = TenantAwareInMemoryTaskStore::new();
+
+        let a = TenantContext::scope("tenant-a", async {
+            store
+                .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("task-a"))
+                .await
+                .unwrap()
+        })
+        .await;
+        assert_eq!(a, IdempotencyClaim::Claimed);
+
+        let b = TenantContext::scope("tenant-b", async {
+            store
+                .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("task-b"))
+                .await
+                .unwrap()
+        })
+        .await;
+        assert_eq!(
+            b,
+            IdempotencyClaim::Claimed,
+            "tenant-b must claim its own key, not replay tenant-a's task"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_retry_within_one_tenant_still_replays() {
+        let store = TenantAwareInMemoryTaskStore::new();
+        TenantContext::scope("tenant-a", async {
+            let first = store
+                .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("task-a"))
+                .await
+                .unwrap();
+            assert_eq!(first, IdempotencyClaim::Claimed);
+
+            let retry = store
+                .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("task-other"))
+                .await
+                .unwrap();
+            assert_eq!(retry, IdempotencyClaim::Replay(TaskId::new("task-a")));
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn releasing_under_an_unknown_tenant_creates_no_partition() {
+        // A release must not be what allocates a tenant, or a failed send
+        // against an unknown tenant would count against the tenant cap.
+        let store = TenantAwareInMemoryTaskStore::new();
+        TenantContext::scope("never-seen", async {
+            store.release_idempotency_key(KEY).await.unwrap();
+        })
+        .await;
+        assert_eq!(store.tenant_count().await, 0);
     }
 }

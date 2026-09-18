@@ -32,6 +32,7 @@
 
 - [Building a Client](./client/builder.md)
 - [Sending Messages](./client/sending-messages.md)
+- [Idempotent Sends](./client/idempotency.md)
 - [Streaming Responses](./client/streaming.md)
 - [Task Management](./client/task-management.md)
 - [Error Handling](./client/error-handling.md)
@@ -71,6 +72,7 @@
 - [Configuration Reference](./reference/configuration.md)
 - [Benchmark Results](./reference/benchmarks.md)
 - [Benchmark Dashboard](./reference/dashboard.md)
+- [Cross-Language Benchmark](./reference/cross-language-benchmarks.md)
 - [Benchmark Regression Gate](./reference/regression-gate.md)
 - [Mutation Testing History](./reference/mutation-history.md)
 - [Conformance History](./reference/conformance-history.md)

@@ -42,7 +42,7 @@ impl RequestHandler {
     /// so a retained queue means a drain loop that never ends. Waiting here
     /// costs one store read per interval on an idle stream and leaves the send
     /// path untouched.
-    fn subscribe_reattach_hook(&self, task_id: TaskId) -> crate::streaming::ReattachFn {
+    pub(crate) fn subscribe_reattach_hook(&self, task_id: TaskId) -> crate::streaming::ReattachFn {
         let queues = self.event_queue_manager.clone();
         let store = std::sync::Arc::clone(&self.task_store);
         let interval = self.limits.subscribe_reattach_interval;

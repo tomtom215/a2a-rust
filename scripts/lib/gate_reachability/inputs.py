@@ -59,6 +59,11 @@ GATE_INPUTS: list[tuple[str, list[str]]] = [
                                          "bindings/*/src/**/*.rs"]),
     (r"check_doc_escapes\.py", ["crates/*/src/**/*.rs", "bindings/*/src/**/*.rs",
                                 "examples/*/src/**/*.rs"]),
+    # Prose snippets, the Rust doc comments that carry them, the manifest the
+    # current release line is read from, and the historical allowlist.
+    (r"check_doc_versions\.py", ["**/*.md", "crates/*/src/**/*.rs",
+                                 "crates/a2a-protocol-types/Cargo.toml",
+                                 "scripts/doc_versions_allowlist.txt"]),
     (r"check_panic_paths\.py", ["crates/*/src/**/*.rs"]),
     (r"check_codecov_ignores\.py", ["codecov.yml"]),
     (r"check_provenance_manifest\.py", ["**"]),

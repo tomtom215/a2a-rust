@@ -77,6 +77,14 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)",
         description: "Add (updated_at, id) index for most-recently-updated-first list ordering",
         sql: "CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC, id DESC)",
     },
+    PgMigration {
+        version: 4,
+        description: "Add idempotency_keys: the index client-supplied send keys are claimed in",
+        // Shared with `from_pool`'s inline DDL rather than copied: two ways to
+        // build the schema means a store can exist without the table, and
+        // every keyed send then fails.
+        sql: super::postgres_store::idempotency::CREATE_TABLE_SQL,
+    },
 ];
 
 /// Runs schema migrations against a `PostgreSQL` database.

@@ -99,6 +99,7 @@ pub mod artifact;
 pub mod error;
 pub mod events;
 pub mod extensions;
+pub mod idempotency;
 pub mod jsonrpc;
 pub mod message;
 pub mod method;

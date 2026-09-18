@@ -326,8 +326,10 @@ gateway rule or a peer.
 
 `ErrorCode::http_status()` and `ErrorCode::grpc_status()` keep their
 signatures and return different values for six codes. The SDK had implemented
-a stale vendored copy of the specification's table; upstream had amended the
-document in place under the same `1.0.0` version string.
+a stale vendored copy of the specification's table. Upstream did not amend the
+document in place, as this entry previously said: the corrections shipped as
+the tagged patch release **v1.0.1** on 2026-05-28, and A2A's `v1.0.0` tag
+still carries the superseded table.
 
 | A2A error | HTTP was → is | gRPC was → is |
 |---|---|---|
@@ -644,16 +646,188 @@ Deserialization is strictly more permissive than before; only a consumer
 reading the card's raw JSON keys rather than parsing it with an A2A
 implementation notices.
 
+## 0.6 → 0.7
+
+The boundary that costs a consumer of `a2a-protocol-types` alone the most:
+the only two changes on this page that stop such code compiling are both
+here. Neither appears under a `### Breaking Changes` heading — 0.7.0 has no
+such heading — and both sit under `### Changed` in a release with sixteen
+subsections, so they are not findable by chance.
+
+### `JsonRpcRequest.id` is the three-state `JsonRpcRequestId`
+
+`JsonRpcRequest.id` was `Option<serde_json::Value>`, which cannot tell an
+absent `id` member from an explicit `"id": null`. JSON-RPC 2.0 does: the
+first is a notification, the second is a call. It is now an enum with all
+three states, so `"id": null` stops collapsing into a notification on
+round-trip.
+
+Responses did **not** change. `JsonRpcId` is still
+`Option<serde_json::Value>`, and it is still what `JsonRpcSuccessResponse.id`
+and `JsonRpcErrorResponse::new` take. Code that threaded a request id
+straight into a response stops compiling:
+
+```text
+// 0.6 — the request id went directly into the response
+fn error_response(id: Option<serde_json::Value>, error: JsonRpcError) -> JsonRpcErrorResponse {
+    JsonRpcErrorResponse::new(id, error)
+}
+```
+
+`to_response_id()` is the bridge. It maps `Absent` and `Null` alike to
+`None`, mirroring the specification's rule for a request whose id could not
+be determined, so the bytes on the response are what they were before:
+
+```rust
+use a2a_protocol_types::jsonrpc::{JsonRpcError, JsonRpcErrorResponse, JsonRpcRequestId};
+
+fn error_response(id: &JsonRpcRequestId, error: JsonRpcError) -> JsonRpcErrorResponse {
+    JsonRpcErrorResponse::new(id.to_response_id(), error)
+}
+
+let replied = error_response(
+    &JsonRpcRequestId::Value(serde_json::json!(1)),
+    JsonRpcError::new(-32600, "Invalid Request"),
+);
+assert_eq!(replied.id, Some(serde_json::json!(1)));
+
+// Both non-value states answer with a null id, as they did before.
+let notification = error_response(
+    &JsonRpcRequestId::Absent,
+    JsonRpcError::new(-32600, "Invalid Request"),
+);
+assert_eq!(notification.id, None);
+```
+
+In practice a server threads the request id through one or two local helpers
+like the one above, so changing those signatures is usually the entire
+migration; every call site that passes an id into them keeps compiling
+untouched.
+
+The new capability is worth a second look while you are there. A server can
+now see `JsonRpcRequestId::Absent` and decline to answer at all, which is
+what JSON-RPC 2.0 requires for a notification — `is_absent()` is provided for
+exactly that. Migrating with `to_response_id()` alone preserves the old
+behaviour of replying to everything; it does not adopt the new one.
+
+### `AuthenticationInfo.credentials` and `TaskPushNotificationConfig::task_id` are `Option<String>`
+
+Both were required, which rejected valid cross-SDK payloads at parse time — a
+push configuration nested in `SendMessageConfiguration`, before the task it
+will belong to exists, legitimately carries no task id. Both are now
+`Option<String>`, matching the canonical schema.
+
+The struct literal is the obvious break:
+
+```text
+// 0.6
+let auth = AuthenticationInfo {
+    scheme: "bearer".to_string(),
+    credentials: "my-token".to_string(),
+};
+```
+
+```rust
+use a2a_protocol_types::push::AuthenticationInfo;
+
+let auth = AuthenticationInfo {
+    scheme: "bearer".to_string(),
+    credentials: Some("my-token".to_string()),
+};
+# let _ = auth;
+```
+
+The non-obvious break is the one to search for. Any `format!` that
+interpolated `credentials` stops compiling for want of `Display`, and rustc
+suggests `{:?}` in its note — which builds an `Authorization` header reading
+`Bearer Some("my-token")`. `unwrap_or_default()` sends an empty bearer token
+instead. Neither is right: omit the header when there is nothing to send.
+
+```text
+// 0.6 — and note that neither `{:?}` nor `unwrap_or_default()` is the fix
+request.header("Authorization", format!("Bearer {}", auth.credentials))
+```
+
+```rust
+use a2a_protocol_types::push::AuthenticationInfo;
+
+let auth = AuthenticationInfo { scheme: "bearer".to_string(), credentials: None };
+
+let header = auth
+    .credentials
+    .as_deref()
+    .map(|credentials| format!("Bearer {credentials}"));
+
+// No credentials configured, so no header at all — not an empty one.
+assert!(header.is_none());
+```
+
+On the server side, a standalone `CreateTaskPushNotificationConfig` carrying
+no task id is now refused with a structured invalid-params error rather than
+a parse error, and every push-config store guards the missing routing key
+explicitly. A handler of your own that forwards `task_id` onward has the same
+decision to make: an absent id is a malformed request, not a default.
+
+### Also in 0.7, changing what parses rather than what compiles
+
+Three tightenings reject input that previously got through. A `Part` carrying
+more than one of `text` / `raw` / `url` / `data` now fails deserialization
+instead of silently taking the first match. A `JsonRpcResponse` carrying both
+`result` and `error` is rejected per JSON-RPC 2.0 §5 instead of being read as
+a success with the error discarded, and a mistyped `result` now surfaces the
+real type error rather than an opaque "no variant matched". And RFC 8785
+canonicalization for signing now sorts object keys by UTF-16 code units
+(§3.2.3) and formats doubles per ECMAScript `Number::toString` (§3.2.2),
+which changes the signature computed over any card containing
+supplementary-plane keys — a card signed under 0.6 and verified under 0.7 can
+disagree.
+
+### Also in 0.7, on the server and client
+
+This is where the JSON tunnel went behind `grpc-legacy-json` and
+`with_event_queue_write_timeout` / `with_write_timeout` became deprecated
+no-ops, all three slated for the 0.8 removals above. It is also where a
+consumer that falls behind the broadcast ring started receiving a marked
+`streamLagged` error and a closed stream instead of a silently skipped gap,
+where `max_concurrent_streams` gained a default cap of 1024 (previously
+unlimited, an unauthenticated denial-of-service vector), and where
+`RateLimitInterceptor::new` became fallible and stopped trusting a
+client-supplied `X-Forwarded-For` unless `RateLimitConfig::trusted_proxy_hops`
+is set.
+
 ## Older boundaries
 
-Before 0.8 the changelog was the migration guide, and it still is for these:
+Before 0.8 the changelog was the migration guide. It still is for these,
+which break nothing at compile time — the 0.6 → 0.7 boundary, which does,
+has a full section above:
 
-- **0.6 → 0.7** (`## [0.7.0] - 2026-07-24`): no `Breaking` heading. It is
-  where the JSON tunnel went behind `grpc-legacy-json` and
-  `with_event_queue_write_timeout` / `with_write_timeout` became deprecated
-  no-ops, both slated for the 0.8 removals above; and where a consumer that
-  falls behind the broadcast ring started receiving a marked `streamLagged`
-  error and a closed stream instead of a silently skipped gap.
+- **0.5 → 0.6** (`## [0.6.0] - 2026-06-10`): no `Breaking` heading, and
+  nothing that fails to compile — no public API signature changed, which is
+  what makes this the easiest boundary to cross without noticing. A
+  types-only consumer gets a clean build and a different service. What moved
+  is the bytes on the wire and which requests are accepted, both breaking
+  under the policy above, so read `### Changed` and `### Fixed` for this
+  release rather than looking for a section that is not there.
+  `Task.history` is populated for the first time — nothing had ever appended
+  to it — so `tasks/get` now returns real history subject to `historyLength`,
+  capped at 1,024 messages with the oldest dropped first, while `message/send`
+  responses and streaming snapshots omit it unless
+  `SendMessageConfiguration.historyLength` asks; response sizes move in both
+  directions. A dropped `message/stream` connection no longer cancels the
+  task: work runs to completion and clients reattach with `SubscribeToTask`,
+  so anything that relied on disconnect-kills-task must now call `CancelTask`
+  explicitly. `Working → Working` became a valid transition, so an executor
+  emitting more than one progress note is no longer marked
+  `TASK_STATE_FAILED` by the background processor behind a stream that
+  already said `Completed` — if you worked around that split-brain, the
+  workaround can go. Continuations carry artifacts, metadata and history
+  forward instead of overwriting them, with only the status returning to
+  `Submitted`. `tasks/resubscribe` joins `SubscribeToTask` and
+  `tasks/subscribe` as a routed alias. And on the client, a JSON-RPC error
+  answering `message/stream` surfaces as `ClientError::Protocol` carrying the
+  original code, instead of ending the stream with zero events and no error,
+  so code that read an empty stream as "nothing happened" now sees the
+  failure it was missing.
 - **0.4 → 0.5** (`## [0.5.0] - 2026-04-02`, `### Breaking Changes`):
   `TaskStore::save()` and `TaskStore::insert_if_absent()` take `&Task`
   instead of an owned `Task`.

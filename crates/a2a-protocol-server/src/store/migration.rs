@@ -106,6 +106,15 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);",
         // for production* was the one that did not work.
         sql: super::sqlite_store::journal::CREATE_TABLE_SQL,
     },
+    Migration {
+        version: 6,
+        description: "Add idempotency_keys: the index client-supplied send keys are claimed in",
+        // Shared with `from_pool`'s inline DDL rather than copied, for the
+        // reason migration 5 above records: two ways to build the schema means
+        // a store can be created without the table, and every keyed send then
+        // fails with "no such table".
+        sql: super::sqlite_store::idempotency::CREATE_TABLE_SQL,
+    },
 ];
 
 /// Runs schema migrations against a `SQLite` database.

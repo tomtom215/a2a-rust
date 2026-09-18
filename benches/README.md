@@ -79,12 +79,13 @@ benches/
 │   ├── generate_book_page.sh       # Auto-generate book/src/reference/benchmarks.md
 │   ├── generate_dashboard.sh       # Generate interactive dashboard from criterion data
 │   ├── extract_benchmark_json.py   # Extract criterion results into structured JSON
-│   ├── compare_results.sh          # Cross-language comparison table
-│   ├── cross_language_python.sh    # Python SDK runner
-│   ├── cross_language_go.sh        # Go SDK runner
-│   └── cross_language_js.sh        # JavaScript SDK runner
+│   ├── cross_language_python.sh    # Rust vs official Python SDK
+│   ├── cross_language_bench.py     # Measurement harness for the above
+│   └── generate_cross_language_page.py  # Renders the cross-language book page
 └── results/
-    └── .gitkeep                    # Result JSONs (gitignored)
+    ├── cross-language-pinned.json  # Committed: the book page is generated from these
+    ├── cross-language-default.json # Committed: the book page is generated from these
+    └── .gitkeep                    # Other result JSONs are gitignored
 ```
 
 ## What We Benchmark (and Why)
@@ -207,20 +208,33 @@ reproduced identically in every A2A SDK:
 
 ### Running Cross-Language Comparisons
 
+The Python leg is implemented and its result is published:
+
 ```bash
-# 1. Run Rust benchmarks
-./benches/scripts/run_benchmarks.sh --bench cross_language
-
-# 2. Run other SDK benchmarks (each starts its own Rust echo server)
-./benches/scripts/cross_language_python.sh
-./benches/scripts/cross_language_go.sh
-./benches/scripts/cross_language_js.sh
-
-# 3. Generate comparison table
-./benches/scripts/compare_results.sh
+./benches/scripts/cross_language_python.sh        # measure
+./benches/scripts/generate_cross_language_page.py # render the book page
 ```
 
-Results appear in `benches/results/comparison.md`.
+It compares this SDK's server against the official Python `a2a-sdk` server on
+an identical echo workload, driving both from one shared raw-socket client so
+that only the server differs. It reports CPU consumed per request — not just
+latency, because latency cannot distinguish work from waiting — across two CPU
+configurations, with a floor target that bounds client and kernel cost. Output
+lands in `benches/results/cross-language-{pinned,default}.json`, which are
+committed so the generated page can be audited against them, and rendered to
+[`book/src/reference/cross-language-benchmarks.md`](../book/src/reference/cross-language-benchmarks.md).
+
+There is no Go or JavaScript leg. Stubs for both existed and were removed: they
+emitted a fixed dict of zeros while `benches/README.md` described them as
+runners and `compare_results.sh` invoked them as data sources. The comparison
+table generator went with them — its entire workload vocabulary
+(`echo_roundtrip`, `stream_events`, `concurrent_50`, …) was invented to match
+the stubs' placeholder dict, so it had never tabulated a real measurement in any
+language.
+
+If a Go or JavaScript leg is wanted later, implement it the way the Python one
+is built — a real server, a shared client, committed raw results — rather than
+reinstating a placeholder that reads like data.
 
 ## Interpreting Results
 
