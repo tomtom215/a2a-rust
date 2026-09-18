@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Pinned Python environment for benches/scripts/cross_language_python.sh.
+#
+# uvicorn[standard] is required, not optional: it supplies uvloop and httptools,
+# which uvicorn's default loop/http="auto" then selects. Benchmarking the plain
+# asyncio + h11 path would understate the official SDK. The runner asserts both
+# are present and refuses to produce a result without them.
+a2a-sdk[http-server]==1.1.4
+uvicorn[standard]==0.53.0
+httpx==0.28.1

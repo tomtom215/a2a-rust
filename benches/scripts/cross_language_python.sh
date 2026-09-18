@@ -2,102 +2,138 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F.
 #
-# Cross-language benchmark: Python A2A SDK
+# Cross-language benchmark: this Rust SDK's server vs the OFFICIAL Python SDK's
+# server, answering one question — what does the A2A layer itself cost per
+# request, and is that cost large enough to matter?
 #
-# Prerequisites:
-#   1. Start the Rust echo server:
-#      cargo run -p echo-agent  (or use A2A_BIND_ADDR=127.0.0.1:3000)
-#   2. Install the Python A2A SDK:
-#      pip install a2a-sdk
-#   3. Install benchmark dependencies:
-#      pip install time-machine  # or just use stdlib timeit
+# Design, and why it is built this way:
 #
-# This script starts a Rust echo server, runs the canonical workloads
-# against it from Python, and writes results to benches/results/.
+#   * ONE client drives both servers. It is a raw socket sending pre-serialized,
+#     byte-identical HTTP requests (benches/scripts/cross_language_bench.py).
+#     Using either SDK's own client would measure that SDK on both sides of the
+#     comparison and make the two legs incomparable.
+#
+#   * BOTH servers run the same echo contract — `Echo: <text>` returned as a
+#     completed task artifact — one from examples/echo-agent (this SDK), one
+#     from itk/agents/python-sdk/agent.py (the official `a2a-sdk`). Those two
+#     agents already exist for interoperability testing; neither was written
+#     for this benchmark.
+#
+#   * The Python server runs uvicorn's FAST path. `uvicorn[standard]` pulls in
+#     uvloop and httptools, and uvicorn's default loop/http setting is "auto",
+#     which selects them when present. Measuring plain asyncio + h11 would
+#     understate the official SDK and make the result a strawman.
+#
+#   * TWO CPU configurations are measured, because either one alone invites a
+#     misreading:
+#       pinned   - each server confined to a single distinct core. Removes the
+#                  "Rust used four cores, one uvicorn worker used one" objection.
+#                  This is the like-for-like number.
+#       default  - nothing pinned; each server as its own docs say to run it.
+#                  This is the out-of-the-box number.
+#
+#   * A `floor` target (a server returning a constant, doing no A2A work) is
+#     measured so the report can separate SDK cost from client-and-kernel cost.
+#     It is a floor for SEQUENTIAL LATENCY ONLY; see the harness docstring.
+#
+# Usage: benches/scripts/cross_language_python.sh
+# Env:   TRIALS, ITERATIONS, WARMUP, CONCURRENCY, PER_CONN to override sizing.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RESULTS_DIR="$SCRIPT_DIR/../results"
-TIMESTAMP="$(date -u +%Y%m%d-%H%M%S)"
-SERVER_PORT=13100
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+RESULTS_DIR="$REPO_ROOT/benches/results"
+VENV_DIR="${A2A_BENCH_VENV:-$REPO_ROOT/target/bench-venv}"
+REQ_FILE="$REPO_ROOT/benches/requirements-cross-language.txt"
 
-echo "=== Python A2A SDK Benchmark ==="
+TRIALS="${TRIALS:-3}"
+ITERATIONS="${ITERATIONS:-2000}"
+WARMUP="${WARMUP:-300}"
+CONCURRENCY="${CONCURRENCY:-50}"
+PER_CONN="${PER_CONN:-40}"
 
-# ── Start Rust echo server ───────────────────────────────────────────────────
+RUST_PORT="${RUST_PORT:-19120}"
+PY_PORT="${PY_PORT:-19110}"
 
-echo "Starting Rust echo server on port $SERVER_PORT..."
-A2A_BIND_ADDR="127.0.0.1:$SERVER_PORT" cargo run -p echo-agent --release &
-SERVER_PID=$!
-sleep 2
-
+PIDS=()
 cleanup() {
-    echo "Stopping echo server (PID $SERVER_PID)..."
-    kill "$SERVER_PID" 2>/dev/null || true
+    for pid in "${PIDS[@]:-}"; do
+        [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+    done
 }
 trap cleanup EXIT
 
-# ── Run Python benchmarks ────────────────────────────────────────────────────
+command -v taskset >/dev/null || { echo "taskset required (util-linux)"; exit 1; }
+NCPU="$(nproc)"
+[ "$NCPU" -ge 4 ] || { echo "need >= 4 logical CPUs, found $NCPU"; exit 1; }
 
-PYTHON_BENCH=$(cat <<'PYEOF'
-import json
-import time
-import statistics
-import sys
+# ── Build both servers ──────────────────────────────────────────────────────
 
-# These would use the actual Python A2A SDK.
-# For now, this is a template showing the expected structure.
+echo "==> building echo-agent (release)"
+cargo build -p echo-agent --release --quiet
 
-SERVER_URL = f"http://127.0.0.1:{sys.argv[1]}"
-WARMUP = 50
-ITERATIONS = 500
+echo "==> preparing Python environment"
+if [ ! -x "$VENV_DIR/bin/python" ]; then
+    python3 -m venv "$VENV_DIR"
+fi
+"$VENV_DIR/bin/pip" install -q --disable-pip-version-check -r "$REQ_FILE"
+FREEZE_FILE="$(mktemp)"
+"$VENV_DIR/bin/pip" freeze > "$FREEZE_FILE"
 
-def measure(fn, warmup=WARMUP, iterations=ITERATIONS):
-    """Run fn with warmup, return median/p95/p99 in microseconds."""
-    for _ in range(warmup):
-        fn()
-    times = []
-    for _ in range(iterations):
-        start = time.perf_counter_ns()
-        fn()
-        elapsed = time.perf_counter_ns() - start
-        times.append(elapsed / 1000)  # to microseconds
-    times.sort()
-    n = len(times)
-    return {
-        "median_us": int(statistics.median(times)),
-        "p95_us": int(times[int(n * 0.95)]),
-        "p99_us": int(times[int(n * 0.99)]),
-    }
+# Fail loudly rather than silently benchmarking uvicorn's slow path.
+grep -qi '^uvloop==' "$FREEZE_FILE" || { echo "uvloop missing: would understate the Python SDK"; exit 1; }
+grep -qi '^httptools==' "$FREEZE_FILE" || { echo "httptools missing: would understate the Python SDK"; exit 1; }
 
-print("NOTE: Python A2A SDK benchmarks require 'a2a-sdk' package.")
-print("      Install it and uncomment the workload implementations below.")
-print("      This template outputs placeholder values.")
-
-results = {
-    "language": "python",
-    "sdk": "a2a-sdk-python",
-    "timestamp": time.strftime("%Y%m%d-%H%M%S", time.gmtime()),
-    "python_version": sys.version,
-    "workloads": {
-        "echo_roundtrip":        {"median_us": 0, "p95_us": 0, "p99_us": 0},
-        "stream_events":         {"median_us": 0, "p95_us": 0, "p99_us": 0},
-        "serialize_agent_card":  {"median_us": 0, "p95_us": 0, "p99_us": 0},
-        "concurrent_50":         {"median_us": 0, "p95_us": 0, "p99_us": 0},
-        "minimal_overhead":      {"median_us": 0, "p95_us": 0, "p99_us": 0},
-    },
-    "note": "Template — replace with actual SDK calls"
+wait_ready() {
+    local port="$1" name="$2"
+    curl -sS --retry 40 --retry-connrefused --retry-delay 1 --max-time 60 \
+        -o /dev/null -H 'Content-Type: application/json' -H 'A2A-Version: 1.0' \
+        -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"configuration":{"historyLength":0},"message":{"messageId":"ready","role":"ROLE_USER","parts":[{"text":"hi"}]}}}' \
+        "http://127.0.0.1:$port/" || { echo "$name never became ready on $port"; exit 1; }
 }
 
-json.dump(results, sys.stdout, indent=2)
-PYEOF
-)
+run_config() {
+    local label="$1" rust_pin="$2" py_pin="$3" client_pin="$4"
+    echo ""
+    echo "==> configuration: $label"
+
+    # shellcheck disable=SC2086
+    A2A_BIND_ADDR="127.0.0.1:$RUST_PORT" \
+        $rust_pin "$REPO_ROOT/target/release/echo-agent" >/dev/null 2>&1 &
+    PIDS+=("$!")
+    # shellcheck disable=SC2086
+    PORT="$PY_PORT" $py_pin "$VENV_DIR/bin/python" \
+        "$REPO_ROOT/itk/agents/python-sdk/agent.py" >/dev/null 2>&1 &
+    PIDS+=("$!")
+
+    wait_ready "$RUST_PORT" "rust echo-agent"
+    wait_ready "$PY_PORT" "python-sdk agent"
+
+    local out="$RESULTS_DIR/cross-language-$label.json"
+    # shellcheck disable=SC2086
+    $client_pin "$VENV_DIR/bin/python" "$SCRIPT_DIR/cross_language_bench.py" \
+        --target "rust-a2a-protocol-server=127.0.0.1:$RUST_PORT" \
+        --target "official-python-a2a-sdk=127.0.0.1:$PY_PORT" \
+        --warmup "$WARMUP" --iterations "$ITERATIONS" --trials "$TRIALS" \
+        --concurrency "$CONCURRENCY" --concurrent-per-conn "$PER_CONN" \
+        --pinned "$label: rust='$rust_pin' python='$py_pin' client='$client_pin'" \
+        --note "uvicorn loop/http = auto (uvloop + httptools installed and asserted present)" \
+        --env-file "$FREEZE_FILE" \
+        --out "$out"
+
+    cleanup
+    PIDS=()
+}
 
 mkdir -p "$RESULTS_DIR"
-OUTPUT_FILE="$RESULTS_DIR/python-$TIMESTAMP.json"
 
-python3 -c "$PYTHON_BENCH" "$SERVER_PORT" > "$OUTPUT_FILE"
+run_config "pinned"  "taskset -c 0" "taskset -c 1" "taskset -c 2,3"
+run_config "default" ""             ""             ""
 
+rm -f "$FREEZE_FILE"
 echo ""
-echo "Results written to: $OUTPUT_FILE"
-echo "=== Python benchmark complete ==="
+echo "=== cross-language benchmark complete ==="
+echo "Results: $RESULTS_DIR/cross-language-pinned.json"
+echo "         $RESULTS_DIR/cross-language-default.json"
+echo "Render:  benches/scripts/generate_cross_language_page.sh"
