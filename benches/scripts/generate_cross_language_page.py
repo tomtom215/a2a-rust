@@ -262,7 +262,9 @@ def main() -> int:
     ]
     w(f"Python packages (full resolved set of {len(env['python_packages'])} recorded in the result file):")
     w("")
-    w("```")
+    # Tagged: an untagged fence is compiled as Rust by rustdoc once the page is
+    # registered in book-tests, which `scripts/check_book_code.sh` enforces.
+    w("```text")
     for pkg in sorted(key):
         w(pkg)
     w("```")

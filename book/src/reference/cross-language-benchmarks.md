@@ -173,7 +173,7 @@ discover the caveats later.
 
 Python packages (full resolved set of 42 recorded in the result file):
 
-```
+```text
 a2a-sdk==1.1.4
 httptools==0.8.0
 httpx==0.28.1
