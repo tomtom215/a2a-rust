@@ -1,0 +1,23 @@
+# scripts/doc_versions_allowlist.txt — read by scripts/check_doc_versions.py
+#
+# Dependency snippets in prose that name a version other than the current
+# release line, and that a person has read and found to be deliberately
+# historical rather than stale. Each line is that reading.
+#
+# Format — one entry per line, whitespace-separated, matched exactly:
+#
+#   FILE  VERSION  # reason
+#
+#   FILE     tracked path, exactly as `git ls-files` prints it
+#   VERSION  the version named in the snippet, as written, e.g. 0.7
+#   reason   required. Why a reader is meant to see this version and not the
+#            current one. A migration guide's before/after pair qualifies; a
+#            page that simply has not been updated does not.
+#
+# Keyed on file and version rather than line number, so that editing the prose
+# around a snippet does not silently invalidate the reading. An entry matching
+# no snippet fails the gate: the thing it excused was changed or removed, and
+# the entry is now a claim about nothing.
+
+book/src/reference/upgrading.md  0.7  # the "before" half of the 0.7 -> 0.8 pair showing the removal of grpc-legacy-json; the old version is the content
+book/src/reference/upgrading.md  0.8  # the "after" half of that same pair, pinned to the release that removed the feature

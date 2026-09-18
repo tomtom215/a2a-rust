@@ -30,7 +30,7 @@
 //! Requires the `websocket` feature flag:
 //!
 //! ```toml
-//! a2a-protocol-server = { version = "0.7", features = ["websocket"] }
+//! a2a-protocol-server = { version = "0.12", features = ["websocket"] }
 //! ```
 
 use std::collections::HashMap;

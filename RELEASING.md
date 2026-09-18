@@ -92,6 +92,15 @@ git checkout -b release/vX.Y.Z main
 #     cargo metadata --format-version 1 >/dev/null          # root workspace
 #     (cd bindings/a2a-protocol-slimrpc && cargo metadata --format-version 1 >/dev/null)
 
+# On a MINOR release, the dependency snippets in prose move too — every
+# `a2a-protocol-* = "X.Y"` a reader is told to copy, in the root README, the
+# crates README, the book and two module docs. They name the release *line*,
+# not the patch, so a patch release changes none of them. This one is checked:
+#     python3 scripts/check_doc_versions.py
+# It fails CI until they match and names every site, so it is a to-do list
+# rather than something to remember. It went unchecked until 0.12.1, by which
+# point 28 snippets across 13 files named 0.7, 0.8 or 0.11.
+
 # Update ROADMAP.md's "Current release:" line, and add a section to
 # book/src/reference/changelog.md — neither is checked by anything, and both
 # have rotted before.

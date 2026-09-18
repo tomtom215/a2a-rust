@@ -63,8 +63,10 @@ release.
 requires both lockfiles to be refreshed, and names the two files nothing
 checks at all (`ROADMAP.md`'s current-release line and the book's changelog
 page). The grep returns fourteen lines; the eight pins are the ones in the four
-crate manifests, and the other six are install snippets in `crates/README.md`
-and two `websocket.rs` doc comments, which still advertise `"0.7"`.
+crate manifests, and the other six are install snippets that named `"0.7"`.
+Those six turned out to be a corner of a larger problem — see the section
+below — because that grep is scoped to `crates`, and most of the prose a
+reader actually copies from is not.
 
 ### Waiting for the benchmark bot is the whole trick
 
@@ -343,6 +345,38 @@ the idempotency key — is worth more than everything in Part B combined. The
 argument above is reasoned from a delegating agent's seat, which may not be the
 median user's. Worth checking against real adopters before building any of it.
 
+## Prose versions are checked now
+
+`a2a-protocol-sdk = "0.7"` means `^0.7`, which resolves to nothing in the 0.12
+line, so a reader copying it gets a five-minor-old SDK and none of the fixes
+since. Measured at `e057c8e`: **28 such snippets across 13 files** named 0.7,
+0.8 or 0.11 — the root `README.md`, every page under `book/src/getting-started/`,
+four in `crates/README.md`, the two `websocket.rs` module docs — against
+exactly one that was current. `release.yml` never caught this and could not:
+it checks the four crate manifests against the tag, and prose is not a
+manifest.
+
+All 28 now name `0.12`, and `scripts/check_doc_versions.py` keeps them there.
+It reads the release line from the types crate's own manifest and requires
+every dependency snippet in tracked prose to name `MAJOR.MINOR` — the line,
+not the patch, so `^0.12` picks up the newest patch and a patch release has to
+touch none of these files. Deliberately historical snippets, meaning a
+migration guide's before/after pair, live in
+`scripts/doc_versions_allowlist.txt` with a reason each; an entry matching no
+snippet fails the gate, so the allowlist cannot rot either.
+
+Excluded by design, and the reason matters if the scope is ever revisited:
+`CHANGELOG.md` and the book's changelog page, whose content *is* what past
+versions said, and `docs/`, which holds dated reviews and handoffs — records
+of a moment rather than instructions to a reader. A snippet that moves into
+one of those stops being checked.
+
+Wired into `ci.yml`, `scripts/prove_gates_fail.sh` (injection: put the root
+README back on the previous line), and the gate-reachability input table.
+`RELEASING.md` §1 names it as a minor-release step. All three failure modes
+were exercised: a stale snippet and an orphaned allowlist entry exit 1, an
+entry with no reason exits 2.
+
 ## Still open
 
 1. Delete `release/v0.12.1`, whose contents are merged and tagged.
@@ -350,7 +384,6 @@ median user's. Worth checking against real adopters before building any of it.
 3. Decide the TCK gating question above, either way.
 4. The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
    command that says when it can be deleted.
-5. Six sites still tell readers to depend on `"0.7"`: four install snippets in
-   `crates/README.md` and two `websocket.rs` doc comments. Nothing checks them,
-   they are not what `release.yml` verifies, and `RELEASING.md` §1 does not
-   list them. The same grep that finds the eight pins finds these six.
+5. ~~Stale install snippets.~~ Done — see "Prose versions are checked now"
+   below. The figure recorded here first, six, was wrong: it counted only
+   `crates/`, and the real number was 28.

@@ -346,6 +346,8 @@ injection_for() {
             echo "cancellation_release" ;;
         *"check_doc_escapes.py"*)
             echo "doc_escapes" ;;
+        *"check_doc_versions.py"*)
+            echo "doc_versions" ;;
         *"check_panic_paths.py"*)
             echo "panic_path:$TYPES_LIB" ;;
         *"check_gate_reachability.py"*)
@@ -467,6 +469,9 @@ expected_marker() {
         block_scalars)    echo "MISMATCH" ;;
         cancellation_release) echo "no \`Drop\` that releases it" ;;
         doc_escapes)      echo "containing a literal" ;;
+        # Independent of both the injected version and the current release
+        # line, so the marker does not need editing at every minor bump.
+        doc_versions)     echo "prose names a version" ;;
         gate_reachability) echo "unreachable:ci.yml" ;;
         timeout_nesting)  echo "push_delivery_timeout / HttpPushSender" ;;
         inert_bounds)     echo "max_probe_rows" ;;
@@ -574,6 +579,15 @@ PROBE
             note_touched "crates/a2a-protocol-types/src/lib.rs"
             printf '\n/// gate probe.\\n/// second line that is not one.\n#[allow(dead_code)]\npub struct GateProbeDocEscape;\n' \
                 >>crates/a2a-protocol-types/src/lib.rs
+            ;;
+        doc_versions)
+            # Leave one install snippet on the previous release line — the
+            # exact decay this gate exists for, and the state 28 snippets were
+            # actually in at 0.12.1. The root README is the injection site
+            # because it is the first thing a reader copies from.
+            note_touched "README.md"
+            sed -i 's/a2a-protocol-sdk = "0.12"/a2a-protocol-sdk = "0.11"/' \
+                README.md
             ;;
         book_code)
             # Append an `ignore`d block: the exact move that would defeat the
