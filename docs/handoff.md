@@ -167,6 +167,17 @@ Eight documentation sites said some version of "no CI job gates it". All eight
 now name the job instead. The cost of a minor release is one extra build per
 agent and no secret.
 
+**One caveat, because it is the honest limit of what was checked.** `tck.yml`
+triggers only on push to `main` and pull requests targeting `main` (`:6`-`:9`),
+so the job has not yet run on a GitHub runner — it first executes when this
+work reaches a pull request. What *was* exercised, on this machine, is every
+leg's full sequence using the workflow's own startup blocks and the same
+`a2a-tck --binding jsonrpc` invocation: all three reach 21/21 with exit 0, and
+the `incident-response` leg brings its two dependencies up and answers on
+`:9200` within a second of each poll starting. What that does not cover is the
+runner environment itself — a clean build and free ports. Watch the first
+`TCK` run on the pull request.
+
 ## Issue #130 — released in 0.12.1 and closed
 
 [#130](https://github.com/tomtom215/a2a-rust/issues/130) (`valliscooper`,
