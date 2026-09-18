@@ -172,6 +172,19 @@ full chain. **Re-check it at the next binding release**: run
 `bindings/a2a-protocol-slimrpc/`; when it succeeds, delete the ignore and
 commit the lockfile instead. Do not let the waiver outlive the constraint.
 
+**Probe run 2026-09-17: still blocked, and the blocker is now named
+precisely.** The command fails to select `aws-lc-rs`, because rustls 0.23.45
+requires `^1.18` (1.18.0 and 1.18.1 exist) while `mls-rs-crypto-awslc 0.23.0`
+pins `=1.16.2`. `cargo update -p mls-rs-crypto-awslc` locks 0 packages and
+`--precise 0.23.1` reports no such package, so 0.23.0 really is the only
+release in the `^0.23` range that `agntcy-slim-auth 0.15.4` admits — the
+constraint is exact, not merely current. `mls-rs-crypto-awslc` itself has
+moved on to 0.25.0, so the half of the chain this project does not control is
+already ready; what is missing is an `agntcy-slim-auth` release admitting
+`^0.24` or later, and 0.15.4 is still its newest. Nothing to do here until
+that ships. The binding's lockfile is on rustls 0.23.43, two patches behind the
+workspace's 0.23.45, and the probe left it untouched.
+
 ## Future ideas — from a consuming agent's seat
 
 Recorded here rather than in `ROADMAP.md` on that file's own terms: it takes
