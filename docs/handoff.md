@@ -86,12 +86,12 @@ the *content* merge.
 
 | Branch | Head | What it is |
 |---|---|---|
-| `claude/friendly-keller-edrezx` | merged | The 0.12.1 content branch. Merged as `1fa58c6` via #131. |
-| `release/v0.12.1` | merged | The 0.12.1 release prep. Merged as `e057c8e` via #132, and tagged. |
+| `claude/friendly-keller-edrezx` | deleted | The 0.12.1 content branch. Merged as `1fa58c6` via #131, then deleted. |
+| `release/v0.12.1` | merged, still present | The 0.12.1 release prep. Merged as `e057c8e` via #132, and tagged. Safe to delete. |
 | `claude/a2a-rig-held` | `caa8774` | Storage. The unpublished `a2a-rig` crate, one commit on top of `caac0ec`. |
 | `claude/adk-rust-0.12-patch` | `6fbdd2f` | Storage. The outbound adk-rust patch as a file, one commit on top of `caac0ec`. |
 
-Both merged branches can be deleted. The two **storage** branches —
+`release/v0.12.1` can be deleted. The two **storage** branches —
 `claude/a2a-rig-held` and `claude/adk-rust-0.12-patch` — are **not destined for
 `main`**. They exist so work survives the session that produced it; delete
 either once its contents have landed somewhere better.
@@ -145,7 +145,11 @@ publishing later costs nothing, maintaining now costs immediately.
 returned a *new* task already carrying the previous task's artifacts, so each
 round returned the whole context's accumulated set. Confirmed, reproduced, and
 fixed in `5ee3cfb`; `history` and `metadata` leaked the same way and are fixed
-with it. Shipped in 0.12.1, classified in `CHANGELOG.md` as the `STABILITY.md`
+with it. The carry-forward itself dates from `f09c50f` (2026-06-10), which
+fixed the *opposite* bug — continuations wiping accumulated state — and keyed
+the new carry-forward on the context rather than the task id; it first shipped
+in 0.6.0, whose notes describe it. Shipped in 0.12.1, classified in
+`CHANGELOG.md` as the `STABILITY.md`
 §2 specification correction, which is what made it patch-eligible rather than a
 minor bump. The issue was answered and closed on 2026-09-17.
 
@@ -341,7 +345,7 @@ median user's. Worth checking against real adopters before building any of it.
 
 ## Still open
 
-1. Delete the two merged release branches.
+1. Delete `release/v0.12.1`, whose contents are merged and tagged.
 2. Submit the adk-rust work if it is still wanted: issue first, then the patch.
 3. Decide the TCK gating question above, either way.
 4. The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
