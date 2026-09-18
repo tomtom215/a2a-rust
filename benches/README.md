@@ -79,12 +79,9 @@ benches/
 │   ├── generate_book_page.sh       # Auto-generate book/src/reference/benchmarks.md
 │   ├── generate_dashboard.sh       # Generate interactive dashboard from criterion data
 │   ├── extract_benchmark_json.py   # Extract criterion results into structured JSON
-│   ├── compare_results.sh          # Cross-language comparison table
-│   ├── cross_language_python.sh    # Rust vs official Python SDK (implemented)
+│   ├── cross_language_python.sh    # Rust vs official Python SDK
 │   ├── cross_language_bench.py     # Measurement harness for the above
-│   ├── generate_cross_language_page.py  # Renders the cross-language book page
-│   ├── cross_language_go.sh        # Go SDK runner (still a stub — see below)
-│   └── cross_language_js.sh        # JavaScript SDK runner (still a stub — see below)
+│   └── generate_cross_language_page.py  # Renders the cross-language book page
 └── results/
     ├── cross-language-pinned.json  # Committed: the book page is generated from these
     ├── cross-language-default.json # Committed: the book page is generated from these
@@ -227,13 +224,17 @@ lands in `benches/results/cross-language-{pinned,default}.json`, which are
 committed so the generated page can be audited against them, and rendered to
 [`book/src/reference/cross-language-benchmarks.md`](../book/src/reference/cross-language-benchmarks.md).
 
-**The Go and JavaScript legs are still stubs.** `cross_language_go.sh` and
-`cross_language_js.sh` emit a fixed dict of zeros, labelled in their own output
-as `"Template — implement bench_go.go"` and `"Template — implement
-bench_js.mjs"`. They measure nothing. The Python runner was in the same state
-until it was implemented. Do not quote a number from either, and do not treat
-`compare_results.sh` output as meaningful until they are — it will happily
-tabulate the placeholder zeros.
+There is no Go or JavaScript leg. Stubs for both existed and were removed: they
+emitted a fixed dict of zeros while `benches/README.md` described them as
+runners and `compare_results.sh` invoked them as data sources. The comparison
+table generator went with them — its entire workload vocabulary
+(`echo_roundtrip`, `stream_events`, `concurrent_50`, …) was invented to match
+the stubs' placeholder dict, so it had never tabulated a real measurement in any
+language.
+
+If a Go or JavaScript leg is wanted later, implement it the way the Python one
+is built — a real server, a shared client, committed raw results — rather than
+reinstating a placeholder that reads like data.
 
 ## Interpreting Results
 

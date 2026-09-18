@@ -5,17 +5,15 @@
 // Do no harm. Respect others. Be honest. Be evidence-driven and fact-based. Never guess — test
 // and verify. Security hardening and best practices are non-negotiable. — Tom F.
 
-//! Cross-language SDK comparison benchmarks.
+//! Canonical-workload benchmarks for this SDK.
 //!
-//! This benchmark measures a2a-rust's performance on standardized workloads
-//! that can be reproduced identically in every official A2A SDK language
-//! (Python, Go, Java, JavaScript, C#/.NET).
+//! These measure **this SDK only**, on workloads defined by the shared JSON
+//! fixtures in `benches/cross_language/` so that an equivalent run in another
+//! language would be driving the same payloads. No such equivalent run exists
+//! in this repository, and nothing here compares languages — the name is
+//! historical.
 //!
-//! ## Methodology
-//!
-//! Each benchmark uses a **canonical workload** defined in the companion
-//! `benches/cross_language/` directory with equivalent implementations in
-//! each language. The workloads are:
+//! The workloads:
 //!
 //! 1. **echo_roundtrip** — Send a fixed 256-byte text message, receive the
 //!    echoed response. Measures full HTTP round-trip including ser/de.
@@ -29,24 +27,25 @@
 //! 4. **concurrent_50_sends** — Fire 50 concurrent send-message requests
 //!    against a local echo server and wait for all responses.
 //!
-//! ## How to compare
+//! ## The actual cross-language comparison lives elsewhere
 //!
-//! 1. Run this benchmark:      `cargo bench -p a2a-benchmarks --bench cross_language`
-//! 2. Run equivalent scripts:  `./benches/scripts/cross_language_python.sh` (etc.)
-//! 3. Collect results into:    `./benches/results/`
-//! 4. Generate comparison:     `./benches/scripts/compare_results.sh`
+//! `benches/scripts/cross_language_python.sh` compares this SDK's server
+//! against the official Python `a2a-sdk` server, driving both from one shared
+//! client so that only the server differs, and reporting CPU consumed per
+//! request rather than latency alone. Its result is published at
+//! `book/src/reference/cross-language-benchmarks.md` and backed by committed
+//! raw data. Prefer it for any comparative claim.
 //!
-//! The comparison script produces a Markdown table with median, p95, and p99
-//! latencies for each workload across all languages.
+//! Note that it holds the **client** fixed and varies the server, which is the
+//! opposite of what a run of this benchmark from another language would do.
+//! The two answer different questions and their numbers are not interchangeable.
 //!
-//! ## Fairness guarantees
+//! ## Measurement properties
 //!
-//! - All SDKs hit an **identical echo server** (the Rust server, to avoid
-//!   measuring server-side differences)
 //! - All workloads use the **same JSON payload** (canonical fixtures)
 //! - All measurements use **warm-up iterations** before timing
-//! - Results are reported as **median ± MAD** (not mean ± stddev) to
-//!   resist outlier pollution
+//! - Criterion reports **median with confidence intervals**, resisting
+//!   outlier pollution
 
 use std::sync::Arc;
 
