@@ -1,0 +1,381 @@
+{
+  "schema": "a2a-cross-language-benchmark/1",
+  "generated_utc": "2026-09-18T09:39:19Z",
+  "method": {
+    "description": "One shared raw-socket client sends byte-identical HTTP requests over a warm keep-alive loopback connection to each target. Only the server differs.",
+    "request_bytes": 181,
+    "request_body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"SendMessage\",\"params\":{\"configuration\":{\"historyLength\":0},\"message\":{\"messageId\":\"bench-fixed-id\",\"role\":\"ROLE_USER\",\"parts\":[{\"text\":\"hello\"}]}}}",
+    "warmup_per_trial": 300,
+    "iterations_per_trial": 2000,
+    "trials": 3,
+    "concurrency": 50,
+    "concurrent_requests_per_connection": 40,
+    "percentile_rule": "nearest-rank on the sorted sample, index=int(q*n)",
+    "cpu_probe": "Server utime+stime from /proc, divided by requests served, over a fixed wall-clock budget. Latency cannot tell work from waiting; this can, and it is what a per-request cost argument actually rests on.",
+    "floor_target": "A canned-response server that does no A2A work. It bounds what the client, loopback and kernel cost; it is not an A2A implementation and is not a competitor.",
+    "floor_scope": "SEQUENTIAL LATENCY ONLY. Under concurrency the floor server measures its own thread-per-connection ceiling, not a floor, so its throughput number bounds nothing and must not be compared against the real servers."
+  },
+  "environment": {
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "logical_cpus": 4,
+    "client_affinity_cpus": 2,
+    "kernel": "6.18.44-fc-v33",
+    "platform": "Linux-x86_64",
+    "python": "3.11.15",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)",
+    "git_commit": "80506b9ebfb57c85adf5d591be4e02a8f2331d42",
+    "git_dirty": false,
+    "cpu_pinning": "pinned: rust='taskset -c 0' python='taskset -c 1' client='taskset -c 2,3'",
+    "loadavg": [
+      0.77197265625,
+      0.43603515625,
+      0.29345703125
+    ],
+    "note": "uvicorn loop/http = auto (uvloop + httptools installed and asserted present)",
+    "python_packages": [
+      "a2a-sdk==1.1.4",
+      "aiologic==0.17.1",
+      "annotated-types==0.8.0",
+      "anyio==4.15.1",
+      "certifi==2026.7.22",
+      "cffi==2.1.1",
+      "charset-normalizer==3.5.1",
+      "click==8.5.0",
+      "cryptography==50.0.1",
+      "culsans==0.11.0",
+      "google-api-core==2.38.0",
+      "google-auth==2.58.0",
+      "googleapis-common-protos==1.75.3",
+      "h11==0.16.0",
+      "httpcore==1.0.9",
+      "httptools==0.8.0",
+      "httpx==0.28.1",
+      "idna==3.20",
+      "json-rpc==1.15.0",
+      "opentelemetry-api==1.44.0",
+      "packaging==26.3",
+      "proto-plus==1.28.4",
+      "protobuf==6.33.6",
+      "pyasn1==0.6.4",
+      "pyasn1_modules==0.4.2",
+      "pycparser==3.0",
+      "pydantic==2.13.5",
+      "pydantic_core==2.46.5",
+      "python-dotenv==1.2.3",
+      "PyYAML==6.0.3",
+      "requests==2.34.2",
+      "sniffio==1.3.1",
+      "sse-starlette==3.4.11",
+      "starlette==1.6.0",
+      "typing-inspection==0.4.4",
+      "typing_extensions==4.16.0",
+      "urllib3==2.8.0",
+      "uvicorn==0.53.0",
+      "uvloop==0.22.1",
+      "watchfiles==1.2.0",
+      "websockets==17.1",
+      "wrapt==2.4.1"
+    ]
+  },
+  "results": {
+    "rust-a2a-protocol-server": {
+      "sequential": {
+        "trials": [
+          {
+            "min_us": 60.65,
+            "p50_us": 69.09,
+            "p90_us": 94.68,
+            "p95_us": 111.64,
+            "p99_us": 185.29,
+            "max_us": 1362.63,
+            "mean_us": 78.3,
+            "stdev_us": 49.79,
+            "response_bytes": 259,
+            "iterations": 2000
+          },
+          {
+            "min_us": 59.3,
+            "p50_us": 69.01,
+            "p90_us": 106.11,
+            "p95_us": 230.99,
+            "p99_us": 304.37,
+            "max_us": 1501.85,
+            "mean_us": 87.53,
+            "stdev_us": 67.55,
+            "response_bytes": 259,
+            "iterations": 2000
+          },
+          {
+            "min_us": 56.37,
+            "p50_us": 68.98,
+            "p90_us": 112.66,
+            "p95_us": 277.29,
+            "p99_us": 325.75,
+            "max_us": 472.26,
+            "mean_us": 88.96,
+            "stdev_us": 57.91,
+            "response_bytes": 259,
+            "iterations": 2000
+          }
+        ],
+        "median_of_trial_medians_us": 69.01,
+        "trial_median_min_us": 68.98,
+        "trial_median_max_us": 69.09
+      },
+      "concurrent": {
+        "trials": [
+          {
+            "min_us": 89.16,
+            "p50_us": 2615.17,
+            "p90_us": 4354.35,
+            "p95_us": 5309.29,
+            "p99_us": 7730.96,
+            "max_us": 13195.64,
+            "mean_us": 2715.39,
+            "stdev_us": 1504.86,
+            "completed": 2000,
+            "wall_s": 0.1909,
+            "throughput_rps": 10476.1,
+            "connections": 50
+          },
+          {
+            "min_us": 148.72,
+            "p50_us": 3634.25,
+            "p90_us": 4560.7,
+            "p95_us": 5029.52,
+            "p99_us": 6021.59,
+            "max_us": 9432.65,
+            "mean_us": 3595.52,
+            "stdev_us": 936.11,
+            "completed": 2000,
+            "wall_s": 0.2685,
+            "throughput_rps": 7448.2,
+            "connections": 50
+          },
+          {
+            "min_us": 123.51,
+            "p50_us": 3516.38,
+            "p90_us": 4402.12,
+            "p95_us": 5048.71,
+            "p99_us": 8247.25,
+            "max_us": 10059.46,
+            "mean_us": 3524.66,
+            "stdev_us": 1096.5,
+            "completed": 2000,
+            "wall_s": 0.2574,
+            "throughput_rps": 7770.9,
+            "connections": 50
+          }
+        ],
+        "median_throughput_rps": 7770.9,
+        "throughput_min_rps": 7448.2,
+        "throughput_max_rps": 10476.1
+      },
+      "cpu": {
+        "requests": 31218,
+        "wall_s": 3.0,
+        "server_cpu_s": 2.27,
+        "server_cpu_us_per_request": 72.71,
+        "clock_tick_s": 0.01,
+        "quantisation_error_pct": 0.44
+      }
+    },
+    "official-python-a2a-sdk": {
+      "sequential": {
+        "trials": [
+          {
+            "min_us": 1840.5,
+            "p50_us": 2177.28,
+            "p90_us": 2611.67,
+            "p95_us": 2962.47,
+            "p99_us": 3618.45,
+            "max_us": 23147.31,
+            "mean_us": 2282.39,
+            "stdev_us": 732.82,
+            "response_bytes": 338,
+            "iterations": 2000
+          },
+          {
+            "min_us": 1831.54,
+            "p50_us": 2188.57,
+            "p90_us": 2768.32,
+            "p95_us": 3027.21,
+            "p99_us": 3772.88,
+            "max_us": 34875.64,
+            "mean_us": 2329.62,
+            "stdev_us": 1159.3,
+            "response_bytes": 338,
+            "iterations": 2000
+          },
+          {
+            "min_us": 1827.31,
+            "p50_us": 2220.79,
+            "p90_us": 2586.56,
+            "p95_us": 3000.0,
+            "p99_us": 4444.01,
+            "max_us": 53729.22,
+            "mean_us": 2362.45,
+            "stdev_us": 1368.87,
+            "response_bytes": 338,
+            "iterations": 2000
+          }
+        ],
+        "median_of_trial_medians_us": 2188.57,
+        "trial_median_min_us": 2177.28,
+        "trial_median_max_us": 2220.79
+      },
+      "concurrent": {
+        "trials": [
+          {
+            "min_us": 80399.92,
+            "p50_us": 109048.19,
+            "p90_us": 152313.26,
+            "p95_us": 157467.67,
+            "p99_us": 186296.6,
+            "max_us": 190406.4,
+            "mean_us": 119634.37,
+            "stdev_us": 21468.64,
+            "completed": 2000,
+            "wall_s": 11.6164,
+            "throughput_rps": 172.2,
+            "connections": 50
+          },
+          {
+            "min_us": 85063.05,
+            "p50_us": 109588.89,
+            "p90_us": 154932.8,
+            "p95_us": 162452.97,
+            "p99_us": 169754.48,
+            "max_us": 171583.63,
+            "mean_us": 119161.66,
+            "stdev_us": 21573.77,
+            "completed": 2000,
+            "wall_s": 11.7246,
+            "throughput_rps": 170.6,
+            "connections": 50
+          },
+          {
+            "min_us": 84053.76,
+            "p50_us": 109355.03,
+            "p90_us": 157689.29,
+            "p95_us": 160329.26,
+            "p99_us": 174445.4,
+            "max_us": 187633.6,
+            "mean_us": 119736.16,
+            "stdev_us": 21516.3,
+            "completed": 2000,
+            "wall_s": 11.8322,
+            "throughput_rps": 169.0,
+            "connections": 50
+          }
+        ],
+        "median_throughput_rps": 170.6,
+        "throughput_min_rps": 169.0,
+        "throughput_max_rps": 172.2
+      },
+      "cpu": {
+        "requests": 1317,
+        "wall_s": 3.001,
+        "server_cpu_s": 2.95,
+        "server_cpu_us_per_request": 2239.94,
+        "clock_tick_s": 0.01,
+        "quantisation_error_pct": 0.34
+      }
+    },
+    "floor": {
+      "sequential": {
+        "trials": [
+          {
+            "min_us": 17.18,
+            "p50_us": 44.33,
+            "p90_us": 53.62,
+            "p95_us": 62.96,
+            "p99_us": 94.6,
+            "max_us": 1381.31,
+            "mean_us": 48.05,
+            "stdev_us": 32.15,
+            "response_bytes": 259,
+            "iterations": 2000
+          },
+          {
+            "min_us": 15.47,
+            "p50_us": 44.91,
+            "p90_us": 52.01,
+            "p95_us": 58.36,
+            "p99_us": 84.89,
+            "max_us": 245.3,
+            "mean_us": 47.24,
+            "stdev_us": 9.45,
+            "response_bytes": 259,
+            "iterations": 2000
+          },
+          {
+            "min_us": 41.0,
+            "p50_us": 44.49,
+            "p90_us": 50.58,
+            "p95_us": 58.66,
+            "p99_us": 76.74,
+            "max_us": 579.57,
+            "mean_us": 46.81,
+            "stdev_us": 14.22,
+            "response_bytes": 259,
+            "iterations": 2000
+          }
+        ],
+        "median_of_trial_medians_us": 44.49,
+        "trial_median_min_us": 44.33,
+        "trial_median_max_us": 44.91
+      },
+      "concurrent": {
+        "trials": [
+          {
+            "min_us": 63.34,
+            "p50_us": 3568.15,
+            "p90_us": 7929.96,
+            "p95_us": 9597.07,
+            "p99_us": 14227.67,
+            "max_us": 18881.67,
+            "mean_us": 4152.18,
+            "stdev_us": 2909.59,
+            "completed": 2000,
+            "wall_s": 0.3626,
+            "throughput_rps": 5516.2,
+            "connections": 50
+          },
+          {
+            "min_us": 46.78,
+            "p50_us": 3351.91,
+            "p90_us": 7353.21,
+            "p95_us": 8969.81,
+            "p99_us": 12508.24,
+            "max_us": 20374.08,
+            "mean_us": 3853.24,
+            "stdev_us": 2693.09,
+            "completed": 2000,
+            "wall_s": 0.3632,
+            "throughput_rps": 5506.5,
+            "connections": 50
+          },
+          {
+            "min_us": 56.04,
+            "p50_us": 3434.12,
+            "p90_us": 7724.19,
+            "p95_us": 9375.78,
+            "p99_us": 12583.62,
+            "max_us": 20558.72,
+            "mean_us": 3982.24,
+            "stdev_us": 2739.38,
+            "completed": 2000,
+            "wall_s": 0.33,
+            "throughput_rps": 6060.7,
+            "connections": 50
+          }
+        ],
+        "median_throughput_rps": 5516.2,
+        "throughput_min_rps": 5506.5,
+        "throughput_max_rps": 6060.7
+      },
+      "cpu": null
+    }
+  }
+}

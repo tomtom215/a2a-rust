@@ -72,6 +72,7 @@
 - [Configuration Reference](./reference/configuration.md)
 - [Benchmark Results](./reference/benchmarks.md)
 - [Benchmark Dashboard](./reference/dashboard.md)
+- [Cross-Language Benchmark](./reference/cross-language-benchmarks.md)
 - [Benchmark Regression Gate](./reference/regression-gate.md)
 - [Mutation Testing History](./reference/mutation-history.md)
 - [Conformance History](./reference/conformance-history.md)
