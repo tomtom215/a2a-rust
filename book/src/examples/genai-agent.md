@@ -50,9 +50,11 @@ GENAI_MODEL=qwen3.5:0.8b cargo run -p genai-a2a-agent
 ```
 
 The agent serves a discovery card, supports push-config CRUD, honors
-`A2A_BIND_ADDR` for a fixed port, and passes the in-repo TCK — measured
-2026-09-13 on the JSON-RPC binding: 21/21 graded checks, 1 not applicable.
-No CI job gates that figure.
+`A2A_BIND_ADDR` for a fixed port, and passes the in-repo TCK: 21/21 graded
+checks, 1 not applicable, on the JSON-RPC binding. `tck.yml`'s
+`tck-example-agents` job re-runs that grade on every push and pull request,
+with no model configured — the TCK grades protocol conformance, and none of it
+reaches the executor's brain.
 
 ## Key integration point
 

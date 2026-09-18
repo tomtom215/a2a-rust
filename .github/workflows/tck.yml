@@ -448,3 +448,88 @@ jobs:
       # must see exactly the corpus-expected messages.
       - name: Official SDK parses Rust-encoded bytes
         run: python3 tck/scripts/grpc_wire_compat.py verify-rust
+
+  # The three in-repo example agents that documentation quotes a TCK grade for.
+  # Those figures were dated manual measurements with "no CI job gates it"
+  # printed beside them, and the honesty of that note is what kept them
+  # defensible — one of them had already drifted, claiming 20/20 against a
+  # measured 21/21, and was corrected in 0.12.1 by a person reading the page.
+  #
+  # Nothing about these agents needed a model to be gated, which is why this
+  # job costs a build and no secret. The TCK grades protocol conformance —
+  # card discovery, method routing, task lifecycle, error envelopes,
+  # push-config CRUD — and none of it reaches the executor's brain. All three
+  # are written to serve with the brain absent: rig defaults OPENAI_API_KEY to
+  # a placeholder "rather than making the surface impossible to start", genai
+  # treats an unreachable model as a failed task rather than a failed launch,
+  # and incident-response's logs agent has no LLM by design.
+  #
+  # Measured 2026-09-17 with no OPENAI_API_KEY, no OPENAI_BASE_URL and nothing
+  # listening on any model port: all three score 21/21 graded, 0 failed, 1 N/A
+  # (a2a_media_type_accepted, which §14.1.1 scopes to the REST binding) — the
+  # same figure the pages claim. genai passes with its SSRF guard left at the
+  # default, so this job does not set A2A_ALLOW_PRIVATE_WEBHOOKS; weakening a
+  # security default to pass a conformance run would be the wrong trade, and
+  # it is not needed.
+  tck-example-agents:
+    name: TCK example agent (${{ matrix.agent }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - agent: rig-a2a-agent
+            package: rig-a2a-agent
+            port: 9300
+            setup: |
+              A2A_BIND_ADDR=127.0.0.1:9300 ./target/release/rig-a2a-agent &
+          - agent: genai-a2a-agent
+            package: genai-a2a-agent
+            port: 9301
+            setup: |
+              A2A_BIND_ADDR=127.0.0.1:9301 ./target/release/genai-a2a-agent &
+          # triage is the agent the book quotes a grade for, and it refuses to
+          # answer without the two it delegates to, so this leg brings up all
+          # three. Their ports are compiled in, not configurable.
+          - agent: incident-response
+            package: incident-response
+            port: 9200
+            setup: |
+              ./target/release/incident-response logs &
+              ./target/release/incident-response runbook &
+              for i in $(seq 1 30); do
+                if curl -sf http://127.0.0.1:9201/.well-known/agent-card.json > /dev/null 2>&1 \
+                   && curl -sf http://127.0.0.1:9202/.well-known/agent-card.json > /dev/null 2>&1; then
+                  break
+                fi
+                sleep 1
+              done
+              ./target/release/incident-response triage &
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Build ${{ matrix.agent }} and TCK
+        run: cargo build --release -p ${{ matrix.package }} -p a2a-tck
+
+      # Same readiness pattern as the echo-agent and cross-language legs: poll
+      # the discovery endpoint rather than sleeping a fixed span, which flakes
+      # under load. Deliberately no model configured — see the note above.
+      - name: Start example agent
+        run: |
+          ${{ matrix.setup }}
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:${{ matrix.port }}/.well-known/agent-card.json > /dev/null 2>&1; then
+              echo "${{ matrix.agent }} ready on :${{ matrix.port }}"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "${{ matrix.agent }} failed to start"
+          exit 1
+
+      - name: TCK — JSON-RPC binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:${{ matrix.port }} --binding jsonrpc

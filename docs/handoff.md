@@ -130,15 +130,42 @@ publishing later costs nothing, maintaining now costs immediately.
   Nothing to do until the maintainer answers; the ask was for a layering decision
   before any code.
 
-## Deliberately not done
+## The TCK figures are gated now
 
-- **The TCK figures are dated measurements, not gates.** Seven places claimed
-  "20/20"; measured 2026-09-13, `rig-a2a-agent`, `genai-a2a-agent` and
-  `incident-response` each report 21/21 graded with 1 N/A on the JSON-RPC binding.
-  Each site now carries the date and says no CI job gates it. Making it a gate
-  needs a job per agent — `tck.yml` currently points only at `echo-agent` (`:24`,
-  `:35`) and `a2a-tck-sut` (`:118`) — and that is a CI-cost decision nobody has
-  made.
+This was recorded here as deliberately not done, on the reasoning that gating
+the example agents' TCK grades "needs a job per agent, and that is a CI-cost
+decision nobody has made". **That reasoning was wrong, and the premise is worth
+correcting rather than deleting**, because it is the kind of mistake that
+re-forms: the agents are LLM-backed, so gating them looks like it needs an API
+key or a model pull in CI, and nobody checked.
+
+The TCK grades protocol conformance — card discovery, method routing, task
+lifecycle, error envelopes, push-config CRUD — and none of that reaches the
+executor's brain. All three agents are written to serve with the brain absent.
+`rig-a2a-agent` defaults `OPENAI_API_KEY` to a placeholder, its own comment
+saying that is "rather than making the surface impossible to start";
+`genai-a2a-agent` treats an unreachable model as a failed task rather than a
+failed launch; `incident-response`'s `logs` agent has no LLM by design.
+
+Measured 2026-09-17 with no `OPENAI_API_KEY`, no `OPENAI_BASE_URL` and nothing
+listening on any model port: **all three score 21/21 graded, 0 failed, 1 N/A**
+(`a2a_media_type_accepted`, which §14.1.1 scopes to the REST binding) — the
+same figure the pages claimed from the manual 2026-09-13 run. `rig-a2a-agent`
+answered its card one second after launch. `genai-a2a-agent` passes with its
+SSRF guard at the default, so the job does not set
+`A2A_ALLOW_PRIVATE_WEBHOOKS`: weakening a security default to pass a
+conformance run would be the wrong trade, and it is not needed.
+
+`tck.yml`'s `tck-example-agents` job now gates all three on every push and pull
+request, as a `fail-fast: false` matrix. The `incident-response` leg starts
+`logs` and `runbook` before `triage`, because triage is the agent the book
+quotes a grade for and it will not answer without the two it delegates to;
+their ports are compiled in. The readiness-poll step is registered in
+`scripts/prove_workflow_gates_fail.py` alongside its siblings.
+
+Eight documentation sites said some version of "no CI job gates it". All eight
+now name the job instead. The cost of a minor release is one extra build per
+agent and no secret.
 
 ## Issue #130 — released in 0.12.1 and closed
 
@@ -394,7 +421,6 @@ entry with no reason exits 2.
 
 1. Delete `release/v0.12.1`, whose contents are merged and tagged.
 2. Submit the adk-rust work if it is still wanted: issue first, then the patch.
-3. Decide the TCK gating question above, either way.
 4. The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
    command that says when it can be deleted.
 5. ~~Stale install snippets.~~ Done — see "Prose versions are checked now"

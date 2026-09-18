@@ -1155,6 +1155,10 @@ def build_registry() -> dict[str, Probe | Exempt]:
         ("tck-all-bindings", "Start the credential-requiring SUT"),
         ("tck-cross-language", "Wait for agent to be ready"),
         ("official-client-vs-rust-server", "Build and start our echo agent"),
+        # The example-agent matrix, added 2026-09-17. Same shape and same
+        # reasoning as its siblings: a poll whose only verdict is "the agent
+        # never came up", guarding the a2a-tck run that follows.
+        ("tck-example-agents", "Start example agent"),
     ):
         reg[f"tck.yml::{job}::{name}"] = Exempt(READINESS_POLL)
 
