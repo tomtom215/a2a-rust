@@ -37,6 +37,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
+use a2a_protocol_types::idempotency::{IDEMPOTENCY_METADATA_KEY, validate_key};
+
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
@@ -182,6 +184,10 @@ impl ClientError {
 /// the A2A spec does not mandate server-side deduplication, so a blind re-send
 /// can double-execute real work. Any unrecognized method is treated as
 /// non-idempotent (fail safe).
+///
+/// This is a property of the *method* alone. A send can still be idempotent
+/// for a reason this cannot see — see [`carries_idempotency_key`], which is
+/// what makes a keyed `SendMessage` retryable.
 fn is_idempotent_method(method: &str) -> bool {
     matches!(
         method,
@@ -194,6 +200,35 @@ fn is_idempotent_method(method: &str) -> bool {
             | "ListTaskPushNotificationConfigs"
             | "DeleteTaskPushNotificationConfig"
     )
+}
+
+/// Returns `true` if `params` carries a client-supplied idempotency key that
+/// makes this send safe to re-send.
+///
+/// A send whose message carries a key *is* idempotent, which is the entire
+/// reason to present one. The server dedupes on it: a retry returns the task
+/// the first attempt created rather than starting a second, so the ambiguous
+/// failure this module refuses to retry — a connection dropped after the bytes
+/// went out — stops being ambiguous.
+///
+/// The property holds even against a server that does not implement the
+/// extension, because such a server refuses a keyed send outright instead of
+/// running it undeduplicated. Either the key is honoured and the retry is
+/// deduplicated, or the send never executed at all; there is no arrangement in
+/// which the retry duplicates work.
+///
+/// The key is validated rather than merely found, so this answers "this send
+/// will be deduplicated" and not "something is present under that name".
+fn carries_idempotency_key(method: &str, params: &serde_json::Value) -> bool {
+    if !matches!(method, "SendMessage" | "SendStreamingMessage") {
+        return false;
+    }
+    params
+        .get("message")
+        .and_then(|message| message.get("metadata"))
+        .and_then(|metadata| metadata.get(IDEMPOTENCY_METADATA_KEY))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|key| validate_key(key).is_ok())
 }
 
 /// Returns `true` if a retryable `error` is safe to retry even for a
@@ -253,7 +288,8 @@ impl Transport for RetryTransport {
         Box::pin(async move {
             let mut last_err: Option<ClientError> = None;
             let mut backoff = self.policy.initial_backoff;
-            let idempotent = is_idempotent_method(method);
+            let idempotent =
+                is_idempotent_method(method) || carries_idempotency_key(method, &params);
 
             // FIX(H7): Serialize params to bytes once and deserialize for each attempt,
             // avoiding deep-clone of the serde_json::Value tree on every retry.
@@ -309,7 +345,8 @@ impl Transport for RetryTransport {
         Box::pin(async move {
             let mut last_err: Option<ClientError> = None;
             let mut backoff = self.policy.initial_backoff;
-            let idempotent = is_idempotent_method(method);
+            let idempotent =
+                is_idempotent_method(method) || carries_idempotency_key(method, &params);
 
             // FIX(H7): Serialize params to bytes once and deserialize for each attempt,
             // avoiding deep-clone of the serde_json::Value tree on every retry.
@@ -1359,6 +1396,121 @@ mod tests {
             1,
             "SendMessage must not be re-sent on an ambiguous timeout"
         );
+    }
+
+    // ── Idempotency keys ─────────────────────────────────────────────────
+
+    /// Builds `MessageSendParams`-shaped JSON whose message carries `key`.
+    fn keyed_send_params(key: &str) -> serde_json::Value {
+        serde_json::json!({
+            "message": {
+                "id": "msg-1",
+                "role": "user",
+                "parts": [{"kind": "text", "text": "hi"}],
+                "metadata": { IDEMPOTENCY_METADATA_KEY: key },
+            }
+        })
+    }
+
+    const GOOD_KEY: &str = "8f14e45fceea167a5a36dedd4bea2543";
+
+    #[test]
+    fn a_keyed_send_is_recognised_as_safe_to_retry() {
+        for method in ["SendMessage", "SendStreamingMessage"] {
+            assert!(
+                carries_idempotency_key(method, &keyed_send_params(GOOD_KEY)),
+                "{method} with a key should be retryable"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unkeyed_send_is_not() {
+        let bare = serde_json::json!({"message": {"id": "m", "role": "user", "parts": []}});
+        assert!(!carries_idempotency_key("SendMessage", &bare));
+        assert!(!carries_idempotency_key(
+            "SendMessage",
+            &serde_json::Value::Null
+        ));
+        assert!(!carries_idempotency_key(
+            "SendMessage",
+            &serde_json::json!({"message": {"metadata": {"trace": "abc"}}})
+        ));
+    }
+
+    #[test]
+    fn a_key_on_a_method_that_is_not_a_send_changes_nothing() {
+        // Only the two send methods are non-idempotent for this reason; a key
+        // attached elsewhere must not widen what gets retried.
+        assert!(!carries_idempotency_key(
+            "CreateTaskPushNotificationConfig",
+            &keyed_send_params(GOOD_KEY)
+        ));
+    }
+
+    #[test]
+    fn a_malformed_key_does_not_make_a_send_retryable() {
+        // The server refuses it, so the send is deterministic rather than
+        // deduplicated — and the predicate should say what it means.
+        for bad in ["short", "", "has a space in it here"] {
+            assert!(
+                !carries_idempotency_key("SendMessage", &keyed_send_params(bad)),
+                "{bad:?} should not count as a key"
+            );
+        }
+        assert!(!carries_idempotency_key(
+            "SendMessage",
+            &serde_json::json!({"message": {"metadata": {IDEMPOTENCY_METADATA_KEY: 42}}})
+        ));
+    }
+
+    /// The point of the whole feature: the ambiguous timeout that
+    /// `non_idempotent_not_retried_on_timeout` refuses to retry *is* retried
+    /// once the send carries a key.
+    #[tokio::test]
+    async fn a_keyed_send_is_retried_on_an_ambiguous_timeout() {
+        let inner = FailNTransport::new(2, serde_json::json!({"ok": true}));
+        let call_count = Arc::clone(&inner.call_count);
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(3),
+        );
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("SendMessage", keyed_send_params(GOOD_KEY), &headers)
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "the retry should have succeeded: {result:?}"
+        );
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            3,
+            "two ambiguous failures then a success"
+        );
+    }
+
+    /// And the unkeyed behaviour is unchanged by that: same transport, same
+    /// error, one attempt.
+    #[tokio::test]
+    async fn an_unkeyed_send_is_still_not_retried_on_a_timeout() {
+        let inner = FailNTransport::new(2, serde_json::json!({"ok": true}));
+        let call_count = Arc::clone(&inner.call_count);
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(3),
+        );
+        let headers = HashMap::new();
+        let bare = serde_json::json!({"message": {"id": "m", "role": "user", "parts": []}});
+        let result = transport.send_request("SendMessage", bare, &headers).await;
+
+        assert!(result.is_err());
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
     }
 
     /// A non-idempotent method IS retried when the server rejected it up front
