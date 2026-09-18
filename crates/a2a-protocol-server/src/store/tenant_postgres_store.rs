@@ -486,24 +486,6 @@ impl TaskStore for TenantAwarePostgresTaskStore {
 mod tests {
     use super::*;
 
-    /// See the note on the in-memory tenant store's equivalent test: the send
-    /// path reads this to decide whether to claim a key, so a silent `false`
-    /// removes the guarantee without failing anything.
-    #[tokio::test]
-    #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
-    async fn postgres_tenant_store_advertises_idempotency_support() {
-        let url = std::env::var("A2A_TEST_POSTGRES_URL")
-            .expect("A2A_TEST_POSTGRES_URL must be set to run this test");
-        let store = TenantAwarePostgresTaskStore::new(&url)
-            .await
-            .expect("failed to connect to the test PostgreSQL server");
-        assert!(
-            store.supports_idempotency(),
-            "the tenant-aware Postgres store implements claim_idempotency_key; \
-             it must advertise support"
-        );
-    }
-
     #[test]
     fn to_a2a_error_formats_message() {
         let pg_err = sqlx::Error::RowNotFound;

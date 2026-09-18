@@ -136,6 +136,27 @@ fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
 
 // ── TaskStore tests ──────────────────────────────────────────────────────────
 
+/// The send path reads `supports_idempotency` to decide whether to claim a key
+/// at all, so a tenant-aware store that silently answered `false` would route
+/// every keyed request down the unkeyed path — no error, no failing test, the
+/// guarantee simply absent. Nothing asserted it returned true.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_store_advertises_idempotency_support() {
+    let db = TestDb::create("tenant_idem_support").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+
+    assert!(
+        store.supports_idempotency(),
+        "the tenant-aware Postgres store implements claim_idempotency_key; \
+         it must advertise support"
+    );
+
+    db.drop_db().await;
+}
+
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn task_save_and_get() -> A2aResult<()> {
