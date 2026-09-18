@@ -81,6 +81,14 @@ if [ ! -x "$VENV_DIR/bin/python" ]; then
     python3 -m venv "$VENV_DIR"
 fi
 "$VENV_DIR/bin/pip" install -q --disable-pip-version-check -r "$REQ_FILE"
+# Captured once, before any result file is written: the first configuration's
+# output would otherwise make every later one record a dirty tree.
+if [ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]; then
+    GIT_DIRTY=true
+else
+    GIT_DIRTY=false
+fi
+
 FREEZE_FILE="$(mktemp)"
 "$VENV_DIR/bin/pip" freeze > "$FREEZE_FILE"
 
@@ -133,6 +141,7 @@ run_config() {
         --pinned "$label: rust='$rust_pin' python='$py_pin' client='$client_pin'" \
         --note "uvicorn loop/http = auto (uvloop + httptools installed and asserted present)" \
         --env-file "$FREEZE_FILE" \
+        --git-dirty "$GIT_DIRTY" \
         --out "$out"
 
     cleanup

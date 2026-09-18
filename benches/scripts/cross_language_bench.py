@@ -329,6 +329,17 @@ def main() -> int:
         help="enables the CPU probe for that target; repeatable",
     )
     ap.add_argument("--cpu-probe-seconds", type=float, default=3.0)
+    ap.add_argument(
+        "--git-dirty",
+        choices=["true", "false"],
+        default="",
+        help=(
+            "whether the tree was dirty BEFORE the run started. The runner "
+            "captures this once and passes it to every configuration, because "
+            "the first configuration's own result file would otherwise make "
+            "every later one report a dirty tree."
+        ),
+    )
     ap.add_argument("--pinned", default="", help="recorded verbatim in provenance")
     ap.add_argument("--note", default="", help="recorded verbatim in provenance")
     ap.add_argument(
@@ -433,7 +444,11 @@ def main() -> int:
             "python": sys.version.split()[0],
             "rustc": sh(["rustc", "--version"]),
             "git_commit": sh(["git", "rev-parse", "HEAD"]),
-            "git_dirty": bool(sh(["git", "status", "--porcelain"])),
+            "git_dirty": (
+                args.git_dirty == "true"
+                if args.git_dirty
+                else bool(sh(["git", "status", "--porcelain"]))
+            ),
             "cpu_pinning": args.pinned or "none",
             "loadavg": list(os.getloadavg()),
             "note": args.note,
