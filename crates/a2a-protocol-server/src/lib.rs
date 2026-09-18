@@ -14,6 +14,40 @@
 //! 2. Build a [`RequestHandler`] via [`RequestHandlerBuilder`].
 //! 3. Wire [`JsonRpcDispatcher`] or [`RestDispatcher`] into your hyper server.
 //!
+//! # Embedding in an existing server
+//!
+//! Step 3 is optional. [`RequestHandler`] is the protocol layer and takes no
+//! HTTP types: its ten `on_*` methods accept parsed params plus a plain
+//! `HashMap<String, String>` of headers, which is all the interceptor chain
+//! reads. Anything that already owns its routing and server lifecycle — an
+//! agent framework, an existing Axum or Actix application, a tower service, a
+//! queue consumer, a test harness — calls those methods directly and skips
+//! [`dispatch`] entirely:
+//!
+//! | Method | A2A operation |
+//! |---|---|
+//! | [`on_send_message`] | `SendMessage`, `SendStreamingMessage` |
+//! | [`on_get_task`], [`on_list_tasks`], [`on_cancel_task`] | `GetTask`, `ListTasks`, `CancelTask` |
+//! | [`on_resubscribe`] | `TaskSubscription` |
+//! | [`on_get_extended_agent_card`] | `GetExtendedAgentCard` |
+//! | [`on_set_push_config`], [`on_get_push_config`], [`on_list_push_configs`], [`on_delete_push_config`] | Push-config CRUD |
+//!
+//! What the dispatchers add on top is wire-format decoding and reply encoding.
+//! Task lifecycle, idempotency, streaming, push delivery, interceptors,
+//! multi-tenancy and limits all live below them, in the handler. The book's
+//! "Request Handler & Builder" page carries a worked example.
+//!
+//! [`on_send_message`]: RequestHandler::on_send_message
+//! [`on_get_task`]: RequestHandler::on_get_task
+//! [`on_list_tasks`]: RequestHandler::on_list_tasks
+//! [`on_cancel_task`]: RequestHandler::on_cancel_task
+//! [`on_resubscribe`]: RequestHandler::on_resubscribe
+//! [`on_get_extended_agent_card`]: RequestHandler::on_get_extended_agent_card
+//! [`on_set_push_config`]: RequestHandler::on_set_push_config
+//! [`on_get_push_config`]: RequestHandler::on_get_push_config
+//! [`on_list_push_configs`]: RequestHandler::on_list_push_configs
+//! [`on_delete_push_config`]: RequestHandler::on_delete_push_config
+//!
 //! # Module overview
 //!
 //! | Module | Contents |
