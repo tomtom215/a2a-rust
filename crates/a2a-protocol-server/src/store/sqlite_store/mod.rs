@@ -26,6 +26,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
+use sqlx::Row as _;
 use sqlx::sqlite::SqlitePool;
 
 use super::task_store::{ArtifactDelta, TaskStore};
@@ -133,6 +134,14 @@ impl SqliteTaskStore {
             .execute(&pool)
             .await?;
 
+        // The other half of migration 6. Unlike the journal this carries no
+        // foreign key, so its order relative to `tasks` does not matter — but
+        // it must exist here too, or a store built by `from_pool` refuses
+        // every keyed send.
+        sqlx::query(idempotency::CREATE_TABLE_SQL)
+            .execute(&pool)
+            .await?;
+
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_context_id ON tasks(context_id)")
             .execute(&pool)
             .await?;
@@ -229,6 +238,7 @@ impl SqliteTaskStore {
 // `crate::sqlite_pool` for what each one is load-bearing for.
 use crate::sqlite_pool::sqlite_pool;
 
+pub(super) mod idempotency;
 pub(super) mod journal;
 
 /// Converts a `sqlx::Error` to an `A2aError`.
@@ -368,6 +378,86 @@ const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for SqliteTaskStore {
+    fn supports_idempotency(&self) -> bool {
+        true
+    }
+
+    fn claim_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+        message_id: &'a a2a_protocol_types::message::MessageId,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<super::task_store::IdempotencyClaim>> + Send + 'a>>
+    {
+        use super::task_store::IdempotencyClaim;
+
+        Box::pin(async move {
+            // One transaction around the insert and the read that follows it.
+            // The INSERT escalates SQLite to a write lock, so from that point
+            // no other connection can delete the row this then reads — which
+            // is what makes a losing claim see the winner rather than an empty
+            // table.
+            let mut tx = self.pool.begin().await.map_err(to_a2a_error)?;
+
+            let inserted = sqlx::query(idempotency::CLAIM_SQL)
+                .bind(key)
+                .bind(message_id.0.as_str())
+                .bind(task_id.0.as_str())
+                .execute(&mut *tx)
+                .await
+                .map_err(to_a2a_error)?
+                .rows_affected();
+
+            if inserted == 1 {
+                tx.commit().await.map_err(to_a2a_error)?;
+                return Ok(IdempotencyClaim::Claimed);
+            }
+
+            let holder = sqlx::query(idempotency::HOLDER_SQL)
+                .bind(key)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(to_a2a_error)?;
+            tx.commit().await.map_err(to_a2a_error)?;
+
+            let Some(row) = holder else {
+                // Unreachable while the transaction above holds its write
+                // lock, and reported rather than assumed away: a claim that
+                // neither inserted nor found a holder must never look like a
+                // successful one, or the send it guards runs twice.
+                return Err(A2aError::internal(
+                    "idempotency key was neither claimed nor held; the row vanished \
+                     inside the claiming transaction",
+                ));
+            };
+
+            let held_by: String = row.try_get("message_id").map_err(to_a2a_error)?;
+            let held_task: String = row.try_get("task_id").map_err(to_a2a_error)?;
+
+            if held_by == message_id.0 {
+                Ok(IdempotencyClaim::Replay(TaskId::new(held_task)))
+            } else {
+                Ok(IdempotencyClaim::Conflict {
+                    held_by: a2a_protocol_types::message::MessageId::new(held_by),
+                })
+            }
+        })
+    }
+
+    fn release_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            sqlx::query(idempotency::RELEASE_SQL)
+                .bind(key)
+                .execute(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            Ok(())
+        })
+    }
+
     fn save<'a>(
         &'a self,
         task: &'a Task,
@@ -746,3 +836,6 @@ mod artifact_delta_tests;
 mod retention_tests;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod idempotency_tests;

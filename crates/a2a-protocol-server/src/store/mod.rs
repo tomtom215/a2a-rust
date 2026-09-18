@@ -30,6 +30,10 @@ pub mod postgres_store;
 #[cfg(feature = "postgres")]
 pub mod tenant_postgres_store;
 
+// Shared by both tenant-aware SQL stores, so it is present when either is.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod tenant_idempotency;
+
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 pub use task_store::{
     ArtifactDelta, DEFAULT_MAX_PAGE_SIZE, InMemoryTaskStore, TaskStore, TaskStoreConfig,

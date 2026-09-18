@@ -19,6 +19,7 @@
 //! ```
 
 mod artifact_delta;
+pub(super) mod idempotency;
 mod pool;
 mod store_impl;
 
@@ -121,6 +122,12 @@ impl PostgresTaskStore {
         )
         .execute(&pool)
         .await?;
+
+        // The other half of pg migration 4. It must exist here too, or a
+        // store built by `from_pool` refuses every keyed send.
+        sqlx::query(idempotency::CREATE_TABLE_SQL)
+            .execute(&pool)
+            .await?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_context_id ON tasks(context_id)")
             .execute(&pool)

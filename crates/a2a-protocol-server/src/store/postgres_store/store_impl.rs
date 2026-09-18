@@ -20,10 +20,87 @@ use a2a_protocol_types::task::{Task, TaskId};
 
 use super::PostgresTaskStore;
 use super::pool::to_a2a_error;
-use crate::store::task_store::{ArtifactDelta, TaskStore};
+use crate::store::task_store::{ArtifactDelta, IdempotencyClaim, TaskStore};
+use a2a_protocol_types::message::MessageId;
+use sqlx::Row as _;
+
+use super::idempotency;
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for PostgresTaskStore {
+    fn supports_idempotency(&self) -> bool {
+        true
+    }
+
+    fn claim_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+        message_id: &'a MessageId,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<IdempotencyClaim>> + Send + 'a>> {
+        Box::pin(async move {
+            // One transaction around the insert and the read that follows it,
+            // with `FOR UPDATE` on the read. Without both, a release landing
+            // between them would leave a losing claim seeing no holder — and a
+            // claim that neither inserted nor found a holder must never be
+            // mistaken for a successful one.
+            let mut tx = self.pool.begin().await.map_err(to_a2a_error)?;
+
+            let inserted = sqlx::query(idempotency::CLAIM_SQL)
+                .bind(key)
+                .bind(message_id.0.as_str())
+                .bind(task_id.0.as_str())
+                .execute(&mut *tx)
+                .await
+                .map_err(to_a2a_error)?
+                .rows_affected();
+
+            if inserted == 1 {
+                tx.commit().await.map_err(to_a2a_error)?;
+                return Ok(IdempotencyClaim::Claimed);
+            }
+
+            let holder = sqlx::query(idempotency::HOLDER_SQL)
+                .bind(key)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(to_a2a_error)?;
+            tx.commit().await.map_err(to_a2a_error)?;
+
+            let Some(row) = holder else {
+                return Err(A2aError::internal(
+                    "idempotency key was neither claimed nor held; the row vanished \
+                     inside the claiming transaction",
+                ));
+            };
+
+            let held_by: String = row.try_get("message_id").map_err(to_a2a_error)?;
+            let held_task: String = row.try_get("task_id").map_err(to_a2a_error)?;
+
+            if held_by == message_id.0 {
+                Ok(IdempotencyClaim::Replay(TaskId::new(held_task)))
+            } else {
+                Ok(IdempotencyClaim::Conflict {
+                    held_by: MessageId::new(held_by),
+                })
+            }
+        })
+    }
+
+    fn release_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            sqlx::query(idempotency::RELEASE_SQL)
+                .bind(key)
+                .execute(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            Ok(())
+        })
+    }
+
     fn save<'a>(
         &'a self,
         task: &'a Task,
