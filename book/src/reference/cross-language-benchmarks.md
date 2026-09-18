@@ -14,9 +14,9 @@ echo with no application work at all, which is the case that shows protocol
 overhead most starkly, because there is nothing else in the request to
 dilute it. A real agent turn is dominated by model inference.
 
-Put in proportion: the measured difference is **2.17 ms of CPU per
+Put in proportion: the measured difference is **2.36 ms of CPU per
 request**. Against an agent turn spending 1–30 s
-in a model, that is **0.007 %–0.22 % of the turn**. No single
+in a model, that is **0.008 %–0.24 % of the turn**. No single
 agent will notice it. Nothing here argues otherwise.
 
 Where it does matter is **aggregation**. Protocol cost is paid per request
@@ -26,9 +26,9 @@ model latency. The same throughput costs materially different amounts of CPU:
 | Sustained A2A traffic | CPU spent on A2A handling — this SDK | CPU spent on A2A handling — official Python SDK |
 |---|---|---|
 | 10 req/s | 0.001 cores | 0.02 cores |
-| 100 req/s | 0.007 cores | 0.22 cores |
-| 1,000 req/s | 0.073 cores | 2.24 cores |
-| 10,000 req/s | 0.727 cores | 22.40 cores |
+| 100 req/s | 0.008 cores | 0.24 cores |
+| 1,000 req/s | 0.076 cores | 2.43 cores |
+| 10,000 req/s | 0.757 cores | 24.32 cores |
 
 That is the shape of the result: irrelevant inside one agent, and the whole
 cost model for anything that terminates A2A traffic on behalf of many.
@@ -42,10 +42,10 @@ one burning CPU can post the same round-trip time. This is the server's own
 
 | Server | CPU per request | Requests sampled | Clock-tick quantisation error |
 |---|---|---|---|
-| This SDK (Rust) | **72.7 µs** | 31,218 | 0.44 % |
-| Official `a2a-sdk` (Python) | **2,239.9 µs** | 1,317 | 0.34 % |
+| This SDK (Rust) | **75.7 µs** | 28,664 | 0.46 % |
+| Official `a2a-sdk` (Python) | **2,432.2 µs** | 1,217 | 0.34 % |
 
-**30.8× the CPU per request**, or 2,167 µs more, on the
+**32.1× the CPU per request**, or 2,357 µs more, on the
 pinned configuration described below.
 
 ## Latency and throughput
@@ -67,9 +67,9 @@ this SDK; if anything it is the opposite.
 
 | Server | p50 | p95 | p99 | trial-to-trial p50 spread | throughput (50 connections) |
 |---|---|---|---|---|---|
-| This SDK (Rust) | 69.0 µs | 111.6 µs | 185.3 µs | 69.0–69.1 µs | 7,771 req/s |
-| Official `a2a-sdk` (Python) | 2,188.6 µs | 2,962.5 µs | 3,618.4 µs | 2,177.3–2,220.8 µs | 171 req/s |
-| _floor — no A2A work_ | 44.5 µs | 63.0 µs | 94.6 µs | 44.3–44.9 µs | _not comparable — see below_ |
+| This SDK (Rust) | 70.7 µs | 112.6 µs | 172.2 µs | 69.1–71.1 µs | 7,455 req/s |
+| Official `a2a-sdk` (Python) | 2,304.7 µs | 3,089.4 µs | 4,482.9 µs | 2,288.8–2,321.8 µs | 166 req/s |
+| _floor — no A2A work_ | 43.5 µs | 57.7 µs | 76.8 µs | 43.0–46.0 µs | _not comparable — see below_ |
 
 ### `default`
 
@@ -78,9 +78,9 @@ server's own documentation describes running it.
 
 | Server | p50 | p95 | p99 | trial-to-trial p50 spread | throughput (50 connections) |
 |---|---|---|---|---|---|
-| This SDK (Rust) | 108.3 µs | 172.4 µs | 317.1 µs | 90.6–108.7 µs | 5,258 req/s |
-| Official `a2a-sdk` (Python) | 2,190.2 µs | 2,850.7 µs | 4,025.5 µs | 2,168.1–2,223.7 µs | 170 req/s |
-| _floor — no A2A work_ | 44.9 µs | 61.0 µs | 104.9 µs | 44.5–46.7 µs | _not comparable — see below_ |
+| This SDK (Rust) | 98.6 µs | 251.9 µs | 397.4 µs | 95.0–117.6 µs | 5,359 req/s |
+| Official `a2a-sdk` (Python) | 2,218.6 µs | 3,163.1 µs | 4,035.7 µs | 2,215.4–2,221.9 µs | 168 req/s |
+| _floor — no A2A work_ | 45.0 µs | 64.9 µs | 125.1 µs | 44.7–45.1 µs | _not comparable — see below_ |
 
 ### The floor row
 
@@ -90,9 +90,9 @@ stack and the kernel, which sit in every number on this page. Because that
 shared cost is present in both real servers, **the ratio of two end-to-end
 latencies understates the ratio of the servers' own handling cost.**
 
-Subtracting the floor from the pinned p50 figures leaves 24.5 µs against 2,144.1 µs — a
-87× ratio, against
-30.8× on CPU. The two measure different things: floor-subtracted
+Subtracting the floor from the pinned p50 figures leaves 27.2 µs against 2,261.3 µs — a
+83× ratio, against
+32.1× on CPU. The two measure different things: floor-subtracted
 latency isolates protocol handling above a bare HTTP round trip, while CPU
 per request includes the server's share of kernel and network work. The CPU
 figure is the conservative one, and it is the one quoted above.
@@ -159,16 +159,16 @@ discover the caveats later.
 
 | | |
 |---|---|
-| Generated | 2026-09-18T09:39:19Z |
+| Generated | 2026-09-18T14:05:01Z |
 | CPU | Intel(R) Xeon(R) Processor @ 2.10GHz |
 | Logical cores | 4 |
 | Kernel | 6.18.44-fc-v33 |
 | Platform | Linux-x86_64 |
-| Load average at run | 0.77, 0.44, 0.29 |
+| Load average at run | 1.10, 1.01, 0.60 |
 | rustc | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Python | 3.11.15 |
 | Build profile | `--release` (Rust) |
-| Repository commit | `80506b9ebfb57c85adf5d591be4e02a8f2331d42` |
+| Repository commit | `b7fcabb1352a5eeebdf16a03832f09f2f5e73657` |
 | Working tree clean | yes |
 
 Python packages (full resolved set of 42 recorded in the result file):
