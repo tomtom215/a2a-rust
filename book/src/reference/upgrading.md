@@ -326,8 +326,10 @@ gateway rule or a peer.
 
 `ErrorCode::http_status()` and `ErrorCode::grpc_status()` keep their
 signatures and return different values for six codes. The SDK had implemented
-a stale vendored copy of the specification's table; upstream had amended the
-document in place under the same `1.0.0` version string.
+a stale vendored copy of the specification's table. Upstream did not amend the
+document in place, as this entry previously said: the corrections shipped as
+the tagged patch release **v1.0.1** on 2026-05-28, and A2A's `v1.0.0` tag
+still carries the superseded table.
 
 | A2A error | HTTP was → is | gRPC was → is |
 |---|---|---|
