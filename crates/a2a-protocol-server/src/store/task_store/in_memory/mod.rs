@@ -33,12 +33,13 @@ use std::pin::Pin;
 use std::time::Instant;
 
 use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::message::MessageId;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use tokio::sync::RwLock;
 
-use super::{ArtifactDelta, TaskStore, TaskStoreConfig};
+use super::{ArtifactDelta, IdempotencyClaim, TaskStore, TaskStoreConfig};
 
 /// Sort key for the update-order indexes: `(status timestamp in Unix millis,
 /// monotonic write sequence)`.
@@ -84,6 +85,17 @@ pub(super) struct StoreData {
     /// Next update-order sequence to assign. Monotonic across the store's
     /// lifetime; guarded by the same write lock as the maps.
     pub(super) next_seq: u64,
+    /// Idempotency keys in flight: `key → (claiming message, its task)`.
+    ///
+    /// Guarded by the same write lock as the maps above, which is what makes
+    /// a claim atomic against a concurrent one for the same key.
+    ///
+    /// Entries are **not** evicted with their task. A key outliving its task
+    /// is the conservative direction: a retry arriving after the task was
+    /// evicted replays to a task id that no longer resolves, which the caller
+    /// sees, whereas dropping the key would let the same send execute a second
+    /// time — the very thing the key was presented to prevent.
+    pub(super) idempotency_index: HashMap<String, (MessageId, TaskId)>,
 }
 
 impl StoreData {
@@ -94,6 +106,7 @@ impl StoreData {
             order_index: BTreeMap::new(),
             context_index: HashMap::new(),
             next_seq: 0,
+            idempotency_index: HashMap::new(),
         }
     }
 
@@ -386,6 +399,39 @@ fn apply_delta(stored: &mut Task, incoming: &Task, delta: ArtifactDelta) -> bool
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for InMemoryTaskStore {
+    fn supports_idempotency(&self) -> bool {
+        true
+    }
+
+    fn claim_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+        message_id: &'a MessageId,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<IdempotencyClaim>> + Send + 'a>> {
+        Box::pin(async move {
+            // The write lock, not the read lock, and taken before the lookup:
+            // two concurrent claims of one key must not both observe it free.
+            // This is the whole atomicity guarantee the trait asks for.
+            let mut data = self.data.write().await;
+            let outcome = match data.idempotency_index.get(key) {
+                Some((held_by, held_task)) if held_by == message_id => {
+                    IdempotencyClaim::Replay(held_task.clone())
+                }
+                Some((held_by, _)) => IdempotencyClaim::Conflict {
+                    held_by: held_by.clone(),
+                },
+                None => {
+                    data.idempotency_index
+                        .insert(key.to_owned(), (message_id.clone(), task_id.clone()));
+                    IdempotencyClaim::Claimed
+                }
+            };
+            drop(data);
+            Ok(outcome)
+        })
+    }
+
     fn save<'a>(
         &'a self,
         task: &'a Task,
@@ -1839,5 +1885,255 @@ mod artifact_delta_tests {
             .collect();
 
         assert_eq!(before, after, "appending an artifact reordered the list");
+    }
+}
+
+#[cfg(test)]
+mod idempotency_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    const KEY: &str = "8f14e45fceea167a5a36dedd4bea2543";
+    const OTHER_KEY: &str = "0123456789abcdef0123456789abcdef";
+
+    #[tokio::test]
+    async fn the_default_store_supports_idempotency() {
+        assert!(InMemoryTaskStore::new().supports_idempotency());
+    }
+
+    #[tokio::test]
+    async fn a_free_key_is_claimed() {
+        let store = InMemoryTaskStore::new();
+        let claim = store
+            .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+            .await
+            .unwrap();
+        assert_eq!(claim, IdempotencyClaim::Claimed);
+    }
+
+    #[tokio::test]
+    async fn the_same_message_replays_to_the_first_task() {
+        // The case the whole feature exists for: an ambiguous failure, then a
+        // retry of the identical message.
+        let store = InMemoryTaskStore::new();
+        let msg = MessageId::new("m1");
+        store
+            .claim_idempotency_key(KEY, &msg, &TaskId::new("t1"))
+            .await
+            .unwrap();
+
+        // The retry proposes a *different* task id, as a fresh send would.
+        let claim = store
+            .claim_idempotency_key(KEY, &msg, &TaskId::new("t2"))
+            .await
+            .unwrap();
+        assert_eq!(claim, IdempotencyClaim::Replay(TaskId::new("t1")));
+    }
+
+    #[tokio::test]
+    async fn replaying_twice_still_names_the_first_task() {
+        let store = InMemoryTaskStore::new();
+        let msg = MessageId::new("m1");
+        store
+            .claim_idempotency_key(KEY, &msg, &TaskId::new("t1"))
+            .await
+            .unwrap();
+        for attempt in ["t2", "t3", "t4"] {
+            assert_eq!(
+                store
+                    .claim_idempotency_key(KEY, &msg, &TaskId::new(attempt))
+                    .await
+                    .unwrap(),
+                IdempotencyClaim::Replay(TaskId::new("t1")),
+                "attempt {attempt} did not replay to the original"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_different_message_on_the_same_key_conflicts() {
+        // A reused key. Handing back t1 here would give the caller a result
+        // for a message it did not just send.
+        let store = InMemoryTaskStore::new();
+        store
+            .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+            .await
+            .unwrap();
+
+        let claim = store
+            .claim_idempotency_key(KEY, &MessageId::new("m2"), &TaskId::new("t2"))
+            .await
+            .unwrap();
+        assert_eq!(
+            claim,
+            IdempotencyClaim::Conflict {
+                held_by: MessageId::new("m1")
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_conflict_does_not_take_the_key_from_its_holder() {
+        // The loser of a conflict must not overwrite the index, or the
+        // original sender's own retry would then conflict too.
+        let store = InMemoryTaskStore::new();
+        let first = MessageId::new("m1");
+        store
+            .claim_idempotency_key(KEY, &first, &TaskId::new("t1"))
+            .await
+            .unwrap();
+        store
+            .claim_idempotency_key(KEY, &MessageId::new("m2"), &TaskId::new("t2"))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store
+                .claim_idempotency_key(KEY, &first, &TaskId::new("t3"))
+                .await
+                .unwrap(),
+            IdempotencyClaim::Replay(TaskId::new("t1"))
+        );
+    }
+
+    #[tokio::test]
+    async fn distinct_keys_do_not_interfere() {
+        let store = InMemoryTaskStore::new();
+        assert_eq!(
+            store
+                .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+                .await
+                .unwrap(),
+            IdempotencyClaim::Claimed
+        );
+        assert_eq!(
+            store
+                .claim_idempotency_key(OTHER_KEY, &MessageId::new("m2"), &TaskId::new("t2"))
+                .await
+                .unwrap(),
+            IdempotencyClaim::Claimed
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn concurrent_claims_of_one_key_produce_exactly_one_winner() {
+        // The guarantee the trait asks for, and the one that actually matters:
+        // if two racing claims both saw the key free, the send would execute
+        // twice and the feature would be worse than useless. 64 racers, one
+        // key, distinct task ids.
+        let store = Arc::new(InMemoryTaskStore::new());
+        let msg = MessageId::new("m1");
+
+        let mut handles = Vec::new();
+        for i in 0..64 {
+            let store = Arc::clone(&store);
+            let msg = msg.clone();
+            handles.push(tokio::spawn(async move {
+                store
+                    .claim_idempotency_key(KEY, &msg, &TaskId::new(format!("t{i}")))
+                    .await
+                    .unwrap()
+            }));
+        }
+
+        let mut claimed = Vec::new();
+        let mut replays = 0;
+        for h in handles {
+            match h.await.unwrap() {
+                IdempotencyClaim::Claimed => claimed.push(()),
+                IdempotencyClaim::Replay(_) => replays += 1,
+                IdempotencyClaim::Conflict { held_by } => {
+                    panic!("same message must never conflict with itself (held_by {held_by})")
+                }
+            }
+        }
+        assert_eq!(claimed.len(), 1, "exactly one racer may claim the key");
+        assert_eq!(replays, 63, "every other racer must observe a replay");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn concurrent_distinct_messages_leave_one_winner_and_the_rest_conflicting() {
+        let store = Arc::new(InMemoryTaskStore::new());
+
+        let mut handles = Vec::new();
+        for i in 0..32 {
+            let store = Arc::clone(&store);
+            handles.push(tokio::spawn(async move {
+                store
+                    .claim_idempotency_key(
+                        KEY,
+                        &MessageId::new(format!("m{i}")),
+                        &TaskId::new(format!("t{i}")),
+                    )
+                    .await
+                    .unwrap()
+            }));
+        }
+
+        let mut claimed = 0;
+        let mut conflicts = 0;
+        for h in handles {
+            match h.await.unwrap() {
+                IdempotencyClaim::Claimed => claimed += 1,
+                IdempotencyClaim::Conflict { .. } => conflicts += 1,
+                IdempotencyClaim::Replay(t) => {
+                    panic!("distinct messages must never replay each other (got {t})")
+                }
+            }
+        }
+        assert_eq!(claimed, 1);
+        assert_eq!(conflicts, 31);
+    }
+
+    #[tokio::test]
+    async fn a_store_that_has_not_implemented_it_says_so_rather_than_allowing_the_send() {
+        // The default trait bodies. A store that forgets to implement this
+        // must not look like one that deduped.
+        struct Unsupported;
+
+        #[allow(clippy::manual_async_fn)]
+        impl TaskStore for Unsupported {
+            fn save<'a>(
+                &'a self,
+                _t: &'a Task,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+                Box::pin(async { Ok(()) })
+            }
+            fn get<'a>(
+                &'a self,
+                _id: &'a TaskId,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
+                Box::pin(async { Ok(None) })
+            }
+            fn list<'a>(
+                &'a self,
+                _p: &'a ListTasksParams,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(TaskListResponse::new(Vec::new())) })
+            }
+            fn insert_if_absent<'a>(
+                &'a self,
+                _t: &'a Task,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+                Box::pin(async { Ok(true) })
+            }
+            fn delete<'a>(
+                &'a self,
+                _id: &'a TaskId,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        assert!(!Unsupported.supports_idempotency());
+        let err = Unsupported
+            .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+            .await
+            .expect_err("a store without the index must not report a successful claim");
+        assert!(
+            err.to_string().contains("does not implement idempotency"),
+            "unhelpful error: {err}"
+        );
     }
 }

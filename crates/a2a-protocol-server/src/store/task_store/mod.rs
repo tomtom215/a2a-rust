@@ -17,11 +17,37 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::message::MessageId;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 
 pub use in_memory::InMemoryTaskStore;
+
+/// What happened when a store was asked to claim an idempotency key.
+///
+/// See [`TaskStore::claim_idempotency_key`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdempotencyClaim {
+    /// The key was free. The caller owns it and should create the task.
+    Claimed,
+
+    /// The key is already held, by the same message. A genuine retry: return
+    /// the named task in whatever state it has reached, and execute nothing.
+    Replay(TaskId),
+
+    /// The key is already held, by a *different* message.
+    ///
+    /// Not a retry. Either the caller generated one key for two distinct
+    /// sends, or two of its concurrent sends collided on a key. Returning the
+    /// first task here would hand back a result for a message the caller did
+    /// not just send, and it would act on it — a silent wrong answer, the
+    /// failure a caller can least detect. It is reported instead.
+    Conflict {
+        /// The message holding the key, named in the error the caller sees.
+        held_by: MessageId,
+    },
+}
 
 /// Trait for persisting and retrieving [`Task`] objects.
 ///
@@ -145,6 +171,57 @@ pub trait TaskStore: Send + Sync + 'static {
         Box::pin(async { Ok(0) })
     }
 
+    /// Whether this store can back idempotency keys.
+    ///
+    /// Defaults to `false`, and that default is load-bearing: a server
+    /// advertises the idempotency extension only where this is `true`, and
+    /// refuses a send carrying a key where it is not. A store that has not
+    /// implemented [`claim_idempotency_key`](TaskStore::claim_idempotency_key)
+    /// therefore produces a missing advertisement and a loud refusal, never a
+    /// send that quietly runs twice. Silent at-least-once is what the feature
+    /// exists to remove; it must not also be what forgetting to implement it
+    /// produces.
+    fn supports_idempotency(&self) -> bool {
+        false
+    }
+
+    /// Atomically claims `key` for `task_id` on behalf of `message_id`.
+    ///
+    /// Concurrent claims of one key must resolve to exactly one
+    /// [`Claimed`](IdempotencyClaim::Claimed); every other caller observes
+    /// [`Replay`](IdempotencyClaim::Replay) or
+    /// [`Conflict`](IdempotencyClaim::Conflict). An implementation that is not
+    /// atomic here reintroduces the double execution this prevents.
+    ///
+    /// # What counts as the same request
+    ///
+    /// The `message_id`, not the message body. A genuine retry resends the
+    /// identical message — the caller kept it in order to resend it — so its
+    /// id is unchanged, while a distinct send carries a fresh one. This
+    /// compares message *identity* and deliberately does not hash content: a
+    /// caller reusing one `MessageId` for two bodies has already broken an
+    /// invariant the protocol cannot check on its behalf.
+    ///
+    /// # Errors
+    ///
+    /// The default implementation reports an unsupported operation; it is
+    /// never reached unless
+    /// [`supports_idempotency`](TaskStore::supports_idempotency) is `true`.
+    /// Implementations return an error if the store operation fails.
+    fn claim_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+        message_id: &'a MessageId,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<IdempotencyClaim>> + Send + 'a>> {
+        let _ = (key, message_id, task_id);
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this task store does not implement idempotency keys",
+            ))
+        })
+    }
+
     /// Persists an artifact change that has **already been applied** to `task`.
     ///
     /// # Why this exists
@@ -238,140 +315,7 @@ pub enum ArtifactDelta {
 
 /// Tests for the default `count` implementation on `TaskStore`.
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A minimal `TaskStore` that only implements required methods.
-    struct MinimalStore;
-
-    impl TaskStore for MinimalStore {
-        fn save<'a>(
-            &'a self,
-            _task: &'a Task,
-        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-            Box::pin(async { Ok(()) })
-        }
-
-        fn get<'a>(
-            &'a self,
-            _id: &'a TaskId,
-        ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
-            Box::pin(async { Ok(None) })
-        }
-
-        fn list<'a>(
-            &'a self,
-            _params: &'a ListTasksParams,
-        ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
-            Box::pin(async { Ok(TaskListResponse::new(vec![])) })
-        }
-
-        fn insert_if_absent<'a>(
-            &'a self,
-            _task: &'a Task,
-        ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
-            Box::pin(async { Ok(true) })
-        }
-
-        fn delete<'a>(
-            &'a self,
-            _id: &'a TaskId,
-        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-            Box::pin(async { Ok(()) })
-        }
-        // Note: count() is NOT overridden, so the default impl is used.
-    }
-
-    /// Covers lines 139-141: default `count()` returns 0.
-    #[tokio::test]
-    async fn default_count_returns_zero() {
-        let store = MinimalStore;
-        let count = store.count().await.unwrap();
-        assert_eq!(count, 0, "default count() should return 0");
-    }
-
-    /// Covers `TaskStoreConfig::default()` (lines 222-231).
-    #[test]
-    fn task_store_config_default_values() {
-        let config = super::TaskStoreConfig::default();
-        assert_eq!(config.max_capacity, Some(10_000));
-        assert_eq!(config.task_ttl, Some(Duration::from_secs(3600)));
-        assert_eq!(config.eviction_interval, 64);
-        assert_eq!(config.max_page_size, 1000);
-    }
-
-    /// Covers `TaskStoreConfig` Clone + Debug derives.
-    #[test]
-    fn task_store_config_clone_and_debug() {
-        let config = super::TaskStoreConfig {
-            max_capacity: Some(500),
-            task_ttl: None,
-            eviction_interval: 32,
-            max_page_size: 100,
-        };
-        let cloned = config;
-        assert_eq!(cloned.max_capacity, Some(500));
-        assert_eq!(cloned.task_ttl, None);
-        assert_eq!(cloned.eviction_interval, 32);
-        assert_eq!(cloned.max_page_size, 100);
-
-        let debug_str = format!("{cloned:?}");
-        assert!(
-            debug_str.contains("TaskStoreConfig"),
-            "Debug output should contain struct name: {debug_str}"
-        );
-    }
-
-    /// Covers `MinimalStore`'s required methods via trait object.
-    #[tokio::test]
-    async fn minimal_store_save_get_list_delete() {
-        let store = MinimalStore;
-        let task = Task {
-            id: TaskId::new("test"),
-            context_id: a2a_protocol_types::task::ContextId::new("ctx"),
-            status: a2a_protocol_types::task::TaskStatus::new(
-                a2a_protocol_types::task::TaskState::Submitted,
-            ),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
-        store.save(&task).await.expect("save should succeed");
-        // MinimalStore is a no-op store, so get should return None.
-        assert!(
-            store.get(&TaskId::new("test")).await.unwrap().is_none(),
-            "MinimalStore get should return None"
-        );
-        let list_result = store.list(&ListTasksParams::default()).await.unwrap();
-        assert!(
-            list_result.tasks.is_empty(),
-            "MinimalStore list should return empty"
-        );
-        assert!(
-            store.insert_if_absent(&task).await.unwrap(),
-            "insert_if_absent should return true"
-        );
-        store
-            .delete(&TaskId::new("test"))
-            .await
-            .expect("delete should succeed");
-    }
-    /// Every setter writes its own field, against values that differ from
-    /// the defaults.
-    #[test]
-    fn every_config_setter_sets_its_field() {
-        let d = TaskStoreConfig::default();
-        let cfg = TaskStoreConfig::default()
-            .with_max_capacity(Some(d.max_capacity.unwrap_or(0) + 11))
-            .with_task_ttl(Some(Duration::from_secs(12)))
-            .with_eviction_interval(d.eviction_interval + 1)
-            .with_max_page_size(d.max_page_size + 1);
-        assert_eq!(cfg.max_capacity, Some(d.max_capacity.unwrap_or(0) + 11));
-        assert_eq!(cfg.task_ttl, Some(Duration::from_secs(12)));
-        assert_eq!(cfg.eviction_interval, d.eviction_interval + 1);
-        assert_eq!(cfg.max_page_size, d.max_page_size + 1);
-    }
-}
+mod tests;
 
 /// The largest page a `list` call may return, when nothing narrower is asked
 /// for.
