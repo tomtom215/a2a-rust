@@ -53,8 +53,11 @@ WARMUP="${WARMUP:-300}"
 CONCURRENCY="${CONCURRENCY:-50}"
 PER_CONN="${PER_CONN:-40}"
 
-RUST_PORT="${RUST_PORT:-19120}"
-PY_PORT="${PY_PORT:-19110}"
+# Each configuration gets its own port pair. Reusing a port across
+# configurations raced the previous server's socket teardown and aborted
+# the next bind.
+RUST_PORT_BASE="${RUST_PORT_BASE:-19120}"
+PY_PORT_BASE="${PY_PORT_BASE:-19110}"
 
 PIDS=()
 cleanup() {
@@ -87,34 +90,44 @@ grep -qi '^httptools==' "$FREEZE_FILE" || { echo "httptools missing: would under
 
 wait_ready() {
     local port="$1" name="$2"
-    curl -sS --retry 40 --retry-connrefused --retry-delay 1 --max-time 60 \
+    # -s, not -sS: --retry prints every refused attempt while a server is still
+    # starting, which reads like a failure in the log when it is not.
+    curl -s --retry 40 --retry-connrefused --retry-delay 1 --max-time 60 \
         -o /dev/null -H 'Content-Type: application/json' -H 'A2A-Version: 1.0' \
         -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"configuration":{"historyLength":0},"message":{"messageId":"ready","role":"ROLE_USER","parts":[{"text":"hi"}]}}}' \
         "http://127.0.0.1:$port/" || { echo "$name never became ready on $port"; exit 1; }
 }
 
 run_config() {
-    local label="$1" rust_pin="$2" py_pin="$3" client_pin="$4"
+    local label="$1" rust_pin="$2" py_pin="$3" client_pin="$4" offset="$5"
+    local rust_port=$((RUST_PORT_BASE + offset))
+    local py_port=$((PY_PORT_BASE + offset))
     echo ""
     echo "==> configuration: $label"
 
     # shellcheck disable=SC2086
-    A2A_BIND_ADDR="127.0.0.1:$RUST_PORT" \
+    A2A_BIND_ADDR="127.0.0.1:$rust_port" \
         $rust_pin "$REPO_ROOT/target/release/echo-agent" >/dev/null 2>&1 &
-    PIDS+=("$!")
+    local rust_pid=$!
+    PIDS+=("$rust_pid")
     # shellcheck disable=SC2086
-    PORT="$PY_PORT" $py_pin "$VENV_DIR/bin/python" \
+    PORT="$py_port" $py_pin "$VENV_DIR/bin/python" \
         "$REPO_ROOT/itk/agents/python-sdk/agent.py" >/dev/null 2>&1 &
-    PIDS+=("$!")
+    local py_pid=$!
+    PIDS+=("$py_pid")
 
-    wait_ready "$RUST_PORT" "rust echo-agent"
-    wait_ready "$PY_PORT" "python-sdk agent"
+    wait_ready "$rust_port" "rust echo-agent"
+    wait_ready "$py_port" "python-sdk agent"
 
+    # The CPU probe reads /proc/<pid>, so it needs the server process itself.
+    # `taskset` execs the target rather than forking, so $! is that process.
     local out="$RESULTS_DIR/cross-language-$label.json"
     # shellcheck disable=SC2086
     $client_pin "$VENV_DIR/bin/python" "$SCRIPT_DIR/cross_language_bench.py" \
-        --target "rust-a2a-protocol-server=127.0.0.1:$RUST_PORT" \
-        --target "official-python-a2a-sdk=127.0.0.1:$PY_PORT" \
+        --target "rust-a2a-protocol-server=127.0.0.1:$rust_port" \
+        --target "official-python-a2a-sdk=127.0.0.1:$py_port" \
+        --server-pid "rust-a2a-protocol-server=$rust_pid" \
+        --server-pid "official-python-a2a-sdk=$py_pid" \
         --warmup "$WARMUP" --iterations "$ITERATIONS" --trials "$TRIALS" \
         --concurrency "$CONCURRENCY" --concurrent-per-conn "$PER_CONN" \
         --pinned "$label: rust='$rust_pin' python='$py_pin' client='$client_pin'" \
@@ -128,8 +141,8 @@ run_config() {
 
 mkdir -p "$RESULTS_DIR"
 
-run_config "pinned"  "taskset -c 0" "taskset -c 1" "taskset -c 2,3"
-run_config "default" ""             ""             ""
+run_config "pinned"  "taskset -c 0" "taskset -c 1" "taskset -c 2,3" 0
+run_config "default" ""             ""             ""              10
 
 rm -f "$FREEZE_FILE"
 echo ""

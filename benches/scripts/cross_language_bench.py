@@ -222,6 +222,59 @@ def run_concurrent(
     return out
 
 
+# ── CPU cost probe ──────────────────────────────────────────────────────────
+
+
+def read_cpu_seconds(pid: int) -> float:
+    """utime + stime for `pid`, in seconds, from /proc.
+
+    Latency alone cannot distinguish work from waiting: a server that sleeps
+    on a poll interval and one that burns CPU can post the same round-trip
+    time. For the question this benchmark exists to answer — what does the A2A
+    layer cost to run — the CPU actually consumed is the honest measure, and it
+    is unaffected by loopback noise or by how the client is scheduled.
+    """
+    with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+        fields = fh.read().rsplit(")", 1)[1].split()
+    # After the comm field, index 11 is utime and 12 is stime (proc(5) fields
+    # 14 and 15, one-based, minus the two consumed by pid and comm).
+    ticks = int(fields[11]) + int(fields[12])
+    return ticks / os.sysconf("SC_CLK_TCK")
+
+
+def run_cpu_probe(host: str, port: int, pid: int, budget_s: float) -> dict[str, Any]:
+    """Drive the server flat out for `budget_s` and divide CPU used by requests.
+
+    A wall-clock budget rather than a fixed request count, because the two
+    servers differ by more than an order of magnitude in throughput and a count
+    that gives one of them a usable sample size would give the other either a
+    handful of clock ticks or a very long run.
+    """
+    conn = Conn(host, port)
+    try:
+        for _ in range(200):
+            conn.round_trip()
+        cpu_before = read_cpu_seconds(pid)
+        wall_before = time.perf_counter()
+        count = 0
+        while time.perf_counter() - wall_before < budget_s:
+            conn.round_trip()
+            count += 1
+        wall = time.perf_counter() - wall_before
+        cpu = read_cpu_seconds(pid) - cpu_before
+        tick = 1.0 / os.sysconf("SC_CLK_TCK")
+        return {
+            "requests": count,
+            "wall_s": round(wall, 3),
+            "server_cpu_s": round(cpu, 3),
+            "server_cpu_us_per_request": round(cpu * 1e6 / count, 2) if count else None,
+            "clock_tick_s": tick,
+            "quantisation_error_pct": round(100 * tick / cpu, 2) if cpu > 0 else None,
+        }
+    finally:
+        conn.close()
+
+
 # ── Floor target ────────────────────────────────────────────────────────────
 
 
@@ -323,6 +376,14 @@ def main() -> int:
     ap.add_argument("--trials", type=int, default=3)
     ap.add_argument("--concurrency", type=int, default=50)
     ap.add_argument("--concurrent-per-conn", type=int, default=200)
+    ap.add_argument(
+        "--server-pid",
+        action="append",
+        default=[],
+        metavar="LABEL=PID",
+        help="enables the CPU probe for that target; repeatable",
+    )
+    ap.add_argument("--cpu-probe-seconds", type=float, default=3.0)
     ap.add_argument("--pinned", default="", help="recorded verbatim in provenance")
     ap.add_argument("--note", default="", help="recorded verbatim in provenance")
     ap.add_argument(
@@ -338,6 +399,11 @@ def main() -> int:
         label, _, hostport = spec.partition("=")
         host, _, port = hostport.rpartition(":")
         targets.append((label, host, int(port)))
+
+    pids: dict[str, int] = {}
+    for spec in args.server_pid:
+        label, _, pid = spec.partition("=")
+        pids[label] = int(pid)
 
     floor = FloorServer(response_len=259)
     floor.start()
@@ -355,6 +421,11 @@ def main() -> int:
                 )
             )
             print(".", end="", flush=True)
+        cpu = (
+            run_cpu_probe(host, port, pids[label], args.cpu_probe_seconds)
+            if label in pids
+            else None
+        )
         seq_medians = [t["p50_us"] for t in seq_trials]
         rps = [t.get("throughput_rps", 0.0) for t in con_trials]
         results[label] = {
@@ -370,6 +441,7 @@ def main() -> int:
                 "throughput_min_rps": round(min(rps), 1),
                 "throughput_max_rps": round(max(rps), 1),
             },
+            "cpu": cpu,
         }
         print(f" p50={results[label]['sequential']['median_of_trial_medians_us']}us")
 
@@ -390,6 +462,11 @@ def main() -> int:
             "concurrency": args.concurrency,
             "concurrent_requests_per_connection": args.concurrent_per_conn,
             "percentile_rule": "nearest-rank on the sorted sample, index=int(q*n)",
+            "cpu_probe": (
+                "Server utime+stime from /proc, divided by requests served, over a "
+                "fixed wall-clock budget. Latency cannot tell work from waiting; this "
+                "can, and it is what a per-request cost argument actually rests on."
+            ),
             "floor_target": (
                 "A canned-response server that does no A2A work. It bounds what "
                 "the client, loopback and kernel cost; it is not an A2A "
@@ -404,7 +481,8 @@ def main() -> int:
         },
         "environment": {
             "cpu_model": cpu_model(),
-            "logical_cpus": len(os.sched_getaffinity(0)),
+            "logical_cpus": os.cpu_count(),
+            "client_affinity_cpus": len(os.sched_getaffinity(0)),
             "kernel": platform.release(),
             "platform": f"{platform.system()}-{platform.machine()}",
             "python": sys.version.split()[0],
