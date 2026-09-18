@@ -222,6 +222,41 @@ pub trait TaskStore: Send + Sync + 'static {
         })
     }
 
+    /// Releases a key claimed by [`claim_idempotency_key`](TaskStore::claim_idempotency_key),
+    /// so it can be claimed again.
+    ///
+    /// # Why this exists
+    ///
+    /// A claim is taken before the send's remaining side effects — the queue
+    /// lease, the task row, the inline push config — precisely so that two
+    /// racing duplicates cannot both get past it. Any of those can still fail,
+    /// and a claim left behind by a send that never created a task is worse
+    /// than no claim at all: the caller's legitimate retry would replay to a
+    /// task id that never existed. Every failure path after the claim
+    /// releases it, which is the same discipline the queue lease and
+    /// cancellation token already follow.
+    ///
+    /// Releasing a key that is not held is not an error; a failure path may
+    /// run after another caller has already taken over.
+    ///
+    /// # Errors
+    ///
+    /// The default implementation reports an unsupported operation. It is
+    /// unreachable in practice: a release only follows a successful claim,
+    /// which only a store with
+    /// [`supports_idempotency`](TaskStore::supports_idempotency) can grant.
+    fn release_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        let _ = key;
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this task store does not implement idempotency keys",
+            ))
+        })
+    }
+
     /// Persists an artifact change that has **already been applied** to `task`.
     ///
     /// # Why this exists

@@ -13,6 +13,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_types::agent_card::AgentCard;
+use a2a_protocol_types::extensions::AgentExtension;
+use a2a_protocol_types::idempotency;
 
 use crate::error::ServerResult;
 use crate::executor::AgentExecutor;
@@ -403,10 +405,51 @@ impl RequestHandlerBuilder {
                 "push_delivery_timeout must be greater than zero".into(),
             ));
         }
+        // Resolve the store before the card is read: whether it can honour an
+        // idempotency key is what decides whether the card may advertise one.
+        let task_store = self
+            .task_store
+            .unwrap_or_else(|| Arc::new(InMemoryTaskStore::with_config(self.task_store_config)));
+
+        // A server advertises the idempotency extension exactly when its store
+        // can honour a key, and the card is derived from the store rather than
+        // set by hand so the two cannot drift. Swapping in a store without the
+        // index removes the advertisement in the same change, and a client can
+        // read the card to learn whether a key will be deduplicated or
+        // refused — never discovering it by having a send run twice.
+        //
+        // An operator who already declared the extension keeps their entry
+        // untouched, `required` flag included.
+        let mut agent_card = self.agent_card;
+        if task_store.supports_idempotency()
+            && let Some(card) = agent_card.as_mut()
+        {
+            {
+                let extensions = card.capabilities.extensions.get_or_insert_with(Vec::new);
+                if !extensions
+                    .iter()
+                    .any(|e| e.uri == idempotency::IDEMPOTENCY_EXTENSION_URI)
+                {
+                    extensions.push(AgentExtension {
+                        uri: idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned(),
+                        description: Some(
+                            "Client-supplied idempotency keys on message/send: a retried                              send returns the task the first one created instead of                              starting a second."
+                                .to_owned(),
+                        ),
+                        // Never required. A client that does not know the
+                        // extension sends no key and is served exactly as
+                        // before; making it required would lock those clients
+                        // out of a server for a feature they do not use.
+                        required: Some(false),
+                        params: None,
+                    });
+                }
+            }
+        }
+
         // §3.3.4: precompute the extension sets from the agent card so each
         // request checks required-extension support in O(request extensions).
-        let (required_extensions, declared_extensions) = self
-            .agent_card
+        let (required_extensions, declared_extensions) = agent_card
             .as_ref()
             .and_then(|c| c.capabilities.extensions.as_ref())
             .map(|exts| {
@@ -422,9 +465,7 @@ impl RequestHandlerBuilder {
 
         Ok(RequestHandler {
             executor: self.executor,
-            task_store: self.task_store.unwrap_or_else(|| {
-                Arc::new(InMemoryTaskStore::with_config(self.task_store_config))
-            }),
+            task_store,
             push_config_store: self
                 .push_config_store
                 .unwrap_or_else(|| Arc::new(InMemoryPushConfigStore::new())),
@@ -444,7 +485,7 @@ impl RequestHandlerBuilder {
                 mgr
             },
             interceptors: self.interceptors,
-            agent_card: self.agent_card,
+            agent_card,
             executor_timeout: self.executor_timeout,
             metrics: self.metrics,
             limits: self.handler_limits,

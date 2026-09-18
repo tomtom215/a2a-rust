@@ -432,6 +432,18 @@ impl TaskStore for InMemoryTaskStore {
         })
     }
 
+    fn release_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut data = self.data.write().await;
+            data.idempotency_index.remove(key);
+            drop(data);
+            Ok(())
+        })
+    }
+
     fn save<'a>(
         &'a self,
         task: &'a Task,
