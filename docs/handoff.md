@@ -13,28 +13,88 @@ the repository commits to, move it there and delete it here.
 
 Last updated 2026-09-17.
 
+## 0.12.1 — released 2026-09-17
+
+Two pull requests, content then release prep, in that order because
+`check_provenance_manifest.py` passes only when the manifest's pinned commit
+differs from the tagged commit by nothing but the manifest itself. That forces
+the manifest to be the last substantive change before the tag, which forces a
+separate prep commit. `ci.yml` does not run that check; only `release.yml` does
+(`.github/workflows/release.yml:100`), which is why a stale manifest never
+reddens a content pull request.
+
+- **[#131](https://github.com/tomtom215/a2a-rust/pull/131)**, merged `1fa58c6`
+  — eleven commits: the issue-130 fix `5ee3cfb`, the RUSTSEC-2026-0285
+  remediation `eaf038c`, four documentation commits carrying six corrections
+  between them, and this file with its revisions. List them with
+  `git log --oneline --no-merges 1fa58c6^1..1fa58c6^2`.
+- **[#132](https://github.com/tomtom215/a2a-rust/pull/132)**, merged `e057c8e`
+  — the versions (`32ed409`, `ed4e1c8`) and the provenance manifest `2e9262e`,
+  re-measured at `ee5b35d`.
+
+`v0.12.1` is an annotated tag at `e057c8e`. Its release run,
+[35248119785](https://github.com/tomtom215/a2a-rust/actions/runs/35248119785),
+reports 13 jobs and every one green. The publish job took its crates.io
+credential from the `Obtain a crates.io token via Trusted Publishing` step, not
+from `CARGO_REGISTRY_TOKEN`, and all four crates were packaged, SBOM-attested
+and published; the GitHub release carries the four `.crate` files and four
+CycloneDX documents as assets.
+
+Two things nearly went wrong. Both are invisible from the code, so both are
+recorded here rather than left to be rediscovered.
+
+### The eight inter-crate pins are not what `release.yml` checks
+
+`release.yml` verifies crate versions with
+`grep '^version' "$toml" | head -1` (`.github/workflows/release.yml:142`). The
+inter-crate dependency pins are written as inline tables, as in
+`a2a-protocol-types = { version = "0.12.1", path = "../a2a-protocol-types" }`,
+so no line of any of them begins with `version` and the gate never sees one.
+
+A stale pin therefore fails no gate and breaks no build, because a pin of
+`version = "X.Y.Z"` means `^X.Y.Z`. What it does is publish, say, an sdk
+`X.Y.Z+1` declaring a dependency on server `X.Y.Z`, so a consumer who bumps
+only the sdk
+against an existing lockfile keeps the old server and never receives the fix.
+On a patch release whose entire content is a server fix, that defeats the
+release.
+
+`RELEASING.md` §1 now names all eight, gives the `git grep` that finds them,
+requires both lockfiles to be refreshed, and names the two files nothing
+checks at all (`ROADMAP.md`'s current-release line and the book's changelog
+page). The grep returns fourteen lines; the eight pins are the ones in the four
+crate manifests, and the other six are install snippets in `crates/README.md`
+and two `websocket.rs` doc comments, which still advertise `"0.7"`.
+
+### Waiting for the benchmark bot is the whole trick
+
+The benchmark workflow fired on the #131 merge and pushed `baedfd5`,
+`chore: update benchmark results`, directly to `main`. Its release-window guard
+did not apply, and correctly so: the guard's signal for "a release is in
+flight" is an in-tree version with no matching tag
+(`.github/workflows/benchmarks.yml`, the `Commit benchmark results to book`
+step), and at that moment the tree said 0.12.0 with `v0.12.0` already tagged.
+
+Regenerating the provenance manifest before that push landed would have pinned
+it to a tree the release no longer had. That is exactly the failure that killed
+the `v0.11.0` tag on 2026-08-30, which the guard was written for and which its
+comment records. Waiting for the bot to settle before regenerating is the whole
+trick; the guard covers the window after the *prep* merge, not the window after
+the *content* merge.
+
 ## Branches
 
 | Branch | Head | What it is |
 |---|---|---|
-| `claude/friendly-keller-edrezx` | *see `git log`* | The content branch: four documentation commits, the issue-130 fix `5ee3cfb`, the rustls security fix `eaf038c`, the merge from `main`, and revisions of this file. Its head moves every time this file is edited, so it is not pinned here. |
-| `release/v0.12.1` | *see `git log`* | The 0.12.1 release prep, branched from the content branch rather than from `main` because `main` does not carry the content yet. Everything but the provenance manifest. Merge `main` into it once the content PR lands. |
+| `claude/friendly-keller-edrezx` | merged | The 0.12.1 content branch. Merged as `1fa58c6` via #131. |
+| `release/v0.12.1` | merged | The 0.12.1 release prep. Merged as `e057c8e` via #132, and tagged. |
 | `claude/a2a-rig-held` | `caa8774` | Storage. The unpublished `a2a-rig` crate, one commit on top of `caac0ec`. |
 | `claude/adk-rust-0.12-patch` | `6fbdd2f` | Storage. The outbound adk-rust patch as a file, one commit on top of `caac0ec`. |
 
-The two **storage** branches — `claude/a2a-rig-held` and
-`claude/adk-rust-0.12-patch` — are **not destined for `main`**. They exist so work
-survives the session that produced it; delete either once its contents have
-landed somewhere better.
-
-### Position relative to `main`
-
-`main` is merged in as of `3ee6f95`. The working branch is **11 ahead, 0
-behind**, and there is nothing left to reconcile. The one conflict was
-`CHANGELOG.md` — both sides had replaced `## [Unreleased]` / "Nothing yet." with
-their own entries — resolved by keeping both and reordering the four sections to
-Changed, Fixed, Security, Internal, which is Keep a Changelog's order and
-0.11.0's.
+Both merged branches can be deleted. The two **storage** branches —
+`claude/a2a-rig-held` and `claude/adk-rust-0.12-patch` — are **not destined for
+`main`**. They exist so work survives the session that produced it; delete
+either once its contents have landed somewhere better.
 
 ### `claude/a2a-rig-held`
 
@@ -78,115 +138,215 @@ publishing later costs nothing, maintaining now costs immediately.
   `:35`) and `a2a-tck-sut` (`:118`) — and that is a CI-cost decision nobody has
   made.
 
-## Issue #130 — fixed on this branch, not yet released
+## Issue #130 — released in 0.12.1 and closed
 
 [#130](https://github.com/tomtom215/a2a-rust/issues/130) (`valliscooper`,
 2026-09-15): a second message on an existing context, sent without a `taskId`,
 returned a *new* task already carrying the previous task's artifacts, so each
 round returned the whole context's accumulated set. Confirmed, reproduced, and
 fixed in `5ee3cfb`; `history` and `metadata` leaked the same way and are fixed
-with it. The reporter has not been answered yet — the issue is still open and
-carries no reply.
+with it. Shipped in 0.12.1, classified in `CHANGELOG.md` as the `STABILITY.md`
+§2 specification correction, which is what made it patch-eligible rather than a
+minor bump. The issue was answered and closed on 2026-09-17.
 
-The fix is on this branch only. It is in `CHANGELOG.md` under `[Unreleased]`,
-classified there as the `STABILITY.md` §2 specification correction, which is
-what makes it patch-eligible rather than a minor bump.
-
-## RUSTSEC-2026-0285 — fixed in the workspace, waived in the binding
+## RUSTSEC-2026-0285 — released for the workspace, still waived in the binding
 
 The advisory (rustls below 0.23.45 accepting TLS 1.3 handshake messages at the
-wrong encryption level) was published after `main`'s last green CI run and
-turned both `cargo-deny` jobs red on this branch without any change here
-causing it. `main` fails the same way if re-run.
+wrong encryption level) turned both `cargo-deny` jobs red without any change
+here causing it. Fixed for the four published crates in `eaf038c` — the
+workspace lockfile moves rustls 0.23.44 to 0.23.45, two lines, no manifest
+change — and that fix is now released in 0.12.1.
 
-Fixed for the four published crates in `eaf038c`: the workspace lockfile moves
-rustls 0.23.44 to 0.23.45, two lines, no manifest change.
+**Still not fixed for `bindings/a2a-protocol-slimrpc`, and it cannot be from
+here.** rustls 0.23.45 needs `aws-lc-rs ^1.18`; `mls-rs-crypto-awslc 0.23.0` —
+the only release in the range `agntcy-slim-auth 0.15.4` admits — pins
+`aws-lc-rs =1.16.2`. The binding's `deny.toml` carries a dated ignore with the
+full chain. **Re-check it at the next binding release**: run
+`cargo update -p rustls --precise 0.23.45` from
+`bindings/a2a-protocol-slimrpc/`; when it succeeds, delete the ignore and
+commit the lockfile instead. Do not let the waiver outlive the constraint.
 
-**Not fixed for `bindings/a2a-protocol-slimrpc`, and it cannot be from here.**
-rustls 0.23.45 needs `aws-lc-rs ^1.18`; `mls-rs-crypto-awslc 0.23.0` — the only
-release in the range `agntcy-slim-auth 0.15.4` admits — pins `aws-lc-rs
-=1.16.2`. The binding's `deny.toml` carries a dated ignore with the full chain.
-**Re-check it at the next binding release**: run `cargo update -p rustls
---precise 0.23.45` from `bindings/a2a-protocol-slimrpc/`; when it succeeds,
-delete the ignore and commit the lockfile instead. Do not let the waiver
-outlive the constraint.
+## Future ideas — from a consuming agent's seat
 
-## What to pick up first
+Recorded here rather than in `ROADMAP.md` on that file's own terms: it takes
+only what the repository has committed to and refuses speculative milestones,
+while this file is explicitly where non-commitments live. Move an item there and
+delete it here if it becomes work the project takes on.
 
-Release 0.12.1 as **two** pull requests, in this order. They cannot be one, and
-the reason is mechanical rather than stylistic — see below.
+Where these came from: a 2026-09-17 session, argued from the position of an
+agent that would *consume* this SDK — delegating to other agents and being
+delegated to — rather than from the maintainer's. Every claim about current
+code was checked against the tree at `e057c8e`, and the check is named inline so
+a later reader can re-run it rather than trust it. Line numbers are pinned to
+that commit and will drift.
 
-1. **Content PR — `claude/friendly-keller-edrezx` into `main`.** Ready: 11
-   ahead, 0 behind, `cargo test --workspace` 3257 passed / 0 failed / 175
-   ignored across 107 binaries, fmt clean, file-length ratchet clean, `cargo
-   deny` clean on both trees, and the blocking incremental-mutation gate clean
-   (2 mutants from the diff, 1 caught, 1 unviable, 0 missed). Everything in it
-   sits under `[Unreleased]`; no version number moves.
+### The vehicle already exists
 
-2. **Release PR — `release/v0.12.1`.** Its content is **already written** and
-   pushed. When opening it, end the description with the exact line
-   `_Generated by [Claude Code](<session url>)_` under a `---` rule: the
-   harness appends that footer unless the body already ends with it, matching
-   on that form only, so a body ending with the other documented variant
-   (`🤖 Generated with ...`) gets a second footer stacked on. #131 was opened
-   that way and had to be corrected. `RELEASING.md` §1 says to cut this branch from `main`; it is instead
-   cut from the content branch's head, because `main` does not carry the
-   content yet. **After (1) merges, bring `main` in** (`git merge origin/main`
-   from this branch) so the pull request shows only the release diff. What it
-   already does:
-   - `0.12.1` in the four crate `Cargo.toml` files **and their eight
-     inter-crate pins**, plus both lockfiles;
-   - `CHANGELOG.md` dated `## [0.12.1] - 2026-09-17` with a fresh empty
-     `[Unreleased]`; `CITATION.cff` at 0.12.1 / 2026-09-17;
-   - `ROADMAP.md`'s current-release line; a v0.12.1 section in the book's
-     changelog page; the two stale live version statements in `RELEASING.md`
-     and the book's upgrading page;
-   - `RELEASING.md` §1 expanded to name the eight pins, both lockfiles and the
-     two unchecked files, which it never did.
+`AgentExtension` on the card
+(`crates/a2a-protocol-types/src/agent_card/mod.rs:81`),
+`extensions: Option<Vec<String>>` on both `Message`
+(`crates/a2a-protocol-types/src/message.rs:140`) and `Artifact`
+(`crates/a2a-protocol-types/src/artifact.rs:92`), and `metadata` on nearly
+everything. Every item below can therefore ship as a declared, URI-identified
+extension without touching spec conformance or the TCK. That is the difference
+between "fork the protocol" and "publish an extension and implement it", and it
+is what makes any of this tractable at all.
 
-   Every gate in `release.yml`'s validate job was simulated against this tree
-   and passes — crate versions, dated CHANGELOG heading, notes extraction,
-   `CITATION.cff`, `SECURITY.md` — with one exception, below.
+### Part A — reliability, ranked by what they change for a consumer
 
-   **The one thing left: the provenance manifest.** Run
-   `scripts/provenance_manifest.sh HEAD` and commit
-   `docs/provenance-manifest.md` as the **last** commit before the tag. It is
-   deliberately not done yet: `check_provenance_manifest.py` passes only when
-   the manifest's pinned commit differs from the tagged commit by nothing but
-   the manifest file itself, so it has to be regenerated after everything else
-   on this branch is final, including the merge from `main`.
+**A1. Idempotency keys on `message/send` (correctness).** The client's retry
+logic is already the careful version: `is_idempotent_method`
+(`crates/a2a-protocol-client/src/retry.rs:185`) treats `SendMessage` and
+`SendStreamingMessage` as non-idempotent, and `safe_to_retry_non_idempotent`
+(`:208`) retries only when the error proves the server rejected the request.
+That is correct, and it is exactly why the gap bites: when a send fails
+ambiguously — the connection drops after the bytes have gone out — the client
+rightly refuses to retry, and the caller cannot tell whether a task exists.
 
-3. Then `git tag -a v0.12.1` — annotated. `release.yml` rejects a lightweight
-   tag, and the GitHub release UI creates lightweight ones. The tag runs six
-   stages and the last, the crates.io publish, enters the `crates-io`
-   environment, which **requires a manual approval** — the release will stop
-   and wait there. Credentials come from Trusted Publishing over OIDC scoped to
-   this repository, this workflow file and that environment, with
-   `CARGO_REGISTRY_TOKEN` as fallback; none of that triple changed since
-   0.12.0, but it is not verifiable from a session clone.
+A delegating agent retries constantly and networks fail mid-flight. Today the
+only recovery is to list tasks on the context and pattern-match message content
+to guess whether the send landed, which is heuristic, racy, and degrades as
+concurrency rises. With a client-supplied key the server dedupes on, retry
+becomes trivial and "did that actually start?" stops being a class of bug.
+`Message.extensions` is the natural home if the spec has no slot of its own;
+whether that is spec-clean is a question for the maintainer, not an assumption
+made here.
 
-**Why the release prep cannot ride in the content PR.**
-`check_provenance_manifest.py`, which `release.yml` runs against the tagged
-commit, passes only when the manifest's pinned commit is the release commit or
-differs from it by *nothing but the manifest file itself*. Regenerating it in
-the content PR and then landing version bumps on top puts four `Cargo.toml`
-files and `CHANGELOG.md` between the pin and the tag, and the check fails. The
-check is in `release.yml` only — `ci.yml` does not run it — so a stale manifest
-does not redden the content PR.
+This is the difference between a caller's retry logic being correct and being a
+guess. Of everything here it is the smallest and the highest value.
 
-**The shallow-clone obstacle is gone.** An earlier note here said this could not
-be done from a session clone. `git fetch --unshallow` succeeded; the clone now
-carries full history and `check_provenance_manifest.py` runs properly.
+**A2. A typed failure classification on `Failed` (correctness).** A failed task
+today is `TaskStatus::with_timestamp(TaskState::Failed)`
+(`crates/a2a-protocol-server/src/handler/messaging/execute.rs:180`) plus an
+error message carried on the status message — prose. A caller deciding what to
+do next is matching English.
 
-Two things the release does **not** need: `SECURITY.md` already covers `0.12.x`
-— verified against the workflow's own regex — and the SLIMRPC binding needs no
-follow-up release, because `RELEASING.md` requires one only after an SDK
-*minor* and the binding's requirement on the three SDK crates is
-`version = "0.12"`, which `0.12.1` satisfies.
+The decisions are genuinely different. Bad input: never retry, fix the request.
+Transient infrastructure: retry with backoff. Policy refusal: escalate to a
+human and stop. Timeout or budget exhaustion: retry with more budget. Four
+behaviours, distinguished only by a string whose wording is up to whoever wrote
+the executor. An orchestrator with three delegated tasks, one of which fails,
+wants to know in a single `match` whether to retry, re-plan or surface. Without
+it, callers either retry what can never succeed or abandon what would have
+worked on the second attempt — and both are visible as bad agent behaviour to
+whoever is watching.
 
-## Still open, unrelated to the release
+**A3. A queryable per-task event journal (debuggability).** Events are already
+persisted — the 0.6.0 notes in `CHANGELOG.md` record a task being marked failed
+"even though every event had already reached the persistence channel", which is
+what makes SSE reattach work. What is missing is exposing that as an ordered,
+queryable record rather than an internal mechanism.
 
-1. Submit the adk-rust work if it is still wanted: issue first, then the patch.
-2. Decide the TCK gating question above, either way.
-3. The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
+This is more than convenience. #130 happened because a task's state is
+derived — a stored snapshot folded together with deltas — and the fold was wrong
+in a way nothing could observe. If a task's event sequence were the primary
+record and state a fold over it, that bug is impossible by construction: in
+the reporter's own terms, artifact `A1` cannot appear in task `T2`, because it
+was never in `T2`'s log. When a delegated result
+makes no sense, the caller asks what the agent actually emitted, in order,
+instead of reasoning backwards from a final snapshot — debugging rather than
+archaeology. Secondary benefit: exact resumption from an offset, rather than
+reattaching and trusting the snapshot.
+
+**A4. A conformance harness for executors (confidence).** The TCK tests
+servers. Nothing tests the thing an adopter actually writes. The paths they will
+get wrong are the awkward ones: cancellation arriving mid-artifact, an
+`input-required` that is never answered, a client disconnecting mid-stream, an
+executor that panics after emitting two of three artifacts. Point a harness at
+an `AgentExecutor` and have it drive every transition the spec permits plus the
+adversarial ones, the way `cargo mutants` drives tests. The alternative is each
+adopter writing those cases by hand, badly, and finding the gaps in production.
+
+### Part B — what would be an inherent edge rather than feature parity
+
+**B1. Attenuable capability grants.** Delegation today is one-directional in
+what it communicates: the card advertises what an agent can do, but nothing lets
+a caller say "for this task you may read these three artifacts, spend at most N
+tokens, and make no outbound network calls", and nothing lets them verify it was
+honoured.
+
+What makes it an edge rather than a feature is multi-hop delegation. A grant
+passed onward should be strictly weaker than the one held — object-capability
+attenuation. Get that right and agent chains are safe by construction instead of
+by trust, which is currently the whole security model of every agent framework
+worth naming. Rust is also the language in which enforcing a resource bound is
+credible: no GC pause to blow a latency budget, predictable memory, and a
+plausible path to seccomp or a sandbox underneath. The machinery is half-built:
+`sign_agent_card` (`crates/a2a-protocol-types/src/signing.rs:255`) and
+`verify_agent_card` (`:408`) already exist. They sign identity. This is the same
+primitive pointed at authority.
+
+**B2. Signed execution receipts.** The card is signed; the work is not. A
+receipt would state: this task, these input hashes, this model, these tools
+invoked, these output digests, signed by the agent that did it.
+
+Why this project specifically: it already produces SLSA build provenance,
+CycloneDX SBOMs, signed attestations and `docs/provenance-manifest.md`. No other
+A2A SDK has that culture. Extending provenance from "how this crate was built"
+to "how this task was executed" is a straight line from where the project
+already stands, and it is a line nobody else is positioned to walk. The payoff
+is handing a result to a human with the chain attached, rather than asking them
+to trust a summary. In any reviewed or regulated setting that is the difference
+between usable and not.
+
+**B3. Content-addressed artifacts.** Artifacts travel by value. One flowing
+through five agents is copied five times, and nothing checks it arrived intact.
+Addressing them by hash gives dedup, integrity, and cheap references — and makes
+an artifact something that can be pointed at across a whole context instead of
+re-sent. There is some poetry in this given #130 was artifacts duplicating where
+they should not: identity by content dissolves a whole class of "is this the
+same artifact?" question.
+
+**B4. Structured critique — the speculative one.** Every interaction today is
+request to terminal state: `Completed` or `Failed`. The shape actually wanted
+between collaborating agents is different: here is my draft, here is my
+confidence, here is where I think I am wrong, push back.
+
+`input-required` gestures at this but only one way — "I need something from you
+before I continue". The missing half is the return path: a task coming back with
+structured objections rather than a binary verdict. "I did this, but I disagree
+with the premise, for these reasons." "Here is the result, and these two parts
+are low-confidence." Today, a caller who believes a delegated result is wrong
+can only send another message and hope the agent infers the objection. There is
+no way to say "this specific artifact, this specific claim, here is my
+counter-evidence."
+
+Labelled honestly: this is the most speculative item here. It likely needs
+design work upstream rather than a local extension, and the premise may be
+wrong — critique might be a message convention that wants no protocol support at
+all. It is recorded because it would most change how agents compose, where the
+rest of this section only makes existing composition more reliable.
+
+### What not to chase
+
+Anything that turns the SDK into a runtime: agent registries, scheduling,
+orchestration DSLs, a mesh. That is a different product, and pursuing it would
+compromise the thing this project is actually good at — being a rigorous,
+conformant, boringly correct protocol implementation. The TCK, the mutation gate
+and the provenance manifest are the moat. Do not spend it on surface area.
+
+### The through-line, and what would falsify all of it
+
+B1 through B3 are all provenance and authority, which is the single axis on
+which this project is already unusual. Any other SDK can add an idempotency key
+as easily. None can credibly claim enforced resource bounds, and none has a
+culture that already produces signed attestations for its own artifacts. An
+inherent edge, if there is one, is there.
+
+What would falsify this: if adopters are building single-hop integrations rather
+than delegation chains, then B1 and B2 solve a problem they do not have, and A1 —
+the idempotency key — is worth more than everything in Part B combined. The
+argument above is reasoned from a delegating agent's seat, which may not be the
+median user's. Worth checking against real adopters before building any of it.
+
+## Still open
+
+1. Delete the two merged release branches.
+2. Submit the adk-rust work if it is still wanted: issue first, then the patch.
+3. Decide the TCK gating question above, either way.
+4. The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
    command that says when it can be deleted.
+5. Six sites still tell readers to depend on `"0.7"`: four install snippets in
+   `crates/README.md` and two `websocket.rs` doc comments. Nothing checks them,
+   they are not what `release.yml` verifies, and `RELEASING.md` §1 does not
+   list them. The same grep that finds the eight pins finds these six.

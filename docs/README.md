@@ -33,7 +33,7 @@ Architecture Decision Records (ADRs) and implementation planning documents for t
 - **Debugging streaming?** Read ADR-0005 (SSE design)
 - **Understanding the test strategy?** Read ADR-0006 (mutation testing) and ADR-0007 (TCK)
 - **Planning a feature?** Check the implementation plan for architectural context
-- **Picking up work mid-stream?** Read [handoff.md](handoff.md) — branch state, what is in flight outside this repository, and what to do first
+- **Picking up work mid-stream?** Read [handoff.md](handoff.md) — branch state, what is in flight outside this repository, what to do first, and the ideas the project has not committed to
 
 ## License
 
