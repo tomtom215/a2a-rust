@@ -648,8 +648,41 @@ implementation notices.
 
 Before 0.8 the changelog was the migration guide, and it still is for these:
 
-- **0.6 → 0.7** (`## [0.7.0] - 2026-07-24`): no `Breaking` heading. It is
-  where the JSON tunnel went behind `grpc-legacy-json` and
+- **0.6 → 0.7** (`## [0.7.0] - 2026-07-24`): no `Breaking` heading, and the
+  boundary that costs a consumer of `a2a-protocol-types` alone the most —
+  the two changes on this page that actually stop such code compiling are
+  both here, under `### Changed`. `JsonRpcRequest.id` became the three-state
+  `JsonRpcRequestId` enum (`Absent` / `Null` / `Value`), because an explicit
+  `"id": null` is a *call* under JSON-RPC 2.0 and had been collapsing into a
+  notification on round-trip. Responses are unchanged: `JsonRpcId` is still
+  `Option<serde_json::Value>`, which is what `JsonRpcSuccessResponse.id` and
+  `JsonRpcErrorResponse::new` still take, and
+  `JsonRpcRequestId::to_response_id()` is the bridge — it maps both `Absent`
+  and `Null` to `None`, mirroring the spec's rule for requests whose id could
+  not be determined. Code that threads a request id into a response
+  typically funnels through one or two local helpers, so changing those
+  signatures is usually the whole migration. Separately,
+  `AuthenticationInfo.credentials` and `TaskPushNotificationConfig::task_id`
+  became `Option<String>` to match the canonical schema, which had been
+  rejecting valid cross-SDK payloads at parse time — a push config nested in
+  `SendMessageConfiguration` before its task exists, for instance. Take the
+  compiler's suggestion here with care: a `format!("Bearer {}", credentials)`
+  stops compiling, because `Option<String>` has no `Display`, and rustc's own
+  note offers `{:?}` — which builds an `Authorization` header reading
+  `Bearer Some("…")`, or `Bearer None` when absent. `unwrap_or_default()`
+  sends an empty bearer token instead. Omit the header entirely when there
+  are no credentials. A standalone `CreateTaskPushNotificationConfig` carrying no
+  task id is now refused by the server with a structured invalid-params
+  error instead of a parse error. Three further tightenings change what
+  parses rather than what compiles: a `Part` carrying more than one of
+  `text` / `raw` / `url` / `data` now fails deserialization instead of
+  silently taking the first; a `JsonRpcResponse` carrying both `result` and
+  `error` is rejected per JSON-RPC 2.0 §5 instead of being read as a success
+  with the error discarded; and RFC 8785 canonicalization for signing now
+  sorts object keys by UTF-16 code units and formats doubles per ECMAScript
+  `Number::toString`, which changes the signature computed over any card
+  containing supplementary-plane keys. On the server and client side, this
+  is also where the JSON tunnel went behind `grpc-legacy-json` and
   `with_event_queue_write_timeout` / `with_write_timeout` became deprecated
   no-ops, both slated for the 0.8 removals above; and where a consumer that
   falls behind the broadcast ring started receiving a marked `streamLagged`
