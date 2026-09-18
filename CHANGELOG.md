@@ -10,7 +10,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Client-supplied idempotency keys on `message/send`, as a declared
+  extension.** A send whose connection drops after the request bytes are on the
+  wire is ambiguous: the task may exist or it may not. The client rightly
+  refuses to retry it — `message/send` creates server-side state — which left a
+  caller with no recovery but to list a context's tasks and pattern-match
+  message content to guess whether the send landed. With a key the server
+  deduplicates on, a retry returns the task the first attempt created, in
+  whatever state it reached, and the agent runs exactly once.
+
+  Not part of A2A v1.0, and shipped as
+  `https://a2a-rust.com/extensions/idempotency/v1` so servers stay conformant
+  and the TCK is unaffected. `Message.extensions` is a list of extension URIs
+  and cannot carry a value, so the key travels in `Message.metadata` under
+  `a2a-rust.com/idempotency-key` while `extensions` declares the URI.
+  `a2a_protocol_types::idempotency` holds the constants, `set_key`, `key_of`
+  and `validate_key`.
+
+  Keys are scoped to the **tenant**, not the context: a retry of a send whose
+  `context_id` the server assigned would otherwise mint a fresh context and
+  miss the deduplication, which is the case the key exists for. They must be
+  unguessable — within a tenant the key is the handle to the task — so
+  `MIN_KEY_LEN` rejects the short mistakes and the character set is restricted
+  to ASCII alphanumerics and `-`, `_`, `.`, `:`, because a key reaches store
+  keys and log lines.
+
+  Three outcomes, and the third is the one worth stating. A free key is
+  claimed; the same message replays to the first task without executing
+  anything; a *different* message on the same key is refused with
+  `InvalidParams`. A genuine retry resends the identical message, so a
+  differing message id means the key was reused across two distinct sends, and
+  returning the first task there would answer a message that was never sent —
+  a silent wrong answer, which is the failure a caller can least detect.
+
+  The claim sits under the per-context lock, after everything that can reject
+  the request on its own terms and before the send's first side effect:
+  claiming later would let two racing duplicates each lease an event queue,
+  claiming earlier would burn a key on a request that was never going to run.
+  Every failure path after it releases the key, the discipline the queue lease
+  and cancellation token already follow — a key held by a send that never
+  created a task would make the caller's own retry replay to a task that never
+  existed. A streaming replay attaches to the original task's live queue as
+  `SubscribeToTask` does, rather than returning a snapshot and closing, which
+  would read as a task that had finished emitting.
+
+- **Agent cards advertise idempotency support, derived from the store.** The
+  builder adds the extension exactly when `TaskStore::supports_idempotency()`
+  is `true`, so the card and the behaviour cannot drift: swapping in a store
+  without the index removes the advertisement in the same change. An operator's
+  own declaration is left untouched, `required` flag included; the generated
+  entry is never `required`, since a client that sends no key must not be
+  locked out. A server whose store cannot honour a key refuses a keyed send
+  rather than running it undeduplicated, so the failure mode is a loud refusal
+  and never silent at-least-once delivery.
+
+- **Every bundled store honours keys**: in-memory, `SQLite`, `PostgreSQL` and
+  the tenant-aware variant of each. The SQL stores claim inside one
+  transaction — `INSERT ... ON CONFLICT DO NOTHING` picks the winner and the
+  loser reads the holder under `SQLite`'s write lock or Postgres's
+  `FOR UPDATE` — because a claim that neither inserted nor found a holder must
+  never pass for a successful one. The tenant-aware SQL stores key the table
+  `(tenant_id, key)` to match `tenant_tasks`: without the tenant in that key
+  one tenant's key would collide with another's and the second tenant's send
+  would replay to the first tenant's task. No table carries a foreign key to
+  the tasks table, deliberately — a cascade would free the key when a retention
+  sweep removed its task, letting that send run a second time.
+
+  `TaskStore` gains `supports_idempotency`, `claim_idempotency_key` and
+  `release_idempotency_key`. All three have defaults, so existing custom stores
+  keep compiling; the defaults report no support rather than a successful
+  claim, so forgetting to implement them cannot produce a send that quietly
+  runs twice.
+
+- **A keyed send is retried on the ambiguous failure it was built for**
+  (client). `SendMessage` and `SendStreamingMessage` remain non-idempotent by
+  method, but a send carrying a valid key now joins the idempotent set for that
+  call, so a dropped connection is retried instead of surfaced. The safety
+  argument needs no capability negotiation: either the key is honoured and the
+  retry is deduplicated, or the server refuses the keyed send outright rather
+  than running it undeduplicated. The key is validated rather than merely
+  found, so the predicate answers "this send will be deduplicated" and not
+  "something is present under that name".
+
+- **Book: "Idempotent Sends"** (`book/src/client/idempotency.md`), covering how
+  to attach a key, how to choose one, what the three outcomes mean, how to tell
+  whether a server honours keys, and the two obligations on a custom store —
+  an atomic claim, and never deleting a key with its task. Every Rust block on
+  the page is compiled and run as a doctest.
+
+### Internal
+
+- `check_doc_versions.py` gates dependency snippets in prose against the
+  current release line. `a2a-protocol-sdk = "0.7"` means `^0.7`, which resolves
+  to nothing in the 0.12 line, so a reader copying it got an SDK without any
+  fix released since — including the #130 artifact-duplication fix. Measured at
+  the 0.12.1 tag, 28 snippets across 14 files named 0.7, 0.8 or 0.11 against
+  exactly one that was current. `release.yml` could not catch it: it verifies
+  the four crate manifests against the tag, and prose is not a manifest.
+  Historical snippets are allowlisted with a reason each, and an entry matching
+  no snippet fails the gate, so the allowlist cannot rot either.
+
+- **`tck.yml` gates the three example agents' TCK grades.** Those figures were
+  dated manual measurements printed beside "no CI job gates it", and one had
+  already drifted to "20/20" before a person reading the page caught it. The
+  blocker was recorded as a CI-cost decision; it was not one. The TCK grades
+  protocol conformance, which never reaches the executor's brain, and all three
+  agents are written to serve without a model — measured 2026-09-17 with no
+  `OPENAI_API_KEY`, no `OPENAI_BASE_URL` and nothing on any model port, all
+  three score 21/21 graded, 0 failed, 1 N/A, the same figure the pages claimed.
+  The new `tck-example-agents` matrix costs a build per agent and no secret.
+  Eight documentation sites now name the job instead of disclaiming one.
+
 
 ## [0.12.1] - 2026-09-17
 

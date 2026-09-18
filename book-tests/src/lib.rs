@@ -85,6 +85,9 @@ pub mod page_client_error_handling {}
 #[doc = include_str!("../../book/src/client/sending-messages.md")]
 pub mod page_client_sending_messages {}
 
+#[doc = include_str!("../../book/src/client/idempotency.md")]
+pub mod page_client_idempotency {}
+
 #[doc = include_str!("../../book/src/client/streaming.md")]
 pub mod page_client_streaming {}
 
