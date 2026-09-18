@@ -205,6 +205,36 @@ pub fn set_key(message: &mut Message, key: &str) -> Result<(), KeyError> {
 
 #[cfg(test)]
 mod tests {
+
+    /// `Display` is what reaches an operator's log line and the error a caller
+    /// sees, so an implementation that formatted nothing at all would still
+    /// type-check and still pass every test that only asserted an error
+    /// occurred. Each variant asserts the substance of its own message.
+    #[test]
+    fn key_error_display_names_the_actual_problem() {
+        let too_short = KeyError::TooShort.to_string();
+        assert!(
+            too_short.contains(&MIN_KEY_LEN.to_string()) && too_short.contains("CSPRNG"),
+            "TooShort must name the minimum and say where a key should come from: {too_short}"
+        );
+
+        let too_long = KeyError::TooLong.to_string();
+        assert!(
+            too_long.contains(&MAX_KEY_LEN.to_string()),
+            "TooLong must name the maximum: {too_long}"
+        );
+
+        let invalid = KeyError::InvalidCharacter.to_string();
+        assert!(
+            invalid.contains("ASCII"),
+            "InvalidCharacter must name the accepted set: {invalid}"
+        );
+
+        assert!(
+            !KeyError::NotAString.to_string().is_empty(),
+            "every variant must render a non-empty message"
+        );
+    }
     use super::*;
     use crate::message::Part;
     use crate::message::{MessageId, MessageRole};

@@ -517,6 +517,19 @@ mod tests {
         }
     }
 
+    /// See the note on the in-memory tenant store's equivalent test: the send
+    /// path reads this to decide whether to claim a key, so a silent `false`
+    /// removes the guarantee without failing anything.
+    #[tokio::test]
+    async fn sqlite_tenant_store_advertises_idempotency_support() {
+        let store = make_store().await;
+        assert!(
+            store.supports_idempotency(),
+            "the tenant-aware SQLite store implements claim_idempotency_key; \
+             it must advertise support"
+        );
+    }
+
     /// The reason the sweep deletes by `rowid` and not by `id`.
     ///
     /// `tenant_tasks` is keyed on `(tenant_id, id)`, so the same task id can

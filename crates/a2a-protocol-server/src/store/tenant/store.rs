@@ -1062,6 +1062,21 @@ mod tests {
         }
     }
 
+    /// The tenant-aware store advertises idempotency support, and the send
+    /// path reads exactly this to decide whether to claim a key at all. A
+    /// store that silently answered `false` would make every keyed send fall
+    /// through to the unkeyed path — no error, no failing test, just the
+    /// guarantee quietly absent. Asserted because nothing else does.
+    #[test]
+    fn in_memory_tenant_store_advertises_idempotency_support() {
+        let store = TenantAwareInMemoryTaskStore::new();
+        assert!(
+            store.supports_idempotency(),
+            "the tenant-aware in-memory store partitions by tenant, which is \
+             exactly the scope a key needs; it must advertise support"
+        );
+    }
+
     #[test]
     fn every_tenant_store_config_setter_sets_its_field() {
         let d = TenantStoreConfig::default();
