@@ -362,7 +362,7 @@ median user's. Worth checking against real adopters before building any of it.
 
 `a2a-protocol-sdk = "0.7"` means `^0.7`, which resolves to nothing in the 0.12
 line, so a reader copying it gets a five-minor-old SDK and none of the fixes
-since. Measured at `e057c8e`: **28 such snippets across 13 files** named 0.7,
+since. Measured at `e057c8e`: **28 such snippets across 14 files** named 0.7,
 0.8 or 0.11 — the root `README.md`, every page under `book/src/getting-started/`,
 four in `crates/README.md`, the two `websocket.rs` module docs — against
 exactly one that was current. `release.yml` never caught this and could not:

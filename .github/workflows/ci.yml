@@ -157,7 +157,7 @@ jobs:
       # `a2a-protocol-sdk = "0.7"` means `^0.7`, which resolves to nothing in
       # the 0.12 line — so a reader who copies it gets a five-minor-old SDK
       # and none of the fixes since. Nothing checked prose versions, and they
-      # rotted: measured at the 0.12.1 tag, 28 snippets across 13 files named
+      # rotted: measured at the 0.12.1 tag, 28 snippets across 14 files named
       # 0.7, 0.8 or 0.11, the root README and every getting-started page among
       # them, against exactly one that was current. release.yml checks the
       # four crate manifests against the tag; prose is not a manifest.

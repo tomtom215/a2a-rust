@@ -99,7 +99,7 @@ git checkout -b release/vX.Y.Z main
 #     python3 scripts/check_doc_versions.py
 # It fails CI until they match and names every site, so it is a to-do list
 # rather than something to remember. It went unchecked until 0.12.1, by which
-# point 28 snippets across 13 files named 0.7, 0.8 or 0.11.
+# point 28 snippets across 14 files named 0.7, 0.8 or 0.11.
 
 # Update ROADMAP.md's "Current release:" line, and add a section to
 # book/src/reference/changelog.md — neither is checked by anything, and both

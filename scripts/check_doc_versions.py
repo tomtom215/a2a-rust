@@ -9,7 +9,7 @@ stale version is actively harmful rather than merely untidy: `a2a-protocol-sdk
 a reader who copies it gets a five-minor-old SDK and none of the fixes since.
 
 Nothing checked these, and they rotted exactly as you would expect. Measured
-2026-09-17 at `e057c8e`, the tag of 0.12.1: 28 snippets across 13 files named
+2026-09-17 at `e057c8e`, the tag of 0.12.1: 28 snippets across 14 files named
 0.7, 0.8 or 0.11, including the root `README.md`, every page under
 `book/src/getting-started/`, and the two `websocket.rs` module docs. One
 snippet in the whole repository was current. This is the same decay class as
