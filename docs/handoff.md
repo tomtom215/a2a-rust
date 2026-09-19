@@ -685,24 +685,34 @@ Written from having actually used the SDK on 2026-09-19 to build
 `rig-agent`'s tool loop, `mcp-agent` and `mcp-bridge`, rather than from
 reading it.
 
-### The `RequestContext` blind spot is the single biggest constraint
+### The `RequestContext` blind spot — closed
 
-An executor cannot see caller identity, tenant, HTTP headers, or the
-activated extension set. `build_request_context`
-(`handler/messaging/create.rs`) takes no `CallContext`, and `tokio::spawn`
-drops `TenantContext`, so the executor observes tenant `""` — stated at
-`handler/mod.rs:157-160`.
+Recorded here as the single biggest constraint: an executor could not see
+caller identity, tenant, HTTP headers or the activated extension set, because
+`build_request_context` took no `CallContext` and `tokio::spawn` dropped
+`TenantContext`. Both halves are fixed.
 
-This was hit directly building `mcp-bridge`: the only channel for getting
-the caller's chosen skill to the agent was `Message.metadata`, because there
-is no supported alternative. The consequence in general is that **an
-executor cannot enforce "only this tenant may invoke this skill"**, which
-rules out a large class of real deployments. Every workaround fails —
-`ServerInterceptor::before` runs before the task id exists, so there is not
-even a key to stash something under.
+`RequestContext` now carries `call_context`, with `caller_identity()`,
+`tenant()`, `http_header()`, `activated_extensions()` and `request_id()` on
+top of it. The spawn re-enters `TenantContext::scope`, matching what the
+background event processor and the sync collector already did — so the
+task-local is correct inside an executor too, though `ctx.tenant()` is the
+field to reach for, since it cannot silently read empty.
 
-Of everything in this file, plumbing `CallContext` into `RequestContext`
-would most expand what people can build on top.
+**Two things worth keeping from doing it.** The tenant drop was documented at
+`handler/mod.rs:157-160` with its measurement ("the executor saw `\"\"`") and
+was still not fixed, which is what a note without a test looks like a month
+later; the regression test now fails without the scope and passes with it.
+And the break is one line, measured: `cargo semver-checks` reports 196
+checks, 195 passing, and only `struct_marked_non_exhaustive` failing. Adding
+the field was free because the `#[non_exhaustive]` subsumes it — which is the
+argument for marking it now rather than at the next field.
+
+The `mcp-bridge` workaround this section named — passing the caller's chosen
+skill through `Message.metadata` — is still what that example does. It is
+now a choice rather than the only option: a bridge could send the skill as a
+header and read it with `ctx.http_header`. Not changed, because the metadata
+hint is what the MCP side can actually populate.
 
 ### Five things every example hand-writes — three of the five are gone
 
@@ -838,8 +848,8 @@ agents rather than maintains the protocol.
 
 1. **Trace context as a protocol concern.** Finding 6. Biggest gap, clearest
    differentiator, and it uses hooks that already exist.
-2. **Plumb `CallContext` into `RequestContext`.** Unblocks auth-aware
-   executors, per-tenant policy, and every higher layer anyone would build.
+2. ~~**Plumb `CallContext` into `RequestContext`.**~~ Done — see *The
+   `RequestContext` blind spot — closed* above.
 3. **The executor conformance harness (A4 above) — move it up.** Three
    executors were written this session; all three got the happy path right
    and none is tested against cancellation arriving mid-artifact, an

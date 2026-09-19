@@ -131,6 +131,61 @@ The `RequestContext` provides information about the incoming request:
 | `stored_task` | `Option<Task>` | Previously stored task snapshot (for continuations) |
 | `metadata` | `Option<Value>` | Arbitrary metadata from the request |
 | `cancellation_token` | `CancellationToken` | Token for cooperative cancellation |
+| `call_context` | `Option<CallContext>` | The call this execution belongs to (see below) |
+
+`RequestContext` is `#[non_exhaustive]` as of 0.13 — build one with
+`RequestContext::new` and the `with_*` methods, not a struct literal.
+
+### What the caller sent
+
+Before 0.13 an executor could see nothing about the caller. The handler built
+a `CallContext` with the caller's identity, the resolved tenant, the HTTP
+headers and the activated extensions, handed it to the interceptor chain, and
+then dropped it. That ruled out a whole class of deployment — an executor
+could not enforce "only this tenant may invoke this skill" — and left
+`Message.metadata` as the only channel for anything caller-specific, which
+the *caller* writes and so is not a fact about the caller at all.
+
+Five accessors read it, each returning `None` rather than a default when
+nobody said:
+
+| Accessor | Returns |
+|----------|---------|
+| `ctx.caller_identity()` | Who the caller is, once an authenticating interceptor established it |
+| `ctx.tenant()` | The tenant this call resolved to, after any `TenantResolver` |
+| `ctx.http_header(name)` | One inbound header, matched case-insensitively |
+| `ctx.activated_extensions()` | The URIs from the `A2A-Extensions` header (spec §14.2.2) |
+| `ctx.request_id()` | The caller's `X-Request-ID`, if they sent one |
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# fn entitled(_tenant: &str, _skill: &str) -> bool { true }
+/// Refuse work the caller's tenant is not entitled to.
+fn check_entitlement(ctx: &RequestContext) -> A2aResult<()> {
+    let Some(tenant) = ctx.tenant() else {
+        return Err(A2aError::invalid_params("this skill requires a tenant"));
+    };
+    if !entitled(tenant, "premium-analysis") {
+        return Err(A2aError::invalid_params("skill not enabled for this tenant"));
+    }
+    Ok(())
+}
+# fn main() {
+#     let ctx = RequestContext::new(
+#         Message::user_text("m1", "hi"), TaskId::new("t1"), "c1".to_owned());
+#     assert!(check_entitlement(&ctx).is_err(), "no tenant means refusal");
+# }
+```
+
+Use `ctx.tenant()` rather than `TenantContext::current()` inside an executor.
+The latter is a `tokio::task_local` and the executor runs in a spawned task;
+`ctx.tenant()` is an owned copy taken before the spawn. (The spawn now
+re-enters the tenant scope as well, so the task-local is correct too — but
+the field is the one that cannot silently become empty.)
+
+`call_context` is `None` when the executor is driven directly, as a unit test
+or a conformance harness does. That is the honest answer there rather than a
+synthetic context claiming a call that never happened.
 
 ## EventQueueWriter
 

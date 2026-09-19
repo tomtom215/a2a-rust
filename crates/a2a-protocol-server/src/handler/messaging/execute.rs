@@ -94,34 +94,45 @@ impl RequestHandler {
             .and_then(|limits| limits.executor_timeout)
             .or(self.executor_timeout);
 
-        tokio::spawn(async move {
-            // Owned by this future, so the slot is returned when the executor
-            // finishes, fails, panics, or is aborted.
-            let _tenant_slot = tenant_slot;
-            trace_debug!(task_id = %ctx.task_id, "executor started");
+        // Captured for the same reason and re-entered below. Without this the
+        // executor — and every store call it makes — ran under the empty
+        // tenant, so a tenant-aware store partitioned the executor's writes
+        // away from the request that caused them. The background event
+        // processor and the sync collector already do exactly this; this
+        // spawn was the one that did not.
+        let tenant = crate::store::tenant::TenantContext::current();
 
-            // Armed before the executor runs; see the type's docs for when it
-            // fires. There is no `catch_unwind` here — the guard *is* the
-            // panic handling.
-            let mut cleanup_guard = CleanupGuard {
-                task_id: Some(task_id.clone()),
-                queue_mgr: event_queue_mgr.clone(),
-                tokens: Arc::clone(&cancel_tokens),
-            };
+        tokio::spawn(crate::store::tenant::TenantContext::scope(
+            tenant,
+            async move {
+                // Owned by this future, so the slot is returned when the executor
+                // finishes, fails, panics, or is aborted.
+                let _tenant_slot = tenant_slot;
+                trace_debug!(task_id = %ctx.task_id, "executor started");
 
-            let result =
-                run_executor(executor.as_ref(), &ctx, writer.as_ref(), executor_timeout).await;
-            if let Err(ref e) = result {
-                write_failure_event(writer.as_ref(), &ctx, e).await;
-            }
-            // Drop the writer so the channel closes and readers see EOF.
-            drop(writer);
-            // Explicit cleanup, then disarm the guard so it does not release
-            // a second time on normal exit.
-            event_queue_mgr.destroy(&task_id).await;
-            cancel_tokens.write().await.remove(&task_id);
-            cleanup_guard.task_id = None;
-        })
+                // Armed before the executor runs; see the type's docs for when it
+                // fires. There is no `catch_unwind` here — the guard *is* the
+                // panic handling.
+                let mut cleanup_guard = CleanupGuard {
+                    task_id: Some(task_id.clone()),
+                    queue_mgr: event_queue_mgr.clone(),
+                    tokens: Arc::clone(&cancel_tokens),
+                };
+
+                let result =
+                    run_executor(executor.as_ref(), &ctx, writer.as_ref(), executor_timeout).await;
+                if let Err(ref e) = result {
+                    write_failure_event(writer.as_ref(), &ctx, e).await;
+                }
+                // Drop the writer so the channel closes and readers see EOF.
+                drop(writer);
+                // Explicit cleanup, then disarm the guard so it does not release
+                // a second time on normal exit.
+                event_queue_mgr.destroy(&task_id).await;
+                cancel_tokens.write().await.remove(&task_id);
+                cleanup_guard.task_id = None;
+            },
+        ))
     }
 }
 

@@ -13,6 +13,8 @@ use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{Task, TaskId};
 use tokio_util::sync::CancellationToken;
 
+use crate::call_context::CallContext;
+
 /// Context for a single agent execution request.
 ///
 /// Built by the [`RequestHandler`](crate::RequestHandler) and passed to
@@ -20,7 +22,19 @@ use tokio_util::sync::CancellationToken;
 ///
 /// The [`cancellation_token`](Self::cancellation_token) allows executors to
 /// observe cancellation requests and abort work cooperatively.
+///
+/// [`call_context`](Self::call_context) carries who the caller is, which
+/// tenant they resolved to, the HTTP headers they sent and the extensions
+/// they activated. Before 0.13 an executor could see none of that — it was
+/// built into a [`CallContext`] the handler never passed on — so an executor
+/// could not enforce "only this tenant may invoke this skill", and the only
+/// channel for anything caller-specific was `Message.metadata`.
+///
+/// `#[non_exhaustive]` since 0.13: this type grows, and every previous growth
+/// was a breaking change for a struct literal nobody was writing. Build one
+/// with [`new`](Self::new) and the `with_*` methods.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct RequestContext {
     /// The incoming user message.
     pub message: Message,
@@ -42,6 +56,18 @@ pub struct RequestContext {
     /// Executors should check [`CancellationToken::is_cancelled`] or
     /// `.cancelled().await` to stop work when the task is cancelled.
     pub cancellation_token: CancellationToken,
+
+    /// The call this execution belongs to: caller identity, tenant, HTTP
+    /// headers, activated extensions, method name and request id.
+    ///
+    /// `None` when the executor is driven directly rather than served — a
+    /// unit test, a conformance harness — which is the honest answer there
+    /// rather than a synthetic context claiming a call that never happened.
+    /// Prefer the accessors ([`caller_identity`](Self::caller_identity),
+    /// [`tenant`](Self::tenant), [`http_header`](Self::http_header),
+    /// [`activated_extensions`](Self::activated_extensions)) over matching on
+    /// this directly.
+    pub call_context: Option<CallContext>,
 }
 
 impl RequestContext {
@@ -55,6 +81,7 @@ impl RequestContext {
             stored_task: None,
             metadata: None,
             cancellation_token: CancellationToken::new(),
+            call_context: None,
         }
     }
 
@@ -70,6 +97,63 @@ impl RequestContext {
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = Some(metadata);
         self
+    }
+
+    /// Attaches the [`CallContext`] this execution was requested under.
+    #[must_use]
+    pub fn with_call_context(mut self, call_context: CallContext) -> Self {
+        self.call_context = Some(call_context);
+        self
+    }
+
+    /// Who the caller is, if authentication established an identity.
+    ///
+    /// `None` means either that no interceptor authenticated the call or
+    /// that this context was built without one. An executor that must refuse
+    /// anonymous work should treat `None` as a refusal rather than a default.
+    #[must_use]
+    pub fn caller_identity(&self) -> Option<&str> {
+        self.call_context
+            .as_ref()
+            .and_then(CallContext::caller_identity)
+    }
+
+    /// The tenant this call resolved to, after any
+    /// [`TenantResolver`](crate::TenantResolver) has had its say.
+    ///
+    /// This is the value to use inside an executor.
+    /// [`TenantContext::current`](crate::store::tenant::TenantContext::current)
+    /// is a task-local that `tokio::spawn` does not inherit, so it reads
+    /// empty in some executor contexts; this field is an owned copy taken
+    /// before the spawn.
+    #[must_use]
+    pub fn tenant(&self) -> Option<&str> {
+        self.call_context.as_ref().and_then(CallContext::tenant)
+    }
+
+    /// One inbound HTTP header, matched case-insensitively.
+    #[must_use]
+    pub fn http_header(&self, name: &str) -> Option<&str> {
+        self.call_context
+            .as_ref()?
+            .http_headers()
+            .get(&name.to_ascii_lowercase())
+            .map(String::as_str)
+    }
+
+    /// The extension URIs the caller activated for this request, from the
+    /// `A2A-Extensions` header (spec §14.2.2).
+    #[must_use]
+    pub fn activated_extensions(&self) -> &[String] {
+        self.call_context
+            .as_ref()
+            .map_or(&[] as &[String], CallContext::extensions)
+    }
+
+    /// The caller's request/trace id, from `X-Request-ID` if they sent one.
+    #[must_use]
+    pub fn request_id(&self) -> Option<&str> {
+        self.call_context.as_ref().and_then(CallContext::request_id)
     }
 }
 

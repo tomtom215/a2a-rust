@@ -29,6 +29,7 @@ use a2a_protocol_types::task::Task;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::task::JoinHandle;
 
+use crate::call_context::CallContext;
 use crate::error::ServerResult;
 use crate::streaming::InMemoryQueueReader;
 
@@ -165,7 +166,9 @@ impl RequestHandler {
         // extensions the agent card marks required.
         self.ensure_required_extensions(&call_ctx)?;
 
-        let (mode, committed) = self.validate_and_commit(params, streaming).await?;
+        let (mode, committed) = self
+            .validate_and_commit(params, streaming, &call_ctx)
+            .await?;
 
         self.interceptors.run_after(&call_ctx).await?;
 
@@ -206,6 +209,7 @@ impl RequestHandler {
         &self,
         mut params: MessageSendParams,
         streaming: bool,
+        call_ctx: &CallContext,
     ) -> ServerResult<(SendMode, Committed)> {
         let tenant_slot = self.acquire_tenant_slot().await?;
 
@@ -219,7 +223,7 @@ impl RequestHandler {
         self.validate_send_params(&mut params)?;
 
         let mode = SendMode::of(&params, streaming);
-        self.commit_task(params, mode.use_background, tenant_slot)
+        self.commit_task(params, mode.use_background, tenant_slot, call_ctx)
             .await
             .map(|started| (mode, started))
     }
@@ -228,11 +232,18 @@ impl RequestHandler {
     /// lease, the cancellation token, the store row, the inline push config,
     /// and finally the executor. Every failure after the lease releases the
     /// queue and token (see `create`), so nothing outlives a refused send.
+    // 61 of an allowed 60, crossed by threading `call_ctx` through: one line
+    // of signature and one of argument. The function's shape is unchanged,
+    // and splitting it would separate the per-context lock from the work it
+    // is held across, which is the one thing this function exists to keep
+    // together.
+    #[allow(clippy::too_many_lines)]
     async fn commit_task(
         &self,
         params: MessageSendParams,
         use_background: bool,
         tenant_slot: Option<OwnedSemaphorePermit>,
+        call_ctx: &CallContext,
     ) -> ServerResult<Committed> {
         let context_id = self.resolve_context_id(&params.message).await?;
 
@@ -290,6 +301,7 @@ impl RequestHandler {
                 context_id,
                 stored_task,
                 params.metadata,
+                call_ctx.clone(),
             );
 
             // From here on there is something to release on failure: the queue

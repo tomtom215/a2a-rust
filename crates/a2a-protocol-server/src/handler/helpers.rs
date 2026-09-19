@@ -88,6 +88,16 @@ pub(super) fn build_call_context(
         }
         ctx = ctx.with_http_headers(h.clone());
     }
+    // The tenant is a `tokio::task_local` that every handler entry point has
+    // already scoped by the time this runs, so reading it here is correct —
+    // and copying it onto the context is what lets it survive the
+    // `tokio::spawn` into the executor, which does not inherit task-locals.
+    // Empty means no tenant was in scope: the single-tenant case, and also
+    // `resolve_tenant`, which builds its own context before the answer exists.
+    let tenant = crate::store::tenant::TenantContext::current();
+    if !tenant.is_empty() {
+        ctx = ctx.with_tenant(tenant);
+    }
     ctx
 }
 

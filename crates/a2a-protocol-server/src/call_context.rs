@@ -65,6 +65,16 @@ pub struct CallContext {
     ///
     /// Keys are lowercased for case-insensitive matching.
     http_headers: HashMap<String, String>,
+
+    /// The tenant this call resolved to, if the deployment is multi-tenant.
+    ///
+    /// The authoritative value, after
+    /// [`TenantResolver`](crate::TenantResolver) has had its say — not the
+    /// client-supplied `params.tenant`, which a resolver may override or
+    /// reject. `None` means no tenant was in scope, which is the
+    /// single-tenant case and also the case inside `resolve_tenant` itself,
+    /// where the answer does not exist yet.
+    tenant: Option<String>,
 }
 
 impl CallContext {
@@ -126,6 +136,18 @@ impl CallContext {
     pub const fn http_headers(&self) -> &HashMap<String, String> {
         &self.http_headers
     }
+
+    /// Returns the tenant this call resolved to, if any.
+    ///
+    /// Prefer this over
+    /// [`TenantContext::current`](crate::store::tenant::TenantContext::current)
+    /// anywhere the value has to survive a `tokio::spawn`: the task-local is
+    /// not inherited by a spawned task, and this field is an owned copy taken
+    /// before the spawn.
+    #[must_use]
+    pub fn tenant(&self) -> Option<&str> {
+        self.tenant.as_deref()
+    }
 }
 
 impl CallContext {
@@ -138,7 +160,15 @@ impl CallContext {
             extensions: Vec::new(),
             request_id: None,
             http_headers: HashMap::new(),
+            tenant: None,
         }
+    }
+
+    /// Sets the resolved tenant.
+    #[must_use]
+    pub fn with_tenant(mut self, tenant: impl Into<String>) -> Self {
+        self.tenant = Some(tenant.into());
+        self
     }
 
     /// Sets the caller identity at construction.

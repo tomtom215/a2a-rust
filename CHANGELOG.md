@@ -10,7 +10,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+Targeting **0.13.0**. In the `0.x` series a minor release may break and a
+patch may not (`STABILITY.md` §2), and each item below is a minor-only change
+by that list. The four crates bump in lockstep, and
+`bindings/a2a-protocol-slimrpc` needs its `a2a-protocol-*` requirements moved
+to `0.13` afterwards (`RELEASING.md` §"every SDK minor release requires a
+follow-up release of the binding").
+
+- **`RequestContext` is `#[non_exhaustive]` and carries a new `call_context`
+  field.** Measured with `cargo semver-checks check-release -p
+  a2a-protocol-server --baseline-version 0.12.1`: 196 checks, 195 pass, and
+  exactly one fails — `struct_marked_non_exhaustive` on `RequestContext`. The
+  added field is not a second finding, because once a struct is
+  `#[non_exhaustive]` an added field is no longer separately observable.
+
+  What breaks: constructing a `RequestContext` with a struct literal from
+  outside `a2a-protocol-server`. Nothing in this repository did —
+  `git ls-files '*.rs' | xargs grep 'RequestContext {'` finds only the
+  definition and function signatures, and all 19 construction sites already
+  use `RequestContext::new`. `book/src/deployment/testing.md` did teach a
+  literal, in a `rust,ignore` fence that nothing compiled; it now uses `new`.
+
+  Migration: replace `RequestContext { message, task_id, context_id, .. }`
+  with `RequestContext::new(message, task_id, context_id)` followed by
+  `.with_stored_task(..)` / `.with_metadata(..)` for anything else you set.
+
+  The attribute is deliberate rather than incidental. This type grows, and
+  every previous growth would have been a break for a literal nobody writes;
+  `#[non_exhaustive]` is what makes this the last time.
+
 ### Added
+
+- **An executor can see who called it.** `RequestContext` gains
+  `call_context`, and with it five accessors: `caller_identity()`,
+  `tenant()`, `http_header(name)`, `activated_extensions()` and
+  `request_id()`.
+
+  The handler already built a `CallContext` carrying all of this and handed
+  it to the interceptor chain — then dropped it. `build_request_context` took
+  a message, two ids and a metadata blob, so the seam was severed by
+  construction. The consequence was not cosmetic: an executor could not
+  enforce "only this tenant may invoke this skill", which rules out a large
+  class of real deployments, and the only channel left for anything
+  caller-specific was `Message.metadata` — which the *caller* writes, so it
+  is not a fact about the caller at all.
+
+  Every accessor returns `None` rather than a default when nobody said.
+  An executor that refuses anonymous work needs `None` to mean "nobody
+  established an identity", never a value that reads like an answer.
+  `call_context` is `None` when an executor is driven directly, as a unit
+  test or a conformance harness does, rather than being given a synthetic
+  context claiming a call that never happened.
+
+  `CallContext` also gains `tenant()` and `with_tenant()` — private field,
+  so additive — populated from the tenant scope the handler has already
+  entered.
 
 - **Constructors for `Message`, `Task` and `MessageSendParams`, and a
   `# Construction` pointer on the three `agent_card` structs.** Measured on
@@ -349,6 +405,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   properties, and only the second is one the protocol can carry.
 
 ### Fixed
+
+- **The spawned executor ran under the empty tenant.** `spawn_executor` used
+  a bare `tokio::spawn`, and `TenantContext` is a `tokio::task_local`, which
+  a spawned task does not inherit. So every store call an executor made ran
+  with `TenantContext::current() == ""` — against a tenant-aware store, that
+  partitions the executor's writes away from the request that caused them.
+  The handler's own doc comment recorded the mechanism and the measurement
+  ("The same probe's executor saw `\"\"`") without the spawn being fixed.
+
+  Two other spawns in the same crate already did the right thing — the
+  background event processor and the sync collector both capture the tenant
+  and re-enter `TenantContext::scope`. This one now does too.
+
+  The regression test is `the_spawned_executor_runs_inside_the_tenant_scope`
+  in `tests/request_context_tests.rs`, and it was checked against the defect
+  rather than merely written: with the scope removed it fails naming the
+  empty tenant, with it in place it passes.
 
 - **A test's panic hook was silencing every other test in its binary.** Three
   tests — two in `a2a-protocol-server`'s `agent_card/hot_reload.rs`, one in

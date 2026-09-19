@@ -9,7 +9,6 @@ Test your executor logic directly by creating a `RequestContext` and mock `Event
 ```rust,ignore
 use a2a_protocol_sdk::prelude::*;
 use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
-use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn test_calculator_executor() {
@@ -18,24 +17,14 @@ async fn test_calculator_executor() {
     // Create a writer/reader pair directly for unit testing
     let (writer, mut reader) = new_in_memory_queue();
 
-    // Build the request context
-    let ctx = RequestContext {
-        task_id: TaskId::new("test-task"),
-        context_id: "ctx-1".into(),
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("3 + 5")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
-        stored_task: None,
-        metadata: None,
-        cancellation_token: CancellationToken::new(),
-    };
+    // Build the request context. `RequestContext` is `#[non_exhaustive]`
+    // since 0.13, so build it with `new` and the `with_*` methods rather
+    // than a struct literal.
+    let ctx = RequestContext::new(
+        Message::user_text("msg-1", "3 + 5"),
+        TaskId::new("test-task"),
+        "ctx-1".to_owned(),
+    );
 
     // Run the executor
     executor.execute(&ctx, &*writer).await.unwrap();
