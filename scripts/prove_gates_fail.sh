@@ -142,7 +142,7 @@ revert_all() {
     # injection adds has to be named here. Registering the second of them was
     # forgotten on 2026-08-19 and the run's own post-check caught it, which is
     # what that check is for.
-    for probe in gate_probe_long gate_probe_slot; do
+    for probe in gate_probe_long gate_probe_slot gate_probe_hook; do
         rm -f "crates/a2a-protocol-types/src/$probe.rs"
         git rm -q --cached --ignore-unmatch "crates/a2a-protocol-types/src/$probe.rs" \
             2>/dev/null || true
@@ -319,6 +319,8 @@ injection_for() {
             echo "proto" ;;
         "./scripts/check_file_lengths.sh")
             echo "file_length" ;;
+        "./scripts/check_panic_hooks.sh")
+            echo "panic_hook" ;;
         "./scripts/check_mutation_scope.sh")
             echo "mutation_scope" ;;
         "./scripts/check_benchmark_prose.sh")
@@ -453,6 +455,7 @@ expected_marker() {
         fmt)              echo "gate_probe_fmt" ;;
         proto)            echo "DRIFT    tck/proto/a2a_v1/a2a.proto" ;;
         file_length)      echo "gate_probe_long.rs" ;;
+        panic_hook)       echo "gate_probe_hook.rs" ;;
         mutation_scope)   echo "MUTATION SCOPE GAP" ;;
         benchmark_prose)  echo "DRIFT" ;;
         book_code)        echo "GREW" ;;
@@ -545,6 +548,19 @@ PY
         file_length)
             python3 -c "open('crates/a2a-protocol-types/src/gate_probe_long.rs','w').write('// gate probe\n'*600)"
             git add -N crates/a2a-protocol-types/src/gate_probe_long.rs >/dev/null 2>&1 || true ;;
+        # A fresh file rather than an edit to a real one: the gate scans every
+        # tracked source, so any file serves, and a file of its own keeps the
+        # injection unambiguous and its marker unique. Nothing compiles it —
+        # no module declares it — because the gate greps rather than builds.
+        panic_hook)
+            {
+                printf '// gate probe\n'
+                printf '#[allow(dead_code)]\n'
+                printf 'fn gate_probe_hook() {\n'
+                printf '    std::panic::set_hook(Box::new(|_| {}));\n'
+                printf '}\n'
+            } >crates/a2a-protocol-types/src/gate_probe_hook.rs
+            git add -N crates/a2a-protocol-types/src/gate_probe_hook.rs >/dev/null 2>&1 || true ;;
         # A claimed guard slot in a file with no `Drop` releasing it. Written to
         # a fresh file rather than appended to a real one so the injection is
         # unambiguous: the checker is file-scoped, and appending to a module

@@ -287,6 +287,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A test's panic hook was silencing every other test in its binary.** Three
+  tests — two in `a2a-protocol-server`'s `agent_card/hot_reload.rs`, one in
+  `a2a-protocol-client`'s `auth.rs` — wrapped an expected panic in
+  `take_hook()` / `set_hook(Box::new(|_| {}))` / `set_hook(hook)`. `set_hook`
+  is process-global and libtest runs a binary's tests as parallel threads in
+  one process, so each of those windows silenced *every* thread for its
+  duration: a genuinely failing test that raced one was listed under
+  `failures:` with no `---- stdout ----` section and no message, and the build
+  went red with its reason absent from the log, non-deterministically.
+
+  It had already cost something measurable. Three gates in
+  `scripts/prove_gates_fail.sh` —
+  `cargo test -p a2a-protocol-server --features {sqlite,postgres,auth-jwt}` —
+  reported `INCONCLUSIVE` rather than `PROVEN`, because the injected defect
+  failed correctly and its panic message never reached the output the prover
+  greps.
+
+  The fix is a deletion at all three sites. `catch_unwind` returns the payload
+  each test asserts on, and libtest already captures panic output per test and
+  discards it when the test passes, so the swap was buying a suppression it
+  already had. Measured on the pattern in isolation: an unrelated failing test
+  in the same binary lost its marker in 3 of 3 parallel runs with the swap and
+  kept it in 3 of 3 without, and the expected panic's own text appeared in 0 of
+  3 runs either way.
+
 - **`examples/rig-agent`'s executor was undocumented.** Its doc comment had
   run together with the one below it, so both attached to `SLOW_PREFIX` and
   `RigAgentExecutor` carried none.
@@ -317,6 +342,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   should have worked.
 
 ### Internal
+
+- **`scripts/check_panic_hooks.sh` forbids process-global panic hooks.** The
+  regression test for the defect above, and for its class: a grep gate is the
+  only mechanical check available, because "some other test lost its message"
+  is not observable from inside the test that lost it. Registered in `ci.yml`'s
+  Format job, paired with an injection in `scripts/prove_gates_fail.sh`, and
+  listed in the gate-reachability input table. Proven both ways before
+  shipping — exit 0 on the fixed tree, exit 1 naming all six lines on the tree
+  as it stood.
 
 - `check_doc_versions.py` gates dependency snippets in prose against the
   current release line. `a2a-protocol-sdk = "0.7"` means `^0.7`, which resolves
