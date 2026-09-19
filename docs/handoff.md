@@ -11,7 +11,7 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-17.
+Last updated 2026-09-19.
 
 ## 0.12.1 — released 2026-09-17
 
@@ -92,11 +92,56 @@ the *content* merge.
 | `release/v0.12.1` | merged, still present | The 0.12.1 release prep. Merged as `e057c8e` via #132, and tagged. Safe to delete. |
 | `claude/a2a-rig-held` | `caa8774` | Storage. The unpublished `a2a-rig` crate, one commit on top of `caac0ec`. |
 | `claude/adk-rust-0.12-patch` | `6fbdd2f` | Storage. The outbound adk-rust patch as a file, one commit on top of `caac0ec`. |
+| `claude/wizardly-tesla-0f358t` | open — see note | **Destined for `main`.** Tool calling in `examples/rig-agent`, on top of `fa1a82b9`. No PR opened yet. |
 
 `release/v0.12.1` can be deleted. The two **storage** branches —
 `claude/a2a-rig-held` and `claude/adk-rust-0.12-patch` — are **not destined for
 `main`**. They exist so work survives the session that produced it; delete
 either once its contents have landed somewhere better.
+
+### `claude/wizardly-tesla-0f358t` — tool calling, and what the live run found
+
+No head SHA in the row above, deliberately: this file lives on that branch, so
+any commit recording a head invalidates the head it recorded. That is the trap
+`dacfc88` fixed for the 0.12.1 branch and it re-forms every time. Read the
+branch with `git log --oneline origin/main..claude/wizardly-tesla-0f358t`.
+
+The repository had no tool calling anywhere: `grep -ril
+'tool_call\|ToolCall\|tool_choice\|function_call'` over `examples/`, `crates/`
+and `book/src/` returned zero files, and `rig-agent`'s own comment said "no
+tools, no history". For an SDK whose adopters are building agents, that is a
+hole in the examples rather than in the crates, and it is fixed there:
+`examples/rig-agent/src/tools.rs` imports no `a2a-protocol-*` type at all.
+A2A has no tool concept, so the loop sits between the executor and its model —
+many model turns, one A2A task. A tool abstraction inside
+`a2a-protocol-server` would make it a framework and board a model provider's
+release treadmill, which is the trade
+[`ROADMAP.md`](../ROADMAP.md)'s "what not to chase" already refuses.
+
+Verified against fakes *and* against a live model, and the live run is what
+makes this worth recording rather than just merging:
+
+- **`Qwen3.5-0.8B-Q4_0` cannot call tools**, and it is the model the README
+  documented for the fully-local path. It answers in prose; forced with
+  `tool_choice: "required"` it still emits no call and runs to
+  `finish_reason: "length"` after 7,400+ tokens. `Qwen3-1.7B-Q4_K_M` returns
+  `finish_reason: "tool_calls"` on the first request. Measured 2026-09-19
+  against llama.cpp `b23701f`. The example's default and the walkthrough moved
+  to 1.7B; `genai-agent` and `incident-response` call no tools, so their 0.8B
+  default stays correct for them, and that divergence is deliberate.
+- **`--jinja` is load-bearing.** Without it `llama-server` applies no chat
+  template and no model emits a tool call however capable it is. The earlier
+  walkthrough did not pass it, because nothing needed it before.
+- **The trace artifact caught the model inventing a number.** The README's
+  first transcript is kept with the error intact: the model reports an uptime
+  the tool never returned, with the real figure one line below in
+  `tool-trace`. Better evidence for the artifact than any argument for it.
+
+Gates run on the branch: workspace suite 3,347 tests over three consecutive
+clean runs; TCK against the live agent 21/21 graded, 0 failed, 1 N/A, which is
+the figure `tck.yml` gates; no-model surface sweep 44/44, exit 0; fmt, workspace
+clippy, file-lengths, doc-versions, book-code, doc-escapes, block-scalars,
+api-reference, sitemap `--check` and DCO all clean.
 
 ### `claude/a2a-rig-held`
 
