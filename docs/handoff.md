@@ -875,12 +875,44 @@ agents rather than maintains the protocol.
    call — the send succeeded. Consuming it belongs in whatever drives the
    task, not in the client's RPC retry loop. That half of the original item
    was wrong about where the seam is.
-5. **Make the event log the record and state the fold.** The one
-   architectural change worth making if only one can be made. It kills
-   #130-class bugs by construction, gives exact resumption from an offset
-   instead of snapshot-and-hope, makes the hand-rolled `tool-trace` artifact
-   unnecessary, and is the substrate signed execution receipts need.
-   Everything in Part B above gets easier downstream of it.
+5. **Make the event log the record and state the fold.** Half done, and the
+   half that is done is the substrate rather than the payoff.
+
+   **Shipped:** `TaskStore::{supports_event_log, append_event,
+   last_event_seq, read_events}`, implemented for `InMemoryTaskStore`, with
+   both fold paths — the background processor and `sync_collector` —
+   recording every event before folding it. Positions are idempotent, and
+   both paths seed `seq` from the store so a continuation does not collide
+   with its own earlier run.
+
+   **Not shipped, in the order it is worth doing:**
+
+   * **SQLite and Postgres implementations.** Without them the log is not
+     durable, which is most of the point. The shape is settled — a
+     `task_events(task_id, seq, kind, payload, created_at)` table with
+     `PRIMARY KEY (task_id, seq)` and `ON CONFLICT DO NOTHING`, generalising
+     `sqlite_store::journal`'s positional design, plus migration V7 and the
+     matching `from_pool` DDL. Note that SQLite has **two** independent
+     schema-construction paths and they have drifted twice; `migration.rs`
+     records both incidents.
+   * **`id:` on SSE frames and `Last-Event-ID` on resubscribe.** This is the
+     payoff — exact resumption from an offset instead of snapshot-and-hope,
+     and the thing that would fix the measured `mcp-bridge` case where three
+     progress events arrive as one. `build_sse_message_frame`
+     (`streaming/sse.rs:70`) emits no `id:` line, and `subscribe.rs`'s
+     reattach hook polls for a snapshot. `read_events(after_seq)` is already
+     the right shape for it: `after_seq` is exclusive precisely so it matches
+     the `Last-Event-ID` contract.
+   * **Making state a fold over the log on read.** The user's choice for this
+     round was the log with the snapshot kept as the record, so this stays
+     deliberately undone. It is what would make #130-class bugs impossible
+     rather than merely detectable, and it is a migration for existing
+     deployments.
+
+   **One thing to check before building on it.** The tenant-aware stores and
+   both SQL stores inherit the refusing defaults, so a deployment using them
+   has no log at all. `supports_event_log()` is the gate; anything added
+   downstream must ask rather than assume.
 6. **Publish `tck/sut`.** The fastest route to people using the server crate
    is for it to become the thing they test *their* agent against. It is
    already built.

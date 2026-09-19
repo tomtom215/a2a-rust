@@ -113,6 +113,18 @@ impl RequestHandler {
                     }
                 };
 
+                // Resumed rather than restarted at 1. A task parked at
+                // `input-required` and then continued gets a second
+                // processor, and since appends are idempotent by position a
+                // restarted counter would collide with the first
+                // processor's positions — the continuation's events would be
+                // silently dropped.
+                let mut event_seq = if task_store.supports_event_log() {
+                    task_store.last_event_seq(&task_id).await.unwrap_or(0)
+                } else {
+                    0
+                };
+
                 let mut executor_done = false;
                 let mut handle_fuse = executor_handle;
 
@@ -122,6 +134,14 @@ impl RequestHandler {
                         // persistence channel.
                         match persistence_reader.recv().await {
                             Some(event) => {
+                                record_event(
+                                    &*task_store,
+                                    &task_id,
+                                    &mut event_seq,
+                                    &event,
+                                    &*metrics,
+                                )
+                                .await;
                                 process_event_bg(
                                     event,
                                     &task_id,
@@ -144,6 +164,14 @@ impl RequestHandler {
                             event = persistence_reader.recv() => {
                                 match event {
                                     Some(event) => {
+                                        record_event(
+                                            &*task_store,
+                                            &task_id,
+                                            &mut event_seq,
+                                            &event,
+                                            &*metrics,
+                                        )
+                                        .await;
                                         process_event_bg(
                                             event,
                                             &task_id,
@@ -184,5 +212,46 @@ impl RequestHandler {
                 }
             },
         ));
+    }
+}
+
+/// Records one event in the task's log before it is folded into the snapshot.
+///
+/// Order matters: the log is written *first*, so what the agent emitted is
+/// durable before the state derived from it is. A snapshot written from an
+/// event that was never recorded is exactly the situation issue #130 left no
+/// way to detect.
+///
+/// A failed append is logged and counted, never fatal. The log is a record of
+/// the run, not a precondition for it: refusing to continue would turn a
+/// storage hiccup into a failed task, which is worse than a gap in the
+/// history — and the gap is visible, because the sequence skips a position.
+pub(in crate::handler::event_processing) async fn record_event(
+    task_store: &dyn crate::store::TaskStore,
+    task_id: &a2a_protocol_types::task::TaskId,
+    seq: &mut u64,
+    event: &a2a_protocol_types::error::A2aResult<a2a_protocol_types::events::StreamResponse>,
+    metrics: &dyn crate::metrics::Metrics,
+) {
+    if !task_store.supports_event_log() {
+        return;
+    }
+    let Ok(event) = event else {
+        // An error in the stream is the queue reporting lag, not something
+        // the agent emitted, so there is nothing to record.
+        return;
+    };
+    *seq += 1;
+    if let Err(e) = task_store.append_event(task_id, *seq, event).await {
+        trace_warn!(
+            task_id = %task_id,
+            seq = *seq,
+            error = %e,
+            "background processor: event log append failed; the history skips this position"
+        );
+        metrics.on_persistence_error(
+            crate::metrics::persistence_operation::EVENT_APPEND,
+            e.metric_label(),
+        );
     }
 }

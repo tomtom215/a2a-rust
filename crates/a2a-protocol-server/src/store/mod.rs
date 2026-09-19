@@ -36,7 +36,8 @@ mod tenant_idempotency;
 
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 pub use task_store::{
-    ArtifactDelta, DEFAULT_MAX_PAGE_SIZE, InMemoryTaskStore, TaskStore, TaskStoreConfig,
+    ArtifactDelta, DEFAULT_MAX_PAGE_SIZE, InMemoryTaskStore, RecordedEvent, TaskStore,
+    TaskStoreConfig,
 };
 pub use tenant::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
 

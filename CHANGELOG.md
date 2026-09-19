@@ -43,6 +43,50 @@ follow-up release of the binding").
 
 ### Added
 
+- **An append-only event log, so what the agent emitted is recorded and not
+  just what it folded into.** `TaskStore` gains `supports_event_log`,
+  `append_event`, `last_event_seq` and `read_events`, all defaulted.
+
+  A task's state is a fold: a stored snapshot folded together with deltas.
+  Issue #130 happened because that fold was wrong in a way nothing could
+  observe — artifacts from one task appeared on another, and the only record
+  was the folded result, which is to say the bug itself. There was nothing to
+  check it against. This adds the thing there was nothing to check against.
+
+  The snapshot stays and stays authoritative for reads; the log is a
+  parallel, ordered record of the events themselves. That makes a wrong
+  snapshot *detectable*, gives a reconnecting subscriber the events it missed
+  rather than a fold it cannot interpret, and is the substrate anything like
+  a signed execution receipt would need.
+
+  **`seq` is a position, not a counter.** The same `(task_id, seq)` written
+  twice leaves one event, so a retried or overlapping append is safe without
+  a read first — the property `sqlite_store::journal` already relies on, for
+  the same reason. That makes `last_event_seq` load-bearing rather than
+  convenient: a task parked at `input-required` and then continued gets a
+  *second* processor, and a `seq` restarting at 1 would collide with
+  positions the first one wrote, so the continuation's events would be
+  silently dropped. Both processors seed from the store instead.
+
+  **Both fold paths record, which is not one site but two.** A blocking send
+  folds in `sync_collector`; a streaming one folds in the background
+  processor. A log covering only streaming sends would be a history whose
+  completeness depended on which method the caller happened to use. Each
+  records *before* folding, so what the agent emitted is durable before the
+  state derived from it is.
+
+  A failed append is logged and counted under the new `event_append`
+  persistence-error label, never fatal. The log is a record of the run, not a
+  precondition for it — and a gap is visible, because the sequence skips a
+  position.
+
+  All four methods default to refusing rather than succeeding. A custom store
+  that does not implement them reports no log, which is inconvenient;
+  defaulting `append_event` to `Ok(())` would advertise a log that silently
+  lost every event, which is worse. Implemented for `InMemoryTaskStore`; the
+  SQL stores report no log for now, and `supports_event_log()` is what a
+  caller checks rather than discovering it by getting nothing back.
+
 - **A conformance harness for `AgentExecutor`, behind the `conformance`
   feature.** The TCK grades servers. Nothing graded the thing an adopter
   actually writes, and the paths they get wrong are the awkward ones —
