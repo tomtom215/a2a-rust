@@ -92,7 +92,7 @@ the *content* merge.
 | `release/v0.12.1` | merged, still present | The 0.12.1 release prep. Merged as `e057c8e` via #132, and tagged. Safe to delete. |
 | `claude/a2a-rig-held` | `caa8774` | Storage. The unpublished `a2a-rig` crate, one commit on top of `caac0ec`. |
 | `claude/adk-rust-0.12-patch` | `6fbdd2f` | Storage. The outbound adk-rust patch as a file, one commit on top of `caac0ec`. |
-| `claude/wizardly-tesla-0f358t` | open — see note | **Destined for `main`.** Tool calling in `examples/rig-agent`, on top of `fa1a82b9`. No PR opened yet. |
+| `claude/wizardly-tesla-0f358t` | open — see note | **Destined for `main`.** Tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP). On top of `fa1a82b9`. No PR opened yet. |
 
 `release/v0.12.1` can be deleted. The two **storage** branches —
 `claude/a2a-rig-held` and `claude/adk-rust-0.12-patch` — are **not destined for
@@ -138,10 +138,34 @@ makes this worth recording rather than just merging:
   `tool-trace`. Better evidence for the artifact than any argument for it.
 
 Gates run on the branch: workspace suite 3,347 tests over three consecutive
-clean runs; TCK against the live agent 21/21 graded, 0 failed, 1 N/A, which is
+clean runs (3,361 after `mcp-agent`); TCK against the live agent 21/21 graded, 0 failed, 1 N/A, which is
 the figure `tck.yml` gates; no-model surface sweep 44/44, exit 0; fmt, workspace
 clippy, file-lengths, doc-versions, book-code, doc-escapes, block-scalars,
 api-reference, sitemap `--check` and DCO all clean.
+
+**`examples/mcp-agent`, added after the above.** The A2A project's guidance
+is that the protocols compose — *"A2A handles inter-agent collaboration and
+MCP handles tool integration"* — and nothing showed what that means in code.
+The agent spawns an MCP server, discovers its tools with `tools/list`, and
+derives its own agent-card skills from the answer; it is `rig-agent` with
+only the tool source changed, which is the claim the two `agent.rs` files
+exist to let a reader check by diffing. Built on `rmcp` 3.4.
+
+Three things from building it that are cheaper to read than to rediscover:
+
+- **`check_package_excludes.py` and `check_book_code.sh` both caught real
+  registration gaps** — a new `publish = false` member missing from four
+  `--exclude` lists, and an unregistered book page. Neither would have
+  surfaced before the release job. Adding an example means touching
+  `Cargo.toml`, `book/src/SUMMARY.md`, `book-tests/src/lib.rs`, the sitemap,
+  and those four exclude sites; the gates name every one.
+- **Two runs of the same demo disagreed on the tool count** — one call, then
+  two, same binary and same model. The README keeps both, because it is the
+  argument for `MAX_TURNS` being a bound rather than a default.
+- **The session ran out of disk at 26 GB of `target/`**, 8 GB of it
+  `debug/incremental`. `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` brings
+  a full workspace test build down to roughly 3 GB and changes no outcome.
+  Worth knowing before a long session in a container.
 
 ### `claude/a2a-rig-held`
 
