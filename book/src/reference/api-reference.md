@@ -25,6 +25,7 @@ are rustdoc's job.
 | `error` | A2A protocol error types |
 | `events` | Server-sent event types for A2A streaming |
 | `extensions` | Agent extension and card-signature types |
+| `failure` | Why a task failed, as a class a caller can match on |
 | `idempotency` | Client-supplied idempotency keys for `message/send`, as a declared extension |
 | `jsonrpc` | JSON-RPC 2.0 envelope types |
 | `message` | Message types for the A2A protocol |

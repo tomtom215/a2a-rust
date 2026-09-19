@@ -477,6 +477,39 @@ impl Task {
         self.artifacts.iter().flatten().find_map(Artifact::text)
     }
 
+    /// Why this task failed, when the agent classified it.
+    ///
+    /// Reads the class off the status message, so a caller can branch on a
+    /// value rather than on prose:
+    ///
+    /// ```rust
+    /// # use a2a_protocol_types::failure::{FailureClass, set_class};
+    /// # use a2a_protocol_types::message::Message;
+    /// # use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+    /// # let mut status = TaskStatus::new(TaskState::Failed);
+    /// # let mut note = Message::agent_text("m1", "rate limited upstream");
+    /// # set_class(&mut note, FailureClass::Transient);
+    /// # status.message = Some(note);
+    /// # let task = Task {
+    /// #     id: "t1".into(), context_id: ContextId::new("c1"), status,
+    /// #     history: None, artifacts: None, metadata: None,
+    /// # };
+    /// match task.failure_class() {
+    ///     Some(c) if c.is_retryable() => { /* back off and try again */ }
+    ///     Some(c) if c.needs_human()  => { /* escalate, do not retry */ }
+    ///     _ => { /* give up, or inspect `task.status.message` */ }
+    /// }
+    /// # assert_eq!(task.failure_class(), Some(FailureClass::Transient));
+    /// ```
+    ///
+    /// `None` means the agent classified nothing — an older peer, or one
+    /// that does not implement the extension. It does not mean the task
+    /// succeeded; [`status`](Self::status) says that.
+    #[must_use]
+    pub fn failure_class(&self) -> Option<crate::failure::FailureClass> {
+        crate::failure::class_of(self.status.message.as_ref()?)
+    }
+
     /// Returns the text of every text [`Part`](crate::message::Part) across
     /// every artifact, in order.
     ///

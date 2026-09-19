@@ -43,6 +43,52 @@ follow-up release of the binding").
 
 ### Added
 
+- **A failed task says why, as a class a caller can `match` on.** Shipped as
+  the declared extension `https://a2a-rust.com/extensions/failure/v1`, so
+  servers stay conformant and the TCK is unaffected.
+
+  A failed task was `TaskState::Failed` plus prose written by whoever wrote
+  the executor, which left a caller matching English for decisions that are
+  genuinely different: never retry and fix the request; retry with backoff;
+  stop and escalate to a person; retry only with more budget. An orchestrator
+  without those either retries what can never succeed or abandons what would
+  have worked on the second attempt.
+
+  `a2a_protocol_types::failure` holds `FailureClass` — `InvalidRequest`,
+  `Transient`, `PolicyRefusal`, `BudgetExhausted`, `Internal` — with
+  `is_retryable()` and `needs_human()`, plus `set_class` / `class_of`.
+  `Task::failure_class()` reads it off the status message. The prose stays
+  exactly where it was, for the human reading the incident.
+
+  **Most classification is automatic and its limit is stated rather than
+  papered over.** When an executor returns `Err`, the server maps the error
+  code — which can only ever produce `InvalidRequest` or `Internal`, because
+  no `ErrorCode` carries the meaning "transient" or "refused on policy".
+  Guessing `Transient` there would tell callers to retry things that can
+  never succeed. An executor deadline is `BudgetExhausted`, since a deadline
+  is a bound that was hit rather than an agent that broke. The two classes no
+  error code can express need the agent itself, which is what
+  `EventEmitter::fail(class, reason)` is for.
+
+  `BudgetExhausted` is deliberately **not** `is_retryable()`: the identical
+  request hits the identical bound. It is retryable with a larger budget,
+  which is a different request. Asserted in its own test so the distinction
+  cannot be quietly relaxed into "retry anything that is not the caller's
+  fault".
+
+  An unrecognised class from a newer peer reads as `Internal` rather than as
+  an error. A peer that classifies more finely must not have its failures
+  become unreadable, and "something went wrong at the agent" is true of every
+  class a future version could add.
+
+  Advertised unconditionally on the card, unlike idempotency, whose
+  advertisement is gated on the store: every server classifies, because the
+  classification happens in the server's own failure path. Never `required`,
+  and an operator's own declaration is left alone.
+
+  New book page, `book/src/client/failure-classes.md`, with both examples
+  compiled and run as doctests.
+
 - **W3C trace context crosses an A2A hop.** The defining property of A2A is
   that work crosses process and organisational boundaries, and until now
   nothing survived the crossing: each agent mints its own task id, so even
@@ -448,6 +494,12 @@ follow-up release of the binding").
   properties, and only the second is one the protocol can carry.
 
 ### Fixed
+
+- **The idempotency extension's card description carried 30 literal
+  spaces.** Someone reflowed a multi-line string literal without stripping
+  the indentation, so the description a client reads off the card said "a
+  retried&nbsp;&nbsp;…&nbsp;&nbsp;send returns". Noticed while adding the
+  failure extension beside it.
 
 - **Three documents said the SDK had no `traceparent`, and now say what it
   does have.** `otel/pipeline.rs`'s "no part of this workspace reads or

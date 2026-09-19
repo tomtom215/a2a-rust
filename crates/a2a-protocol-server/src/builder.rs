@@ -433,7 +433,9 @@ impl RequestHandlerBuilder {
                     extensions.push(AgentExtension {
                         uri: idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned(),
                         description: Some(
-                            "Client-supplied idempotency keys on message/send: a retried                              send returns the task the first one created instead of                              starting a second."
+                            "Client-supplied idempotency keys on message/send: a \
+                             retried send returns the task the first one created \
+                             instead of starting a second."
                                 .to_owned(),
                         ),
                         // Never required. A client that does not know the
@@ -444,6 +446,31 @@ impl RequestHandlerBuilder {
                         params: None,
                     });
                 }
+            }
+        }
+
+        // The failure taxonomy needs no capability gate the way idempotency
+        // does: every server classifies, because the classification happens
+        // in this crate's own failure path rather than in a store that may
+        // or may not support it. So the advertisement is unconditional — and
+        // still never `required`, and still never overwrites an operator's
+        // own entry.
+        if let Some(card) = agent_card.as_mut() {
+            let extensions = card.capabilities.extensions.get_or_insert_with(Vec::new);
+            if !extensions
+                .iter()
+                .any(|e| e.uri == a2a_protocol_types::failure::FAILURE_EXTENSION_URI)
+            {
+                extensions.push(AgentExtension {
+                    uri: a2a_protocol_types::failure::FAILURE_EXTENSION_URI.to_owned(),
+                    description: Some(
+                        "A failed task says why in a form a caller can match on, \
+                         rather than only in prose."
+                            .to_owned(),
+                    ),
+                    required: Some(false),
+                    params: None,
+                });
             }
         }
 
@@ -747,5 +774,79 @@ mod tests {
             result.is_err(),
             "zero push_delivery_timeout should be rejected"
         );
+    }
+
+    /// The failure taxonomy is advertised unconditionally, because every
+    /// server classifies — unlike idempotency, whose advertisement is gated
+    /// on the store. Never `required`: a client that does not know the
+    /// extension reads the prose as before.
+    #[test]
+    fn the_failure_extension_is_advertised_and_never_required() {
+        use a2a_protocol_types::failure::FAILURE_EXTENSION_URI;
+
+        let card = a2a_protocol_types::agent_card::AgentCard::new(
+            "t",
+            "0.0.0",
+            a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
+        );
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect("handler");
+
+        let entry = handler
+            .agent_card
+            .as_ref()
+            .expect("a card was configured")
+            .capabilities
+            .extensions
+            .as_ref()
+            .expect("extensions")
+            .iter()
+            .find(|e| e.uri == FAILURE_EXTENSION_URI)
+            .expect("the failure extension must be advertised");
+        assert_eq!(entry.required, Some(false));
+        assert!(
+            entry.description.is_some(),
+            "a bare URI tells a reader nothing"
+        );
+    }
+
+    /// An operator's own declaration wins, `required` included — the same
+    /// rule idempotency follows.
+    #[test]
+    fn an_operators_own_failure_declaration_is_left_alone() {
+        use a2a_protocol_types::extensions::AgentExtension;
+        use a2a_protocol_types::failure::FAILURE_EXTENSION_URI;
+
+        let mut card = a2a_protocol_types::agent_card::AgentCard::new(
+            "t",
+            "0.0.0",
+            a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
+        );
+        let mut mine = AgentExtension::new(FAILURE_EXTENSION_URI);
+        mine.required = Some(true);
+        mine.description = Some("mine".to_owned());
+        card.capabilities.extensions = Some(vec![mine]);
+
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect("handler");
+
+        let entries: Vec<_> = handler
+            .agent_card
+            .as_ref()
+            .expect("card")
+            .capabilities
+            .extensions
+            .as_ref()
+            .expect("extensions")
+            .iter()
+            .filter(|e| e.uri == FAILURE_EXTENSION_URI)
+            .collect();
+        assert_eq!(entries.len(), 1, "the entry must not be duplicated");
+        assert_eq!(entries[0].required, Some(true));
+        assert_eq!(entries[0].description.as_deref(), Some("mine"));
     }
 }

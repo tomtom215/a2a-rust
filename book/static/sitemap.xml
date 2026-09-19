@@ -42,6 +42,7 @@
   <url><loc>https://a2a-rust.com/client/builder.html</loc><lastmod>2026-09-19</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/client/sending-messages.html</loc><lastmod>2026-09-19</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/client/idempotency.html</loc><lastmod>2026-09-19</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://a2a-rust.com/client/failure-classes.html</loc><lastmod>2026-09-19</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/client/streaming.html</loc><lastmod>2026-09-19</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/client/task-management.html</loc><lastmod>2026-09-19</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/client/error-handling.html</loc><lastmod>2026-09-19</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>

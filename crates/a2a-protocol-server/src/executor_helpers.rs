@@ -60,6 +60,8 @@ use std::pin::Pin;
 use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
+use a2a_protocol_types::failure::{FailureClass, set_class};
+use a2a_protocol_types::message::Message;
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
@@ -223,6 +225,46 @@ impl<'a> EventEmitter<'a> {
                 task_id: self.ctx.task_id.clone(),
                 context_id: ContextId::new(self.ctx.context_id.clone()),
                 status: TaskStatus::new(state),
+                metadata: None,
+            }))
+            .await
+    }
+
+    /// Emits the terminal `Failed` status, saying *why* in a form a caller
+    /// can branch on.
+    ///
+    /// An executor that returns `Err` instead gets a class inferred from the
+    /// error code, which can only ever be `InvalidRequest` or `Internal` —
+    /// no [`ErrorCode`](a2a_protocol_types::error::ErrorCode) means
+    /// "transient" or "refused on policy". An agent that knows it was rate
+    /// limited upstream, or declined on a safety rule, is the only thing
+    /// that can say so, and this is how.
+    ///
+    /// ```rust,ignore
+    /// // Retry me: the model was rate limited, not wrong.
+    /// emit.fail(FailureClass::Transient, "upstream model returned 429").await?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event queue write fails.
+    pub async fn fail(&self, class: FailureClass, reason: impl Into<String>) -> A2aResult<()> {
+        let mut note = Message::agent(
+            uuid::Uuid::new_v4().to_string(),
+            vec![Part::text(reason.into())],
+        );
+        note.task_id = Some(self.ctx.task_id.clone());
+        note.context_id = Some(ContextId::new(self.ctx.context_id.clone()));
+        set_class(&mut note, class);
+
+        let mut status = TaskStatus::new(TaskState::Failed);
+        status.message = Some(note);
+
+        self.queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: self.ctx.task_id.clone(),
+                context_id: ContextId::new(self.ctx.context_id.clone()),
+                status,
                 metadata: None,
             }))
             .await

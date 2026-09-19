@@ -859,9 +859,14 @@ agents rather than maintains the protocol.
    because writing those by hand is exactly the work people skip. This
    project already believes in the tooling: `cargo mutants` is the same
    instinct pointed at tests.
-4. **A typed failure taxonomy shipped as a declared extension**, with the
-   client's retry policy consuming it. Idempotency proved the extension
-   pattern works end to end.
+4. ~~**A typed failure taxonomy shipped as a declared extension.**~~ Done —
+   `a2a_protocol_types::failure`, `Task::failure_class()`,
+   `EventEmitter::fail`, advertised on the card, with a book page. **The
+   client's retry policy does not consume it and should not**: `retry.rs`
+   retries *transport* calls, and a task that ran and failed is not a failed
+   call — the send succeeded. Consuming it belongs in whatever drives the
+   task, not in the client's RPC retry loop. That half of the original item
+   was wrong about where the seam is.
 5. **Make the event log the record and state the fold.** The one
    architectural change worth making if only one can be made. It kills
    #130-class bugs by construction, gives exact resumption from an offset
