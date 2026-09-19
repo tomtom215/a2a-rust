@@ -846,8 +846,10 @@ construction.
 Ordered by value per unit of work, from the seat of someone who consumes
 agents rather than maintains the protocol.
 
-1. **Trace context as a protocol concern.** Finding 6. Biggest gap, clearest
-   differentiator, and it uses hooks that already exist.
+1. ~~**Trace context as a protocol concern.**~~ Done — see *Trace context
+   is carried now* below. It did use the hooks that already existed:
+   `CallContext::http_headers` inbound, `ClientRequest::extra_headers`
+   outbound, and nothing else needed inventing.
 2. ~~**Plumb `CallContext` into `RequestContext`.**~~ Done — see *The
    `RequestContext` blind spot — closed* above.
 3. **The executor conformance harness (A4 above) — move it up.** Three
@@ -1054,6 +1056,49 @@ clean tree selects nine gates and reports **9 proven, 0 unproven**, each
 So the panic hook was the whole of the INCONCLUSIVE verdict, and a local
 PostgreSQL was the whole of those three PRE-BROKEN ones.
 
+
+### Trace context is carried now
+
+Finding 6 above — "there is no tracing at all, and for *this* protocol that
+is the biggest gap" — is half answered, and the half matters because the two
+claims were being run together everywhere.
+
+**What shipped: propagation.** `a2a_protocol_types::trace_context` holds the
+W3C wire format; the server parses an inbound `traceparent`, advances the
+span and exposes `RequestContext::trace_context()`; the client gains
+`TracePropagationInterceptor` plus a `CurrentTrace` task-local. A delegation
+chain now shares one trace id, and because `traceparent` is a wire format
+rather than a Rust type, it shares it with the Python, JavaScript, Go and
+Java agents the ITK already runs.
+
+**What did not: span export.** The `otel` feature is still metrics-only, with
+no `TracerProvider`. Nothing records a duration or a parent/child edge. The
+cross-language *trace conformance result* this file named as the prize is
+therefore still unbuilt — but its precondition now exists, which it did not
+before.
+
+**Three design calls, each of which could have gone the other way.** The
+server propagates and never invents, so `None` is evidence about the caller
+rather than a hole in the plumbing — the alternative, minting a root
+server-side, makes every request traced and makes `Option` meaningless. A
+malformed `traceparent` is dropped rather than repaired. An explicit header
+on a request beats the ambient scope.
+
+**The `CurrentTrace` task-local lives in the client crate, not the server**,
+because `a2a-protocol-server` does not depend on `a2a-protocol-client` and
+should not start to. The consequence is that an executor opts in explicitly
+with one `CurrentTrace::scope` wrap rather than propagation being automatic.
+That is the honest trade and it is documented on the type; anyone tempted to
+make it implicit should check that dependency direction first.
+
+**Three documents had to be corrected in the same change**, all of which had
+been corrected *to* their previous wording on 2026-09-19:
+`otel/pipeline.rs`, `book/src/deployment/observability.md` and the
+`docs/rust-sdk-assessment.md` comparison row. Each said some version of "no
+`traceparent` anywhere in the workspace". The lesson worth keeping is that
+"no spans are exported" and "trace context is not carried" are different
+claims, and writing them as one sentence is what made all three go stale at
+once.
 
 ### Deferred by the 2026-09-19 observability review
 

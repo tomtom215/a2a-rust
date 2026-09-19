@@ -150,6 +150,30 @@ impl RequestContext {
             .map_or(&[] as &[String], CallContext::extensions)
     }
 
+    /// The W3C trace this execution belongs to, when the caller sent a
+    /// `traceparent`.
+    ///
+    /// Propagate it verbatim on any outbound A2A call and the delegation
+    /// chain becomes one trace rather than several unrelated span trees:
+    ///
+    /// ```rust,ignore
+    /// if let Some(tc) = ctx.trace_context() {
+    ///     CurrentTrace::scope(tc.clone(), async {
+    ///         client.send_message(params).await
+    ///     })
+    ///     .await?;
+    /// }
+    /// ```
+    ///
+    /// `None` means the caller was not tracing. It never means the SDK
+    /// invented one.
+    #[must_use]
+    pub fn trace_context(&self) -> Option<&a2a_protocol_types::trace_context::TraceContext> {
+        self.call_context
+            .as_ref()
+            .and_then(CallContext::trace_context)
+    }
+
     /// The caller's request/trace id, from `X-Request-ID` if they sent one.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {

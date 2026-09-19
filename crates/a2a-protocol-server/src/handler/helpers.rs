@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::task::Task;
+use a2a_protocol_types::trace_context::{TRACEPARENT_HEADER, TRACESTATE_HEADER, TraceContext};
 
 use crate::call_context::CallContext;
 use crate::error::{ServerError, ServerResult};
@@ -86,6 +87,9 @@ pub(super) fn build_call_context(
         if !extensions.is_empty() {
             ctx = ctx.with_extensions(extensions);
         }
+        if let Some(trace) = parse_trace_context(h) {
+            ctx = ctx.with_trace_context(trace);
+        }
         ctx = ctx.with_http_headers(h.clone());
     }
     // The tenant is a `tokio::task_local` that every handler entry point has
@@ -99,6 +103,30 @@ pub(super) fn build_call_context(
         ctx = ctx.with_tenant(tenant);
     }
     ctx
+}
+
+/// The W3C trace a request belongs to, as *this hop's* span.
+///
+/// The caller's `traceparent` names their span; ours has to be a new one, or
+/// every hop in a chain would report the same span id and the trace would be
+/// a flat list instead of a tree. The span id is 64 bits of a v4 UUID, which
+/// is what the rest of this crate already mints identifiers from.
+///
+/// A malformed `traceparent` is dropped rather than repaired. Guessing at
+/// what a peer meant would attach this work to a trace that may not exist,
+/// and a missing span is a smaller lie than a wrong one.
+fn parse_trace_context(headers: &HashMap<String, String>) -> Option<TraceContext> {
+    let inbound = TraceContext::parse(headers.get(TRACEPARENT_HEADER)?).ok()?;
+    let inbound = match headers.get(TRACESTATE_HEADER) {
+        // An unusable `tracestate` loses only the vendor state, so the trace
+        // is still worth joining without it.
+        Some(state) => inbound.clone().with_tracestate(state).unwrap_or(inbound),
+        None => inbound,
+    };
+    let uuid = uuid::Uuid::new_v4();
+    let mut span_id = [0_u8; 8];
+    span_id.copy_from_slice(&uuid.as_bytes()[..8]);
+    inbound.child_bytes(span_id).ok()
 }
 
 /// Parses the (lowercased) `a2a-extensions` header into extension URIs.

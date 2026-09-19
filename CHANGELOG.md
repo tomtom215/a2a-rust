@@ -43,6 +43,49 @@ follow-up release of the binding").
 
 ### Added
 
+- **W3C trace context crosses an A2A hop.** The defining property of A2A is
+  that work crosses process and organisational boundaries, and until now
+  nothing survived the crossing: each agent mints its own task id, so even
+  correlating by hand failed at the first hop. One identifier now does —
+  `traceparent`, which every other ecosystem already speaks.
+
+  `a2a_protocol_types::trace_context` is the wire format: `TraceContext`
+  with strict [W3C](https://www.w3.org/TR/trace-context/) parsing, the
+  `traceparent`/`tracestate` header names, and `child` / `child_bytes` for
+  deriving the next hop. It mints nothing — this crate depends on `serde` and
+  `serde_json` and has no random source — so a caller supplies the identifier
+  bytes, the same call the `Artifact::new` id already makes.
+
+  The server parses an inbound `traceparent`, advances the span, and exposes
+  it as `RequestContext::trace_context()`. The client gains
+  `TracePropagationInterceptor`, which writes the ambient `CurrentTrace` onto
+  every outbound request; `CurrentTrace::scope` sets it and
+  `CurrentTrace::start_root()` begins a chain. The indirection through a
+  task-local is deliberate: a client is built once and reused for many
+  delegated calls, so a trace fixed at construction would label all of them
+  with the first request's.
+
+  Three decisions worth stating, because each could reasonably have gone the
+  other way. **The server propagates and never invents** — `None` from
+  `trace_context()` is evidence that the caller was not tracing, not a gap in
+  the plumbing, and a chain that wants a trace starts one at its first hop.
+  **A malformed `traceparent` is dropped, not repaired** — uppercase hex, an
+  all-zero id, a bad width: attaching work to a guessed-at trace is a wrong
+  answer where a missing trace is only an absent one. **An explicit header on
+  the request wins over the ambient scope**, because silently replacing it
+  would move the callee into a different trace than its caller asked for.
+
+  This is propagation, not tracing. Nothing records a span, measures a
+  duration or exports anything, and the `otel` feature is still metrics-only.
+  What it buys is that whatever *does* record spans can stitch the hops
+  together — across languages, since `traceparent` is a wire format and the
+  interoperability kit already runs Python, JavaScript, Go and Java agents.
+
+  Proven over a real socket rather than asserted: `tests/trace_propagation_e2e.rs`
+  drives two chained agents and checks that the trace id holds across both
+  hops while each hop advances the span — the two ways a propagator can be
+  wrong while looking right.
+
 - **An executor can see who called it.** `RequestContext` gains
   `call_context`, and with it five accessors: `caller_identity()`,
   `tenant()`, `http_header(name)`, `activated_extensions()` and
@@ -405,6 +448,16 @@ follow-up release of the binding").
   properties, and only the second is one the protocol can carry.
 
 ### Fixed
+
+- **Three documents said the SDK had no `traceparent`, and now say what it
+  does have.** `otel/pipeline.rs`'s "no part of this workspace reads or
+  writes W3C `traceparent`", `book/src/deployment/observability.md`'s "There
+  are no traces", and the `docs/rust-sdk-assessment.md` comparison row were
+  all accurate on 2026-09-19 and were made false by the change above. Each
+  now separates the two claims that were being run together: no spans are
+  exported, which is still true, and trace context is not carried, which is
+  no longer. The assessment row has now been corrected twice in opposite
+  directions, which is recorded there rather than quietly overwritten.
 
 - **The spawned executor ran under the empty tenant.** `spawn_executor` used
   a bare `tokio::spawn`, and `TenantContext` is a `tokio::task_local`, which

@@ -30,6 +30,8 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use a2a_protocol_types::trace_context::TraceContext;
+
 /// Metadata about the current server-side method call.
 ///
 /// Passed to [`ServerInterceptor::before`](crate::ServerInterceptor::before)
@@ -65,6 +67,13 @@ pub struct CallContext {
     ///
     /// Keys are lowercased for case-insensitive matching.
     http_headers: HashMap<String, String>,
+
+    /// The W3C trace this call belongs to, when the caller sent one.
+    ///
+    /// Its `span_id` is *this* request's, derived from the caller's
+    /// `traceparent` — so an outbound call made while serving this request
+    /// carries it verbatim and becomes a child of this hop.
+    trace_context: Option<TraceContext>,
 
     /// The tenant this call resolved to, if the deployment is multi-tenant.
     ///
@@ -137,6 +146,17 @@ impl CallContext {
         &self.http_headers
     }
 
+    /// The W3C trace this call belongs to, when the caller propagated one.
+    ///
+    /// `None` means the caller sent no `traceparent`, or sent one this SDK
+    /// refused. It never means "we made one up": the server propagates
+    /// traces and does not start them, so a `Some` here is evidence that
+    /// something upstream is actually tracing.
+    #[must_use]
+    pub const fn trace_context(&self) -> Option<&TraceContext> {
+        self.trace_context.as_ref()
+    }
+
     /// Returns the tenant this call resolved to, if any.
     ///
     /// Prefer this over
@@ -160,8 +180,16 @@ impl CallContext {
             extensions: Vec::new(),
             request_id: None,
             http_headers: HashMap::new(),
+            trace_context: None,
             tenant: None,
         }
+    }
+
+    /// Sets the trace this call belongs to.
+    #[must_use]
+    pub fn with_trace_context(mut self, trace_context: TraceContext) -> Self {
+        self.trace_context = Some(trace_context);
+        self
     }
 
     /// Sets the resolved tenant.

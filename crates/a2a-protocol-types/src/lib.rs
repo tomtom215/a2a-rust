@@ -113,6 +113,7 @@ pub mod serde_helpers;
 #[cfg(feature = "signing")]
 pub mod signing;
 pub mod task;
+pub mod trace_context;
 
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 

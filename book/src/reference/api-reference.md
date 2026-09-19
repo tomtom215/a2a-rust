@@ -37,6 +37,7 @@ are rustdoc's job.
 | `serde_helpers` | Serialization helpers for reducing allocation overhead |
 | `signing` | Agent card signing and verification (spec §10) (`signing` feature) |
 | `task` | Task types for the A2A protocol |
+| `trace_context` | W3C `traceparent` / `tracestate`: parse, validate, derive a child |
 
 ### Protocol Constants
 
@@ -222,6 +223,9 @@ are rustdoc's job.
 | `ClientConfig` | Configuration for an `A2aClient` instance |
 | `EventStream` | Async SSE event stream |
 | `RetryPolicy` | Configurable retry with exponential backoff |
+| `trace_propagation` | Carrying W3C trace context on outbound calls |
+| `CurrentTrace` | The trace the current task runs under, and how to start one |
+| `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |
 | `ClientError` | Errors that can occur during A2A client operations |
 | `ClientResult<T>` | Alias for `Result<T, ClientError>` |
 
