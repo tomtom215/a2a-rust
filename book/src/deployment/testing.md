@@ -77,22 +77,13 @@ async fn test_end_to_end() {
         .unwrap();
 
     // Send a message
-    let response = client.send_message(MessageSendParams {
-        tenant: None,
-        context_id: None,
-        message: Message {
-            id: MessageId::new("test-msg"),
-            role: MessageRole::User,
-            parts: vec![Part::text("10 + 20")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
-        configuration: None,
-        metadata: None,
-    }).await.unwrap();
+    let response = client
+        .send_message(MessageSendParams::new(Message::user_text(
+            "test-msg",
+            "10 + 20",
+        )))
+        .await
+        .unwrap();
 
     // Verify
     if let SendMessageResponse::Task(task) = response {

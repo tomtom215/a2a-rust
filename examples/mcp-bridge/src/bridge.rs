@@ -50,7 +50,7 @@ use std::time::{Duration, Instant};
 
 use a2a_protocol_client::A2aClient;
 use a2a_protocol_types::agent_card::AgentCard;
-use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+use a2a_protocol_types::message::Message;
 use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{Task, TaskState};
@@ -163,27 +163,18 @@ async fn drive(
     message: String,
     progress: Option<&TaskContext>,
 ) -> Result<CallToolResult, String> {
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message {
-            id: MessageId::new(format!("mcp-bridge-{}", uuid_like())),
-            role: MessageRole::User,
-            parts: vec![Part::text(message)],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
-        // `return_immediately` so the task id is in hand before the agent
-        // finishes. Without it a cancel arriving mid-call would have nothing
-        // to cancel.
-        configuration: Some(SendMessageConfiguration {
-            return_immediately: Some(true),
-            ..SendMessageConfiguration::default()
-        }),
-        metadata: Some(serde_json::json!({ SKILL_METADATA_KEY: tool })),
-    };
+    let params = MessageSendParams::new(Message::user_text(
+        format!("mcp-bridge-{}", uuid::Uuid::new_v4()),
+        message,
+    ))
+    // `return_immediately` so the task id is in hand before the agent
+    // finishes. Without it a cancel arriving mid-call would have nothing
+    // to cancel.
+    .with_configuration(SendMessageConfiguration {
+        return_immediately: Some(true),
+        ..SendMessageConfiguration::default()
+    })
+    .with_metadata(serde_json::json!({ SKILL_METADATA_KEY: tool }));
 
     let task = match client.send_message(params).await {
         Ok(SendMessageResponse::Task(task)) => task,
@@ -304,16 +295,6 @@ fn message_result(reply: &a2a_protocol_types::message::Message) -> CallToolResul
         })
         .collect();
     CallToolResult::success(blocks)
-}
-
-/// A unique-enough message id without a `uuid` dependency for one call site.
-fn uuid_like() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default()
-        .to_string()
 }
 
 impl ServerHandler for A2aBridge {

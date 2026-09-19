@@ -172,21 +172,10 @@ async fn main() {
         .build()
         .expect("build client");
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text("42 + 58")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(Message::user_text(
+        uuid::Uuid::new_v4().to_string(),
+        "42 + 58",
+    ));
 
     match client.send_message(params).await.unwrap() {
         SendMessageResponse::Task(task) => {

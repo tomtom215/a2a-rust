@@ -11,7 +11,7 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-19.
+Last updated 2026-09-19 (second session: the panic-hook fix and the type constructors).
 
 ## 0.12.1 — released 2026-09-17
 
@@ -704,7 +704,15 @@ even a key to stash something under.
 Of everything in this file, plumbing `CallContext` into `RequestContext`
 would most expand what people can build on top.
 
-### Five things every example hand-writes
+### Five things every example hand-writes — three of the five are gone
+
+**Superseded in part.** The `AgentCard` literal, the `MessageSendParams`
+construction and the artifact text extraction are all one call now; the list
+below is kept because the other two are still true and because the measured
+sizes are what justified fixing them. What changed, and what did not, is in
+*What the constructors changed* below.
+
+### The original list
 
 Each of these was written three times in one session:
 
@@ -740,6 +748,63 @@ an answer out of a finished task. Neither `MessageSendParams` nor `Task` has
 a single inherent method between them. Adding those two, plus the
 `# Construction` pointer above, would delete roughly a hundred lines from
 every agent anyone writes and make the examples shorter rather than longer.
+
+### What the constructors changed
+
+Shipped 2026-09-19 in `feat(types): constructors for Message, Task and
+MessageSendParams`. Counted on the tree with
+`git ls-files '*.rs' | xargs grep`, filtering out signatures and definitions —
+the earlier figures in this file were contaminated by `fn ... -> Message {`
+lines and by protobuf `pb::Message {`, so they ran high:
+
+| literal | sites |
+|---|---|
+| `Message {` | 105 |
+| `AgentCard {` | 82 |
+| `Task {` | 82 |
+| `MessageSendParams {` | 75 |
+| `AgentSkill {` | 54 |
+
+`Message` has 8 fields, not nine as recorded above; a one-line-of-text message
+cost a ten-line literal, five of whose fields said `None`.
+
+Added: `Message::{new, user, agent, user_text, agent_text}` and `with_*` for
+all five optional fields; `MessageSendParams::{new, with_tenant,
+with_configuration, with_metadata}`; `Task::{text, texts}`; `# Construction`
+sections on `AgentCard`, `AgentSkill` and `AgentInterface`.
+
+Three things worth not rediscovering:
+
+* **The id stays a parameter.** `a2a-protocol-types` depends on `serde` and
+  `serde_json` and nothing else. Minting an id means either a new mandatory
+  dependency for a pure-data crate or a clock-derived id that collides under
+  concurrency. `Artifact::new` already made this call.
+* **`AgentCard::new` leaves `default_input_modes` and `default_output_modes`
+  empty**, where every hand-written literal set `["text/plain"]`. Converting a
+  literal without adding `.with_input_modes(..)` silently changes the served
+  card. This is the one trap in the conversion.
+* **`Task::text` skips artifacts with no text** rather than stopping at the
+  first, so it answers where `artifacts.first().and_then(Artifact::text)`
+  returns `None`. Deliberate, documented and asserted — it is the rule
+  `Message::text` already applies across parts.
+
+Adoption: seven files under `examples/` (net −113 lines) and five book pages
+(net −108). Three cards stopped setting `AgentCard.url`, which is
+`#[serde(skip_serializing)]` and therefore unreadable by any client;
+`rig-agent`'s test now asserts `supported_interfaces[0].url` instead. One book
+snippet, `book/src/deployment/testing.md`, was setting a `context_id` field
+`MessageSendParams` does not have — it sat in a `rust,ignore` fence, so
+nothing had ever compiled it.
+
+The two hand-rolled `uuid_like()` helpers went with them. Each was a
+nanosecond timestamp — not unique under concurrency, and sequential enough to
+guess — written to avoid a `uuid` dependency the workspace already carries and
+seven other examples already use. Both examples now take `uuid` and call
+`Uuid::new_v4()`.
+
+**Still hand-written, and still worth doing:** the ~25-line hyper accept loop,
+because `serve()` does not cover "JSON-RPC and REST on one socket". That is
+the last of the five with no answer.
 
 ### The event-log absence has a measured cost now
 
@@ -823,6 +888,12 @@ Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
 4. ~~Stale install snippets.~~ Done — see "Prose versions are checked now"
    below. The figure recorded here first, six, was wrong: it counted only
    `crates/`, and the real number was 28.
+5. Re-run `prove_gates_fail.sh` for the three `--features {sqlite,postgres,
+   auth-jwt}` gates on a clean tree. The panic hook that made them
+   INCONCLUSIVE is gone, but that they now report PROVEN is inference, not
+   measurement. Do this before trusting the harness's tally again.
+6. ~~The two hand-rolled `uuid_like()` helpers.~~ Done — both examples take
+   `uuid` now.
 
 ### `prove_gates_fail.sh` was stuck at gate 5 of 65 — found and fixed 2026-09-19
 
@@ -880,51 +951,61 @@ machine rather than a repository defect: five need a PostgreSQL server, one
 is the SLIMRPC SPIFFE suite, one is `cargo hack clippy` failing in 0 s
 because `cargo-hack` is absent. The remaining three are the next entry.
 
-### Three gates report INCONCLUSIVE because a test-local panic hook is process-global
+### The process-global panic hook is fixed — and the recommended fix was wrong
 
-Found 2026-09-19 while running the harness past step 5 for the first time.
-Pre-existing, unrelated to the needle, **not fixed**.
+Recorded here on 2026-09-19 as found-but-not-fixed, with a proposal. Both the
+count and the proposal turned out to be wrong, so this section is rewritten
+rather than ticked off.
 
-`cargo test -p a2a-protocol-server --features {sqlite,postgres,auth-jwt}`
-each come back `INCONCLUSIVE — gate exited 101 but its output never mentions
-the injected defect`. The injected test does fail correctly:
-`gate_probe_sqlite::gate_probe_must_fail` is in the failure list. Its panic
-*message* is missing, so cargo prints an empty `failures:` block with no
-`---- stdout ----` section and the prover's grep finds nothing to confirm.
+**There were three sites, not two, in two crates rather than one.** The two in
+`crates/a2a-protocol-server/src/agent_card/hot_reload.rs` were recorded. The
+third, `crates/a2a-protocol-client/src/auth.rs:277`, was not, so the client's
+own test binary had the same hole and nobody knew. `grep -rn 'set_hook'
+--include='*.rs'` over the whole tree is what found it; the original pass had
+looked only where the symptom appeared.
 
-The cause is not in the prover. Two tests in
-`crates/a2a-protocol-server/src/agent_card/hot_reload.rs` silence panic
-output around an expected panic:
+**The proposal — move those tests into their own integration-test binary —
+would not have worked, and rested on a false premise.** Both hot-reload tests
+reach `handler.card` and the client test reaches `store.inner`, all private,
+so an integration test in `tests/` cannot see them without making internals
+public. That trades a real encapsulation boundary for a cosmetic one. And the
+premise, that the hook swap "keeps the output clean", is false: libtest
+captures panic output per test and discards it when the test passes, so an
+expected panic in a passing test prints nothing whether the swap is there or
+not.
 
-```rust
-let hook = std::panic::take_hook();
-std::panic::set_hook(Box::new(|_| {}));
-...
-std::panic::set_hook(hook);
-```
-
-`set_hook` is process-global, libtest runs tests as parallel threads in one
-process, and nothing serialises these two. Any test that panics inside that
-window loses its message. Measured, not inferred — an injected panicking test
-in the same binary:
+**What shipped is the deletion**, at all three sites, plus
+`scripts/check_panic_hooks.sh` to keep them deleted. Measured rather than
+argued, on the pattern in isolation — an unrelated failing test in the same
+binary:
 
 ```text
-SERIAL   (--test-threads=1):  marker present, 1/1 runs
-PARALLEL (default):           marker present, 2/3 runs — lost in run 1
+with the hook swap:     marker LOST in 3 of 3 parallel runs
+without the hook swap:  marker present in 3 of 3
+expected panic's text:  absent in 3 of 3 either way
 ```
 
-**Severity is higher than the three INCONCLUSIVE suggest**, because those are
-only the symptom that happened to be looked at. Any genuinely failing test in
-this crate can lose its panic message when it races those two, giving a red
-CI build whose reason is absent from the log, non-deterministically.
+So the swap suppressed nothing libtest was not already suppressing, and cost
+every other test in the binary its failure message to do it.
 
-**The fix**, left for a change of its own: the silencing is cosmetic —
-`catch_unwind` captures the payload both tests actually assert on, and the
-hook only controls what gets printed. Either drop the hook swap and accept
-one backtrace in passing output, or move those two tests into their own
-integration-test binary so the global hook can only reach them. The second is
-preferable: it keeps the output clean and bounds the blast radius to a
-process containing nothing else.
+The gate is a grep, deliberately: "some other test lost its message" is not
+observable from inside the test that lost it, so there is no runtime assertion
+to write. It strips line comments before matching, so the explanatory comments
+now at the three sites are not findings. Registered in `ci.yml`'s Format job,
+paired with an injection in `scripts/prove_gates_fail.sh`, and listed in the
+gate-reachability input table. Proven three ways before shipping: exit 0 on
+the fixed tree; exit 1 naming all six lines on the tree as it stood; and
+`prove_gates_fail.sh --only check_panic_hooks` reports **PROVEN**, "gate
+exited 1 citing the injected defect", with the tree clean afterwards. The
+harness now counts 66 gates rather than 65.
+
+**Not yet re-measured: whether the three gates now report PROVEN.** The
+mechanism is fixed and the reasoning is that they will, but
+`prove_gates_fail.sh --only 'features sqlite'` needs a clean tree and a long
+run, and this branch has not had one. That is the check the next session
+should run first, and it is the only claim in this section that is inference
+rather than measurement.
+
 
 ### Deferred by the 2026-09-19 observability review
 
@@ -952,11 +1033,9 @@ of these renames something a user's dashboards already select on:
   can win as the specification requires — `Option<&str>`, or drop the
   parameter and let `EnvResourceDetector` supply it.
 
-**Non-breaking, small, and independently useful:**
-
-* A `# Construction` line on the `AgentCard` struct doc
-  (`agent_card/mod.rs:182-190`) pointing at `AgentCard::new` and the twelve
-  `with_*` methods. Three examples written the same day all missed them.
-* A `Message` constructor — `impl Message` has `text` and `texts` and no way
-  to build one.
-* `Task::text()` — `Task` has no `impl` block at all in the types crate.
+**Non-breaking, small, and independently useful — all three shipped.** The
+`# Construction` sections are on `AgentCard`, `AgentSkill` and
+`AgentInterface`; `Message` has `new`, `user`, `agent`, `user_text`,
+`agent_text` and `with_*` for all five optional fields; `Task` has `text` and
+`texts`. `MessageSendParams` turned out to have no `impl` block either and got
+`new` plus three `with_*`. See the section below.

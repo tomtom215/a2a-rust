@@ -200,42 +200,28 @@ fn tool_server_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
 /// server does not serve is a lie told to every client that reads it, and
 /// deriving it makes that impossible rather than merely discouraged.
 fn make_agent_card(url: &str, model: &str, tools: &[&str]) -> AgentCard {
-    AgentCard {
-        url: Some(url.into()),
-        name: "MCP-backed A2A Agent".into(),
-        description: format!(
-            "A2A agent backed by the '{model}' model, with tools from an MCP server"
-        ),
-        version: env!("CARGO_PKG_VERSION").into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "mcp-tools".into(),
-            name: "MCP-backed question answering".into(),
-            description: format!(
+    AgentCard::new(
+        "MCP-backed A2A Agent",
+        env!("CARGO_PKG_VERSION"),
+        AgentInterface::jsonrpc(url),
+    )
+    .with_description(format!(
+        "A2A agent backed by the '{model}' model, with tools from an MCP server"
+    ))
+    .with_input_modes(["text/plain"])
+    .with_output_modes(["text/plain"])
+    .with_skill(
+        AgentSkill::new(
+            "mcp-tools",
+            "MCP-backed question answering",
+            format!(
                 "Answers questions using the MCP server's tools: {}",
                 tools.join(", ")
             ),
-            tags: vec!["llm".into(), "mcp".into(), "tool-calling".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none().with_streaming(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+        )
+        .with_tags(["llm", "mcp", "tool-calling"]),
+    )
+    .with_capabilities(AgentCapabilities::none().with_streaming(true))
 }
 
 /// Serves the JSON-RPC dispatcher on an already-bound listener.
@@ -391,25 +377,14 @@ async fn drive_once(
     client: &a2a_protocol_client::A2aClient,
     question: &str,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    use a2a_protocol_types::message::{Message, MessageId, MessageRole};
+    use a2a_protocol_types::message::Message;
     use a2a_protocol_types::params::MessageSendParams;
     use a2a_protocol_types::responses::SendMessageResponse;
 
-    let params = MessageSendParams {
-        message: Message {
-            id: MessageId::new(uuid_like()),
-            role: MessageRole::User,
-            parts: vec![Part::text(question)],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
-        configuration: None,
-        metadata: None,
-        tenant: None,
-    };
+    let params = MessageSendParams::new(Message::user_text(
+        format!("m-{}", uuid::Uuid::new_v4()),
+        question,
+    ));
 
     match client.send_message(params).await? {
         SendMessageResponse::Task(task) => {
@@ -430,14 +405,4 @@ async fn drive_once(
         }
         other => Err(format!("expected a task, got {other:?}").into()),
     }
-}
-
-/// A unique-enough message id without pulling `uuid` in for two calls.
-fn uuid_like() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
-    format!("m-{nanos}")
 }

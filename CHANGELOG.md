@@ -305,6 +305,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Seven example files and five book pages now use the new constructors.**
+  Net 113 lines removed from `examples/` and 108 from `book/`: `rig-agent`'s 43-line
+  `AgentCard` literal, `mcp-bridge`'s 45-line one and `mcp-agent`'s 38-line
+  one become chained builders; `hello-agent`'s 16-line send becomes
+  `MessageSendParams::new(Message::user("test-msg", parts))` and its
+  five-line artifact walk becomes `task.text()`. The examples are what an
+  adopter copies, so leaving them on the literal would have shipped the
+  ergonomics and taught around them.
+
+  Three cards stopped setting `AgentCard.url`. That field is
+  `#[serde(skip_serializing)]` — a served card never carries it, so no client
+  could ever read what those agents were setting — and its own doc says to
+  publish an address through `supported_interfaces`, which all three already
+  did. `rig-agent`'s test asserted on it; it now asserts on
+  `supported_interfaces[0].url`, which is the address a client actually sees.
+
+  `examples/mcp-agent` and `examples/mcp-bridge` each carried a `uuid_like()`
+  helper — a nanosecond timestamp, not unique under concurrency and
+  sequential enough to guess — written to avoid a `uuid` dependency the
+  workspace already carries and seven other examples already use. Both now
+  take `uuid` and call `Uuid::new_v4()`.
+
+  One book snippet did not compile. `book/src/deployment/testing.md` set a
+  `context_id` field on `MessageSendParams`, which has no such field — the
+  snippet was inside a `rust,ignore` fence, so nothing ever built it. It is
+  now three lines that would.
+
 - **`examples/rig-agent` defaults to `qwen3:1.7b`, not `qwen3.5:0.8b`.**
   Measured 2026-09-19 against llama.cpp `b23701f` with `--jinja` and the
   example's own catalogue: Qwen3.5-0.8B-Q4_0 answers in prose, and forced with
@@ -386,7 +413,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Format job, paired with an injection in `scripts/prove_gates_fail.sh`, and
   listed in the gate-reachability input table. Proven both ways before
   shipping — exit 0 on the fixed tree, exit 1 naming all six lines on the tree
-  as it stood.
+  as it stood, and `prove_gates_fail.sh --only check_panic_hooks` reporting
+  PROVEN with the tree clean afterwards. The harness counts 66 gates now.
 
 - `check_doc_versions.py` gates dependency snippets in prose against the
   current release line. `a2a-protocol-sdk = "0.7"` means `^0.7`, which resolves

@@ -104,28 +104,13 @@ mod tests {
 
     /// Sends `parts` as a user message and returns the agent's artifact text.
     async fn greet(client: &A2aClient, parts: Vec<Part>) -> Option<String> {
-        let params = MessageSendParams {
-            tenant: None,
-            message: Message {
-                id: MessageId::new("test-msg"),
-                role: MessageRole::User,
-                parts,
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            },
-            configuration: None,
-            metadata: None,
-        };
+        let params = MessageSendParams::new(Message::user("test-msg", parts));
 
         match client.send_message(params).await.expect("send_message") {
-            SendMessageResponse::Task(task) => task
-                .artifacts
-                .unwrap_or_default()
-                .first()
-                .and_then(|a| a.text().map(ToOwned::to_owned)),
+            // `Task::text()` is the whole `artifacts -> first -> text` walk,
+            // and it skips an artifact with no text rather than stopping at
+            // it — the same rule `Message::text()` applies across parts.
+            SendMessageResponse::Task(task) => task.text().map(ToOwned::to_owned),
             // `SendMessageResponse` is `#[non_exhaustive]`; this agent always
             // creates a task, so anything else means the test setup is wrong.
             _ => None,

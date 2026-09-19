@@ -161,21 +161,7 @@ let handler = RequestHandlerBuilder::new(EchoAgent)
     .expect("build handler");
 
 // Whatever your framework hands you becomes params plus a header map.
-let params = MessageSendParams {
-    message: Message {
-        id: MessageId::new("msg-1"),
-        role: MessageRole::User,
-        parts: vec![Part::text("hello")],
-        context_id: None,
-        task_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    },
-    configuration: None,
-    metadata: None,
-    tenant: None,
-};
+let params = MessageSendParams::new(Message::user_text("msg-1", "hello"));
 
 let mut headers = HashMap::new();
 headers.insert("authorization".into(), "Bearer token".into());

@@ -160,49 +160,28 @@ async fn emit_artifact(
 }
 
 fn sample_card(url: &str) -> AgentCard {
-    let skill = |id: &str, name: &str, description: &str| AgentSkill {
-        id: id.to_owned(),
-        name: name.to_owned(),
-        description: description.to_owned(),
-        tags: vec!["demo".into()],
-        examples: None,
-        input_modes: None,
-        output_modes: None,
-        security_requirements: None,
+    let skill = |id: &str, name: &str, description: &str| {
+        AgentSkill::new(id, name, description).with_tags(["demo"])
     };
-    AgentCard {
-        url: Some(url.into()),
-        name: "Sample Reporting Agent".into(),
-        description: "A2A agent with two skills, used to demonstrate the MCP bridge".into(),
-        version: env!("CARGO_PKG_VERSION").into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            skill(
-                SLOW_SKILL,
-                "Slow service report",
-                "Produce a service report. Takes a few hundred milliseconds.",
-            ),
-            skill(
-                FAILING_SKILL,
-                "Always fails",
-                "A skill that always fails, so an error has something to cross.",
-            ),
-        ],
-        capabilities: AgentCapabilities::none().with_streaming(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Sample Reporting Agent",
+        env!("CARGO_PKG_VERSION"),
+        AgentInterface::jsonrpc(url),
+    )
+    .with_description("A2A agent with two skills, used to demonstrate the MCP bridge")
+    .with_input_modes(["text/plain"])
+    .with_output_modes(["text/plain"])
+    .with_skill(skill(
+        SLOW_SKILL,
+        "Slow service report",
+        "Produce a service report. Takes a few hundred milliseconds.",
+    ))
+    .with_skill(skill(
+        FAILING_SKILL,
+        "Always fails",
+        "A skill that always fails, so an error has something to cross.",
+    ))
+    .with_capabilities(AgentCapabilities::none().with_streaming(true))
 }
 
 /// Starts the sample agent and returns its base URL.
