@@ -703,23 +703,46 @@ PY
             note_touched "book/src/reference/benchmarks.md"
             python3 - <<'PY'
 import pathlib
-p = pathlib.Path("book/src/reference/benchmarks.md")
-s = p.read_text()
-before = s
-s = s.replace(
-    "Connection reuse saves 122.5 µs (42.7%) on loopback",
-    "Connection reuse saves ~140µs (9%) on loopback",
+import re
+
+# The sentence is matched by SHAPE, never by value, and that is the whole
+# point of this block.
+#
+# It was twice pinned to the literal figure, and both times a `cargo bench`
+# regeneration moved the page out from under it: 123.5 -> 122.5 (fixed in
+# 80a9f401, by pinning the new value) and then 122.5 -> 143.8 -> 116.6, which
+# broke it again. A needle carrying a number that something else regenerates
+# is a needle with an expiry date, so this one carries none.
+#
+# The alternation comes from `derive_saving` in
+# `benches/scripts/generate_book_page.sh`, which is what writes this sentence.
+# It emits `{saved/1000:.1f} µs ({pct:.1f}%)` when the saving reaches a
+# microsecond and `{saved:.0f} ns ({pct:.1f}%)` below that, so both units are
+# reachable and both must match. (It emits a bare em dash when a measurement
+# is missing; that case is meant to fail the assertion below, because a page
+# generated without data has no claim here for the gate to catch drifting.)
+PAGE = pathlib.Path("book/src/reference/benchmarks.md")
+SENTENCE = re.compile(
+    r"Connection reuse saves [0-9.]+ (?:µs|ns) \([0-9.]+%\) on loopback"
 )
-# The injected drift must actually change the page, or the gate is proving
-# nothing. `benchmarks.md` is regenerated from measurements, so the exact
-# figure here moves between releases; when it does and this string is not
-# updated with it, the replace becomes a silent no-op and the gate reports
-# UNPROVEN. Fail loudly instead of injecting nothing.
-assert s != before, (
-    "benchmark_prose injection matched no text — the connection-reuse figure "
-    "in book/src/reference/benchmarks.md changed and this string is stale"
+
+s = PAGE.read_text(encoding="utf-8")
+s, hits = SENTENCE.subn("Connection reuse saves ~140µs (9%) on loopback", s)
+
+# Exactly one match, or inject nothing and say which way it went wrong. Zero
+# means the sentence no longer has this shape; two or more means a second
+# sentence now shares it and replacing both would no longer be the one-claim
+# defect this step is meant to prove. Either way the cause is a wording
+# change, not a re-measurement, and a human should look at the generator.
+assert hits == 1, (
+    f"benchmark_prose injection matched {hits} sentences in "
+    "book/src/reference/benchmarks.md, expected exactly 1. The "
+    "connection-reuse sentence no longer reads 'Connection reuse saves "
+    "<value> <µs|ns> (<pct>%) on loopback' — its wording changed, or the "
+    "page was generated with no measurement behind it. See derive_saving in "
+    "benches/scripts/generate_book_page.sh."
 )
-p.write_text(s)
+PAGE.write_text(s, encoding="utf-8")
 PY
             ;;
         mutation_scope)

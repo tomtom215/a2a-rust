@@ -824,9 +824,9 @@ Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
    below. The figure recorded here first, six, was wrong: it counted only
    `crates/`, and the real number was 28.
 
-### `prove_gates_fail.sh` is stuck at gate 5 of 65 — found 2026-09-19, not fixed here
+### `prove_gates_fail.sh` was stuck at gate 5 of 65 — found and fixed 2026-09-19
 
-Running the harness on a clean tree stops at step 5/65:
+Running the harness on a clean tree used to stop at step 5/65:
 
 ```text
 [5/65] ./scripts/check_benchmark_prose.sh
@@ -836,36 +836,95 @@ connection-reuse figure in book/src/reference/benchmarks.md changed and
 this string is stale
 ```
 
-The script's own comment anticipated exactly this. It injects the historical
-drift by string replacement:
+The injection rewrites the connection-reuse sentence to a wrong value and
+asserts `check_benchmark_prose.sh` goes red. Its "from" side was the literal
+figure, so every `cargo bench` regeneration invalidated it. The harness
+aborts on that, so gates 6 through 65 went unproven with it.
 
-* `scripts/prove_gates_fail.sh:710` looks for
-  `"Connection reuse saves 122.5 µs (42.7%) on loopback"`;
-* `book/src/reference/benchmarks.md:554` now reads
-  `"Connection reuse saves 116.6 µs (44.3%) on loopback"`.
+**Pinning the number had already been tried and did not last a day.**
+`80a9f401` fixed the first occurrence on 2026-08-27 by pinning the new value
+and adding the assertion above, so the next drift would be loud rather than a
+silent `UNPROVEN`. The page moved off it the same afternoon and seven times
+after:
 
-The benchmarks were re-measured and the hard-coded needle was not updated
-with them, so the replacement matches nothing and the assertion fires.
+| commit | date | page reads | |
+|---|---|---|---|
+| `80a9f401` | 2026-08-27 | 122.5 µs (42.7%) | needle pinned here |
+| `e388fb5f` | 2026-08-27 | 125.4 µs (43.3%) | stale the same day |
+| `72465dc4` | 2026-08-30 | 123.3 µs (50.7%) | |
+| `d52189ca` | 2026-09-09 | 113.4 µs (47.7%) | |
+| `518bac67` | 2026-09-10 | 126.7 µs (43.7%) | |
+| `baedfd50` | 2026-09-17 | 104.8 µs (44.5%) | |
+| `9f0f3ea9` | 2026-09-17 | 143.8 µs (40.6%) | |
+| `fa1a82b9` | 2026-09-18 | 116.6 µs (44.3%) | current |
 
-**Pre-existing, not from this branch, and it does not gate CI.** Both files
-are byte-identical to `origin/main` here — `git diff origin/main..HEAD` names
-neither — and the same mismatch reproduces on `origin/main` directly. No
-workflow has a `run:` step for this script; `ci.yml` mentions it only in
-comments, and the gate CI actually runs, `prove_workflow_gates_fail.py`,
-passes.
+**The fix taken** was the second option this section originally listed, not
+the first: the needle carries no number at all and matches the sentence by
+shape — `Connection reuse saves [0-9.]+ (?:µs|ns) \([0-9.]+%\) on loopback`.
+The unit alternation comes from `derive_saving` in
+`benches/scripts/generate_book_page.sh`, which writes the sentence and emits
+microseconds at or above 1 µs and nanoseconds below, a branch the old literal
+could never match. The assertion now demands exactly one match: zero means
+the wording changed or the page has no measurement behind it, two or more
+means a second sentence took the same shape.
 
-**Why it still matters:** the harness aborts on the first failure, so gates 5
-through 65 are currently never proven able to fail. That is sixty gates whose
-ability to catch anything is unverified, which is the specific thing this
-script exists to prevent.
+Of the 34 injections, `benchmark_prose` was the only one targeting a
+regenerated artifact, so this was the whole class rather than the first of
+many.
 
-**The fix**, left for a change of its own because it is unrelated to this
-one's subject: update the needle at line 710 to the current sentence. The
-replacement text (`~140µs (9%)`) still represents drift, so the injection
-should still trip `check_benchmark_prose.sh` — worth confirming rather than
-assuming, since a needle that no longer proves anything is how this got here.
-Better still, derive the needle from the file instead of hard-coding it, so
-the next re-measurement cannot break it silently.
+**Where the harness stands now**, run to completion in a detached worktree:
+`55 proven, 10 unproven, 0 not selected (of 65 gates)`. The 10 are not stale
+needles. Seven are **PRE-BROKEN** — already red on the clean tree, so the
+harness correctly claimed nothing — and all seven are an under-provisioned
+machine rather than a repository defect: five need a PostgreSQL server, one
+is the SLIMRPC SPIFFE suite, one is `cargo hack clippy` failing in 0 s
+because `cargo-hack` is absent. The remaining three are the next entry.
+
+### Three gates report INCONCLUSIVE because a test-local panic hook is process-global
+
+Found 2026-09-19 while running the harness past step 5 for the first time.
+Pre-existing, unrelated to the needle, **not fixed**.
+
+`cargo test -p a2a-protocol-server --features {sqlite,postgres,auth-jwt}`
+each come back `INCONCLUSIVE — gate exited 101 but its output never mentions
+the injected defect`. The injected test does fail correctly:
+`gate_probe_sqlite::gate_probe_must_fail` is in the failure list. Its panic
+*message* is missing, so cargo prints an empty `failures:` block with no
+`---- stdout ----` section and the prover's grep finds nothing to confirm.
+
+The cause is not in the prover. Two tests in
+`crates/a2a-protocol-server/src/agent_card/hot_reload.rs` silence panic
+output around an expected panic:
+
+```rust
+let hook = std::panic::take_hook();
+std::panic::set_hook(Box::new(|_| {}));
+...
+std::panic::set_hook(hook);
+```
+
+`set_hook` is process-global, libtest runs tests as parallel threads in one
+process, and nothing serialises these two. Any test that panics inside that
+window loses its message. Measured, not inferred — an injected panicking test
+in the same binary:
+
+```text
+SERIAL   (--test-threads=1):  marker present, 1/1 runs
+PARALLEL (default):           marker present, 2/3 runs — lost in run 1
+```
+
+**Severity is higher than the three INCONCLUSIVE suggest**, because those are
+only the symptom that happened to be looked at. Any genuinely failing test in
+this crate can lose its panic message when it races those two, giving a red
+CI build whose reason is absent from the log, non-deterministically.
+
+**The fix**, left for a change of its own: the silencing is cosmetic —
+`catch_unwind` captures the payload both tests actually assert on, and the
+hook only controls what gets printed. Either drop the hook swap and accept
+one backtrace in passing output, or move those two tests into their own
+integration-test binary so the global hook can only reach them. The second is
+preferable: it keeps the output clean and bounds the blast radius to a
+process containing nothing else.
 
 ### Deferred by the 2026-09-19 observability review
 
