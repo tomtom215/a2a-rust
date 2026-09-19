@@ -100,6 +100,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an atomic claim, and never deleting a key with its task. Every Rust block on
   the page is compiled and run as a doctest.
 
+- **Tool calling, in `examples/rig-agent`.** Nothing in this repository showed
+  it: `grep -ril 'tool_call\|ToolCall\|tool_choice\|function_call'` over
+  `examples/`, `crates/` and `book/src/` returned zero files, and the rig
+  example's own comment said "no tools, no history". An A2A SDK whose examples
+  never call a tool cannot show an adopter how to build an agent that does
+  anything, which is the gap this closes.
+
+  It is deliberately **not** in the crates. A2A has no tool concept — the
+  protocol carries messages, tasks and artifacts *between* agents and says
+  nothing about what happens inside one — so tool calling belongs between an
+  executor and its model, and `examples/rig-agent/src/tools.rs` imports no
+  `a2a-protocol-*` type at all. Many model turns, one A2A task. Putting a tool
+  abstraction in `a2a-protocol-server` would make it a framework and put it on
+  a model-provider's release treadmill; hosting one costs neither.
+
+  `src/agent.rs` writes the loop out rather than delegating to `rig-agent`'s
+  runner, because the loop is the part an adopter has to get right. Three
+  things it gets right, each a bug if the shape is copied without them: the
+  catalogue goes on *every* request, since a provider holds no state between
+  turns; a tool error is returned to the model as that call's result rather
+  than failing the task, so an unknown service is recoverable; and the loop is
+  bounded (`MAX_TURNS`, 6), because unbounded it holds the A2A task open until
+  the server's hour-long executor timeout. `src/tools.rs` declares two tools
+  over a fixed inventory — one with no arguments, one with a required string —
+  which covers both JSON Schema shapes a provider must encode and, because a
+  model must discover the inventory before querying it, produces a *two*-round
+  loop. One round is the case that still works when the loop is written wrong.
+
+  When tools ran, the task carries a second `tool-trace` artifact naming each
+  call and its result. Eleven new tests drive the loop against a scripted
+  model that records what it was sent, covering the tool-error and turn-limit
+  branches a live provider reaches only by chance.
+
+### Changed
+
+- **`examples/rig-agent` defaults to `qwen3:1.7b`, not `qwen3.5:0.8b`.**
+  Measured 2026-09-19 against llama.cpp `b23701f` with `--jinja` and the
+  example's own catalogue: Qwen3.5-0.8B-Q4_0 answers in prose, and forced with
+  `tool_choice: "required"` still emits no tool call, running to
+  `finish_reason: "length"` after 7,400+ tokens. Qwen3-1.7B-Q4_K_M returns
+  `finish_reason: "tool_calls"` on the first request. The sibling LLM examples
+  call no tools, so their 0.8B default stays right for them; the README
+  records both results so the next person does not rediscover this.
+
+  The end-to-end run is in `examples/rig-agent/README.md` as two verbatim
+  transcripts. The first is kept **with the model's arithmetic error intact** —
+  it reports an uptime the tool never returned, and the trace line beneath it
+  shows the real figure. That is the argument for the trace artifact stated as
+  evidence rather than as a claim: grounded and verifiable are different
+  properties, and only the second is one the protocol can carry.
+
+### Fixed
+
+- **`examples/rig-agent`'s executor was undocumented.** Its doc comment had
+  run together with the one below it, so both attached to `SLOW_PREFIX` and
+  `RigAgentExecutor` carried none.
+
 ### Internal
 
 - `check_doc_versions.py` gates dependency snippets in prose against the

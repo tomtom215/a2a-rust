@@ -10,6 +10,10 @@
 //! of an LLM-backed example is normally only reachable with a model running;
 //! here it is reachable in a unit test, so the assertion can be that the
 //! model's text arrives verbatim and unlabelled.
+//!
+//! The tool loop needs a third fake — one that replays a *script* and
+//! records what it was sent. It and its tests live in [`tool_loop`], which
+//! reuses the harness below.
 
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
@@ -25,7 +29,10 @@ use rig_core::completion::{
 };
 use rig_core::streaming::StreamingCompletionResponse;
 
-use crate::{RigAgent, RigAgentExecutor, SLOW_PREFIX, make_agent_card};
+use crate::agent::RigAgent;
+use crate::{RigAgentExecutor, SLOW_PREFIX, make_agent_card};
+
+mod tool_loop;
 
 // ── Two models, neither of which has a provider ──────────────────────────────
 

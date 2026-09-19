@@ -5,16 +5,26 @@
 //! behind the A2A protocol.
 //!
 //! A real `rig-core` model (OpenAI-compatible provider) serves A2A traffic:
-//! incoming `SendMessage` text is sent as a completion request carrying the
-//! agent's preamble, and the completion comes back as an A2A artifact. The
+//! incoming `SendMessage` text becomes a prompt, the agent runs a **tool
+//! loop** over it, and the final answer comes back as an A2A artifact. The
 //! executor is generic over [`rig_core::completion::CompletionModel`], so the
 //! same bridge works with any rig provider (Anthropic, Gemini, Ollama, …) —
 //! swap the client construction in `main` and nothing else changes.
 //!
-//! rig-core 0.41 moved its `Agent` run loop into the separate `rig-agent`
-//! crate; this example stays on `rig-core` alone, and [`RigAgent`] is the
-//! single-turn, tool-less slice of that agent it needs: a preamble plus one
-//! completion per prompt.
+//! # Tool calling, and where it sits relative to A2A
+//!
+//! A2A has no tool concept. It carries messages, tasks and artifacts
+//! *between* agents; what an agent does inside one task is its own business.
+//! So tool calling lives one layer down, between [`agent::RigAgent`] and its
+//! model, and the A2A server never sees it — [`tools`] does not import a
+//! single `a2a-protocol-*` type. Many model turns, one A2A task.
+//!
+//! That is the layering to copy. An A2A server does not become a tool
+//! runtime; it hosts one.
+//!
+//! What the caller *does* see, when tools ran, is a second `tool-trace`
+//! artifact naming each call and its result — so a researched answer is
+//! distinguishable from a guessed one.
 //!
 //! # Architecture
 //!
@@ -22,10 +32,16 @@
 //! A2A Client ──→ A2A Server (a2a-protocol-server)
 //!                     │
 //!                     ▼
-//!               RigAgentExecutor<M>
+//!               RigAgentExecutor<M>          one A2A task
 //!                     │
 //!                     ▼
-//!               RigAgent<M> (preamble + CompletionModel) ──→ LLM provider
+//!               RigAgent<M> (preamble + CompletionModel)
+//!                     │  ▲                   many model turns
+//!                     ▼  │
+//!               tools::invoke ──→ in-memory service inventory
+//!                     │
+//!                     ▼
+//!               LLM provider
 //! ```
 //!
 //! # Setup
@@ -39,7 +55,7 @@
 //! # llama-server or Ollama), no real key needed:
 //! export OPENAI_API_KEY=local
 //! export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
-//! RIG_MODEL=qwen3.5:0.8b cargo run -p rig-a2a-agent
+//! RIG_MODEL=qwen3:1.7b cargo run -p rig-a2a-agent
 //! ```
 //!
 //! # Failure semantics
@@ -56,7 +72,9 @@ use std::sync::Arc;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
+mod agent;
 mod surface;
+mod tools;
 
 #[cfg(test)]
 mod tests;
@@ -72,57 +90,21 @@ use a2a_protocol_types::message::{Part, PartContent};
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
 use rig_core::client::CompletionClient;
-use rig_core::completion::{AssistantContent, CompletionError, CompletionModel};
+use rig_core::completion::CompletionModel;
 use rig_core::providers::openai;
 
-/// A single-turn agent: a preamble and the model that answers under it.
-///
-/// This is what `rig_core::agent::Agent` was for this example before the run
-/// loop moved to the `rig-agent` crate — one completion request per prompt,
-/// no tools, no history — expressed over rig-core's `CompletionModel` alone.
-pub struct RigAgent<M> {
-    model: M,
-    preamble: String,
-}
+use agent::RigAgent;
 
-impl<M: CompletionModel + Clone> RigAgent<M> {
-    pub fn new(model: M, preamble: &str) -> Self {
-        Self {
-            model,
-            preamble: preamble.to_owned(),
-        }
-    }
-
-    /// Sends `text` as the user turn and returns the model's text blocks,
-    /// concatenated in order — the same shape the old `Agent::prompt` gave.
-    pub async fn prompt(&self, text: &str) -> Result<String, CompletionError> {
-        let response = self
-            .model
-            .completion_request(text)
-            .preamble(self.preamble.clone())
-            .send()
-            .await?;
-        Ok(response
-            .choice
-            .iter()
-            .filter_map(|content| match content {
-                AssistantContent::Text(text) => Some(text.text.as_str()),
-                _ => None,
-            })
-            .collect())
-    }
-}
-
-/// An A2A `AgentExecutor` that delegates to a [`RigAgent`].
-///
-/// Generic over the rig completion model, so any provider rig supports can
-/// sit behind the same A2A bridge.
 /// Message-text prefix that makes the executor pause mid-task.
 ///
 /// `SubscribeToTask` is refused on a terminal task, correctly, so without a
 /// slow turn its success path is unreachable and only the refusal is observed.
 const SLOW_PREFIX: &str = "slow:";
 
+/// An A2A `AgentExecutor` that delegates to a [`RigAgent`].
+///
+/// Generic over the rig completion model, so any provider rig supports can
+/// sit behind the same A2A bridge.
 struct RigAgentExecutor<M: CompletionModel> {
     agent: RigAgent<M>,
     /// When `true`, a provider error produces a labelled mechanical reply
@@ -170,17 +152,20 @@ where
                 tokio::time::sleep(std::time::Duration::from_millis(400)).await;
             }
 
-            let response = match self.agent.prompt(user_text).await {
-                Ok(r) => r,
+            let answer = match self.agent.prompt(user_text).await {
+                Ok(answer) => answer,
                 // No provider reachable. Degrade to a *labelled* mechanical
                 // reply so the protocol mechanics stay demonstrable with no
                 // model at all. The label is load-bearing: without it, "the
                 // agent answered" and "the model answered" become
                 // indistinguishable.
-                Err(e) if self.fallback_on_error => format!(
-                    "[no model reachable — mechanical fallback, not an LLM answer] \
-                     echo of your input: {user_text}\n(underlying error: {e})"
-                ),
+                Err(e) if self.fallback_on_error => agent::Answer {
+                    text: format!(
+                        "[no model reachable — mechanical fallback, not an LLM answer] \
+                         echo of your input: {user_text}\n(underlying error: {e})"
+                    ),
+                    trace: Vec::new(),
+                },
                 Err(e) => {
                     return Err(A2aError::internal(format!("rig agent error: {e}")));
                 }
@@ -191,12 +176,40 @@ where
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
                     context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("rig-response", vec![Part::text(&response)]),
+                    artifact: Artifact::new("rig-response", vec![Part::text(&answer.text)]),
                     append: None,
                     last_chunk: Some(true),
                     metadata: None,
                 }))
                 .await?;
+
+            // 4b. If the answer took tool calls, publish what ran as a second
+            //     artifact. Without it the tool loop is invisible from the
+            //     protocol side and a caller cannot tell a researched answer
+            //     from a guessed one — which, for an agent that delegates,
+            //     is the whole question. `last_chunk` is per-artifact (see
+            //     `TaskArtifactUpdateEvent::last_chunk`), so both artifacts
+            //     set it: each is complete in one chunk.
+            //
+            //     Reported after the fact rather than streamed per call. A
+            //     mid-loop status event would need the queue inside
+            //     `RigAgent::prompt`, and keeping the agent free of A2A types
+            //     is what lets it be unit-tested with no server at all.
+            if !answer.trace.is_empty() {
+                queue
+                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                        task_id: ctx.task_id.clone(),
+                        context_id: ContextId::new(ctx.context_id.clone()),
+                        artifact: Artifact::new(
+                            "tool-trace",
+                            vec![Part::text(answer.trace.join("\n"))],
+                        ),
+                        append: None,
+                        last_chunk: Some(true),
+                        metadata: None,
+                    }))
+                    .await?;
+            }
 
             // 5. Transition to Completed
             queue
@@ -231,9 +244,15 @@ fn make_agent_card(url: &str, model: &str) -> AgentCard {
         skills: vec![AgentSkill {
             id: "chat".into(),
             name: "LLM Chat".into(),
-            description: "Sends the message text to the rig agent and returns the completion"
+            description: "Answers the message text, calling the agent's service-inventory \
+                 tools when the question needs them"
                 .into(),
-            tags: vec!["llm".into(), "rig".into(), "chat".into()],
+            tags: vec![
+                "llm".into(),
+                "rig".into(),
+                "chat".into(),
+                "tool-calling".into(),
+            ],
             examples: None,
             input_modes: None,
             output_modes: None,
@@ -282,7 +301,11 @@ fn serve(listener: tokio::net::TcpListener, dispatcher: Arc<JsonRpcDispatcher>) 
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let model = std::env::var("RIG_MODEL").unwrap_or_else(|_| "qwen3.5:0.8b".to_string());
+    // Defaults to a *tool-capable* model, unlike the sibling examples' 0.8B:
+    // measured 2026-09-19, Qwen3.5-0.8B never emits a tool call even with
+    // `tool_choice: "required"`, so it cannot demonstrate what this example
+    // is for. See README.md, "Pick a model that can actually call tools".
+    let model = std::env::var("RIG_MODEL").unwrap_or_else(|_| "qwen3:1.7b".to_string());
 
     println!("Rig + A2A Agent Example");
     println!("=======================");

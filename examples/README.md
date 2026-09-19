@@ -24,7 +24,7 @@ cargo run -p agent-team
 | [**echo-agent**](echo-agent/) | All four bindings; drives every A2A method over each and asserts the coverage matrix | None | Beginner |
 | [**agent-team**](agent-team/) | 4-agent team with 100 E2E tests; the SDK's dogfood suite | None | Advanced |
 | [**genai-agent**](genai-agent/) | LLM-powered agent via [genai](https://crates.io/crates/genai); all four bindings, full surface matrix | Optional model | Intermediate |
-| [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the in-repo TCK (21/21 graded, 1 N/A; gated by `tck.yml`) | Optional model | Intermediate |
+| [`rig-agent/`](rig-agent/) | **Real rig-core agent with tool calling** served over A2A — a bounded tool loop over a two-tool catalogue, the repo's reference for *where tool calling sits relative to A2A*; hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the in-repo TCK (21/21 graded, 1 N/A; gated by `tck.yml`) | Optional model | Intermediate |
 | [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go, Java and Rust worker agents (the Rust worker is a second binary, `--bin rust-worker`); all four bindings, full surface matrix | Optional workers | Advanced |
 
 ## What to start with
@@ -58,6 +58,8 @@ cargo run -p agent-team
   (`ci.yml`, job `dogfood`).
 
 - **Integrating an LLM?** See [`genai-agent`](genai-agent/) or [`rig-agent`](rig-agent/) for patterns that bridge LLM frameworks with A2A's `AgentExecutor` trait.
+
+- **Tool calling?** [`rig-agent`](rig-agent/) is the one. A2A itself has no tool concept, so the loop lives between the executor and its model and the server never sees it; the example shows the bounded loop, tool errors returned to the model rather than failing the task, and a `tool-trace` artifact that makes the calls visible to the A2A caller.
 
 - **Cross-language interop?** See [`multi-lang-team`](multi-lang-team/) for a Rust coordinator that talks to agents in 4 other languages, plus a Rust worker to run beside them.
 
