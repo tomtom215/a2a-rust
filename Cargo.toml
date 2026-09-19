@@ -19,6 +19,7 @@ members = [
     "examples/rig-agent",
     "examples/genai-agent",
     "examples/incident-response",
+    "examples/mcp-agent",
     "examples/resilient-agent",
     "benches",
     "book-tests",

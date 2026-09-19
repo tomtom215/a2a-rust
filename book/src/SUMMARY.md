@@ -47,6 +47,7 @@
 - [Agent Team](./examples/agent-team.md)
 - [Genai Agent](./examples/genai-agent.md)
 - [Rig Agent](./examples/rig-agent.md)
+- [MCP Agent](./examples/mcp-agent.md)
 - [Multi-Language Team](./examples/multi-lang-team.md)
 
 # Testing & Deployment

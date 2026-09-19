@@ -133,6 +133,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model that records what it was sent, covering the tool-error and turn-limit
   branches a live provider reaches only by chance.
 
+- **`examples/mcp-agent` — tools over MCP, agents over A2A.** The A2A project's
+  own guidance is that the two protocols compose: *"A2A handles inter-agent
+  collaboration and MCP handles tool integration."* Nothing showed what that
+  looks like, so this does. The agent spawns an MCP server as a child process,
+  asks it what it offers with `tools/list`, builds its catalogue **and its
+  agent-card skills** from the answer, and calls it with `tools/call`. A2A
+  never carries a tool call; MCP never carries a task; they meet in one
+  process and nowhere else.
+
+  It is `rig-agent` with exactly one thing changed, which is the point. Diff
+  the two `src/agent.rs` files: the loop is the same — same three rules, same
+  bound — and only the tool source moves. Nothing in the crate knows what the
+  tools are, so `MCP_SERVER_BIN` repoints it at any other MCP stdio server, in
+  any language, with no code change.
+
+  The distinction the bridge exists to keep is between a tool that **ran and
+  refused** and a session that is **gone**. The first is information for the
+  model — it can read the reason and try something else — so it returns as a
+  tool result and the A2A task stays alive. The second cannot be re-prompted
+  away, and answering regardless would hand the caller a guess dressed as a
+  researched answer, so the task fails. The model-unreachable fallback the
+  sibling examples use is deliberately not extended to a dead MCP server, and
+  an agent that cannot reach its tools at startup refuses to start rather than
+  serve a card advertising them.
+
+  Built on `rmcp` 3.4, the official Rust MCP SDK, for both halves: the client
+  and the bundled `mcp-tool-server` binary. Fourteen tests, and the split
+  matters — ten drive the bridge over an in-process `tokio::io::duplex` pipe,
+  which is real MCP framing and reaches the branches (a refusal, a session
+  dying mid-call, a model that never stops calling); four spawn the *shipped*
+  binary the way a real MCP client does, which is what proves its schemas
+  reach the wire from the `JsonSchema` derive and that its `main` writes
+  nothing but MCP to stdout. A stray `println!` there desynchronizes every
+  frame, and no in-process test would notice.
+
+  Verified end to end against llama.cpp `b23701f` serving Qwen3-1.7B: both
+  demo questions answered over A2A with tools fetched over MCP, including the
+  recovery path — the server refused an unknown service, the refusal crossed
+  back as a tool result, the model read the hint the server wrote and called
+  the tool it named. Worth noting from that run: the first question took *two*
+  MCP round trips where the same question against `rig-agent`'s in-process
+  tools took one. The tool count is the model's choice, not a property of the
+  code, which is why the bound is not optional.
+
 ### Changed
 
 - **`examples/rig-agent` defaults to `qwen3:1.7b`, not `qwen3.5:0.8b`.**
