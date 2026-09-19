@@ -37,6 +37,10 @@ a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = [
     "axum",
     "grpc",
     "grpc-tls",
+    # Added with the observability page's OTLP section, for the same reason as
+    # `postgres` below: the page shows the `init_otlp_pipeline` call sequence,
+    # and without the feature that block could only be `ignore`d.
+    "otel",
     # Added with the horizontal-scaling page: it documents `PostgresTaskStore`
     # and `PostgresRateLimitCounter`, and without the feature those blocks could
     # only be `ignore`d — which is what this crate exists to stop.
