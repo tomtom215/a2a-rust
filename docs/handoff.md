@@ -907,6 +907,19 @@ Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
    and `cargo hack clippy` with `cargo-hack` absent).
 6. ~~The two hand-rolled `uuid_like()` helpers.~~ Done — both examples take
    `uuid` now.
+7. **`cargo doc -p a2a-protocol-client --no-deps` fails, and CI cannot see
+   it.** Three intra-doc links in `builder/mod.rs` — `crate::WebSocketTransport`
+   at `:288`, `Self::build_grpc` at `:290` and `:344` — point at items behind
+   the `websocket` and `grpc` features, which are off in that crate's default
+   build. `ci.yml`'s `doc` job runs `cargo doc --workspace --no-deps`, where
+   feature unification turns both on (the client's own dev-dependencies pull
+   them in), so the workspace build is green and the per-crate one is not.
+   docs.rs builds with `all-features = true` and is therefore also unaffected,
+   which is why nobody has hit it. Pre-existing — the same text is at
+   `f806792`, before any of this session's work. Reproduce with
+   `RUSTDOCFLAGS="-D warnings" cargo doc -p a2a-protocol-client --no-deps`.
+   The fix is three links, but the gate that would keep it fixed is a
+   per-crate doc build, which is the more interesting half.
 
 ### `prove_gates_fail.sh` was stuck at gate 5 of 65 — found and fixed 2026-09-19
 
