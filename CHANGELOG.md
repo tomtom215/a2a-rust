@@ -12,6 +12,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Constructors for `Message`, `Task` and `MessageSendParams`, and a
+  `# Construction` pointer on the three `agent_card` structs.** Measured on
+  this tree, the workspace holds 105 `Message` struct literals, 75
+  `MessageSendParams` literals and 82 `AgentCard` literals. `Message` had two
+  inherent methods and no constructor; `Task` and `MessageSendParams` had no
+  `impl` block at all, so sending one line of text cost a ten-line `Message`
+  literal — five of its eight fields written as `None` — inside a four-line
+  `MessageSendParams` literal, and reading the answer back out cost a
+  hand-written `artifacts → first → text` walk that six files under
+  `examples/` had each written separately.
+
+  `Message::new`, `user`, `agent`, `user_text`, `agent_text`, and `with_*` for
+  all five optional fields. `MessageSendParams::new` plus `with_tenant`,
+  `with_configuration`, `with_metadata`. `Task::text` and `Task::texts`.
+  Nothing is breaking: every field stays public and every literal still
+  compiles.
+
+  The id stays a parameter rather than something the constructor invents.
+  `a2a-protocol-types` depends on `serde` and `serde_json` and nothing else,
+  so it has no random source, and a clock-derived id is not unique under
+  concurrency — the same reason
+  [`Artifact::new`](https://docs.rs/a2a-protocol-types) already takes one.
+
+  `Task::text` skips artifacts that carry no text rather than stopping at the
+  first, so it answers where the hand-written `artifacts.first()` chain
+  returns `None`. That divergence is deliberate, documented on the method, and
+  asserted in its test; it is the rule `Message::text` already applies across
+  parts.
+
+  The `# Construction` sections exist because discoverability, not absence,
+  was the `AgentCard` problem: the twelve `with_*` builders have shipped since
+  0.10 in `agent_card/builders.rs`, one file over from the field definitions,
+  and three examples written in a single session on 2026-09-19 each reached
+  for a literal instead — 38, 43 and 45 lines, verified by counting the three
+  functions.
+
 - **Client-supplied idempotency keys on `message/send`, as a declared
   extension.** A send whose connection drops after the request bytes are on the
   wire is ambiguous: the task may exist or it may not. The client rightly

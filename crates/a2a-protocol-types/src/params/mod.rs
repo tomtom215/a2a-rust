@@ -274,19 +274,10 @@ pub struct GetExtendedAgentCardParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::{MessageId, MessageRole, Part};
+    use crate::message::MessageId;
 
     fn make_message() -> Message {
-        Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        }
+        Message::user_text("msg-1", "hello")
     }
 
     #[test]
@@ -482,3 +473,7 @@ accepted_fields!(
     ]
 );
 accepted_fields!(GetExtendedAgentCardParams, ["tenant"]);
+
+// ── Constructors ──────────────────────────────────────────────────────────────
+
+mod builders;

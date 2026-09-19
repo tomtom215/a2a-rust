@@ -25,6 +25,12 @@ use crate::security::{NamedSecuritySchemes, SecurityRequirement};
 // ── AgentInterface ────────────────────────────────────────────────────────────
 
 /// A transport interface offered by an agent.
+///
+/// # Construction
+///
+/// [`AgentInterface::jsonrpc`], [`AgentInterface::grpc`] and
+/// [`AgentInterface::rest`] take a URL and fill in the binding name and the
+/// protocol version; [`AgentInterface::new`] takes an arbitrary binding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentInterface {
@@ -137,6 +143,11 @@ pub struct AgentProvider {
 // ── AgentSkill ────────────────────────────────────────────────────────────────
 
 /// A discrete capability offered by an agent.
+///
+/// # Construction
+///
+/// [`AgentSkill::new`] takes the id, name and description; tags, examples and
+/// the two mode lists are set by the `with_*` methods beside it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSkill {
@@ -188,6 +199,27 @@ pub struct AgentSkill {
 /// In v1.0, `protocol_version` and `url` moved to [`AgentInterface`], and
 /// `supported_interfaces` replaces the old `url`/`preferred_transport`/
 /// `additional_interfaces` fields.
+///
+/// # Construction
+///
+/// Prefer [`AgentCard::new`] and the twelve `with_*` methods beside it over a
+/// struct literal: `new` takes the three things the type cannot invent — a
+/// name, a version, an interface — and defaults the rest, so a card built
+/// that way is valid by construction.
+///
+/// ```rust
+/// use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+///
+/// let card = AgentCard::new("triage", "1.0.0", AgentInterface::jsonrpc("http://localhost:8080"))
+///     .with_description("Routes incidents to the right runbook")
+///     .with_skill(AgentSkill::new("triage", "Triage", "Classifies an incident"));
+/// assert_eq!(card.skills.len(), 1);
+/// ```
+///
+/// The builders live in `agent_card/builders.rs`, one file over from these
+/// field definitions. Three examples written in a single session on
+/// 2026-09-19 each hand-wrote a 38-to-45-line literal without finding them,
+/// which is what this section is here to prevent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentCard {

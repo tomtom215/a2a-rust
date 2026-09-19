@@ -145,6 +145,185 @@ pub struct Message {
 }
 
 impl Message {
+    /// Creates a message with the given id, role and parts.
+    ///
+    /// The five optional fields start as `None`; set the ones you need with
+    /// the `with_*` methods below. Until 0.12.2 the only way to make a
+    /// [`Message`] was a struct literal naming all eight fields, and this
+    /// workspace contained 105 of them — a message carrying one line of text
+    /// cost ten lines to write, five of which said `None`.
+    ///
+    /// The id is a parameter rather than something this constructor invents,
+    /// for the same reason [`Artifact::new`](crate::artifact::Artifact::new)
+    /// takes one: this crate depends on `serde` and `serde_json` and nothing
+    /// else, so it has no random source to mint one from, and a
+    /// clock-derived id is not unique under concurrency. Servers in this
+    /// workspace use `uuid::Uuid::new_v4()`; a client that already has a
+    /// correlation id of its own should use that.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::{Message, MessageRole, Part};
+    ///
+    /// let msg = Message::new("m1", MessageRole::User, vec![Part::text("hello")]);
+    /// assert_eq!(msg.text(), Some("hello"));
+    /// assert_eq!(msg.role, MessageRole::User);
+    /// ```
+    #[must_use]
+    pub fn new(id: impl Into<MessageId>, role: MessageRole, parts: Vec<Part>) -> Self {
+        Self {
+            id: id.into(),
+            role,
+            parts,
+            task_id: None,
+            context_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        }
+    }
+
+    /// Creates a [`MessageRole::User`] message with the given parts.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::{Message, MessageRole, Part};
+    ///
+    /// let msg = Message::user("m1", vec![Part::url("https://example.com/f.pdf")]);
+    /// assert_eq!(msg.role, MessageRole::User);
+    /// ```
+    #[must_use]
+    pub fn user(id: impl Into<MessageId>, parts: Vec<Part>) -> Self {
+        Self::new(id, MessageRole::User, parts)
+    }
+
+    /// Creates a [`MessageRole::Agent`] message with the given parts.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::{Message, MessageRole, Part};
+    ///
+    /// let msg = Message::agent("m1", vec![Part::text("done")]);
+    /// assert_eq!(msg.role, MessageRole::Agent);
+    /// ```
+    #[must_use]
+    pub fn agent(id: impl Into<MessageId>, parts: Vec<Part>) -> Self {
+        Self::new(id, MessageRole::Agent, parts)
+    }
+
+    /// Creates a [`MessageRole::User`] message carrying one text part.
+    ///
+    /// The shape almost every caller wants: send this text to an agent.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::Message;
+    ///
+    /// let msg = Message::user_text("m1", "what is the status of order 42?");
+    /// assert_eq!(msg.text(), Some("what is the status of order 42?"));
+    /// assert_eq!(msg.parts.len(), 1);
+    /// ```
+    #[must_use]
+    pub fn user_text(id: impl Into<MessageId>, text: impl Into<String>) -> Self {
+        Self::user(id, vec![Part::text(text)])
+    }
+
+    /// Creates a [`MessageRole::Agent`] message carrying one text part.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::Message;
+    ///
+    /// let msg = Message::agent_text("m2", "order 42 shipped on Tuesday");
+    /// assert_eq!(msg.text(), Some("order 42 shipped on Tuesday"));
+    /// ```
+    #[must_use]
+    pub fn agent_text(id: impl Into<MessageId>, text: impl Into<String>) -> Self {
+        Self::agent(id, vec![Part::text(text)])
+    }
+
+    /// Attaches this message to an existing task.
+    ///
+    /// Sending a follow-up without this is what makes it a *new* task on the
+    /// same context rather than a continuation of the old one.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::Message;
+    /// use a2a_protocol_types::task::TaskId;
+    ///
+    /// let msg = Message::user_text("m2", "and the one after that?")
+    ///     .with_task_id("task-1");
+    /// assert_eq!(msg.task_id, Some(TaskId::new("task-1")));
+    /// ```
+    #[must_use]
+    pub fn with_task_id(mut self, task_id: impl Into<TaskId>) -> Self {
+        self.task_id = Some(task_id.into());
+        self
+    }
+
+    /// Places this message in an existing conversation context.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::Message;
+    /// use a2a_protocol_types::task::ContextId;
+    ///
+    /// let msg = Message::user_text("m2", "go on").with_context_id("ctx-1");
+    /// assert_eq!(msg.context_id, Some(ContextId::new("ctx-1")));
+    /// ```
+    #[must_use]
+    pub fn with_context_id(mut self, context_id: impl Into<ContextId>) -> Self {
+        self.context_id = Some(context_id.into());
+        self
+    }
+
+    /// Names earlier tasks this message refers to.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::Message;
+    ///
+    /// let msg = Message::user_text("m3", "compare those two")
+    ///     .with_reference_task_ids(["task-1", "task-2"]);
+    /// assert_eq!(msg.reference_task_ids.map(|ids| ids.len()), Some(2));
+    /// ```
+    #[must_use]
+    pub fn with_reference_task_ids<I, T>(mut self, task_ids: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<TaskId>,
+    {
+        self.reference_task_ids = Some(task_ids.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Declares the extension URIs this message activates.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::Message;
+    ///
+    /// let msg = Message::user_text("m1", "hi")
+    ///     .with_extensions(["https://example.com/ext/v1"]);
+    /// assert_eq!(msg.extensions.as_deref(), Some(&["https://example.com/ext/v1".to_owned()][..]));
+    /// ```
+    #[must_use]
+    pub fn with_extensions<I, S>(mut self, extensions: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.extensions = Some(extensions.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Attaches opaque metadata to this message.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::Message;
+    ///
+    /// let msg = Message::user_text("m1", "hi")
+    ///     .with_metadata(serde_json::json!({ "skill": "triage" }));
+    /// assert_eq!(msg.metadata.as_ref().and_then(|m| m["skill"].as_str()), Some("triage"));
+    /// ```
+    #[must_use]
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+
     /// Returns the text of the first text [`Part`], or `None` if this message
     /// carries no text part.
     ///
@@ -153,18 +332,12 @@ impl Message {
     /// [`PartContent::Text`]:
     ///
     /// ```rust
-    /// use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+    /// use a2a_protocol_types::message::{Message, Part};
     ///
-    /// let msg = Message {
-    ///     id: MessageId::new("m1"),
-    ///     role: MessageRole::User,
-    ///     parts: vec![Part::url("https://example.com/f.pdf"), Part::text("hello")],
-    ///     task_id: None,
-    ///     context_id: None,
-    ///     reference_task_ids: None,
-    ///     extensions: None,
-    ///     metadata: None,
-    /// };
+    /// let msg = Message::user(
+    ///     "m1",
+    ///     vec![Part::url("https://example.com/f.pdf"), Part::text("hello")],
+    /// );
     ///
     /// assert_eq!(msg.text(), Some("hello"));
     /// ```
@@ -606,16 +779,7 @@ mod tests {
     use super::*;
 
     fn make_message() -> Message {
-        Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("Hello")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        }
+        Message::user_text("msg-1", "Hello")
     }
 
     /// Builds a message carrying exactly `parts`.
@@ -1040,5 +1204,81 @@ mod tests {
             uri: Some("https://example.com/a".into()),
         };
         assert!(fc.validate().is_ok(), "both set must be ok");
+    }
+
+    #[test]
+    fn constructors_set_the_role_and_leave_every_optional_field_empty() {
+        for (msg, role) in [
+            (
+                Message::user("m1", vec![Part::text("hi")]),
+                MessageRole::User,
+            ),
+            (
+                Message::agent("m1", vec![Part::text("hi")]),
+                MessageRole::Agent,
+            ),
+            (Message::user_text("m1", "hi"), MessageRole::User),
+            (Message::agent_text("m1", "hi"), MessageRole::Agent),
+            (
+                Message::new("m1", MessageRole::User, vec![Part::text("hi")]),
+                MessageRole::User,
+            ),
+        ] {
+            assert_eq!(msg.id, MessageId::new("m1"));
+            assert_eq!(msg.role, role);
+            assert_eq!(msg.text(), Some("hi"));
+            assert!(msg.task_id.is_none());
+            assert!(msg.context_id.is_none());
+            assert!(msg.reference_task_ids.is_none());
+            assert!(msg.extensions.is_none());
+            assert!(msg.metadata.is_none());
+        }
+    }
+
+    /// Each `with_*` must set its own field and touch no other — a builder
+    /// that quietly clears a sibling is the failure mode worth a test.
+    #[test]
+    fn each_with_method_sets_exactly_its_own_field() {
+        let base = Message::user_text("m1", "hi");
+
+        let m = base.clone().with_task_id("t1");
+        assert_eq!(m.task_id, Some(TaskId::new("t1")));
+        assert!(m.context_id.is_none() && m.metadata.is_none());
+
+        let m = base.clone().with_context_id("c1");
+        assert_eq!(m.context_id, Some(ContextId::new("c1")));
+        assert!(m.task_id.is_none() && m.extensions.is_none());
+
+        let m = base.clone().with_reference_task_ids(["t1", "t2"]);
+        assert_eq!(
+            m.reference_task_ids,
+            Some(vec![TaskId::new("t1"), TaskId::new("t2")])
+        );
+        assert!(m.task_id.is_none());
+
+        let m = base.clone().with_extensions(["https://example.com/ext/v1"]);
+        assert_eq!(
+            m.extensions,
+            Some(vec!["https://example.com/ext/v1".to_owned()])
+        );
+        assert!(m.metadata.is_none());
+
+        let m = base.with_metadata(serde_json::json!({ "k": "v" }));
+        assert_eq!(m.metadata, Some(serde_json::json!({ "k": "v" })));
+        assert!(m.extensions.is_none());
+    }
+
+    /// The whole chain still round-trips through the wire format, which is
+    /// the only thing that makes a constructor safe to recommend.
+    #[test]
+    fn a_fully_built_message_round_trips() {
+        let msg = Message::user_text("m1", "hi")
+            .with_task_id("t1")
+            .with_context_id("c1")
+            .with_reference_task_ids(["t0"])
+            .with_extensions(["https://example.com/ext/v1"])
+            .with_metadata(serde_json::json!({ "k": "v" }));
+        let json = serde_json::to_string(&msg).expect("ser");
+        assert_eq!(serde_json::from_str::<Message>(&json).expect("de"), msg);
     }
 }

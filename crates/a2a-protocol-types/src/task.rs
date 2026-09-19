@@ -434,6 +434,59 @@ pub struct Task {
     pub metadata: Option<serde_json::Value>,
 }
 
+impl Task {
+    /// Returns the text of the first text [`Part`](crate::message::Part) in
+    /// this task's artifacts, or `None` if it produced no text.
+    ///
+    /// Reading the answer out of a finished task is what a caller does with
+    /// every delegated result, and until 0.12.2 [`Task`] had no inherent
+    /// methods at all, so each caller wrote the walk by hand. Six files under
+    /// `examples/` had written the same `artifacts → first → text` chain.
+    ///
+    /// **This skips artifacts with no text rather than stopping at the
+    /// first**, which is where it differs from the hand-written chain: a task
+    /// whose first artifact is a file and whose second is text yields that
+    /// text here and `None` from `artifacts.first().and_then(Artifact::text)`.
+    /// It is the same rule [`Message::text`](crate::message::Message::text)
+    /// already applies across parts.
+    ///
+    /// It reads artifacts only. A failure reason lives on the status message
+    /// instead, at `task.status.message`.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::artifact::Artifact;
+    /// use a2a_protocol_types::message::Part;
+    /// use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+    ///
+    /// let task = Task {
+    ///     id: "t1".into(),
+    ///     context_id: ContextId::new("c1"),
+    ///     status: TaskStatus::new(TaskState::Completed),
+    ///     history: None,
+    ///     artifacts: Some(vec![
+    ///         Artifact::new("chart", vec![Part::url("https://example.com/c.png")]),
+    ///         Artifact::new("summary", vec![Part::text("revenue rose 4%")]),
+    ///     ]),
+    ///     metadata: None,
+    /// };
+    ///
+    /// assert_eq!(task.text(), Some("revenue rose 4%"));
+    /// ```
+    #[must_use]
+    pub fn text(&self) -> Option<&str> {
+        self.artifacts.iter().flatten().find_map(Artifact::text)
+    }
+
+    /// Returns the text of every text [`Part`](crate::message::Part) across
+    /// every artifact, in order.
+    ///
+    /// Use this when a task may produce several textual artifacts and
+    /// [`Task::text`] would silently drop all but the first.
+    pub fn texts(&self) -> impl Iterator<Item = &str> {
+        self.artifacts.iter().flatten().flat_map(Artifact::texts)
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -955,5 +1008,49 @@ mod tests {
     fn has_valid_timestamp_with_timestamp_constructor() {
         let status = TaskStatus::with_timestamp(TaskState::Completed);
         assert!(status.has_valid_timestamp());
+    }
+
+    /// `text()` skips a leading artifact that carries no text, where the
+    /// hand-written `artifacts.first().and_then(..)` chain returns `None`.
+    /// That divergence is deliberate and documented, so it is asserted.
+    #[test]
+    fn text_finds_the_first_textual_artifact_and_texts_returns_all_of_them() {
+        use crate::message::Part;
+
+        let mut task = make_task();
+        assert_eq!(task.text(), None, "no artifacts at all");
+        assert_eq!(task.texts().count(), 0);
+
+        task.artifacts = Some(vec![
+            Artifact::new("chart", vec![Part::url("https://example.com/c.png")]),
+            Artifact::new("summary", vec![Part::text("revenue rose 4%")]),
+            Artifact::new("notes", vec![Part::text("caveat"), Part::text("second")]),
+        ]);
+
+        assert_eq!(task.text(), Some("revenue rose 4%"));
+        assert_eq!(
+            task.texts().collect::<Vec<_>>(),
+            vec!["revenue rose 4%", "caveat", "second"]
+        );
+
+        let first = task.artifacts.as_ref().and_then(|a| a.first());
+        assert_eq!(
+            first.and_then(Artifact::text),
+            None,
+            "the chain text() deliberately differs from"
+        );
+    }
+
+    #[test]
+    fn text_is_none_when_every_artifact_is_non_textual() {
+        use crate::message::Part;
+
+        let mut task = make_task();
+        task.artifacts = Some(vec![Artifact::new(
+            "chart",
+            vec![Part::url("https://example.com/c.png")],
+        )]);
+        assert_eq!(task.text(), None);
+        assert_eq!(task.texts().count(), 0);
     }
 }
