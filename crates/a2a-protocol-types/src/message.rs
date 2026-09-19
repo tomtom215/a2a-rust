@@ -148,8 +148,8 @@ impl Message {
     /// Creates a message with the given id, role and parts.
     ///
     /// The five optional fields start as `None`; set the ones you need with
-    /// the `with_*` methods below. Until 0.12.2 the only way to make a
-    /// [`Message`] was a struct literal naming all eight fields, and this
+    /// the `with_*` methods below. Before these existed the only way to make
+    /// a [`Message`] was a struct literal naming all eight fields, and this
     /// workspace contained 105 of them — a message carrying one line of text
     /// cost ten lines to write, five of which said `None`.
     ///

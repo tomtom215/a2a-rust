@@ -439,8 +439,8 @@ impl Task {
     /// this task's artifacts, or `None` if it produced no text.
     ///
     /// Reading the answer out of a finished task is what a caller does with
-    /// every delegated result, and until 0.12.2 [`Task`] had no inherent
-    /// methods at all, so each caller wrote the walk by hand. Six files under
+    /// every delegated result, and [`Task`] previously had no inherent methods
+    /// at all, so each caller wrote the walk by hand. Six files under
     /// `examples/` had written the same `artifacts → first → text` chain.
     ///
     /// **This skips artifacts with no text rather than stopping at the
