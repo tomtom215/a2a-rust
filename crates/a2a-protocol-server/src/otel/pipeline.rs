@@ -24,6 +24,38 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 ///
 /// * `service_name` — value for the `service.name` resource attribute.
 ///
+/// # This is gRPC only, and `service_name` overrides the environment
+///
+/// Two behaviours that surprise anyone arriving with an OpenTelemetry
+/// deployment already configured. Both are current limitations, not
+/// decisions the specification supports:
+///
+/// * **The transport is gRPC (OTLP/gRPC, port 4317) and cannot be changed.**
+///   `MetricExporter::builder().with_tonic()` is hard-coded, and this crate
+///   compiles `opentelemetry-otlp` with `default-features = false,
+///   features = ["grpc-tonic", "metrics"]`, so the HTTP/protobuf exporter is
+///   not built at all. **`OTEL_EXPORTER_OTLP_PROTOCOL` has no effect.**
+///   Setting it to `http/protobuf` and pointing `OTEL_EXPORTER_OTLP_ENDPOINT`
+///   at a collector's `:4318` produces gRPC spoken at an HTTP port, and
+///   silence.
+/// * **`OTEL_SERVICE_NAME` is overridden by the `service_name` argument.**
+///   `Resource::builder()` installs `EnvResourceDetector`, which reads
+///   `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`; the
+///   `.with_attributes([service.name])` call below then overwrites what it
+///   found. The argument therefore always wins, which is the opposite of
+///   what the OpenTelemetry environment-variable specification
+///   prescribes. Pass the value your environment would have supplied.
+///
+/// Only the endpoint, headers and timeout variables reach the exporter.
+///
+/// # Only metrics — there is no span export
+///
+/// This pipeline exports **metrics and nothing else**. The `otel` feature
+/// installs no `TracerProvider`, and no part of this workspace reads or
+/// writes W3C `traceparent`, so A2A calls between agents are not joined into
+/// a distributed trace. Structured logs via the `tracing` feature carry task
+/// and context identifiers within *one* process; they are not a substitute.
+///
 /// # Errors
 ///
 /// Returns an error if the OTLP exporter or meter provider cannot be created.
@@ -69,9 +101,13 @@ pub fn init_otlp_pipeline(
 ///
 /// For a process that configures its exporter from its own settings rather
 /// than the environment — and for tests, where writing the environment is
-/// `unsafe` in edition 2024 because another thread may be reading it. The
-/// `OTEL_EXPORTER_OTLP_*` variables other than the endpoint (headers,
-/// timeout, protocol) still apply.
+/// `unsafe` in edition 2024 because another thread may be reading it.
+///
+/// `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_EXPORTER_OTLP_TIMEOUT` still apply.
+/// **`OTEL_EXPORTER_OTLP_PROTOCOL` does not** — the transport is gRPC and
+/// cannot be changed; see [`init_otlp_pipeline`]. An earlier revision of this
+/// comment listed protocol among the variables that still apply, which was
+/// wrong and would have sent a reader to an HTTP port expecting it to work.
 ///
 /// # Errors
 ///

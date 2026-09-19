@@ -60,6 +60,76 @@ SDK — which is the distinction this two-minute step buys you.
 With the `otel` feature, `OtelMetrics` is the real provider and exports the
 catalogue below over OTLP.
 
+## Exporting over OTLP — the sequence, and where it bites
+
+Installing `OtelMetrics` is half of it. Nothing leaves the process until an
+export pipeline exists, and the order matters more than it looks.
+
+```rust
+use a2a_protocol_server::otel::{OtelMetricsBuilder, init_otlp_pipeline};
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+
+/// The whole sequence. Called from inside the runtime — see below.
+async fn install(executor: impl a2a_protocol_server::executor::AgentExecutor)
+    -> Result<(), Box<dyn std::error::Error>>
+{
+    // 1. The pipeline first. It installs a process-global meter provider,
+    //    which is what `OtelMetrics` records through.
+    let provider = init_otlp_pipeline("my-agent")?;
+
+    // 2. Then the metrics provider, on the handler.
+    let handler = RequestHandlerBuilder::new(executor)
+        .with_metrics(OtelMetricsBuilder::new().build())
+        .build()?;
+    let _ = handler;
+
+    // 3. On shutdown, flush. Treat an error as "metrics may have been lost",
+    //    not as a failure to terminate: the final flush fails whenever the
+    //    collector is unreachable.
+    let _ = provider.shutdown();
+    Ok(())
+}
+# fn main() {}
+```
+
+Four things that are easy to get wrong, in the order people hit them.
+
+**It must be called from inside a Tokio runtime.** `init_otlp_pipeline`
+builds the tonic channel, and tonic spawns onto the ambient runtime while
+doing so. Called from a plain `fn main` before the runtime starts, it panics
+with `there is no reactor running` — and because release builds set
+`panic = "abort"`, that is a **process abort, not an error you can handle**.
+Call it inside `#[tokio::main]`, or within a `Runtime::enter` guard.
+
+**The transport is gRPC and cannot be changed.** OTLP/gRPC on port 4317. The
+HTTP/protobuf exporter is not compiled in, so **`OTEL_EXPORTER_OTLP_PROTOCOL`
+has no effect**. Setting it to `http/protobuf` and pointing
+`OTEL_EXPORTER_OTLP_ENDPOINT` at a collector's `:4318` gives you gRPC spoken
+at an HTTP port, and silence. Of the standard variables, only these reach the
+exporter:
+
+| Variable | Effect |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | ✅ collector address; defaults to `http://localhost:4317` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | ✅ |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | ✅ |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | ❌ ignored — gRPC always |
+| `OTEL_SERVICE_NAME` | ❌ overridden by the `service_name` argument |
+| `OTEL_RESOURCE_ATTRIBUTES` | ◑ read, except `service.name`, which the argument overwrites |
+
+**`OTEL_SERVICE_NAME` loses to the argument.** The SDK's resource builder does
+read it, and then the `service_name` you pass overwrites what it found. That
+is the opposite of what the OpenTelemetry environment-variable specification
+prescribes, and it is a current limitation rather than a decision: pass the
+value your environment would have supplied, or read the variable yourself and
+hand it in.
+
+**It is last-write-wins, process-wide.** Calling it twice replaces the first
+provider and silently orphans it.
+
+If `CountingMetrics` above prints and your collector is still empty, the
+problem is in this section, not in the SDK.
+
 ## The catalogue
 
 Every instrument the server emits, with its unit. These names are stable;
@@ -83,6 +153,56 @@ treat them as the contract.
 gap between them is requests that produced no response — a panicked executor, a
 dropped connection, a process that went away mid-request. A single counter
 would hide exactly the failure you want to see.
+
+### What these become in Prometheus
+
+The dots are correct: OpenTelemetry names metrics this way
+(`http.server.request.duration`), and the exporter translates `.` to `_`.
+But you should not have to guess the translated name, so here it is,
+measured rather than derived — rendered through `opentelemetry-prometheus`
+0.32.0, the version matching this crate's `opentelemetry_sdk`:
+
+| Instrument | Prometheus name |
+|---|---|
+| `a2a.server.requests` | `a2a_server_requests_total` |
+| `a2a.server.responses` | `a2a_server_responses_total` |
+| `a2a.server.errors` | `a2a_server_errors_total` |
+| `a2a.server.latency` | `a2a_server_latency_seconds` |
+| `a2a.server.queue_depth` | `a2a_server_queue_depth` |
+| `a2a.server.persistence_errors` | `a2a_server_persistence_errors_total` |
+| `a2a.server.push_deliveries` | `a2a_server_push_deliveries_total` |
+| `a2a.server.pool.active` | `a2a_server_pool_active` |
+| `a2a.server.pool.idle` | `a2a_server_pool_idle` |
+| `a2a.server.pool.created` | `a2a_server_pool_created_total` |
+| `a2a.server.pool.closed` | `a2a_server_pool_closed_total` |
+
+Counters gain `_total`, the histogram gains `_seconds` from its `s` unit,
+and gauges gain nothing. Every series also carries
+`otel_scope_name="a2a.server"` — the default meter name, changeable with
+`OtelMetricsBuilder::meter_name`. Alongside them the exporter emits
+`target_info`, a gauge whose `service_name` label is the `service_name` you
+passed to `init_otlp_pipeline`; that is where it lands, and the section
+above is why the environment cannot set it.
+
+**One known deviation, and a measurement that bounds it.** The Unit column
+above is not UCUM: the specification brace-annotates dimensionless counts
+(`{request}`, not `request`). Re-rendering the whole catalogue with UCUM
+units produces a **byte-identical** exposition — same names, same metadata,
+same SHA-256 — because this exporter only suffixes units it can translate,
+and `{request}` and `request` both translate to nothing. So the deviation is
+a metadata-correctness issue, not a cause of wrong metric names here; other
+exporters may treat it differently.
+
+The deviation that *is* visible: OpenTelemetry names duration histograms
+`.duration`, so the conventional name would be
+`a2a.server.request.duration` → `a2a_server_request_duration_seconds`,
+which is what a dashboard template built for OTel will look for.
+`a2a_server_latency_seconds` will not match it.
+
+Neither is corrected in place, because the catalogue is published as a
+contract — see the line under *The catalogue* above — and changing a
+published contract is a breaking change that belongs in its own release
+with its own upgrade note. Both are recorded in `docs/handoff.md`.
 
 ## The four signals worth alerting on
 
@@ -116,6 +236,12 @@ skipped     a configuration result: push_delivery_timeout cut the schedule short
 
 Stated so a green dashboard is not mistaken for a complete one:
 
+* **There are no traces.** The `otel` feature exports metrics and nothing
+  else — no `TracerProvider`, no span export, no `traceparent` on the wire.
+  For a protocol whose subject is agents calling agents this is the largest
+  gap, because metrics can say *this* server was slow and cannot say that a
+  40-second task was 38 seconds waiting two hops away. Propagate your own
+  correlation id in `Message.metadata` until this exists.
 * **Nothing here measures the executor.** Latency is request latency; time spent
   inside your `AgentExecutor` is yours to instrument.
 * **Task-store operations have no latency instrument.** `persistence_errors`
@@ -134,9 +260,18 @@ With `tracing` enabled and a subscriber installed:
 RUST_LOG=a2a_protocol_server=debug,a2a_protocol_client=debug cargo run
 ```
 
-Task and context identifiers are on the spans, so a single incident can be
-followed across the delegation chain when agents call agents. If you emit your
-own events from inside an executor, they inherit that context.
+Task and context identifiers are on the spans, so one request can be followed
+through **this** process. If you emit your own events from inside an executor,
+they inherit that context.
+
+**They do not join a delegation chain.** An earlier revision of this page said
+they did, and that was wrong. There is no distributed tracing here: the `otel`
+feature exports metrics only, nothing in the SDK reads or writes W3C
+`traceparent`, and two agents therefore produce two unrelated span trees.
+Correlating by hand does not rescue it either — each agent mints its own task
+id, so the identifier changes at every hop. Following one incident across
+agents today means propagating a correlation id yourself, in
+`Message.metadata`, and grepping for it.
 
 See also [Troubleshooting](./troubleshooting.md) for the symptom-first version
 of this page, and [Production Hardening](./production.md) for health checks.

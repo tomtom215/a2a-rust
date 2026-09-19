@@ -300,7 +300,7 @@ way.
 | SQLite store | ❌ | ✅ |
 | PostgreSQL store (+ migrations) | ❌ | ✅ |
 | Tenant isolation | ◑ — `tenant` is carried on requests and in `CallContext`; nothing enforces it | ✅ — tenant-scoped stores, `TenantResolver`, per-tenant limits |
-| OpenTelemetry / OTLP export | ❌ (no `opentelemetry` dependency anywhere in the workspace) | ✅ (`otel` feature: traces + metrics) |
+| OpenTelemetry / OTLP export | ❌ (no `opentelemetry` dependency anywhere in the workspace) | ◑ (`otel` feature: **metrics only** — no `TracerProvider`, no span export, and no `traceparent` anywhere in the workspace. Corrected 2026-09-19; this row previously read "traces + metrics", which overclaimed) |
 | Pluggable metrics trait | ❌ | ✅ |
 | `tracing` | ✅ | ✅ |
 | Graceful shutdown | ❌ — no handler-level API; the axum host closes the socket, in-flight executors and event queues are not drained (the `shutdown` symbols in `handler.rs` are test helpers) | ✅ (`RequestHandler::shutdown` cancels tokens and destroys queues) |
@@ -899,6 +899,37 @@ which CI (20 jobs), the coverage upload and the ITK nightly are all green.
 What this section does not claim: none of it changes the governance rows in
 §3, and the ITK and Codecov results are the two numbers this day's work
 produced but had not yet read back.
+
+## 10. Correction made on 2026-09-19 — the OTel row overclaimed
+
+One row in §4 asserted a capability this project does not have, inside a
+comparison whose whole purpose is to state capability accurately. It is
+corrected above and recorded here rather than silently edited, because a
+comparison that quietly revises its own claims is worth less than one that
+shows them being revised.
+
+| Row (section) | Said | Says now | How it was checked |
+|---|---|---|---|
+| OpenTelemetry / OTLP export (§4.2) | `✅ (otel feature: traces + metrics)` | `◑ (otel feature: metrics only)` | `opentelemetry_sdk` is compiled with `features = ["metrics", "experimental_metrics_custom_reader"]` and `opentelemetry-otlp` with `["grpc-tonic", "metrics"]`; there is no `TracerProvider` and no span export anywhere in `crates/`. `grep -rni 'traceparent\|tracestate' crates/ --include='*.rs'` matched nothing before this change and matches exactly one line after it — the `otel/pipeline.rs` doc comment added here to say there is no `traceparent`. No code reads or writes either header |
+
+The `❌` against `a2a-rs` in that row is unchanged, and was re-checked
+against its published manifest rather than carried over:
+`https://index.crates.io/a2/a-/a2a-rs` gives `a2a-rs` 0.9.2 thirty-seven
+dependencies and no declared features, none of the dependencies an
+`opentelemetry` crate. So the row's *direction* was right and its magnitude
+was wrong — this project has metrics where `a2a-rs` has nothing, not
+traces-and-metrics where `a2a-rs` has nothing.
+
+Two sibling documents carried the same overclaim and were corrected in the
+same change: `book/src/deployment/troubleshooting.md` listed "Metrics /
+traces over OTLP" against the `otel` feature, and
+`book/src/deployment/observability.md` told readers that task and context
+identifiers on spans let a single incident "be followed across the
+delegation chain when agents call agents". Neither is true without
+distributed tracing, and the second is the one most likely to have cost
+somebody an afternoon. `docs/handoff.md` records the finding in full,
+including that the hooks for fixing it — inbound headers on `CallContext`,
+mutable outbound headers on `CallInterceptor` — already exist.
 
 ---
 

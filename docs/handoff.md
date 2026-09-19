@@ -524,12 +524,380 @@ README back on the previous line), and the gate-reachability input table.
 were exercised: a stale snippet and an orphaned allowlist entry exit 1, an
 entry with no reason exits 2.
 
+## Observability review, 2026-09-19 — five maintainer findings, verified, plus a sixth
+
+The maintainer reported five defects from recent use. All five were checked
+against the tree rather than taken on report; four hold, one is right about
+the symptom and wrong about the cause, and the check turned up a sixth that
+matters more than the other five together. Every claim below names the file
+and the mechanism so a later reader can re-run it rather than trust it.
+
+### 1. No "just works from env" path — holds, and the failure mode is worse than ergonomics
+
+`init_otlp_pipeline(service_name)` requires an argument, installs
+process-global state last-write-wins, and **must be called from inside a
+Tokio runtime or it panics** — the tonic OTLP channel is built there and
+tonic spawns onto the ambient runtime. The release profile sets
+`panic = "abort"`, so the penalty for getting the init order wrong is a
+process abort rather than an `Err`.
+
+That is documented, in `otel/pipeline.rs`'s `# Panics` section. It was not
+documented anywhere a reader looks first — see finding 6's doc work.
+
+### 2. `OTEL_SERVICE_NAME` ignored — holds, and the mechanism is structural
+
+Not an oversight in reading the environment. `Resource::builder()`
+(`opentelemetry_sdk-0.32.1`, `src/resource/mod.rs:62`) installs three
+detectors, one of them `EnvResourceDetector`, which *does* read
+`OTEL_SERVICE_NAME`. `build_pipeline` then calls
+`.with_attributes([Kv::new("service.name", service_name.to_owned())])`,
+which overwrites whatever the detector found.
+
+So the required argument **structurally cannot lose to the environment**.
+Reading the env harder does not fix it; the signature has to change —
+`Option<&str>`, or drop the parameter and let the detector win, which is
+what the OTel environment-variable specification expects. That is a
+breaking change to a public function and is therefore *not* made here.
+
+### 3. gRPC-only, not discoverable at the config layer — holds, plus a doc defect
+
+`build_pipeline` hard-codes `MetricExporter::builder().with_tonic()`, and
+the manifest compiles `opentelemetry-otlp` with
+`default-features = false, features = ["grpc-tonic", "metrics"]` — the
+http/protobuf exporter is not built at all.
+
+The doc defect on top is the part worth fixing immediately, and it was:
+`init_otlp_pipeline_with_endpoint`'s rustdoc claimed the other
+`OTEL_EXPORTER_OTLP_*` variables "(headers, timeout, **protocol**) still
+apply". Protocol cannot apply. A reader who set
+`OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` and pointed the endpoint at
+`:4318` would get gRPC spoken at an HTTP port, silence, and a doc line
+telling them that should have worked.
+
+### 4. Dotted metric names — the symptom is real, the diagnosis is not, and my first counter-diagnosis was also wrong
+
+**Dots are correct.** OTel semantic conventions name metrics
+`http.server.request.duration`, and the Prometheus exporter specification
+defines the `.`→`_` translation. Renaming away from dots would move *away*
+from the convention.
+
+What is actually off-convention, and is the likely source of the
+mapping-guess friction:
+
+* **The docs never said what the Prometheus names are.** This is the
+  likeliest source of the reported friction, and the one thing here that was
+  a pure documentation gap: nothing in the book stated that
+  `a2a.server.requests` arrives as `a2a_server_requests_total`, so the only
+  way to find out was to run it. `observability.md` now carries the measured
+  name for all eleven instruments.
+* **The units are not UCUM — but I over-charged this one, and the
+  measurement is the reason.** `with_unit("request")`, `("response")`,
+  `("error")`, `("queue")`, `("connection")`, `("delivery")`: six distinct
+  strings across ten of the eleven instruments, every one except
+  `a2a.server.latency`, whose `s` is already correct
+  (`grep -rn with_unit crates/a2a-protocol-server/src/otel/`). UCUM wants
+  `{request}`. I first predicted, from the Prometheus-compatibility
+  specification's rule that a unit "suffix to the metric name SHOULD be
+  added", that this injects a word into every name —
+  `a2a_server_requests_request_total`. **That prediction was wrong.**
+  Rendering the whole catalogue through `opentelemetry-prometheus` 0.32.0
+  both ways produces byte-identical output, SHA-256
+  `374ca05fdf3e2bc7bcca89e8c603dd442cc894b7ed1a27c39fcdb3b62b1fa59d` for
+  both: the exporter only suffixes units it can translate, and `request` is
+  not in its table, so it contributes nothing either way. The deviation is
+  real against the specification and worth fixing for metadata correctness
+  and for exporters that behave differently, but it costs nothing observable
+  here. Recorded because reading the spec and predicting the behaviour gave
+  the wrong answer and forty lines of throwaway code gave the right one.
+* **`a2a.server.latency` should be `a2a.server.request.duration`.** This one
+  *is* visible in the output. OTel names duration histograms `.duration`, so
+  the conventional rendering is `a2a_server_request_duration_seconds`; this
+  ships `a2a_server_latency_seconds`, which no OTel dashboard template will
+  match.
+* **Three parallel counters** — `.requests`, `.responses`, `.errors` — where
+  the convention is one counter with an outcome attribute. As shipped, "error
+  rate" is a division across two instruments.
+
+None of these is changed here. `book/src/deployment/observability.md` states
+"These names are stable; treat them as the contract", so the catalogue is a
+published contract and renaming it is a breaking change that needs its own
+decision, its own upgrade note and its own release. Recorded, not done.
+
+### 5. Prior-task-state inheritance — fixed, confirmed
+
+Issue [#130](https://github.com/tomtom215/a2a-rust/issues/130), fixed in
+`5ee3cfb` and released in 0.12.1, classified in `CHANGELOG.md` as the
+`STABILITY.md` §2 specification correction that made it patch-eligible.
+Nothing outstanding.
+
+### 6. There is no tracing at all — and for *this* protocol that is the biggest gap
+
+The `otel` feature is metrics-only. `opentelemetry_sdk` is compiled with
+`features = ["metrics", "experimental_metrics_custom_reader"]` and
+`opentelemetry-otlp` with `["grpc-tonic", "metrics"]`. There is no
+`TracerProvider`, no span export, and
+`grep -rni 'traceparent\|tracestate' crates/ --include='*.rs'` matched
+**nothing** before this change, and matches exactly one line after it:
+`otel/pipeline.rs`'s new doc comment saying there is no `traceparent`. No
+code reads or writes either header. (Widening the pattern to `propagat`
+adds only unrelated uses of the English word "propagate".)
+
+For an agent-to-*agent* protocol this is the wrong thing to be missing. The
+defining property of A2A is that work crosses process and organisational
+boundaries. Metrics say this server was slow. They cannot say that a triage
+agent's 40-second task was 38 seconds waiting on a runbook agent two hops
+away, and that is the only question anyone asks of a multi-agent system.
+Worse, the task ids *differ* at every hop — each agent mints its own — so
+even correlating by hand across logs does not join the chain.
+
+**Three public documents claimed otherwise, and all three are corrected in
+this change:**
+
+* `book/src/deployment/observability.md` said task and context identifiers on
+  spans mean "a single incident can be followed across the delegation chain
+  when agents call agents". It cannot be: separate processes produce separate
+  span trees with no shared trace id.
+* `book/src/deployment/troubleshooting.md` listed "Metrics / **traces** over
+  OTLP" against the `otel` feature.
+* `docs/rust-sdk-assessment.md` claimed `✅ (otel feature: **traces** +
+  metrics)` in the capability comparison against `a2a-rs` — an overclaim
+  about this project inside a row asserting a shortfall in someone else's,
+  which is the worst place for one.
+
+**The hooks for fixing it already exist**, which is why this is the
+recommendation rather than an aspiration. `CallContext::http_headers()`
+already reads inbound headers. `CallInterceptor` already hands the client a
+mutable `extra_headers` on the way out. Extract `traceparent` inbound,
+inject outbound, attach `a2a.task.id` as a span attribute, and a delegation
+chain becomes one trace. It is protocol-level, so it works cross-language —
+and the ITK already runs against the official Python, JavaScript, Go and
+Java SDKs, which means this project could publish a **cross-language trace
+conformance result nobody else in the ecosystem is positioned to produce**.
+Nor is anyone else placed to: `a2a-server-lf` 0.4.4 declares nineteen
+dependencies, none of them an `opentelemetry` crate, and one feature,
+`native-tls` — checked against the published manifest at
+`https://index.crates.io/a2/a-/a2a-server-lf`, which is also true of
+`a2a-lf` 0.3.1 and `a2a-client-lf` 0.2.5.
+
+## Ergonomics, measured by building three examples in one session
+
+Written from having actually used the SDK on 2026-09-19 to build
+`rig-agent`'s tool loop, `mcp-agent` and `mcp-bridge`, rather than from
+reading it.
+
+### The `RequestContext` blind spot is the single biggest constraint
+
+An executor cannot see caller identity, tenant, HTTP headers, or the
+activated extension set. `build_request_context`
+(`handler/messaging/create.rs`) takes no `CallContext`, and `tokio::spawn`
+drops `TenantContext`, so the executor observes tenant `""` — stated at
+`handler/mod.rs:157-160`.
+
+This was hit directly building `mcp-bridge`: the only channel for getting
+the caller's chosen skill to the agent was `Message.metadata`, because there
+is no supported alternative. The consequence in general is that **an
+executor cannot enforce "only this tenant may invoke this skill"**, which
+rules out a large class of real deployments. Every workaround fails —
+`ServerInterceptor::before` runs before the task id exists, so there is not
+even a key to stash something under.
+
+Of everything in this file, plumbing `CallContext` into `RequestContext`
+would most expand what people can build on top.
+
+### Five things every example hand-writes
+
+Each of these was written three times in one session:
+
+* a hyper accept loop, about 25 lines, because `serve()` does not cover
+  "JSON-RPC and REST on one socket";
+* an `AgentCard` struct literal of 38, 43 and 45 lines respectively — and
+  this one is a **discoverability** failure, not a missing feature. The
+  builder covers every field all three cards set: `AgentCard::new`, twelve
+  `with_*` methods including `with_skill` and `with_interface`
+  (`agent_card/builders.rs`), and `AgentSkill::new().with_tags()`. All three
+  examples reached for the literal anyway. The likely reason is that they
+  import `a2a_protocol_types::agent_card::{AgentCard, AgentSkill, …}` and
+  land on the struct, whose rustdoc (`agent_card/mod.rs:182-190`) describes
+  what the document is and never mentions that a builder exists; the fields
+  are right there and `builders.rs` is not. `hello-agent`, which comes in
+  through the SDK prelude, uses the builder. A `# Construction` line on the
+  struct doc is a one-line fix for the 126 lines those three functions
+  occupy;
+* `MessageSendParams` construction, about 12 lines, to send one line of text;
+* text extraction from a task's artifacts, about 8 lines;
+* a message-id generator — `uuid_like()` was written twice rather than take
+  a `uuid` dependency for two call sites.
+
+`hello-agent` is 28 lines of code — `src/main.rs` lines 24-67, which is
+everything above its `#[cfg(test)]`, excluding blanks and comments; the
+file is 185 lines with its tests — because it uses `agent_executor!` and
+`EventEmitter`. Almost nothing else does. The ergonomic layer exists, reaches
+unevenly, and is under-advertised where it does reach. Two genuine holes:
+`impl Message` has exactly two methods, `text` and `texts`, and no
+constructor, so there is no `Message::user_text("hi")`; and `Task` has no
+`impl` block at all in the types crate, so there is no `task.text()` to pull
+an answer out of a finished task. Neither `MessageSendParams` nor `Task` has
+a single inherent method between them. Adding those two, plus the
+`# Construction` pointer above, would delete roughly a hundred lines from
+every agent anyone writes and make the examples shorter rather than longer.
+
+### The event-log absence has a measured cost now
+
+State is a folded snapshot; `sqlite_store/journal.rs` is an artifact-parts
+side table, not an event log; there is no SSE `id:` or `Last-Event-ID`.
+
+The measurement: in `mcp-bridge`'s demo the sample agent emits three progress
+steps 120 ms apart and the MCP caller sees **one**, because a poller can only
+ever observe the latest fold. That transcript is in the example's README with
+the cause named. A reconnecting client gets a snapshot, not what it missed —
+and #130 was itself a fold bug, which an event log makes impossible by
+construction.
+
+### Two smaller ones
+
+* **`Failed` is prose** (already recorded above as A2). Building the bridge,
+  mapping an A2A failure onto MCP's `isError` had only the state enum to work
+  from. Bad input, transient infrastructure, policy refusal and budget
+  exhaustion are four different caller behaviours behind one variant, so
+  every bridge and orchestrator will re-invent an English matcher.
+* **A documented wrong default.** `HandlerLimits::push_delivery_timeout` is
+  5 s while `HttpPushSender::new()`'s retry schedule totals 98 s, so at
+  defaults 1 of 3 attempts runs. Honestly recorded at
+  `handler/limits.rs:44-84` — but a reader who sees `max_attempts: 3` and
+  does not open the other file gets one attempt and no warning.
+
+## What to build next, ranked
+
+Ordered by value per unit of work, from the seat of someone who consumes
+agents rather than maintains the protocol.
+
+1. **Trace context as a protocol concern.** Finding 6. Biggest gap, clearest
+   differentiator, and it uses hooks that already exist.
+2. **Plumb `CallContext` into `RequestContext`.** Unblocks auth-aware
+   executors, per-tenant policy, and every higher layer anyone would build.
+3. **The executor conformance harness (A4 above) — move it up.** Three
+   executors were written this session; all three got the happy path right
+   and none is tested against cancellation arriving mid-artifact, an
+   `input-required` never answered, or a client disconnecting mid-stream,
+   because writing those by hand is exactly the work people skip. This
+   project already believes in the tooling: `cargo mutants` is the same
+   instinct pointed at tests.
+4. **A typed failure taxonomy shipped as a declared extension**, with the
+   client's retry policy consuming it. Idempotency proved the extension
+   pattern works end to end.
+5. **Make the event log the record and state the fold.** The one
+   architectural change worth making if only one can be made. It kills
+   #130-class bugs by construction, gives exact resumption from an offset
+   instead of snapshot-and-hope, makes the hand-rolled `tool-trace` artifact
+   unnecessary, and is the substrate signed execution receipts need.
+   Everything in Part B above gets easier downstream of it.
+6. **Publish `tck/sut`.** The fastest route to people using the server crate
+   is for it to become the thing they test *their* agent against. It is
+   already built.
+
+**What a heavy agent user wants from this SDK, stated plainly:** to hand a
+coding agent an A2A endpoint and have it work (that is `mcp-bridge`, and it
+should be on crates.io); to know why a delegated task failed without parsing
+English; to see one trace across a delegation chain; and to get the caller's
+identity inside an executor.
+
+## What is good, since an all-negative list is neither complete nor credible
+
+The gate culture is the best thing here and it is not close.
+`check_package_excludes.py` and `check_book_code.sh` each caught a real
+registration mistake in this session before CI would have, with error
+messages that named the fix. The docs-as-argument style — every limit stated
+where it happens, with the measurement that found it — is why verifying five
+maintainer claims took an hour rather than a day. And three non-trivial
+examples were built against the core in one day without fighting it once.
+The foundation is sound; what is missing is mostly *above* it.
+
 ## Still open
+
+Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
 
 1. Delete `release/v0.12.1`, whose contents are merged and tagged.
 2. Submit the adk-rust work if it is still wanted: issue first, then the patch.
-4. The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
+3. The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
    command that says when it can be deleted.
-5. ~~Stale install snippets.~~ Done — see "Prose versions are checked now"
+4. ~~Stale install snippets.~~ Done — see "Prose versions are checked now"
    below. The figure recorded here first, six, was wrong: it counted only
    `crates/`, and the real number was 28.
+
+### `prove_gates_fail.sh` is stuck at gate 5 of 65 — found 2026-09-19, not fixed here
+
+Running the harness on a clean tree stops at step 5/65:
+
+```text
+[5/65] ./scripts/check_benchmark_prose.sh
+       injection: benchmark_prose
+AssertionError: benchmark_prose injection matched no text — the
+connection-reuse figure in book/src/reference/benchmarks.md changed and
+this string is stale
+```
+
+The script's own comment anticipated exactly this. It injects the historical
+drift by string replacement:
+
+* `scripts/prove_gates_fail.sh:710` looks for
+  `"Connection reuse saves 122.5 µs (42.7%) on loopback"`;
+* `book/src/reference/benchmarks.md:554` now reads
+  `"Connection reuse saves 116.6 µs (44.3%) on loopback"`.
+
+The benchmarks were re-measured and the hard-coded needle was not updated
+with them, so the replacement matches nothing and the assertion fires.
+
+**Pre-existing, not from this branch, and it does not gate CI.** Both files
+are byte-identical to `origin/main` here — `git diff origin/main..HEAD` names
+neither — and the same mismatch reproduces on `origin/main` directly. No
+workflow has a `run:` step for this script; `ci.yml` mentions it only in
+comments, and the gate CI actually runs, `prove_workflow_gates_fail.py`,
+passes.
+
+**Why it still matters:** the harness aborts on the first failure, so gates 5
+through 65 are currently never proven able to fail. That is sixty gates whose
+ability to catch anything is unverified, which is the specific thing this
+script exists to prevent.
+
+**The fix**, left for a change of its own because it is unrelated to this
+one's subject: update the needle at line 710 to the current sentence. The
+replacement text (`~140µs (9%)`) still represents drift, so the injection
+should still trip `check_benchmark_prose.sh` — worth confirming rather than
+assuming, since a needle that no longer proves anything is how this got here.
+Better still, derive the needle from the file instead of hard-coding it, so
+the next re-measurement cannot break it silently.
+
+### Deferred by the 2026-09-19 observability review
+
+The large items are argued in *What to build next, ranked* above and are not
+repeated here. These are the small ones that would otherwise have no home.
+Everything in this list was found and deliberately **not** changed, so that
+the documentation fix and the behaviour change stay separable.
+
+**Breaking — needs its own release and an upgrade note.** The catalogue in
+`book/src/deployment/observability.md` is published as a contract, so each
+of these renames something a user's dashboards already select on:
+
+* Units to UCUM: `("request")` → `("{request}")` and the five others.
+  Measured to change nothing in the Prometheus exposition (see finding 4),
+  so this is for metadata correctness and for exporters that behave
+  differently, not for the metric names.
+* `a2a.server.latency` → `a2a.server.request.duration`. This one *does*
+  change the Prometheus name, to `a2a_server_request_duration_seconds`,
+  which is what an OTel dashboard template looks for.
+* `.requests` / `.responses` / `.errors` → one counter with an `outcome`
+  attribute, per convention. Note this loses the requests-minus-responses
+  gap the current split is there to expose, so it is not a pure win; decide
+  deliberately.
+* `init_otlp_pipeline`'s `service_name` parameter, so `OTEL_SERVICE_NAME`
+  can win as the specification requires — `Option<&str>`, or drop the
+  parameter and let `EnvResourceDetector` supply it.
+
+**Non-breaking, small, and independently useful:**
+
+* A `# Construction` line on the `AgentCard` struct doc
+  (`agent_card/mod.rs:182-190`) pointing at `AgentCard::new` and the twelve
+  `with_*` methods. Three examples written the same day all missed them.
+* A `Message` constructor — `impl Message` has `text` and `texts` and no way
+  to build one.
+* `Task::text()` — `Task` has no `impl` block at all in the types crate.

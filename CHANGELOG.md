@@ -225,6 +225,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because the bridge polls at 250 ms. The cost of polling rather than
   streaming, visible in the output rather than discovered later.
 
+- **The OTLP export sequence is documented.** `book/src/deployment/observability.md`
+  covered metrics conceptually and the instrument catalogue, and said nothing
+  about how to make bytes leave the process. It now carries the call order as
+  a compiled example, and the four things that bite:
+
+  `init_otlp_pipeline` **must be called from inside a Tokio runtime** — tonic
+  spawns onto the ambient runtime while building the channel — and since the
+  release profile sets `panic = "abort"`, getting that wrong aborts the
+  process rather than returning an error. The transport is **gRPC only**, so
+  `OTEL_EXPORTER_OTLP_PROTOCOL` has no effect and an endpoint pointed at a
+  collector's `:4318` produces silence. **`OTEL_SERVICE_NAME` is overridden**
+  by the `service_name` argument: `Resource::builder()` installs
+  `EnvResourceDetector`, which reads it, and `.with_attributes` then
+  overwrites what it found — the opposite of what the OTel
+  environment-variable specification prescribes. And the install is
+  **last-write-wins, process-wide**.
+
+  A table now says which `OTEL_*` variables reach the exporter (endpoint,
+  headers, timeout) and which do not (protocol, service name). `book-tests`
+  gains the `otel` feature so the sequence compiles as a doctest rather than
+  being an `ignore`d block, which is the same reason `postgres` was added for
+  the horizontal-scaling page.
+
+  The catalogue section gains **the Prometheus name for every instrument**,
+  measured by rendering the catalogue through `opentelemetry-prometheus`
+  0.32.0 rather than derived from the translation rules: `a2a.server.requests`
+  arrives as `a2a_server_requests_total`, `a2a.server.latency` as
+  `a2a_server_latency_seconds`, and gauges keep their names unsuffixed. The
+  dotted names are *correct* — OTel names metrics
+  `http.server.request.duration` — and nothing in the book had previously
+  said what they translate to, which is the likeliest reason mapping them
+  took guesswork.
+
+  Two deviations are now stated there rather than changed, because the page
+  calls these names a contract and changing a published contract needs its
+  own release and upgrade note: the units are not UCUM (`request` should be
+  `{request}`), which the same measurement shows costs nothing observable —
+  UCUM and non-UCUM units render byte-identical exposition through this
+  exporter — and `a2a.server.latency` should conventionally be
+  `a2a.server.request.duration`, which *is* visible, since no OTel dashboard
+  template will match `a2a_server_latency_seconds`.
+
 ### Changed
 
 - **`examples/rig-agent` defaults to `qwen3:1.7b`, not `qwen3.5:0.8b`.**
@@ -248,6 +290,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`examples/rig-agent`'s executor was undocumented.** Its doc comment had
   run together with the one below it, so both attached to `SLOW_PREFIX` and
   `RigAgentExecutor` carried none.
+
+- **Three documents claimed OpenTelemetry trace export that does not
+  exist.** The `otel` feature is metrics-only: `opentelemetry_sdk` is
+  compiled with `features = ["metrics", …]`, `opentelemetry-otlp` with
+  `["grpc-tonic", "metrics"]`, there is no `TracerProvider`, and
+  `grep -rni 'traceparent\|tracestate' crates/` matched nothing before this
+  change — it now matches exactly the one doc comment added here that says so.
+  Corrected in
+  `book/src/deployment/troubleshooting.md` ("Metrics / **traces** over
+  OTLP"), `docs/rust-sdk-assessment.md` (`✅ otel feature: **traces** +
+  metrics`, in a row comparing this project against `a2a-rs` — an overclaim
+  in the worst possible place, now `◑ metrics only` with a §10 recording the
+  change), and `book/src/deployment/observability.md`, which told readers
+  that identifiers on spans let one incident "be followed across the
+  delegation chain when agents call agents". It cannot: separate processes
+  produce separate span trees, and each agent mints its own task id, so the
+  identifier changes at every hop.
+
+- **`init_otlp_pipeline_with_endpoint`'s rustdoc said
+  `OTEL_EXPORTER_OTLP_PROTOCOL` still applies.** It cannot —
+  `MetricExporter::builder().with_tonic()` is hard-coded and the
+  HTTP/protobuf exporter is not compiled in. A reader who set
+  `http/protobuf` and pointed the endpoint at a collector's `:4318` would
+  get gRPC spoken at an HTTP port, silence, and a doc line saying that
+  should have worked.
 
 ### Internal
 
