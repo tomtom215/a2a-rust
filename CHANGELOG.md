@@ -43,6 +43,41 @@ follow-up release of the binding").
 
 ### Added
 
+- **A conformance harness for `AgentExecutor`, behind the `conformance`
+  feature.** The TCK grades servers. Nothing graded the thing an adopter
+  actually writes, and the paths they get wrong are the awkward ones —
+  cancellation arriving mid-work, a parked task reported as an error, an
+  event emitted after a terminal status. Those are exactly the cases people
+  skip when writing tests by hand.
+
+  `conformance::check(Arc::new(MyExecutor)).await.assert_pass()` drives the
+  executor against a real event queue — no server, no ports, no model — and
+  grades eight protocol invariants that hold for any agent whatever it does:
+  it ends in a terminal or interrupted state, its transitions are legal,
+  nothing follows a terminal status, artifacts carry ids, parking is not
+  reported as an error, it observes the cancellation token, `cancel` leaves
+  subscribers a terminal state, and it does not panic. It says nothing about
+  whether the agent is any good at its job.
+
+  **Three rules keep the score honest, and each is the repository's own.** A
+  check that did not apply is *not graded* rather than counted as a pass — a
+  report that grades nothing fails rather than reporting full marks, which is
+  the failure `tck/`'s README records having shipped once. Every verdict
+  carries its reason, so a failure says what was observed and why it matters,
+  not just which check. And the executor runs inside `tokio::spawn`, so a
+  panicking executor is a graded failure rather than a panic that takes the
+  adopter's whole test run down with it.
+
+  Its own tests are fourteen deliberately broken executors, each breaking one
+  invariant, asserting the harness names that one and no other. A conformance
+  harness whose failures are untested is a gate that cannot fail, which is
+  the thing this repository checks for everywhere else — and the discipline
+  paid immediately: the first draft of one fixture broke two invariants
+  rather than one, and the harness was right where the test was wrong.
+
+  No new dependencies. Documented on `book/src/deployment/testing.md` with a
+  compiled example.
+
 - **A failed task says why, as a class a caller can `match` on.** Shipped as
   the declared extension `https://a2a-rust.com/extensions/failure/v1`, so
   servers stay conformant and the TCK is unaffected.

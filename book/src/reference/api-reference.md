@@ -297,6 +297,7 @@ are rustdoc's job.
 | `auth` | Server-side authentication interceptors |
 | `builder` | Builder for `RequestHandler` |
 | `call_context` | Call context for server-side interceptors |
+| `conformance` | Grades an `AgentExecutor` against the protocol invariants (`conformance` feature) |
 | `dispatch` | HTTP dispatch layer — JSON-RPC and REST routing |
 | `error` | Server-specific error types |
 | `executor` | Agent executor trait |

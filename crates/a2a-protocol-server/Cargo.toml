@@ -53,6 +53,12 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls"]
 ## Enable OpenTelemetry integration for native OTLP export of traces and metrics.
 otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
+## A harness that grades an `AgentExecutor` against the protocol invariants
+## that hold for any agent — terminal states, legal transitions, cooperative
+## cancellation, parking. Intended as a dev-dependency: the TCK grades
+## servers, and this grades the thing an adopter actually writes. Pulls in no
+## extra dependencies.
+conformance = []
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["dep:axum"]
 ## Enable JWT bearer-token authentication (HS256/RS256/ES256, static or remote

@@ -2,6 +2,73 @@
 
 a2a-rust makes it easy to test agents at multiple levels: unit testing executors, integration testing with real HTTP, and property-based testing with fuzz targets.
 
+## Grading an executor against the protocol
+
+The TCK grades servers. This grades the thing you actually wrote.
+
+The paths executors get wrong are the awkward ones — cancellation arriving
+mid-work, a parked task reported as an error, an event emitted after a
+terminal status — and they are exactly the cases people skip when writing
+tests by hand. The harness drives your executor against a real event queue,
+with no server, no ports and no model, and grades the protocol invariants
+that hold for any agent whatever it does.
+
+Add the `conformance` feature as a dev-dependency:
+
+```toml
+[dev-dependencies]
+a2a-protocol-server = { version = "0.12", features = ["conformance"] }
+```
+
+```rust
+# use std::sync::Arc;
+# use a2a_protocol_server::conformance;
+# use a2a_protocol_server::{EventEmitter, agent_executor};
+# use a2a_protocol_types::task::TaskState;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |ctx, queue| async {
+#     let emit = EventEmitter::new(ctx, queue);
+#     if emit.is_cancelled() { return emit.status(TaskState::Canceled).await; }
+#     emit.status(TaskState::Working).await?;
+#     emit.status(TaskState::Completed).await
+# });
+# async fn conformance_test() {
+let report = conformance::check(Arc::new(MyExecutor)).await;
+report.assert_pass(); // panics with the full grid if anything failed
+# }
+# fn main() {
+#     tokio::runtime::Builder::new_current_thread()
+#         .enable_all()
+#         .build()
+#         .expect("runtime")
+#         .block_on(conformance_test());
+# }
+```
+
+A failing report names the invariant and says why it matters:
+
+```text
+executor conformance:
+  pass  ends_in_terminal_or_interrupt      ended in TASK_STATE_COMPLETED
+  n/a   transitions_are_legal              fewer than two statuses emitted
+  FAIL  honours_cancellation               ran to Completed with an already-cancelled
+                                           token; cancellation is cooperative, so an
+                                           executor that never checks
+                                           ctx.cancellation_token cannot be cancelled
+                                           at all
+  4 of 5 graded checks passed, 3 not applicable
+```
+
+**A check that did not apply is not graded**, and a report that grades
+nothing fails rather than passing vacuously — the same two rules the TCK
+follows, for the reason its README gives: a run that measured nothing once
+reported full marks.
+
+What it cannot tell you: it runs each check once, so it will not find a race;
+it supplies its own message, so use `conformance::check_with` if your
+executor only misbehaves on particular input; and it grades the executor, not
+the deployment — the TCK is still what says your *server* conforms.
+
 ## Unit Testing Executors
 
 Test your executor logic directly by creating a `RequestContext` and mock `EventQueueWriter`:

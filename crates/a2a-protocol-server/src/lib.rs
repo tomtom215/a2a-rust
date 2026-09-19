@@ -130,6 +130,9 @@ pub mod streaming;
 pub mod tenant_config;
 pub mod tenant_resolver;
 
+#[cfg(feature = "conformance")]
+pub mod conformance;
+
 #[cfg(feature = "otel")]
 pub mod otel;
 

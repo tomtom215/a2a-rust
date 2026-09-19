@@ -35,6 +35,10 @@ a2a-protocol-sdk = { path = "../crates/a2a-protocol-sdk", features = [
 a2a-protocol-client = { path = "../crates/a2a-protocol-client" }
 a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = [
     "axum",
+    # Added with the testing page's conformance section, for the same reason
+    # as `otel` and `postgres` below: without it that block could only be
+    # `ignore`d, which is what this crate exists to stop.
+    "conformance",
     "grpc",
     "grpc-tls",
     # Added with the observability page's OTLP section, for the same reason as

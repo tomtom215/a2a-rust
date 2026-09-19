@@ -852,13 +852,21 @@ agents rather than maintains the protocol.
    outbound, and nothing else needed inventing.
 2. ~~**Plumb `CallContext` into `RequestContext`.**~~ Done — see *The
    `RequestContext` blind spot — closed* above.
-3. **The executor conformance harness (A4 above) — move it up.** Three
-   executors were written this session; all three got the happy path right
-   and none is tested against cancellation arriving mid-artifact, an
-   `input-required` never answered, or a client disconnecting mid-stream,
-   because writing those by hand is exactly the work people skip. This
-   project already believes in the tooling: `cargo mutants` is the same
-   instinct pointed at tests.
+3. ~~**The executor conformance harness (A4 above).**~~ Done —
+   `a2a_protocol_server::conformance` behind the `conformance` feature,
+   eight checks, fourteen tests of its own.
+
+   **What it does not cover, stated so the next person does not assume it
+   does.** It runs each check once, so it finds no races. It drives the
+   executor directly, so "a client disconnecting mid-stream" — one of the
+   three cases this item named — is still untested: that is a server-side
+   event the executor never observes, and testing it needs a real stream
+   rather than a queue. `input-required` never answered is likewise the
+   *handler's* behaviour, not the executor's; what the harness checks is the
+   half that is the executor's, that parking returns `Ok` rather than `Err`.
+   Cancellation arriving *mid-artifact* is approximated by a pre-cancelled
+   token, which catches an executor that never checks at all but not one
+   that checks only before its first emit.
 4. ~~**A typed failure taxonomy shipped as a declared extension.**~~ Done —
    `a2a_protocol_types::failure`, `Task::failure_class()`,
    `EventEmitter::fail`, advertised on the card, with a book page. **The
