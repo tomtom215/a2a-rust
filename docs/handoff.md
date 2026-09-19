@@ -92,7 +92,7 @@ the *content* merge.
 | `release/v0.12.1` | merged, still present | The 0.12.1 release prep. Merged as `e057c8e` via #132, and tagged. Safe to delete. |
 | `claude/a2a-rig-held` | `caa8774` | Storage. The unpublished `a2a-rig` crate, one commit on top of `caac0ec`. |
 | `claude/adk-rust-0.12-patch` | `6fbdd2f` | Storage. The outbound adk-rust patch as a file, one commit on top of `caac0ec`. |
-| `claude/wizardly-tesla-0f358t` | open — see note | **Destined for `main`.** Tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP). On top of `fa1a82b9`. No PR opened yet. |
+| `claude/wizardly-tesla-0f358t` | open — see note | **Destined for `main`.** Three examples: tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP) and `examples/mcp-bridge` (an A2A agent exposed *as* MCP). On top of `fa1a82b9`. No PR opened yet. |
 
 `release/v0.12.1` can be deleted. The two **storage** branches —
 `claude/a2a-rig-held` and `claude/adk-rust-0.12-patch` — are **not destined for
@@ -138,7 +138,7 @@ makes this worth recording rather than just merging:
   `tool-trace`. Better evidence for the artifact than any argument for it.
 
 Gates run on the branch: workspace suite 3,347 tests over three consecutive
-clean runs (3,361 after `mcp-agent`); TCK against the live agent 21/21 graded, 0 failed, 1 N/A, which is
+clean runs (3,376 after all three examples); TCK against the live agent 21/21 graded, 0 failed, 1 N/A, which is
 the figure `tck.yml` gates; no-model surface sweep 44/44, exit 0; fmt, workspace
 clippy, file-lengths, doc-versions, book-code, doc-escapes, block-scalars,
 api-reference, sitemap `--check` and DCO all clean.
@@ -166,6 +166,33 @@ Three things from building it that are cheaper to read than to rediscover:
   `debug/incremental`. `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` brings
   a full workspace test build down to roughly 3 GB and changes no outcome.
   Worth knowing before a long session in a container.
+
+**`examples/mcp-bridge`, the reverse direction.** An A2A agent exposed as an
+MCP server, so an MCP client can call it with no A2A library and no A2A
+concept — a command in its server list. This is the direction with the
+reach: `rmcp` has ~2,030 reverse dependencies on crates.io against
+`a2a-protocol-types`' one external.
+
+The finding: **more of A2A crosses than expected, and only because MCP's
+`2026-07-28` spec added long-running tasks (SEP-2663).** An A2A task maps
+onto an MCP task rather than a blocked request — the caller polls
+`tasks/get`, agent status messages cross, and `tasks/cancel` reaches the
+agent as `CancelTask`. Before that extension the bridge could not have been
+built without misrepresenting one side. Three asymmetries stay: A2A skills
+have no argument schema, A2A has no skill selector (the bridge sends a
+metadata hint the agent may ignore), and `input-required` is reported rather
+than bridged, because holding an A2A task id across MCP calls is real work
+and a half-built version would strand tasks.
+
+**Where it should live is still open, and deliberately so.** It was built in
+`examples/` because the code is identical either way and that costs no
+release commitment. The argument for publishing it — as a `bindings/` crate
+or its own repo — is that a bridge speaks wire protocols, so it works against
+`a2a-protocol-*`, against the official `a2a-lf`, or against a Python agent,
+which makes it the one asset here that survives whatever happens to the SDK
+contest. The argument against is the one this repository already applied to
+`a2a-rig`: publishing later costs nothing, maintaining now costs
+immediately. Decide it with a user in hand, not before.
 
 ### `claude/a2a-rig-held`
 
