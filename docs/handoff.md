@@ -888,10 +888,11 @@ Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
 4. ~~Stale install snippets.~~ Done — see "Prose versions are checked now"
    below. The figure recorded here first, six, was wrong: it counted only
    `crates/`, and the real number was 28.
-5. Re-run `prove_gates_fail.sh` for the three `--features {sqlite,postgres,
-   auth-jwt}` gates on a clean tree. The panic hook that made them
-   INCONCLUSIVE is gone, but that they now report PROVEN is inference, not
-   measurement. Do this before trusting the harness's tally again.
+5. ~~Re-run `prove_gates_fail.sh` for the three `--features {sqlite,postgres,
+   auth-jwt}` gates.~~ Done — 9 proven, 0 unproven, including three that were
+   PRE-BROKEN only for want of a local PostgreSQL. Still unrun on this branch:
+   the other 57 gates, and the two remaining PRE-BROKEN ones (SLIMRPC SPIFFE,
+   and `cargo hack clippy` with `cargo-hack` absent).
 6. ~~The two hand-rolled `uuid_like()` helpers.~~ Done — both examples take
    `uuid` now.
 
@@ -943,13 +944,36 @@ Of the 34 injections, `benchmark_prose` was the only one targeting a
 regenerated artifact, so this was the whole class rather than the first of
 many.
 
-**Where the harness stands now**, run to completion in a detached worktree:
-`55 proven, 10 unproven, 0 not selected (of 65 gates)`. The 10 are not stale
-needles. Seven are **PRE-BROKEN** — already red on the clean tree, so the
-harness correctly claimed nothing — and all seven are an under-provisioned
-machine rather than a repository defect: five need a PostgreSQL server, one
-is the SLIMRPC SPIFFE suite, one is `cargo hack clippy` failing in 0 s
-because `cargo-hack` is absent. The remaining three are the next entry.
+**Where the harness stood on 2026-09-19**, run to completion in a detached
+worktree: `55 proven, 10 unproven, 0 not selected (of 65 gates)`. The 10 were
+not stale needles. Seven were **PRE-BROKEN** — already red on the clean tree,
+so the harness correctly claimed nothing — and all seven were an
+under-provisioned machine rather than a repository defect: five needed a
+PostgreSQL server, one is the SLIMRPC SPIFFE suite, one is `cargo hack clippy`
+failing in 0 s because `cargo-hack` is absent. The remaining three are the
+next entry.
+
+**"Under-provisioned" was doing too much work there, and it cost the session
+a measurement.** A PostgreSQL server is one `apt-get install -y postgresql`
+away in this container. Installed, started, and with the `postgres` role given
+the password `ci.yml` already expects, three of those five gates go straight
+to PROVEN — `postgres_store_tests --ignored`, `multi_replica --ignored` and
+the `rate_limit::shared --ignored` counter suite, in 10 s, 7 s and 11 s. Do
+this before recording a gate as unprovable for want of a machine:
+
+```sh
+apt-get install -y postgresql
+PGV=$(ls /usr/lib/postgresql/ | head -1)
+mkdir -p /var/run/postgresql && chown postgres:postgres /var/run/postgresql
+su postgres -c "/usr/lib/postgresql/$PGV/bin/pg_ctl \
+    -D /var/lib/postgresql/$PGV/main \
+    -o '-c config_file=/etc/postgresql/$PGV/main/postgresql.conf \
+        -c listen_addresses=localhost -p 5432' -l /tmp/pg.log start"
+su postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD 'postgres';\""
+```
+
+`prove_gates_fail.sh` reads `A2A_TEST_POSTGRES_URL` out of `ci.yml` itself, so
+nothing else needs setting.
 
 ### The process-global panic hook is fixed — and the recommended fix was wrong
 
@@ -999,12 +1023,26 @@ the fixed tree; exit 1 naming all six lines on the tree as it stood; and
 exited 1 citing the injected defect", with the tree clean afterwards. The
 harness now counts 66 gates rather than 65.
 
-**Not yet re-measured: whether the three gates now report PROVEN.** The
-mechanism is fixed and the reasoning is that they will, but
-`prove_gates_fail.sh --only 'features sqlite'` needs a clean tree and a long
-run, and this branch has not had one. That is the check the next session
-should run first, and it is the only claim in this section that is inference
-rather than measurement.
+**Re-measured: the three gates report PROVEN.** This was recorded here as the
+one inference in the section and is now a measurement.
+`prove_gates_fail.sh --only 'test -p a2a-protocol-server --features'` on a
+clean tree selects nine gates and reports **9 proven, 0 unproven**, each
+"gate exited 101 citing the injected defect", tree clean afterwards:
+
+| gate | |
+|---|---|
+| `--features sqlite` | PROVEN, 26 s — was INCONCLUSIVE |
+| `--features postgres` | PROVEN, 23 s — was INCONCLUSIVE |
+| `--features auth-jwt` | PROVEN, 21 s — was INCONCLUSIVE |
+| `--features tls-rustls` | PROVEN, 33 s |
+| `--features axum` | PROVEN, 22 s |
+| `--features auth-jwt,tls-rustls` | PROVEN, 24 s |
+| `postgres_store_tests --ignored` | PROVEN, 10 s — was PRE-BROKEN |
+| `multi_replica --ignored` | PROVEN, 7 s — was PRE-BROKEN |
+| `rate_limit::shared --ignored` | PROVEN, 11 s — was PRE-BROKEN |
+
+So the panic hook was the whole of the INCONCLUSIVE verdict, and a local
+PostgreSQL was the whole of those three PRE-BROKEN ones.
 
 
 ### Deferred by the 2026-09-19 observability review

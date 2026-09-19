@@ -416,6 +416,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as it stood, and `prove_gates_fail.sh --only check_panic_hooks` reporting
   PROVEN with the tree clean afterwards. The harness counts 66 gates now.
 
+  The three gates the hook had made INCONCLUSIVE —
+  `cargo test -p a2a-protocol-server --features {sqlite,postgres,auth-jwt}` —
+  were re-run afterwards and all three report PROVEN, "gate exited 101 citing
+  the injected defect". With a local PostgreSQL installed, three gates that
+  had been PRE-BROKEN for want of one prove as well, so the selection is
+  9 proven, 0 unproven.
+
 - `check_doc_versions.py` gates dependency snippets in prose against the
   current release line. `a2a-protocol-sdk = "0.7"` means `^0.7`, which resolves
   to nothing in the 0.12 line, so a reader copying it got an SDK without any
