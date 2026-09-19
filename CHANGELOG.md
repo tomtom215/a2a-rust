@@ -100,6 +100,222 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an atomic claim, and never deleting a key with its task. Every Rust block on
   the page is compiled and run as a doctest.
 
+- **Tool calling, in `examples/rig-agent`.** Nothing in this repository showed
+  it: `grep -ril 'tool_call\|ToolCall\|tool_choice\|function_call'` over
+  `examples/`, `crates/` and `book/src/` returned zero files, and the rig
+  example's own comment said "no tools, no history". An A2A SDK whose examples
+  never call a tool cannot show an adopter how to build an agent that does
+  anything, which is the gap this closes.
+
+  It is deliberately **not** in the crates. A2A has no tool concept — the
+  protocol carries messages, tasks and artifacts *between* agents and says
+  nothing about what happens inside one — so tool calling belongs between an
+  executor and its model, and `examples/rig-agent/src/tools.rs` imports no
+  `a2a-protocol-*` type at all. Many model turns, one A2A task. Putting a tool
+  abstraction in `a2a-protocol-server` would make it a framework and put it on
+  a model-provider's release treadmill; hosting one costs neither.
+
+  `src/agent.rs` writes the loop out rather than delegating to `rig-agent`'s
+  runner, because the loop is the part an adopter has to get right. Three
+  things it gets right, each a bug if the shape is copied without them: the
+  catalogue goes on *every* request, since a provider holds no state between
+  turns; a tool error is returned to the model as that call's result rather
+  than failing the task, so an unknown service is recoverable; and the loop is
+  bounded (`MAX_TURNS`, 6), because unbounded it holds the A2A task open until
+  the server's hour-long executor timeout. `src/tools.rs` declares two tools
+  over a fixed inventory — one with no arguments, one with a required string —
+  which covers both JSON Schema shapes a provider must encode and, because a
+  model must discover the inventory before querying it, produces a *two*-round
+  loop. One round is the case that still works when the loop is written wrong.
+
+  When tools ran, the task carries a second `tool-trace` artifact naming each
+  call and its result. Eleven new tests drive the loop against a scripted
+  model that records what it was sent, covering the tool-error and turn-limit
+  branches a live provider reaches only by chance.
+
+- **`examples/mcp-agent` — tools over MCP, agents over A2A.** The A2A project's
+  own guidance is that the two protocols compose: *"A2A handles inter-agent
+  collaboration and MCP handles tool integration."* Nothing showed what that
+  looks like, so this does. The agent spawns an MCP server as a child process,
+  asks it what it offers with `tools/list`, builds its catalogue **and its
+  agent-card skills** from the answer, and calls it with `tools/call`. A2A
+  never carries a tool call; MCP never carries a task; they meet in one
+  process and nowhere else.
+
+  It is `rig-agent` with exactly one thing changed, which is the point. Diff
+  the two `src/agent.rs` files: the loop is the same — same three rules, same
+  bound — and only the tool source moves. Nothing in the crate knows what the
+  tools are, so `MCP_SERVER_BIN` repoints it at any other MCP stdio server, in
+  any language, with no code change.
+
+  The distinction the bridge exists to keep is between a tool that **ran and
+  refused** and a session that is **gone**. The first is information for the
+  model — it can read the reason and try something else — so it returns as a
+  tool result and the A2A task stays alive. The second cannot be re-prompted
+  away, and answering regardless would hand the caller a guess dressed as a
+  researched answer, so the task fails. The model-unreachable fallback the
+  sibling examples use is deliberately not extended to a dead MCP server, and
+  an agent that cannot reach its tools at startup refuses to start rather than
+  serve a card advertising them.
+
+  Built on `rmcp` 3.4, the official Rust MCP SDK, for both halves: the client
+  and the bundled `mcp-tool-server` binary. Fourteen tests, and the split
+  matters — ten drive the bridge over an in-process `tokio::io::duplex` pipe,
+  which is real MCP framing and reaches the branches (a refusal, a session
+  dying mid-call, a model that never stops calling); four spawn the *shipped*
+  binary the way a real MCP client does, which is what proves its schemas
+  reach the wire from the `JsonSchema` derive and that its `main` writes
+  nothing but MCP to stdout. A stray `println!` there desynchronizes every
+  frame, and no in-process test would notice.
+
+  Verified end to end against llama.cpp `b23701f` serving Qwen3-1.7B: both
+  demo questions answered over A2A with tools fetched over MCP, including the
+  recovery path — the server refused an unknown service, the refusal crossed
+  back as a tool result, the model read the hint the server wrote and called
+  the tool it named. Worth noting from that run: the first question took *two*
+  MCP round trips where the same question against `rig-agent`'s in-process
+  tools took one. The tool count is the model's choice, not a property of the
+  code, which is why the bound is not optional.
+
+- **`examples/mcp-bridge` — the reverse direction: an A2A agent, callable as
+  an MCP tool.** `mcp-agent` serves A2A agents; this serves everyone else. An
+  MCP client needs no A2A library, no A2A concept and no new code to call a
+  remote agent — it needs a command in its server list. The bridge discovers
+  the agent card at startup, publishes one MCP tool per advertised skill with
+  the agent's own descriptions, and forwards each call as an A2A task.
+
+  More of A2A survives the crossing than expected, and that is the finding
+  worth recording. `Completed` is a tool result and `Failed`/`Rejected`/
+  `Canceled` carry `isError`, which is unsurprising. What is new is that
+  MCP's `2026-07-28` specification added long-running tasks (SEP-2663), so an
+  A2A task now maps onto an MCP task rather than a blocked request: the
+  caller polls `tasks/get`, the agent's own status messages cross to it, and
+  `tasks/cancel` reaches the agent as `CancelTask`, cooperative on both
+  sides. Before that extension this bridge could not have been built without
+  lying about one side or the other.
+
+  Three asymmetries are stated where they happen rather than papered over.
+  A2A skills carry no argument schema — A2A's calling convention is a
+  `Message` — so every published tool takes one string and the skill's
+  description is what steers a caller's model; inventing a schema per skill
+  would publish a contract the agent never agreed to. A2A has no skill
+  selector, so the chosen tool travels as message metadata the agent may
+  route on or ignore. And `input-required` is reported rather than bridged:
+  MCP has a counterpart, but wiring it needs the bridge to hold an A2A task
+  id across MCP calls, and a half-built version would strand tasks with no
+  way to answer them, so a paused task returns an error saying what the agent
+  is waiting for — a caller can tell "waiting" from "broken".
+
+  It refuses to start when the agent is unreachable, when the card advertises
+  no skills, and when two skill ids collide as MCP tool names (naming both).
+  An MCP server that came up with an empty or wrong tool list is
+  indistinguishable, to its caller, from an agent with nothing to offer.
+
+  Fifteen tests. The mapping is pure, so its awkward cases are asserted on
+  values; the bridge needs a real agent, so those tests start one on
+  localhost and drive the bridge with a real MCP client over an in-process
+  pipe. `bridge-demo` covers the child-process spawn by standing up a sample
+  agent, spawning the bridge against it and acting as an MCP client — no
+  model, no network, deterministic.
+
+  Its transcript is in the README, and it earns its place: the sample agent
+  echoes back the skill hint, proving the metadata arrived; the agent's own
+  progress message crosses two protocols into `tasks/get`; and it arrives
+  *coarsened* — three agent steps 120 ms apart, of which the caller sees one,
+  because the bridge polls at 250 ms. The cost of polling rather than
+  streaming, visible in the output rather than discovered later.
+
+- **The OTLP export sequence is documented.** `book/src/deployment/observability.md`
+  covered metrics conceptually and the instrument catalogue, and said nothing
+  about how to make bytes leave the process. It now carries the call order as
+  a compiled example, and the four things that bite:
+
+  `init_otlp_pipeline` **must be called from inside a Tokio runtime** — tonic
+  spawns onto the ambient runtime while building the channel — and since the
+  release profile sets `panic = "abort"`, getting that wrong aborts the
+  process rather than returning an error. The transport is **gRPC only**, so
+  `OTEL_EXPORTER_OTLP_PROTOCOL` has no effect and an endpoint pointed at a
+  collector's `:4318` produces silence. **`OTEL_SERVICE_NAME` is overridden**
+  by the `service_name` argument: `Resource::builder()` installs
+  `EnvResourceDetector`, which reads it, and `.with_attributes` then
+  overwrites what it found — the opposite of what the OTel
+  environment-variable specification prescribes. And the install is
+  **last-write-wins, process-wide**.
+
+  A table now says which `OTEL_*` variables reach the exporter (endpoint,
+  headers, timeout) and which do not (protocol, service name). `book-tests`
+  gains the `otel` feature so the sequence compiles as a doctest rather than
+  being an `ignore`d block, which is the same reason `postgres` was added for
+  the horizontal-scaling page.
+
+  The catalogue section gains **the Prometheus name for every instrument**,
+  measured by rendering the catalogue through `opentelemetry-prometheus`
+  0.32.0 rather than derived from the translation rules: `a2a.server.requests`
+  arrives as `a2a_server_requests_total`, `a2a.server.latency` as
+  `a2a_server_latency_seconds`, and gauges keep their names unsuffixed. The
+  dotted names are *correct* — OTel names metrics
+  `http.server.request.duration` — and nothing in the book had previously
+  said what they translate to, which is the likeliest reason mapping them
+  took guesswork.
+
+  Two deviations are now stated there rather than changed, because the page
+  calls these names a contract and changing a published contract needs its
+  own release and upgrade note: the units are not UCUM (`request` should be
+  `{request}`), which the same measurement shows costs nothing observable —
+  UCUM and non-UCUM units render byte-identical exposition through this
+  exporter — and `a2a.server.latency` should conventionally be
+  `a2a.server.request.duration`, which *is* visible, since no OTel dashboard
+  template will match `a2a_server_latency_seconds`.
+
+### Changed
+
+- **`examples/rig-agent` defaults to `qwen3:1.7b`, not `qwen3.5:0.8b`.**
+  Measured 2026-09-19 against llama.cpp `b23701f` with `--jinja` and the
+  example's own catalogue: Qwen3.5-0.8B-Q4_0 answers in prose, and forced with
+  `tool_choice: "required"` still emits no tool call, running to
+  `finish_reason: "length"` after 7,400+ tokens. Qwen3-1.7B-Q4_K_M returns
+  `finish_reason: "tool_calls"` on the first request. The sibling LLM examples
+  call no tools, so their 0.8B default stays right for them; the README
+  records both results so the next person does not rediscover this.
+
+  The end-to-end run is in `examples/rig-agent/README.md` as two verbatim
+  transcripts. The first is kept **with the model's arithmetic error intact** —
+  it reports an uptime the tool never returned, and the trace line beneath it
+  shows the real figure. That is the argument for the trace artifact stated as
+  evidence rather than as a claim: grounded and verifiable are different
+  properties, and only the second is one the protocol can carry.
+
+### Fixed
+
+- **`examples/rig-agent`'s executor was undocumented.** Its doc comment had
+  run together with the one below it, so both attached to `SLOW_PREFIX` and
+  `RigAgentExecutor` carried none.
+
+- **Three documents claimed OpenTelemetry trace export that does not
+  exist.** The `otel` feature is metrics-only: `opentelemetry_sdk` is
+  compiled with `features = ["metrics", …]`, `opentelemetry-otlp` with
+  `["grpc-tonic", "metrics"]`, there is no `TracerProvider`, and
+  `grep -rni 'traceparent\|tracestate' crates/` matched nothing before this
+  change — it now matches exactly the one doc comment added here that says so.
+  Corrected in
+  `book/src/deployment/troubleshooting.md` ("Metrics / **traces** over
+  OTLP"), `docs/rust-sdk-assessment.md` (`✅ otel feature: **traces** +
+  metrics`, in a row comparing this project against `a2a-rs` — an overclaim
+  in the worst possible place, now `◑ metrics only` with a §10 recording the
+  change), and `book/src/deployment/observability.md`, which told readers
+  that identifiers on spans let one incident "be followed across the
+  delegation chain when agents call agents". It cannot: separate processes
+  produce separate span trees, and each agent mints its own task id, so the
+  identifier changes at every hop.
+
+- **`init_otlp_pipeline_with_endpoint`'s rustdoc said
+  `OTEL_EXPORTER_OTLP_PROTOCOL` still applies.** It cannot —
+  `MetricExporter::builder().with_tonic()` is hard-coded and the
+  HTTP/protobuf exporter is not compiled in. A reader who set
+  `http/protobuf` and pointed the endpoint at a collector's `:4318` would
+  get gRPC spoken at an HTTP port, silence, and a doc line saying that
+  should have worked.
+
 ### Internal
 
 - `check_doc_versions.py` gates dependency snippets in prose against the

@@ -33,7 +33,7 @@ off in both cases:
 | You want | Feature |
 |---|---|
 | Structured logs | `tracing` |
-| Metrics / traces over OTLP | `otel` |
+| Metrics over OTLP (metrics only — there is no span export) | `otel` |
 | SQLite / PostgreSQL task stores | `sqlite`, `postgres` |
 | WebSocket, gRPC, Axum | `websocket`, `grpc`, `axum` |
 | JWT bearer auth | `auth-jwt` |
