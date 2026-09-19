@@ -62,6 +62,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "a2a-mcp-bridge"
+version = "0.0.0"
+dependencies = [
+ "a2a-protocol-client",
+ "a2a-protocol-server",
+ "a2a-protocol-types",
+ "hyper",
+ "hyper-util",
+ "rmcp",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "a2a-protocol-client"
 version = "0.12.1"
 dependencies = [

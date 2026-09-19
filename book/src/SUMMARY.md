@@ -48,6 +48,7 @@
 - [Genai Agent](./examples/genai-agent.md)
 - [Rig Agent](./examples/rig-agent.md)
 - [MCP Agent](./examples/mcp-agent.md)
+- [A2A → MCP Bridge](./examples/mcp-bridge.md)
 - [Multi-Language Team](./examples/multi-lang-team.md)
 
 # Testing & Deployment

@@ -177,6 +177,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tools took one. The tool count is the model's choice, not a property of the
   code, which is why the bound is not optional.
 
+- **`examples/mcp-bridge` — the reverse direction: an A2A agent, callable as
+  an MCP tool.** `mcp-agent` serves A2A agents; this serves everyone else. An
+  MCP client needs no A2A library, no A2A concept and no new code to call a
+  remote agent — it needs a command in its server list. The bridge discovers
+  the agent card at startup, publishes one MCP tool per advertised skill with
+  the agent's own descriptions, and forwards each call as an A2A task.
+
+  More of A2A survives the crossing than expected, and that is the finding
+  worth recording. `Completed` is a tool result and `Failed`/`Rejected`/
+  `Canceled` carry `isError`, which is unsurprising. What is new is that
+  MCP's `2026-07-28` specification added long-running tasks (SEP-2663), so an
+  A2A task now maps onto an MCP task rather than a blocked request: the
+  caller polls `tasks/get`, the agent's own status messages cross to it, and
+  `tasks/cancel` reaches the agent as `CancelTask`, cooperative on both
+  sides. Before that extension this bridge could not have been built without
+  lying about one side or the other.
+
+  Three asymmetries are stated where they happen rather than papered over.
+  A2A skills carry no argument schema — A2A's calling convention is a
+  `Message` — so every published tool takes one string and the skill's
+  description is what steers a caller's model; inventing a schema per skill
+  would publish a contract the agent never agreed to. A2A has no skill
+  selector, so the chosen tool travels as message metadata the agent may
+  route on or ignore. And `input-required` is reported rather than bridged:
+  MCP has a counterpart, but wiring it needs the bridge to hold an A2A task
+  id across MCP calls, and a half-built version would strand tasks with no
+  way to answer them, so a paused task returns an error saying what the agent
+  is waiting for — a caller can tell "waiting" from "broken".
+
+  It refuses to start when the agent is unreachable, when the card advertises
+  no skills, and when two skill ids collide as MCP tool names (naming both).
+  An MCP server that came up with an empty or wrong tool list is
+  indistinguishable, to its caller, from an agent with nothing to offer.
+
+  Fifteen tests. The mapping is pure, so its awkward cases are asserted on
+  values; the bridge needs a real agent, so those tests start one on
+  localhost and drive the bridge with a real MCP client over an in-process
+  pipe. `bridge-demo` covers the child-process spawn by standing up a sample
+  agent, spawning the bridge against it and acting as an MCP client — no
+  model, no network, deterministic.
+
+  Its transcript is in the README, and it earns its place: the sample agent
+  echoes back the skill hint, proving the metadata arrived; the agent's own
+  progress message crosses two protocols into `tasks/get`; and it arrives
+  *coarsened* — three agent steps 120 ms apart, of which the caller sees one,
+  because the bridge polls at 250 ms. The cost of polling rather than
+  streaming, visible in the output rather than discovered later.
+
 ### Changed
 
 - **`examples/rig-agent` defaults to `qwen3:1.7b`, not `qwen3.5:0.8b`.**

@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "a2a-mcp-bridge"
+version     = "0.0.0"
+description = "Exposes a remote A2A agent as an MCP server, so any MCP client can call it as a tool — the reverse direction of examples/mcp-agent"
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[dependencies]
+a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
+a2a-protocol-client = { path = "../../crates/a2a-protocol-client" }
+# The demo binary stands up a sample A2A agent to bridge to; the bridge itself
+# needs only the client.
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }
+
+serde_json = { workspace = true }
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal", "io-std", "process"] }
+hyper      = { workspace = true }
+hyper-util = { workspace = true, features = ["server", "server-auto"] }
+
+# rmcp — the official Rust MCP SDK. `server` (a default) for the bridge,
+# `client` + `transport-child-process` for the demo driving it, and
+# `transport-io` for the bridge's own stdin/stdout.
+rmcp = { version = "3.4", features = [
+    "client",
+    "transport-child-process",
+    "transport-io",
+] }
+
+[[bin]]
+name = "a2a-mcp-bridge"
+path = "src/main.rs"
+
+[[bin]]
+name = "bridge-demo"
+path = "src/bin/demo.rs"

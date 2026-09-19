@@ -167,6 +167,9 @@ pub mod page_examples_incident_response {}
 #[doc = include_str!("../../book/src/examples/mcp-agent.md")]
 pub mod page_examples_mcp_agent {}
 
+#[doc = include_str!("../../book/src/examples/mcp-bridge.md")]
+pub mod page_examples_mcp_bridge {}
+
 #[doc = include_str!("../../book/src/examples/multi-lang-team.md")]
 pub mod page_examples_multi_lang_team {}
 

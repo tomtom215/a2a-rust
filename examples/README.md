@@ -26,6 +26,7 @@ cargo run -p agent-team
 | [**genai-agent**](genai-agent/) | LLM-powered agent via [genai](https://crates.io/crates/genai); all four bindings, full surface matrix | Optional model | Intermediate |
 | [`rig-agent/`](rig-agent/) | **Real rig-core agent with tool calling** served over A2A — a bounded tool loop over a two-tool catalogue, the repo's reference for *where tool calling sits relative to A2A*; hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the in-repo TCK (21/21 graded, 1 N/A; gated by `tck.yml`) | Optional model | Intermediate |
 | [`mcp-agent/`](mcp-agent/) | **Tools over MCP** — an A2A agent that spawns an MCP server, discovers its tools with `tools/list`, and derives its own agent-card skills from the answer; nothing in the crate knows what the tools are, so `MCP_SERVER_BIN` repoints it at any other MCP stdio server. Ships the server too, and tests both an in-process pipe and the spawned binary | Optional model | Intermediate |
+| [`mcp-bridge/`](mcp-bridge/) | **The reverse: an A2A agent, callable as an MCP tool.** Discovers an agent card and publishes one MCP tool per skill, mapping A2A tasks onto MCP's SEP-2663 tasks — progress, cancellation and `isError` all cross. An MCP client needs no A2A library, just a command in its server list. Protocol only: no model, deterministic | None | Intermediate |
 | [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go, Java and Rust worker agents (the Rust worker is a second binary, `--bin rust-worker`); all four bindings, full surface matrix | Optional workers | Advanced |
 
 ## What to start with
@@ -63,6 +64,8 @@ cargo run -p agent-team
 - **Tool calling?** [`rig-agent`](rig-agent/) is the one to read first. A2A itself has no tool concept, so the loop lives between the executor and its model and the server never sees it; the example shows the bounded loop, tool errors returned to the model rather than failing the task, and a `tool-trace` artifact that makes the calls visible to the A2A caller.
 
 - **Tools from an MCP server?** [`mcp-agent`](mcp-agent/) — the same loop with the catalogue discovered at startup instead of compiled in. A2A between agents, MCP to tools, neither protocol aware of the other. Diff its `src/agent.rs` against `rig-agent`'s: only the tool source moves.
+
+- **Want an MCP client to reach an A2A agent?** [`mcp-bridge`](mcp-bridge/) goes the other way: it *is* an MCP server, fronting one remote A2A agent. One tool per advertised skill, A2A tasks mapped onto MCP tasks, and nothing on the client side needs to know A2A exists.
 
 - **Cross-language interop?** See [`multi-lang-team`](multi-lang-team/) for a Rust coordinator that talks to agents in 4 other languages, plus a Rust worker to run beside them.
 
