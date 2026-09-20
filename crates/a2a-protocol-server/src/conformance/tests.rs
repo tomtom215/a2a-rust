@@ -18,7 +18,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent};
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::{ContextId, TaskState};
 
-use super::{Outcome, Report, check};
+use super::{CheckResult, Outcome, Report, check};
 use crate::executor::AgentExecutor;
 use crate::executor_helpers::EventEmitter;
 use crate::request_context::RequestContext;
@@ -334,5 +334,43 @@ async fn a_panicking_join_is_a_panic_and_a_cancelled_one_is_not() {
     assert!(
         !super::run::is_panic(&cancelled),
         "a cancelled task did not panic, and the harness must not report it as one"
+    );
+}
+
+/// A report that graded nothing must not pass.
+///
+/// Unreachable through [`check`]: `does_not_panic` grades on every run, so a
+/// real harness always has at least one graded check and the `graded() > 0`
+/// guard is never exercised. The mutation gate found this — `>` relaxed to
+/// `>=` makes the guard vacuous for a `usize`, `is_pass` collapses to
+/// `failed() == 0`, and every other test in this file still passes. The
+/// reports are therefore built by hand, which is the only way to reach the
+/// case the doc comment promises.
+#[test]
+fn a_report_that_graded_nothing_is_not_a_pass() {
+    let empty = Report {
+        results: Vec::new(),
+    };
+    assert_eq!(empty.graded(), 0);
+    assert_eq!(empty.failed(), 0, "nothing graded means nothing failed");
+    assert!(
+        !empty.is_pass(),
+        "a run that measured nothing must report failure, not full marks"
+    );
+
+    let all_not_applicable = Report {
+        results: vec![
+            CheckResult::skip("first", "never applied"),
+            CheckResult::skip("second", "never applied either"),
+        ],
+    };
+    assert_eq!(
+        all_not_applicable.graded(),
+        0,
+        "not-applicable checks are excluded from the graded count"
+    );
+    assert!(
+        !all_not_applicable.is_pass(),
+        "two checks that never ran are still nothing measured:\n{all_not_applicable}"
     );
 }

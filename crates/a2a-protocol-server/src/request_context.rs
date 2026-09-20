@@ -186,6 +186,7 @@ mod tests {
     use super::*;
     use a2a_protocol_types::message::{MessageId, MessageRole, Part};
     use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+    use a2a_protocol_types::trace_context::TraceContext;
 
     /// Helper: creates a minimal user message.
     fn make_message(text: &str) -> Message {
@@ -340,6 +341,51 @@ mod tests {
         assert!(
             debug_str.contains("RequestContext"),
             "Debug output should contain the struct name"
+        );
+    }
+
+    // ── trace_context ──────────────────────────────────────────────────────
+
+    /// Not a round-trip of `with_trace_context`: the accessor reaches through
+    /// `Option<CallContext>` into `Option<TraceContext>`, and replacing its
+    /// body with `None` compiles and passes everything else this crate runs.
+    /// The mutation gate reported exactly that, so the value is asserted here
+    /// rather than only its presence.
+    #[test]
+    fn trace_context_returns_the_trace_the_caller_sent() {
+        const TRACEPARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let trace = TraceContext::parse(TRACEPARENT).expect("a valid traceparent");
+
+        let ctx = RequestContext::new(make_message("hi"), TaskId::new("t-10"), "ctx-10".to_owned())
+            .with_call_context(CallContext::new("message/send").with_trace_context(trace.clone()));
+
+        assert_eq!(
+            ctx.trace_context(),
+            Some(&trace),
+            "the accessor must hand back the caller's trace, not a fresh one"
+        );
+        assert_eq!(
+            ctx.trace_context().map(TraceContext::traceparent),
+            Some(TRACEPARENT.to_owned()),
+            "and it must re-emit byte-for-byte, or the delegation chain forks"
+        );
+    }
+
+    #[test]
+    fn trace_context_is_none_when_the_caller_was_not_tracing() {
+        let untraced =
+            RequestContext::new(make_message("hi"), TaskId::new("t-11"), "ctx-11".to_owned())
+                .with_call_context(CallContext::new("message/send"));
+        assert!(
+            untraced.trace_context().is_none(),
+            "a call with no traceparent has no trace; the SDK never invents one"
+        );
+
+        let unserved =
+            RequestContext::new(make_message("hi"), TaskId::new("t-12"), "ctx-12".to_owned());
+        assert!(
+            unserved.trace_context().is_none(),
+            "nor does one appear when there is no CallContext at all"
         );
     }
 }
