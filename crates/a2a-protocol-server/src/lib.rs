@@ -201,7 +201,8 @@ pub use push::{PostgresPushConfigStore, TenantAwarePostgresPushConfigStore};
 #[cfg(feature = "postgres")]
 pub use store::{PgMigration, PgMigrationRunner, PostgresTaskStore, TenantAwarePostgresTaskStore};
 pub use streaming::{
-    EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader, InMemoryQueueWriter,
+    EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader,
+    InMemoryQueueWriter, StreamEvent,
 };
 pub use tenant_config::{PerTenantConfig, TenantLimits};
 pub use tenant_resolver::{

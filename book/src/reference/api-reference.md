@@ -425,6 +425,7 @@ are rustdoc's job.
 | `EventQueueManager` | struct | Per-task queue lifecycle manager (create / lookup / destroy) |
 | `InMemoryQueueWriter` | struct | Bounded-channel `EventQueueWriter` implementation |
 | `InMemoryQueueReader` | struct | Bounded-channel `EventQueueReader` implementation |
+| `StreamEvent` | struct | One queued event and its position in the task's event log (the SSE `id:`) |
 
 ### Configuration
 

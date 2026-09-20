@@ -118,6 +118,10 @@ follow-up release of the binding").
   the same: the header is ignored and the client gets the snapshot, which is
   the pre-resumption behaviour.
 
+  `CorsConfig`'s default `Access-Control-Allow-Headers` gains `last-event-id`
+  for the same reason `a2a-version` and `a2a-extensions` are already there: a
+  cross-origin client that cannot send the header cannot resume.
+
   WebSocket, gRPC and SLIM streams are unchanged. Resumption is the SSE
   binding's `id:`/`Last-Event-ID` pair; inventing a spelling for the others
   would be a protocol extension this server made up. Note that

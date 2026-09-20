@@ -391,3 +391,96 @@ async fn a_continuation_resumes_the_log_rather_than_colliding_with_it() {
          would have been swallowed as a replay and left only the first four"
     );
 }
+
+// ── The replay honours the tenant boundary ───────────────────────────────────
+
+/// Replaying reads the log, and a log holds message content — the most
+/// sensitive thing this server stores. `read_events` is tenant-scoped at the
+/// store, but only if the handler calls it inside the request's
+/// `TenantContext` scope; a replay hoisted out of that block would read the
+/// default partition and hand tenant B tenant A's messages.
+///
+/// Structurally the call sits inside the scope. That is an argument, not a
+/// check, and this is the one property in the feature where being wrong is a
+/// data leak rather than a missing event — so it gets a test.
+#[tokio::test]
+async fn a_replay_never_crosses_the_tenant_boundary() {
+    use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
+
+    // `with_task_store_arc` so the test keeps a handle to the same store the
+    // handler uses; seeding a per-tenant log has no public API otherwise.
+    let store = Arc::new(TenantAwareInMemoryTaskStore::new());
+    let handler = RequestHandlerBuilder::new(ThreeSteps)
+        .with_task_store_arc(Arc::clone(&store) as Arc<dyn TaskStore>)
+        .build()
+        .expect("handler");
+
+    // The same task id under two tenants, which is legal: ids are
+    // caller-supplied. Only tenant-a's has a log.
+    for tenant in ["tenant-a", "tenant-b"] {
+        TenantContext::scope(tenant, async {
+            let task = Task {
+                id: TaskId::new("shared-id"),
+                context_id: ContextId::new("c-1"),
+                status: TaskStatus::new(TaskState::InputRequired),
+                history: None,
+                artifacts: None,
+                metadata: None,
+            };
+            store.save(&task).await.expect("save");
+            if tenant == "tenant-a" {
+                for seq in 1..=3 {
+                    let event = StreamResponse::StatusUpdate(
+                        a2a_protocol_types::events::TaskStatusUpdateEvent {
+                            task_id: task.id.clone(),
+                            context_id: task.context_id.clone(),
+                            status: TaskStatus::new(TaskState::Working),
+                            metadata: None,
+                        },
+                    );
+                    store
+                        .append_event(&task.id, seq, &event)
+                        .await
+                        .expect("append");
+                }
+            }
+        })
+        .await;
+    }
+
+    // tenant-b resubscribes with an offset that would match tenant-a's log.
+    let reader = handler
+        .on_resubscribe(
+            TaskIdParams {
+                id: "shared-id".to_owned(),
+                tenant: Some("tenant-b".to_owned()),
+            },
+            Some(&header("last-event-id", "0")),
+        )
+        .await
+        .expect("resubscribe");
+
+    assert_eq!(
+        drain_positions(reader).await,
+        vec![None],
+        "tenant-b has no log of its own, and must not be handed tenant-a's"
+    );
+
+    // And the control: tenant-a asking the same thing does get its own.
+    let reader = handler
+        .on_resubscribe(
+            TaskIdParams {
+                id: "shared-id".to_owned(),
+                tenant: Some("tenant-a".to_owned()),
+            },
+            Some(&header("last-event-id", "0")),
+        )
+        .await
+        .expect("resubscribe");
+
+    assert_eq!(
+        drain_positions(reader).await,
+        vec![None, Some(1), Some(2), Some(3)],
+        "the scoping must not be achieved by replaying nothing for everyone"
+    );
+}
