@@ -75,7 +75,12 @@ pub const MIN_KEY_LEN: usize = 16;
 pub const MAX_KEY_LEN: usize = 255;
 
 /// Why a candidate key was refused.
+///
+/// `#[non_exhaustive]` because the rules a key must satisfy are this SDK's,
+/// not a standard's: an entropy floor or a reserved prefix would each add a
+/// variant, and `validate_key` is a documented entry point callers `match` on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum KeyError {
     /// Shorter than [`MIN_KEY_LEN`].
     TooShort,

@@ -70,4 +70,12 @@ REPO = pathlib.Path(__file__).resolve().parents[3]
 ALLOWLIST = REPO / "scripts" / "timeout_nesting_allowlist.txt"
 
 SENDER_RS = "crates/a2a-protocol-server/src/push/sender.rs"
-LIMITS_RS = "crates/a2a-protocol-server/src/handler/limits.rs"
+# `handler/limits.rs` until 2026-09-20, when adding `MIN_MESSAGE_ID_LENGTH`
+# took it past the 500-line ratchet and its test module moved to
+# `limits/tests.rs`. The push pairing is hand-modelled against this exact
+# file, so a move makes it unmodellable — which the checker reports as a
+# finding rather than skipping, and that is how this was caught. Kept as one
+# literal path rather than a search: failing loudly on a move is the
+# behaviour worth having, and a fallback that quietly found the file at
+# either spelling would have let the stale path sit here unnoticed.
+LIMITS_RS = "crates/a2a-protocol-server/src/handler/limits/mod.rs"

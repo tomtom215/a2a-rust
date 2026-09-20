@@ -555,3 +555,95 @@ async fn tenant_isolation_insert_if_absent() {
     })
     .await;
 }
+
+// ── Event-log appends that change no row ────────────────────────────────────
+//
+// The non-tenant store's equivalent lives in
+// `src/store/sqlite_store/event_log_tests.rs`. This store's append is a
+// different statement — every clause carries the tenant — and nothing
+// exercised its conflict path at all: the incremental mutation gate on this
+// pull request (shard 2 of run 35523981742) reported four surviving mutants
+// in it, three on the `rows_affected()` guard and one on the payload
+// comparison that decides whether a collision lost anything.
+
+/// Records the persistence errors the store reports.
+#[derive(Default)]
+struct Recorder(std::sync::Mutex<Vec<(String, String)>>);
+
+impl a2a_protocol_server::metrics::Metrics for Recorder {
+    fn on_persistence_error(&self, operation: &str, error_kind: &str) {
+        self.0
+            .lock()
+            .expect("recorder mutex")
+            .push((operation.to_owned(), error_kind.to_owned()));
+    }
+}
+
+fn status_event(id: &str, state: TaskState) -> a2a_protocol_types::events::StreamResponse {
+    a2a_protocol_types::events::StreamResponse::StatusUpdate(
+        a2a_protocol_types::events::TaskStatusUpdateEvent {
+            task_id: TaskId::new(id),
+            context_id: ContextId::new("ctx"),
+            status: TaskStatus::new(state),
+            metadata: None,
+        },
+    )
+}
+
+/// `INSERT ... ON CONFLICT DO NOTHING` is how the position stays unique, and
+/// it is also how an event is lost without an error. Two replicas numbering
+/// one task's log from the same place put *different* events on one position;
+/// the row that stays is whichever arrived first, and the loser is gone. The
+/// store cannot return that — the agent has already emitted it — so it reads
+/// the stored payload back and counts the collision unless the bytes match.
+///
+/// Both directions here: a replay of the identical event loses nothing and
+/// must not be counted, and a different event on a held position must be.
+#[tokio::test]
+async fn a_second_writer_on_one_tenants_position_is_reported_and_a_replay_is_not() {
+    let recorder = std::sync::Arc::new(Recorder::default());
+    let store = TenantAwareSqliteTaskStore::new("sqlite::memory:")
+        .await
+        .expect("in-memory sqlite should open")
+        .with_metrics(a2a_protocol_server::metrics::MetricsHandle::from_arc(
+            recorder.clone(),
+        ));
+
+    TenantContext::scope("acme", async {
+        let task = make_task("t-1", "ctx", TaskState::Working);
+        store.save(&task).await.expect("save");
+
+        store
+            .append_event(&task.id, 1, &status_event("t-1", TaskState::Working))
+            .await
+            .expect("append");
+        store
+            .append_event(&task.id, 1, &status_event("t-1", TaskState::Working))
+            .await
+            .expect("replay");
+        assert!(
+            recorder.0.lock().expect("recorder mutex").is_empty(),
+            "the same event at the same position lost nothing"
+        );
+
+        store
+            .append_event(&task.id, 1, &status_event("t-1", TaskState::Completed))
+            .await
+            .expect("a collision must not fail the agent");
+        assert_eq!(
+            recorder.0.lock().expect("recorder mutex").clone(),
+            vec![(
+                a2a_protocol_server::metrics::persistence_operation::EVENT_APPEND.to_owned(),
+                a2a_protocol_server::metrics::event_append_error::POSITION_CONFLICT.to_owned(),
+            )],
+            "a different event on a held position is an event that is gone"
+        );
+
+        // And the log still holds exactly one event at that position: the
+        // first writer's, unchanged.
+        let events = store.read_events(&task.id, 0, 10).await.expect("read");
+        assert_eq!(events.len(), 1, "one position, one row");
+        assert_eq!(events[0].seq, 1);
+    })
+    .await;
+}

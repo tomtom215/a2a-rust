@@ -98,6 +98,51 @@ Sign the card yourself with `sign_agent_card` and hand the signed card to
 unsigned — the server has done what it was asked, so there is no error to look
 for. `examples/incident-response` does this correctly and is worth copying.
 
+**Declare the extensions before you sign.** `build()` advertises the
+extensions this server can honour by appending to
+`capabilities.extensions`, and `canonicalize_card` strips only `signatures`
+— so `capabilities.extensions` is inside the bytes a signature covers. A
+card signed before those entries exist would be served canonicalizing to
+bytes nobody signed, and every client that verifies would fail while this
+side reported nothing. So `build()` **refuses** a signed card it would
+otherwise have to edit, and names the URIs to add:
+
+```rust
+use a2a_protocol_types::agent_card::{AgentCard, AgentInterface};
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::extensions::AgentExtension;
+use a2a_protocol_types::failure::FAILURE_EXTENSION_URI;
+use a2a_protocol_types::idempotency::IDEMPOTENCY_EXTENSION_URI;
+use a2a_protocol_types::signing::sign_agent_card;
+
+fn card_to_serve(pkcs8: &[u8]) -> A2aResult<AgentCard> {
+    let mut card = AgentCard::new(
+        "Triage Agent",
+        "1.0.0",
+        AgentInterface::jsonrpc("https://agent.example/rpc"),
+    );
+
+    // Declare first. `AgentExtension::new` leaves `required` unset, which is
+    // what a non-required extension means on the wire.
+    card.capabilities.extensions = Some(vec![
+        AgentExtension::new(IDEMPOTENCY_EXTENSION_URI),
+        AgentExtension::new(FAILURE_EXTENSION_URI),
+    ]);
+
+    // ...then sign the card that results, and hand *that* to the builder.
+    let signature = sign_agent_card(&card, pkcs8, Some("my-key"))?;
+    card.signatures = Some(vec![signature]);
+    Ok(card)
+}
+```
+
+Declare only the extensions your configuration actually advertises:
+`IDEMPOTENCY_EXTENSION_URI` is advertised exactly when the configured
+`TaskStore` reports `supports_idempotency()`, and `FAILURE_EXTENSION_URI`
+always. Declaring one the server would not have added is allowed — an
+operator's own entry is never overwritten — but it advertises a capability
+to clients, so declare it only if it holds.
+
 ## Known gaps
 
 Stated because a security page that lists only strengths is not one.

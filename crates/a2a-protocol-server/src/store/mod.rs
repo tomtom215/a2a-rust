@@ -41,9 +41,14 @@ mod event_log_sql;
 mod tenant_event_log;
 
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
+// `IdempotencyClaim` is the return type of a `TaskStore` method, so an
+// out-of-tree store has to name it. It was reachable only at
+// `store::task_store::IdempotencyClaim` while its sibling `RecordedEvent` sat
+// here, which made the obvious import line fail to compile for exactly the
+// audience this module exists to serve.
 pub use task_store::{
-    ArtifactDelta, DEFAULT_MAX_PAGE_SIZE, InMemoryTaskStore, RecordedEvent, TaskStore,
-    TaskStoreConfig,
+    ArtifactDelta, DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK, DEFAULT_MAX_PAGE_SIZE,
+    IdempotencyClaim, InMemoryTaskStore, RecordedEvent, TaskStore, TaskStoreConfig,
 };
 pub use tenant::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
 
@@ -85,7 +90,7 @@ pub use sqlite_store::SqliteTaskStore;
 pub use tenant_sqlite_store::TenantAwareSqliteTaskStore;
 
 #[cfg(feature = "postgres")]
-pub use pg_migration::{PgMigration, PgMigrationRunner};
+pub use pg_migration::{BUILTIN_PG_MIGRATIONS, PgMigration, PgMigrationRunner};
 #[cfg(feature = "postgres")]
 pub use postgres_store::PostgresTaskStore;
 #[cfg(feature = "postgres")]

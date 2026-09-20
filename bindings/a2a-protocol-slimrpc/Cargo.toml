@@ -4,7 +4,9 @@
 # This crate is deliberately NOT a member of the root workspace, and it has its
 # own Cargo.lock. `agntcy-slim-rpc` brings 379 transitive dependencies —
 # including `aws-lc-sys`, a native C crypto build — against 12 for
-# `a2a-protocol-types` and 191 for `a2a-protocol-server` at all features. None
+# `a2a-protocol-types` at its defaults and 188 for `a2a-protocol-server` at all
+# features — normal edges only, as `cargo tree --edges normal` counts them; add
+# build-dependencies and the server reading is 222. None
 # of that belongs in the lockfile, the `deny.toml` allow-list, or the audit
 # surface of the four published crates, which do not depend on this one.
 #

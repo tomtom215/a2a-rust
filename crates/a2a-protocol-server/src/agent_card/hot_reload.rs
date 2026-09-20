@@ -715,8 +715,22 @@ mod tests {
         updated.name = "Poll Updated".into();
         std::fs::write(&file, serde_json::to_string(&updated).unwrap()).unwrap();
 
-        // Give the poller time to detect the change.
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Wait for the poller to detect the change, bounded by a deadline
+        // rather than by a fixed budget. What has to fit in the window is a
+        // tick of the 50ms interval, an mtime read and a parse, on a machine
+        // running the rest of this binary's tests beside it — and 200ms did
+        // not fit on `Test (1.88, macos-latest)` for f69fced2, where this was
+        // the one failure in 1248. The assertion is unchanged in strength: a
+        // reload that never happens still fails the test, at the deadline,
+        // rather than hanging.
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while handler.current().name != "Poll Updated" {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the poll watcher did not pick up the rewritten card within 10s"
+            );
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
 
         assert_eq!(handler.current().name, "Poll Updated");
 

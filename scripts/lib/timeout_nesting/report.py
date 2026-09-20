@@ -14,8 +14,22 @@ Usage
     python3 scripts/check_timeout_nesting.py --explain  # every site, resolved,
                                                         # every pair, its verdict
 
+Denominator floors
+------------------
+Two, both exit 2. The file count has always been one. The second is on
+`model.sites`: a source tree that parses but yields no bound at all means
+discovery stopped recognising the shapes, not that the bounds were removed.
+Without it this printed "0 timeout site(s) + 0 deadline(s); 0 pairing(s)
+checked" and returned 0 — a green over an empty census, which is the one
+number this repository's gates have learned not to trust.
+
+Sleeps are excluded from that floor deliberately. `sleep` sites are timers
+rather than bounds and are never paired, so a census of nothing but sleeps is
+exactly as empty as a census of nothing, and would otherwise satisfy a floor
+written on `model.sites` alone.
+
 Exit codes: 0 clean, 1 at least one unjustified pair (or a stale allowlist
-line), 2 the tree could not be read.
+line), 2 the tree could not be read, or discovery found no bound to pair.
 """
 
 from __future__ import annotations
@@ -77,6 +91,30 @@ def main(argv: list[str]) -> int:
 
     model = Model(files)
     model.discover()
+
+    # Denominator floor — see the module docstring. `via ` kinds are bounds
+    # handed to a helper, which is a bound like any other; `sleep` is a timer
+    # and is not paired, so it cannot stand in for a census.
+    BOUND_KINDS = ("timeout", "timeout_at", "send_timeout", "deadline")
+    n_bounds = sum(
+        1 for s in model.sites if s.kind in BOUND_KINDS or s.kind.startswith("via ")
+    )
+    if n_bounds == 0:
+        print(
+            f"check_timeout_nesting: discovered 0 bound(s) in {len(files)} "
+            f"source(s) ({len(model.sites)} site(s) of any kind)",
+            file=sys.stderr,
+        )
+        print(
+            "  refusing to report agreement over an empty check — with no bound "
+            "there is no\n  pair to check, and a clean verdict over zero pairs "
+            "says nothing. Discovery\n  stopped recognising `tokio::time::timeout`"
+            ", `timeout_at`, `send_timeout` and\n  `Instant::now() +` deadlines; "
+            "see scripts/lib/timeout_nesting/sites.py.",
+            file=sys.stderr,
+        )
+        return 2
+
     findings, checked = model.pairs()
     push_findings, push_notes = model.push_pair()
     findings.extend(push_findings)

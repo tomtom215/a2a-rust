@@ -134,7 +134,7 @@ jobs:
       # referenced a URL until the spec was vendored, so nothing here could
       # check it and nothing would notice upstream moving. This job already has
       # network (it clones the upstream TCK), which is why the drift check lives
-      # here rather than in the offline Format job.
+      # here rather than in the offline Static checks job.
       - name: Vendored SLIMRPC spec still matches upstream
         run: ./scripts/check_slimrpc_spec.sh
 

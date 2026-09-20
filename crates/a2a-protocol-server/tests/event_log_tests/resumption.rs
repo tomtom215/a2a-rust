@@ -6,15 +6,15 @@
 //! Resumption: `id:` on every logged frame, and `Last-Event-ID` on the way
 //! back in.
 
-use super::{NoLog, Shared, ThreeSteps, handler_with};
+use super::{
+    NoLog, Shared, ThreeSteps, drain_positions, handler_with, header, parked_task_with_log,
+};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
-use a2a_protocol_server::streaming::EventQueueReader as _;
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::params::{MessageSendParams, TaskIdParams};
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,75 +23,6 @@ use std::time::Duration;
 // The payoff the log exists for. A client that was disconnected sends back
 // the `id:` of the last frame it saw and receives exactly what it missed,
 // rather than a snapshot it has to diff against its own state.
-
-/// A task parked mid-run, with `count` events already in its log.
-///
-/// Parked because §3.1.6 forbids subscribing to a terminal task, and
-/// resumption is only meaningful while there is more to come.
-async fn parked_task_with_log(store: &Arc<InMemoryTaskStore>, count: u64) -> TaskId {
-    let task = Task {
-        id: TaskId::new("t-resume"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
-    store.save(&task).await.expect("save");
-    for seq in 1..=count {
-        let event =
-            StreamResponse::StatusUpdate(a2a_protocol_types::events::TaskStatusUpdateEvent {
-                task_id: task.id.clone(),
-                context_id: task.context_id.clone(),
-                // The position is encoded in the state sequence so a replay can
-                // be checked for *which* events came back, not just how many.
-                status: TaskStatus::new(if seq % 2 == 0 {
-                    TaskState::Working
-                } else {
-                    TaskState::InputRequired
-                }),
-                metadata: None,
-            });
-        store
-            .append_event(&task.id, seq, &event)
-            .await
-            .expect("append");
-    }
-    task.id
-}
-
-fn header(name: &str, value: &str) -> HashMap<String, String> {
-    let mut h = HashMap::new();
-    h.insert(name.to_owned(), value.to_owned());
-    h
-}
-
-/// Reads the frames a resubscribe delivers immediately, returning each
-/// frame's log position.
-///
-/// `None` marks a frame the server synthesized rather than the agent
-/// emitting — the snapshot, and the terminal frame built from stored state.
-/// Those are not in the log, so they carry no `id:` and must not shift a
-/// resuming client's offset.
-///
-/// Reads until the stream goes quiet rather than until EOF, because for a
-/// parked task there is no EOF to wait for: §3.1.6 requires the stream to
-/// stay open until a terminal state, so after the replay it waits for the
-/// next turn. Going quiet is therefore the assertion — the replay arrives,
-/// and then the stream is still there.
-async fn drain_positions(
-    mut reader: a2a_protocol_server::streaming::InMemoryQueueReader,
-) -> Vec<Option<u64>> {
-    let mut out = Vec::new();
-    loop {
-        match tokio::time::timeout(Duration::from_millis(200), reader.read()).await {
-            Ok(Some(item)) => out.push(item.expect("frames must not be errors").seq),
-            Ok(None) => break,
-            Err(_) => break,
-        }
-    }
-    out
-}
 
 #[tokio::test]
 async fn a_resubscribe_with_last_event_id_replays_exactly_what_was_missed() {

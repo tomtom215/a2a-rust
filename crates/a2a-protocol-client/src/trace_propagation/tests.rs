@@ -78,6 +78,85 @@ async fn an_explicit_traceparent_is_not_overwritten() {
     );
 }
 
+/// The header name is case-insensitive, so the guard has to be.
+///
+/// W3C Trace Context §3.2.1: *"Vendors MUST expect the header name in any
+/// case (upper, lower, mixed), and SHOULD send the header name in
+/// lowercase."* A case-sensitive `HashMap` lookup against the lowercase
+/// literal misses `Traceparent`, and the consequence is not a cosmetic one —
+/// see `header_builder_appends_rather_than_replacing` below.
+#[tokio::test]
+async fn an_explicit_traceparent_is_not_overwritten_whatever_its_case() {
+    let explicit = "00-11111111111111111111111111111111-2222222222222222-00";
+    for spelling in ["Traceparent", "TRACEPARENT", "TraceParent"] {
+        let mut req = request();
+        req.extra_headers
+            .insert(spelling.to_owned(), explicit.to_owned());
+
+        let trace = TraceContext::parse(PARENT)
+            .expect("valid")
+            .with_tracestate("vendor=value")
+            .expect("valid");
+        let req = CurrentTrace::scope(trace, intercepted(req)).await;
+
+        assert_eq!(
+            req.extra_headers.len(),
+            1,
+            "{spelling} must be recognised, not duplicated: {:?}",
+            req.extra_headers
+        );
+        assert_eq!(
+            req.extra_headers.get(spelling).map(String::as_str),
+            Some(explicit)
+        );
+    }
+
+    // The same for `tracestate`, which had no guard of its own at all.
+    let mut req = request();
+    req.extra_headers
+        .insert("Tracestate".to_owned(), "caller=chose".to_owned());
+    let trace = TraceContext::parse(PARENT)
+        .expect("valid")
+        .with_tracestate("vendor=value")
+        .expect("valid");
+    let req = CurrentTrace::scope(trace, intercepted(req)).await;
+    assert!(
+        !req.extra_headers.contains_key(TRACESTATE_HEADER),
+        "a second tracestate would go on the wire alongside the caller's: {:?}",
+        req.extra_headers
+    );
+}
+
+/// Why the case of the guard matters, verified rather than assumed.
+///
+/// Both HTTP transports build the outbound request with
+/// `hyper::Request::builder().header(k, v)` in a loop over `extra_headers`.
+/// `http`'s builder **appends**: two differently-cased keys in the map become
+/// two `traceparent` fields on the wire, and which one the peer joins is its
+/// parser's choice, not ours.
+#[test]
+fn header_builder_appends_rather_than_replacing() {
+    let req = hyper::Request::builder()
+        .method(hyper::Method::POST)
+        .uri("http://example.invalid/")
+        .header(
+            "traceparent",
+            "00-11111111111111111111111111111111-2222222222222222-00",
+        )
+        .header(
+            "Traceparent",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        )
+        .body(())
+        .expect("a well-formed request");
+
+    assert_eq!(
+        req.headers().get_all("traceparent").iter().count(),
+        2,
+        "`header()` appends, so a duplicate key is two fields, not one"
+    );
+}
+
 #[tokio::test]
 async fn a_started_root_is_sampled_and_well_formed() {
     let root = CurrentTrace::start_root();

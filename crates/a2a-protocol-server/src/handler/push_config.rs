@@ -164,7 +164,11 @@ impl RequestHandler {
                 ));
             }
 
-            let call_ctx = build_call_context("CreateTaskPushNotificationConfig", headers);
+            let call_ctx = build_call_context(
+                "CreateTaskPushNotificationConfig",
+                headers,
+                self.inbound_trace_policy,
+            );
             self.interceptors.run_before(&call_ctx).await?;
             // SPEC §3.3.4: reject clients that do not declare support for
             // extensions the agent card marks required.
@@ -218,7 +222,11 @@ impl RequestHandler {
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             // SPEC §3.3.4: reject when the agent card does not advertise push support.
             self.ensure_push_supported()?;
-            let call_ctx = build_call_context("GetTaskPushNotificationConfig", headers);
+            let call_ctx = build_call_context(
+                "GetTaskPushNotificationConfig",
+                headers,
+                self.inbound_trace_policy,
+            );
             self.interceptors.run_before(&call_ctx).await?;
             // SPEC §3.3.4: reject clients that do not declare support for
             // extensions the agent card marks required.
@@ -275,7 +283,11 @@ impl RequestHandler {
             crate::store::tenant::TenantContext::scope(tenant_owned, async {
                 // SPEC §3.3.4: reject when the agent card does not advertise push support.
                 self.ensure_push_supported()?;
-                let call_ctx = build_call_context("ListTaskPushNotificationConfigs", headers);
+                let call_ctx = build_call_context(
+                    "ListTaskPushNotificationConfigs",
+                    headers,
+                    self.inbound_trace_policy,
+                );
                 self.interceptors.run_before(&call_ctx).await?;
                 // SPEC §3.3.4: reject clients that do not declare support for
                 // extensions the agent card marks required.
@@ -326,7 +338,11 @@ impl RequestHandler {
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             // SPEC §3.3.4: reject when the agent card does not advertise push support.
             self.ensure_push_supported()?;
-            let call_ctx = build_call_context("DeleteTaskPushNotificationConfig", headers);
+            let call_ctx = build_call_context(
+                "DeleteTaskPushNotificationConfig",
+                headers,
+                self.inbound_trace_policy,
+            );
             self.interceptors.run_before(&call_ctx).await?;
             // SPEC §3.3.4: reject clients that do not declare support for
             // extensions the agent card marks required.

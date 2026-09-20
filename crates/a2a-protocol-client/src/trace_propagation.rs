@@ -104,8 +104,30 @@ impl CurrentTrace {
 /// the request itself — an explicit header is a decision, and silently
 /// replacing it would move the callee into a different trace than the one
 /// its caller asked for.
+///
+/// That guard is **case-insensitive**, because the header name is.
+/// W3C Trace Context §3.2.1 and §3.3.1 both say: *"Vendors MUST expect the
+/// header name in any case (upper, lower, mixed), and SHOULD send the header
+/// name in lowercase."* A case-sensitive lookup against the lowercase literal
+/// would miss a caller's `Traceparent` and write a second one, and both HTTP
+/// transports build the request with `hyper::Request::builder().header(..)`,
+/// which **appends** rather than replaces — so the peer would receive two
+/// `traceparent` fields and pick whichever its own parser happened to.
+///
+/// One transport is outside its reach, and says so in its own module docs:
+/// `WebSocketTransport` (behind the `websocket` feature) cannot carry a
+/// per-request header at all, so nothing this interceptor writes reaches the
+/// wire on an established WebSocket connection.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TracePropagationInterceptor;
+
+/// True when `headers` already carries `name` under any spelling of its case.
+fn contains_header_ignoring_case(
+    headers: &std::collections::HashMap<String, String>,
+    name: &str,
+) -> bool {
+    headers.keys().any(|k| k.eq_ignore_ascii_case(name))
+}
 
 impl TracePropagationInterceptor {
     /// Creates the interceptor.
@@ -125,13 +147,17 @@ impl CallInterceptor for TracePropagationInterceptor {
         req: &'a mut ClientRequest,
     ) -> impl Future<Output = ClientResult<()>> + Send + 'a {
         async move {
-            if req.extra_headers.contains_key(TRACEPARENT_HEADER) {
+            if contains_header_ignoring_case(&req.extra_headers, TRACEPARENT_HEADER) {
                 return Ok(());
             }
             if let Some(trace) = CurrentTrace::current() {
                 req.extra_headers
                     .insert(TRACEPARENT_HEADER.to_owned(), trace.traceparent());
-                if let Some(state) = trace.tracestate() {
+                // The same guard for `tracestate`: a caller that set only
+                // `Tracestate` would otherwise get two of those instead.
+                if let Some(state) = trace.tracestate()
+                    && !contains_header_ignoring_case(&req.extra_headers, TRACESTATE_HEADER)
+                {
                     req.extra_headers
                         .insert(TRACESTATE_HEADER.to_owned(), state.to_owned());
                 }

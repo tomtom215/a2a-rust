@@ -153,6 +153,27 @@ impl RequestHandler {
             .await;
         if let Err(e) = stored {
             self.release_admission(task_id).await;
+            // The task row is already written by this point — the push config
+            // is validated against it, so it has to be. Releasing only the
+            // queue and the token left a task parked in `Submitted` for ever:
+            // the retention sweeps delete terminal states only, so on SQLite
+            // and Postgres nothing ever collects it, and it stays visible to
+            // `tasks/get` and `tasks/list`. Worse, the caller's key was
+            // released too, so their retry created a *second* task and they
+            // ended up with two ids for one logical send.
+            //
+            // Safe to delete: the executor has not been spawned and the
+            // context guard is still held, so nothing has been able to
+            // observe this task.
+            if let Err(_delete_err) = self.task_store.delete(task_id).await {
+                // Best effort. The caller is already receiving an error, and
+                // an orphan row is a smaller wrong than reporting success.
+                trace_warn!(
+                    task_id = %task_id,
+                    error = %_delete_err,
+                    "push config rejected the send, and rolling the task row back failed"
+                );
+            }
             return Err(e);
         }
         Ok(())

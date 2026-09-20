@@ -6,9 +6,8 @@
 //! The [`TaskStore`] implementation for [`PostgresTaskStore`].
 //!
 //! Split out on 2026-08-19 when [`super`] crossed the 500-line ratchet. The
-//! seam is the trait boundary: `mod.rs` is now the type, its constructors and
-//! its knobs, and this file is what it does for the store trait — which is
-//! where a reader looking for "how does `list` paginate" actually goes.
+//! seam is the trait boundary: `mod.rs` is the type, its constructors and its
+//! knobs; this file is what it does for the store trait.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -21,7 +20,9 @@ use a2a_protocol_types::task::{Task, TaskId};
 
 use super::PostgresTaskStore;
 use super::pool::to_a2a_error;
-use crate::store::event_log_sql::{decode_json_row, encode_json, limit_to_i64, seq_to_i64};
+use crate::store::event_log_sql::{
+    decode_json_row, encode_json, limit_to_i64, report_no_op_append, seq_from_i64, seq_to_i64,
+};
 use crate::store::task_store::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore};
 use a2a_protocol_types::message::MessageId;
 use sqlx::Row as _;
@@ -385,15 +386,34 @@ impl TaskStore for PostgresTaskStore {
         event: &'a StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            // `JSONB` rather than text, so the column matches `tasks.data`
-            // beside it and the log is queryable with the same operators.
-            sqlx::query(event_log::APPEND_SQL)
+            // `JSONB` rather than text, so the column matches `tasks.data`.
+            // `rows_affected()` was discarded here until 0.13, and this is the
+            // store where it matters most: replicas sharing one database
+            // number the log from their own in-process queues.
+            let position = seq_to_i64(seq)?;
+            let payload = encode_json(event)?;
+            let changed_nothing = sqlx::query(event_log::APPEND_SQL)
                 .bind(task_id.0.as_str())
-                .bind(seq_to_i64(seq)?)
-                .bind(encode_json(event)?)
+                .bind(position)
+                .bind(&payload)
                 .execute(&self.pool)
                 .await
-                .map_err(to_a2a_error)?;
+                .map_err(to_a2a_error)?
+                .rows_affected()
+                == 0;
+            if changed_nothing {
+                // Only on the collision path. `Value` compares structurally,
+                // so `JSONB` normalization cannot fake a replay.
+                let stored: Option<(serde_json::Value,)> =
+                    sqlx::query_as(event_log::SELECT_PAYLOAD_SQL)
+                        .bind(task_id.0.as_str())
+                        .bind(position)
+                        .fetch_optional(&self.pool)
+                        .await
+                        .unwrap_or(None);
+                let same = stored.is_some_and(|(h,)| h == payload);
+                report_no_op_append(&*self.metrics, task_id, seq, same);
+            }
             Ok(())
         })
     }
@@ -408,7 +428,21 @@ impl TaskStore for PostgresTaskStore {
                 .fetch_one(&self.pool)
                 .await
                 .map_err(to_a2a_error)?;
-            Ok(max.unsigned_abs())
+            seq_from_i64(max)
+        })
+    }
+
+    fn earliest_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
+        Box::pin(async move {
+            let (min,): (Option<i64>,) = sqlx::query_as(event_log::EARLIEST_SEQ_SQL)
+                .bind(task_id.0.as_str())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            min.map(seq_from_i64).transpose()
         })
     }
 

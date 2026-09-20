@@ -88,7 +88,12 @@ pub enum FailureClass {
 
 impl FailureClass {
     /// Every class, for exhaustiveness in tests and for rendering a table.
-    pub const ALL: [Self; 5] = [
+    ///
+    /// A slice, not `[Self; N]`. The length was in the type, so adding the
+    /// sixth variant this enum is `#[non_exhaustive]` to allow would have
+    /// changed `ALL`'s type and broken every caller that bound it — the exact
+    /// break the attribute three lines up promises not to inflict.
+    pub const ALL: &'static [Self] = &[
         Self::InvalidRequest,
         Self::Transient,
         Self::PolicyRefusal,
@@ -116,7 +121,8 @@ impl FailureClass {
     #[must_use]
     pub fn from_wire(token: &str) -> Self {
         Self::ALL
-            .into_iter()
+            .iter()
+            .copied()
             .find(|c| c.as_str() == token)
             .unwrap_or(Self::Internal)
     }
@@ -163,11 +169,20 @@ impl From<crate::error::ErrorCode> for FailureClass {
             | E::ExtensionSupportRequired
             | E::VersionNotSupported
             | E::TaskNotFound
-            | E::TaskNotCancelable => Self::InvalidRequest,
-            E::InternalError
+            | E::TaskNotCancelable
+            // Both of these were `Internal`, whose row in the table above
+            // reads "The agent broke. Retry once, then escalate." Neither is
+            // a break and neither will ever succeed on a retry: the caller
+            // attached a push-notification config to a server that does not
+            // support them, or asked for an extended card the server does not
+            // serve. Both are things the caller could have sent differently,
+            // which is this mapping's own stated rule for `InvalidRequest` —
+            // and it is where the structurally identical
+            // `UnsupportedOperation` already sits. An orchestrator built on
+            // `is_retryable()` was burning a retry on each.
             | E::PushNotificationNotSupported
-            | E::InvalidAgentResponse
-            | E::ExtendedAgentCardNotConfigured => Self::Internal,
+            | E::ExtendedAgentCardNotConfigured => Self::InvalidRequest,
+            E::InternalError | E::InvalidAgentResponse => Self::Internal,
         }
     }
 }

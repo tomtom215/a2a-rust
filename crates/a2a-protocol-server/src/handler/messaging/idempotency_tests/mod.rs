@@ -16,6 +16,7 @@ use a2a_protocol_types::idempotency::IDEMPOTENCY_METADATA_KEY;
 use super::*;
 
 mod fixtures;
+mod replay_wait;
 use crate::builder::RequestHandlerBuilder;
 use crate::error::ServerError;
 use crate::streaming::EventQueueReader as _;

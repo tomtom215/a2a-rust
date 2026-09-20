@@ -19,14 +19,23 @@ the A2A `v1.0` wire contract, the tenant model and the four bindings were
 being brought to conformance; it is not appropriate for a dependency someone
 has to keep compiling. The policy below is the commitment that replaces it.
 
-`0.13.0` carries three breaking changes, batched and labelled as §2 and §3
+`0.13.0` carries eight breaking changes, batched and labelled as §2 and §3
 require. It is worth saying plainly what that costs: §7 cuts `1.0` after
 **two consecutive** minor releases with no break, and `0.12.0` was the last
 one to break, so that count restarts at zero here rather than reaching one.
-The three are the `#[non_exhaustive]` marking of `RequestContext`, the event
-position `EventQueueReader::read` now carries, and one renamed `PurgeReport`
-field; each has a one-line migration in the changelog. Nothing in
-`ROADMAP.md` is pending that requires another.
+
+They are: the `#[non_exhaustive]` marking of `RequestContext`; the event
+position `EventQueueReader::read` now carries; one renamed `PurgeReport`
+field; the `#[non_exhaustive]` marking of `IdempotencyClaim` and of
+`KeyError`; `FailureClass::ALL` becoming a slice rather than a fixed-size
+array; `RequestHandlerBuilder::build` refusing a signed agent card it would
+otherwise have had to edit; a keyed `message/send` being retried only against
+a peer known to honour the key; and `message.id` being validated at ingress.
+Each has a migration in the changelog.
+
+The last five were found by an audit after the first three were written down,
+which is the honest account of why this section said "three" until 0.13.0
+shipped. Nothing in `ROADMAP.md` is pending that requires another.
 
 ## 2. Semantic versioning, and what "breaking" means here
 
@@ -77,28 +86,38 @@ removing an unsafe surface; those are documented as such.
 
 ## 4. What is designed to stay compatible
 
-- **The eleven server extension traits** (`AgentExecutor`, `TaskStore`,
+- **The twelve server extension traits** (`AgentExecutor`, `TaskStore`,
   `PushConfigStore`, `PushSender`, `ServerInterceptor`, `TenantResolver`,
-  `Metrics`, `Dispatcher`, `AgentCardProducer` and the two event-queue
-  traits) are unsealed and stay unsealed. New methods are added with default
-  implementations so external implementations keep compiling; the rules for
-  doing that are in
+  `Metrics`, `Dispatcher`, `AgentCardProducer`, `RateLimitCounter` and the two
+  event-queue traits) are unsealed and stay unsealed. New methods are added
+  with default implementations so external implementations keep compiling; the
+  rules for doing that are in
   [CONTRIBUTING.md](CONTRIBUTING.md#extending-a-public-trait).
 - **Protocol enums and structs that can grow with the A2A specification** are
   `#[non_exhaustive]`, so a new variant or field from a specification
-  revision is a patch-level addition. The two deliberate exceptions are
-  closed sets fixed by their underlying standards: `ApiKeyLocation` and
-  `JsonRpcResponse` stay exhaustive so consumers can match them completely.
+  revision is a patch-level addition. The three deliberate exceptions are
+  closed sets fixed by their underlying standards — `ApiKeyLocation` (OpenAPI's
+  header/query/cookie), `JsonRpcResponse` (JSON-RPC 2.0's result/error) and
+  `JsonRpcRequestId` (JSON-RPC 2.0's absent/null/value id states) — and stay
+  exhaustive so consumers can match them completely.
 - **The configuration structs** (`HandlerLimits`, `DispatchConfig`,
   `CorsConfig`, `GrpcConfig`, `CacheConfig`, `PushRetryPolicy`,
   `RateLimitConfig`, `TaskStoreConfig`, `TenantStoreConfig`,
-  `PerTenantConfig`, `TenantLimits`, `ServeConfig`; `ClientConfig`,
-  `RetryPolicy`, `WebSocketTransportConfig`, `GrpcTransportConfig`) are
-  `#[non_exhaustive]` with `Default` (or a documented constructor) and a
-  `with_*` setter per field, so a new option on any of them is additive.
-  Until `0.12.0` most of them were exhaustive and adding a field was a
-  breaking change under §2; that conversion was the bulk of the `0.12.0`
-  breaking batch, and this exception no longer exists.
+  `PerTenantConfig`, `TenantLimits`, `ServeConfig`, `RetentionPolicy`;
+  `ClientConfig`, `RetryPolicy`, `WebSocketTransportConfig`,
+  `GrpcTransportConfig`) are `#[non_exhaustive]` with `Default` (or a
+  documented constructor) and a `with_*` setter per field, so a new option on
+  any of them is additive. Until `0.12.0` most of them were exhaustive and
+  adding a field was a breaking change under §2; that conversion was the bulk
+  of the `0.12.0` breaking batch, and this exception no longer exists.
+
+  `RetentionPolicy` was missed by that conversion and this list claimed
+  otherwise until 2026-09-20 — the claim was found by needing to add a field
+  to it, which is the only way an omission from a list of things that are
+  *already done* ever gets found. `PurgeReport` is marked for the same reason:
+  it is a report rather than a configuration struct, but a sweep that learns
+  to count something new should not be a breaking change, and `0.13.0`'s own
+  breaking list already carries one renamed field of it.
 - **Feature flags** are additive: enabling a feature never removes or changes
   an API that is available without it.
 

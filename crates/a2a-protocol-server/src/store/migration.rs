@@ -23,6 +23,23 @@
 //! | 1 | Initial schema — `tasks` table with indexes on `context_id` and `state` |
 //! | 2 | Add `created_at` column to `tasks` table |
 //! | 3 | Add composite index on `(context_id, state)` for combined filter queries |
+//! | 4 | Add `(updated_at DESC, id DESC)` index for list ordering |
+//! | 5 | Add `task_artifact_appends` — the journal streaming appends are written to |
+//! | 6 | Add `idempotency_keys` — the index client-supplied send keys are claimed in |
+//! | 7 | Add `task_events` — the per-task log of what the agent emitted |
+//!
+//! This table listed 1 to 3 while seven existed — the failure mode of a list
+//! maintained by hand beside one maintained by the compiler. The test below
+//! fails if the two stop agreeing on how many there are.
+//!
+//! `SQLite`'s `ALTER TABLE` has no `ADD CONSTRAINT`, so a `CHECK` in a table's
+//! DDL reaches only databases built after it. `task_events` gained
+//! `CHECK (seq > 0)` in 0.13 and migration 7 carries it — that migration
+//! *creates* the table, sharing the constant with `from_pool` — but a database
+//! that already ran migration 7 keeps the unconstrained table. Correcting it
+//! means a full table rebuild for a constraint on values this crate does not
+//! write. `pg_migration`'s version 6 does it on `PostgreSQL`, which has
+//! `ALTER TABLE ... ADD CONSTRAINT`.
 //!
 //! # Example
 //!
@@ -285,6 +302,26 @@ mod tests {
             .connect("sqlite::memory:")
             .await
             .expect("failed to open in-memory sqlite")
+    }
+
+    #[test]
+    fn the_module_doc_table_lists_every_migration() {
+        // The table above said 1 to 3 while seven existed. A hand-maintained
+        // list beside a compiler-maintained one drifts; this notices.
+        let doc = include_str!("migration.rs");
+        for migration in BUILTIN_MIGRATIONS {
+            let row = format!("//! | {} |", migration.version);
+            assert!(
+                doc.contains(&row),
+                "the module doc table has no row for migration {}",
+                migration.version
+            );
+        }
+        let rows = doc
+            .lines()
+            .filter(|l| l.starts_with("//! | ") && !l.starts_with("//! | Version"))
+            .count();
+        assert_eq!(rows, BUILTIN_MIGRATIONS.len(), "the doc table has drifted");
     }
 
     #[tokio::test]

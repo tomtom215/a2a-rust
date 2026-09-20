@@ -37,6 +37,10 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_push_configs_per_task` | `usize` | 100 | Maximum push configs per task (uniform across store backends) |
 | `max_parts_per_artifact` | `usize` | 10,000 | Maximum parts a single artifact may accumulate |
 | `max_total_push_configs` | `usize` | 100,000 | Global push-config ceiling across all tasks |
+| `subscribe_reattach_interval` | `Duration` | 250ms | How often an idle `SubscribeToTask` stream re-checks whether its task finished, once the turn's queue closed |
+| `subscribe_max_idle` | `Duration` | 5 min | How long a `SubscribeToTask` stream waits on a parked task before ending; the client resubscribes |
+| `subscribe_replay_limit` | `usize` | 1,000 | Maximum logged events a `Last-Event-ID` resumption replays. The offset is client-supplied, so the cap bounds the read; every replayed frame carries its own `id:`, so a truncated replay is resumable |
+| `subscribe_replay_catchup` | `Duration` | 2s | How long a resuming stream waits for the event log to catch up with what was already broadcast. Zero disables the wait; on expiry the shortfall is logged and counted under `event_log_catchup` |
 
 > **Build-time validation:** `max_id_length`, `max_metadata_size`, and
 > `push_delivery_timeout` must be non-zero. Zero values are rejected by

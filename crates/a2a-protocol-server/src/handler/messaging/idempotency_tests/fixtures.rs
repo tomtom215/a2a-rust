@@ -240,3 +240,122 @@ impl crate::store::TaskStore for FailFirstSaveStore {
         self.inner.release_idempotency_key(key)
     }
 }
+
+/// Reports a chosen task as absent for the next `n` reads, then delegates.
+///
+/// Reproduces the window the claim opens. `claim_idempotency_key` commits
+/// before `persist_initial_task` writes the row — it has to, or two racing
+/// duplicates would each get past the claim and both execute — so a duplicate
+/// that reaches the replay path in that window asks for a task that does not
+/// exist yet. The window is short and timing-dependent, which is why it is
+/// injected here rather than raced for: a test that raced it would be the
+/// kind that passes on a fast machine and fails in CI.
+///
+/// Targeted at one id rather than counting every read, so an unrelated `get`
+/// elsewhere in the send path cannot consume the budget and leave the test
+/// asserting nothing.
+pub(super) struct WithholdingStore {
+    inner: crate::store::InMemoryTaskStore,
+    withheld: std::sync::Mutex<Option<(TaskId, usize)>>,
+}
+
+impl Default for WithholdingStore {
+    fn default() -> Self {
+        Self {
+            inner: crate::store::InMemoryTaskStore::new(),
+            withheld: std::sync::Mutex::new(None),
+        }
+    }
+}
+
+impl WithholdingStore {
+    /// Arms the next `n` reads of `id` to report it absent.
+    pub(super) fn withhold(&self, id: &TaskId, n: usize) {
+        *self.withheld.lock().expect("test mutex") = Some((id.clone(), n));
+    }
+
+    /// Consumes one withheld read of `id`, if one is armed.
+    fn take_withheld(&self, id: &TaskId) -> bool {
+        let mut armed = self.withheld.lock().expect("test mutex");
+        match armed.as_mut() {
+            Some((target, remaining)) if target == id && *remaining > 0 => {
+                *remaining -= 1;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+#[allow(clippy::manual_async_fn)]
+impl crate::store::TaskStore for WithholdingStore {
+    fn save<'a>(&'a self, t: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.inner.save(t)
+    }
+    fn get<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.take_withheld(id) {
+                return Ok(None);
+            }
+            self.inner.get(id).await
+        })
+    }
+    fn list<'a>(
+        &'a self,
+        p: &'a a2a_protocol_types::params::ListTasksParams,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = A2aResult<a2a_protocol_types::responses::TaskListResponse>>
+                + Send
+                + 'a,
+        >,
+    > {
+        self.inner.list(p)
+    }
+    fn insert_if_absent<'a>(
+        &'a self,
+        t: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        self.inner.insert_if_absent(t)
+    }
+    fn delete<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.inner.delete(id)
+    }
+    fn supports_idempotency(&self) -> bool {
+        self.inner.supports_idempotency()
+    }
+    fn claim_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+        message_id: &'a MessageId,
+        task_id: &'a TaskId,
+    ) -> Pin<
+        Box<dyn Future<Output = A2aResult<crate::store::task_store::IdempotencyClaim>> + Send + 'a>,
+    > {
+        self.inner.claim_idempotency_key(key, message_id, task_id)
+    }
+    fn release_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.inner.release_idempotency_key(key)
+    }
+}
+
+/// A counting handler over a caller-held [`WithholdingStore`].
+pub(super) fn withholding_handler(
+    store: &Arc<WithholdingStore>,
+) -> (RequestHandler, Arc<AtomicUsize>) {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&counter)))
+        .with_task_store_arc(Arc::clone(store) as Arc<dyn crate::store::TaskStore>)
+        .build()
+        .expect("withholding-store build should succeed");
+    (handler, counter)
+}

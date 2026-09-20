@@ -192,11 +192,14 @@ async fn journal_orphans_are_reclaimed_when_the_cascade_does_not_fire() {
 }
 
 #[tokio::test]
-async fn the_journal_sweep_runs_only_after_a_task_was_deleted() {
-    // The anti-join is gated on `tasks_deleted > 0`: a purge that deleted
-    // nothing must not touch the journal at all, even where a stranded row
-    // exists. Kills `> 0` → `>= 0`, under which every purge would run the
-    // sweep and report an orphan it had no business reclaiming on that run.
+async fn the_journal_sweep_runs_even_when_the_purge_deletes_nothing() {
+    // The anti-join used to be gated on `tasks_deleted > 0`, which assumed an
+    // orphan can only appear during the purge that made it. A purge that fails
+    // part way has already committed its earlier batches, so the rows it
+    // strands outlive it — and the next sweep, finding nothing newly eligible,
+    // skipped the cleanup and left them to be spliced onto whoever next reused
+    // the task id. Kills the `if report.tasks_deleted > 0` guard: with it back,
+    // the stranded row survives and both assertions below fail.
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use std::str::FromStr;
 
@@ -228,17 +231,107 @@ async fn the_journal_sweep_runs_only_after_a_task_was_deleted() {
 
     assert_eq!(report.tasks_deleted, 0, "nothing was old enough to delete");
     assert_eq!(
-        report.orphan_rows_deleted, 0,
-        "no task was deleted, so the sweep must not have run"
+        report.orphan_rows_deleted, 1,
+        "the stranded row is reclaimed whether or not this sweep deleted a task"
     );
     let left: i64 = sqlx::query_scalar("SELECT count(*) FROM task_artifact_appends")
         .fetch_one(&store.pool)
         .await
         .unwrap();
+    assert_eq!(left, 0, "a row whose task does not exist must not survive");
+}
+
+#[tokio::test]
+async fn a_sweep_that_deletes_no_task_still_reclaims_an_orphaned_event_log() {
+    // The same defect on the table where it matters most. Task ids are
+    // caller-supplied and reusable, so an orphaned log is one that replays a
+    // deleted task's messages to whoever next claims that id — which is the
+    // failure `sqlite_store::event_log`'s own module doc says the explicit
+    // delete exists to prevent.
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use std::str::FromStr;
+
+    let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+        .unwrap()
+        .pragma("foreign_keys", "OFF")
+        .create_if_missing(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(opts)
+        .await
+        .expect("pool");
+    let store = SqliteTaskStore::from_pool(pool).await.expect("store");
+
+    sqlx::query("INSERT INTO task_events (task_id, seq, payload) VALUES ('ghost', 1, '{}')")
+        .execute(&store.pool)
+        .await
+        .expect("seed orphan");
+
+    let report = store
+        .purge_expired(&RetentionPolicy::new(Duration::from_secs(3_600)))
+        .await
+        .expect("purge");
+
+    assert_eq!(report.tasks_deleted, 0, "nothing was old enough to delete");
+    assert_eq!(report.orphan_rows_deleted, 1);
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM task_events")
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0, "an orphaned log outlives nothing");
+}
+
+#[tokio::test]
+async fn an_orphan_sweep_clears_more_tasks_than_one_batch_holds() {
+    // The sweeps are batched now, and a batch of these statements counts task
+    // ids rather than rows — the tables are `WITHOUT ROWID`, so the `rowid IN
+    // (SELECT ... LIMIT ?)` shape the task delete uses is unavailable. The
+    // loop therefore has to run until a batch comes back empty; a single
+    // execution would leave the rest behind. Kills "run the sweep once".
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use std::str::FromStr;
+
+    let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+        .unwrap()
+        .pragma("foreign_keys", "OFF")
+        .create_if_missing(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(opts)
+        .await
+        .expect("pool");
+    let store = SqliteTaskStore::from_pool(pool).await.expect("store");
+
+    for n in 0..5 {
+        sqlx::query("INSERT INTO task_events (task_id, seq, payload) VALUES (?1, 1, '{}')")
+            .bind(format!("ghost-{n}"))
+            .execute(&store.pool)
+            .await
+            .expect("seed orphan");
+    }
+
+    let report = store
+        .purge_expired(&RetentionPolicy::new(Duration::from_secs(3_600)).with_batch_size(2))
+        .await
+        .expect("purge");
+
+    assert_eq!(report.orphan_rows_deleted, 5);
+    // Three batches of at most two, and the count is what `max_batches`
+    // spends: an orphan loop that deleted rows without charging for them
+    // would let a bounded sweep run for ever. Nothing asserted this, which
+    // is why `replace += with *= in purge` survived the incremental mutation
+    // gate on this pull request (shard 5 of run 35523981742) — `0 *= 1` is
+    // still 0, and no other assertion here reads the number.
     assert_eq!(
-        left, 1,
-        "the orphan is untouched until a purge deletes a task"
+        report.batches, 3,
+        "five rows at two per batch is three batches, and they are charged for"
     );
+    assert!(report.complete, "nothing was left to do");
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM task_events")
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
 }
 
 #[tokio::test]

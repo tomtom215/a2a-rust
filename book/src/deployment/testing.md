@@ -30,6 +30,7 @@ a2a-protocol-server = { version = "0.13", features = ["conformance"] }
 #     let emit = EventEmitter::new(ctx, queue);
 #     if emit.is_cancelled() { return emit.status(TaskState::Canceled).await; }
 #     emit.status(TaskState::Working).await?;
+#     if emit.is_cancelled() { return emit.status(TaskState::Canceled).await; }
 #     emit.status(TaskState::Completed).await
 # });
 # async fn conformance_test() {
@@ -50,13 +51,29 @@ A failing report names the invariant and says why it matters:
 ```text
 executor conformance:
   pass  ends_in_terminal_or_interrupt      ended in TASK_STATE_COMPLETED
-  n/a   transitions_are_legal              fewer than two statuses emitted
+  pass  transitions_are_legal              1 transitions, all legal
+  pass  nothing_after_terminal             TASK_STATE_COMPLETED was the last event
+  n/a   artifacts_have_ids                 no artifacts emitted
+  n/a   parking_is_not_an_error            the executor never parked
+  pass  does_not_panic                     returned normally
+  pass  returns_within_the_time_limit      returned within the time limit
   FAIL  honours_cancellation               ran to Completed with an already-cancelled
                                            token; cancellation is cooperative, so an
                                            executor that never checks
                                            ctx.cancellation_token cannot be cancelled
                                            at all
-  4 of 5 graded checks passed, 3 not applicable
+  pass  does_not_panic_when_cancelled      returned normally
+  pass  cancellation_is_not_an_error       did not report cancellation as a failure
+  FAIL  stops_when_cancelled_mid_run       emitted Completed after the token was
+                                           cancelled during its first write;
+                                           cancellation is cooperative, so an executor
+                                           that checks the token on entry and never
+                                           again cannot be cancelled once it has
+                                           started — which is when cancellation almost
+                                           always arrives
+  pass  does_not_panic_when_cancelled_mid_run returned normally
+  pass  cancel_emits_terminal              emitted a terminal status
+  9 of 11 graded checks passed, 2 not applicable
 ```
 
 **A check that did not apply is not graded**, and a report that grades
@@ -66,8 +83,12 @@ reported full marks.
 
 What it cannot tell you: it runs each check once, so it will not find a race;
 it supplies its own message, so use `conformance::check_with` if your
-executor only misbehaves on particular input; and it grades the executor, not
-the deployment — the TCK is still what says your *server* conforms.
+executor only misbehaves on particular input; it supplies its own
+`CallContext`, so use `conformance::check_with_context` if your executor
+reads the caller's tenant or identity; it bounds each drive at 30 seconds and
+grades an overrun as a failure, so a very slow but correct executor is
+reported as broken; and it grades the executor, not the deployment — the TCK
+is still what says your *server* conforms.
 
 ## Unit Testing Executors
 
@@ -322,7 +343,7 @@ conditions that are hardest to reproduce in staging.
 
 ### What Mutation Testing Found in a2a-rust
 
-Even with ~1,630 passing tests (with feature flags), 81 E2E dogfood tests (94 with all features), property tests, and fuzz targets —
+Even with ~1,630 passing tests (with feature flags), 102 E2E dogfood tests on `agent-team`'s default feature set (87 with `--no-default-features`), property tests, and fuzz targets —
 all green — the first mutation testing run surfaced gaps across every crate:
 
 - **Delegation methods** returning `()` instead of forwarding calls (e.g.,

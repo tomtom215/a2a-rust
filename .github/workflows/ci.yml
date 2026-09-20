@@ -42,9 +42,26 @@ env:
   CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
-  # ── Format check ─────────────────────────────────────────────────────────
-  fmt:
-    name: Format
+  # ── Static checks ────────────────────────────────────────────────────────
+  #
+  # Renamed from `fmt` / "Format" on 2026-09-20. Exactly one of this job's
+  # verdict-bearing steps runs `cargo fmt`; the other twenty are source, prose
+  # and gate-inventory audits that have nothing to do with formatting. The old
+  # name cost real time — docs/handoff.md records a commit whose PR went red on
+  # a check named `Format` while `cargo fmt --check` passed, and the 0.13.0
+  # diff then added two more steps to the same job without renaming it. A check
+  # name that misdirects the person reading it is a failure of the gate as
+  # surely as a wrong verdict is.
+  #
+  # Both the job key and the display name changed: the key is what
+  # `GATE_JOBS` in scripts/lib/ci_gates.sh and every log line say, and leaving
+  # it as `fmt` would have moved the misdirection rather than removed it.
+  # Nothing in any workflow `needs:` this job. A required-status-check rule
+  # configured in repository settings keys on the display name, so the branch
+  # protection entry `Format` must be re-pointed at the name below; that is
+  # outside the tree and cannot be done from here.
+  static-checks:
+    name: Static checks (formatting, sources, docs, gate inventory)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -145,6 +162,15 @@ jobs:
       # exhaustively; this keeps the curated overview honest alongside it.
       - name: API Quick Reference names still exist
         run: python3 scripts/check_api_reference.py
+
+      # A fuzz target reaches a runner through three files — the harness, a
+      # `[[bin]]` in fuzz/Cargo.toml, and fuzz.yml's matrix — and only the
+      # third has no build error behind it. Miss it and the target is written,
+      # reviewed, merged, builds clean and is executed by nobody, while every
+      # document quoting the fuzz-suite count goes up by one. `trace_context`
+      # shipped that way on 2026-09-20.
+      - name: Every fuzz target is both built and run
+        run: python3 scripts/check_fuzz_matrix.py
 
       # `Metrics` callbacks default to no-ops, so one the bundled OTLP exporter
       # forgets is discarded with no compile error and no failing test — the
@@ -290,6 +316,46 @@ jobs:
       # matches anything, the same rule deny.toml's skip list follows (B21).
       - name: Configurable bounds are honoured by every sibling, or allowlisted with a reason
         run: python3 scripts/check_inert_bounds.py
+
+      # The inventory that every other gate's coverage claim rests on. A gate
+      # missing from it does not report a gap — it reports a smaller total, in
+      # green, and `scripts/prove_gates_fail.sh` prints "N of N proven" over a
+      # set nobody has confirmed is the whole set.
+      #
+      # Two holes this closes, both of which were open when it was written:
+      #
+      #   * The check that every job in this file is classified as a gate or an
+      #     explicit non-gate lived only in `scripts/preflight.sh`, which runs
+      #     in no workflow. A job added here was silently uncovered.
+      #
+      #   * `gates_for_jobs` extracts `run:` steps, so a `uses:` step
+      #     contributes zero gates and the unregistered-gate guard has nothing
+      #     to complain about. `cargo-deny (the binding's own dependency tree)`
+      #     is such a step — the only audit of the binding's 379 transitive
+      #     dependencies, a native C crypto build among them — and no inventory
+      #     here knew it existed. It cannot be *proven* (a marketplace action
+      #     has no command to re-run against an injected defect), so it is now
+      #     registered with that reason in
+      #     `scripts/action_gate_exemptions.txt`, where an entry that stops
+      #     naming a real step fails this gate.
+      # `mutants.toml` sits at the repository root; cargo-mutants reads
+      # `.cargo/mutants.toml`. Every exclusion, timeout and test-arg in it
+      # governs nothing, and the file's own banner says so — as prose, which
+      # does not re-measure itself. The moment `.cargo/mutants.toml` appears,
+      # that banner becomes a confident and wrong description of what the
+      # mutation gate measures, and the mutation gate prints a percentage this
+      # repository publishes.
+      #
+      # It also carries `cap_timeout` and `jobs`, which cargo-mutants 27.1.0
+      # rejects outright, so moving the file as it stands does not narrow the
+      # sweep — it stops every shard before it lists a mutant. This gate holds
+      # both halves: the status claim, and the keys that make the move more
+      # than a copy.
+      - name: mutants.toml says what it is
+        run: python3 scripts/check_mutants_config.py
+
+      - name: Gate inventory is complete
+        run: ./scripts/check_gate_inventory.sh
 
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
@@ -485,10 +551,36 @@ jobs:
       # named: a bare `--ignored` would also select every other ignored lib
       # test, and those are ignored for reasons a database does not fix. Each
       # test creates and drops its own scratch database, so no thread limit.
+      #
+      # `cargo test` exits 0 when its filter selects nothing, so `rate_limit`
+      # moving or `shared` being renamed would leave this step green having run
+      # no test at all — a filter is a silent denominator. The reported count is
+      # asserted below.
       - name: Test (Postgres rate-limit counter, live database)
         run: |
-          cargo test -p a2a-protocol-server --features postgres --lib \
-            rate_limit::shared -- --ignored
+          log=$(mktemp)
+          # Redirect, not `| tee`. With no `shell:` key GitHub runs this block
+          # under `bash -e` and not `bash -eo pipefail`, so a pipeline would
+          # report tee's status and a failing suite would go green. That is how
+          # the official-TCK gate came to print UNDER-MEASURED and exit 0.
+          #
+          # No script filename in this comment on purpose: `injection_for` in
+          # scripts/prove_gates_fail.sh routes a gate to its injection by
+          # substring over the whole block, comments included, so naming a
+          # script that is itself a gate command here silently hands this step
+          # that script's injection. Measured, by doing it.
+          if ! cargo test -p a2a-protocol-server --features postgres --lib \
+            rate_limit::shared -- --ignored >"$log" 2>&1; then
+            cat "$log"
+            exit 1
+          fi
+          cat "$log"
+          ran=$(awk '/^test result:/ { n += $4 } END { print n + 0 }' "$log")
+          if [ "$ran" -eq 0 ]; then
+            echo "::error::the filter 'rate_limit::shared' selected 0 tests, so this step measured nothing. The module was renamed or moved — re-point the filter."
+            exit 1
+          fi
+          echo "Postgres rate-limit counter: $ran test(s) ran"
 
   # ── Nightly CI ──────────────────────────────────────────────────────────
   nightly:
@@ -537,13 +629,42 @@ jobs:
         env:
           RUSTDOCFLAGS: "-D warnings"
 
+      # The workspace build above cannot see a per-crate doc failure, because
+      # feature unification turns on features a crate does not enable by
+      # itself. `a2a-protocol-client` documented `WebSocketTransport` and
+      # `build_grpc` — both behind features that are off in its own default
+      # build — and the workspace build was green for months while
+      # `cargo doc -p a2a-protocol-client --no-deps` failed, because the
+      # client's own dev-dependencies pull those features in. docs.rs builds
+      # with all-features and was unaffected too, so nothing anywhere saw it.
+      #
+      # Each published crate is therefore documented on its own, in the
+      # feature set a consumer who depends on it alone actually gets.
+      - name: Build docs per crate, in each crate's own default features
+        run: |
+          set -euo pipefail
+          for crate in a2a-protocol-types a2a-protocol-client \
+                       a2a-protocol-server a2a-protocol-sdk; do
+            echo "::group::cargo doc -p $crate --no-deps"
+            cargo doc -p "$crate" --no-deps
+            echo "::endgroup::"
+          done
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
   # ── cargo-deny (license/advisory compliance) ─────────────────────────────
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: EmbarkStudios/cargo-deny-action@82eb9f621fbc699dd0918f3ea06864c14cc84246 # v2
+      # Named, and not left as a bare `- uses:`, because
+      # scripts/check_gate_inventory.sh registers verdict-bearing action steps
+      # by job and step name: a step with no name cannot be registered and
+      # cannot be named in a failure message. See
+      # scripts/action_gate_exemptions.txt.
+      - name: cargo-deny (the workspace dependency tree)
+        uses: EmbarkStudios/cargo-deny-action@82eb9f621fbc699dd0918f3ea06864c14cc84246 # v2
         with:
           command: check
 
@@ -828,11 +949,28 @@ jobs:
       # wall-clock expiry of 40-second SVIDs, so it is slow by construction —
       # that is the cost of testing the failure mode a long-lived deployment
       # actually hits.
+      #
+      # Same silent-denominator hazard as the Postgres rate-limit step: `cargo
+      # test` exits 0 when `--ignored` selects nothing, so un-`#[ignore]`ing
+      # these suites, or renaming one of the three test files, would leave this
+      # green having run no SPIFFE test against the SPIRE it just installed.
       - name: Test (SPIFFE, against real SPIRE)
         working-directory: bindings/a2a-protocol-slimrpc
         run: |
-          cargo test --test spiffe --test spiffe_federation --test spiffe_rotation \
-            -- --ignored --test-threads=1
+          log=$(mktemp)
+          # Redirect, not `| tee` — see the Postgres rate-limit step above.
+          if ! cargo test --test spiffe --test spiffe_federation --test spiffe_rotation \
+            -- --ignored --test-threads=1 >"$log" 2>&1; then
+            cat "$log"
+            exit 1
+          fi
+          cat "$log"
+          ran=$(awk '/^test result:/ { n += $4 } END { print n + 0 }' "$log")
+          if [ "$ran" -eq 0 ]; then
+            echo "::error::the three SPIFFE suites selected 0 tests, so this step measured nothing against the SPIRE it installed. A test file was renamed, or the suites are no longer #[ignore]d and so are no longer selected by --ignored."
+            exit 1
+          fi
+          echo "SPIFFE suites: $ran test(s) ran"
 
   example-surface:
     name: Example surface coverage (all methods x all bindings)

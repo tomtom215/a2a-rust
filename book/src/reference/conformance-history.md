@@ -60,6 +60,7 @@ that measured nothing.
 | 2026-08-12 | `6ebf821` | `5996b79` | full | 246 | 0 | 19 | 0 | 88 | 0 |
 | 2026-08-12 | `6ebf821` | `5996b79` | minimal | 181 | 0 | 83 | 1 | 66 | 0 |
 | 2026-08-12 | `6ebf821` | `5996b79` | extension (`-k`) | 2 | 0 | 0 | 263 | 1 | 0 |
+| 2026-09-01 | `b6f3afb` | `de6af18` | full | — | — | — | — | 92 | — |
 
 The 2026-08-10 rows are the first against post-#103 `main`; the 2026-08-09 rows
 predate it. Every count is identical, which is the point of recording an
@@ -202,6 +203,57 @@ structurally inapplicable, 21 `NOT TESTED` upstream.
 `a2a-tck` was re-cloned from floating `main` (W1) and again resolved to
 `5996b79` — the same commit as every row above it, so all four dates are
 directly comparable and no upstream drift has occurred since 2026-08-09.
+
+> **The two figures above are superseded — do not quote `92 … 0 FAILING` as
+> current.** They were true at `a2a-tck@5996b79` and are left standing because
+> a dated measurement that gets quietly edited stops being a measurement. The
+> pin has since moved, and upstream drift *has* occurred since: see the next
+> section. The state to quote is **88 of 114 passing and 4 failing**,
+> re-measured 2026-09-01 at `a2a-tck@de6af18` and recorded in
+> `tck/conformance-baseline.json` (four `known_failures`), in `README.md`'s
+> Project Status section and in `ROADMAP.md`'s Conformance section.
+
+### The 2026-09-01 re-measurement at `a2a-tck@de6af18`
+
+This is the row the rest of the repository quotes, and it is the first in the
+table where the pin moved rather than this SDK: `A2A_TCK_REVISION` floats
+(register entry W1), and `a2a-tck` landed ten commits on 2026-08-31. The
+2026-08-31 nightly and the 2026-09-01 nightly ran on the **identical** a2a-rust
+commit, `b6f3afb`; the first was green and the second was not.
+
+**88 of 114 MUST requirements PASS and 4 FAIL** — so 92 graded, the same
+denominator as 2026-08-12, with four requirements moved from the passing column
+to the failing one. The four are exactly the entries in
+`tck/conformance-baseline.json`:
+
+| Requirement | Binding that fails |
+|---|---|
+| `CORE-CANCEL-002` | `http_json` |
+| `GRPC-ERR-002` | `grpc` |
+| `HTTP_JSON-STATUS-001` | `*` |
+| `STREAM-SUB-003` | `grpc` |
+
+All four are the same cause, and it is not a deviation from the specification:
+the suite grades §5.4's error-mapping table against the copy of the
+specification it vendors, which its own `specification/version.json` records as
+A2A v1.0.0 (2026-03-13), while A2A v1.0.1 (2026-05-28) rewrote six of that
+table's nine rows. Each fails on exactly the one binding whose cell the two
+copies disagree about and passes on the bindings where they agree. Reported
+upstream as [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231);
+the evidence is `docs/official-tck-findings.md` §20 and §21. The
+22-requirement remainder — 21 `NOT TESTED`, `CARD-EXT-002` structurally
+inapplicable — is unchanged.
+
+**Why that row's pytest columns are `—`, and not zeroes.** This page records
+pytest outcomes it has a run log for. It has none for 2026-09-01: the sources
+that fix this measurement — `tck/conformance-baseline.json`, `README.md`'s
+Project Status section, `ROADMAP.md`'s Conformance section and
+`docs/official-tck-findings.md` §21 — state the MUST tally and the four
+failing requirements, not the `Passed`/`Failed`/`Skipped`/`Deselected` counts
+or the six exit codes. A dash is "not recorded here"; writing a plausible
+number in its place would be the failure this page exists to prevent. The next
+run taken locally, mirroring `official-tck.yml` step for step, should fill
+those cells in.
 
 ## In-repo `a2a-tck` runner
 

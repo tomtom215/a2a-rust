@@ -32,6 +32,7 @@ mod messaging;
 mod push_config;
 mod shutdown;
 
+pub use helpers::InboundTracePolicy;
 pub use shutdown::ShutdownReport;
 
 use std::collections::HashMap;
@@ -51,7 +52,7 @@ use crate::streaming::{EventQueueManager, InMemoryQueueReader};
 use crate::tenant_config::PerTenantConfig;
 use crate::tenant_resolver::TenantResolver;
 
-pub use limits::HandlerLimits;
+pub use limits::{HandlerLimits, MIN_MESSAGE_ID_LENGTH};
 
 // Re-export the response type alongside the handler.
 pub use a2a_protocol_types::responses::SendMessageResponse;
@@ -87,6 +88,13 @@ pub struct RequestHandler {
     /// be determined) causes the request to be **rejected** rather than falling
     /// back to the shared default (`""`) partition. Opt-in strict multi-tenancy.
     pub(crate) require_resolved_tenant: bool,
+
+    /// What to do with a `traceparent` an as-yet-unauthenticated peer sent.
+    ///
+    /// Per handler rather than per process, so one process serving a public
+    /// front gate and an internal endpoint can hold a different policy on
+    /// each. See [`InboundTracePolicy`].
+    pub(crate) inbound_trace_policy: InboundTracePolicy,
     /// When `true`, `GetExtendedAgentCard` is served even though no
     /// authenticating interceptor guards the chain. Spec §13.3 says the
     /// operation MUST require authentication, so the default is `false`:
@@ -196,7 +204,8 @@ impl RequestHandler {
         let Some(resolver) = self.tenant_resolver.as_deref() else {
             return Ok(client_tenant.unwrap_or_default().to_owned());
         };
-        let call_ctx = crate::handler::helpers::build_call_context(method, headers);
+        let call_ctx =
+            crate::handler::helpers::build_call_context(method, headers, self.inbound_trace_policy);
         let derived = resolver.resolve(&call_ctx).await;
         // Strict mode: a resolver that cannot determine a tenant must not fall
         // through to the shared default partition — reject instead, so a

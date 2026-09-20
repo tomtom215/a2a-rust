@@ -19,7 +19,15 @@ use a2a_protocol_types::task::TaskId;
 /// What happened when a store was asked to claim an idempotency key.
 ///
 /// See [`TaskStore::claim_idempotency_key`].
+///
+/// `#[non_exhaustive]` because every out-of-tree `TaskStore` must `match` on
+/// this, and the outcomes this can report are not a closed set: an expiry, or
+/// an "in flight, wait" that would let the second caller be told to retry
+/// instead of handed a `TaskNotFound`, are both plausible fourth variants.
+/// Adding one without the attribute would be a compile break for every
+/// external store — which `STABILITY.md` §4 promises not to inflict.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum IdempotencyClaim {
     /// The key was free. The caller owns it and should create the task.
     Claimed,

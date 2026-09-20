@@ -159,7 +159,6 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
-          IS_PRE="${{ steps.meta.outputs.is_prerelease }}"
           VERSION_RE=$(printf '%s' "$VERSION" | sed 's/\./\\./g')
 
           if ! grep -qE "^## \[$VERSION_RE\]" CHANGELOG.md; then
@@ -168,18 +167,58 @@ jobs:
             exit 1
           fi
 
-          # Stable releases must carry a real date — an '— Unreleased' heading
+          # Every release must carry a real date — an '— Unreleased' heading
           # left over from release prep would otherwise ship as the public
           # record of the release.
-          if [[ "$IS_PRE" == "false" ]] && ! grep -qE "^## \[$VERSION_RE\] - [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
+          #
+          # Pre-releases included, since 2026-09-20. This used to be guarded by
+          # `[[ "$IS_PRE" == "false" ]]`, which is the only reason `IS_PRE` was
+          # read here at all. But a pre-release tag publishes: the `publish` job
+          # has no pre-release condition, so `vX.Y.Z-rc.1` uploads to crates.io
+          # and creates a GitHub release like any other. An undated heading
+          # therefore shipped as the public record of something people could
+          # install. RELEASING.md already tells maintainers "the release
+          # workflow rejects undated headings" without qualification; it is now
+          # true.
+          if ! grep -qE "^## \[$VERSION_RE\] - [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
             echo "::error file=CHANGELOG.md::'## [$VERSION]' heading is not dated."
             echo "Expected '## [$VERSION] - YYYY-MM-DD'. Date the heading before tagging."
             exit 1
           fi
           echo "::notice::CHANGELOG.md entry found for v$VERSION"
 
+      # Runs for pre-releases too, since 2026-09-20. It carried
+      # `if: steps.meta.outputs.is_prerelease == 'false'`, and a skipped step
+      # is a green one: a `vX.Y.Z-rc.1` tag could ship with CITATION.cff still
+      # citing a version several lines old, a malformed `date-released`, and a
+      # SECURITY.md whose supported-versions table did not cover the line being
+      # released.
+      #
+      # The premise of the exemption was that a pre-release is not really a
+      # release. It is: the `publish` job below has no pre-release condition, so
+      # the tag uploads to crates.io and creates a GitHub release. People can
+      # install it and can cite it, which is exactly what these two files are
+      # for.
+      #
+      # Each of the three checks was considered on its own rather than as a
+      # block, because the weakest one decides whether an exemption is worth
+      # having:
+      #
+      #   date-released well-formedness — a format check, independent of which
+      #     version is being released. There was never a reason to skip it.
+      #   SECURITY.md supported line — `0.14.0-rc.1` puts the 0.14 line in
+      #     users' hands, so the security policy has to cover it *at* the RC
+      #     and not after the final. This is the check a pre-release needs
+      #     most, not least.
+      #   CITATION.cff version match — the strictest, and the only arguable
+      #     one: it means bumping CITATION.cff for each RC. Applied anyway,
+      #     because the alternative is a citation file that describes a
+      #     different artefact from the one that was published, and because
+      #     RELEASING.md's checklist already says to set it to "the new
+      #     release" without excepting pre-releases. If a maintainer decides an
+      #     RC should not be citable, the fix is to skip *this* check with that
+      #     reason written here — not to skip all three by skipping the step.
       - name: Verify CITATION.cff and SECURITY.md match the release
-        if: steps.meta.outputs.is_prerelease == 'false'
         shell: bash
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
@@ -199,9 +238,16 @@ jobs:
 
           # SECURITY.md's supported-versions table must cover the line being
           # released, so the security policy can never lag the release again.
-          MAJOR_MINOR=$(printf '%s' "$VERSION" | cut -d. -f1-2 | sed 's/\./\\./g')
+          # The release LINE, not the version: `0.14.0-rc.1` is on the 0.14
+          # line and SECURITY.md lists lines. `cut -d. -f1-2` already did the
+          # right thing; the error message did not — it said `${VERSION%.*}.x`,
+          # which for that tag reads "0.14.0-rc.x", a line that does not exist
+          # and that nobody could add to the table. Now that pre-releases reach
+          # this step, the message has to be right for them too.
+          LINE=$(printf '%s' "$VERSION" | cut -d. -f1-2)
+          MAJOR_MINOR=$(printf '%s' "$LINE" | sed 's/\./\\./g')
           if ! grep -qE "\|\s*${MAJOR_MINOR}\.x\s*\|\s*:white_check_mark:" SECURITY.md; then
-            echo "::error file=SECURITY.md::Supported Versions table does not mark ${VERSION%.*}.x as supported."
+            echo "::error file=SECURITY.md::Supported Versions table does not mark ${LINE}.x as supported."
             FAILED=1
           fi
 
@@ -611,8 +657,27 @@ jobs:
               fi
 
               # Yanked dependency — the index hasn't caught up after a prior
-              # unyank. Wait and retry.
+              # unyank. Wait and retry, and fail once the retries are spent.
+              #
+              # The max-attempts check is the whole point of this branch's
+              # shape. Without it, the branch incremented `attempt` and
+              # `continue`d unconditionally: on the fifth failure `attempt`
+              # became 6, `(( attempt <= max_attempts ))` went false, the loop
+              # ended normally, and the function body ended with no `return`.
+              # A `while` that ends because its condition failed reports the
+              # status of the last command in its body — `continue`, which is
+              # 0 — so `publish_crate` returned success having published
+              # nothing. The step then printed "All crates published
+              # successfully" and wrote a summary of crates.io links for
+              # versions that do not exist. The `exit 1` below was reachable
+              # only from the other failure branch.
               if grep -q "is yanked" /tmp/publish-${crate}.log; then
+                if (( attempt >= max_attempts )); then
+                  echo "::error::cargo publish -p $crate failed after $max_attempts attempts: a dependency is still yanked in the crates.io index. The index did not propagate an unyank in time; re-run this job once it has."
+                  cat /tmp/publish-${crate}.log
+                  echo "::endgroup::"
+                  exit 1
+                fi
                 local wait=$(( 15 * attempt ))
                 echo "::warning::Dependency appears yanked in index — waiting ${wait}s for propagation (attempt $attempt/$max_attempts)."
                 sleep "$wait"
@@ -633,6 +698,21 @@ jobs:
                 exit 1
               fi
             done
+
+            # Falling out of the loop means the retries ran out without either
+            # a `return 0` or an `exit 1`. Nothing was published, so nothing
+            # below this function may report success.
+            #
+            # This is deliberately a second guard and not a replacement for the
+            # per-branch checks above: the defect it catches is the *absence*
+            # of one of those checks in some branch added later, and a guard
+            # that only works when every branch already gets it right is not a
+            # guard. The success path returns from inside the loop, so this
+            # line is unreachable on every run that publishes.
+            echo "::error::cargo publish -p $crate exhausted $max_attempts attempts without publishing or failing explicitly — treating as a failure. Nothing was published for $crate v$VERSION."
+            cat /tmp/publish-${crate}.log 2>/dev/null || true
+            echo "::endgroup::"
+            exit 1
           }
 
           # Publish in topological order of ALL dependencies (including dev-deps).

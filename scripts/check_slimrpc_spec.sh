@@ -37,7 +37,7 @@
 # one-line disposition. A new one fails until somebody triages it.
 #
 # Network. This needs it, which is why it runs in `official-tck.yml` (already
-# cloning upstream) rather than in the offline Format job. With no network it
+# cloning upstream) rather than in the offline Static checks job. With no network it
 # exits 3 — "could not check" — instead of reporting agreement it did not
 # verify, because a green tick for a check that never ran is worse than no check
 # at all.

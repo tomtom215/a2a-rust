@@ -2,7 +2,7 @@
 
 The best way to find bugs in an SDK is to use it yourself — under real conditions, with real complexity, exercising real interaction patterns. Unit tests verify individual functions. Integration tests verify pairwise contracts. But only dogfooding reveals the emergent issues that appear when all the pieces come together.
 
-The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **81 base E2E tests** (94 with all optional features: WebSocket, gRPC, Axum, SQLite, signing, and OTel) runs in ~6 seconds.
+The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive E2E suite of **102 tests** runs in ~6 seconds. That is the figure for a plain `cargo run -p agent-team`, because the six optional features — WebSocket, gRPC, Axum, SQLite, signing and OTel — are the example's `default` set; `examples/agent-team/Cargo.toml` says why, and `--all-features` adds only `tracing`, which changes output volume rather than coverage, so it is 102 as well. Compile the six out with `--no-default-features` and **87** run. Both figures are the binary's own total, read off the run; hand-counting the source gives the wrong answer, which is how the 81/94 this paragraph used to claim survived.
 
 ## Why Dogfood?
 
@@ -28,7 +28,7 @@ Dogfooding operates at the highest level of the testing pyramid. It catches the 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     E2E Test Harness                        │
-│          (81 base / 94 all features, ~6000ms)               │
+│      (102 default / 87 no-default-features, ~5500ms)        │
 └─────┬───────────┬───────────┬───────────┬───────────────────┘
       │           │           │           │
       ▼           ▼           ▼           ▼
@@ -147,23 +147,26 @@ examples/agent-team/src/
 ## Running the Agent Team
 
 ```bash
-# Basic run (81 tests)
+# The full suite — 102 tests. WebSocket, gRPC, Axum, SQLite, signing and OTel
+# are the example's DEFAULT features, so this is not a reduced run.
 cargo run -p agent-team
 
-# With Axum + SQLite (tests 93-98)
-cargo run -p agent-team --features axum,sqlite
+# Identical: --all-features adds only `tracing`, which changes output volume
+# and not coverage. Still 102.
+cargo run -p agent-team --all-features
 
-# With WebSocket tests (tests 51-52)
-cargo run -p agent-team --features websocket
+# All six compiled out — 87 tests. Exits 2, because a narrowed build leaves
+# claimed feature areas unexercised, and that is reported rather than hidden.
+cargo run -p agent-team --no-default-features
 
-# With gRPC tests (tests 56-58, requires protoc)
-cargo run -p agent-team --features grpc
+# One area at a time on top of that narrowed build:
+cargo run -p agent-team --no-default-features --features axum,sqlite   # tests 93-98
+cargo run -p agent-team --no-default-features --features websocket     # tests 51-52
+cargo run -p agent-team --no-default-features --features grpc          # tests 56-58, needs protoc
 
-# With structured logging
+# With structured logging. `tracing` is the only non-default feature, and the
+# count is unchanged.
 RUST_LOG=debug cargo run -p agent-team --features tracing
-
-# With all optional features (94 tests)
-cargo run -p agent-team --features "websocket,grpc,axum,sqlite,signing,otel,tracing"
 ```
 
 Expected output:
@@ -178,9 +181,9 @@ Agent [BuildMonitor]  REST     on http://127.0.0.1:XXXXX
 Agent [HealthMonitor] JSON-RPC on http://127.0.0.1:XXXXX
 Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
-...81 tests...
+...102 tests...
 
-║ Total: 81 | Passed: 81 | Failed: 0 | Time: ~6000ms
+║ Total: 102 | Passed: 102 | Failed: 0 | Time: ~5500ms
 ```
 
 ## Lessons for Your Own Agents
@@ -210,7 +213,7 @@ All architecture, ergonomics, observability, performance, and durability issues 
 ## Sub-pages
 
 - **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 68 bugs discovered across thirteen dogfooding passes
-- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 81-test base E2E coverage map (94 with all optional features)
+- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete E2E coverage map — 102 tests on the default feature set, 87 with `--no-default-features`
 
 ## See Also
 

@@ -18,7 +18,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent};
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::{ContextId, TaskState};
 
-use super::{CheckResult, Outcome, Report, check};
+use super::{CheckResult, Outcome, Report, check, check_with_context};
 use crate::executor::AgentExecutor;
 use crate::executor_helpers::EventEmitter;
 use crate::request_context::RequestContext;
@@ -39,6 +39,8 @@ macro_rules! executor {
     };
 }
 
+mod gaps;
+
 fn outcome_of(report: &Report, name: &str) -> Outcome {
     report
         .results()
@@ -51,24 +53,41 @@ fn outcome_of(report: &Report, name: &str) -> Outcome {
 /// Everything except the named check must pass, so a broken executor cannot
 /// pass by making the harness fall over somewhere else.
 fn only_failure_is(report: &Report, name: &str) {
-    assert_eq!(outcome_of(report, name), Outcome::Fail, "{report}");
+    only_failures_are(report, &[name]);
+}
+
+/// The same rule for a fixture that genuinely breaks more than one invariant:
+/// every named check must fail, and nothing else may.
+fn only_failures_are(report: &Report, names: &[&str]) {
+    for name in names {
+        assert_eq!(outcome_of(report, name), Outcome::Fail, "{report}");
+    }
     for r in report.results() {
         assert!(
-            r.name == name || r.outcome != Outcome::Fail,
+            names.contains(&r.name) || r.outcome != Outcome::Fail,
             "unexpected extra failure in {}:\n{report}",
             r.name
         );
     }
 }
 
+// Re-checks the token between steps, not only on entry. Checking once on
+// entry is the shape `stops_when_cancelled_mid_run` exists to catch: real
+// cancellation almost always arrives after the work has started.
 executor!(Good, |ctx, queue| {
     let emit = EventEmitter::new(ctx, queue);
     if emit.is_cancelled() {
         return emit.status(TaskState::Canceled).await;
     }
     emit.status(TaskState::Working).await?;
+    if emit.is_cancelled() {
+        return emit.status(TaskState::Canceled).await;
+    }
     emit.artifact("result", vec![Part::text("done")], None, Some(true))
         .await?;
+    if emit.is_cancelled() {
+        return emit.status(TaskState::Canceled).await;
+    }
     emit.status(TaskState::Completed).await
 });
 
@@ -153,6 +172,9 @@ executor!(NamelessArtifact, |ctx, queue| {
         return emit.status(TaskState::Canceled).await;
     }
     emit.status(TaskState::Working).await?;
+    if emit.is_cancelled() {
+        return emit.status(TaskState::Canceled).await;
+    }
     let mut artifact = Artifact::new("placeholder", vec![Part::text("x")]);
     artifact.id = "".into();
     queue
@@ -165,6 +187,9 @@ executor!(NamelessArtifact, |ctx, queue| {
             metadata: None,
         }))
         .await?;
+    if emit.is_cancelled() {
+        return emit.status(TaskState::Canceled).await;
+    }
     emit.status(TaskState::Completed).await
 });
 
@@ -176,9 +201,18 @@ async fn an_artifact_with_an_empty_id_is_caught() {
     );
 }
 
+// Honours cancellation both ways, so the only invariant it breaks is
+// reporting a park as an error — `only_failure_is` can then hold the harness
+// to naming just that one.
 executor!(ParksButErrors, |ctx, queue| {
     let emit = EventEmitter::new(ctx, queue);
+    if emit.is_cancelled() {
+        return emit.status(TaskState::Canceled).await;
+    }
     emit.status(TaskState::Working).await?;
+    if emit.is_cancelled() {
+        return emit.status(TaskState::Canceled).await;
+    }
     emit.status(TaskState::InputRequired).await?;
     Err(A2aError::internal("waiting for the caller"))
 });
@@ -197,11 +231,14 @@ executor!(IgnoresCancellation, |ctx, queue| {
     emit.status(TaskState::Completed).await
 });
 
+/// It ignores the token whenever it arrives, so both cancellation checks
+/// must name it — the pre-cancelled one and the mid-run one. Asserting only
+/// the first would leave the mid-run check free to pass vacuously.
 #[tokio::test]
 async fn ignoring_the_cancellation_token_is_caught() {
-    only_failure_is(
+    only_failures_are(
         &check(Arc::new(IgnoresCancellation)).await,
-        "honours_cancellation",
+        &["honours_cancellation", "stops_when_cancelled_mid_run"],
     );
 }
 

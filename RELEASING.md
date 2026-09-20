@@ -115,6 +115,29 @@ git checkout -b release/vX.Y.Z main
 # Update SECURITY.md: make sure the Supported Versions table covers the
 # new minor line (validated by the release workflow)
 
+# Regenerate docs/provenance-manifest.md and commit it. THIS IS A HARD GATE:
+#     scripts/provenance_manifest.sh HEAD
+#
+# `.github/workflows/release.yml:100` runs
+# `./scripts/check_provenance_manifest.py "$GITHUB_SHA"`, and that check
+# passes only when the tagged tree differs from the manifest's pinned commit
+# by *nothing but the manifest itself*. `ci.yml` does not run it, so a stale
+# manifest never reddens a content pull request — it fails the tag, after the
+# tag exists. Check it before you tag:
+#     python3 scripts/check_provenance_manifest.py "$(git rev-parse HEAD)"
+#
+# ORDERING CONSTRAINT — this is the part that bites. Regenerating the manifest
+# must be the LAST substantive change before the tag. Anything committed after
+# it (another fix, a doc touch, a bot pushing benchmark results to `main`)
+# re-breaks the gate, because that file now differs from the pinned commit too.
+# In practice that forces content and release prep into two pull requests in
+# that order, prep second, with the manifest regenerated in the prep commit —
+# which is exactly how 0.12.1 shipped (docs/handoff.md, "0.12.1"). The
+# v0.11.0 tag died on 2026-08-30 to the other half of the same rule: the
+# manifest was regenerated before a benchmark bot push landed, so it pinned a
+# tree the release no longer had. Wait for automation to settle, regenerate,
+# then tag.
+
 # Verify everything builds and passes
 cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -227,10 +250,36 @@ So **every SDK minor release requires a follow-up release of the binding**:
 1. Publish the four SDK crates as normal.
 2. Bump the binding's `a2a-protocol-*` requirements to the new minor.
 3. Bump the binding's own version (minor, since its supported SDK changed).
-4. From `bindings/a2a-protocol-slimrpc/`: `cargo package` then `cargo publish`.
+4. From the repository root, package and verify the binding with the script
+   that exists for it — **not** plain `cargo package`:
+
+   ```sh
+   python3 scripts/package_binding.py
+   ```
+
+   It packages with a config-level `[patch]` supplying the SDK crates from
+   the tree, so the tarball is *built*, not merely listed, and it refuses a
+   pin that does not name the in-tree version. See "The window between step 1
+   and step 2" below for why the plain command cannot work here. Then, from
+   `bindings/a2a-protocol-slimrpc/`, `cargo publish`.
 
 Skipping step 4 leaves the newest binding on crates.io pinned to a superseded
 SDK, which is the failure mode this note exists to prevent.
+
+> **The first publish has to be manual and token-authenticated.** The four SDK
+> crates are published by `release.yml` using a crates.io token obtained
+> through Trusted Publishing, and the obvious instinct is to extend that job
+> to the binding. It cannot cover the *first* publish: a trusted publisher is
+> configured per crate, on that crate's own settings page on crates.io, which
+> presupposes the crate exists and is owned — and this one does not exist on
+> the index at all (see the note below, dated 2026-09-01). So version one goes
+> up by hand with `CARGO_REGISTRY_TOKEN`, and only after that can a trusted
+> publisher be configured and the step automated. **Not re-verified against
+> crates.io** — re-checked 2026-09-20, the index still answers HTTP 403 through
+> the sandbox proxy this file is edited behind, so confirm the Trusted
+> Publishing half against crates.io's own documentation before acting on it.
+> The crate's absence from the index is the dated observation below, not a
+> fresh one.
 
 > **Step 4 has never actually been run.** As of 2026-09-01 the crate does not
 > exist on crates.io at all:
@@ -274,13 +323,19 @@ SDK, which is the failure mode this note exists to prevent.
 >
 > Two things to settle before the first publish, neither of which blocks it:
 >
-> * **The crate declares no `rust-version`.** The four SDK crates inherit
->   `rust-version = "1.88"` from the workspace root; this crate is its own
->   workspace and inherits nothing, so it publishes without an MSRV. Its true
->   MSRV is at least 1.88 (it depends on crates that require it) and may be
->   higher, because the `agntcy-slim-*` dependencies have their own floors.
->   Measure it before declaring it — an MSRV that has not been built against is
->   a claim, not a fact.
+> * **The crate's `rust-version` is declared but unmeasured.** This used to
+>   read "the crate declares no `rust-version`"; that is no longer true —
+>   `bindings/a2a-protocol-slimrpc/Cargo.toml:21` reads
+>   `rust-version = "1.88"`, a literal, since the crate is its own workspace
+>   and inherits nothing from the root. Verify with
+>   `grep -n 'rust-version' bindings/a2a-protocol-slimrpc/Cargo.toml`.
+>
+>   What has *not* changed is the substance of the note: 1.88 matches the
+>   four SDK crates, but nothing has built this crate against 1.88 to confirm
+>   it. Its true MSRV is at least 1.88 and may be higher, because the
+>   `agntcy-slim-*` dependencies have their own floors. A declared MSRV that
+>   has not been built against is a claim, not a fact — and a declared one is
+>   worse than an absent one, because it looks checked.
 > * **It has no changelog of its own**, though the comment in its manifest
 >   about independent versioning assumes one. The root `CHANGELOG.md` covers
 >   the four SDK crates.
@@ -288,34 +343,91 @@ SDK, which is the failure mode this note exists to prevent.
 #### The window between step 1 and step 2, and why CI stays green across it
 
 The version bump that must precede the tag is the same commit that puts the
-binding out of resolution, so between the release-prep commit and publication
-there is no pin value the binding can hold:
+binding out of registry resolution. Without a fix there is no pin value the
+binding can hold between the release-prep commit and publication:
 
-| pin | in-tree | build / clippy / test | `cargo package` |
+| pin | in-tree | build / clippy / test | plain `cargo package` |
 | --- | --- | --- | --- |
-| `0.10` | 0.10.0 | pass | fails — 0.10.0 not on the index yet |
-| `0.9` | 0.10.0 | **fails** — didn't match 0.10.0 | fails |
+| `0.13` | 0.13.0 | pass | fails — 0.13.0 not on the index yet |
+| `0.12` | 0.13.0 | **fails** — didn't match 0.13.0 | fails |
 
 Locally the `path` wins, so the binding builds and tests against the in-tree
-crates either way; `cargo package` strips the path, and the requirement then
-resolves against crates.io. Reverting the pin does not rescue it — it breaks the
-build instead — and a range is refused for the public-dependency reason above.
+crates either way; plain `cargo package` strips the path, and the requirement
+then resolves against crates.io. Reverting the pin does not rescue it — it
+breaks the build instead — and a range is refused for the public-dependency
+reason above.
 
-`ci.yml` therefore runs `scripts/package_binding.py` rather than `cargo package`
-directly. It skips **registry resolution alone** when every pin names the
-version that is in the tree and that version is absent from the index, proves
-the rest of packaging with `cargo package --list`, and fails on everything else
-— including a pin naming a version that is neither in-tree nor published. The
-skip is annotated as a warning on the job, not hidden, and it closes by itself
-once step 4 publishes.
+**`ci.yml` therefore runs `scripts/package_binding.py` rather than
+`cargo package` directly, and that script closes the window with Cargo's
+`[patch]`, applied at the config level so the manifest is untouched:**
+
+```sh
+cargo package --allow-dirty \
+  --config 'patch.crates-io.a2a-protocol-types.path="/abs/crates/a2a-protocol-types"' \
+  --config 'patch.crates-io.a2a-protocol-client.path="…"' \
+  --config 'patch.crates-io.a2a-protocol-server.path="…"'
+```
+
+A patch supplies a version of a crates.io crate from a path, *including a
+version the index does not have* — Cargo's own "prepublishing a breaking
+change" case. So the tarball is verified by building it against the in-tree
+SDK, exactly what Build and Test compile against, and **the release window
+stops being a state at all**: the pin names the in-tree version, the patch
+supplies it, and the index is never asked. There is no skip and no warning;
+the row above marked "fails" is what the *unpatched* command does, not what
+the gate does.
+
+What the patch does not do, and the script still must:
+
+* **Refuse a pin that does not name the in-tree version, before cargo runs.**
+  A patch is used only when its version satisfies the requirement, so a stale
+  `0.12` against an in-tree `0.13.0` leaves the patch unused; cargo merely
+  *warns*, resolves `0.12.x` from crates.io, and verification then builds
+  against the published SDK — passing or failing on the wrong crate either
+  way.
+* **Treat an unused patch as a failure, not a warning**, so a mismatch the
+  script's own semver arithmetic did not predict is red rather than a line in
+  the log.
+
+Check the rules without touching cargo:
+
+```sh
+python3 scripts/package_binding.py --self-test
+# package_binding --self-test: 11 caret cases, 7 pin cases, the patch
+# arguments and the unused-patch warning all pass
+```
+
+> **Superseded, recorded so it is not reinvented.** Until 2026-09-10 this
+> section described a different mechanism: the script "skipped registry
+> resolution alone" when every pin named the in-tree version and that version
+> was absent from the index, proved the rest with `cargo package --list`, and
+> annotated the skip as a warning on the job. That skip, its
+> `--list --no-verify` fallback and the crates.io index query behind it were
+> all **removed** on 2026-09-10 (see the module docstring of
+> `scripts/package_binding.py`, and `docs/v0.9.0-post-release-review.md` B23
+> and §2.5). They existed to tell a release window from a broken manifest
+> when the window could not be verified; with the patch it can be, so nothing
+> was left for them to cover. The cost of the old shape was that during the
+> window the tarball was listed but never *built*, so any API the binding
+> used from the same change went unchecked until the release shipped.
 
 Nothing about this changes the order: step 2 still follows step 1. What it
-changes is that the release-prep commit is now a commit CI can pass.
+changes is that the release-prep commit is now a commit CI can pass, and that
+the gate's pass means the tarball compiled — not that a check was skipped.
 
 ## Path to 1.0.0
 
-All four crates are pre-1.0 despite a multi-release history (all four are at
-0.10.0 as of this writing). Nothing below is a promise
+All four crates are pre-1.0 despite a multi-release history — they share a
+single version, which `release.yml` requires to match across all four
+manifests, and it is still `0.x`. Read it from the tree rather than from this
+sentence, which has rotted before (it said `0.10.0` while the tree held
+`0.13.0`):
+
+```sh
+grep -n '^version' crates/*/Cargo.toml
+```
+
+Nothing below is a promise
 about timing — it exists so "are we ready for 1.0" has a checklist instead of
 a feeling, and so this is answered before, not during, any external review
 (donation, security audit, or otherwise) that asks for it.
@@ -340,9 +452,22 @@ All of the following, not some:
   not this project's to close). This bar is already met as of this writing;
   keeping it met through 1.0.0 is the requirement, not reaching it.
 - **Coverage does not regress** below its current measured floor on
-  `crates/*/src` (94% lines / 94% regions / 92% functions at the time of
-  writing — see `codecov.yml`'s `project` status, which already gates on
-  this at PR time).
+  `crates/*/src` — 94% lines / 94% regions / 92% functions. Those three
+  figures are **undated and unverified**: they were written without a
+  measurement date and nothing in the repository re-derives them, so
+  re-measure before citing them.
+
+  **Nothing enforces that floor.** `codecov.yml`'s `project.default` is
+  `target: auto` with `threshold: 1%` — a *relative* check against the base
+  commit, which fails only when coverage drops more than one point below
+  wherever it already is. There is no absolute floor anywhere in that file,
+  so a slow slide below 94% passes every PR status, one point at a time.
+  (`patch.default` *is* absolute — `target: 75%`, `threshold: 5%` — but it
+  grades the new and changed lines in a diff, not the project floor.) Turning
+  this criterion into a gate means replacing `target: auto` with an explicit
+  `target:` percentage; that is a decision nobody has taken, and until
+  somebody does, this bullet is an aspiration the release process checks by
+  hand or not at all.
 - **Mutation score**: the weekly full sweep (`mutants.yml`) is clean —
   zero surviving mutants workspace-wide — for at least one full sweep
   immediately before tagging, not just the incremental per-PR gate.

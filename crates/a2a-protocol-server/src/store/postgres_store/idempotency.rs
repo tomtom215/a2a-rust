@@ -38,3 +38,20 @@ pub(super) const HOLDER_SQL: &str =
 
 /// Releases a key, so a send that failed after claiming does not keep it.
 pub(super) const RELEASE_SQL: &str = "DELETE FROM idempotency_keys WHERE key = $1";
+
+/// Deletes one batch of keys older than the cutoff.
+///
+/// `$1` is the age as an interval string (`"86400 seconds"`) and `$2` the
+/// batch size. The cutoff is computed by `PostgreSQL` from `now()` rather than
+/// formatted here from the process clock, for the same reason the task
+/// sweep's is: a host running fast would delete keys younger than the policy
+/// allows, and a deleted key is a send that can execute twice.
+///
+/// `ctid` to bound the batch, as the task sweep does — it is `PostgreSQL`'s
+/// physical row address, stable within the statement, which is all it needs
+/// to be.
+pub(super) const EXPIRE_SQL: &str = "DELETE FROM idempotency_keys WHERE ctid IN ( \
+         SELECT ctid FROM idempotency_keys \
+          WHERE created_at < now() - $1::interval \
+          LIMIT $2 \
+     )";

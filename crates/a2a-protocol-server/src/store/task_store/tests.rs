@@ -71,6 +71,34 @@ fn task_store_config_default_values() {
     assert_eq!(config.task_ttl, Some(Duration::from_secs(3600)));
     assert_eq!(config.eviction_interval, 64);
     assert_eq!(config.max_page_size, 1000);
+    assert_eq!(
+        config.max_events_per_task,
+        Some(super::DEFAULT_MAX_EVENTS_PER_TASK)
+    );
+    assert_eq!(
+        super::DEFAULT_MAX_EVENTS_PER_TASK,
+        512,
+        "the default is documented as roughly a 500-chunk stream; changing it \
+         changes how far back a reconnect can resume"
+    );
+    assert_eq!(
+        config.idempotency_key_ttl,
+        Some(super::DEFAULT_IDEMPOTENCY_KEY_TTL)
+    );
+    // Spelled `24 * 3600` at the definition, so the arithmetic is pinned to
+    // the day it documents rather than to whatever that expression evaluates
+    // to. A key kept for an hour instead of a day would expire inside a
+    // client's retry window and let a send execute twice.
+    assert_eq!(
+        super::DEFAULT_IDEMPOTENCY_KEY_TTL,
+        Duration::from_secs(86_400),
+        "one day, matching the SQL stores' DEFAULT_IDEMPOTENCY_KEY_MAX_AGE"
+    );
+    assert_eq!(
+        super::DEFAULT_IDEMPOTENCY_KEY_TTL,
+        crate::store::retention::DEFAULT_IDEMPOTENCY_KEY_MAX_AGE,
+        "the two backends must not disagree about how long a retry is honoured"
+    );
 }
 
 /// Covers `TaskStoreConfig` Clone + Debug derives.
@@ -81,6 +109,8 @@ fn task_store_config_clone_and_debug() {
         task_ttl: None,
         eviction_interval: 32,
         max_page_size: 100,
+        max_events_per_task: Some(8),
+        idempotency_key_ttl: None,
     };
     let cloned = config;
     assert_eq!(cloned.max_capacity, Some(500));
@@ -138,9 +168,26 @@ fn every_config_setter_sets_its_field() {
         .with_max_capacity(Some(d.max_capacity.unwrap_or(0) + 11))
         .with_task_ttl(Some(Duration::from_secs(12)))
         .with_eviction_interval(d.eviction_interval + 1)
-        .with_max_page_size(d.max_page_size + 1);
+        .with_max_page_size(d.max_page_size + 1)
+        .with_max_events_per_task(Some(7));
     assert_eq!(cfg.max_capacity, Some(d.max_capacity.unwrap_or(0) + 11));
     assert_eq!(cfg.task_ttl, Some(Duration::from_secs(12)));
     assert_eq!(cfg.eviction_interval, d.eviction_interval + 1);
     assert_eq!(cfg.max_page_size, d.max_page_size + 1);
+    assert_eq!(cfg.max_events_per_task, Some(7));
+    // Zero would be a log that keeps nothing, which cannot report an earliest
+    // position — so a resuming subscriber would be told every offset is still
+    // served. One is the floor.
+    assert_eq!(
+        TaskStoreConfig::default()
+            .with_max_events_per_task(Some(0))
+            .effective_max_events_per_task(),
+        Some(1),
+    );
+    assert_eq!(
+        TaskStoreConfig::default()
+            .with_max_events_per_task(None)
+            .effective_max_events_per_task(),
+        None,
+    );
 }

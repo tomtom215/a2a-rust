@@ -27,7 +27,10 @@ pub use in_memory::InMemoryTaskStore;
 mod config;
 mod records;
 
-pub use config::{DEFAULT_MAX_PAGE_SIZE, TaskStoreConfig};
+pub use config::{
+    DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK, DEFAULT_MAX_PAGE_SIZE,
+    TaskStoreConfig,
+};
 pub use records::{ArtifactDelta, IdempotencyClaim, RecordedEvent};
 
 /// Trait for persisting and retrieving [`Task`] objects.
@@ -407,6 +410,77 @@ pub trait TaskStore: Send + Sync + 'static {
             Err(a2a_protocol_types::error::A2aError::unsupported_operation(
                 "this task store keeps no event log",
             ))
+        })
+    }
+
+    /// The lowest `seq` this task's log still holds, or `None` when it holds
+    /// nothing — **or when the store cannot say**, which is the default.
+    ///
+    /// # Why a store has to be able to say this
+    ///
+    /// [`read_events`](TaskStore::read_events) filters `seq > after_seq` and
+    /// returns whatever survives. If the head of the log is gone — truncated
+    /// by [`TaskStoreConfig::max_events_per_task`], or swept as an orphan on a
+    /// SQL backend — the first event replayed is not `after_seq + 1`, and
+    /// nothing in that answer says so. The subscriber cannot tell it apart
+    /// from the numbering gaps this design calls normal (an append that
+    /// failed skips a position), so it silently receives a stream with a hole
+    /// in it and believes it resumed.
+    ///
+    /// # The default, and why it is `Ok(None)` rather than an error
+    ///
+    /// The other event-log methods default to `unsupported_operation`, because
+    /// a store that forgot to implement them should report no log rather than
+    /// an empty one. This one cannot: it was added to a trait that out-of-tree
+    /// stores already implement, and defaulting it to an error would break a
+    /// working store that keeps a perfectly good log (`STABILITY.md` §4). It
+    /// therefore defaults to "cannot say", which is what every caller already
+    /// assumed before this existed.
+    ///
+    /// `None` is consequently **not** evidence that nothing is missing. Read
+    /// it through [`event_log_covers`](TaskStore::event_log_covers), which
+    /// spells that out in one place.
+    ///
+    /// # Errors
+    ///
+    /// [`A2aError`](a2a_protocol_types::error::A2aError) if the store fails.
+    fn earliest_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
+        let _ = task_id;
+        Box::pin(async { Ok(None) })
+    }
+
+    /// Whether a replay starting after `after_seq` can be served in full.
+    ///
+    /// `false` means the log no longer holds `after_seq + 1`: the caller asked
+    /// to resume from a position that has been dropped, and serving
+    /// [`read_events`](TaskStore::read_events) would hand it a gapped stream
+    /// it cannot detect. Answer such a subscriber with an error, or with a
+    /// fresh snapshot — anything but a silent partial replay.
+    ///
+    /// `true` means "no gap can be proven", which is the honest reading: a
+    /// store whose [`earliest_event_seq`](TaskStore::earliest_event_seq) is
+    /// the default answers `true` always, exactly as callers behaved before
+    /// either method existed.
+    ///
+    /// Provided rather than implemented per store, so the comparison — and the
+    /// off-by-one in it, `after_seq` being exclusive — lives once.
+    ///
+    /// # Errors
+    ///
+    /// [`A2aError`](a2a_protocol_types::error::A2aError) if the store fails.
+    fn event_log_covers<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        after_seq: u64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
+            Ok(self
+                .earliest_event_seq(task_id)
+                .await?
+                .is_none_or(|earliest| earliest <= after_seq.saturating_add(1)))
         })
     }
 }

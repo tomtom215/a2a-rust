@@ -63,8 +63,25 @@ the failure this whole exercise is about:
 Both are deliberate: this check is a tripwire for one specific mistake that has
 been made three times here, not a static analyser.
 
+Denominator floor
+-----------------
+`claim_count` started at 0 and was only ever added to. If `CLAIM` stopped
+matching — a rustfmt change, a rename of `compare_exchange`, a scope glob that
+stopped reaching `crates/*/src` — every file was skipped at `if not claims:
+continue`, `offenders` stayed empty, and this printed "0 claimed guard slot(s)"
+and returned 0. A gate reporting zero of the thing it looks for has not found
+the code clean; it has found nothing, and those are opposite results wearing the
+same exit code.
+
+Two floors, both exit 2, following `scripts/check_panic_hooks.sh` and
+`scripts/check_api_reference.py`: zero sources scanned, and zero claim sites
+found. The second is the one that matters — the tree has carried at least one
+`compare_exchange(false, true, ..)` since the defect this gate is named for, and
+if it ever legitimately carries none, this gate has no subject and should be
+deleted rather than left printing a green zero.
+
 Exit codes: 0 every claiming file releases from `Drop`, 1 one does not,
-2 not run from the repository root.
+2 not run from the repository root, nothing scanned, or no claim site found.
 """
 
 from __future__ import annotations
@@ -141,6 +158,15 @@ def main() -> int:
         if "/tests/" not in p.as_posix()
     )
 
+    if not sources:
+        print(
+            "check_cancellation_release: scanned zero sources under crates/*/src "
+            "and bindings/*/src",
+            file=sys.stderr,
+        )
+        print("  refusing to report agreement over an empty check", file=sys.stderr)
+        return 2
+
     offenders: list[tuple[pathlib.Path, int]] = []
     claim_count = 0
 
@@ -165,6 +191,22 @@ def main() -> int:
             line = body.count("\n", 0, claims[0].start()) + 1
             offenders.append((path, line))
 
+    if claim_count == 0:
+        print(
+            f"check_cancellation_release: found zero `compare_exchange(false, "
+            f"true, ..)` sites in {len(sources)} source(s)",
+            file=sys.stderr,
+        )
+        print(
+            "  refusing to report agreement over an empty check — the shape this "
+            "gate is named\n  for has been in the tree since 2026-08-19, so zero "
+            "means the scanner stopped\n  matching it, not that it stopped being "
+            "written. Check `CLAIM` against the\n  current spelling, and the "
+            "source globs against the current layout.",
+            file=sys.stderr,
+        )
+        return 2
+
     if offenders:
         print(
             "check_cancellation_release: a guard slot is claimed in a file with "
@@ -187,8 +229,8 @@ def main() -> int:
         return 1
 
     print(
-        f"check_cancellation_release: {claim_count} claimed guard slot(s), "
-        "each in a file that releases from `Drop`."
+        f"check_cancellation_release: {claim_count} claimed guard slot(s) across "
+        f"{len(sources)} source(s), each in a file that releases from `Drop`."
     )
     return 0
 

@@ -10,7 +10,8 @@
 
 use super::{TraceContext, TraceContextError};
 
-/// The example from W3C Trace Context §3.2.
+/// The example from W3C Trace Context §3.2.3 "Examples of HTTP traceparent
+/// Headers": *"Valid traceparent when caller sampled this request."*
 const SPEC_EXAMPLE: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 
 #[test]
@@ -35,8 +36,12 @@ fn an_unsampled_flag_round_trips_as_00() {
     assert!(tc.traceparent().ends_with("-00"));
 }
 
-/// §3.3: a parser must accept a version it does not know, so that a future
-/// hop does not sever the chain. Only the four known fields are propagated.
+/// §3.2.4 "Versioning of traceparent": *"If a higher version is detected, the
+/// implementation SHOULD try to parse it"*, checking that the flags are
+/// *"either the end of the string or a dash"* — so a future hop does not sever
+/// the chain. Only the four known fields are propagated, since the same
+/// section says *"Vendors MUST NOT parse or assume anything about unknown
+/// fields for this version."*
 #[test]
 fn a_future_version_with_extra_fields_still_joins_the_trace() {
     let tc = TraceContext::parse(
@@ -102,6 +107,59 @@ fn wrong_field_widths_and_junk_are_refused() {
     }
 }
 
+/// Version `00`'s grammar is *exactly* 55 characters — §3.2.2.2 fixes
+/// `version-format = trace-id "-" parent-id "-" trace-flags` and nothing
+/// follows it. The lenient trailing-field rule belongs to §3.2.4, and is
+/// conditional on *"If a higher version is detected"*; applying it at version
+/// 00 accepts a value no conforming peer can emit.
+///
+/// The `-01x` case above is a different defect (no separator at all). This is
+/// the one the length check let through, because it ran before and
+/// independently of the version check.
+#[test]
+fn a_version_00_traceparent_with_a_trailing_field_is_refused() {
+    assert_eq!(
+        TraceContext::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-x"),
+        Err(TraceContextError::Malformed),
+        "version 00 has no trailing fields; only a higher version may append"
+    );
+    // The pair that makes the assertion about the *version*, not the shape:
+    // the identical suffix on version 01 must still join the trace.
+    assert!(
+        TraceContext::parse("01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-x").is_ok(),
+        "forward compatibility for higher versions must survive the fix"
+    );
+}
+
+/// A multi-byte character straddling byte 55.
+///
+/// The length guard counts *bytes*, so this 57-byte value clears it; the
+/// parser then had to index at 55, which is inside the `'€'`. `str::split_at`
+/// panics there — `byte index 55 is not a char boundary` — and the release
+/// profile sets `panic = "abort"`, so a peer-supplied header terminated the
+/// process. The function is `pub`, documents `# Errors` and no `# Panics`, and
+/// is reached from `RequestHandler::on_send_message`'s caller-supplied
+/// headers.
+#[test]
+fn a_multi_byte_character_on_the_55_byte_boundary_is_an_error_not_a_panic() {
+    let straddling = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-0\u{20ac}";
+    assert_eq!(straddling.len(), 57, "past the length guard, in bytes");
+    assert!(!straddling.is_char_boundary(55), "index 55 splits the '€'");
+    assert_eq!(
+        TraceContext::parse(straddling),
+        Err(TraceContextError::Malformed)
+    );
+
+    // Not only at 55: any boundary the parser could land on must be safe.
+    for filler in 0..8 {
+        let value = format!(
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7{}\u{1f600}",
+            "-".repeat(filler)
+        );
+        assert!(TraceContext::parse(&value).is_err(), "{value:?}");
+    }
+}
+
 #[test]
 fn surrounding_whitespace_is_tolerated() {
     let tc = TraceContext::parse(&format!("  {SPEC_EXAMPLE}\t")).expect("trimmed");
@@ -155,38 +213,115 @@ fn a_child_refuses_a_span_id_that_is_not_16_lowercase_hex() {
     );
 }
 
+/// Size is no longer a reason to refuse a `tracestate` (see below); a
+/// non-printable byte still is, because §3.3.1.3.2 confines values to
+/// `0x20..=0x7e` and a newline here is header injection wherever this is
+/// re-emitted.
 #[test]
 fn tracestate_bounds_are_enforced() {
     let tc = TraceContext::parse(SPEC_EXAMPLE).expect("valid");
-
+    let cleared = tc.clone().with_tracestate("").expect("empty clears");
     assert_eq!(
-        tc.clone()
-            .with_tracestate("")
-            .expect("empty clears")
-            .tracestate(),
+        cleared.tracestate(),
         None,
         "an empty header is absence, not a value"
     );
+    assert_eq!(
+        tc.with_tracestate("vendor=val\nInjected: header"),
+        Err(TraceContextError::InvalidTracestate)
+    );
+}
 
+/// §3.3.1.5: *"In a situation where tracestate needs to be truncated due to
+/// size limitations, the vendor MUST truncate whole entries. Entries larger
+/// than 128 characters long SHOULD be removed first. Then entries SHOULD be
+/// removed starting from the end of tracestate."*
+///
+/// Discarding the whole header instead — which is what returning `Err` here
+/// amounted to, because the only caller dropped the vendor state and kept the
+/// `traceparent` — deletes keys this SDK did not generate. §3.5: *"Vendors
+/// SHOULD NOT delete keys that were not generated by them. The deletion of an
+/// unknown key/value pair will break correlation in other systems."*
+#[test]
+fn an_oversized_tracestate_is_truncated_entry_wise_not_discarded() {
+    let tc = TraceContext::parse(SPEC_EXAMPLE).expect("valid");
+
+    // 33 members: one over the §3.3.1.1 cap. The 32 left-most survive, in
+    // order, because §3.1 and §3.3.1.4 put the newest state left-most.
     let too_many = (0..33)
         .map(|i| format!("k{i}=v"))
         .collect::<Vec<_>>()
         .join(",");
-    assert_eq!(
-        tc.clone().with_tracestate(&too_many),
-        Err(TraceContextError::InvalidTracestate),
-        "more than 32 list members (W3C 3.3.3)"
-    );
+    let kept = tc
+        .clone()
+        .with_tracestate(&too_many)
+        .expect("an over-long list is truncated, never refused");
+    let kept = kept.tracestate().expect("vendor state survives");
+    assert_eq!(kept.split(',').count(), 32);
+    assert!(kept.starts_with("k0=v,k1=v,"), "got {kept}");
+    assert!(kept.ends_with(",k31=v"), "the tail is what is shed: {kept}");
 
-    assert_eq!(
-        tc.clone().with_tracestate(&"a".repeat(4097)),
-        Err(TraceContextError::InvalidTracestate)
+    // An entry over 128 characters goes first, even though it is not last.
+    let members: Vec<String> = std::iter::once(format!("big={}", "x".repeat(200)))
+        .chain((0..32).map(|i| format!("k{i}=v")))
+        .collect();
+    let kept = tc.clone().with_tracestate(&members.join(",")).expect("ok");
+    let kept = kept.tracestate().expect("vendor state survives");
+    assert!(
+        !kept.contains("big="),
+        "the >128-char entry goes first: {kept}"
     );
+    assert_eq!(kept, members[1..].join(","), "and only that one goes");
 
+    // Over the length cap with every entry within the 128-character rule, so
+    // only "remove from the end" can apply: 32 entries of exactly 128 is
+    // 4127 characters with the commas, and shedding one brings it to 3998.
+    let many = (0..32)
+        .map(|i| format!("kk{i:02}={}", "y".repeat(123)))
+        .collect::<Vec<_>>()
+        .join(",");
+    assert_eq!(many.len(), 4127, "the fixture must sit just past the cap");
+    let kept = tc.clone().with_tracestate(&many).expect("not refused");
+    let kept = kept.tracestate().expect("something survives");
+    assert!(kept.len() <= 4096, "within the cap: {}", kept.len());
+    assert_eq!(kept.split(',').count(), 31, "exactly one entry shed");
+    assert!(kept.starts_with("kk00=y"), "the head is preserved");
+    for member in kept.split(',') {
+        assert!(
+            member.contains('=') && member.ends_with('y'),
+            "whole entries only, never a half one: {member:?}"
+        );
+    }
+
+    // A single entry that cannot fit at all leaves nothing rather than a
+    // fragment — the one case where the list legitimately empties.
     assert_eq!(
-        tc.with_tracestate("vendor=val\nInjected: header"),
-        Err(TraceContextError::InvalidTracestate),
-        "a newline here would be header injection wherever this is re-emitted"
+        tc.with_tracestate(&"a".repeat(4097))
+            .expect("truncated, not refused")
+            .tracestate(),
+        None
+    );
+}
+
+/// §3.3.1.1: *"Empty and whitespace-only list members are allowed."* Counting
+/// them against the 32-member cap sheds a real vendor's entry to make room
+/// for a comma, which is the deletion §3.5 says not to make.
+#[test]
+fn empty_and_whitespace_only_members_do_not_consume_the_member_budget() {
+    let tc = TraceContext::parse(SPEC_EXAMPLE).expect("valid");
+
+    let real = (0..32)
+        .map(|i| format!("k{i}=v"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let padded = format!(",  ,{real}, ,");
+    let kept = tc
+        .with_tracestate(&padded)
+        .expect("padding must not push a real entry out");
+    let kept = kept.tracestate().expect("vendor state survives");
+    assert_eq!(
+        kept, real,
+        "blanks are dropped, the 32 real entries all stay"
     );
 }
 
@@ -221,13 +356,14 @@ fn every_error_renders_a_distinct_message() {
 // no tests at all.
 
 /// The limits are inclusive: 32 members and 4096 bytes are *legal*, and it is
-/// 33 and 4097 that are not. Testing only the rejecting side leaves `>` and
-/// `>=` indistinguishable, which is exactly what CI reported.
+/// 33 and 4097 that get truncated. Testing only the truncating side leaves `>`
+/// and `>=` indistinguishable, which is exactly what CI reported.
 #[test]
 fn the_tracestate_limits_admit_their_own_boundary() {
     let tc = TraceContext::parse(SPEC_EXAMPLE).expect("valid");
 
-    // Exactly 32 list members — the most W3C 3.3.3 allows.
+    // Exactly 32 list members — the most W3C 3.3.1.1 allows: "There can be a
+    // maximum of 32 list-members in a list."
     let at_limit = (0..32)
         .map(|i| format!("k{i}=v"))
         .collect::<Vec<_>>()
@@ -259,18 +395,51 @@ fn the_tracestate_limits_admit_their_own_boundary() {
 /// `flags()` returns the byte it was given. The sampled example above is `01`,
 /// so every assertion on it is also satisfied by a function that ignores its
 /// input and returns 1; an unsampled context is what distinguishes them.
+///
+/// The second half of this test used to assert that an unknown flag byte was
+/// *carried through unchanged*, citing "§3.3.1" for it. §3.3.1 is the
+/// `tracestate` header-name section and says nothing about flags. The clause
+/// that does is §3.2.2.5.2 "Other Flags", and it says the opposite: *"The
+/// behavior of other flags, such as (00000100) is not defined and is reserved
+/// for future use. Vendors MUST set those to zero."* §4.3 restates it for the
+/// wire: *"Vendors will set all unparsed / unknown trace-flags to 0 on
+/// outgoing requests."*
 #[test]
-fn flags_reports_the_byte_it_was_given_not_a_constant() {
+fn flags_reports_the_byte_received_but_only_defined_bits_go_back_out() {
     let unsampled = TraceContext::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00")
         .expect("flags 00 is valid — unsampled, not malformed");
     assert_eq!(unsampled.flags(), 0);
     assert!(!unsampled.is_sampled());
 
-    // A byte that is neither 0 nor 1: §3.3.1 says an unknown flag bit is
-    // carried through unchanged rather than masked off.
+    // A byte that is neither 0 nor 1. What was received stays observable —
+    // "the peer set 0xfe" is a fact worth logging — but what leaves is masked.
     let other = TraceContext::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-fe")
         .expect("unknown flag bits parse");
-    assert_eq!(other.flags(), 0xfe);
+    assert_eq!(other.flags(), 0xfe, "diagnostics keep the received byte");
+    assert_eq!(
+        other.traceparent(),
+        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
+        "reserved bits MUST be zero on an outgoing request (§3.2.2.5.2, §4.3)"
+    );
+
+    // `03` is the case that costs something. Trace Context Level 2 assigns
+    // `0x02` to `random-trace-id`, so re-emitting a peer's `03` asserts to
+    // every downstream hop that the trace id is random — a property this SDK
+    // never checked and cannot check.
+    let three = TraceContext::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-03")
+        .expect("sampled plus one reserved bit");
+    assert!(three.is_sampled(), "the sampled bit is read with a mask");
+    assert!(
+        three.traceparent().ends_with("-01"),
+        "sampled survives, the reserved bit does not: {}",
+        three.traceparent()
+    );
+
+    // `child()` builds the context for the *next* outgoing request, so the
+    // masking has to happen there too or the bit simply reappears one hop on.
+    let child = three.child("b7ad6b7169203331").expect("valid span id");
+    assert_eq!(child.flags(), 0x01, "the child carries only defined bits");
+    assert!(child.traceparent().ends_with("-01"));
 }
 
 /// `from_bytes` rejects an all-zero id and accepts everything else. The

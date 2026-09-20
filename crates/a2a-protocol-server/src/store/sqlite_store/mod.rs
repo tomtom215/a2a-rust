@@ -30,8 +30,11 @@ use a2a_protocol_types::task::{Task, TaskId};
 use sqlx::Row as _;
 use sqlx::sqlite::SqlitePool;
 
-use super::event_log_sql::{decode_text_row, encode_text, limit_to_i64, seq_to_i64};
+use super::event_log_sql::{
+    decode_text_row, encode_text, limit_to_i64, report_no_op_append, seq_from_i64, seq_to_i64,
+};
 use super::task_store::{ArtifactDelta, RecordedEvent, TaskStore};
+use crate::metrics::MetricsHandle;
 
 /// SQLite-backed [`TaskStore`].
 ///
@@ -62,6 +65,9 @@ pub struct SqliteTaskStore {
     /// Largest page `list` will return. See
     /// [`with_max_page_size`](SqliteTaskStore::with_max_page_size).
     max_page_size: u32,
+    /// Where an append that recorded nothing is reported. See
+    /// [`with_metrics`](SqliteTaskStore::with_metrics).
+    metrics: MetricsHandle,
 }
 
 impl SqliteTaskStore {
@@ -77,6 +83,21 @@ impl SqliteTaskStore {
         self.max_page_size = max;
         self
     }
+
+    /// Sets where this store reports an event it could not record.
+    ///
+    /// Defaults to [`NoopMetrics`](crate::metrics::NoopMetrics). An append is
+    /// `ON CONFLICT (task_id, seq) DO NOTHING`, so one that lands on a
+    /// position another writer already holds returns `Ok(())` having written
+    /// nothing — see
+    /// [`event_append_error`](crate::metrics::event_append_error). This is how
+    /// that becomes visible.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: MetricsHandle) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
     /// Opens (or creates) a `SQLite` database and initializes the schema.
     ///
     /// # Errors
@@ -105,6 +126,7 @@ impl SqliteTaskStore {
         Ok(Self {
             pool,
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
+            metrics: MetricsHandle::default(),
         })
     }
 
@@ -175,6 +197,7 @@ impl SqliteTaskStore {
         Ok(Self {
             pool,
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
+            metrics: MetricsHandle::default(),
         })
     }
 
@@ -239,6 +262,7 @@ impl SqliteTaskStore {
             &self.pool,
             "tasks",
             &[journal::DELETE_ORPHANS_SQL, event_log::DELETE_ORPHANS_SQL],
+            idempotency::EXPIRE_SQL,
             policy,
         )
         .await
@@ -819,13 +843,33 @@ impl TaskStore for SqliteTaskStore {
         event: &'a StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            sqlx::query(event_log::APPEND_SQL)
+            let position = seq_to_i64(seq)?;
+            let payload = encode_text(event)?;
+            // `rows_affected()` was discarded here until 0.13. `DO NOTHING` is
+            // right — the position is the idempotency key — but "nothing
+            // happened" and "another writer owns this position" are the same
+            // answer, and only one of them is safe to ignore.
+            let changed_nothing = sqlx::query(event_log::APPEND_SQL)
                 .bind(task_id.0.as_str())
-                .bind(seq_to_i64(seq)?)
-                .bind(encode_text(event)?)
+                .bind(position)
+                .bind(&payload)
                 .execute(&self.pool)
                 .await
-                .map_err(to_a2a_error)?;
+                .map_err(to_a2a_error)?
+                .rows_affected()
+                == 0;
+            if changed_nothing {
+                // Only on the collision path, so the append itself keeps its
+                // single round trip.
+                let stored: Option<(String,)> = sqlx::query_as(event_log::SELECT_PAYLOAD_SQL)
+                    .bind(task_id.0.as_str())
+                    .bind(position)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .unwrap_or(None);
+                let same = stored.is_some_and(|(held,)| held == payload);
+                report_no_op_append(&*self.metrics, task_id, seq, same);
+            }
             Ok(())
         })
     }
@@ -840,7 +884,21 @@ impl TaskStore for SqliteTaskStore {
                 .fetch_one(&self.pool)
                 .await
                 .map_err(to_a2a_error)?;
-            Ok(max.unsigned_abs())
+            seq_from_i64(max)
+        })
+    }
+
+    fn earliest_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
+        Box::pin(async move {
+            let (min,): (Option<i64>,) = sqlx::query_as(event_log::EARLIEST_SEQ_SQL)
+                .bind(task_id.0.as_str())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            min.map(seq_from_i64).transpose()
         })
     }
 
@@ -910,6 +968,8 @@ impl TaskStore for SqliteTaskStore {
 
 #[cfg(test)]
 mod artifact_delta_tests;
+#[cfg(test)]
+mod retention_key_tests;
 #[cfg(test)]
 mod retention_tests;
 #[cfg(test)]

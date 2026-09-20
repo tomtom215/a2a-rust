@@ -10,6 +10,145 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **`RetentionPolicy` and `PurgeReport` are `#[non_exhaustive]`.** Construct a
+  policy with `RetentionPolicy::new` and the `with_*` setters, and read a
+  report's fields rather than destructuring it exhaustively. `STABILITY.md` §4
+  lists the configuration structs that carry this marking so a new option is
+  additive; `RetentionPolicy` was missed by the 0.12.0 conversion that
+  introduced the rule, and the list said otherwise until now. Marking both is
+  what makes the two additions below — and the next one — non-breaking.
+
+### Added
+
+- **`RetentionPolicy::idempotency_key_max_age`** (default 24 hours) and
+  **`TaskStoreConfig::idempotency_key_ttl`** (default 24 hours), with
+  `DEFAULT_IDEMPOTENCY_KEY_MAX_AGE` and `DEFAULT_IDEMPOTENCY_KEY_TTL`.
+  `PurgeReport::idempotency_keys_deleted` reports what a sweep removed.
+
+  **Behaviour change, and it is a trade rather than a pure fix.** Nothing ever
+  removed an idempotency key. A key is released when the send holding it
+  fails, and otherwise kept deliberately — it has to outlive the task it names
+  or a late retry would execute the send a second time — so neither the
+  retention sweep, which deletes tasks, nor the in-memory store's `task_ttl`
+  and `max_capacity`, which bound tasks, touched the key index. A busy
+  deployment accumulated one row per keyed send for the life of the database
+  or the process.
+
+  What expiring a key costs is exactly what the key was preventing: a retry
+  arriving *after* the key expires re-executes the send. That is inherent to
+  any expiring idempotency key, and it is why the default is a full day rather
+  than something tidier — it has to exceed the longest window in which a client
+  might still retry, and this SDK's own `RetryPolicy` is bounded in the low
+  tens of seconds.
+
+  The sweep will not delete a key younger than `terminal_max_age`
+  (`effective_idempotency_key_max_age` clamps it). A key expiring while the
+  task it names is still retained does not produce a replay and does not
+  produce a clear "that task is gone" — it produces a *second* task alongside
+  the first, and the caller ends up with two ids for one logical send. The
+  invariant holds by construction rather than by the operator having read the
+  documentation.
+
+  Set either to `None` to keep the previous behaviour. The four SQL tables
+  already carried a `created_at` column, defaulted and never read, so no
+  migration is needed.
+
+
+- **`RequestHandlerBuilder::with_inbound_trace_policy`** and
+  `InboundTracePolicy` (`Continue` — the default and the previous behaviour —
+  `Restart`, `Drop`). The inbound `traceparent` is joined while the
+  `CallContext` is built, which is *before* the interceptor chain, which is
+  where authentication happens: so on a public endpoint the peer choosing the
+  `trace-id` and the sampling bit is, at that moment, anonymous. W3C Trace
+  Context §7.2 names the consequences — forged `trace-id` collisions, and an
+  attacker deciding what the operator's tracing vendor is billed for — and
+  §3.4 names the remedy. Per handler rather than per process, so one process
+  serving both a public front gate and an internal endpoint can hold a
+  different policy on each.
+
+- **`TaskStore::earliest_event_seq` and `TaskStore::event_log_covers`**, both
+  defaulted, so an out-of-tree store compiles unchanged (`STABILITY.md` §4).
+  `event_log_covers` is provided rather than implemented per store, so the
+  comparison and its off-by-one live in one place. A resubscribe naming a
+  position the log has dropped is now served the snapshot rather than a replay
+  that silently begins later than asked.
+
+- **`TaskStoreConfig::max_events_per_task`** (default `Some(512)`) and
+  `DEFAULT_MAX_EVENTS_PER_TASK`. **Behaviour change:** the in-memory event log
+  was unbounded and is now bounded.
+
+- **`metrics::event_append_error`** with `position_conflict` and
+  `task_absent`, both reported under `persistence_operation::EVENT_APPEND`
+  alongside a warning. A collision whose stored payload matches what was
+  offered is a replay rather than a loss and is deliberately not counted.
+
+- **`metrics::MetricsHandle`**, and `with_metrics` on the five directly
+  constructed stores, including `TenantAwareInMemoryTaskStore`, which hands it
+  to every partition it creates.
+
+- **`InMemoryTaskStore::is_prunable` and `idempotency_key_count`.**
+
+- **`CHECK (seq > 0)`** on `task_events` and `tenant_task_events`. Postgres
+  migration 6 adds it to existing databases. SQLite cannot — `ALTER TABLE` has
+  no `ADD CONSTRAINT`, so an existing SQLite database keeps the unconstrained
+  table; a database the runner builds from scratch gets it.
+
+- **A `trace_context` fuzz target**, and `scripts/check_fuzz_matrix.py`, which
+  fails when a fuzz target exists but no runner executes it. A target reaches
+  CI through three files and only the workflow matrix has no build error
+  behind it; `trace_context` itself shipped registered in `fuzz/Cargo.toml`
+  and absent from the matrix, which is the drift the gate caught on its first
+  run.
+
+### Fixed
+
+- **`TraceContext::parse` could abort the process.** A `traceparent` whose
+  55th byte falls inside a multi-byte character panicked, and the root
+  manifest sets `panic = "abort"`, so a peer-supplied header on the public
+  `on_send_message` path was process death rather than a rejected request.
+
+- **A version-`00` `traceparent` with a trailing field was accepted.** W3C
+  §3.2.2.2 gives version 00's grammar exactly; the lenient trailing-field rule
+  is §3.2.4's and applies only to a *higher* version.
+
+- **Reserved `trace-flags` bits were propagated.** W3C §3.2.2.5.2 and §4.3
+  both require a vendor to zero unknown bits on outgoing requests. `flags()`
+  still reports the byte as received, for diagnostics.
+
+- **An oversized or over-32-member `tracestate` was discarded whole**, taking
+  every vendor's state with it. W3C §3.3.1.5 requires truncating *entries* —
+  those over 128 characters first, then from the end — which is what happens
+  now. `MAX_TRACESTATE_LEN` is public and documented because §3.3.1.5 requires
+  the maximum to be documented.
+
+- **`TracePropagationInterceptor`'s "never overwrite" guard was
+  case-sensitive**, and `http`'s builder appends rather than replaces, so a
+  user interceptor setting `Traceparent` put two `traceparent` fields on the
+  wire and which one the peer joined was its parser's choice. `tracestate` had
+  no guard at all.
+
+- **An append that wrote nothing was discarded in silence.** All four SQL
+  stores dropped `rows_affected()` from their `ON CONFLICT ... DO NOTHING`
+  insert, and both in-memory stores returned `Ok(())` for a task they no
+  longer held.
+
+- **The SQLite retention orphan sweep ran only when a purge deleted a task**,
+  so rows stranded by a partly-failed purge survived to be replayed to
+  whoever next reused the task id. It runs on every sweep now, batched.
+
+- **A negative stored event position was made positive** by `unsigned_abs`
+  instead of refused.
+
+- **`prune_empty_tenants` destroyed live idempotency indexes.** It decided on
+  `count()`, which counts tasks, and an idempotency key deliberately outlives
+  the task it names. A partition whose tasks had all been swept still held a
+  live index, and pruning it discarded that index — so the next retry carrying
+  one of those keys found no claim and executed the send a second time, which
+  is the one outcome a key exists to prevent.
+
+
 ## [0.13.0] - 2026-09-20
 
 ### Breaking Changes
@@ -29,8 +168,14 @@ one that has never been run.
 
 - **`RequestContext` is `#[non_exhaustive]` and carries a new `call_context`
   field.** Measured with `cargo semver-checks check-release -p
-  a2a-protocol-server --baseline-version 0.12.1`: 196 checks, 195 pass, and
-  exactly one fails — `struct_marked_non_exhaustive` on `RequestContext`. The
+  a2a-protocol-server --baseline-version 0.12.1` **at the time that bullet was
+  written**: 196 checks, 195 pass, and one fails —
+  `struct_marked_non_exhaustive` on `RequestContext`. That "exactly one" was
+  never right even then: the third bullet below renames a public field on
+  `PurgeReport`, which is public, unconditionally reachable and not
+  `#[non_exhaustive]`, so `struct_pub_field_missing` must fire too. Treat the
+  figure as the record of one run, not as evidence that the list is complete —
+  the list is complete because each entry below was derived from the diff. The
   added field is not a second finding, because once a struct is
   `#[non_exhaustive]` an added field is no longer separately observable.
 
@@ -80,6 +225,100 @@ one that has never been run.
   anyone who had only the journal, and it is still normally zero (a non-zero
   count means rows outlived their task, which happens on a pool without
   `foreign_keys=ON`).
+
+- **`build()` refuses an agent card it would have to edit.** The builder
+  advertises the extensions this server can honour by appending to
+  `capabilities.extensions`, and `canonicalize_card` strips only
+  `signatures` — so those entries are inside the bytes a signature covers. A
+  card signed before they existed was served canonicalizing to bytes nobody
+  signed, and every client that verified it failed, silently, because nothing
+  on the server side reads the signature again. Measured on the default
+  configuration: the operator's card canonicalized to 360 bytes, the card
+  actually served to 767.
+
+  `book/src/deployment/security.md` tells operators to sign the card and hand
+  it to `RequestHandlerBuilder`, so the instruction and the code together
+  produced the failure.
+
+  What breaks: `build()` now returns `InvalidParams` for a card that carries a
+  signature and does not already declare every extension this server
+  advertises. A card that declares them is served byte-identical to what was
+  signed; an unsigned card, or one with an empty signature list, is
+  advertised on as before.
+
+  Migration: declare the extensions on the card *before* signing it —
+  `IDEMPOTENCY_EXTENSION_URI` when the configured store reports
+  `supports_idempotency()`, and `FAILURE_EXTENSION_URI` always — then sign the
+  card that results. The security page shows the order in a block that
+  compiles.
+
+- **`IdempotencyClaim` and `KeyError` are `#[non_exhaustive]`.** Both were
+  exhaustive public enums that callers must `match`. Every out-of-tree
+  `TaskStore` matches on the first, and the outcomes it can report are not a
+  closed set — an expiry, or an "in flight, wait" that would let a second
+  caller be told to retry instead of handed a `TaskNotFound`, are both
+  plausible additions. `STABILITY.md` §4 promises new variants will not break
+  external implementations, and without the attribute they would have. Their
+  siblings added in this same release — `RecordedEvent`, `StreamEvent`,
+  `Outcome`, `CheckResult`, `TraceContextError` — were all marked; these two
+  were missed.
+
+  What breaks: a `match` on either from outside its crate needs a wildcard
+  arm. `IdempotencyClaim` is also re-exported from `store` now, where its
+  sibling `RecordedEvent` already sat — it is the return type of a public
+  `TaskStore` method and was reachable only at
+  `store::task_store::IdempotencyClaim`.
+
+- **`FailureClass::ALL` is `&'static [FailureClass]`, not `[Self; 5]`.** The
+  enum is `#[non_exhaustive]` so that adding a variant is not breaking, and
+  then exported a constant whose *type* encoded the variant count — so the
+  sixth variant would have changed `ALL`'s type and broken every caller that
+  bound it, which is the exact break the attribute three lines above it
+  promises not to inflict.
+
+  Migration: `for c in FailureClass::ALL` becomes `for &c in
+  FailureClass::ALL`; `.into_iter()` becomes `.iter().copied()`.
+
+- **A keyed `message/send` is retried only against a peer known to honour the
+  key.** `RetryTransport` treated any valid key in `Message.metadata` as
+  making the send retryable, on the stated grounds that a server without the
+  extension "refuses a keyed send outright". That is true of this SDK's
+  server and of nothing else: the key rides in `Message.metadata`, which A2A
+  defines as free-form, and the extension is deliberately not part of A2A
+  v1.0 — a conformant Python, Java, Go or JavaScript server ignores it and
+  runs the send. Retrying there starts a second task, which is the exact
+  double execution `is_idempotent_method` exists to prevent. There is no
+  handshake that would fix it: A2A's `A2A-Extensions` header is the server
+  reporting what it activated, not a demand a server must reject.
+
+  What breaks: a client built for a bare endpoint no longer retries a keyed
+  send after an ambiguous failure. `ClientBuilder::from_card` reads the
+  advertisement off the agent card and enables it automatically;
+  `ClientBuilder::with_peer_honouring_idempotency(true)` asserts it for a peer
+  you know implements the extension.
+
+- **`message.id` is validated at ingress.** It is now checked for being
+  non-empty after trimming, and bounded in length. It was checked nowhere,
+  while being stored verbatim in `idempotency_keys.message_id`, keying history
+  de-duplication, and interpolated into the error a caller sees when an
+  idempotency key is held by a different message. A spec-invalid empty id was
+  accepted, stored, and echoed in task history, where an empty id collides
+  with every other empty id.
+
+  **The length bound is not `max_id_length`**, and the difference matters.
+  That field is documented as covering task and context ids, which are
+  commonly short and often chosen by the deployment; a message id is minted by
+  the client and is conventionally a UUID — 36 characters, which is what
+  `Message::id`'s rustdoc tells a caller to send. Holding both to one number
+  meant a deployment tightening `max_id_length` below 36, a reasonable thing
+  to do for the two ids it was documented to cover, refused *every* message
+  from a conformant client. `HandlerLimits::effective_max_message_id_length`
+  is `max_id_length` floored at `MIN_MESSAGE_ID_LENGTH` (36), so the bound
+  still tightens with the field but never past what the protocol requires.
+
+  What breaks: a send whose `messageId` is empty, whitespace-only, or longer
+  than `effective_max_message_id_length()` is rejected with `InvalidParams`
+  instead of accepted.
 
 ### Added
 
@@ -217,12 +456,15 @@ one that has never been run.
 
   `conformance::check(Arc::new(MyExecutor)).await.assert_pass()` drives the
   executor against a real event queue — no server, no ports, no model — and
-  grades eight protocol invariants that hold for any agent whatever it does:
-  it ends in a terminal or interrupted state, its transitions are legal,
+  grades thirteen protocol invariants that hold for any agent whatever it
+  does: it ends in a terminal or interrupted state, its transitions are legal,
   nothing follows a terminal status, artifacts carry ids, parking is not
-  reported as an error, it observes the cancellation token, `cancel` leaves
-  subscribers a terminal state, and it does not panic. It says nothing about
-  whether the agent is any good at its job.
+  reported as an error, it returns within the harness's time limit, it
+  observes a cancellation token set before it starts *and* one that arrives
+  during its first write, it does not report cancellation as a failure,
+  `cancel` leaves subscribers a terminal state, and it does not panic — on
+  the normal run, the cancelled run, or the mid-run cancellation. It says
+  nothing about whether the agent is any good at its job.
 
   **Three rules keep the score honest, and each is the repository's own.** A
   check that did not apply is *not graded* rather than counted as a pass — a
@@ -233,8 +475,9 @@ one that has never been run.
   panicking executor is a graded failure rather than a panic that takes the
   adopter's whole test run down with it.
 
-  Its own tests are fourteen deliberately broken executors, each breaking one
-  invariant, asserting the harness names that one and no other. A conformance
+  Its own tests are deliberately broken executors, each breaking one invariant
+  (or, where an executor genuinely breaks two, naming both), asserting the
+  harness names those and no others. A conformance
   harness whose failures are untested is a gate that cannot fail, which is
   the thing this repository checks for everywhere else — and the discipline
   paid immediately: the first draft of one fixture broke two invariants
@@ -305,7 +548,14 @@ one that has never been run.
   The server parses an inbound `traceparent`, advances the span, and exposes
   it as `RequestContext::trace_context()`. The client gains
   `TracePropagationInterceptor`, which writes the ambient `CurrentTrace` onto
-  every outbound request; `CurrentTrace::scope` sets it and
+  every outbound request on the canonical A2A transports — JSON-RPC, REST and
+  gRPC. **The `websocket` transport is the exception, and cannot be
+  otherwise:** it carries headers only on the HTTP upgrade, and a
+  `traceparent` fixed at connect time would report every request on that
+  connection as the same span, which W3C §3.4 forbids. A dropped trace header
+  is reported once per connection at `warn`; a dropped *credential* header is
+  still reported on every call, because that one can be fixed by reconnecting.
+  `CurrentTrace::scope` sets it and
   `CurrentTrace::start_root()` begins a chain. The indirection through a
   task-local is deliberate: a client is built once and reused for many
   delegated calls, so a trace fixed at construction would label all of them

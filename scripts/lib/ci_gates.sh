@@ -18,11 +18,53 @@
 #
 # The caller must set CI_YML before sourcing.
 
-GATE_JOBS='^(fmt|clippy|features|test|test-postgres|doc|package|dogfood|example-surface|slimrpc-binding)$'
+# ── Job classification ───────────────────────────────────────────────────────
+#
+# Every job in ci.yml must be in exactly one of these two. `require_known_jobs`
+# refuses to run if one is in neither.
+GATE_JOBS='^(static-checks|clippy|features|test|test-postgres|doc|package|dogfood|example-surface|slimrpc-binding)$'
 
+# Why each of these three is not a gate job, because an exemption with no
+# recorded reason is the same shape as an oversight:
+#
+#   nightly  informational. It carries `continue-on-error: true` in ci.yml, so
+#            nothing it reports can block a merge; there is no verdict to prove.
+#
+#   deny     BLOCKS, and is listed here anyway.
+#   semver   BLOCKS, and is listed here anyway. ci.yml's own comment above the
+#            job says so at length and is correct: neither job carries
+#            `continue-on-error`.
+#
+# The reason the two blocking jobs are here is a parser limit and not a
+# judgement that they do not matter: every step in them is a `uses:`, a
+# marketplace action, and `gates_for_jobs` extracts `run:` commands. There is
+# no command to copy and run, so filing them under GATE_JOBS would (correctly)
+# make `require_nonempty_gate_jobs` refuse.
+#
+# Left at that, "has no `run:` key" silently meant "is not audited by
+# anything" — which is how the binding's own `cargo-deny` step, the only thing
+# auditing 379 transitive dependencies including a native C crypto build, came
+# to be registered nowhere and missed by the unregistered-gate guard.
+# `require_registered_actions` below closes that: every `uses:` step in ci.yml
+# is either infrastructure or a named exemption carrying a reason, and an
+# exemption whose step has gone is a failure like any other stale one.
 NON_GATE_JOBS='^(nightly|deny|semver)$'
 
 SKIP_STEPS='^(Install SPIRE|Install cargo-hack)$'
+
+# Actions that prepare a runner and render no verdict about this repository:
+# checking out, installing a toolchain, restoring a cache, installing Python.
+# None of them can go red *about the code*, so none of them is a gate. Every
+# other `uses:` in ci.yml must be registered in ACTION_EXEMPTIONS with a reason.
+#
+# Each alternative must still match a real `uses:`, for the reason
+# `require_known_skips` gives about SKIP_STEPS: a classification that covers
+# nothing reads as a decision and is an oversight.
+SETUP_ACTIONS='^(actions/checkout|actions/setup-python|dtolnay/rust-toolchain|Swatinem/rust-cache)$'
+
+# Resolved from this file's own location rather than from CI_YML, so it is
+# right whichever script sourced it and from whatever working directory.
+ACTION_EXEMPTIONS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/action_gate_exemptions.txt"
 
 # Emits one gate per line as "<prefix>\t<command>". The two fields are
 # separate because prove_gates_fail.sh looks its injection up by the bare
@@ -256,3 +298,11 @@ require_known_skips() {
     fi
 }
 
+# The completeness guards — `require_known_jobs`, `require_nonempty_gate_jobs`
+# and `require_registered_actions` — live beside this file and are sourced
+# here, so that sourcing ci_gates.sh gets the whole picture rather than half of
+# it. A guard a caller has to remember to source separately is a guard that
+# gets forgotten, which is the argument this file's own header makes about the
+# parser it used to be two copies of.
+# shellcheck source=ci_gate_audit.sh
+. "$(dirname "${BASH_SOURCE[0]}")/ci_gate_audit.sh"

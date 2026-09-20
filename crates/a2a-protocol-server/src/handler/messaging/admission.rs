@@ -104,7 +104,29 @@ impl RequestHandler {
                 // dropped. Here, and not inside `write`, because this is the
                 // one moment no event can be in flight.
                 if self.task_store.supports_event_log() {
-                    writer.seed_seq(self.task_store.last_event_seq(task_id).await.unwrap_or(0));
+                    // A failed read must not become `0`. Seeding at 0 restarts
+                    // the numbering at 1, and because appends are idempotent
+                    // *by position* every event of this turn then lands on a
+                    // position the previous turn already holds and is swallowed
+                    // as a replay — the exact silent loss the seeding exists to
+                    // prevent, and invisible, because the sequence has no gap
+                    // to show for it. A refused send is recoverable by retrying;
+                    // a turn whose events were never recorded is not.
+                    match self.task_store.last_event_seq(task_id).await {
+                        Ok(seq) => writer.seed_seq(seq),
+                        Err(e) => {
+                            // The lease is already registered, so returning
+                            // without releasing it would wedge the task as
+                            // `Existing` for every later send.
+                            drop((writer, reader, persistence_rx));
+                            self.event_queue_manager.destroy(task_id).await;
+                            return Err(ServerError::Internal(format!(
+                                "task {task_id}: could not read the event log's last \
+                                 position, so this turn's events could not be numbered \
+                                 without colliding with the previous turn's: {e}"
+                            )));
+                        }
+                    }
                 }
                 Ok((writer, reader, persistence_rx))
             }
@@ -122,5 +144,117 @@ impl RequestHandler {
                 )))
             }
         }
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use a2a_protocol_types::error::{A2aError, A2aResult};
+    use a2a_protocol_types::params::ListTasksParams;
+    use a2a_protocol_types::responses::TaskListResponse;
+    use a2a_protocol_types::task::{Task, TaskId};
+
+    use crate::builder::RequestHandlerBuilder;
+    use crate::error::ServerError;
+    use crate::executor::AgentExecutor;
+    use crate::request_context::RequestContext;
+    use crate::store::TaskStore;
+    use crate::streaming::EventQueueWriter;
+
+    struct NoopExecutor;
+
+    impl AgentExecutor for NoopExecutor {
+        fn execute<'a>(
+            &'a self,
+            _ctx: &'a RequestContext,
+            _queue: &'a dyn EventQueueWriter,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    /// A store that keeps a log but cannot say where it is — a pool that has
+    /// gone away, or `SQLITE_BUSY` under contention.
+    struct UnreadableLogStore;
+
+    impl TaskStore for UnreadableLogStore {
+        fn save<'a>(
+            &'a self,
+            _t: &'a Task,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn get<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
+            Box::pin(async { Ok(None) })
+        }
+        fn list<'a>(
+            &'a self,
+            _p: &'a ListTasksParams,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
+            Box::pin(async { Ok(TaskListResponse::new(vec![])) })
+        }
+        fn insert_if_absent<'a>(
+            &'a self,
+            _t: &'a Task,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+            Box::pin(async { Ok(true) })
+        }
+        fn delete<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn supports_event_log(&self) -> bool {
+            true
+        }
+        fn last_event_seq<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+            Box::pin(async { Err(A2aError::internal("the pool is gone")) })
+        }
+    }
+
+    /// The defect this guards: the seed used to be `.unwrap_or(0)`. A store
+    /// that could not report its last position therefore restarted the
+    /// numbering at 1, and because appends are idempotent *by position* every
+    /// event of the continuation landed on a position the first turn already
+    /// held and was swallowed — a whole turn missing from the log, with a
+    /// dense sequence and no error to show for it.
+    #[tokio::test]
+    async fn an_unreadable_log_position_refuses_the_lease_rather_than_renumbering() {
+        let handler = RequestHandlerBuilder::new(NoopExecutor)
+            .with_task_store(UnreadableLogStore)
+            .build()
+            .expect("handler");
+
+        let task_id = TaskId("t-1".to_owned());
+        let err = handler
+            .lease_event_queue(&task_id, true)
+            .await
+            .expect_err("an unreadable log position must refuse the lease");
+
+        assert!(
+            matches!(err, ServerError::Internal(_)),
+            "expected an internal error, got {err:?}"
+        );
+
+        // And the refusal must not wedge the task: the queue it created has to
+        // be released, or every later send for this id reports "already being
+        // processed" forever.
+        assert_eq!(
+            handler.event_queue_manager.active_count().await,
+            0,
+            "the failed lease must leave no queue behind"
+        );
     }
 }

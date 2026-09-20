@@ -146,6 +146,18 @@ impl InMemoryQueueWriter {
         self.seq.store(last, Ordering::Relaxed);
     }
 
+    /// The highest position this writer has assigned so far.
+    ///
+    /// Read by the resubscribe path as a barrier: every event at or below this
+    /// value has already been handed to the persistence channel, so once the
+    /// log has reached it the replay covers everything a subscriber attaching
+    /// now could otherwise have missed. `Relaxed` matches
+    /// [`seed_seq`](Self::seed_seq) and the assignment in `write` — the value
+    /// travels with the event, so no other memory is ordered against it.
+    pub(crate) fn current_seq(&self) -> u64 {
+        self.seq.load(Ordering::Relaxed)
+    }
+
     /// Reports dropped events to `metrics` — see
     /// [`persistence_operation::QUEUE_HANDOFF`](crate::metrics::persistence_operation::QUEUE_HANDOFF).
     #[must_use]
@@ -298,6 +310,17 @@ pub struct InMemoryQueueReader {
     /// consumer. Suppresses the synthesized final frame, so a client that
     /// already saw the real one does not get it twice.
     saw_terminal: bool,
+    /// The highest log position handed to the consumer from `pending`.
+    ///
+    /// A resuming subscriber attaches to the broadcast channel *before* the
+    /// log is read, so any event written in the window between those two
+    /// steps is in both the replay and the broadcast backlog. Delivering it
+    /// twice is not merely redundant: an `ArtifactUpdate` with `append: true`
+    /// folded twice corrupts the artifact the log exists to make
+    /// reconstructible, and the wire `id:` sequence goes backwards. Positions
+    /// are assigned by one writer and strictly increase, so a live event at or
+    /// below this mark is exactly a frame the replay already delivered.
+    replayed_through: u64,
 }
 
 // Hand-written because `ReattachFn` is a boxed closure, which cannot derive
@@ -371,6 +394,7 @@ impl InMemoryQueueReader {
             pending: std::collections::VecDeque::new(),
             reattach: None,
             saw_terminal: false,
+            replayed_through: 0,
         }
     }
 
@@ -395,6 +419,7 @@ impl InMemoryQueueReader {
         events: impl IntoIterator<Item = crate::store::RecordedEvent>,
     ) {
         for recorded in events {
+            self.replayed_through = self.replayed_through.max(recorded.seq);
             self.pending
                 .push_back(Ok(StreamEvent::at(recorded.seq, recorded.event)));
         }
@@ -410,6 +435,7 @@ impl InMemoryQueueReader {
             pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
             saw_terminal: false,
+            replayed_through: 0,
         }
     }
 
@@ -429,6 +455,7 @@ impl InMemoryQueueReader {
             pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
             saw_terminal: false,
+            replayed_through: 0,
         }
     }
 }
@@ -477,6 +504,18 @@ impl EventQueueReader for InMemoryQueueReader {
                 match self.rx.recv().await {
                     Ok(event) => {
                         if let Ok(ref ev) = event {
+                            // Already delivered by the replay. The broadcast
+                            // receiver is attached before the log is read, so
+                            // the window between those two steps is in both;
+                            // skipping here is what keeps the wire `id:`
+                            // sequence strictly increasing and stops an
+                            // `append: true` artifact chunk being folded
+                            // twice. Unpositioned frames are server-
+                            // synthesized and never came from the log, so they
+                            // are never skipped.
+                            if ev.seq.is_some_and(|s| s <= self.replayed_through) {
+                                continue;
+                            }
                             self.saw_terminal |= carries_terminal_state(&ev.event);
                         }
                         return Some(event);
@@ -1189,6 +1228,82 @@ mod tests {
                 crate::metrics::queue_handoff_error::CHANNEL_CLOSED.to_owned()
             )],
             "the dropped event is counted, once, with the bounded labels"
+        );
+    }
+
+    /// The defect this guards: a resubscribe attaches its broadcast receiver
+    /// *before* it reads the log, so a position written inside that window is
+    /// in both the replay and the live channel. The reader used to drain
+    /// `pending` and then the channel with no memory of what it had already
+    /// handed over, so the client saw the overlap twice and the wire `id:`
+    /// sequence went backwards — and an `ArtifactUpdate` with `append: true`
+    /// folded twice corrupts the artifact the log exists to make
+    /// reconstructible.
+    #[tokio::test]
+    async fn a_live_event_the_replay_already_delivered_is_not_delivered_again() {
+        use crate::store::RecordedEvent;
+
+        let (writer, reader) = new_in_memory_queue();
+        let mut reader = reader;
+
+        // Broadcast 1..=3. The receiver above is already attached, so these
+        // are in the live channel.
+        for _ in 0..3 {
+            writer
+                .write(make_status_event("t-dup", TaskState::Working))
+                .await
+                .unwrap();
+        }
+
+        // ...and the log read that follows returns the same three.
+        reader.queue_replay((1..=3).map(|seq| RecordedEvent {
+            seq,
+            event: make_status_event("t-dup", TaskState::Working),
+        }));
+
+        // One more, written after the replay was queued: genuinely new.
+        writer
+            .write(make_status_event("t-dup", TaskState::Working))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let mut positions = Vec::new();
+        while let Some(item) = reader.read().await {
+            positions.push(item.expect("no errors").seq);
+        }
+
+        assert_eq!(
+            positions,
+            vec![Some(1), Some(2), Some(3), Some(4)],
+            "each position must be delivered exactly once, in order"
+        );
+    }
+
+    /// The negative control: de-duplication must key on the position, not on
+    /// "anything after a replay". A server-synthesized frame carries no
+    /// position and was never in the log, so it is never suppressed.
+    #[tokio::test]
+    async fn an_unpositioned_frame_is_never_suppressed_by_the_replay_mark() {
+        use crate::store::RecordedEvent;
+
+        let (writer, reader) = new_in_memory_queue();
+        let mut reader = reader;
+        reader.queue_replay(std::iter::once(RecordedEvent {
+            seq: 9,
+            event: make_status_event("t-unpos", TaskState::Working),
+        }));
+        reader.set_first_event(make_status_event("t-unpos", TaskState::Submitted));
+        drop(writer);
+
+        let mut positions = Vec::new();
+        while let Some(item) = reader.read().await {
+            positions.push(item.expect("no errors").seq);
+        }
+        assert_eq!(
+            positions,
+            vec![None, Some(9)],
+            "the snapshot leads, and carries no position"
         );
     }
 }

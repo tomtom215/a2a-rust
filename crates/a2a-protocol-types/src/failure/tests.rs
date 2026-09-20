@@ -19,7 +19,7 @@ fn status() -> Message {
 #[test]
 fn every_class_has_a_distinct_wire_token_that_round_trips() {
     let mut seen = std::collections::HashSet::new();
-    for class in FailureClass::ALL {
+    for &class in FailureClass::ALL {
         let token = class.as_str();
         assert!(seen.insert(token), "wire tokens must be distinct: {token}");
         assert_eq!(
@@ -158,4 +158,36 @@ fn the_class_survives_a_json_round_trip() {
 fn a_non_string_class_reads_as_absent() {
     let msg = status().with_metadata(serde_json::json!({ FAILURE_METADATA_KEY: 7 }));
     assert_eq!(class_of(&msg), None);
+}
+
+/// The defect this guards: both of these mapped to `Internal`, whose
+/// documented advice is "retry once, then escalate" — and neither can ever
+/// succeed on a retry. The caller attached a push config to a server that does
+/// not support them, or asked for an extended card the server does not serve.
+/// An orchestrator built on `is_retryable()` burned a retry on each.
+#[test]
+fn capability_refusals_are_not_retryable() {
+    use crate::error::ErrorCode;
+
+    for code in [
+        ErrorCode::PushNotificationNotSupported,
+        ErrorCode::ExtendedAgentCardNotConfigured,
+    ] {
+        let class = FailureClass::from(code);
+        assert_eq!(
+            class,
+            FailureClass::InvalidRequest,
+            "{code:?} is something the caller could have sent differently"
+        );
+        assert!(
+            !class.is_retryable(),
+            "{code:?} must not be advertised as retryable"
+        );
+    }
+
+    // The negative control: a genuine break still reads as one.
+    assert_eq!(
+        FailureClass::from(ErrorCode::InternalError),
+        FailureClass::Internal
+    );
 }

@@ -32,7 +32,7 @@
 /// version of the journal shipped.
 pub const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS task_events (
         task_id    TEXT    NOT NULL,
-        seq        INTEGER NOT NULL,
+        seq        INTEGER NOT NULL CONSTRAINT task_events_seq_positive CHECK (seq > 0),
         payload    TEXT    NOT NULL,
         created_at TEXT    NOT NULL DEFAULT (datetime('now')),
         PRIMARY KEY (task_id, seq),
@@ -61,8 +61,40 @@ pub(super) const LAST_SEQ_SQL: &str =
 /// Drops a task's events. Used by `delete`, for the reason in the module doc.
 pub(super) const DELETE_FOR_TASK_SQL: &str = "DELETE FROM task_events WHERE task_id = ?1";
 
-/// Reclaims rows whose task is gone. The retention sweep deletes from
-/// `tasks` directly, so it never goes through `delete`, and an orphaned
-/// log is the one that would be replayed to whoever next reuses the id.
-pub(super) const DELETE_ORPHANS_SQL: &str =
-    "DELETE FROM task_events WHERE task_id NOT IN (SELECT id FROM tasks)";
+/// The lowest position a task's log still holds, or `NULL` when it holds
+/// nothing.
+///
+/// What a resuming subscriber's offset has to be checked against: the log's
+/// head can be gone — swept as an orphan, or never written — and
+/// [`SELECT_AFTER_SQL`] would then serve the surviving tail as though nothing
+/// were missing. See `TaskStore::earliest_event_seq`.
+pub(super) const EARLIEST_SEQ_SQL: &str = "SELECT MIN(seq) FROM task_events WHERE task_id = ?1";
+
+/// The payload stored at a position, for classifying an append that changed
+/// no row: the same bytes mean a replay, different bytes mean another writer
+/// holds the position and this event was discarded.
+pub(super) const SELECT_PAYLOAD_SQL: &str =
+    "SELECT payload FROM task_events WHERE task_id = ?1 AND seq = ?2";
+
+/// Reclaims rows whose task is gone, one bounded batch per execution. The
+/// retention sweep deletes from `tasks` directly, so it never goes through
+/// `delete`, and an orphaned log is the one that would be replayed to whoever
+/// next reuses the id.
+///
+/// `?1` bounds the batch, for the reason `retention::sqlite::purge` batches
+/// the task deletion itself: one unbounded `DELETE` holds a write lock for as
+/// long as it runs, and this sweep has work to do precisely when something has
+/// gone wrong and there is a lot of it.
+///
+/// The batch is a set of **task ids**, not of rows. `task_events` is
+/// `WITHOUT ROWID`, so the `rowid IN (SELECT ... LIMIT ?)` shape the task
+/// delete uses is unavailable, and a row-value `(task_id, seq) IN (...)` needs
+/// `SQLite` 3.15, which this crate does not pin. Every execution therefore
+/// clears at least one orphaned task's log entirely, which is enough for the
+/// loop to terminate and keeps the statement one a `SQLite` of any vintage
+/// will run.
+pub(super) const DELETE_ORPHANS_SQL: &str = "DELETE FROM task_events WHERE task_id IN ( \
+         SELECT DISTINCT task_id FROM task_events \
+          WHERE task_id NOT IN (SELECT id FROM tasks) \
+          LIMIT ?1 \
+     )";

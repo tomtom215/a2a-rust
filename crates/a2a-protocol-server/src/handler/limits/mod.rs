@@ -29,6 +29,11 @@ use std::time::Duration;
 #[non_exhaustive]
 pub struct HandlerLimits {
     /// Maximum allowed length for task/context IDs. Default: 1024.
+    ///
+    /// `message.id` is bounded too, but never below
+    /// [`MIN_MESSAGE_ID_LENGTH`] — see
+    /// [`effective_max_message_id_length`](Self::effective_max_message_id_length)
+    /// for why it cannot simply share this number.
     pub max_id_length: usize,
     /// Maximum allowed serialized size for metadata fields in bytes. Default: 1 MiB.
     pub max_metadata_size: usize,
@@ -187,6 +192,25 @@ pub struct HandlerLimits {
     /// last one and continues — the replay is resumable by the same mechanism
     /// that started it.
     pub subscribe_replay_limit: usize,
+    /// How long a resuming `SubscribeToTask` waits for the task's event log to
+    /// catch up with what has already been broadcast. Default: 2 seconds.
+    ///
+    /// Events reach the log through the background processor, so a position
+    /// can have been broadcast to live subscribers before it has been
+    /// appended. A resubscribe attaches its broadcast receiver first and reads
+    /// the log second; without this wait, a position broadcast just before the
+    /// receiver existed and appended just after the log was read appears in
+    /// neither, and the subscriber loses it with no gap it could detect.
+    ///
+    /// The wait is bounded because the processor can be slow for reasons that
+    /// are not this subscriber's problem — a registered webhook is delivered
+    /// inline, under `push_delivery_budget`. On expiry the replay is served
+    /// with what the log does hold and the shortfall is logged and counted
+    /// under the `event_log_catchup` persistence-error label, rather than
+    /// being passed off as a complete history.
+    ///
+    /// Zero disables the wait.
+    pub subscribe_replay_catchup: Duration,
 }
 
 impl Default for HandlerLimits {
@@ -207,11 +231,60 @@ impl Default for HandlerLimits {
             subscribe_reattach_interval: Duration::from_millis(250),
             subscribe_max_idle: Duration::from_secs(300),
             subscribe_replay_limit: 1_000,
+            subscribe_replay_catchup: Duration::from_secs(2),
         }
     }
 }
 
+/// The smallest bound `message.id` may be held to: the length of a hyphenated
+/// UUID.
+///
+/// A2A requires `messageId` on every message, and a v4 UUID is what this
+/// SDK's own documentation tells a caller to use — `Message::id`'s rustdoc
+/// says so, and every example does it. 36 characters is therefore not a
+/// preference, it is the smallest id a conformant client actually sends.
+pub const MIN_MESSAGE_ID_LENGTH: usize = 36;
+
 impl HandlerLimits {
+    /// The bound `message.id` is actually held to: never below
+    /// [`MIN_MESSAGE_ID_LENGTH`].
+    ///
+    /// # Why this is not just [`max_id_length`](Self::max_id_length)
+    ///
+    /// It was, for one release, and that was a defect. `context_id` and
+    /// `task_id` are commonly short and often chosen by the deployment;
+    /// `message.id` is minted by the client and is conventionally a UUID. A
+    /// deployment tightening `max_id_length` to anything under 36 — which is
+    /// a reasonable thing to do for the two ids it was documented to cover —
+    /// then rejected *every* message from a conformant client, including
+    /// every one this SDK's own examples send.
+    ///
+    /// Caught by `examples/incident-response`'s handler-limits check, which
+    /// sets `max_id_length` to 32 and asserts that an id within the bound is
+    /// accepted. It failed on a 36-character UUID, which is exactly the
+    /// report an adopter would have filed.
+    ///
+    /// The clamp rather than a separate knob, for the same reason
+    /// `effective_batch_size` floors a zero batch: an operator tightening a
+    /// bound should not have to know that one identifier has a protocol-
+    /// imposed floor, and a configuration that cannot serve a conformant
+    /// client is not one worth honouring exactly.
+    ///
+    /// Spelled as a saturating offset from the floor rather than the
+    /// `self.max_id_length > MIN_MESSAGE_ID_LENGTH` it reads as, for the
+    /// reason `mutants.toml` records for `InMemoryTaskStore::evict`: `>`
+    /// mutates to `>=`, and at exactly the floor both arms return the same
+    /// number, so the weakened operator is an *equivalent* mutant that no
+    /// test can kill. The arithmetic below has no such form —
+    /// `saturating_sub` is 0 at or below the floor, which lands the sum on
+    /// the floor, and is the excess above it otherwise. Reported by the
+    /// incremental mutation gate on this pull request (shard 1 of run
+    /// 35523981742); the fix is the spelling, not the logic.
+    #[must_use]
+    pub const fn effective_max_message_id_length(&self) -> usize {
+        MIN_MESSAGE_ID_LENGTH + self.max_id_length.saturating_sub(MIN_MESSAGE_ID_LENGTH)
+    }
+
     /// Sets how often an idle `SubscribeToTask` stream re-checks its task.
     #[must_use]
     pub const fn with_subscribe_reattach_interval(mut self, interval: Duration) -> Self {
@@ -230,6 +303,14 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_subscribe_replay_limit(mut self, limit: usize) -> Self {
         self.subscribe_replay_limit = limit;
+        self
+    }
+
+    /// Sets how long a resuming `SubscribeToTask` waits for the event log to
+    /// catch up with what has already been broadcast. Zero disables the wait.
+    #[must_use]
+    pub const fn with_subscribe_replay_catchup(mut self, catchup: Duration) -> Self {
+        self.subscribe_replay_catchup = catchup;
         self
     }
 
@@ -323,105 +404,4 @@ impl HandlerLimits {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_values() {
-        let limits = HandlerLimits::default();
-        assert_eq!(limits.max_id_length, 1024);
-        assert_eq!(limits.max_metadata_size, 1_048_576);
-        assert_eq!(limits.max_cancellation_tokens, 10_000);
-        assert_eq!(limits.max_token_age, Duration::from_secs(3600));
-        assert_eq!(limits.push_delivery_timeout, Duration::from_secs(5));
-        assert_eq!(limits.push_delivery_budget, Duration::from_secs(30));
-        assert_eq!(limits.executor_drain_timeout, Duration::from_secs(5));
-        assert_eq!(limits.max_artifacts_per_task, 1000);
-        assert_eq!(limits.max_context_locks, 10_000);
-        assert_eq!(limits.max_push_configs_per_task, 100);
-        assert_eq!(limits.max_parts_per_artifact, 10_000);
-        assert_eq!(limits.max_total_push_configs, 100_000);
-        assert_eq!(
-            limits.subscribe_reattach_interval,
-            Duration::from_millis(250)
-        );
-        assert_eq!(limits.subscribe_max_idle, Duration::from_secs(300));
-    }
-
-    #[test]
-    fn with_push_delivery_budget_and_executor_drain_timeout_set_their_values() {
-        let limits = HandlerLimits::default()
-            .with_push_delivery_budget(Duration::from_secs(90))
-            .with_executor_drain_timeout(Duration::from_millis(750));
-        assert_eq!(limits.push_delivery_budget, Duration::from_secs(90));
-        assert_eq!(limits.executor_drain_timeout, Duration::from_millis(750));
-    }
-
-    #[test]
-    fn with_max_id_length_sets_value() {
-        let limits = HandlerLimits::default().with_max_id_length(2048);
-        assert_eq!(limits.max_id_length, 2048);
-    }
-
-    #[test]
-    fn with_max_metadata_size_sets_value() {
-        let limits = HandlerLimits::default().with_max_metadata_size(2_097_152);
-        assert_eq!(limits.max_metadata_size, 2_097_152);
-    }
-
-    #[test]
-    fn with_max_cancellation_tokens_sets_value() {
-        let limits = HandlerLimits::default().with_max_cancellation_tokens(5_000);
-        assert_eq!(limits.max_cancellation_tokens, 5_000);
-    }
-
-    #[test]
-    fn with_max_token_age_sets_value() {
-        let limits = HandlerLimits::default().with_max_token_age(Duration::from_secs(7200));
-        assert_eq!(limits.max_token_age, Duration::from_secs(7200));
-    }
-
-    #[test]
-    fn with_push_delivery_timeout_sets_value() {
-        let limits = HandlerLimits::default().with_push_delivery_timeout(Duration::from_secs(10));
-        assert_eq!(limits.push_delivery_timeout, Duration::from_secs(10));
-    }
-
-    #[test]
-    fn builder_chaining() {
-        let limits = HandlerLimits::default()
-            .with_max_id_length(512)
-            .with_max_metadata_size(500_000)
-            .with_max_cancellation_tokens(1_000)
-            .with_max_token_age(Duration::from_secs(1800))
-            .with_push_delivery_timeout(Duration::from_secs(15));
-
-        assert_eq!(limits.max_id_length, 512);
-        assert_eq!(limits.max_metadata_size, 500_000);
-        assert_eq!(limits.max_cancellation_tokens, 1_000);
-        assert_eq!(limits.max_token_age, Duration::from_secs(1800));
-        assert_eq!(limits.push_delivery_timeout, Duration::from_secs(15));
-    }
-
-    #[test]
-    fn with_max_artifacts_per_task_sets_value() {
-        let limits = HandlerLimits::default().with_max_artifacts_per_task(500);
-        assert_eq!(limits.max_artifacts_per_task, 500);
-    }
-
-    #[test]
-    fn debug_format() {
-        let limits = HandlerLimits::default();
-        let debug = format!("{limits:?}");
-        assert!(debug.contains("HandlerLimits"));
-        assert!(debug.contains("max_id_length"));
-        assert!(debug.contains("max_metadata_size"));
-        assert!(debug.contains("max_cancellation_tokens"));
-        assert!(debug.contains("max_token_age"));
-        assert!(debug.contains("push_delivery_timeout"));
-        assert!(debug.contains("push_delivery_budget"));
-        assert!(debug.contains("executor_drain_timeout"));
-        assert!(debug.contains("max_artifacts_per_task"));
-        assert!(debug.contains("max_context_locks"));
-    }
-}
+mod tests;

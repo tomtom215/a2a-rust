@@ -75,6 +75,7 @@ const fn json_kind(value: &serde_json::Value) -> &'static str {
 pub(super) fn build_call_context(
     method: &str,
     headers: Option<&HashMap<String, String>>,
+    inbound_trace_policy: InboundTracePolicy,
 ) -> CallContext {
     let mut ctx = CallContext::new(method);
     if let Some(h) = headers {
@@ -87,7 +88,7 @@ pub(super) fn build_call_context(
         if !extensions.is_empty() {
             ctx = ctx.with_extensions(extensions);
         }
-        if let Some(trace) = parse_trace_context(h) {
+        if let Some(trace) = parse_trace_context(h, inbound_trace_policy) {
             ctx = ctx.with_trace_context(trace);
         }
         ctx = ctx.with_http_headers(h.clone());
@@ -105,28 +106,117 @@ pub(super) fn build_call_context(
     ctx
 }
 
+/// What this deployment does with a `traceparent` an unauthenticated peer
+/// sent it.
+///
+/// # The threat this exists for
+///
+/// The inbound trace is joined while the request's `CallContext` is built,
+/// which runs *before* the interceptor chain — and the interceptor chain is
+/// where authentication happens. So on a public endpoint the peer choosing
+/// the `trace-id` and the sampling bit is, at that moment, anonymous.
+///
+/// [W3C Trace Context §7.2 "Denial of
+/// Service"](https://www.w3.org/TR/trace-context/#denial-of-service) names
+/// exactly this: *"When distributed tracing is enabled on a service with a
+/// public API and naively continues any trace with the sampled flag set, a
+/// malicious attacker could overwhelm an application with tracing overhead,
+/// forge trace-id collisions that make monitoring data unusable, or run up
+/// your tracing bill with your `SaaS` tracing vendor."* Its own suggested
+/// remedy is *"different tracing behavior for authenticated and
+/// unauthenticated requests"*.
+///
+/// [§3.4](https://www.w3.org/TR/trace-context/#mutating-the-traceparent-field)
+/// names the mutation that implements it: *"Restart trace: All properties
+/// (trace-id, parent-id, trace-flags) are regenerated. This mutation is used
+/// in services that are defined as a front gate into secure networks and
+/// eliminates a potential denial-of-service attack surface. Vendors SHOULD
+/// clean up tracestate collection on traceparent restart."*
+///
+/// Set per handler with
+/// [`RequestHandlerBuilder::with_inbound_trace_policy`](crate::builder::RequestHandlerBuilder::with_inbound_trace_policy),
+/// so a process serving both a public front gate and an internal endpoint can
+/// hold a different policy on each.
+///
+/// # Why [`Continue`](Self::Continue) is still the default
+///
+/// A2A's premise is a mesh of agents delegating to one another, and one trace
+/// id surviving every hop is the only thing that makes such a chain readable.
+/// Restarting by default would sever every chain to protect the deployments
+/// that are front gates, which are the minority. A front gate opts in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum InboundTracePolicy {
+    /// Join the peer's trace: same `trace-id`, a fresh span. The right answer
+    /// inside a trusted mesh, and the historical behaviour.
+    #[default]
+    Continue,
+    /// Restart the trace, per §3.4: mint a new `trace-id` and `parent-id`,
+    /// reset `trace-flags`, and drop `tracestate` — the peer controls none of
+    /// it. The request still carries a trace, so this hop and everything
+    /// below it remain correlated; what is severed is the attacker's ability
+    /// to choose the identifier or the sampling decision.
+    Restart,
+    /// Refuse to trace an untrusted request at all. Cheaper than
+    /// [`Restart`](Self::Restart) — nothing is minted and nothing is
+    /// recorded — and appropriate where the tracing bill, not the trace tree,
+    /// is the thing being protected.
+    Drop,
+}
+
+/// Mints 8 bytes of a v4 UUID, which is what the rest of this crate already
+/// derives identifiers from.
+fn fresh_span_id() -> [u8; 8] {
+    let uuid = uuid::Uuid::new_v4();
+    let mut span_id = [0_u8; 8];
+    span_id.copy_from_slice(&uuid.as_bytes()[..8]);
+    span_id
+}
+
 /// The W3C trace a request belongs to, as *this hop's* span.
 ///
 /// The caller's `traceparent` names their span; ours has to be a new one, or
 /// every hop in a chain would report the same span id and the trace would be
-/// a flat list instead of a tree. The span id is 64 bits of a v4 UUID, which
-/// is what the rest of this crate already mints identifiers from.
+/// a flat list instead of a tree — §3.4's *"Update parent-id"*, the mutation
+/// it calls "the most typical […] and should be considered a default". The
+/// span id is 64 bits of a v4 UUID.
 ///
 /// A malformed `traceparent` is dropped rather than repaired. Guessing at
 /// what a peer meant would attach this work to a trace that may not exist,
 /// and a missing span is a smaller lie than a wrong one.
-fn parse_trace_context(headers: &HashMap<String, String>) -> Option<TraceContext> {
+///
+/// What happens to a *well-formed* one from an as-yet-unauthenticated peer is
+/// the deployment's call: see [`InboundTracePolicy`].
+fn parse_trace_context(
+    headers: &HashMap<String, String>,
+    policy: InboundTracePolicy,
+) -> Option<TraceContext> {
+    if policy == InboundTracePolicy::Drop {
+        return None;
+    }
     let inbound = TraceContext::parse(headers.get(TRACEPARENT_HEADER)?).ok()?;
+    if policy == InboundTracePolicy::Restart {
+        // §3.4 "Restart trace": every property regenerated, and "Vendors
+        // SHOULD clean up tracestate collection on traceparent restart" — so
+        // no `with_tracestate` here, deliberately. Sampled, because a trace
+        // this hop starts on purpose is one it means to be recorded; the
+        // peer's sampling bit is precisely what it must not get to set.
+        return TraceContext::from_bytes(
+            *uuid::Uuid::new_v4().as_bytes(),
+            fresh_span_id(),
+            a2a_protocol_types::trace_context::FLAG_SAMPLED,
+        )
+        .ok();
+    }
     let inbound = match headers.get(TRACESTATE_HEADER) {
-        // An unusable `tracestate` loses only the vendor state, so the trace
-        // is still worth joining without it.
+        // An over-long `tracestate` is truncated entry-wise by
+        // `with_tracestate` (W3C §3.3.1.5) rather than refused, so this
+        // fallback now only catches a non-printable byte — header injection,
+        // where losing the vendor state is the point.
         Some(state) => inbound.clone().with_tracestate(state).unwrap_or(inbound),
         None => inbound,
     };
-    let uuid = uuid::Uuid::new_v4();
-    let mut span_id = [0_u8; 8];
-    span_id.copy_from_slice(&uuid.as_bytes()[..8]);
-    inbound.child_bytes(span_id).ok()
+    inbound.child_bytes(fresh_span_id()).ok()
 }
 
 /// Parses the (lowercased) `a2a-extensions` header into extension URIs.
@@ -388,7 +478,7 @@ mod tests {
         headers.insert("traceparent".to_owned(), PARENT.to_owned());
         headers.insert("tracestate".to_owned(), "vendor=value".to_owned());
 
-        let ctx = build_call_context("message/send", Some(&headers));
+        let ctx = build_call_context("message/send", Some(&headers), InboundTracePolicy::Continue);
         let trace = ctx
             .trace_context()
             .expect("a valid traceparent must reach the context");
@@ -415,14 +505,108 @@ mod tests {
         let mut headers = HashMap::new();
         headers.insert("traceparent".to_owned(), "not-a-traceparent".to_owned());
 
-        let ctx = build_call_context("message/send", Some(&headers));
+        let ctx = build_call_context("message/send", Some(&headers), InboundTracePolicy::Continue);
         assert!(ctx.trace_context().is_none());
         assert_eq!(ctx.method(), "message/send", "the call still proceeds");
     }
 
+    // ── InboundTracePolicy (W3C Trace Context §7.2 / §3.4) ────────────────
+
+    /// §7.2 "Denial of Service": a public endpoint that *"naively continues
+    /// any trace with the sampled flag set"* lets an attacker forge
+    /// `trace-id` collisions and set the operator's tracing bill. The remedy
+    /// §3.4 names is "Restart trace": every property regenerated, and
+    /// `tracestate` cleaned up.
+    #[test]
+    fn the_inbound_trace_policy_decides_whether_a_peer_chooses_the_trace_id() {
+        const PARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let mut headers = HashMap::new();
+        headers.insert("traceparent".to_owned(), PARENT.to_owned());
+        headers.insert("tracestate".to_owned(), "vendor=value".to_owned());
+
+        // Default: continue. A mesh of trusted agents needs one trace id
+        // across every hop, so this must not have changed.
+        assert_eq!(
+            InboundTracePolicy::default(),
+            InboundTracePolicy::Continue,
+            "a mesh of trusted agents needs one trace id across every hop"
+        );
+        let joined =
+            build_call_context("message/send", Some(&headers), InboundTracePolicy::Continue)
+                .trace_context()
+                .cloned()
+                .expect("the default still joins the caller's trace");
+        assert_eq!(joined.trace_id(), "4bf92f3577b34da6a3ce929d0e0e4736");
+
+        let restarted =
+            build_call_context("message/send", Some(&headers), InboundTracePolicy::Restart)
+                .trace_context()
+                .cloned()
+                .expect("a restart still traces the request, with our own ids");
+        assert_ne!(
+            restarted.trace_id(),
+            "4bf92f3577b34da6a3ce929d0e0e4736",
+            "the peer must not choose the trace id on a front gate"
+        );
+        assert_ne!(restarted.span_id(), "00f067aa0ba902b7");
+        assert_eq!(
+            restarted.tracestate(),
+            None,
+            "§3.4: vendors SHOULD clean up tracestate on restart"
+        );
+        assert!(
+            restarted.is_sampled(),
+            "a trace this hop starts on purpose is one it means to be recorded"
+        );
+
+        assert!(
+            build_call_context("message/send", Some(&headers), InboundTracePolicy::Drop)
+                .trace_context()
+                .is_none(),
+            "Drop refuses to trace an untrusted request at all"
+        );
+    }
+
+    /// Every request mints its *own* span, not just a span different from
+    /// the caller's. The assertions above compare this hop's span id with
+    /// the peer's, so a `fresh_span_id` returning one fixed value satisfies
+    /// all of them while putting every request in the process on a single
+    /// span — a trace that parses, is rooted correctly, and is wrong.
+    /// Uniqueness is the property, so uniqueness is what this asserts.
+    ///
+    /// Reported by the incremental mutation gate on this pull request
+    /// (shard 1 of run 35523981742): `replace fresh_span_id -> [u8; 8] with
+    /// [1; 8]` survived, and `[1; 8]` is a non-zero span id, so even §3.2.2.3's
+    /// all-zeroes rule would not have caught it.
+    #[test]
+    fn each_call_mints_its_own_span_id() {
+        const PARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let mut headers = HashMap::new();
+        headers.insert("traceparent".to_owned(), PARENT.to_owned());
+
+        let span_of = |policy| {
+            build_call_context("message/send", Some(&headers), policy)
+                .trace_context()
+                .expect("this policy traces the request")
+                .span_id()
+                .to_owned()
+        };
+
+        assert_ne!(
+            span_of(InboundTracePolicy::Continue),
+            span_of(InboundTracePolicy::Continue),
+            "two requests joining one caller trace are two spans, not one"
+        );
+        assert_ne!(
+            span_of(InboundTracePolicy::Restart),
+            span_of(InboundTracePolicy::Restart),
+            "a restarted trace mints a fresh span id on every request too"
+        );
+    }
+
     #[test]
     fn build_call_context_without_headers() {
-        let ctx = build_call_context("message/send", None);
+        let ctx = build_call_context("message/send", None, InboundTracePolicy::Continue);
         assert_eq!(ctx.method(), "message/send", "method should be set");
         assert!(
             ctx.http_headers().is_empty(),
@@ -436,7 +620,7 @@ mod tests {
         headers.insert("authorization".to_owned(), "Bearer tok".to_owned());
         headers.insert("x-request-id".to_owned(), "req-99".to_owned());
 
-        let ctx = build_call_context("tasks/get", Some(&headers));
+        let ctx = build_call_context("tasks/get", Some(&headers), InboundTracePolicy::Continue);
         assert_eq!(ctx.method(), "tasks/get");
         assert_eq!(
             ctx.http_headers().get("authorization").map(String::as_str),
@@ -452,7 +636,7 @@ mod tests {
     #[test]
     fn build_call_context_with_empty_headers_map() {
         let headers = HashMap::new();
-        let ctx = build_call_context("test", Some(&headers));
+        let ctx = build_call_context("test", Some(&headers), InboundTracePolicy::Continue);
         assert!(
             ctx.http_headers().is_empty(),
             "an empty map should result in empty headers"
@@ -469,7 +653,7 @@ mod tests {
             "https://example.com/ext/geo/v1, https://standards.org/ext/cite/v1".to_owned(),
         );
 
-        let ctx = build_call_context("message/send", Some(&headers));
+        let ctx = build_call_context("message/send", Some(&headers), InboundTracePolicy::Continue);
         assert_eq!(
             ctx.extensions(),
             &[
@@ -484,7 +668,7 @@ mod tests {
     fn build_call_context_no_extensions_header_is_empty() {
         let mut headers = HashMap::new();
         headers.insert("authorization".to_owned(), "Bearer tok".to_owned());
-        let ctx = build_call_context("message/send", Some(&headers));
+        let ctx = build_call_context("message/send", Some(&headers), InboundTracePolicy::Continue);
         assert_eq!(ctx.extensions(), [] as [String; 0]);
     }
 

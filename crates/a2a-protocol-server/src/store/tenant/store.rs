@@ -135,6 +135,12 @@ pub struct TenantAwareInMemoryTaskStore {
     /// `#[non_exhaustive]` since 0.12, and the field stays here because the
     /// store, not the config, is what a caller hands an override to.
     overrides: HashMap<String, TaskStoreConfig>,
+    /// Handed to every partition as it is created.
+    ///
+    /// A partition reports its own dropped appends, so without this each one
+    /// would report to `NoopMetrics` and a whole multi-tenant deployment
+    /// would be the one configuration where those reports go nowhere.
+    metrics: crate::metrics::MetricsHandle,
 }
 
 impl Default for TenantAwareInMemoryTaskStore {
@@ -151,6 +157,7 @@ impl TenantAwareInMemoryTaskStore {
             stores: RwLock::new(HashMap::new()),
             config: TenantStoreConfig::default(),
             overrides: HashMap::new(),
+            metrics: crate::metrics::MetricsHandle::default(),
         }
     }
 
@@ -161,7 +168,23 @@ impl TenantAwareInMemoryTaskStore {
             stores: RwLock::new(HashMap::new()),
             config,
             overrides: HashMap::new(),
+            metrics: crate::metrics::MetricsHandle::default(),
         }
+    }
+
+    /// Sends every partition's store metrics to `metrics`.
+    ///
+    /// Each partition is an [`InMemoryTaskStore`] and reports its own dropped
+    /// appends; without this they all report to the no-op sink, so the one
+    /// deployment shape that most needs the signal is the one that has none.
+    ///
+    /// A partition is created on a tenant's first use, so this must be set
+    /// before the store serves traffic — a partition already built keeps the
+    /// handle it was given.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: crate::metrics::MetricsHandle) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     /// Gives `tenant` its own [`TaskStoreConfig`], overriding
@@ -225,12 +248,15 @@ impl TenantAwareInMemoryTaskStore {
             )));
         }
 
-        let store = Arc::new(InMemoryTaskStore::with_config(
-            self.overrides
-                .get(&tenant)
-                .unwrap_or(&self.config.per_tenant)
-                .clone(),
-        ));
+        let store = Arc::new(
+            InMemoryTaskStore::with_config(
+                self.overrides
+                    .get(&tenant)
+                    .unwrap_or(&self.config.per_tenant)
+                    .clone(),
+            )
+            .with_metrics(self.metrics.clone()),
+        );
         stores.insert(tenant, Arc::clone(&store));
         drop(stores);
         Ok(store)
@@ -264,13 +290,25 @@ impl TenantAwareInMemoryTaskStore {
 
     /// Removes empty tenant partitions to reclaim memory.
     ///
-    /// A partition is considered empty when its task count is zero, so this
-    /// reclaims a slot only once every task in that partition is gone —
-    /// evicted by TTL, by capacity, or deleted. It is the only way a
+    /// A partition is empty when it holds neither a task nor an idempotency
+    /// key, so this reclaims a slot only once every task in that partition is
+    /// gone — evicted by TTL, by capacity, or deleted — *and* no key is still
+    /// claimed. It is the only way a
     /// [`max_tenants`](TenantStoreConfig::max_tenants) slot is ever given
     /// back, and nothing calls it for you: schedule it alongside
     /// [`run_eviction_all`](Self::run_eviction_all), which is what makes
     /// partitions empty in the first place.
+    ///
+    /// # Why the key count is part of the test
+    ///
+    /// It decided on `count()` alone, which counts tasks. A key deliberately
+    /// outlives the task it names — dropping it would let a delayed retry of
+    /// the same send execute a second time — so a partition whose tasks had
+    /// all been swept still held a live idempotency index, and pruning it
+    /// destroyed that index along with the partition. The next retry carrying
+    /// one of those keys found no claim, and ran the send a second time: the
+    /// one outcome an idempotency key exists to prevent, reached by a
+    /// memory-reclamation path that looked unrelated to it.
     ///
     /// Calling it will not relieve a store that is at its cap because of live
     /// tasks; see `max_tenants` for why that matters.
@@ -278,7 +316,9 @@ impl TenantAwareInMemoryTaskStore {
         let mut stores = self.stores.write().await;
         let mut empty_tenants = Vec::new();
         for (tenant, store) in stores.iter() {
-            if store.count().await.unwrap_or(0) == 0 {
+            // `is_prunable` reads the task count and the key count under one
+            // read lock, so the two halves of the answer cannot disagree.
+            if store.is_prunable().await {
                 empty_tenants.push(tenant.clone());
             }
         }
@@ -419,6 +459,24 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
         })
     }
 
+    fn earliest_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
+        Box::pin(async move {
+            // Delegated rather than left to the trait default, which answers
+            // `None` — "cannot say" — and would let a truncated tenant log be
+            // replayed as though it were whole. `get_existing_store` for the
+            // same reason `last_event_seq` uses it: asking must not create a
+            // partition. An absent partition holds no log, so it holds no
+            // earliest position either.
+            match self.get_existing_store().await {
+                Some(store) => store.earliest_event_seq(task_id).await,
+                None => Ok(None),
+            }
+        })
+    }
+
     fn read_events<'a>(
         &'a self,
         task_id: &'a TaskId,
@@ -458,6 +516,65 @@ mod tests {
             artifacts: None,
             metadata: None,
         }
+    }
+
+    /// `with_metrics` has to reach the partitions, which are built lazily
+    /// on a tenant's first use.
+    ///
+    /// Each partition is an [`InMemoryTaskStore`] reporting its own dropped
+    /// appends. A `with_metrics` that returned a fresh store rather than
+    /// `self` would leave every partition on the no-op sink, and the
+    /// deployment shape that most needs the signal is the one that would
+    /// then have none. Reported by the incremental mutation gate on this
+    /// pull request (shard 5 of run 35523981742):
+    /// `replace TenantAwareInMemoryTaskStore::with_metrics -> Self with
+    /// Default::default()` survived.
+    #[tokio::test]
+    async fn with_metrics_reaches_the_per_tenant_stores() {
+        use a2a_protocol_types::events::StreamResponse;
+        use a2a_protocol_types::events::TaskStatusUpdateEvent;
+
+        #[derive(Default)]
+        struct Recorder(std::sync::Mutex<Vec<(String, String)>>);
+
+        impl crate::metrics::Metrics for Recorder {
+            fn on_persistence_error(&self, operation: &str, error_kind: &str) {
+                self.0
+                    .lock()
+                    .expect("not poisoned")
+                    .push((operation.to_owned(), error_kind.to_owned()));
+            }
+        }
+
+        let recorder = Arc::new(Recorder::default());
+        let store = TenantAwareInMemoryTaskStore::new()
+            .with_metrics(crate::metrics::MetricsHandle::from_arc(recorder.clone()));
+
+        // An append for a task no partition holds. The in-memory store cannot
+        // return that failure — the agent has already emitted the event — so
+        // it counts it, and the count is the only way to see it.
+        store
+            .append_event(
+                &TaskId::new("gone"),
+                1,
+                &StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: TaskId::new("gone"),
+                    context_id: ContextId::new("ctx-default"),
+                    status: TaskStatus::new(TaskState::Working),
+                    metadata: None,
+                }),
+            )
+            .await
+            .expect("a missing task must not fail the agent");
+
+        assert_eq!(
+            *recorder.0.lock().expect("not poisoned"),
+            vec![(
+                crate::metrics::persistence_operation::EVENT_APPEND.to_owned(),
+                crate::metrics::event_append_error::TASK_ABSENT.to_owned(),
+            )],
+            "the partition must report to the handle the store was given"
+        );
     }
 
     // ── per-tenant bounds reach the per-tenant stores ────────────────────
@@ -984,6 +1101,95 @@ mod tests {
             store.tenant_count().await,
             1,
             "empty tenant partition should be pruned"
+        );
+    }
+
+    /// A partition still holding idempotency keys is not empty.
+    ///
+    /// It decided on `count()`, which counts tasks. A key deliberately
+    /// outlives the task it names, so a partition whose tasks had all been
+    /// swept still held a live index — and pruning it destroyed that index.
+    /// A retry carrying one of those keys then found no claim and ran the
+    /// send a second time, which is the one outcome the key exists to
+    /// prevent, reached through a memory-reclamation path.
+    #[tokio::test]
+    async fn a_partition_still_holding_idempotency_keys_is_not_pruned() {
+        let store = TenantAwareInMemoryTaskStore::new();
+
+        TenantContext::scope("keyed", async {
+            store
+                .save(&make_task("t1", TaskState::Submitted))
+                .await
+                .unwrap();
+            store
+                .claim_idempotency_key(
+                    "8f14e45fceea167a5a36dedd4bea2543",
+                    &a2a_protocol_types::message::MessageId::new("msg-1"),
+                    &TaskId::new("t1"),
+                )
+                .await
+                .unwrap();
+            // The retention sweep takes the task; the key outlives it, which
+            // is the whole point of the key.
+            store.delete(&TaskId::new("t1")).await.unwrap();
+            assert_eq!(
+                store.count().await.unwrap(),
+                0,
+                "the partition holds no task, which is what used to decide this"
+            );
+        })
+        .await;
+        assert_eq!(store.tenant_count().await, 1);
+
+        store.prune_empty_tenants().await;
+        assert_eq!(
+            store.tenant_count().await,
+            1,
+            "a partition holding a live idempotency key must survive the prune"
+        );
+
+        // And the key is still claimed: a retry replays rather than re-running.
+        let claim = TenantContext::scope("keyed", async {
+            store
+                .claim_idempotency_key(
+                    "8f14e45fceea167a5a36dedd4bea2543",
+                    &a2a_protocol_types::message::MessageId::new("msg-1"),
+                    &TaskId::new("t2"),
+                )
+                .await
+                .unwrap()
+        })
+        .await;
+        assert!(
+            matches!(
+                claim,
+                crate::store::task_store::IdempotencyClaim::Replay(ref id) if id.0 == "t1"
+            ),
+            "the surviving key must still name the first task, got {claim:?}"
+        );
+    }
+
+    /// Counter-test: a partition holding neither a task nor a key is still
+    /// pruned, so the fix above did not simply stop reclaiming slots.
+    #[tokio::test]
+    async fn a_partition_holding_neither_tasks_nor_keys_is_still_pruned() {
+        let store = TenantAwareInMemoryTaskStore::new();
+
+        TenantContext::scope("transient", async {
+            store
+                .save(&make_task("t1", TaskState::Submitted))
+                .await
+                .unwrap();
+            store.delete(&TaskId::new("t1")).await.unwrap();
+        })
+        .await;
+        assert_eq!(store.tenant_count().await, 1);
+
+        store.prune_empty_tenants().await;
+        assert_eq!(
+            store.tenant_count().await,
+            0,
+            "a genuinely empty partition must still give its slot back"
         );
     }
 

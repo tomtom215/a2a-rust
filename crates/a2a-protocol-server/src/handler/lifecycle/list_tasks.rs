@@ -56,7 +56,7 @@ impl RequestHandler {
         let history_length = params.history_length;
         let include_artifacts = params.include_artifacts;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            let call_ctx = build_call_context("ListTasks", headers);
+            let call_ctx = build_call_context("ListTasks", headers, self.inbound_trace_policy);
             self.interceptors.run_before(&call_ctx).await?;
             // SPEC §3.3.4: reject clients that do not declare support for
             // extensions the agent card marks required.

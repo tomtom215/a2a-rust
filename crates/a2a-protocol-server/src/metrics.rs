@@ -141,6 +141,15 @@ pub mod persistence_operation {
     pub const FAILED_STATE: &str = "failed_state";
     /// Persisting an agent message appended to the task's history.
     pub const HISTORY_APPEND: &str = "history_append";
+    /// Waiting for a task's event log to catch up with what was already
+    /// broadcast, on a resubscribe that asked to resume.
+    ///
+    /// Reported when the wait bounded by
+    /// [`HandlerLimits::subscribe_replay_catchup`](crate::handler::HandlerLimits::subscribe_replay_catchup)
+    /// expired with the log still short of the writer's position. The replay
+    /// was served with what the log held, so the subscriber is missing the
+    /// shortfall — this is the only signal that it happened.
+    pub const EVENT_LOG_CATCHUP: &str = "event_log_catchup";
     /// Handing an event from the executor's queue to the persistence processor.
     ///
     /// Reported with `error_kind = "channel_closed"` when the processor is
@@ -148,6 +157,58 @@ pub mod persistence_operation {
     /// subscribers, but the task's stored state stops advancing, and until
     /// 0.12 a default build said nothing about it.
     pub const QUEUE_HANDOFF: &str = "queue_handoff";
+}
+
+/// Error kinds passed to [`Metrics::on_persistence_error`] for
+/// [`persistence_operation::EVENT_LOG_CATCHUP`].
+pub mod event_log_catchup_error {
+    /// The bounded wait expired with the log still behind the position the
+    /// writer had already broadcast. The replay was served short.
+    pub const TIMED_OUT: &str = "timed_out";
+}
+
+/// Error kinds passed to [`Metrics::on_persistence_error`] for
+/// [`persistence_operation::EVENT_APPEND`].
+///
+/// # Why an append that raised nothing is reported here
+///
+/// An append is `INSERT ... ON CONFLICT (task_id, seq) DO NOTHING`, because
+/// `seq` is a *position*: writing one twice must leave one row. That is the
+/// safety property, and it is also a way to lose an event without an error.
+/// Two replicas each running their own in-process event queue number one
+/// task's events from the same place — nothing here hands out a
+/// database-backed lease — so replica B's event *n* lands on the position
+/// replica A already wrote, and the row that stays is A's. Until these labels
+/// existed the store returned `Ok(())` and nothing anywhere said so.
+///
+/// Both kinds mean **an event the agent emitted is not in the log**, which is
+/// what [`Metrics::on_persistence_error`] is for. A retried append of the
+/// *same* event is not reported here: see
+/// [`POSITION_CONFLICT`](event_append_error::POSITION_CONFLICT).
+pub mod event_append_error {
+    /// The position was already held, and the store could not establish that
+    /// the row already there is this same event.
+    ///
+    /// On a collision the store reads the stored payload back and compares it
+    /// with what it was asked to write. Identical bytes mean a replay of the
+    /// event already recorded, which loses nothing and is **not** counted.
+    /// This label covers the rest: the stored event is a different one, or the
+    /// comparison could not be made (the read-back failed, or the event would
+    /// not serialize). It errs towards reporting.
+    ///
+    /// A non-zero rate is the shape the design has no other defence against:
+    /// two writers numbering one task's log. Look for a second replica
+    /// serving the same task id.
+    pub const POSITION_CONFLICT: &str = "position_conflict";
+
+    /// The store held no such task, so there was nowhere to put the event.
+    ///
+    /// Only the two in-memory stores raise this: they keep the log on the task
+    /// entry, so eviction takes the log with it and the event processor can
+    /// outlive the sweep that removed the task it is still writing for. The
+    /// append stays a success on purpose — failing it would turn a swept task
+    /// into a failed agent — and this is the report that it happened.
+    pub const TASK_ABSENT: &str = "task_absent";
 }
 
 /// Error kinds passed to [`Metrics::on_persistence_error`] for
@@ -195,6 +256,61 @@ pub mod push_outcome {
 pub struct NoopMetrics;
 
 impl Metrics for NoopMetrics {}
+
+/// A shareable [`Metrics`] a store can hold, and discard into by default.
+///
+/// The task stores all `#[derive(Debug)]` and `dyn Metrics` does not implement
+/// it, so this wrapper carries the `Debug` rather than six hand-written impls
+/// each of which is a chance to forget a field.
+///
+/// [`Default`] is [`NoopMetrics`], so a store built the way every existing
+/// caller builds one keeps working. `with_metrics`, which every task store in
+/// this crate has, is how an operator opts in.
+#[derive(Clone)]
+pub struct MetricsHandle(Arc<dyn Metrics>);
+
+impl MetricsHandle {
+    /// Wraps a metrics implementation.
+    #[must_use]
+    pub fn new<M: Metrics>(metrics: M) -> Self {
+        Self(Arc::new(metrics))
+    }
+
+    /// Wraps an already-shared metrics implementation, so a process with one
+    /// exporter hands the same one to every store.
+    #[must_use]
+    pub fn from_arc(metrics: Arc<dyn Metrics>) -> Self {
+        Self(metrics)
+    }
+}
+
+impl Default for MetricsHandle {
+    fn default() -> Self {
+        Self(Arc::new(NoopMetrics))
+    }
+}
+
+impl std::fmt::Debug for MetricsHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // No `Debug` on the callee, and nothing useful to print if there were:
+        // the value is behaviour, not state.
+        f.write_str("MetricsHandle(..)")
+    }
+}
+
+impl std::ops::Deref for MetricsHandle {
+    type Target = dyn Metrics;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+impl<M: Metrics> From<Arc<M>> for MetricsHandle {
+    fn from(metrics: Arc<M>) -> Self {
+        Self(metrics)
+    }
+}
 
 /// Blanket implementation: `Arc<T>` implements [`Metrics`] if `T` does.
 ///

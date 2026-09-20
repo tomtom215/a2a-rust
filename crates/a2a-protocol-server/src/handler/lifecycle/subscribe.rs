@@ -6,7 +6,7 @@
 //! `SubscribeToTask` handler — resubscribe to a task's event stream.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use a2a_protocol_types::params::TaskIdParams;
 use a2a_protocol_types::task::TaskId;
@@ -150,26 +150,134 @@ impl RequestHandler {
             );
             return;
         }
-        match self
+
+        let Some(events) = self.read_log_with_catchup(task_id, after_seq).await else {
+            return;
+        };
+
+        // The log may no longer hold the position the client asked to resume
+        // from — the in-memory log is bounded, and a persistent one is swept.
+        // `read_events` cannot say so: it returns whatever survives above
+        // `after_seq`, and a replay that silently begins later than asked is
+        // a gap the subscriber has no way to detect. The snapshot the stream
+        // already starts with is the correct answer instead.
+        //
+        // Checked after the read rather than before it, and deliberately: the
+        // read waits for the writer to catch up, and a log bounded at 512
+        // events can truncate during that wait. A check before the wait could
+        // pass and the position be gone by the time the events are in hand,
+        // which is the very failure this exists to prevent.
+        //
+        // A store error keeps the pre-existing path — `true` means "no gap can
+        // be proven", so a store that cannot answer behaves exactly as it did
+        // before this check existed.
+        if !self
             .task_store
-            .read_events(task_id, after_seq, self.limits.subscribe_replay_limit)
+            .event_log_covers(task_id, after_seq)
             .await
+            .unwrap_or(true)
         {
-            Ok(events) => {
-                trace_info!(
-                    task_id = %task_id,
-                    after_seq = after_seq,
-                    replayed = events.len(),
-                    "resubscribe replaying missed events"
-                );
-                reader.queue_replay(events);
+            trace_warn!(
+                task_id = %task_id,
+                after_seq = after_seq,
+                "resubscribe asked to resume from a position the event log no longer \
+                 holds; the stream starts from the snapshot rather than a gapped replay"
+            );
+            return;
+        }
+
+        trace_info!(
+            task_id = %task_id,
+            after_seq = after_seq,
+            replayed = events.len(),
+            "resubscribe replaying missed events"
+        );
+        reader.queue_replay(events);
+    }
+
+    /// Reads the task's log from `after_seq`, waiting — bounded by
+    /// [`HandlerLimits::subscribe_replay_catchup`](crate::handler::HandlerLimits::subscribe_replay_catchup)
+    /// — for it to catch up with what the live writer has already broadcast.
+    ///
+    /// The barrier is the writer's current position. Every position at or
+    /// below it has been handed to the persistence channel, so once the log
+    /// reaches it the replay covers everything the broadcast receiver —
+    /// attached before this runs — could not have seen. Without the wait, a
+    /// position broadcast just before the receiver existed and appended just
+    /// after the log was read is in neither source, and the subscriber loses
+    /// it with nothing in what it receives to reveal that.
+    ///
+    /// `None` means the read failed and the caller should serve the stream
+    /// without a replay: that is the pre-resumption behaviour, a snapshot then
+    /// live events, and refusing to subscribe because the history could not be
+    /// read would turn a storage hiccup into a dropped connection.
+    async fn read_log_with_catchup(
+        &self,
+        task_id: &TaskId,
+        after_seq: u64,
+    ) -> Option<Vec<crate::store::RecordedEvent>> {
+        // Backoff rather than a fixed tick: the common case is the processor
+        // being an event or two behind, which the first retry catches, and the
+        // cap keeps a full budget to roughly a dozen store reads instead of a
+        // poll every few milliseconds.
+        const FIRST_BACKOFF: Duration = Duration::from_millis(10);
+        const MAX_BACKOFF: Duration = Duration::from_millis(200);
+
+        // `None` means no live queue: the task is parked or the process
+        // restarted, nothing is being written, and the log is already whole.
+        let target = self
+            .event_queue_manager
+            .current_seq(task_id)
+            .await
+            .unwrap_or(0);
+
+        let limit = self.limits.subscribe_replay_limit;
+        let deadline = Instant::now() + self.limits.subscribe_replay_catchup;
+        let mut backoff = FIRST_BACKOFF;
+
+        loop {
+            let found = match self.task_store.read_events(task_id, after_seq, limit).await {
+                Ok(found) => found,
+                Err(_e) => {
+                    trace_warn!(
+                        task_id = %task_id,
+                        "resubscribe: event log read failed; the stream starts from the snapshot"
+                    );
+                    return None;
+                }
+            };
+
+            let reached = found.last().map_or(after_seq, |e| e.seq);
+            // Caught up, or capped by `subscribe_replay_limit` — which is
+            // truncation, not lag, and is resumable by the client's own next
+            // `Last-Event-ID`, so there is nothing to wait for.
+            if reached >= target || found.len() >= limit {
+                return Some(found);
             }
-            Err(_e) => {
+            if Instant::now() >= deadline {
                 trace_warn!(
                     task_id = %task_id,
-                    "resubscribe: event log read failed; the stream starts from the snapshot"
+                    reached = reached,
+                    target = target,
+                    "resubscribe: the event log did not catch up within \
+                     subscribe_replay_catchup; the replay is short by the difference"
                 );
+                self.metrics.on_persistence_error(
+                    crate::metrics::persistence_operation::EVENT_LOG_CATCHUP,
+                    crate::metrics::event_log_catchup_error::TIMED_OUT,
+                );
+                return Some(found);
             }
+            tokio::time::sleep(backoff).await;
+            // `saturating_mul` rather than `*`: the doubling is politeness,
+            // not correctness, so `*` mutated to `/` shrinks the interval to
+            // zero and spins until the same deadline, returning the same
+            // events and reporting the same metric — an equivalent mutant
+            // that survived the incremental mutation gate on this pull
+            // request (shard 4 of run 35523981742). A saturating call has no
+            // weakened operator form, and it also cannot panic on overflow
+            // if MAX_BACKOFF is ever raised near Duration::MAX.
+            backoff = backoff.saturating_mul(2).min(MAX_BACKOFF);
         }
     }
 
@@ -196,7 +304,8 @@ impl RequestHandler {
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(
             tenant,
             Box::pin(async {
-                let call_ctx = build_call_context("SubscribeToTask", headers);
+                let call_ctx =
+                    build_call_context("SubscribeToTask", headers, self.inbound_trace_policy);
                 self.interceptors.run_before(&call_ctx).await?;
                 // SPEC §3.3.4: reject clients that do not declare support for
                 // extensions the agent card marks required.

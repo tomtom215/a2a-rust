@@ -15,6 +15,14 @@
 //! |---------|-------------|
 //! | 1 | Initial schema — `tasks` table with indexes on `context_id` and `state` |
 //! | 2 | Add composite index on `(context_id, state)` for combined filter queries |
+//! | 3 | Add `(updated_at DESC, id DESC)` index for list ordering |
+//! | 4 | Add `idempotency_keys` — the index client-supplied send keys are claimed in |
+//! | 5 | Add `task_events` — the per-task log of what the agent emitted |
+//! | 6 | Add `CHECK (seq > 0)` to `task_events` |
+//!
+//! This table listed 1 and 2 while five existed. [`BUILTIN_PG_MIGRATIONS`] is
+//! the list; the test below fails if the two stop agreeing on how many there
+//! are.
 //!
 //! # Example
 //!
@@ -94,6 +102,23 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)",
         // schema, so a missing table shows up as an empty history rather than
         // as a loud error.
         sql: super::postgres_store::event_log::CREATE_TABLE_SQL,
+    },
+    PgMigration {
+        version: 6,
+        description: "Constrain task_events.seq to be positive",
+        // `seq` is a position and positions start at 1. `seq_to_i64` refuses a
+        // value too large to store rather than wrapping it — a wrapped
+        // position would collide with a real one, and because appends are
+        // idempotent *by position* the collision would drop an event rather
+        // than raise anything — but nothing said so to the database, and every
+        // read-back path turned a stored negative into a positive with
+        // `unsigned_abs`. This closes it from the other end, for databases
+        // created before migration 5 carried the constraint inline.
+        //
+        // NOT VERIFIED against a live server: this repository has no
+        // PostgreSQL in CI, so the Postgres suites are `#[ignore]`d. Reviewed
+        // as SQL and compiled.
+        sql: super::postgres_store::event_log::ADD_SEQ_POSITIVE_SQL,
     },
 ];
 
@@ -235,5 +260,50 @@ impl PgMigrationRunner {
         }
 
         Ok(applied)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_module_doc_table_lists_every_migration() {
+        // This table said "1, 2" while five migrations existed. A list
+        // maintained by hand beside one maintained by the compiler drifts, and
+        // this is the cheapest thing that notices. It needs no `PostgreSQL`,
+        // which matters: every other test here is `#[ignore]`d without a live
+        // server, so drift in this file had nothing running against it at all.
+        let doc = include_str!("pg_migration.rs");
+        for migration in BUILTIN_PG_MIGRATIONS {
+            let row = format!("//! | {} |", migration.version);
+            assert!(
+                doc.contains(&row),
+                "the module doc table has no row for migration {}",
+                migration.version
+            );
+        }
+        let rows = doc
+            .lines()
+            .filter(|l| l.starts_with("//! | ") && !l.starts_with("//! | Version"))
+            .count();
+        assert_eq!(
+            rows,
+            BUILTIN_PG_MIGRATIONS.len(),
+            "the doc table and BUILTIN_PG_MIGRATIONS disagree on how many migrations there are"
+        );
+    }
+
+    #[test]
+    fn migration_versions_are_unique_and_ascending() {
+        let versions: Vec<u32> = BUILTIN_PG_MIGRATIONS.iter().map(|m| m.version).collect();
+        let mut sorted = versions.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(
+            versions, sorted,
+            "run_pending applies these in slice order and records MAX(version); \
+             a duplicate or an out-of-order entry silently never runs"
+        );
     }
 }

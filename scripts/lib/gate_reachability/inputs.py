@@ -56,6 +56,18 @@ GATE_INPUTS: list[tuple[str, list[str]]] = [
     (r"prove_workflow_gates_fail\.py", [".github/workflows/**", "scripts/**",
                                         "tck/scripts/**"]),
     (r"check_block_scalars\.py", ["scripts/lib/ci_gates.sh"]),
+    # The gate inventory: ci.yml's job and step lists, the parser that reads
+    # them, the completeness guards, and the registry of `uses:` steps that
+    # cannot be proven.
+    (r"check_gate_inventory\.sh", [".github/workflows/ci.yml",
+                                   "scripts/lib/ci_gates.sh",
+                                   "scripts/lib/ci_gate_audit.sh",
+                                   "scripts/action_gate_exemptions.txt"]),
+    # `.cargo/mutants.toml` is deliberately absent from this list: the gate's
+    # whole subject is whether that path exists, and a tracked-file table
+    # cannot describe a file whose absence is the thing being asserted.
+    (r"check_mutants_config\.py", ["mutants.toml",
+                                   ".github/workflows/mutants.yml"]),
     (r"check_cancellation_release\.py", ["crates/*/src/**/*.rs",
                                          "bindings/*/src/**/*.rs"]),
     (r"check_doc_escapes\.py", ["crates/*/src/**/*.rs", "bindings/*/src/**/*.rs",

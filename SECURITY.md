@@ -17,8 +17,26 @@ workflow checks that it covers the version being tagged.)
 
 ## Scope
 
-This policy covers **all crates** in the a2a-rust workspace, including but not
-limited to the core protocol types, server, and client libraries.
+This policy covers **every crate published from this repository**:
+
+* **The four workspace crates** — `a2a-protocol-types`, `a2a-protocol-client`,
+  `a2a-protocol-server` and `a2a-protocol-sdk`. These are the `members` of the
+  root `Cargo.toml` that are published; the example, benchmark, book-test and
+  TCK members are `publish = false` and are not covered.
+* **`bindings/a2a-protocol-slimrpc`**, which is publishable and **is covered by
+  this policy**, even though it is deliberately *outside* the root workspace —
+  it is not in `Cargo.toml`'s `members` list and carries its own `Cargo.lock`
+  and its own `deny.toml`, because `agntcy-slim-rpc` brings 379 transitive
+  dependencies into a tree the SDK crates must not inherit. "All crates in the
+  workspace" therefore did not reach it, which is why this section now names
+  it. Two things a reporter should know about it: it has **never been
+  published to crates.io** (see `RELEASING.md`), so no released artifact is
+  affected today; and it carries a **live advisory waiver** —
+  `RUSTSEC-2026-0285`, ignored in `bindings/a2a-protocol-slimrpc/deny.toml`
+  because `slim-auth 0.15.4` pins `aws-lc-rs =1.16.2` while `rustls 0.23.45`
+  needs `^1.18`, with no upstream release resolving it as of 2026-09-16. A
+  report about that advisory is not new information; a report about anything
+  else in the binding is in scope and welcome.
 
 ## Reporting a Vulnerability
 

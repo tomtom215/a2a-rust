@@ -162,8 +162,8 @@ pub struct ClientConfig {
     /// which never sees this config and carries whatever bound it was built
     /// with. Two shipped transports are in that position:
     ///
-    /// * [`WebSocketTransport`](crate::WebSocketTransport) — bounded by
-    ///   [`WebSocketTransportConfig::max_message_size`](crate::WebSocketTransportConfig),
+    /// * `WebSocketTransport` (behind the `websocket` feature) — bounded by
+    ///   `WebSocketTransportConfig::max_message_size`,
     ///   which *defaults to this same constant*. So the two agree until you
     ///   change one: tightening `max_response_size` to 1 MiB and connecting
     ///   over WebSocket still admits 32 MiB. Set it on

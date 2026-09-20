@@ -2106,3 +2106,163 @@ fn token_still_evictable_spares_fresh_live_token() {
         .expect("now + max_age is representable");
     assert!(token_still_evictable(&aged, later, max_age));
 }
+
+// ── message.id takes the same rule as the other ids ──────────────────────
+
+/// `message.id` was validated nowhere, while reaching further than either id
+/// that was.
+///
+/// It is stored verbatim in `idempotency_keys.message_id`, it keys the
+/// history de-duplication in `helpers.rs`, and it is interpolated into the
+/// error a caller sees when a key is already held by a different message. The
+/// key beside it in that same row is capped and charset-restricted precisely
+/// because a value reaching store keys and log lines is where log injection
+/// starts; the message id reached both with no defence at all, bounded only
+/// by the dispatcher's request-body limit. An empty id was accepted and
+/// stored, and every empty id collides with every other one.
+///
+/// `validate_id` had its own unit tests throughout. What was missing was the
+/// call, so these drive the whole send path rather than the helper: they fail
+/// if the call site is removed again.
+#[tokio::test]
+async fn an_empty_message_id_is_refused() {
+    let handler = make_handler();
+    let mut params = make_params(None);
+    params.message.id = MessageId::new("");
+
+    let err = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect_err("an empty message id must be refused, not stored");
+
+    match err {
+        ServerError::InvalidParams(msg) => assert!(
+            msg.contains("message.id"),
+            "the error must name the field the caller has to fix, got: {msg}"
+        ),
+        other => panic!("expected InvalidParams, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn an_over_long_message_id_is_refused() {
+    let handler = make_handler();
+    let over_limit = handler.limits.max_id_length + 1;
+    let mut params = make_params(None);
+    params.message.id = MessageId::new("m".repeat(over_limit));
+
+    let err = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect_err("a message id past max_id_length must be refused");
+
+    match err {
+        ServerError::InvalidParams(msg) => assert!(
+            msg.contains("message.id"),
+            "the error must name the field the caller has to fix, got: {msg}"
+        ),
+        other => panic!("expected InvalidParams, got {other:?}"),
+    }
+}
+
+/// Counter-test: an id *at* the limit is accepted.
+///
+/// Without it, an off-by-one that rejected every id — or a check that
+/// rejected on `>=` — would satisfy both tests above.
+#[tokio::test]
+async fn a_message_id_at_the_limit_is_accepted() {
+    let handler = make_handler();
+    let at_limit = handler.limits.max_id_length;
+    let mut params = make_params(None);
+    params.message.id = MessageId::new("m".repeat(at_limit));
+
+    handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("an id exactly at max_id_length is valid and must be accepted");
+}
+
+/// A tightened `max_id_length` must not refuse a conformant client.
+///
+/// `message.id` was bounded by `max_id_length` for one release. That number
+/// is documented as covering task and context ids, which are commonly short,
+/// and a deployment tightening it to 32 is doing exactly what the field
+/// invites. But a message id is conventionally a UUID — 36 characters, which
+/// is what `Message::id`'s own rustdoc tells a caller to send and what every
+/// example in this workspace does send — so the tightened deployment refused
+/// every message it received.
+///
+/// Caught by `examples/incident-response`'s handler-limits check, which sets
+/// `max_id_length` to 32 and failed on a UUID.
+#[tokio::test]
+async fn a_uuid_message_id_survives_a_max_id_length_below_it() {
+    let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .with_handler_limits(crate::handler::HandlerLimits::default().with_max_id_length(32))
+        .build()
+        .expect("handler must build");
+
+    let mut params = make_params(None);
+    params.message.id = MessageId::new(uuid::Uuid::new_v4().to_string());
+    assert_eq!(
+        params.message.id.0.len(),
+        36,
+        "precondition: a hyphenated v4 UUID is 36 characters"
+    );
+
+    handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("a UUID message id must be accepted however tight max_id_length is");
+}
+
+/// Counter-test: the floor is a floor, not an exemption.
+///
+/// Without it, dropping the `message.id` check altogether would satisfy the
+/// test above while restoring the defect that check exists for — an id
+/// reaching `idempotency_keys.message_id` and a caller-visible error with no
+/// bound at all.
+#[tokio::test]
+async fn an_id_past_the_floor_is_still_refused_when_the_limit_is_tight() {
+    let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .with_handler_limits(crate::handler::HandlerLimits::default().with_max_id_length(32))
+        .build()
+        .expect("handler must build");
+
+    let mut params = make_params(None);
+    params.message.id = MessageId::new("m".repeat(37));
+
+    let err = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect_err("37 characters is past the 36-character floor and must be refused");
+    assert!(
+        matches!(err, ServerError::InvalidParams(ref msg) if msg.contains("message.id")),
+        "the error must still name the field, got: {err:?}"
+    );
+}
+
+/// And a limit above the floor is honoured as given, so the clamp does not
+/// quietly loosen a deployment that asked for more room.
+#[tokio::test]
+async fn a_limit_above_the_floor_is_used_as_given() {
+    let limits = crate::handler::HandlerLimits::default().with_max_id_length(100);
+    assert_eq!(limits.effective_max_message_id_length(), 100);
+
+    let tight = crate::handler::HandlerLimits::default().with_max_id_length(8);
+    assert_eq!(
+        tight.effective_max_message_id_length(),
+        crate::handler::MIN_MESSAGE_ID_LENGTH,
+        "below the floor, the floor wins"
+    );
+
+    // The boundary itself. Both sides of the clamp agree here, which is
+    // exactly why the `>` this was once spelled with had an equivalent
+    // mutant; the arithmetic that replaced it still has to land on 36.
+    let exactly = crate::handler::HandlerLimits::default()
+        .with_max_id_length(crate::handler::MIN_MESSAGE_ID_LENGTH);
+    assert_eq!(
+        exactly.effective_max_message_id_length(),
+        crate::handler::MIN_MESSAGE_ID_LENGTH,
+        "a limit set to the floor is the floor"
+    );
+}
