@@ -6,7 +6,9 @@
 //! Resumption: `id:` on every logged frame, and `Last-Event-ID` on the way
 //! back in.
 
-use super::{NoLog, Shared, ThreeSteps, drain_positions, handler_with, header};
+use super::{
+    NoLog, Shared, ThreeSteps, drain_positions, handler_with, header, parked_task_with_log,
+};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
 use a2a_protocol_types::events::StreamResponse;
@@ -21,42 +23,6 @@ use std::time::Duration;
 // The payoff the log exists for. A client that was disconnected sends back
 // the `id:` of the last frame it saw and receives exactly what it missed,
 // rather than a snapshot it has to diff against its own state.
-
-/// A task parked mid-run, with `count` events already in its log.
-///
-/// Parked because §3.1.6 forbids subscribing to a terminal task, and
-/// resumption is only meaningful while there is more to come.
-async fn parked_task_with_log(store: &Arc<InMemoryTaskStore>, count: u64) -> TaskId {
-    let task = Task {
-        id: TaskId::new("t-resume"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
-    store.save(&task).await.expect("save");
-    for seq in 1..=count {
-        let event =
-            StreamResponse::StatusUpdate(a2a_protocol_types::events::TaskStatusUpdateEvent {
-                task_id: task.id.clone(),
-                context_id: task.context_id.clone(),
-                // The position is encoded in the state sequence so a replay can
-                // be checked for *which* events came back, not just how many.
-                status: TaskStatus::new(if seq % 2 == 0 {
-                    TaskState::Working
-                } else {
-                    TaskState::InputRequired
-                }),
-                metadata: None,
-            });
-        store
-            .append_event(&task.id, seq, &event)
-            .await
-            .expect("append");
-    }
-    task.id
-}
 
 #[tokio::test]
 async fn a_resubscribe_with_last_event_id_replays_exactly_what_was_missed() {

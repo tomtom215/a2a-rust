@@ -101,10 +101,22 @@ pub(super) const SELECT_FOR_TASK_SQL: &str = "SELECT artifact, seq, part FROM ta
 /// `delete`.
 pub(super) const DELETE_FOR_TASK_SQL: &str = "DELETE FROM task_artifact_appends WHERE task_id = ?1";
 
-/// Reclaims rows whose task is gone. Run by the retention sweep, which
-/// deletes from `tasks` directly and so never goes through `delete_for`.
-pub(super) const DELETE_ORPHANS_SQL: &str =
-    "DELETE FROM task_artifact_appends WHERE task_id NOT IN (SELECT id FROM tasks)";
+/// Reclaims rows whose task is gone, one bounded batch per execution. Run by
+/// the retention sweep, which deletes from `tasks` directly and so never goes
+/// through `delete_for`.
+///
+/// `?1` bounds the batch, and the batch is a set of **task ids** rather than
+/// of rows: this table is `WITHOUT ROWID`, so the `rowid IN (SELECT ... LIMIT
+/// ?)` shape `retention::sqlite::purge` uses for the task rows is unavailable
+/// here. Every execution clears at least one orphaned task's journal
+/// entirely, so the sweep's loop makes progress and terminates. See
+/// `event_log::DELETE_ORPHANS_SQL`, which is the same shape for the same
+/// reasons.
+pub(super) const DELETE_ORPHANS_SQL: &str = "DELETE FROM task_artifact_appends WHERE task_id IN ( \
+         SELECT DISTINCT task_id FROM task_artifact_appends \
+          WHERE task_id NOT IN (SELECT id FROM tasks) \
+          LIMIT ?1 \
+     )";
 
 /// One journal row: which artifact, which position, and the part itself.
 pub(super) type Row = (i64, i64, String);

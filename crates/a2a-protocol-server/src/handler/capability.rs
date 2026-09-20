@@ -263,7 +263,11 @@ mod tests {
         if !exts.is_empty() {
             headers.insert("a2a-extensions".to_owned(), exts.join(","));
         }
-        crate::handler::helpers::build_call_context("Test", Some(&headers))
+        crate::handler::helpers::build_call_context(
+            "Test",
+            Some(&headers),
+            crate::handler::InboundTracePolicy::Continue,
+        )
     }
 
     #[tokio::test]

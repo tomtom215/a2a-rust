@@ -59,6 +59,9 @@ pub struct PostgresTaskStore {
     /// Largest page `list` will return. See
     /// [`with_max_page_size`](PostgresTaskStore::with_max_page_size).
     max_page_size: u32,
+    /// Where an append that recorded nothing is reported. See
+    /// [`with_metrics`](PostgresTaskStore::with_metrics).
+    metrics: crate::metrics::MetricsHandle,
 }
 
 impl PostgresTaskStore {
@@ -74,6 +77,20 @@ impl PostgresTaskStore {
         self.max_page_size = max;
         self
     }
+
+    /// Sets where this store reports an event it could not record.
+    ///
+    /// Defaults to [`NoopMetrics`](crate::metrics::NoopMetrics). An append is
+    /// `ON CONFLICT (task_id, seq) DO NOTHING`, so one that lands on a
+    /// position another replica already holds returns `Ok(())` having written
+    /// nothing — and a multi-replica deployment is exactly what this store is
+    /// for. See [`event_append_error`](crate::metrics::event_append_error).
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: crate::metrics::MetricsHandle) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
     /// Opens a `PostgreSQL` connection pool and initializes the schema.
     ///
     /// # Errors
@@ -102,6 +119,7 @@ impl PostgresTaskStore {
         Ok(Self {
             pool,
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
+            metrics: crate::metrics::MetricsHandle::default(),
         })
     }
 
@@ -161,6 +179,7 @@ impl PostgresTaskStore {
         Ok(Self {
             pool,
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
+            metrics: crate::metrics::MetricsHandle::default(),
         })
     }
 

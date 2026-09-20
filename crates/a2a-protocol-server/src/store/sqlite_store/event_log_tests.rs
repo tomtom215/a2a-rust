@@ -247,3 +247,122 @@ async fn the_migration_runner_creates_the_table_too() {
         .expect("the migration runner must create task_events");
     assert_eq!(store.last_event_seq(&task.id).await.expect("last"), 1);
 }
+
+/// Records what the store reported. An append that writes nothing returns
+/// `Ok(())`, so this callback is the only thing that can assert it happened.
+#[derive(Debug, Default)]
+struct Recorder {
+    seen: std::sync::Mutex<Vec<(String, String)>>,
+}
+
+impl crate::metrics::Metrics for Recorder {
+    fn on_persistence_error(&self, operation: &str, error_kind: &str) {
+        self.seen
+            .lock()
+            .expect("recorder mutex")
+            .push((operation.to_owned(), error_kind.to_owned()));
+    }
+}
+
+#[tokio::test]
+async fn a_second_writer_on_one_position_is_reported_and_a_replay_is_not() {
+    // `rows_affected()` was discarded here: `ON CONFLICT DO NOTHING` is the
+    // safety property, and it is also how an event is lost without an error.
+    // Two replicas, each with its own in-process queue and no database-backed
+    // lease between them, number one task's log from the same place. Kills
+    // dropping `rows_affected()`, and kills reporting a replay as a conflict.
+    let recorder = std::sync::Arc::new(Recorder::default());
+    let store = SqliteTaskStore::new("sqlite::memory:")
+        .await
+        .expect("in-memory sqlite should open")
+        .with_metrics(crate::metrics::MetricsHandle::from_arc(recorder.clone()));
+    let task = task("t-1");
+    store.save(&task).await.expect("save");
+
+    store
+        .append_event(&task.id, 1, &event(TaskState::Working))
+        .await
+        .expect("append");
+    store
+        .append_event(&task.id, 1, &event(TaskState::Working))
+        .await
+        .expect("replay");
+    assert!(
+        recorder.seen.lock().expect("recorder mutex").is_empty(),
+        "the same event at the same position lost nothing"
+    );
+
+    store
+        .append_event(&task.id, 1, &event(TaskState::Completed))
+        .await
+        .expect("collision");
+    assert_eq!(
+        recorder.seen.lock().expect("recorder mutex").clone(),
+        vec![(
+            crate::metrics::persistence_operation::EVENT_APPEND.to_owned(),
+            crate::metrics::event_append_error::POSITION_CONFLICT.to_owned(),
+        )],
+    );
+
+    let held = store.read_events(&task.id, 0, 10).await.expect("read");
+    assert_eq!(held.len(), 1, "a position holds one event, not two");
+}
+
+#[tokio::test]
+async fn the_log_reports_the_earliest_position_it_still_holds() {
+    // A reader resuming from a position the log no longer holds was handed the
+    // surviving tail with nothing saying so, and could not tell it from the
+    // numbering gaps the design calls normal. Kills `earliest_event_seq`.
+    let store = store().await;
+    let task = task("t-1");
+    store.save(&task).await.expect("save");
+
+    assert_eq!(
+        store.earliest_event_seq(&task.id).await.expect("earliest"),
+        None,
+        "an empty log holds no position, and must not claim one"
+    );
+
+    for seq in [5, 6, 7] {
+        store
+            .append_event(&task.id, seq, &event(TaskState::Working))
+            .await
+            .expect("append");
+    }
+    assert_eq!(
+        store.earliest_event_seq(&task.id).await.expect("earliest"),
+        Some(5),
+    );
+    assert!(
+        !store.event_log_covers(&task.id, 2).await.expect("covers"),
+        "resuming after 2 needs position 3, and the log starts at 5"
+    );
+    assert!(
+        store.event_log_covers(&task.id, 4).await.expect("covers"),
+        "after_seq + 1 == earliest is exactly covered"
+    );
+}
+
+#[tokio::test]
+async fn a_non_positive_position_is_refused_by_the_schema() {
+    // `seq_to_i64` refuses a `u64` too large to store, because a wrapped
+    // position would collide with a real one and the collision would drop an
+    // event rather than raise anything. Nothing said that to the database, and
+    // every read-back path turned a stored negative into a positive with
+    // `unsigned_abs`. Kills the `CHECK (seq > 0)`.
+    let store = store().await;
+    store.save(&task("t-1")).await.expect("save");
+
+    for bad in [0_i64, -1] {
+        let err =
+            sqlx::query("INSERT INTO task_events (task_id, seq, payload) VALUES ('t-1', ?1, '{}')")
+                .bind(bad)
+                .execute(&store.pool)
+                .await
+                .expect_err("a non-positive position is not a position");
+        assert!(
+            format!("{err}").to_lowercase().contains("constraint"),
+            "the schema must be what refuses it: {err}"
+        );
+    }
+}

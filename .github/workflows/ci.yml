@@ -163,6 +163,15 @@ jobs:
       - name: API Quick Reference names still exist
         run: python3 scripts/check_api_reference.py
 
+      # A fuzz target reaches a runner through three files — the harness, a
+      # `[[bin]]` in fuzz/Cargo.toml, and fuzz.yml's matrix — and only the
+      # third has no build error behind it. Miss it and the target is written,
+      # reviewed, merged, builds clean and is executed by nobody, while every
+      # document quoting the fuzz-suite count goes up by one. `trace_context`
+      # shipped that way on 2026-09-20.
+      - name: Every fuzz target is both built and run
+        run: python3 scripts/check_fuzz_matrix.py
+
       # `Metrics` callbacks default to no-ops, so one the bundled OTLP exporter
       # forgets is discarded with no compile error and no failing test — the
       # exporter's own tests run against a noop meter, which a no-op override

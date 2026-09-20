@@ -184,8 +184,27 @@ pub struct PurgeReport {
     /// `SqliteTaskStore::new` sets — the rows go with the task and the sweep
     /// finds nothing left to do. A non-zero count means rows had outlived
     /// their task, which happens when `from_pool` was handed a pool without
-    /// the pragma. Always zero on `PostgreSQL`, where the constraint is
-    /// always enforced.
+    /// the pragma.
+    ///
+    /// # It is zero on `PostgreSQL` because nothing counts there
+    ///
+    /// Only the `SQLite` sweep runs anti-join deletes; the `PostgreSQL` one
+    /// has no orphan statement at all, so this field is *structurally* zero on
+    /// both Postgres stores rather than observed to be. That is a deliberate
+    /// omission and not an oversight: `PostgreSQL` has no per-session
+    /// equivalent of `foreign_keys=OFF`, so a declared `ON DELETE CASCADE`
+    /// always fires and there is nothing for a sweep to find.
+    ///
+    /// The residual case it does **not** cover is a caller who handed
+    /// `from_pool` a database in which `task_events` or `tenant_task_events`
+    /// already existed without the foreign key — `CREATE TABLE IF NOT EXISTS`
+    /// leaves such a table alone. Rows can then be stranded there and no
+    /// Postgres sweep will reclaim them. Declare the tables from this crate's
+    /// own DDL, or from its migration runner, and the case does not arise.
+    ///
+    /// Since 0.13 the `SQLite` sweep runs on every purge rather than only on
+    /// one that deleted a task: a purge that fails part way strands rows that
+    /// outlive it, and the sweep is what reclaims them.
     pub orphan_rows_deleted: u64,
     /// Batches executed.
     pub batches: u32,

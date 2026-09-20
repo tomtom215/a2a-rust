@@ -195,7 +195,51 @@ async fn a_malformed_traceparent_is_dropped_not_repaired() {
 
     assert!(
         observed.lock().expect("uncontended").is_none(),
-        "uppercase hex is invalid per W3C 3.3 and must not be accepted"
+        "uppercase hex is invalid per W3C 3.2.2.3 and must not be accepted"
+    );
+}
+
+/// A reserved `trace-flags` bit must not survive the hop.
+///
+/// W3C Trace Context §3.2.2.5.2 "Other Flags": *"The behavior of other flags,
+/// such as (00000100) is not defined and is reserved for future use. Vendors
+/// MUST set those to zero."* §4.3: *"Vendors will set all unparsed / unknown
+/// trace-flags to 0 on outgoing requests."*
+///
+/// `03` is sampled plus one reserved bit. Trace Context Level 2 assigns
+/// `0x02` to `random-trace-id`, so carrying a peer's `03` through would have
+/// this SDK assert downstream that the trace id is random — something it
+/// never checked. Sent by hand, because the interceptor can no longer produce
+/// one.
+#[tokio::test]
+async fn a_reserved_trace_flag_bit_does_not_survive_the_hop() {
+    let observed: Observed = Arc::new(Mutex::new(None));
+    let url = spawn_agent(&observed).await;
+
+    let client = ClientBuilder::new(&url)
+        .with_interceptor(FixedHeader(
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-03",
+        ))
+        .build()
+        .expect("build client");
+    client.send_message(params()).await.expect("send");
+
+    let seen = observed
+        .lock()
+        .expect("uncontended")
+        .clone()
+        .expect("a well-formed traceparent must still be joined");
+
+    assert!(seen.is_sampled(), "the sampled bit is a real one and stays");
+    assert_eq!(
+        seen.flags(),
+        0x01,
+        "the reserved 0x02 bit must be zero by the time this hop propagates it"
+    );
+    assert!(
+        seen.traceparent().ends_with("-01"),
+        "and must be zero on the wire: {}",
+        seen.traceparent()
     );
 }
 

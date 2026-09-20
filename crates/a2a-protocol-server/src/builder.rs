@@ -110,6 +110,7 @@ pub struct RequestHandlerBuilder {
     tenant_resolver: Option<Arc<dyn TenantResolver>>,
     tenant_config: Option<PerTenantConfig>,
     require_resolved_tenant: bool,
+    inbound_trace_policy: crate::handler::InboundTracePolicy,
     allow_unauthenticated_extended_card: bool,
 }
 
@@ -136,6 +137,7 @@ impl RequestHandlerBuilder {
             tenant_resolver: None,
             tenant_config: None,
             require_resolved_tenant: false,
+            inbound_trace_policy: crate::handler::InboundTracePolicy::Continue,
             allow_unauthenticated_extended_card: false,
         }
     }
@@ -322,6 +324,34 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub const fn require_resolved_tenant(mut self) -> Self {
         self.require_resolved_tenant = true;
+        self
+    }
+
+    /// Decides what this handler does with a `traceparent` an as-yet
+    /// unauthenticated peer sent it.
+    ///
+    /// The inbound trace is joined while the `CallContext` is built, which is
+    /// before the interceptor chain runs — and the interceptor chain is where
+    /// authentication happens. So on a public endpoint the peer choosing the
+    /// `trace-id` and the sampling bit is, at that moment, anonymous. W3C
+    /// Trace Context §7.2 names the consequences and §3.4 names the remedy;
+    /// [`InboundTracePolicy`](crate::handler::InboundTracePolicy) quotes both.
+    ///
+    /// Defaults to [`InboundTracePolicy::Continue`](crate::handler::InboundTracePolicy::Continue),
+    /// because A2A's premise is a mesh of agents delegating to one another and
+    /// one trace id surviving every hop is what makes such a chain readable.
+    /// A front gate opts in to
+    /// [`Restart`](crate::handler::InboundTracePolicy::Restart) or
+    /// [`Drop`](crate::handler::InboundTracePolicy::Drop).
+    ///
+    /// Per handler, so one process serving both a public front gate and an
+    /// internal endpoint can hold a different policy on each.
+    #[must_use]
+    pub const fn with_inbound_trace_policy(
+        mut self,
+        policy: crate::handler::InboundTracePolicy,
+    ) -> Self {
+        self.inbound_trace_policy = policy;
         self
     }
 
@@ -537,6 +567,7 @@ impl RequestHandlerBuilder {
             limits: self.handler_limits,
             tenant_resolver: self.tenant_resolver,
             require_resolved_tenant: self.require_resolved_tenant,
+            inbound_trace_policy: self.inbound_trace_policy,
             allow_unauthenticated_extended_card: self.allow_unauthenticated_extended_card,
             required_extensions,
             declared_extensions,
@@ -569,6 +600,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("tenant_resolver", &self.tenant_resolver.is_some())
             .field("tenant_config", &self.tenant_config)
             .field("require_resolved_tenant", &self.require_resolved_tenant)
+            .field("inbound_trace_policy", &self.inbound_trace_policy)
             .field(
                 "allow_unauthenticated_extended_card",
                 &self.allow_unauthenticated_extended_card,

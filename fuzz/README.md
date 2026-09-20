@@ -19,11 +19,15 @@ Fuzz testing validates that the A2A type system handles arbitrary and malformed 
 | `proto_convert` | Differential round-trip of the protobuf <-> serde conversion layer (decode, convert, convert back, re-encode) |
 | `iso8601` | The ISO-8601 timestamp parser used on stored task timestamps and the `statusTimestampAfter` filter |
 | `jwks_parse` | `Jwks::from_json`, parsing a key set fetched from a remote OIDC/JWKS endpoint |
+| `trace_context` | The W3C Trace Context parser (`TraceContext::parse` and `with_tracestate`) on a peer-supplied `traceparent`/`tracestate` pair |
 
-All six run as a 60-second smoke test on every PR/push and a 10-minute sweep
-nightly (`.github/workflows/fuzz.yml`); the nightly sweep also persists each
-target's corpus between runs via GitHub Actions cache, so it builds on
-previously discovered inputs instead of starting from empty every night.
+Every target named in `.github/workflows/fuzz.yml`'s `matrix.target` runs as a
+60-second smoke test on every PR/push and a 10-minute sweep nightly; the
+nightly sweep also persists each target's corpus between runs via GitHub
+Actions cache, so it builds on previously discovered inputs instead of starting
+from empty every night. A target registered here but missing from that matrix
+is built by nobody and run by nobody, so adding one is two edits, not one:
+`fuzz/Cargo.toml` **and** that matrix.
 
 ## Running
 
@@ -38,6 +42,7 @@ cargo +nightly fuzz run sse_parser
 cargo +nightly fuzz run proto_convert
 cargo +nightly fuzz run iso8601
 cargo +nightly fuzz run jwks_parse
+cargo +nightly fuzz run trace_context
 
 # Run with a time limit (e.g., 5 minutes)
 cargo +nightly fuzz run json_deser -- -max_total_time=300

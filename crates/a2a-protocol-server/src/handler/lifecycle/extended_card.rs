@@ -29,7 +29,8 @@ impl RequestHandler {
         self.metrics.on_request("GetExtendedAgentCard");
 
         let result: ServerResult<_> = async {
-            let call_ctx = build_call_context("GetExtendedAgentCard", headers);
+            let call_ctx =
+                build_call_context("GetExtendedAgentCard", headers, self.inbound_trace_policy);
             self.interceptors.run_before(&call_ctx).await?;
 
             // SPEC §3.1.11: If capabilities.extended_agent_card is false or

@@ -37,6 +37,29 @@
 //! credential. This is a deliberate limitation of the WebSocket binding, which
 //! is not part of the canonical A2A transport set (JSON-RPC, REST, gRPC).
 //!
+//! # W3C trace context is not propagated over this transport
+//!
+//! Stated plainly because the alternative is a silent gap:
+//! [`TracePropagationInterceptor`](crate::TracePropagationInterceptor)
+//! **has no effect on an established WebSocket connection.** The `traceparent`
+//! and `tracestate` it writes are per-request headers, and this binding has
+//! nowhere to put them: a JSON-RPC text frame carries no header channel, and
+//! the A2A WebSocket binding defines no in-band equivalent. Inventing one
+//! would be a private protocol extension no peer implements.
+//!
+//! Connect-time headers are not the workaround they are for a credential.
+//! [W3C Trace Context §3.4](https://www.w3.org/TR/trace-context/#mutating-the-traceparent-field)
+//! requires every outgoing request to advance `parent-id` — *"The value of
+//! property parent-id MUST be set to a value representing the ID of the
+//! current operation"* (§4.3) — so one `traceparent` fixed at the handshake
+//! would report every request on the connection as the same span. That is a
+//! wrong trace, not a partial one, and a missing span is the smaller lie.
+//!
+//! **If a call must be traced, send it over JSON-RPC, REST or gRPC**, where
+//! the interceptor writes the header on every request as documented. A
+//! dropped trace header is reported once per connection at `warn`, separately
+//! from the per-call credential warning, which has a different remedy.
+//!
 //! # Feature gate
 //!
 //! Requires the `websocket` feature flag:
@@ -319,6 +342,11 @@ struct Inner {
     reader_handle: tokio::task::JoinHandle<()>,
     /// Background writer task, aborted on drop.
     writer_handle: tokio::task::JoinHandle<()>,
+    /// Whether the dropped-`traceparent` notice has been emitted on this
+    /// connection. It is a property of the binding, not of a request, so it
+    /// is said once: an open `CurrentTrace::scope` otherwise puts a `warn`
+    /// line on *every* call, which is how a real warning gets filtered out.
+    trace_drop_warned: AtomicBool,
 }
 
 impl Drop for Inner {
@@ -515,6 +543,7 @@ impl WebSocketTransport {
                 max_pending_requests: config.max_pending_requests,
                 reader_handle,
                 writer_handle,
+                trace_drop_warned: AtomicBool::new(false),
             }),
         })
     }
@@ -533,7 +562,7 @@ impl WebSocketTransport {
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<serde_json::Value> {
         self.check_open()?;
-        warn_dropped_per_request_headers(method, extra_headers);
+        warn_dropped_per_request_headers(method, extra_headers, &self.inner.trace_drop_warned);
         trace_info!(method, endpoint = %self.inner.endpoint, "sending WebSocket JSON-RPC request");
 
         let rpc_req = build_rpc_request(method, params);
@@ -612,7 +641,7 @@ impl WebSocketTransport {
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<EventStream> {
         self.check_open()?;
-        warn_dropped_per_request_headers(method, extra_headers);
+        warn_dropped_per_request_headers(method, extra_headers, &self.inner.trace_drop_warned);
         trace_info!(method, endpoint = %self.inner.endpoint, "opening WebSocket stream");
 
         let rpc_req = build_rpc_request(method, params);
@@ -684,22 +713,60 @@ impl std::fmt::Debug for WebSocketTransport {
     }
 }
 
-/// Warns (once per call) when the client's interceptor chain produced
-/// per-request headers that the WebSocket binding cannot deliver on an
-/// established connection. Silently dropping an `Authorization` header would
-/// send the request unauthenticated with no signal; this makes the drop
-/// observable. See the module docs for the rationale and the connect-time
-/// alternative.
+/// The W3C Trace Context headers, which need a different diagnosis from a
+/// credential: §3.2.1 and §3.3.1 both require the name to be recognised in
+/// *any* case, so the match is case-insensitive.
+const TRACE_HEADERS: [&str; 2] = [
+    a2a_protocol_types::trace_context::TRACEPARENT_HEADER,
+    a2a_protocol_types::trace_context::TRACESTATE_HEADER,
+];
+
+/// Reports per-request headers the WebSocket binding cannot deliver on an
+/// established connection, with the remediation that actually applies to
+/// each kind.
+///
+/// Silently dropping an `Authorization` header would send the request
+/// unauthenticated with no signal; that stays a per-call `warn`, because a
+/// rotated token is a per-call fact and "reconnect" really is the fix.
+///
+/// A dropped `traceparent` is a different thing and the old message misdiagnosed
+/// it: supplying a trace "at connect time" pins every request on the connection
+/// to one span, which is worse than sending none. It is a property of the
+/// binding rather than of the request, so it is said **once per connection** —
+/// at `warn` on every call it would simply be filtered out, and a single open
+/// [`CurrentTrace`](crate::CurrentTrace) scope is enough to make it fire on
+/// all of them.
 // `method` is consumed only by `trace_warn!`, which expands to nothing when the
 // `tracing` feature is off — allow it to be unused in that build.
 #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
-fn warn_dropped_per_request_headers(method: &str, extra_headers: &HashMap<String, String>) {
-    if !extra_headers.is_empty() {
+fn warn_dropped_per_request_headers(
+    method: &str,
+    extra_headers: &HashMap<String, String>,
+    trace_warned: &AtomicBool,
+) {
+    let trace_dropped = extra_headers
+        .keys()
+        .any(|k| TRACE_HEADERS.iter().any(|t| k.eq_ignore_ascii_case(t)));
+    let other_dropped = extra_headers
+        .keys()
+        .filter(|k| !TRACE_HEADERS.iter().any(|t| k.eq_ignore_ascii_case(t)))
+        .count();
+
+    if other_dropped > 0 {
         trace_warn!(
             method,
-            header_count = extra_headers.len(),
+            header_count = other_dropped,
             "per-request headers are not sent over an established WebSocket connection; \
              supply credentials at connect time via WebSocketTransport::connect_with_options"
+        );
+    }
+    if trace_dropped && !trace_warned.swap(true, Ordering::Relaxed) {
+        trace_warn!(
+            method,
+            "W3C trace context cannot be propagated per request over an established \
+             WebSocket connection: the headers ride the HTTP upgrade only, so one value \
+             would label every request on this connection. Traced calls belong on a \
+             canonical A2A transport (JSON-RPC, REST or gRPC). Reported once per connection"
         );
     }
 }
@@ -1705,9 +1772,10 @@ mod tests {
         }
 
         let count = Arc::new(AtomicUsize::new(0));
+        let warned = AtomicBool::new(false);
         tracing::subscriber::with_default(CountingSubscriber(Arc::clone(&count)), || {
             // No headers to drop → no warning.
-            warn_dropped_per_request_headers("SendMessage", &HashMap::new());
+            warn_dropped_per_request_headers("SendMessage", &HashMap::new(), &warned);
             assert_eq!(
                 count.load(Ordering::SeqCst),
                 0,
@@ -1717,11 +1785,84 @@ mod tests {
             // A dropped header → exactly one warning, so the drop is observable.
             let mut headers = HashMap::new();
             headers.insert("authorization".to_owned(), "Bearer secret".to_owned());
-            warn_dropped_per_request_headers("SendMessage", &headers);
+            warn_dropped_per_request_headers("SendMessage", &headers, &warned);
             assert_eq!(
                 count.load(Ordering::SeqCst),
                 1,
                 "dropping a per-request header must emit a warning (never silent)"
+            );
+
+            // A credential is a per-request fact: every call says so again,
+            // because the request that just went out was unauthenticated.
+            warn_dropped_per_request_headers("SendMessage", &headers, &warned);
+            assert_eq!(
+                count.load(Ordering::SeqCst),
+                2,
+                "each unauthenticated request must be reported"
+            );
+        });
+    }
+
+    /// A dropped `traceparent` is a property of the binding, not of a
+    /// request. It has to be reported — the interceptor's documented promise
+    /// is that it writes the trace onto every outbound request, and here it
+    /// cannot — but reporting it on every call is how a `warn` line becomes
+    /// noise that gets filtered, and one open `CurrentTrace::scope` makes it
+    /// fire on all of them.
+    ///
+    /// The header name is matched case-insensitively, per W3C Trace Context
+    /// §3.2.1: *"Vendors MUST expect the header name in any case (upper,
+    /// lower, mixed)."*
+    #[cfg(feature = "tracing")]
+    #[test]
+    fn a_dropped_traceparent_is_reported_once_per_connection() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct CountingSubscriber(Arc<AtomicUsize>);
+        impl tracing::Subscriber for CountingSubscriber {
+            fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+                true
+            }
+            fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+                tracing::span::Id::from_u64(1)
+            }
+            fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+            fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+            fn event(&self, _: &tracing::Event<'_>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+            fn enter(&self, _: &tracing::span::Id) {}
+            fn exit(&self, _: &tracing::span::Id) {}
+        }
+
+        let count = Arc::new(AtomicUsize::new(0));
+        let warned = AtomicBool::new(false);
+        tracing::subscriber::with_default(CountingSubscriber(Arc::clone(&count)), || {
+            let mut headers = HashMap::new();
+            headers.insert(
+                "Traceparent".to_owned(),
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_owned(),
+            );
+            headers.insert("tracestate".to_owned(), "vendor=value".to_owned());
+
+            for _ in 0..5 {
+                warn_dropped_per_request_headers("SendMessage", &headers, &warned);
+            }
+            assert_eq!(
+                count.load(Ordering::SeqCst),
+                1,
+                "the binding's limitation is stated once, not once per request"
+            );
+
+            // A credential alongside it still gets its own per-call warning:
+            // the two are different diagnoses with different remedies.
+            headers.insert("authorization".to_owned(), "Bearer secret".to_owned());
+            warn_dropped_per_request_headers("SendMessage", &headers, &warned);
+            assert_eq!(
+                count.load(Ordering::SeqCst),
+                2,
+                "a dropped credential is never suppressed by the trace notice"
             );
         });
     }

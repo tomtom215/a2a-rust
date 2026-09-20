@@ -46,6 +46,12 @@ use super::InMemoryTaskStore;
 /// [`TaskStoreConfig::max_page_size`]: TaskStoreConfig
 pub const DEFAULT_MAX_PAGE_SIZE: u32 = 1000;
 
+/// How many events one task's log keeps when nothing else is asked for.
+///
+/// See [`TaskStoreConfig::max_events_per_task`] for why the log needs a bound
+/// at all and how this number was chosen.
+pub const DEFAULT_MAX_EVENTS_PER_TASK: usize = 512;
+
 /// Configuration for [`InMemoryTaskStore`].
 ///
 /// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
@@ -82,6 +88,46 @@ pub struct TaskStoreConfig {
     ///
     /// Larger requested page sizes are clamped to this limit.
     pub max_page_size: u32,
+
+    /// How many events one task's log may hold before the oldest are dropped.
+    /// `None` means no limit. Default: `Some(512)`.
+    ///
+    /// # Why this has to be bounded at all
+    ///
+    /// [`max_capacity`](Self::max_capacity) and [`task_ttl`](Self::task_ttl)
+    /// bound the number of *tasks*; until 0.13 nothing bounded what one task
+    /// held. The log keeps a full `event.clone()` per append, artifact
+    /// payloads included, so a streaming agent that emits 10,000 chunks leaves
+    /// the store holding the folded task *and* a second copy of every chunk.
+    /// Memory per task went from O(final task size) to O(events × event size),
+    /// and the only thing that freed it was the whole task being evicted.
+    ///
+    /// # Why 512
+    ///
+    /// The log's job is to let a subscriber that dropped its connection resume
+    /// where it left off, so what it has to cover is a reconnect, not a run.
+    /// 512 positions is roughly a 500-chunk stream — the length this
+    /// repository's own `backpressure/append_volume` benchmark uses as its
+    /// large case — so a reconnect inside one typical response replays in
+    /// full. It is deliberately not "whatever the longest run produces": that
+    /// number is unbounded and set by the agent, not by the operator.
+    ///
+    /// Raise it where subscribers reconnect after long gaps and the events are
+    /// small; lower it where artifact chunks are large. Truncation is safe
+    /// either way — see the next paragraph — so the cost of too low a value is
+    /// a resubscribe that is told it cannot be served, not one served wrongly.
+    ///
+    /// # Dropping the oldest is safe, and this is what makes it safe
+    ///
+    /// A reader that asks to resume from a position the log no longer holds
+    /// must not be handed the surviving tail as though nothing were missing.
+    /// [`TaskStore::earliest_event_seq`](super::TaskStore::earliest_event_seq)
+    /// reports the oldest position still held, and
+    /// [`TaskStore::event_log_covers`](super::TaskStore::event_log_covers)
+    /// turns that into the question a resubscribe actually asks. Truncation
+    /// never empties a log — at least one event is always kept — so the
+    /// earliest position stays answerable.
+    pub max_events_per_task: Option<usize>,
 }
 
 impl Default for TaskStoreConfig {
@@ -91,6 +137,7 @@ impl Default for TaskStoreConfig {
             task_ttl: Some(Duration::from_secs(3600)), // 1 hour
             eviction_interval: 64,
             max_page_size: DEFAULT_MAX_PAGE_SIZE,
+            max_events_per_task: Some(DEFAULT_MAX_EVENTS_PER_TASK),
         }
     }
 }
@@ -123,5 +170,27 @@ impl TaskStoreConfig {
     pub const fn with_max_page_size(mut self, max: u32) -> Self {
         self.max_page_size = max;
         self
+    }
+
+    /// Sets how many events one task's log keeps; `None` is no limit.
+    ///
+    /// `Some(0)` is treated as `Some(1)`: a log that keeps nothing could not
+    /// report an earliest position, and a resuming subscriber would be told
+    /// the log is complete when it holds nothing at all. See
+    /// [`max_events_per_task`](Self::max_events_per_task) for the default and
+    /// for why dropping the oldest entries does not produce a gapped replay.
+    #[must_use]
+    pub const fn with_max_events_per_task(mut self, max: Option<usize>) -> Self {
+        self.max_events_per_task = max;
+        self
+    }
+
+    /// The event-log bound actually applied, never zero, and `None` when the
+    /// log is unbounded. See [`with_max_events_per_task`](Self::with_max_events_per_task).
+    pub(crate) const fn effective_max_events_per_task(&self) -> Option<usize> {
+        match self.max_events_per_task {
+            Some(0) => Some(1),
+            other => other,
+        }
     }
 }

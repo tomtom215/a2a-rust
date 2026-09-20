@@ -50,6 +50,9 @@ pub struct TenantAwarePostgresTaskStore {
     /// Largest page `list` will return. See
     /// [`with_max_page_size`](TenantAwarePostgresTaskStore::with_max_page_size).
     max_page_size: u32,
+    /// Where an append that recorded nothing is reported. See
+    /// [`with_metrics`](TenantAwarePostgresTaskStore::with_metrics).
+    metrics: crate::metrics::MetricsHandle,
 }
 
 impl TenantAwarePostgresTaskStore {
@@ -65,6 +68,20 @@ impl TenantAwarePostgresTaskStore {
         self.max_page_size = max;
         self
     }
+
+    /// Sets where this store reports an event it could not record.
+    ///
+    /// Defaults to [`NoopMetrics`](crate::metrics::NoopMetrics). See
+    /// [`event_append_error`](crate::metrics::event_append_error): a
+    /// multi-replica deployment is what this store is for, and two replicas
+    /// numbering one task's log is exactly what an append that writes nothing
+    /// reports.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: crate::metrics::MetricsHandle) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
     /// Opens a `PostgreSQL` connection pool and initializes the schema.
     ///
     /// # Errors
@@ -138,6 +155,7 @@ impl TenantAwarePostgresTaskStore {
         Ok(Self {
             pool,
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
+            metrics: crate::metrics::MetricsHandle::default(),
         })
     }
 

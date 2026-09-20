@@ -155,6 +155,37 @@ impl RequestHandler {
             return;
         };
 
+        // The log may no longer hold the position the client asked to resume
+        // from — the in-memory log is bounded, and a persistent one is swept.
+        // `read_events` cannot say so: it returns whatever survives above
+        // `after_seq`, and a replay that silently begins later than asked is
+        // a gap the subscriber has no way to detect. The snapshot the stream
+        // already starts with is the correct answer instead.
+        //
+        // Checked after the read rather than before it, and deliberately: the
+        // read waits for the writer to catch up, and a log bounded at 512
+        // events can truncate during that wait. A check before the wait could
+        // pass and the position be gone by the time the events are in hand,
+        // which is the very failure this exists to prevent.
+        //
+        // A store error keeps the pre-existing path — `true` means "no gap can
+        // be proven", so a store that cannot answer behaves exactly as it did
+        // before this check existed.
+        if !self
+            .task_store
+            .event_log_covers(task_id, after_seq)
+            .await
+            .unwrap_or(true)
+        {
+            trace_warn!(
+                task_id = %task_id,
+                after_seq = after_seq,
+                "resubscribe asked to resume from a position the event log no longer \
+                 holds; the stream starts from the snapshot rather than a gapped replay"
+            );
+            return;
+        }
+
         trace_info!(
             task_id = %task_id,
             after_seq = after_seq,
@@ -265,7 +296,8 @@ impl RequestHandler {
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(
             tenant,
             Box::pin(async {
-                let call_ctx = build_call_context("SubscribeToTask", headers);
+                let call_ctx =
+                    build_call_context("SubscribeToTask", headers, self.inbound_trace_policy);
                 self.interceptors.run_before(&call_ctx).await?;
                 // SPEC §3.3.4: reject clients that do not declare support for
                 // extensions the agent card marks required.

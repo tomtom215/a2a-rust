@@ -160,7 +160,7 @@ impl RequestHandler {
         method_name: &str,
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<SendMessageResult> {
-        let call_ctx = build_call_context(method_name, headers);
+        let call_ctx = build_call_context(method_name, headers, self.inbound_trace_policy);
         self.interceptors.run_before(&call_ctx).await?;
         // SPEC §3.3.4: reject clients that do not declare support for
         // extensions the agent card marks required.

@@ -14,6 +14,7 @@
 mod live_resubscribe;
 mod log;
 mod resumption;
+mod truncation;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,7 +28,7 @@ use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::{Message, Part};
 use a2a_protocol_types::params::MessageSendParams;
-use a2a_protocol_types::task::{TaskId, TaskState};
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 struct ThreeSteps;
 agent_executor!(ThreeSteps, |ctx, queue| async {
@@ -96,6 +97,17 @@ impl TaskStore for Shared {
 
     fn supports_event_log(&self) -> bool {
         self.0.supports_event_log()
+    }
+    /// Delegated, not left at the trait default.
+    ///
+    /// The default answers `None` — "cannot say" — which makes every log look
+    /// complete, so a wrapper that forgot this would hide a truncated log
+    /// from `event_log_covers` and from any test written against it.
+    fn earliest_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
+        self.0.earliest_event_seq(task_id)
     }
     fn append_event<'a>(
         &'a self,
@@ -240,6 +252,46 @@ async fn send_and_settle(handler: &RequestHandler, store: &Arc<InMemoryTaskStore
 
 /// Builds a one-entry header map, lowercased the way every dispatcher
 /// normalizes before the handler sees it.
+/// A task parked mid-run, with `count` events already in its log.
+///
+/// Shared by `resumption` and `truncation`: both need a log with known
+/// contents, and the second exists because a *bounded* log is the case
+/// the first cannot express.
+///
+/// Parked because §3.1.6 forbids subscribing to a terminal task, and
+/// resumption is only meaningful while there is more to come.
+pub(crate) async fn parked_task_with_log(store: &Arc<InMemoryTaskStore>, count: u64) -> TaskId {
+    let task = Task {
+        id: TaskId::new("t-resume"),
+        context_id: ContextId::new("c-1"),
+        status: TaskStatus::new(TaskState::InputRequired),
+        history: None,
+        artifacts: None,
+        metadata: None,
+    };
+    store.save(&task).await.expect("save");
+    for seq in 1..=count {
+        let event =
+            StreamResponse::StatusUpdate(a2a_protocol_types::events::TaskStatusUpdateEvent {
+                task_id: task.id.clone(),
+                context_id: task.context_id.clone(),
+                // The position is encoded in the state sequence so a replay can
+                // be checked for *which* events came back, not just how many.
+                status: TaskStatus::new(if seq % 2 == 0 {
+                    TaskState::Working
+                } else {
+                    TaskState::InputRequired
+                }),
+                metadata: None,
+            });
+        store
+            .append_event(&task.id, seq, &event)
+            .await
+            .expect("append");
+    }
+    task.id
+}
+
 pub(crate) fn header(name: &str, value: &str) -> HashMap<String, String> {
     let mut h = HashMap::new();
     h.insert(name.to_owned(), value.to_owned());

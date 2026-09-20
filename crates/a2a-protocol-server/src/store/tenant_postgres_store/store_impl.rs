@@ -24,7 +24,9 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 
 use super::{TenantAwarePostgresTaskStore, to_a2a_error};
-use crate::store::event_log_sql::{decode_json_row, encode_json, limit_to_i64, seq_to_i64};
+use crate::store::event_log_sql::{
+    decode_json_row, encode_json, limit_to_i64, report_no_op_append, seq_from_i64, seq_to_i64,
+};
 use crate::store::task_store::{RecordedEvent, TaskStore};
 use crate::store::tenant::TenantContext;
 use crate::store::tenant_event_log as evlog;
@@ -346,14 +348,31 @@ impl TaskStore for TenantAwarePostgresTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::current();
-            sqlx::query(evlog::PG_APPEND)
+            let position = seq_to_i64(seq)?;
+            let payload = encode_json(event)?;
+            // `rows_affected()` was discarded here until 0.13; see
+            // `event_log_sql::report_no_op_append` for what it hid.
+            let wrote = sqlx::query(evlog::PG_APPEND)
                 .bind(&tenant)
                 .bind(task_id.0.as_str())
-                .bind(seq_to_i64(seq)?)
-                .bind(encode_json(event)?)
+                .bind(position)
+                .bind(&payload)
                 .execute(&self.pool)
                 .await
-                .map_err(|e| to_a2a_error(&e))?;
+                .map_err(|e| to_a2a_error(&e))?
+                .rows_affected()
+                > 0;
+            if !wrote {
+                let stored: Option<(serde_json::Value,)> = sqlx::query_as(evlog::PG_SELECT_PAYLOAD)
+                    .bind(&tenant)
+                    .bind(task_id.0.as_str())
+                    .bind(position)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .unwrap_or(None);
+                let same = stored.is_some_and(|(held,)| held == payload);
+                report_no_op_append(&*self.metrics, task_id, seq, same);
+            }
             Ok(())
         })
     }
@@ -370,7 +389,23 @@ impl TaskStore for TenantAwarePostgresTaskStore {
                 .fetch_one(&self.pool)
                 .await
                 .map_err(|e| to_a2a_error(&e))?;
-            Ok(max.unsigned_abs())
+            seq_from_i64(max)
+        })
+    }
+
+    fn earliest_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
+        Box::pin(async move {
+            let tenant = TenantContext::current();
+            let (min,): (Option<i64>,) = sqlx::query_as(evlog::PG_EARLIEST_SEQ)
+                .bind(&tenant)
+                .bind(task_id.0.as_str())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            min.map(seq_from_i64).transpose()
         })
     }
 

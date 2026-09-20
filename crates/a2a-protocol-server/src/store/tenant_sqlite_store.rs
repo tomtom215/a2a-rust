@@ -37,11 +37,14 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use sqlx::sqlite::SqlitePool;
 
-use super::event_log_sql::{decode_text_row, encode_text, limit_to_i64, seq_to_i64};
+use super::event_log_sql::{
+    decode_text_row, encode_text, limit_to_i64, report_no_op_append, seq_from_i64, seq_to_i64,
+};
 use super::task_store::{RecordedEvent, TaskStore};
 use super::tenant::TenantContext;
 use super::tenant_event_log as evlog;
 use super::tenant_idempotency as idem;
+use crate::metrics::MetricsHandle;
 
 /// Tenant-scoped `SQLite`-backed [`TaskStore`].
 ///
@@ -70,6 +73,9 @@ pub struct TenantAwareSqliteTaskStore {
     /// Largest page `list` will return. See
     /// [`with_max_page_size`](TenantAwareSqliteTaskStore::with_max_page_size).
     max_page_size: u32,
+    /// Where an append that recorded nothing is reported. See
+    /// [`with_metrics`](TenantAwareSqliteTaskStore::with_metrics).
+    metrics: MetricsHandle,
 }
 
 impl TenantAwareSqliteTaskStore {
@@ -85,6 +91,19 @@ impl TenantAwareSqliteTaskStore {
         self.max_page_size = max;
         self
     }
+
+    /// Sets where this store reports an event it could not record.
+    ///
+    /// Defaults to [`NoopMetrics`](crate::metrics::NoopMetrics). See
+    /// [`event_append_error`](crate::metrics::event_append_error) for why an
+    /// append that wrote nothing cannot be an error, and what a non-zero rate
+    /// means.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: MetricsHandle) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
     /// Opens (or creates) a `SQLite` database and initializes the schema.
     ///
     /// # Errors
@@ -167,6 +186,7 @@ impl TenantAwareSqliteTaskStore {
         Ok(Self {
             pool,
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
+            metrics: MetricsHandle::default(),
         })
     }
 
@@ -519,14 +539,31 @@ impl TaskStore for TenantAwareSqliteTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::current();
-            sqlx::query(evlog::SQLITE_APPEND)
+            let position = seq_to_i64(seq)?;
+            let payload = encode_text(event)?;
+            // `rows_affected()` was discarded here until 0.13; see
+            // `event_log_sql::report_no_op_append` for what it hid.
+            let wrote = sqlx::query(evlog::SQLITE_APPEND)
                 .bind(&tenant)
                 .bind(task_id.0.as_str())
-                .bind(seq_to_i64(seq)?)
-                .bind(encode_text(event)?)
+                .bind(position)
+                .bind(&payload)
                 .execute(&self.pool)
                 .await
-                .map_err(|e| to_a2a_error(&e))?;
+                .map_err(|e| to_a2a_error(&e))?
+                .rows_affected()
+                > 0;
+            if !wrote {
+                let stored: Option<(String,)> = sqlx::query_as(evlog::SQLITE_SELECT_PAYLOAD)
+                    .bind(&tenant)
+                    .bind(task_id.0.as_str())
+                    .bind(position)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .unwrap_or(None);
+                let same = stored.is_some_and(|(held,)| held == payload);
+                report_no_op_append(&*self.metrics, task_id, seq, same);
+            }
             Ok(())
         })
     }
@@ -543,7 +580,23 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 .fetch_one(&self.pool)
                 .await
                 .map_err(|e| to_a2a_error(&e))?;
-            Ok(max.unsigned_abs())
+            seq_from_i64(max)
+        })
+    }
+
+    fn earliest_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
+        Box::pin(async move {
+            let tenant = TenantContext::current();
+            let (min,): (Option<i64>,) = sqlx::query_as(evlog::SQLITE_EARLIEST_SEQ)
+                .bind(&tenant)
+                .bind(task_id.0.as_str())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            min.map(seq_from_i64).transpose()
         })
     }
 

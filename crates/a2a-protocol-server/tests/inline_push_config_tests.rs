@@ -333,7 +333,10 @@ async fn a_send_its_inline_config_refuses_leaves_no_task_behind() {
 
     let err = handler
         .on_send_message(
-            send_with(Some(inline_config("http://127.0.0.1:9/hook")), "ctx-rolled-back"),
+            send_with(
+                Some(inline_config("http://127.0.0.1:9/hook")),
+                "ctx-rolled-back",
+            ),
             false,
             None,
         )

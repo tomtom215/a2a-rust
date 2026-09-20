@@ -19,9 +19,15 @@ use super::{PurgeReport, RetentionPolicy, terminal_state_labels};
 /// which on a busy database means bloat and blocked writers; a thousand small
 /// deletes let everything else through in between.
 ///
-/// Side tables need no sweep on this backend: `PostgreSQL` always enforces
-/// `ON DELETE CASCADE`, so [`PurgeReport::orphan_rows_deleted`] is always
-/// zero.
+/// Side tables get no sweep on this backend, so
+/// [`PurgeReport::orphan_rows_deleted`] is structurally zero here — this
+/// function contains no statement that could raise it, rather than running one
+/// that finds nothing. `PostgreSQL` has no per-session equivalent of
+/// `SQLite`'s `foreign_keys=OFF`, so a declared `ON DELETE CASCADE` always
+/// fires and a sweep would have nothing to do. The one case that leaves
+/// uncovered — a caller's database where the side table already existed
+/// *without* the foreign key, which `CREATE TABLE IF NOT EXISTS` will not
+/// correct — is recorded on [`PurgeReport::orphan_rows_deleted`] itself.
 pub async fn purge(
     pool: &PgPool,
     table: &'static str,

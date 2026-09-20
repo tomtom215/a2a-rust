@@ -38,11 +38,11 @@ use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{ContextId, Task, TaskId};
 
+use a2a_protocol_server::agent_executor;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::handler::SendMessageResult;
 use a2a_protocol_server::push::{HttpPushSender, PushConfigStore};
 use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
-use a2a_protocol_server::agent_executor;
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::oneshot;
@@ -255,7 +255,11 @@ async fn a_concurrent_send_cannot_see_a_task_the_push_config_is_about_to_withdra
     // First send: parks inside the push-config step with its task row written.
     let first = tokio::spawn({
         let handler = Arc::clone(&handler);
-        async move { handler.on_send_message(send("msg-a", CTX, true), false, None).await }
+        async move {
+            handler
+                .on_send_message(send("msg-a", CTX, true), false, None)
+                .await
+        }
     });
 
     let doomed_id = tokio::time::timeout(LOOKUP_WINDOW, entered)
@@ -273,7 +277,11 @@ async fn a_concurrent_send_cannot_see_a_task_the_push_config_is_about_to_withdra
 
     let second = tokio::spawn({
         let handler = Arc::clone(&handler);
-        async move { handler.on_send_message(send("msg-b", CTX, false), false, None).await }
+        async move {
+            handler
+                .on_send_message(send("msg-b", CTX, false), false, None)
+                .await
+        }
     });
 
     // The assertion. With the guard held across the push-config step the

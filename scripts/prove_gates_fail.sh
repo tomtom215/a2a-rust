@@ -342,6 +342,8 @@ injection_for() {
             echo "api_reference" ;;
         *"check_otel_metrics_coverage.py"*)
             echo "otel_coverage" ;;
+        *"check_fuzz_matrix.py"*)
+            echo "fuzz_matrix" ;;
         *"check_package_excludes.py"*)
             echo "package_excludes" ;;
         # The binding's packaging gate is a wrapper, not a bare `cargo package`
@@ -482,6 +484,10 @@ expected_marker() {
         # that reports only one of the two is INCONCLUSIVE, not proven.
         api_reference)    echo "FAIL (stale=1, unlisted=1)" ;;
         otel_coverage)    echo "the bundled exporter drops" ;;
+        # The "runs nowhere" direction specifically. A run red because the
+        # workflow lists a target Cargo.toml lacks would prove the loud half,
+        # which the runner's own build already catches.
+        fuzz_matrix)      echo "no runner ever executes it" ;;
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         block_scalars)    echo "MISMATCH" ;;
@@ -737,6 +743,23 @@ PY
             # this arm stays a one-liner like its neighbours.
             note_touched "$OTEL_RS"
             perl -0pi -e 's/\n    fn on_push_delivery\(.*?\n    \}\n/\n/s' "$OTEL_RS"
+            ;;
+        fuzz_matrix)
+            # Drop one target from fuzz.yml's matrix, leaving its harness and
+            # its `[[bin]]` in place. This is the defect verbatim: the target
+            # still exists, still builds, and is run by nothing — which is how
+            # `trace_context` shipped on 2026-09-20. The build cannot catch it,
+            # because nothing builds a target that is never scheduled.
+            note_touched ".github/workflows/fuzz.yml"
+            python3 - <<'PY'
+import pathlib, sys
+p = pathlib.Path(".github/workflows/fuzz.yml")
+s = p.read_text()
+old = "          - jwks_parse\n"
+if s.count(old) != 1:
+    sys.exit(f"expected exactly one jwks_parse matrix entry; found {s.count(old)}")
+p.write_text(s.replace(old, ""))
+PY
             ;;
         gate_reachability)
             # The defect is the review's "Done when" verbatim: drop ci.yml's

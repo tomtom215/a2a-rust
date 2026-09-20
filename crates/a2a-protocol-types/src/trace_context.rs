@@ -55,17 +55,44 @@ pub const TRACEPARENT_HEADER: &str = "traceparent";
 /// The companion header carrying vendor-specific state.
 pub const TRACESTATE_HEADER: &str = "tracestate";
 
-/// The `sampled` bit of `trace-flags` (§3.3.1).
+/// The `sampled` bit of `trace-flags` (§3.2.2.5.1).
 pub const FLAG_SAMPLED: u8 = 0x01;
 
-/// The spec's cap on `tracestate` list members (§3.3.3).
-const MAX_TRACESTATE_MEMBERS: usize = 32;
+/// Every `trace-flags` bit this version of the spec defines. §3.2.2.5.2
+/// "Other Flags": *"The behavior of other flags, such as (00000100) is not
+/// defined and is reserved for future use. Vendors MUST set those to zero."*
+/// §4.3 restates it for the wire: *"Vendors will set all unparsed / unknown
+/// trace-flags to 0 on outgoing requests."*
+const PROPAGATED_FLAGS: u8 = FLAG_SAMPLED;
 
-/// A defensive cap on the `tracestate` header as a whole. The spec sets no
-/// single total, but a header reaching logs and stores should not be an
-/// unbounded upload channel — the same reason
+/// The spec's cap on `tracestate` list members: §3.3.1.1, *"There can be a
+/// maximum of 32 list-members in a list"*, and the ABNF at §3.3.1.2
+/// (`list = list-member 0*31( OWS "," OWS list-member )`).
+pub const MAX_TRACESTATE_MEMBERS: usize = 32;
+
+/// The largest `tracestate` this implementation propagates, in characters.
+///
+/// §3.3.1.5 sets a floor and asks for a ceiling to be published: *"Vendors
+/// SHOULD propagate at least 512 characters of a combined header. […] In this
+/// case, the maximum size of the propagated `tracestate` header SHOULD be
+/// documented and explained."* This is that documentation — eight times the
+/// floor, bounded at all because a header that reaches logs and stores should
+/// not be an unbounded upload channel, the same reason
 /// [`idempotency::MAX_KEY_LEN`](crate::idempotency::MAX_KEY_LEN) exists.
-const MAX_TRACESTATE_LEN: usize = 4096;
+/// Exceeding it truncates entries rather than discarding the vendor state;
+/// see [`TraceContext::with_tracestate`].
+pub const MAX_TRACESTATE_LEN: usize = 4096;
+
+/// The exact length of a version-`00` `traceparent`: §3.2.2.1 and §3.2.2.2
+/// give `version "-" trace-id "-" parent-id "-" trace-flags`, which is
+/// 2 + 1 + 32 + 1 + 16 + 1 + 2. §3.2.4 makes the same number the floor for a
+/// higher version: *"If the size of the header is shorter than 55 characters,
+/// the vendor should not parse the header and should restart the trace."*
+const V00_LEN: usize = 55;
+
+/// The entry length §3.3.1.5 says to shed first: *"Entries larger than 128
+/// characters long SHOULD be removed first."*
+const MAX_TRACESTATE_MEMBER_LEN: usize = 128;
 
 /// Why a `traceparent` or `tracestate` was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,15 +100,18 @@ const MAX_TRACESTATE_LEN: usize = 4096;
 pub enum TraceContextError {
     /// Not four `-`-separated fields of the required widths.
     Malformed,
-    /// Version `ff` is forbidden outright by §3.3.
+    /// Version `ff` is forbidden outright by §3.2.2.1.
     ForbiddenVersion,
     /// A field contained something other than lowercase hex.
     NotLowercaseHex,
-    /// An all-zero trace id, which §3.3.1 defines as invalid.
+    /// An all-zero trace id, which §3.2.2.3 defines as invalid.
     ZeroTraceId,
-    /// An all-zero span id, which §3.3.2 defines as invalid.
+    /// An all-zero span id (`parent-id`), which §3.2.2.4 defines as invalid.
     ZeroSpanId,
-    /// `tracestate` exceeded a bound, or carried a non-printable byte.
+    /// `tracestate` carried a byte outside printable ASCII.
+    ///
+    /// Size is *not* a reason: §3.3.1.5 requires truncation rather than
+    /// rejection, which [`TraceContext::with_tracestate`] performs.
     InvalidTracestate,
 }
 
@@ -92,13 +122,13 @@ impl fmt::Display for TraceContextError {
                 "traceparent must be version-traceid-spanid-flags, as \
                  2-32-16-2 lowercase hex characters separated by '-'"
             }
-            Self::ForbiddenVersion => "traceparent version ff is forbidden (W3C 3.3)",
+            Self::ForbiddenVersion => "traceparent version ff is forbidden (W3C 3.2.2.1)",
             Self::NotLowercaseHex => "traceparent fields must be lowercase hexadecimal",
-            Self::ZeroTraceId => "an all-zero trace id is invalid (W3C 3.3.1)",
-            Self::ZeroSpanId => "an all-zero span id is invalid (W3C 3.3.2)",
+            Self::ZeroTraceId => "an all-zero trace id is invalid (W3C 3.2.2.3)",
+            Self::ZeroSpanId => "an all-zero span id is invalid (W3C 3.2.2.4)",
             Self::InvalidTracestate => {
-                "tracestate must be printable ASCII, at most 32 list members \
-                 and 4096 bytes"
+                "tracestate must be printable ASCII (W3C 3.3.1.3.2); an \
+                 oversized one is truncated, not refused"
             }
         };
         f.write_str(msg)
@@ -120,7 +150,9 @@ pub struct TraceContext {
     tracestate: Option<String>,
 }
 
-/// Lowercase hex, which is the only spelling §3.3 admits.
+/// Lowercase hex, which is the only spelling §3.2.2 admits: its ABNF defines
+/// `HEXDIGLC = DIGIT / "a" / "b" / "c" / "d" / "e" / "f" ; lowercase hex
+/// character` and every `traceparent` field is built from it.
 fn hex(bytes: &[u8]) -> String {
     use fmt::Write as _;
     bytes
@@ -138,31 +170,75 @@ fn is_lower_hex(s: &str, len: usize) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// The rendered length of `members` once re-joined with `,`.
+fn joined_len(members: &[&str]) -> usize {
+    members.iter().map(|m| m.len()).sum::<usize>() + members.len().saturating_sub(1)
+}
+
+/// Sheds whole `tracestate` entries until the list fits both published caps.
+///
+/// §3.3.1.5: *"In a situation where tracestate needs to be truncated due to
+/// size limitations, the vendor MUST truncate whole entries. Entries larger
+/// than 128 characters long SHOULD be removed first. Then entries SHOULD be
+/// removed starting from the end of tracestate."*
+///
+/// Removing from the end is what preserves correlation: §3.1 and §3.3.1.4 put
+/// the most recently written entry left-most, so the tail is the oldest state
+/// and the cheapest thing to lose.
+fn truncate_tracestate(members: &mut Vec<&str>) {
+    while members.len() > MAX_TRACESTATE_MEMBERS || joined_len(members) > MAX_TRACESTATE_LEN {
+        // An over-long entry first; otherwise the last one. `rposition` picks
+        // the *last* over-long entry, so the two rules agree instead of
+        // fighting: oldest-first within "remove the big ones first".
+        let victim = members
+            .iter()
+            .rposition(|m| m.len() > MAX_TRACESTATE_MEMBER_LEN)
+            .or_else(|| members.len().checked_sub(1));
+        match victim {
+            Some(i) => {
+                members.remove(i);
+            }
+            // Unreachable: an empty list satisfies both bounds. Written as a
+            // `break` rather than an index so the loop cannot spin or panic
+            // whatever the constants are set to.
+            None => break,
+        }
+    }
+}
+
 impl TraceContext {
     /// Parses a `traceparent` header value.
     ///
-    /// Version `00` is parsed strictly. A higher version is accepted on its
-    /// first four fields, as §3.3's forward-compatibility rule requires:
-    /// *"if the version cannot be parsed, restart the trace"* applies only
-    /// when the known prefix itself is malformed, so a future version that
-    /// merely appends fields must still join the trace rather than break it.
-    /// Version `ff` is refused outright.
+    /// Version `00` is parsed strictly: §3.2.2.2 fixes its grammar at
+    /// `version-format = trace-id "-" parent-id "-" trace-flags`, so a
+    /// version-`00` value is exactly the 55 characters
+    /// `2 + 1 + 32 + 1 + 16 + 1 + 2` and nothing may follow them.
+    ///
+    /// A *higher* version is accepted on its first four fields, because
+    /// §3.2.4 requires it: *"If a higher version is detected, the
+    /// implementation SHOULD try to parse it […] Parse the sampled bit of
+    /// flags (2 characters from the third dash). Vendors MUST check that the
+    /// 2 characters are either the end of the string or a dash."* That
+    /// leniency is conditional on the higher version, which is why the
+    /// version is read before the trailing field is judged.
+    ///
+    /// Version `ff` is refused outright (§3.2.2.1).
     ///
     /// # Errors
     ///
     /// [`TraceContextError`] naming which rule the value broke.
     pub fn parse(traceparent: &str) -> Result<Self, TraceContextError> {
         let value = traceparent.trim();
-        // 55 = 2 + 1 + 32 + 1 + 16 + 1 + 2.
-        if value.len() < 55 {
+        // Split by byte range through `get`, never `split_at`: `split_at`
+        // *panics* when the index is not a UTF-8 character boundary, and
+        // `V00_LEN` is a byte count, so "00-<32>-<16>-0\u{20ac}" is 57 bytes
+        // with index 55 inside the '€'. With `panic = "abort"` in the release
+        // profile that panic is process death on a peer-supplied header.
+        // `get` returns `None` there instead. Every character a conforming
+        // value can hold at this offset is ASCII, so nothing legal is lost.
+        let (Some(head), Some(rest)) = (value.get(..V00_LEN), value.get(V00_LEN..)) else {
             return Err(TraceContextError::Malformed);
-        }
-        let (head, rest) = value.split_at(55);
-        // A longer value is only legal when a future version appended fields,
-        // which the spec separates with '-'. Anything else is a malformed 00.
-        if !rest.is_empty() && !rest.starts_with('-') {
-            return Err(TraceContextError::Malformed);
-        }
+        };
 
         let mut fields = head.split('-');
         let (Some(version), Some(trace_id), Some(span_id), Some(flags), None) = (
@@ -181,10 +257,20 @@ impl TraceContext {
         if version == "ff" {
             return Err(TraceContextError::ForbiddenVersion);
         }
-        // A future version may append fields. They are dropped rather than
-        // echoed: re-emitting a field we did not parse would be asserting
-        // something we cannot check. The four below are what this hop
-        // propagates, and `traceparent()` therefore always writes version 00.
+        // Only now is the trailing field judged, because whether one is legal
+        // depends on the version. Version 00's grammar (§3.2.2.2) ends at
+        // character 55, so anything after it is malformed; a trailing field
+        // is the *higher* version's allowance (§3.2.4), and accepting it at
+        // version 00 admits a value no conforming peer can emit. A higher
+        // version's extra fields are dropped rather than echoed — §3.2.4:
+        // "Vendors MUST NOT parse or assume anything about unknown fields for
+        // this version. Vendors MUST use these fields to construct the new
+        // traceparent field according to the highest version of the
+        // specification known to the implementation (in this specification it
+        // is 00)."
+        if !rest.is_empty() && (version == "00" || !rest.starts_with('-')) {
+            return Err(TraceContextError::Malformed);
+        }
         if !is_lower_hex(trace_id, 32) || !is_lower_hex(span_id, 16) {
             return Err(TraceContextError::NotLowercaseHex);
         }
@@ -208,29 +294,58 @@ impl TraceContext {
         })
     }
 
-    /// Attaches a `tracestate` value, validating it against §3.3.3.
+    /// Attaches a `tracestate` value, truncating it to this implementation's
+    /// published limits.
     ///
-    /// The value is carried opaquely and re-emitted unmodified. This SDK adds
-    /// no vendor entry of its own, so it has nothing to move to the front and
-    /// no reason to rewrite the list.
+    /// The entries are carried opaquely. This SDK adds no vendor entry of its
+    /// own, so it has nothing to move to the front (§3.5) and no reason to
+    /// rewrite a list that fits.
+    ///
+    /// # What is propagated, and what is shed
+    ///
+    /// At most [`MAX_TRACESTATE_LEN`] characters and
+    /// [`MAX_TRACESTATE_MEMBERS`] list members. §3.3.1.5 asks that a vendor
+    /// which caps `tracestate` publish the cap, which those two constants do;
+    /// the floor it names is 512 characters, and 4096 clears it eightfold.
+    ///
+    /// Over either limit the list is **truncated, never discarded**, exactly
+    /// as §3.3.1.5 requires: *"the vendor MUST truncate whole entries.
+    /// Entries larger than 128 characters long SHOULD be removed first. Then
+    /// entries SHOULD be removed starting from the end of tracestate."*
+    /// Dropping the header wholesale would delete keys this SDK did not
+    /// generate, which §3.5 and §4.3 say vendors SHOULD NOT do, and which
+    /// "will break correlation in other systems".
+    ///
+    /// Empty and whitespace-only members are dropped before the count is
+    /// taken. §3.3.1.1 allows them precisely because a vendor cannot always
+    /// avoid emitting them, so counting them against the 32-member cap would
+    /// shed a real vendor's entry to make room for a comma.
     ///
     /// # Errors
     ///
-    /// [`TraceContextError::InvalidTracestate`] if it is too long, has more
-    /// than 32 list members, or carries a byte outside printable ASCII.
+    /// [`TraceContextError::InvalidTracestate`] only if the value carries a
+    /// byte outside printable ASCII (§3.3.1.3.2 confines values to
+    /// `0x20..=0x7e`). A newline here would be header injection wherever this
+    /// is re-emitted, so it is refused rather than repaired.
     pub fn with_tracestate(mut self, tracestate: &str) -> Result<Self, TraceContextError> {
         let value = tracestate.trim();
-        if value.is_empty() {
-            self.tracestate = None;
-            return Ok(self);
-        }
-        if value.len() > MAX_TRACESTATE_LEN
-            || value.split(',').count() > MAX_TRACESTATE_MEMBERS
-            || !value.bytes().all(|b| (0x20..=0x7e).contains(&b))
-        {
+        if !value.bytes().all(|b| (0x20..=0x7e).contains(&b)) {
             return Err(TraceContextError::InvalidTracestate);
         }
-        self.tracestate = Some(value.to_owned());
+        // Past that check every byte is one printable ASCII character, so the
+        // byte lengths below are character counts and `MAX_TRACESTATE_LEN`
+        // means what its documentation says.
+        let mut members: Vec<&str> = value
+            .split(',')
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .collect();
+        truncate_tracestate(&mut members);
+        self.tracestate = if members.is_empty() {
+            None
+        } else {
+            Some(members.join(","))
+        };
         Ok(self)
     }
 
@@ -246,16 +361,31 @@ impl TraceContext {
         &self.span_id
     }
 
-    /// The raw `trace-flags` byte.
+    /// The `trace-flags` byte **as received**, reserved bits included.
+    ///
+    /// This is not what goes on the wire. §3.2.2.5.2 requires vendors to zero
+    /// every bit the spec does not define, so [`traceparent`](Self::traceparent)
+    /// and [`child`](Self::child) mask with [`FLAG_SAMPLED`]; this accessor
+    /// exists for diagnostics — "the peer set 0x02" is a fact worth being able
+    /// to log — and must not be fed back into a header.
     #[must_use]
     pub const fn flags(&self) -> u8 {
         self.flags
     }
 
-    /// Whether the caller sampled this trace (§3.3.1).
+    /// The bits this hop may propagate: §3.2.2.5.2's "MUST set those to zero"
+    /// and §4.3's "set all unparsed / unknown trace-flags to 0 on outgoing
+    /// requests", applied at the one place a value becomes outgoing.
+    const fn outgoing_flags(&self) -> u8 {
+        self.flags & PROPAGATED_FLAGS
+    }
+
+    /// Whether the caller sampled this trace (§3.2.2.5.1).
     ///
-    /// A propagator must pass the bit on unchanged whichever way it reads;
-    /// this is for a caller deciding how much of its own detail to record.
+    /// Read with a mask, as §3.2.2.5 insists: *"A common mistake in bit fields
+    /// is forgetting to mask when interpreting flags."* A propagator passes
+    /// the bit on unchanged whichever way it reads; this is for a caller
+    /// deciding how much of its own detail to record.
     #[must_use]
     pub const fn is_sampled(&self) -> bool {
         self.flags & FLAG_SAMPLED != 0
@@ -267,10 +397,23 @@ impl TraceContext {
         self.tracestate.as_deref()
     }
 
-    /// Renders the `traceparent` header value, always as version `00`.
+    /// Renders the `traceparent` header value, always as version `00`
+    /// (§3.2.4: construct it "according to the highest version of the
+    /// specification known to the implementation").
+    ///
+    /// Reserved `trace-flags` bits are zeroed here, per §3.2.2.5.2 and §4.3.
+    /// Echoing one would assert a property this code never checked — Trace
+    /// Context Level 2 assigns `0x02` to `random-trace-id`, so re-emitting a
+    /// peer's `…-03` tells every downstream hop that the trace id is random
+    /// when nothing verified that it is.
     #[must_use]
     pub fn traceparent(&self) -> String {
-        format!("00-{}-{}-{:02x}", self.trace_id, self.span_id, self.flags)
+        format!(
+            "00-{}-{}-{:02x}",
+            self.trace_id,
+            self.span_id,
+            self.outgoing_flags()
+        )
     }
 
     /// Builds a context from raw identifier bytes — the shape a caller with
@@ -285,8 +428,8 @@ impl TraceContext {
     ///
     /// # Errors
     ///
-    /// [`TraceContextError`] if either identifier is all zeros, which §3.3
-    /// forbids.
+    /// [`TraceContextError`] if either identifier is all zeros, which
+    /// §3.2.2.3 (`trace-id`) and §3.2.2.4 (`parent-id`) forbid.
     pub fn from_bytes(
         trace_id: [u8; 16],
         span_id: [u8; 8],
@@ -320,9 +463,17 @@ impl TraceContext {
     }
 
     /// Derives the context an outbound call should carry: same trace, same
-    /// flags, same `tracestate`, and `span_id` as the new parent.
+    /// `sampled` decision, same `tracestate`, and `span_id` as the new
+    /// parent.
     ///
-    /// This is what makes a delegation chain one trace rather than several.
+    /// This is what makes a delegation chain one trace rather than several,
+    /// and it is the mutation §3.4 calls the default one: *"Update parent-id:
+    /// The value of the parent-id field can be set to the new value
+    /// representing the ID of the current operation."*
+    ///
+    /// The result is by definition an outgoing context, so §4.3's *"Vendors
+    /// will set all unparsed / unknown trace-flags to 0 on outgoing
+    /// requests"* applies to it: reserved bits do not survive the hop.
     ///
     /// # Errors
     ///
@@ -338,7 +489,7 @@ impl TraceContext {
         Ok(Self {
             trace_id: self.trace_id.clone(),
             span_id: span_id.to_owned(),
-            flags: self.flags,
+            flags: self.outgoing_flags(),
             tracestate: self.tracestate.clone(),
         })
     }

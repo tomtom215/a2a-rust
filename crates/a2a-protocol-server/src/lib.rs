@@ -172,7 +172,9 @@ pub use dispatch::{GrpcConfig, GrpcDispatcher};
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use executor_helpers::{EventEmitter, boxed_future};
-pub use handler::{HandlerLimits, RequestHandler, SendMessageResult, ShutdownReport};
+pub use handler::{
+    HandlerLimits, InboundTracePolicy, RequestHandler, SendMessageResult, ShutdownReport,
+};
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
 pub use metrics::{ConnectionPoolStats, Metrics};
 #[cfg(feature = "otel")]
