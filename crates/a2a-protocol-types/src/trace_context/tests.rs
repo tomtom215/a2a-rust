@@ -203,7 +203,7 @@ fn every_error_renders_a_distinct_message() {
     let mut seen = std::collections::HashSet::new();
     for v in variants {
         let rendered = v.to_string();
-        assert!(!rendered.is_empty());
+        assert_ne!(rendered, "", "{v:?} must render as something");
         assert!(
             seen.insert(rendered),
             "each variant must say something different"
