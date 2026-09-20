@@ -88,10 +88,16 @@ requires. Full detail in
   instead of parsing English out of a message.
 - **A conformance harness for `AgentExecutor`**, behind the `conformance`
   feature: thirteen checks an implementation can run against itself.
-- **Breaking:** `RequestContext` is `#[non_exhaustive]`;
-  `EventQueueReader::read` yields a `StreamEvent` carrying the log position;
-  `PurgeReport::journal_orphans_deleted` is now `orphan_rows_deleted`. See
-  [Upgrading Between Minor Versions](./upgrading.md).
+- **Breaking:** eight items. `RequestContext`, `IdempotencyClaim` and
+  `KeyError` are `#[non_exhaustive]`; `EventQueueReader::read` yields a
+  `StreamEvent` carrying the log position; `FailureClass::ALL` is a slice
+  rather than a fixed-size array; `PurgeReport::journal_orphans_deleted` is
+  now `orphan_rows_deleted`; `build()` refuses a signed agent card it would
+  otherwise have to edit; a keyed `message/send` is retried only against a
+  peer that advertises the extension; and `message.id` is validated at
+  ingress. See
+  [Upgrading Between Minor Versions](./upgrading.md), which has a migration
+  for each.
 
 ## v0.12.1 (2026-09-17)
 

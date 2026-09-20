@@ -620,6 +620,29 @@ jobs:
         env:
           RUSTDOCFLAGS: "-D warnings"
 
+      # The workspace build above cannot see a per-crate doc failure, because
+      # feature unification turns on features a crate does not enable by
+      # itself. `a2a-protocol-client` documented `WebSocketTransport` and
+      # `build_grpc` — both behind features that are off in its own default
+      # build — and the workspace build was green for months while
+      # `cargo doc -p a2a-protocol-client --no-deps` failed, because the
+      # client's own dev-dependencies pull those features in. docs.rs builds
+      # with all-features and was unaffected too, so nothing anywhere saw it.
+      #
+      # Each published crate is therefore documented on its own, in the
+      # feature set a consumer who depends on it alone actually gets.
+      - name: Build docs per crate, in each crate's own default features
+        run: |
+          set -euo pipefail
+          for crate in a2a-protocol-types a2a-protocol-client \
+                       a2a-protocol-server a2a-protocol-sdk; do
+            echo "::group::cargo doc -p $crate --no-deps"
+            cargo doc -p "$crate" --no-deps
+            echo "::endgroup::"
+          done
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
   # ── cargo-deny (license/advisory compliance) ─────────────────────────────
   deny:
     name: cargo-deny

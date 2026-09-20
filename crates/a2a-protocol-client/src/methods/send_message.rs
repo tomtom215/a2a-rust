@@ -64,11 +64,15 @@ impl A2aClient {
     /// retried by default, because re-sending it could start a second task.
     /// Attach a key with
     /// [`a2a_protocol_types::idempotency::set_key`] and the retry becomes
-    /// safe: a server that honours it returns the task the first attempt
-    /// created, and one that cannot honour it refuses the send rather than
-    /// running it undeduplicated. Servers advertise support as
+    /// safe *against a peer that honours it*: the server returns the task the
+    /// first attempt created instead of starting a second. Servers advertise
+    /// support as
     /// [`IDEMPOTENCY_EXTENSION_URI`](a2a_protocol_types::idempotency::IDEMPOTENCY_EXTENSION_URI)
-    /// on their agent card.
+    /// on their agent card, and the client requires that evidence before it
+    /// will retry a keyed send — a peer that never advertised it may simply
+    /// ignore the key and run the send twice. `ClientBuilder::from_card`
+    /// reads the advertisement; a client built for a bare endpoint asserts it
+    /// with `ClientBuilder::with_peer_honouring_idempotency`.
     ///
     pub async fn send_message(
         &self,

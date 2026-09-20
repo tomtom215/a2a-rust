@@ -29,6 +29,22 @@ impl RequestHandler {
 
         // Validate incoming IDs: reject empty/whitespace-only and excessively
         // long values (AP-1).
+        //
+        // `message.id` is checked with the same rule as the other two. It was
+        // not, and it is the one that reaches furthest: it is stored verbatim
+        // in `idempotency_keys.message_id`, it keys the history de-duplication
+        // in `helpers.rs`, and it is interpolated into the error a caller sees
+        // when an idempotency key is already held by a different message. The
+        // key beside it in that same row is capped and charset-restricted
+        // precisely because "a key reaches store keys and log lines, and a
+        // control character or newline in either is how log injection starts";
+        // the message id reached both with neither defence, bounded only by
+        // the dispatcher's request-body limit.
+        validate_id(
+            &params.message.id.0,
+            "message.id",
+            self.limits.max_id_length,
+        )?;
         if let Some(ref ctx_id) = params.message.context_id {
             validate_id(&ctx_id.0, "context_id", self.limits.max_id_length)?;
         }

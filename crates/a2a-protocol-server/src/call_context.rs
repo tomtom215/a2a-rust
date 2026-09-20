@@ -36,7 +36,7 @@ use a2a_protocol_types::trace_context::TraceContext;
 ///
 /// Passed to [`ServerInterceptor::before`](crate::ServerInterceptor::before)
 /// and [`ServerInterceptor::after`](crate::ServerInterceptor::after).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CallContext {
     /// The JSON-RPC method name (e.g. `"message/send"`).
     method: String,
@@ -84,6 +84,40 @@ pub struct CallContext {
     /// single-tenant case and also the case inside `resolve_tenant` itself,
     /// where the answer does not exist yet.
     tenant: Option<String>,
+}
+
+/// Hand-written so a caller's credentials cannot reach a log through a
+/// debug-print.
+///
+/// Until 0.13.0 `CallContext` reached only the interceptor chain. It now rides
+/// on [`RequestContext`](crate::request_context::RequestContext) into every
+/// [`AgentExecutor`](crate::executor::AgentExecutor), and the derived `Debug`
+/// printed `http_headers` verbatim — `Authorization`, `Cookie`, whatever the
+/// deployment forwards. `tracing::debug!("{ctx:?}")` inside an executor is a
+/// natural thing to write, and the executor is the component most likely to be
+/// LLM-adjacent or to forward its context somewhere else.
+///
+/// Header **names** are printed and values are not, rather than redacting a
+/// named list of sensitive ones: a denylist rots the moment a deployment
+/// forwards a header nobody thought of, and the names alone answer the
+/// question a debug-print is usually asking. Read a value deliberately with
+/// `http_header` when you want one.
+///
+/// This is the same call `auth::jwt` already makes for its signing secret.
+impl std::fmt::Debug for CallContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut names: Vec<&str> = self.http_headers.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        f.debug_struct("CallContext")
+            .field("method", &self.method)
+            .field("caller_identity", &self.caller_identity)
+            .field("extensions", &self.extensions)
+            .field("request_id", &self.request_id)
+            .field("http_header_names", &names)
+            .field("trace_context", &self.trace_context)
+            .field("tenant", &self.tenant)
+            .finish()
+    }
 }
 
 impl CallContext {
@@ -324,5 +358,33 @@ mod tests {
         assert_eq!(ctx.extensions(), [] as [String; 0]);
         assert!(ctx.request_id().is_none());
         assert!(ctx.http_headers().is_empty());
+    }
+
+    /// The defect this guards: `CallContext` derived `Debug`, and 0.13.0 put
+    /// it on `RequestContext`, which reaches every executor. A
+    /// `debug!("{ctx:?}")` — a natural line to write, in the component most
+    /// likely to forward its context somewhere else — wrote the caller's
+    /// bearer token to the log.
+    #[test]
+    fn debug_prints_header_names_and_never_their_values() {
+        let ctx = CallContext::new("SendMessage")
+            .with_http_header("Authorization", "Bearer super-secret-token")
+            .with_http_header("Cookie", "session=also-secret")
+            .with_http_header("content-type", "application/json");
+
+        let rendered = format!("{ctx:?}");
+
+        assert!(
+            !rendered.contains("super-secret-token"),
+            "a credential must not reach a debug-print: {rendered}"
+        );
+        assert!(
+            !rendered.contains("also-secret"),
+            "nor any other header value: {rendered}"
+        );
+        assert!(
+            rendered.contains("authorization") && rendered.contains("content-type"),
+            "the names are what a debug-print is usually asking for: {rendered}"
+        );
     }
 }

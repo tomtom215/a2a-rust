@@ -202,24 +202,46 @@ fn is_idempotent_method(method: &str) -> bool {
     )
 }
 
-/// Returns `true` if `params` carries a client-supplied idempotency key that
-/// makes this send safe to re-send.
+/// Returns `true` if `params` carries a client-supplied idempotency key **and**
+/// this peer is known to honour it, which together make the send safe to
+/// re-send.
 ///
-/// A send whose message carries a key *is* idempotent, which is the entire
-/// reason to present one. The server dedupes on it: a retry returns the task
-/// the first attempt created rather than starting a second, so the ambiguous
-/// failure this module refuses to retry — a connection dropped after the bytes
-/// went out — stops being ambiguous.
+/// The server dedupes on the key: a retry returns the task the first attempt
+/// created rather than starting a second, so the ambiguous failure this module
+/// otherwise refuses to retry — a connection dropped after the bytes went out
+/// — stops being ambiguous.
 ///
-/// The property holds even against a server that does not implement the
-/// extension, because such a server refuses a keyed send outright instead of
-/// running it undeduplicated. Either the key is honoured and the retry is
-/// deduplicated, or the send never executed at all; there is no arrangement in
-/// which the retry duplicates work.
+/// # Why the peer has to be known
+///
+/// This said the property held "even against a server that does not implement
+/// the extension, because such a server refuses a keyed send outright". That
+/// is true of *this* SDK's server, which refuses a keyed send when its store
+/// cannot honour one — and of nothing else. The key travels in
+/// `Message.metadata`, which A2A defines as free-form, and the extension is
+/// explicitly not part of A2A v1.0. A conformant Python, Java, Go or
+/// JavaScript server has never heard of the URI, ignores the metadata, and
+/// runs the send. Retrying against one duplicates the task — the exact
+/// double-execution [`is_idempotent_method`] refuses to risk, re-introduced by
+/// the feature meant to make it safe.
+///
+/// There is no handshake that would let a client infer this: A2A's
+/// `A2A-Extensions` header is the server reporting what it activated, not a
+/// demand the server must reject. So the evidence has to come from the agent
+/// card, which advertises the extension exactly when the configured store can
+/// honour a key — see `ClientBuilder::from_card`, which sets this — or from
+/// the caller asserting it with
+/// [`ClientBuilder::with_peer_honouring_idempotency`](crate::builder::ClientBuilder::with_peer_honouring_idempotency).
 ///
 /// The key is validated rather than merely found, so this answers "this send
 /// will be deduplicated" and not "something is present under that name".
-fn carries_idempotency_key(method: &str, params: &serde_json::Value) -> bool {
+fn carries_idempotency_key(
+    method: &str,
+    params: &serde_json::Value,
+    peer_honours_idempotency: bool,
+) -> bool {
+    if !peer_honours_idempotency {
+        return false;
+    }
     if !matches!(method, "SendMessage" | "SendStreamingMessage") {
         return false;
     }
@@ -269,12 +291,29 @@ fn retry_delay(
 pub(crate) struct RetryTransport {
     inner: Box<dyn Transport>,
     policy: RetryPolicy,
+    /// Whether this peer is known to honour an idempotency key.
+    ///
+    /// Set from the agent card when the client was built from one, or by the
+    /// caller asserting it. Never assumed: an unkeyed peer is the default,
+    /// because the cost of being wrong is a duplicated task.
+    peer_honours_idempotency: bool,
 }
 
 impl RetryTransport {
     /// Creates a new retry transport wrapping the given inner transport.
     pub(crate) fn new(inner: Box<dyn Transport>, policy: RetryPolicy) -> Self {
-        Self { inner, policy }
+        Self {
+            inner,
+            policy,
+            peer_honours_idempotency: false,
+        }
+    }
+
+    /// Records that the peer advertises the idempotency extension.
+    #[must_use]
+    pub(crate) const fn with_peer_honouring_idempotency(mut self, honours: bool) -> Self {
+        self.peer_honours_idempotency = honours;
+        self
     }
 }
 
@@ -288,8 +327,8 @@ impl Transport for RetryTransport {
         Box::pin(async move {
             let mut last_err: Option<ClientError> = None;
             let mut backoff = self.policy.initial_backoff;
-            let idempotent =
-                is_idempotent_method(method) || carries_idempotency_key(method, &params);
+            let idempotent = is_idempotent_method(method)
+                || carries_idempotency_key(method, &params, self.peer_honours_idempotency);
 
             // FIX(H7): Serialize params to bytes once and deserialize for each attempt,
             // avoiding deep-clone of the serde_json::Value tree on every retry.
@@ -345,8 +384,8 @@ impl Transport for RetryTransport {
         Box::pin(async move {
             let mut last_err: Option<ClientError> = None;
             let mut backoff = self.policy.initial_backoff;
-            let idempotent =
-                is_idempotent_method(method) || carries_idempotency_key(method, &params);
+            let idempotent = is_idempotent_method(method)
+                || carries_idempotency_key(method, &params, self.peer_honours_idempotency);
 
             // FIX(H7): Serialize params to bytes once and deserialize for each attempt,
             // avoiding deep-clone of the serde_json::Value tree on every retry.
@@ -1418,7 +1457,7 @@ mod tests {
     fn a_keyed_send_is_recognised_as_safe_to_retry() {
         for method in ["SendMessage", "SendStreamingMessage"] {
             assert!(
-                carries_idempotency_key(method, &keyed_send_params(GOOD_KEY)),
+                carries_idempotency_key(method, &keyed_send_params(GOOD_KEY), true),
                 "{method} with a key should be retryable"
             );
         }
@@ -1427,14 +1466,16 @@ mod tests {
     #[test]
     fn an_unkeyed_send_is_not() {
         let bare = serde_json::json!({"message": {"id": "m", "role": "user", "parts": []}});
-        assert!(!carries_idempotency_key("SendMessage", &bare));
+        assert!(!carries_idempotency_key("SendMessage", &bare, true));
         assert!(!carries_idempotency_key(
             "SendMessage",
-            &serde_json::Value::Null
+            &serde_json::Value::Null,
+            true
         ));
         assert!(!carries_idempotency_key(
             "SendMessage",
-            &serde_json::json!({"message": {"metadata": {"trace": "abc"}}})
+            &serde_json::json!({"message": {"metadata": {"trace": "abc"}}}),
+            true
         ));
     }
 
@@ -1444,29 +1485,32 @@ mod tests {
         // attached elsewhere must not widen what gets retried.
         assert!(!carries_idempotency_key(
             "CreateTaskPushNotificationConfig",
-            &keyed_send_params(GOOD_KEY)
+            &keyed_send_params(GOOD_KEY),
+            true
         ));
     }
 
     #[test]
     fn a_malformed_key_does_not_make_a_send_retryable() {
-        // The server refuses it, so the send is deterministic rather than
-        // deduplicated — and the predicate should say what it means.
+        // A key the server would reject is not a key this client can rely on,
+        // so it must not widen what gets retried — even against a peer that
+        // advertises the extension.
         for bad in ["short", "", "has a space in it here"] {
             assert!(
-                !carries_idempotency_key("SendMessage", &keyed_send_params(bad)),
+                !carries_idempotency_key("SendMessage", &keyed_send_params(bad), true),
                 "{bad:?} should not count as a key"
             );
         }
         assert!(!carries_idempotency_key(
             "SendMessage",
-            &serde_json::json!({"message": {"metadata": {IDEMPOTENCY_METADATA_KEY: 42}}})
+            &serde_json::json!({"message": {"metadata": {IDEMPOTENCY_METADATA_KEY: 42}}}),
+            true
         ));
     }
 
     /// The point of the whole feature: the ambiguous timeout that
     /// `non_idempotent_not_retried_on_timeout` refuses to retry *is* retried
-    /// once the send carries a key.
+    /// once the send carries a key **and the peer is known to honour it**.
     #[tokio::test]
     async fn a_keyed_send_is_retried_on_an_ambiguous_timeout() {
         let inner = FailNTransport::new(2, serde_json::json!({"ok": true}));
@@ -1476,7 +1520,8 @@ mod tests {
             RetryPolicy::default()
                 .with_initial_backoff(Duration::from_millis(1))
                 .with_max_retries(3),
-        );
+        )
+        .with_peer_honouring_idempotency(true);
         let headers = HashMap::new();
         let result = transport
             .send_request("SendMessage", keyed_send_params(GOOD_KEY), &headers)
@@ -1645,6 +1690,52 @@ mod tests {
             delay,
             Duration::from_secs(30),
             "retry-after must be clamped"
+        );
+    }
+    /// The defect this guards: the predicate read only the *locally attached*
+    /// key, so any keyed send became retryable against any peer. The key
+    /// rides in `Message.metadata`, which A2A defines as free-form, and the
+    /// extension is not part of A2A v1.0 — so a conformant Python, Java, Go
+    /// or JavaScript server ignores it and runs the send. Retrying there
+    /// starts a second task: the exact double execution
+    /// `is_idempotent_method` refuses to risk, re-introduced by the feature
+    /// meant to make it safe.
+    #[tokio::test]
+    async fn a_keyed_send_is_not_retried_against_a_peer_that_never_advertised_it() {
+        let inner = FailNTransport::new(2, serde_json::json!({"ok": true}));
+        let call_count = Arc::clone(&inner.call_count);
+        // No `with_peer_honouring_idempotency`: this is what a client built
+        // for a bare endpoint, or from a card without the extension, gets.
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(3),
+        );
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("SendMessage", keyed_send_params(GOOD_KEY), &headers)
+            .await;
+
+        assert!(result.is_err(), "the ambiguous failure must surface");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "a key the peer never claimed to honour must not make the send retryable"
+        );
+    }
+
+    /// And the evidence is the advertisement, not the key: the same send,
+    /// against a peer that advertises, is retried.
+    #[test]
+    fn the_predicate_requires_both_the_key_and_the_advertisement() {
+        assert!(
+            carries_idempotency_key("SendMessage", &keyed_send_params(GOOD_KEY), true),
+            "a valid key against an advertising peer is retryable"
+        );
+        assert!(
+            !carries_idempotency_key("SendMessage", &keyed_send_params(GOOD_KEY), false),
+            "the identical send against a peer that did not advertise is not"
         );
     }
 }

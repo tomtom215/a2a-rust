@@ -312,16 +312,22 @@ impl RequestHandler {
                 .await;
             self.persist_initial_task(&task).await?;
 
-            // Subsequent requests for this context_id will now find the task via
-            // find_task_by_context.
-            drop(context_guard);
-
             // Boxed, and with every local confined to the helper, so this cold
             // branch does not enlarge the send future for every send — inline it
             // pushed all three dispatch futures past clippy's `large_futures`
             // threshold.
+            //
+            // Before the guard is dropped, not after: this step can still
+            // reject the send, and it rolls the task row back when it does.
+            // Dropping the guard first published a task that a concurrent
+            // send for the same context could find by `find_task_by_context`
+            // in the window before the rollback.
             Box::pin(self.register_inline_push_config(params.configuration.as_ref(), &task_id))
                 .await?;
+
+            // Subsequent requests for this context_id will now find the task via
+            // find_task_by_context.
+            drop(context_guard);
 
             let executor_handle = self.spawn_executor(ctx, writer, tenant_slot);
             Ok(Started {

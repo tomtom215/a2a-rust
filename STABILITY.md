@@ -19,14 +19,23 @@ the A2A `v1.0` wire contract, the tenant model and the four bindings were
 being brought to conformance; it is not appropriate for a dependency someone
 has to keep compiling. The policy below is the commitment that replaces it.
 
-`0.13.0` carries three breaking changes, batched and labelled as §2 and §3
+`0.13.0` carries eight breaking changes, batched and labelled as §2 and §3
 require. It is worth saying plainly what that costs: §7 cuts `1.0` after
 **two consecutive** minor releases with no break, and `0.12.0` was the last
 one to break, so that count restarts at zero here rather than reaching one.
-The three are the `#[non_exhaustive]` marking of `RequestContext`, the event
-position `EventQueueReader::read` now carries, and one renamed `PurgeReport`
-field; each has a one-line migration in the changelog. Nothing in
-`ROADMAP.md` is pending that requires another.
+
+They are: the `#[non_exhaustive]` marking of `RequestContext`; the event
+position `EventQueueReader::read` now carries; one renamed `PurgeReport`
+field; the `#[non_exhaustive]` marking of `IdempotencyClaim` and of
+`KeyError`; `FailureClass::ALL` becoming a slice rather than a fixed-size
+array; `RequestHandlerBuilder::build` refusing a signed agent card it would
+otherwise have had to edit; a keyed `message/send` being retried only against
+a peer known to honour the key; and `message.id` being validated at ingress.
+Each has a migration in the changelog.
+
+The last five were found by an audit after the first three were written down,
+which is the honest account of why this section said "three" until 0.13.0
+shipped. Nothing in `ROADMAP.md` is pending that requires another.
 
 ## 2. Semantic versioning, and what "breaking" means here
 

@@ -169,11 +169,20 @@ impl From<crate::error::ErrorCode> for FailureClass {
             | E::ExtensionSupportRequired
             | E::VersionNotSupported
             | E::TaskNotFound
-            | E::TaskNotCancelable => Self::InvalidRequest,
-            E::InternalError
+            | E::TaskNotCancelable
+            // Both of these were `Internal`, whose row in the table above
+            // reads "The agent broke. Retry once, then escalate." Neither is
+            // a break and neither will ever succeed on a retry: the caller
+            // attached a push-notification config to a server that does not
+            // support them, or asked for an extended card the server does not
+            // serve. Both are things the caller could have sent differently,
+            // which is this mapping's own stated rule for `InvalidRequest` —
+            // and it is where the structurally identical
+            // `UnsupportedOperation` already sits. An orchestrator built on
+            // `is_retryable()` was burning a retry on each.
             | E::PushNotificationNotSupported
-            | E::InvalidAgentResponse
-            | E::ExtendedAgentCardNotConfigured => Self::Internal,
+            | E::ExtendedAgentCardNotConfigured => Self::InvalidRequest,
+            E::InternalError | E::InvalidAgentResponse => Self::Internal,
         }
     }
 }

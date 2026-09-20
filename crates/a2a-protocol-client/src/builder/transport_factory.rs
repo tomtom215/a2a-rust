@@ -103,7 +103,10 @@ impl ClientBuilder {
 
         // Wrap with retry transport if a policy is configured.
         let transport: Box<dyn Transport> = if let Some(policy) = self.retry_policy {
-            Box::new(RetryTransport::new(transport, policy))
+            Box::new(
+                RetryTransport::new(transport, policy)
+                    .with_peer_honouring_idempotency(self.peer_honours_idempotency),
+            )
         } else {
             transport
         };
@@ -167,7 +170,10 @@ impl ClientBuilder {
         };
 
         let transport: Box<dyn Transport> = if let Some(policy) = self.retry_policy {
-            Box::new(RetryTransport::new(transport, policy))
+            Box::new(
+                RetryTransport::new(transport, policy)
+                    .with_peer_honouring_idempotency(self.peer_honours_idempotency),
+            )
         } else {
             transport
         };

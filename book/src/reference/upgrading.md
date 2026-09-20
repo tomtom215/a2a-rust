@@ -137,8 +137,10 @@ already carries a wildcard arm and a new variant does not break it.
 ## 0.12 → 0.13
 
 0.13.0 makes the event log the record and spends it on stream resumption.
-Three breaking items, all in `a2a-protocol-server`. The first is the one most
-code will meet; the third is a rename you fix at the read site.
+Eight breaking items. The first is the one most code will meet; the third is
+a rename you fix at the read site; the last five were found by an audit after
+the first three were written down, and four of them are attributes or types
+that only bite a `match` or a literal.
 
 ### `RequestContext` is `#[non_exhaustive]`, and gains `call_context`
 
@@ -255,6 +257,115 @@ fn summarize(report: &PurgeReport) -> String {
 It is still normally zero: both side tables carry an `ON DELETE CASCADE`, so a
 non-zero count means rows outlived their task — which happens on a `SQLite`
 pool handed to `from_pool` without `foreign_keys=ON`.
+
+### `IdempotencyClaim` and `KeyError` are `#[non_exhaustive]`
+
+Both are enums a caller matches on. A `match` from outside the defining crate
+now needs a wildcard arm — and should name it, because a future variant
+reaching a silent catch-all is how a new outcome gets folded into the wrong
+one.
+
+`IdempotencyClaim` is also re-exported from `a2a_protocol_server::store` now,
+beside `RecordedEvent`. It is the return type of a `TaskStore` method, so an
+out-of-tree store has to name it, and it was reachable only at
+`store::task_store::IdempotencyClaim`.
+
+```rust
+use a2a_protocol_server::store::IdempotencyClaim;
+use a2a_protocol_types::task::TaskId;
+
+fn describe(claim: IdempotencyClaim) -> String {
+    match claim {
+        IdempotencyClaim::Claimed => "create the task".to_owned(),
+        IdempotencyClaim::Replay(id) => format!("return {id}"),
+        IdempotencyClaim::Conflict { held_by } => format!("refuse; held by {held_by}"),
+        // Required from 0.13. Naming it beats a silent fallthrough.
+        other => format!("unhandled claim outcome: {other:?}"),
+    }
+}
+# fn main() { let _ = describe(IdempotencyClaim::Replay(TaskId::new("t"))); }
+```
+
+### `FailureClass::ALL` is a slice
+
+It was `[FailureClass; 5]`, so the length was in the type and the sixth
+variant would have broken every caller that bound it — the break
+`#[non_exhaustive]` on the enum exists to prevent.
+
+```rust
+use a2a_protocol_types::failure::FailureClass;
+
+fn tokens() -> Vec<&'static str> {
+    // was: for c in FailureClass::ALL
+    FailureClass::ALL.iter().map(|c| c.as_str()).collect()
+}
+# fn main() { assert!(!tokens().is_empty()); }
+```
+
+### `build()` refuses a signed agent card it would have to edit
+
+The builder advertises the extensions this server can honour by appending to
+`capabilities.extensions`, and a card signature covers everything except
+`signatures` — so appending to a card that is already signed leaves the served
+card canonicalizing to bytes nobody signed, and every client that verifies it
+fails while this side reports nothing.
+
+Declare the extensions before signing. A card that already declares them
+builds and is served byte-identical to what was signed.
+
+```rust
+use a2a_protocol_types::extensions::AgentExtension;
+use a2a_protocol_types::failure::FAILURE_EXTENSION_URI;
+use a2a_protocol_types::idempotency::IDEMPOTENCY_EXTENSION_URI;
+
+# fn example(card: &mut a2a_protocol_types::agent_card::AgentCard) {
+// Before signing, not after:
+card.capabilities.extensions = Some(vec![
+    AgentExtension::new(IDEMPOTENCY_EXTENSION_URI),
+    AgentExtension::new(FAILURE_EXTENSION_URI),
+]);
+# }
+# fn main() {}
+```
+
+Declare `IDEMPOTENCY_EXTENSION_URI` only when the store you configure reports
+`supports_idempotency()`; `FAILURE_EXTENSION_URI` is advertised on every
+server.
+
+### A keyed `message/send` is retried only against a peer that advertises it
+
+`RetryTransport` treated any valid key in `Message.metadata` as making the
+send retryable. The key rides in a field A2A defines as free-form, and the
+extension is not part of A2A v1.0, so a conformant peer from another SDK
+ignores it and runs the send — and the retry starts a second task.
+
+`ClientBuilder::from_card` reads the advertisement and enables it for you.
+For a client built on a bare endpoint, assert it only for a peer you know
+implements the extension:
+
+```rust
+use a2a_protocol_client::ClientBuilder;
+
+# fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
+let client = ClientBuilder::new("http://localhost:8080")
+    .with_peer_honouring_idempotency(true)
+    .build()?;
+# let _ = client;
+# Ok(())
+# }
+# fn main() {}
+```
+
+### `message.id` is validated at ingress
+
+It is checked with the same rule as `context_id` and `task_id` now — non-empty
+after trimming, and within `HandlerLimits::max_id_length`. It was checked
+nowhere, so an empty `messageId` was accepted, stored, and echoed in task
+history, where every empty id collides with every other.
+
+No code change is needed unless you were sending empty or very long message
+ids. If you generate them, `uuid::Uuid::new_v4().to_string()` is what the
+examples use.
 
 ### Also in 0.13, not breaking
 

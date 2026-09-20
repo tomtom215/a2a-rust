@@ -29,8 +29,14 @@ one that has never been run.
 
 - **`RequestContext` is `#[non_exhaustive]` and carries a new `call_context`
   field.** Measured with `cargo semver-checks check-release -p
-  a2a-protocol-server --baseline-version 0.12.1`: 196 checks, 195 pass, and
-  exactly one fails — `struct_marked_non_exhaustive` on `RequestContext`. The
+  a2a-protocol-server --baseline-version 0.12.1` **at the time that bullet was
+  written**: 196 checks, 195 pass, and one fails —
+  `struct_marked_non_exhaustive` on `RequestContext`. That "exactly one" was
+  never right even then: the third bullet below renames a public field on
+  `PurgeReport`, which is public, unconditionally reachable and not
+  `#[non_exhaustive]`, so `struct_pub_field_missing` must fire too. Treat the
+  figure as the record of one run, not as evidence that the list is complete —
+  the list is complete because each entry below was derived from the diff. The
   added field is not a second finding, because once a struct is
   `#[non_exhaustive]` an added field is no longer separately observable.
 
@@ -80,6 +86,89 @@ one that has never been run.
   anyone who had only the journal, and it is still normally zero (a non-zero
   count means rows outlived their task, which happens on a pool without
   `foreign_keys=ON`).
+
+- **`build()` refuses an agent card it would have to edit.** The builder
+  advertises the extensions this server can honour by appending to
+  `capabilities.extensions`, and `canonicalize_card` strips only
+  `signatures` — so those entries are inside the bytes a signature covers. A
+  card signed before they existed was served canonicalizing to bytes nobody
+  signed, and every client that verified it failed, silently, because nothing
+  on the server side reads the signature again. Measured on the default
+  configuration: the operator's card canonicalized to 360 bytes, the card
+  actually served to 767.
+
+  `book/src/deployment/security.md` tells operators to sign the card and hand
+  it to `RequestHandlerBuilder`, so the instruction and the code together
+  produced the failure.
+
+  What breaks: `build()` now returns `InvalidParams` for a card that carries a
+  signature and does not already declare every extension this server
+  advertises. A card that declares them is served byte-identical to what was
+  signed; an unsigned card, or one with an empty signature list, is
+  advertised on as before.
+
+  Migration: declare the extensions on the card *before* signing it —
+  `IDEMPOTENCY_EXTENSION_URI` when the configured store reports
+  `supports_idempotency()`, and `FAILURE_EXTENSION_URI` always — then sign the
+  card that results. The security page shows the order in a block that
+  compiles.
+
+- **`IdempotencyClaim` and `KeyError` are `#[non_exhaustive]`.** Both were
+  exhaustive public enums that callers must `match`. Every out-of-tree
+  `TaskStore` matches on the first, and the outcomes it can report are not a
+  closed set — an expiry, or an "in flight, wait" that would let a second
+  caller be told to retry instead of handed a `TaskNotFound`, are both
+  plausible additions. `STABILITY.md` §4 promises new variants will not break
+  external implementations, and without the attribute they would have. Their
+  siblings added in this same release — `RecordedEvent`, `StreamEvent`,
+  `Outcome`, `CheckResult`, `TraceContextError` — were all marked; these two
+  were missed.
+
+  What breaks: a `match` on either from outside its crate needs a wildcard
+  arm. `IdempotencyClaim` is also re-exported from `store` now, where its
+  sibling `RecordedEvent` already sat — it is the return type of a public
+  `TaskStore` method and was reachable only at
+  `store::task_store::IdempotencyClaim`.
+
+- **`FailureClass::ALL` is `&'static [FailureClass]`, not `[Self; 5]`.** The
+  enum is `#[non_exhaustive]` so that adding a variant is not breaking, and
+  then exported a constant whose *type* encoded the variant count — so the
+  sixth variant would have changed `ALL`'s type and broken every caller that
+  bound it, which is the exact break the attribute three lines above it
+  promises not to inflict.
+
+  Migration: `for c in FailureClass::ALL` becomes `for &c in
+  FailureClass::ALL`; `.into_iter()` becomes `.iter().copied()`.
+
+- **A keyed `message/send` is retried only against a peer known to honour the
+  key.** `RetryTransport` treated any valid key in `Message.metadata` as
+  making the send retryable, on the stated grounds that a server without the
+  extension "refuses a keyed send outright". That is true of this SDK's
+  server and of nothing else: the key rides in `Message.metadata`, which A2A
+  defines as free-form, and the extension is deliberately not part of A2A
+  v1.0 — a conformant Python, Java, Go or JavaScript server ignores it and
+  runs the send. Retrying there starts a second task, which is the exact
+  double execution `is_idempotent_method` exists to prevent. There is no
+  handshake that would fix it: A2A's `A2A-Extensions` header is the server
+  reporting what it activated, not a demand a server must reject.
+
+  What breaks: a client built for a bare endpoint no longer retries a keyed
+  send after an ambiguous failure. `ClientBuilder::from_card` reads the
+  advertisement off the agent card and enables it automatically;
+  `ClientBuilder::with_peer_honouring_idempotency(true)` asserts it for a peer
+  you know implements the extension.
+
+- **`message.id` is validated at ingress.** It is now checked with the same
+  rule as `context_id` and `task_id` — non-empty after trimming, and within
+  `HandlerLimits::max_id_length`. It was checked nowhere, while being stored
+  verbatim in `idempotency_keys.message_id`, keying history de-duplication,
+  and interpolated into the error a caller sees when an idempotency key is
+  held by a different message. A spec-invalid empty id was accepted, stored,
+  and echoed in task history, where an empty id collides with every other
+  empty id.
+
+  What breaks: a send whose `messageId` is empty, whitespace-only, or longer
+  than `max_id_length` is rejected with `InvalidParams` instead of accepted.
 
 ### Added
 
@@ -217,12 +306,15 @@ one that has never been run.
 
   `conformance::check(Arc::new(MyExecutor)).await.assert_pass()` drives the
   executor against a real event queue — no server, no ports, no model — and
-  grades eight protocol invariants that hold for any agent whatever it does:
-  it ends in a terminal or interrupted state, its transitions are legal,
+  grades thirteen protocol invariants that hold for any agent whatever it
+  does: it ends in a terminal or interrupted state, its transitions are legal,
   nothing follows a terminal status, artifacts carry ids, parking is not
-  reported as an error, it observes the cancellation token, `cancel` leaves
-  subscribers a terminal state, and it does not panic. It says nothing about
-  whether the agent is any good at its job.
+  reported as an error, it returns within the harness's time limit, it
+  observes a cancellation token set before it starts *and* one that arrives
+  during its first write, it does not report cancellation as a failure,
+  `cancel` leaves subscribers a terminal state, and it does not panic — on
+  the normal run, the cancelled run, or the mid-run cancellation. It says
+  nothing about whether the agent is any good at its job.
 
   **Three rules keep the score honest, and each is the repository's own.** A
   check that did not apply is *not graded* rather than counted as a pass — a
@@ -233,8 +325,9 @@ one that has never been run.
   panicking executor is a graded failure rather than a panic that takes the
   adopter's whole test run down with it.
 
-  Its own tests are fourteen deliberately broken executors, each breaking one
-  invariant, asserting the harness names that one and no other. A conformance
+  Its own tests are deliberately broken executors, each breaking one invariant
+  (or, where an executor genuinely breaks two, naming both), asserting the
+  harness names those and no others. A conformance
   harness whose failures are untested is a gate that cannot fail, which is
   the thing this repository checks for everywhere else — and the discipline
   paid immediately: the first draft of one fixture broke two invariants

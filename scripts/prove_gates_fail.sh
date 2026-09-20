@@ -380,6 +380,12 @@ injection_for() {
         # is seen by every one of cargo-hack's invocations.
         "cargo hack clippy"*)
             echo "clippy_always:$TYPES_LIB" ;;
+        # The per-crate doc loop is a block, not a bare command, so the
+        # prefix pattern below cannot see it. Same injection: the broken
+        # intra-doc link goes into the types crate's lib.rs, which every
+        # iteration of the loop documents.
+        *'cargo doc -p "$crate" --no-deps'*)
+            echo "doc" ;;
         "cargo doc"*)
             echo "doc" ;;
         "cargo package"*)

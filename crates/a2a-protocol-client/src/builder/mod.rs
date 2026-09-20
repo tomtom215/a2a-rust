@@ -96,6 +96,13 @@ pub struct ClientBuilder {
     pub(super) config: ClientConfig,
     pub(super) preferred_binding: Option<String>,
     pub(super) retry_policy: Option<RetryPolicy>,
+    /// Whether the peer is known to honour an idempotency key.
+    ///
+    /// Only an agent card that advertises the extension, or a caller saying so
+    /// outright, sets this. It decides whether a keyed `message/send` joins
+    /// the set the retry policy will re-send after an ambiguous failure, so a
+    /// wrong `true` duplicates tasks against a server that ignores the key.
+    pub(super) peer_honours_idempotency: bool,
     /// The card's interfaces, when this builder came from one; empty otherwise.
     ///
     /// Retained so that [`ClientBuilder::with_protocol_binding`] can move the
@@ -155,6 +162,7 @@ impl ClientBuilder {
             config: ClientConfig::default(),
             preferred_binding: None,
             retry_policy: None,
+            peer_honours_idempotency: false,
             grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme::default(),
             #[cfg(feature = "grpc-tls")]
             grpc_tls_config: None,
@@ -215,10 +223,21 @@ impl ClientBuilder {
             );
         }
 
+        // The card advertises the idempotency extension exactly when the
+        // agent's configured store can honour a key, so it is the one piece of
+        // evidence a client can act on. Without it a keyed send stays
+        // non-retryable: a peer that ignores the key would run the retry as a
+        // second task.
+        let peer_honours_idempotency = card.capabilities.extensions.as_ref().is_some_and(|exts| {
+            exts.iter()
+                .any(|e| e.uri == a2a_protocol_types::idempotency::IDEMPOTENCY_EXTENSION_URI)
+        });
+
         Ok(Self {
             endpoint,
             transport_override: None,
             interceptors: InterceptorChain::new(),
+            peer_honours_idempotency,
             config: ClientConfig {
                 // Preserve tenant from AgentInterface for multi-tenancy (Java #772).
                 tenant: first.tenant.clone(),
@@ -285,9 +304,9 @@ impl ClientBuilder {
     /// [`with_protocol_binding`](Self::with_protocol_binding) can move it.
     /// This is the outcome of those rules, so a caller who needs a
     /// constructor the builder does not drive itself — a
-    /// [`WebSocketTransport`](crate::WebSocketTransport) for
+    /// `WebSocketTransport` (behind the `websocket` feature) for
     /// [`with_custom_transport`](Self::with_custom_transport), or
-    /// [`build_grpc`](Self::build_grpc) rather than [`build`](Self::build) —
+    /// `build_grpc` (behind the `grpc` feature) rather than [`build`](Self::build) —
     /// reads the endpoint and binding here instead of re-implementing the
     /// preference.
     ///
@@ -341,7 +360,7 @@ impl ClientBuilder {
     /// ([`GrpcBareAddressScheme::HttpsExceptLoopback`]) uses TLS for every
     /// host except loopback; a deployment whose plaintext gRPC lives on a
     /// private network sets [`GrpcBareAddressScheme::Http`]. Only
-    /// [`build_grpc`](Self::build_grpc) reads this; an address that already
+    /// `build_grpc` (behind the `grpc` feature) reads this; an address that already
     /// carries a scheme is unaffected.
     ///
     /// [`GrpcBareAddressScheme::HttpsExceptLoopback`]: crate::config::GrpcBareAddressScheme::HttpsExceptLoopback
@@ -355,7 +374,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the TLS configuration [`build_grpc`](Self::build_grpc) uses for
+    /// Sets the TLS configuration `build_grpc` (behind the `grpc` feature) uses for
     /// an `https://` endpoint, explicit or chosen by the bare-address policy:
     /// a private CA, a client certificate, or a server name that differs from
     /// the host. Without it the server is verified against the bundled
@@ -438,6 +457,30 @@ impl ClientBuilder {
     #[must_use]
     pub const fn with_retry_policy(mut self, policy: RetryPolicy) -> Self {
         self.retry_policy = Some(policy);
+        self
+    }
+
+    /// Asserts that the peer honours idempotency keys on `message/send`.
+    ///
+    /// Only needed when the client was not built from an agent card:
+    /// [`from_card`](Self::from_card) reads the advertisement itself.
+    ///
+    /// # What this changes, and what it costs to get wrong
+    ///
+    /// `SendMessage` is not retried after an *ambiguous* failure — a
+    /// connection dropped after the request bytes went out — because the send
+    /// may have executed. A key the server deduplicates on removes that
+    /// ambiguity, so a keyed send becomes retryable. Setting this for a peer
+    /// that does **not** honour the key re-introduces exactly the double
+    /// execution the rule exists to prevent: the key rides in
+    /// `Message.metadata`, which A2A defines as free-form, so a server that
+    /// has never heard of the extension ignores it and runs the send again.
+    ///
+    /// Assert it only for a peer you know implements
+    /// `https://a2a-rust.com/extensions/idempotency/v1`.
+    #[must_use]
+    pub const fn with_peer_honouring_idempotency(mut self, honours: bool) -> Self {
+        self.peer_honours_idempotency = honours;
         self
     }
 

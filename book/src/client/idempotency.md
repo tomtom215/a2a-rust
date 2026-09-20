@@ -101,11 +101,24 @@ Attaching a key changes the retry decision. `SendMessage` and
 `SendStreamingMessage` are normally not retried after an ambiguous failure; a
 keyed send is, because the retry cannot duplicate work.
 
-That holds even against a server without the extension. Either the key is
-honoured and the retry is deduplicated, or the server refuses the keyed send
-outright rather than running it undeduplicated. There is no arrangement in
-which the retry starts a second task, which is why no capability negotiation is
-needed before sending one.
+**That holds only against a peer known to honour the key**, and the client
+will not assume it. `ClientBuilder::from_card` reads the advertisement off
+the agent card and sets it; a client built for a bare endpoint can assert it
+with `ClientBuilder::with_peer_honouring_idempotency(true)`. Without that
+evidence a keyed send stays exactly as retryable as an unkeyed one, which is
+to say not at all after an ambiguous failure.
+
+This paragraph used to say the property held even against a server without
+the extension, "because such a server refuses a keyed send outright". That is
+true of *this* SDK's server, which refuses a keyed send when its store cannot
+honour one — and of nothing else. The key travels in `Message.metadata`,
+which A2A defines as free-form, and the extension is deliberately not part of
+A2A v1.0: a conformant Python, Java, Go or JavaScript server has never heard
+of the URI, ignores the metadata, and runs the send. Retrying against one
+starts a second task. Nor is there a handshake that would fix it — A2A's
+`A2A-Extensions` header is the server reporting what it activated, not a
+demand a server must reject — so the agent card is the evidence, and the
+client requires it.
 
 ## Knowing whether a server honours it
 

@@ -76,14 +76,7 @@ impl RequestHandler {
         {
             IdempotencyClaim::Claimed => Ok(SendKey::Claimed(key.to_owned())),
             IdempotencyClaim::Replay(existing) => {
-                let task = self.task_store.get(&existing).await?.ok_or_else(|| {
-                    // The key outlives its task deliberately — see the index's
-                    // own note — so a retry arriving after the task was swept
-                    // lands here. Saying so is the conservative direction:
-                    // dropping the key instead would let this send execute a
-                    // second time.
-                    ServerError::TaskNotFound(existing.clone())
-                })?;
+                let task = self.await_claimed_task(&existing).await?;
                 Ok(SendKey::Replay(Box::new(task)))
             }
             IdempotencyClaim::Conflict { held_by } => Err(ServerError::InvalidParams(format!(
@@ -93,6 +86,46 @@ impl RequestHandler {
                  was never sent."
             ))),
         }
+    }
+
+    /// Reads the task a replayed key names, waiting briefly for it to appear.
+    ///
+    /// The claim commits before the task row is written — it has to, or two
+    /// racing duplicates would each get past the claim and both execute — so
+    /// there is a window in which the winner holds the key and its task does
+    /// not yet exist. The per-context lock does not close it: a send that
+    /// carries no `context_id` gets a freshly minted one, so two duplicates of
+    /// the *same* message take two different locks and run concurrently. That
+    /// is precisely the case idempotency exists for, which is why the window
+    /// is reachable rather than theoretical.
+    ///
+    /// Without the wait the loser was told `TaskNotFound` for a task that
+    /// existed milliseconds later — and that error's own documentation
+    /// attributes it to a retention sweep, so a caller following the
+    /// documented semantics concluded the task was permanently gone.
+    ///
+    /// Bounded, and the fallback is unchanged: a key really does outlive its
+    /// task (see the index's own note), so a retry arriving after the task was
+    /// swept still lands on `TaskNotFound`. That is the conservative
+    /// direction — dropping the key instead would let the send execute a
+    /// second time.
+    async fn await_claimed_task(&self, existing: &TaskId) -> ServerResult<Task> {
+        // Ten attempts over ~250ms. The window is one lock acquisition plus
+        // the store writes between the claim and `persist_initial_task`, so
+        // the first or second read resolves it in practice; the budget is for
+        // a loaded database, not for a task that is never coming.
+        const ATTEMPTS: u32 = 10;
+        const INTERVAL: std::time::Duration = std::time::Duration::from_millis(25);
+
+        for attempt in 0..ATTEMPTS {
+            if let Some(task) = self.task_store.get(existing).await? {
+                return Ok(task);
+            }
+            if attempt + 1 < ATTEMPTS {
+                tokio::time::sleep(INTERVAL).await;
+            }
+        }
+        Err(ServerError::TaskNotFound(existing.clone()))
     }
 
     /// Releases a key this send claimed, because the send then failed.
