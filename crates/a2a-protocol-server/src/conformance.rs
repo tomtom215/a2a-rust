@@ -254,6 +254,19 @@ fn context(message: &Message) -> RequestContext {
     )
 }
 
+/// Whether a failed `join` means the task panicked, as opposed to having been
+/// cancelled.
+///
+/// A one-line wrapper with a reason: written inline as a match guard, the
+/// distinction is untestable. A `JoinError` that is *not* a panic can only
+/// come from aborting a task, and neither call site aborts anything — so the
+/// non-panic branch is unreachable from outside and a mutated guard changes
+/// nothing any test can see. CI reported exactly that, three times over.
+/// Here both kinds can be constructed directly and the predicate checked.
+fn is_panic(join: &tokio::task::JoinError) -> bool {
+    join.is_panic()
+}
+
 impl Run {
     async fn drive(executor: &Arc<dyn AgentExecutor>, ctx: RequestContext) -> Self {
         let (writer, reader) = new_in_memory_queue();
@@ -270,8 +283,13 @@ impl Run {
         let outcome = match joined {
             Ok(Ok(())) => RunOutcome::Ok,
             Ok(Err(e)) => RunOutcome::Err(e.to_string()),
-            Err(join) if join.is_panic() => RunOutcome::Panicked,
-            Err(e) => RunOutcome::Err(e.to_string()),
+            Err(join) => {
+                if is_panic(&join) {
+                    RunOutcome::Panicked
+                } else {
+                    RunOutcome::Err(join.to_string())
+                }
+            }
         };
         Self { outcome, events }
     }
@@ -455,8 +473,15 @@ async fn cancel_emits_a_terminal_state(
     let events = drain(reader).await;
 
     match joined {
-        Err(join) if join.is_panic() => CheckResult::fail(NAME, "cancel panicked"),
-        Err(e) => CheckResult::fail(NAME, format!("cancel could not be run: {e}")),
+        // An `if` rather than a match guard, for the reason `is_panic`
+        // documents: a guard's mutants are unkillable here.
+        Err(join) => {
+            if is_panic(&join) {
+                CheckResult::fail(NAME, "cancel panicked")
+            } else {
+                CheckResult::fail(NAME, format!("cancel could not be run: {join}"))
+            }
+        }
         Ok(Err(e)) => CheckResult::fail(NAME, format!("cancel returned Err({e})")),
         Ok(Ok(())) => {
             if states(&events).iter().any(|s| s.is_terminal()) {

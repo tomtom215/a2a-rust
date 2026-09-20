@@ -312,3 +312,27 @@ async fn the_report_renders_every_check_with_its_reason() {
 async fn assert_pass_panics_with_the_grid() {
     check(Arc::new(Silent)).await.assert_pass();
 }
+
+/// `is_panic` exists so this distinction is testable at all; see its doc
+/// comment. Both kinds of `JoinError` are constructed here, which is what
+/// neither call site can do.
+#[tokio::test]
+async fn a_panicking_join_is_a_panic_and_a_cancelled_one_is_not() {
+    let panicked = tokio::spawn(async { panic!("deliberate") })
+        .await
+        .expect_err("a panicking task fails its join");
+    assert!(panicked.is_panic(), "fixture must actually be a panic");
+    assert!(super::is_panic(&panicked));
+
+    let handle = tokio::spawn(std::future::pending::<()>());
+    handle.abort();
+    let cancelled = handle.await.expect_err("an aborted task fails its join");
+    assert!(
+        cancelled.is_cancelled(),
+        "fixture must actually be a cancel"
+    );
+    assert!(
+        !super::is_panic(&cancelled),
+        "a cancelled task did not panic, and the harness must not report it as one"
+    );
+}

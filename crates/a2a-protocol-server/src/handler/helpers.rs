@@ -375,6 +375,51 @@ mod tests {
 
     // ── build_call_context ─────────────────────────────────────────────────
 
+    /// A caller's `traceparent` has to reach the `CallContext`, or the
+    /// delegation chain this exists to join is several unrelated span trees.
+    /// Nothing asserted it: `parse_trace_context` replaced with `None`
+    /// survived the mutation gate, because every test here either sent no
+    /// headers or looked only at the ones it did send.
+    #[test]
+    fn a_traceparent_header_reaches_the_call_context() {
+        const PARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+
+        let mut headers = HashMap::new();
+        headers.insert("traceparent".to_owned(), PARENT.to_owned());
+        headers.insert("tracestate".to_owned(), "vendor=value".to_owned());
+
+        let ctx = build_call_context("message/send", Some(&headers));
+        let trace = ctx
+            .trace_context()
+            .expect("a valid traceparent must reach the context");
+
+        assert_eq!(
+            trace.trace_id(),
+            "4bf92f3577b34da6a3ce929d0e0e4736",
+            "same trace as the caller — that is the whole point"
+        );
+        assert_eq!(trace.flags(), 1, "the sampling decision carries through");
+        assert_eq!(trace.tracestate(), Some("vendor=value"));
+        assert_ne!(
+            trace.span_id(),
+            "00f067aa0ba902b7",
+            "this hop is a child, not the caller's own span"
+        );
+    }
+
+    /// A malformed `traceparent` is dropped rather than repaired, and must not
+    /// fail the request: an unusable header from a caller is their problem to
+    /// fix, not a reason to refuse the call.
+    #[test]
+    fn a_malformed_traceparent_is_dropped_not_fatal() {
+        let mut headers = HashMap::new();
+        headers.insert("traceparent".to_owned(), "not-a-traceparent".to_owned());
+
+        let ctx = build_call_context("message/send", Some(&headers));
+        assert!(ctx.trace_context().is_none());
+        assert_eq!(ctx.method(), "message/send", "the call still proceeds");
+    }
+
     #[test]
     fn build_call_context_without_headers() {
         let ctx = build_call_context("message/send", None);
