@@ -355,14 +355,19 @@ mod tests {
             .expect("runtime");
         let handler = HotReloadAgentCardHandler::new(minimal_agent_card());
 
-        let hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
+        // No panic-hook swap around this `catch_unwind`, deliberately, and
+        // `scripts/check_panic_hooks.sh` keeps it that way. `set_hook` is
+        // process-global while libtest runs tests as parallel threads in one
+        // process, so silencing the hook here silences every *other* thread
+        // for as long as the window is held — a genuinely failing test that
+        // races it loses its message and reddens CI with no reason in the
+        // log. Nothing is gained by the swap: libtest already captures panic
+        // output per test and discards it when the test passes.
         let outcome = rt.block_on(async {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _handle = handler.spawn_signal_watcher(Path::new("/nonexistent"));
             }))
         });
-        std::panic::set_hook(hook);
 
         let payload = outcome.expect_err(
             "registration must happen inside spawn_signal_watcher, so the failure \
@@ -396,13 +401,11 @@ mod tests {
         let name_before = handler.current().name;
 
         let poisoner = handler.clone();
-        let hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
+        // No panic-hook swap — see the test above for why.
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _guard = poisoner.card.write().expect("uncontended");
             panic!("poison the lock");
         }));
-        std::panic::set_hook(hook);
         assert!(outcome.is_err(), "the closure must actually have panicked");
         assert!(
             handler.card.is_poisoned(),

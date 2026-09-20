@@ -19,8 +19,9 @@ use super::{PurgeReport, RetentionPolicy, terminal_state_labels};
 /// which on a busy database means bloat and blocked writers; a thousand small
 /// deletes let everything else through in between.
 ///
-/// There is no journal table on this backend — the artifact-delta journal is
-/// `SQLite`-only — so [`PurgeReport::journal_orphans_deleted`] is always zero.
+/// Side tables need no sweep on this backend: `PostgreSQL` always enforces
+/// `ON DELETE CASCADE`, so [`PurgeReport::orphan_rows_deleted`] is always
+/// zero.
 pub async fn purge(
     pool: &PgPool,
     table: &'static str,

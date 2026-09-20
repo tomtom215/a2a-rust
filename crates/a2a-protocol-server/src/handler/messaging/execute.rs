@@ -14,8 +14,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_protocol_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::failure::{FailureClass, set_class};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 use tokio::sync::OwnedSemaphorePermit;
@@ -94,34 +95,45 @@ impl RequestHandler {
             .and_then(|limits| limits.executor_timeout)
             .or(self.executor_timeout);
 
-        tokio::spawn(async move {
-            // Owned by this future, so the slot is returned when the executor
-            // finishes, fails, panics, or is aborted.
-            let _tenant_slot = tenant_slot;
-            trace_debug!(task_id = %ctx.task_id, "executor started");
+        // Captured for the same reason and re-entered below. Without this the
+        // executor — and every store call it makes — ran under the empty
+        // tenant, so a tenant-aware store partitioned the executor's writes
+        // away from the request that caused them. The background event
+        // processor and the sync collector already do exactly this; this
+        // spawn was the one that did not.
+        let tenant = crate::store::tenant::TenantContext::current();
 
-            // Armed before the executor runs; see the type's docs for when it
-            // fires. There is no `catch_unwind` here — the guard *is* the
-            // panic handling.
-            let mut cleanup_guard = CleanupGuard {
-                task_id: Some(task_id.clone()),
-                queue_mgr: event_queue_mgr.clone(),
-                tokens: Arc::clone(&cancel_tokens),
-            };
+        tokio::spawn(crate::store::tenant::TenantContext::scope(
+            tenant,
+            async move {
+                // Owned by this future, so the slot is returned when the executor
+                // finishes, fails, panics, or is aborted.
+                let _tenant_slot = tenant_slot;
+                trace_debug!(task_id = %ctx.task_id, "executor started");
 
-            let result =
-                run_executor(executor.as_ref(), &ctx, writer.as_ref(), executor_timeout).await;
-            if let Err(ref e) = result {
-                write_failure_event(writer.as_ref(), &ctx, e).await;
-            }
-            // Drop the writer so the channel closes and readers see EOF.
-            drop(writer);
-            // Explicit cleanup, then disarm the guard so it does not release
-            // a second time on normal exit.
-            event_queue_mgr.destroy(&task_id).await;
-            cancel_tokens.write().await.remove(&task_id);
-            cleanup_guard.task_id = None;
-        })
+                // Armed before the executor runs; see the type's docs for when it
+                // fires. There is no `catch_unwind` here — the guard *is* the
+                // panic handling.
+                let mut cleanup_guard = CleanupGuard {
+                    task_id: Some(task_id.clone()),
+                    queue_mgr: event_queue_mgr.clone(),
+                    tokens: Arc::clone(&cancel_tokens),
+                };
+
+                let result =
+                    run_executor(executor.as_ref(), &ctx, writer.as_ref(), executor_timeout).await;
+                if let Err((ref e, class)) = result {
+                    write_failure_event(writer.as_ref(), &ctx, e, class).await;
+                }
+                // Drop the writer so the channel closes and readers see EOF.
+                drop(writer);
+                // Explicit cleanup, then disarm the guard so it does not release
+                // a second time on normal exit.
+                event_queue_mgr.destroy(&task_id).await;
+                cancel_tokens.write().await.remove(&task_id);
+                cleanup_guard.task_id = None;
+            },
+        ))
     }
 }
 
@@ -134,18 +146,28 @@ async fn run_executor(
     ctx: &RequestContext,
     writer: &dyn EventQueueWriter,
     timeout: Option<Duration>,
-) -> A2aResult<()> {
-    if let Some(timeout) = timeout {
-        tokio::time::timeout(timeout, executor.execute(ctx, writer))
+) -> Result<(), (A2aError, FailureClass)> {
+    let Some(timeout) = timeout else {
+        return executor
+            .execute(ctx, writer)
             .await
-            .unwrap_or_else(|_| {
-                Err(A2aError::internal(format!(
-                    "executor timed out after {}s",
-                    timeout.as_secs()
-                )))
-            })
-    } else {
-        executor.execute(ctx, writer).await
+            .map_err(|e| (FailureClass::from(e.code), e))
+            .map_err(|(class, e)| (e, class));
+    };
+    match tokio::time::timeout(timeout, executor.execute(ctx, writer)).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => {
+            let class = FailureClass::from(e.code);
+            Err((e, class))
+        }
+        // A deadline is a bound that was hit, not an agent that broke, and
+        // the classes exist so a caller can tell those apart: an identical
+        // retry hits the identical deadline, a retry with more budget need
+        // not.
+        Err(_) => Err((
+            A2aError::internal(format!("executor timed out after {}s", timeout.as_secs())),
+            FailureClass::BudgetExhausted,
+        )),
     }
 }
 
@@ -157,12 +179,17 @@ async fn run_executor(
 /// — and every `GetTask` after it — returns a `Failed` task that says why.
 /// `metadata.error` is where streaming callers have always read it, and it
 /// stays for them.
-async fn write_failure_event(writer: &InMemoryQueueWriter, ctx: &RequestContext, error: &A2aError) {
+async fn write_failure_event(
+    writer: &InMemoryQueueWriter,
+    ctx: &RequestContext,
+    error: &A2aError,
+    class: FailureClass,
+) {
     trace_error!(task_id = %ctx.task_id, error = %error, "executor failed");
     let fail_event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
         task_id: ctx.task_id.clone(),
         context_id: ContextId::new(ctx.context_id.clone()),
-        status: failure_status(ctx, error),
+        status: failure_status(ctx, error, class),
         metadata: Some(serde_json::json!({ "error": error.to_string() })),
     });
     if let Err(_write_err) = writer.write(fail_event).await {
@@ -176,9 +203,9 @@ async fn write_failure_event(writer: &InMemoryQueueWriter, ctx: &RequestContext,
 
 /// The `Failed` status, carrying the error as an agent-role message with one
 /// text part.
-fn failure_status(ctx: &RequestContext, error: &A2aError) -> TaskStatus {
+fn failure_status(ctx: &RequestContext, error: &A2aError, class: FailureClass) -> TaskStatus {
     let mut status = TaskStatus::with_timestamp(TaskState::Failed);
-    status.message = Some(Message {
+    let mut note = Message {
         id: MessageId::new(uuid::Uuid::new_v4().to_string()),
         role: MessageRole::Agent,
         parts: vec![Part::text(error.to_string())],
@@ -187,6 +214,12 @@ fn failure_status(ctx: &RequestContext, error: &A2aError) -> TaskStatus {
         reference_task_ids: None,
         extensions: None,
         metadata: None,
-    });
+    };
+    // The class rides the status message beside the prose, so a caller can
+    // branch on a value instead of matching English. An executor that
+    // classified for itself emits its own terminal status and never reaches
+    // here.
+    set_class(&mut note, class);
+    status.message = Some(note);
     status
 }

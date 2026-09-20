@@ -240,6 +240,48 @@ other readers or the writer.
 > (`Completed`, `Failed`, `Canceled`, `Rejected`) returns an
 > `UnsupportedOperation` error immediately, without opening an SSE stream.
 
+### Resuming from where you left off
+
+A snapshot tells you where the task *is*, not what happened while you were
+disconnected. An agent that emitted three progress updates during the outage
+folds them into one state, and a client polling or resubscribing sees one.
+
+Every frame carrying an event the agent emitted therefore also carries an SSE
+`id:`, which is that event's position in the task's event log:
+
+```text
+id: 7
+event: message
+data: {"kind":"status-update", ...}
+```
+
+Send the last one you saw back as `Last-Event-ID` on the resubscribe, and the
+server replays the log from exactly there — after the snapshot, before the
+live stream:
+
+```text
+GET /v1/tasks/task-abc:subscribe
+Last-Event-ID: 7
+```
+
+Details worth knowing:
+
+- **The offset is exclusive.** `Last-Event-ID: 7` returns 8 onward. `0` asks
+  for the whole history.
+- **Frames without an `id:` are not in the log.** The `Task` snapshot and the
+  terminal frame the server rebuilds from stored state are server-synthesized
+  rather than agent-emitted, so they carry no position and do not move your
+  offset.
+- **The replay is bounded** by `HandlerLimits::subscribe_replay_limit`
+  (default 1,000). Truncation is not loss: each replayed frame carries its own
+  `id:`, so reconnect at the last one you received and continue.
+- **It needs a store that keeps a log.** Every store this crate ships does
+  (`TaskStore::supports_event_log`). A custom store that does not gets the
+  snapshot and the live stream, which is the behaviour from before resumption
+  existed — the header is ignored rather than refused.
+- **A malformed `Last-Event-ID` is ignored**, not rejected, so echoing back an
+  id from an unrelated stream costs you a replay, not the connection.
+
 ## Streaming vs Synchronous
 
 | Aspect | SendMessage | SendStreamingMessage |

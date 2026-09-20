@@ -19,6 +19,23 @@ use crate::streaming::{InMemoryQueueReader, Reattached};
 use super::super::RequestHandler;
 use super::super::helpers::build_call_context;
 
+/// The `Last-Event-ID` a resuming subscriber sent back, when it names a
+/// position this server could have issued.
+///
+/// The header is client-supplied, so it is parsed rather than trusted: a
+/// value that is not a decimal position is ignored and the stream starts from
+/// the snapshot, which is what a first-time subscriber gets. Rejecting the
+/// request instead would fail a reconnect over a header the client is allowed
+/// to echo back from a previous, unrelated stream.
+///
+/// `0` is a legitimate answer and means "from the beginning": positions start
+/// at 1 and `read_events` is exclusive of its offset.
+fn last_event_id(headers: Option<&HashMap<String, String>>) -> Option<u64> {
+    // Lowercase: `extract_headers` normalizes every key that way, and HTTP
+    // field names are case-insensitive.
+    headers?.get("last-event-id")?.trim().parse::<u64>().ok()
+}
+
 impl RequestHandler {
     /// Builds the hook that keeps a `SubscribeToTask` stream alive across turns.
     ///
@@ -104,6 +121,58 @@ impl RequestHandler {
         })
     }
 
+    /// Queues the events a resuming subscriber missed, read from the task's
+    /// event log.
+    ///
+    /// Does nothing without a usable `Last-Event-ID`, which covers every
+    /// first-time subscribe. Does nothing either when the store keeps no log:
+    /// there is nothing to replay from, and the snapshot the stream already
+    /// starts with is the best answer available.
+    ///
+    /// A failed read is not an error. The stream is still correct without the
+    /// replay — it is the pre-resumption behaviour, a snapshot then live
+    /// events — and refusing to subscribe because the history could not be
+    /// read would turn a storage hiccup into a dropped connection.
+    async fn replay_missed_events(
+        &self,
+        reader: &mut InMemoryQueueReader,
+        task_id: &TaskId,
+        headers: Option<&HashMap<String, String>>,
+    ) {
+        let Some(after_seq) = last_event_id(headers) else {
+            return;
+        };
+        if !self.task_store.supports_event_log() {
+            trace_warn!(
+                task_id = %task_id,
+                "resubscribe sent Last-Event-ID but this task store keeps no event log; \
+                 the stream starts from the snapshot instead"
+            );
+            return;
+        }
+        match self
+            .task_store
+            .read_events(task_id, after_seq, self.limits.subscribe_replay_limit)
+            .await
+        {
+            Ok(events) => {
+                trace_info!(
+                    task_id = %task_id,
+                    after_seq = after_seq,
+                    replayed = events.len(),
+                    "resubscribe replaying missed events"
+                );
+                reader.queue_replay(events);
+            }
+            Err(_e) => {
+                trace_warn!(
+                    task_id = %task_id,
+                    "resubscribe: event log read failed; the stream starts from the snapshot"
+                );
+            }
+        }
+    }
+
     /// Handles `SubscribeToTask`.
     ///
     /// # Errors
@@ -159,7 +228,7 @@ impl RequestHandler {
                 // SPEC: The first event in a SubscribeToTask stream MUST be a Task
                 // snapshot representing the current state (Go #231, JS #323).
                 let snapshot = a2a_protocol_types::events::StreamResponse::Task(task);
-                let reader = self
+                let mut reader = self
                     .event_queue_manager
                     .subscribe_with_snapshot(&task_id, snapshot.clone())
                     .await
@@ -171,6 +240,14 @@ impl RequestHandler {
                     // the next turn's queue.
                     .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(snapshot))
                     .with_reattach(self.subscribe_reattach_hook(task_id.clone()));
+
+                // Resumption. A client that was disconnected sends back the
+                // `id:` of the last frame it saw; the log is replayed from
+                // exactly there, after the snapshot and before the live
+                // stream, so the client sees what it missed rather than a
+                // fold it cannot interpret.
+                self.replay_missed_events(&mut reader, &task_id, headers)
+                    .await;
 
                 self.interceptors.run_after(&call_ctx).await?;
                 Ok(reader)
@@ -296,7 +373,7 @@ mod tests {
             .await
             .expect("stream must yield the snapshot")
             .expect("snapshot must not be an error");
-        match first {
+        match first.event {
             a2a_protocol_types::events::StreamResponse::Task(t) => {
                 assert_eq!(t.id.0.as_str(), "t-resub-nonterminal");
                 assert_eq!(t.status.state, TaskState::Working);
@@ -325,7 +402,7 @@ mod tests {
             .expect("stream must report the terminal state promptly")
             .expect("expected a final frame, got EOF")
             .expect("final frame must not be an error");
-        match final_frame {
+        match final_frame.event {
             a2a_protocol_types::events::StreamResponse::StatusUpdate(u) => {
                 assert_eq!(u.status.state, TaskState::Completed);
                 assert_eq!(u.task_id.0.as_str(), "t-resub-nonterminal");

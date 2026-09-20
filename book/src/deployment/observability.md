@@ -15,7 +15,7 @@ and the answer is almost always this page's first section.
 ## Turning them on
 
 ```toml
-a2a-protocol-server = { version = "0.12", features = ["tracing", "otel"] }
+a2a-protocol-server = { version = "0.13", features = ["tracing", "otel"] }
 ```
 
 * **`tracing`** — the crate's logging calls compile to nothing without it. With
@@ -236,12 +236,15 @@ skipped     a configuration result: push_delivery_timeout cut the schedule short
 
 Stated so a green dashboard is not mistaken for a complete one:
 
-* **There are no traces.** The `otel` feature exports metrics and nothing
-  else — no `TracerProvider`, no span export, no `traceparent` on the wire.
-  For a protocol whose subject is agents calling agents this is the largest
-  gap, because metrics can say *this* server was slow and cannot say that a
-  40-second task was 38 seconds waiting two hops away. Propagate your own
-  correlation id in `Message.metadata` until this exists.
+* **No spans are exported.** The `otel` feature exports metrics and nothing
+  else: no `TracerProvider`, no span export, no durations recorded. Metrics
+  can say *this* server was slow; they cannot say a 40-second task was 38
+  seconds waiting two hops away.
+
+  Trace **context** is a separate thing and it is carried, as of 0.13 — see
+  [Trace context](#trace-context) below. That gives every hop in a
+  delegation chain the same trace id, which is what a collector needs to
+  join them. Recording the spans themselves is still yours to install.
 * **Nothing here measures the executor.** Latency is request latency; time spent
   inside your `AgentExecutor` is yours to instrument.
 * **Task-store operations have no latency instrument.** `persistence_errors`
@@ -264,14 +267,58 @@ Task and context identifiers are on the spans, so one request can be followed
 through **this** process. If you emit your own events from inside an executor,
 they inherit that context.
 
-**They do not join a delegation chain.** An earlier revision of this page said
-they did, and that was wrong. There is no distributed tracing here: the `otel`
-feature exports metrics only, nothing in the SDK reads or writes W3C
-`traceparent`, and two agents therefore produce two unrelated span trees.
-Correlating by hand does not rescue it either — each agent mints its own task
-id, so the identifier changes at every hop. Following one incident across
-agents today means propagating a correlation id yourself, in
-`Message.metadata`, and grepping for it.
+**Logs alone still do not join a delegation chain.** An early revision of
+this page said they did, which was wrong: two processes produce two span
+trees, and correlating by task id does not rescue it because each agent mints
+its own. What joins them is the trace id below.
+
+## Trace context
+
+Since 0.13 the SDK carries [W3C Trace
+Context](https://www.w3.org/TR/trace-context/) across an A2A hop. It is
+propagation, not tracing: nothing here records a span or exports one. What it
+guarantees is that every agent in a chain sees the same trace id, so whatever
+does record spans can stitch them together — including across the Python,
+JavaScript, Go and Java agents in the interoperability kit, since
+`traceparent` is a wire format rather than a Rust type.
+
+**Serving.** The server parses an inbound `traceparent`, advances the span,
+and hands it to the executor:
+
+```rust
+# use a2a_protocol_client::{A2aClient, ClientResult, CurrentTrace};
+# use a2a_protocol_server::RequestContext;
+# use a2a_protocol_types::params::MessageSendParams;
+# async fn delegate(
+#     ctx: &RequestContext,
+#     downstream: &A2aClient,
+#     params: MessageSendParams,
+# ) -> ClientResult<()> {
+// `ctx.trace_context()` names *this* hop's span, so sending it verbatim
+// makes the callee a child of this agent.
+if let Some(trace) = ctx.trace_context().cloned() {
+    CurrentTrace::scope(trace, async {
+        downstream.send_message(params).await
+    })
+    .await?;
+}
+# Ok(())
+# }
+```
+
+`None` means the caller sent no `traceparent`, or sent one the SDK refused.
+It never means the SDK invented one: a malformed header is dropped rather
+than repaired, because attaching work to a guessed-at trace is a wrong
+answer where a missing trace is only an absent one.
+
+**Calling.** Add `TracePropagationInterceptor` to the client and it writes
+the ambient `CurrentTrace` onto every request. An agent that is the first hop
+starts one with `CurrentTrace::start_root()`.
+
+**What is not done.** Nothing reads or acts on `tracestate` beyond carrying
+it unchanged; there is no sampler; and the SDK adds no vendor entry of its
+own. The `a2a.task.id` of each hop is still not attached to anything, because
+there is no span to attach it to.
 
 See also [Troubleshooting](./troubleshooting.md) for the symptom-first version
 of this page, and [Production Hardening](./production.md) for health checks.

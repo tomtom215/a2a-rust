@@ -14,9 +14,9 @@ mod in_memory;
 
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Duration;
 
 use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::MessageId;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
@@ -24,30 +24,11 @@ use a2a_protocol_types::task::{Task, TaskId};
 
 pub use in_memory::InMemoryTaskStore;
 
-/// What happened when a store was asked to claim an idempotency key.
-///
-/// See [`TaskStore::claim_idempotency_key`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IdempotencyClaim {
-    /// The key was free. The caller owns it and should create the task.
-    Claimed,
+mod config;
+mod records;
 
-    /// The key is already held, by the same message. A genuine retry: return
-    /// the named task in whatever state it has reached, and execute nothing.
-    Replay(TaskId),
-
-    /// The key is already held, by a *different* message.
-    ///
-    /// Not a retry. Either the caller generated one key for two distinct
-    /// sends, or two of its concurrent sends collided on a key. Returning the
-    /// first task here would hand back a result for a message the caller did
-    /// not just send, and it would act on it — a silent wrong answer, the
-    /// failure a caller can least detect. It is reported instead.
-    Conflict {
-        /// The message holding the key, named in the error the caller sees.
-        held_by: MessageId,
-    },
-}
+pub use config::{DEFAULT_MAX_PAGE_SIZE, TaskStoreConfig};
+pub use records::{ArtifactDelta, IdempotencyClaim, RecordedEvent};
 
 /// Trait for persisting and retrieving [`Task`] objects.
 ///
@@ -320,146 +301,116 @@ pub trait TaskStore: Send + Sync + 'static {
         let _ = delta;
         self.save(task)
     }
-}
 
-/// What changed in a task's artifacts, for [`TaskStore::save_artifact_delta`].
-///
-/// Indexes refer to positions in the task's `artifacts` vector as it stands
-/// *after* the change, so a store can locate the affected artifact without
-/// searching.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ArtifactDelta {
-    /// `count` parts were appended to the end of the artifact at `index`.
+    // ── The event log ───────────────────────────────────────────────────
+    //
+    // A task's state is a *fold*: a stored snapshot folded together with
+    // deltas. Issue #130 happened because that fold was wrong in a way
+    // nothing could observe — artifacts from one task appeared on another,
+    // and the only record was the folded result, which is to say the bug
+    // itself. There was nothing to check it against.
+    //
+    // These three methods add the thing there was nothing to check against:
+    // an append-only, ordered record of what the agent actually emitted.
+    // The snapshot stays and stays authoritative for reads; the log is what
+    // makes a wrong snapshot *detectable*, gives a reconnecting subscriber
+    // the events it missed instead of a fold it cannot interpret, and is the
+    // substrate anything like a signed execution receipt would need.
+    //
+    // All three default to "not supported" rather than to success, the same
+    // discipline `supports_idempotency` follows: a custom store that forgets
+    // to implement them reports no log, which is inconvenient. Defaulting
+    // `append_event` to `Ok(())` would report a log that silently loses
+    // every event, which is worse.
+
+    /// Whether this store keeps a per-task event log.
     ///
-    /// Every part before the last `count` is untouched, so a store holding the
-    /// previous version only needs to copy the tail.
-    AppendedParts {
-        /// Position of the artifact that grew.
-        index: usize,
-        /// How many parts were appended.
-        count: usize,
-    },
-    /// A new artifact was pushed at `index`, which is the last position.
+    /// `false` by default. A server reads this before offering
+    /// resumption-from-offset, so a store without a log degrades to the
+    /// snapshot behaviour rather than promising replay it cannot deliver.
+    fn supports_event_log(&self) -> bool {
+        false
+    }
+
+    /// Appends one event at `seq` in the task's log.
     ///
-    /// Every artifact before it is untouched.
-    Pushed {
-        /// Position of the newly added artifact.
-        index: usize,
-    },
+    /// `seq` is a **position, not a counter**: the same `(task_id, seq)`
+    /// written twice must leave one row, so replaying an append is
+    /// idempotent rather than duplicating an event. That is the property
+    /// `sqlite_store::journal` already relies on, and for the same reason —
+    /// it makes a retried or overlapping write safe without a read first.
+    ///
+    /// # Errors
+    ///
+    /// [`A2aError`](a2a_protocol_types::error::A2aError) if the store fails,
+    /// or [`unsupported_operation`](a2a_protocol_types::error::A2aError::unsupported_operation)
+    /// when the store keeps no log.
+    fn append_event<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        seq: u64,
+        event: &'a StreamResponse,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        let _ = (task_id, seq, event);
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this task store keeps no event log",
+            ))
+        })
+    }
+
+    /// The highest `seq` this task's log holds, or 0 when it is empty.
+    ///
+    /// Needed because a task outlives any one executor invocation: a task
+    /// parked at `input-required` and then continued gets a *second*
+    /// processor, and a `seq` restarting at 1 would collide with positions
+    /// the first one already wrote. Since appends are idempotent by
+    /// position, those collisions would be silently dropped — the
+    /// continuation's events would simply not be recorded. Resuming the
+    /// numbering from here is what stops that.
+    ///
+    /// # Errors
+    ///
+    /// [`A2aError`](a2a_protocol_types::error::A2aError) if the store fails,
+    /// or `unsupported_operation` when the store keeps no log.
+    fn last_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        let _ = task_id;
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this task store keeps no event log",
+            ))
+        })
+    }
+
+    /// Reads a task's events in order, starting after `after_seq`.
+    ///
+    /// `after_seq` is exclusive, so a subscriber that has seen event `n`
+    /// asks for `n` and receives `n+1` onward — which is exactly the
+    /// `Last-Event-ID` contract, and avoids the off-by-one that an
+    /// inclusive offset invites at every call site.
+    ///
+    /// # Errors
+    ///
+    /// [`A2aError`](a2a_protocol_types::error::A2aError) if the store fails,
+    /// or `unsupported_operation` when the store keeps no log.
+    fn read_events<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        after_seq: u64,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
+        let _ = (task_id, after_seq, limit);
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this task store keeps no event log",
+            ))
+        })
+    }
 }
 
 /// Tests for the default `count` implementation on `TaskStore`.
 #[cfg(test)]
 mod tests;
-
-/// The largest page a `list` call may return, when nothing narrower is asked
-/// for.
-///
-/// # Why this is a constant rather than five literals
-///
-/// It used to be five. [`TaskStoreConfig::max_page_size`] defaulted to `1000`,
-/// and each of the four SQL stores carried its own `n.min(1000)` — so the
-/// *configurable* bound and the *hardcoded* one agreed by coincidence, and the
-/// SQL stores took no `TaskStoreConfig` at all. An operator who tightened
-/// `max_page_size` to protect a database therefore changed the in-memory store
-/// and nothing else, and the book documented the field as capping `list`
-/// generally.
-///
-/// MEASURED 2026-08-19, cap set to 10 against 60 stored tasks with a client
-/// asking for 100:
-///
-/// | store | returned |
-/// |---|---|
-/// | `InMemoryTaskStore` (cap honoured) | 10 |
-/// | `SqliteTaskStore` (cap unreachable) | **60** |
-///
-/// The knob failed only once somebody set it, which is the shape this
-/// repository has now found three times — a configurable bound whose default
-/// equals the hardcoded fallback, so nothing looks wrong until the person who
-/// cares tightens it.
-///
-/// Each SQL store now takes its own cap (`with_max_page_size`) defaulting to
-/// this constant, so the two can no longer drift apart silently.
-///
-/// [`TaskStoreConfig::max_page_size`]: TaskStoreConfig
-pub const DEFAULT_MAX_PAGE_SIZE: u32 = 1000;
-
-/// Configuration for [`InMemoryTaskStore`].
-///
-/// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
-/// which cover every field; a struct literal is not available outside this
-/// crate, so a field added later does not break callers.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct TaskStoreConfig {
-    /// Maximum number of tasks to keep in the store. Once exceeded, the oldest
-    /// terminal (completed/failed/canceled/rejected) tasks are evicted first.
-    /// `None` means no limit.
-    ///
-    /// **Overload behavior:** if the overflow cannot be covered by terminal
-    /// tasks alone, the oldest *non-terminal* tasks are evicted as a last
-    /// resort — bounded memory is prioritized over retaining in-flight rows.
-    /// An evicted in-flight task answers `GetTask` with task-not-found until
-    /// its next event is persisted (the background processor re-saves it),
-    /// so under sustained over-capacity write pressure the cap is a strong
-    /// bound on steady-state size, not an absolute invariant. Size
-    /// `max_capacity` above the realistic concurrent in-flight task count.
-    pub max_capacity: Option<usize>,
-
-    /// Time-to-live for completed or failed tasks. Tasks in terminal states
-    /// older than this duration are evicted on the next write operation.
-    /// `None` means no TTL-based eviction.
-    pub task_ttl: Option<Duration>,
-
-    /// Number of writes between automatic eviction sweeps. Default: 64.
-    ///
-    /// Amortizes the O(n) eviction cost so it doesn't run on every single `save()`.
-    pub eviction_interval: u64,
-
-    /// Maximum allowed page size for list queries. Default: 1000.
-    ///
-    /// Larger requested page sizes are clamped to this limit.
-    pub max_page_size: u32,
-}
-
-impl Default for TaskStoreConfig {
-    fn default() -> Self {
-        Self {
-            max_capacity: Some(10_000),
-            task_ttl: Some(Duration::from_secs(3600)), // 1 hour
-            eviction_interval: 64,
-            max_page_size: DEFAULT_MAX_PAGE_SIZE,
-        }
-    }
-}
-
-impl TaskStoreConfig {
-    /// Sets the maximum number of tasks kept; `None` is no limit. See
-    /// [`max_capacity`](Self::max_capacity) for what happens past it.
-    #[must_use]
-    pub const fn with_max_capacity(mut self, max: Option<usize>) -> Self {
-        self.max_capacity = max;
-        self
-    }
-
-    /// Sets the time-to-live for terminal tasks; `None` disables TTL eviction.
-    #[must_use]
-    pub const fn with_task_ttl(mut self, ttl: Option<Duration>) -> Self {
-        self.task_ttl = ttl;
-        self
-    }
-
-    /// Sets the number of writes between eviction sweeps.
-    #[must_use]
-    pub const fn with_eviction_interval(mut self, writes: u64) -> Self {
-        self.eviction_interval = writes;
-        self
-    }
-
-    /// Sets the maximum page size for list queries.
-    #[must_use]
-    pub const fn with_max_page_size(mut self, max: u32) -> Self {
-        self.max_page_size = max;
-        self
-    }
-}

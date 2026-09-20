@@ -2,6 +2,73 @@
 
 a2a-rust makes it easy to test agents at multiple levels: unit testing executors, integration testing with real HTTP, and property-based testing with fuzz targets.
 
+## Grading an executor against the protocol
+
+The TCK grades servers. This grades the thing you actually wrote.
+
+The paths executors get wrong are the awkward ones — cancellation arriving
+mid-work, a parked task reported as an error, an event emitted after a
+terminal status — and they are exactly the cases people skip when writing
+tests by hand. The harness drives your executor against a real event queue,
+with no server, no ports and no model, and grades the protocol invariants
+that hold for any agent whatever it does.
+
+Add the `conformance` feature as a dev-dependency:
+
+```toml
+[dev-dependencies]
+a2a-protocol-server = { version = "0.13", features = ["conformance"] }
+```
+
+```rust
+# use std::sync::Arc;
+# use a2a_protocol_server::conformance;
+# use a2a_protocol_server::{EventEmitter, agent_executor};
+# use a2a_protocol_types::task::TaskState;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |ctx, queue| async {
+#     let emit = EventEmitter::new(ctx, queue);
+#     if emit.is_cancelled() { return emit.status(TaskState::Canceled).await; }
+#     emit.status(TaskState::Working).await?;
+#     emit.status(TaskState::Completed).await
+# });
+# async fn conformance_test() {
+let report = conformance::check(Arc::new(MyExecutor)).await;
+report.assert_pass(); // panics with the full grid if anything failed
+# }
+# fn main() {
+#     tokio::runtime::Builder::new_current_thread()
+#         .enable_all()
+#         .build()
+#         .expect("runtime")
+#         .block_on(conformance_test());
+# }
+```
+
+A failing report names the invariant and says why it matters:
+
+```text
+executor conformance:
+  pass  ends_in_terminal_or_interrupt      ended in TASK_STATE_COMPLETED
+  n/a   transitions_are_legal              fewer than two statuses emitted
+  FAIL  honours_cancellation               ran to Completed with an already-cancelled
+                                           token; cancellation is cooperative, so an
+                                           executor that never checks
+                                           ctx.cancellation_token cannot be cancelled
+                                           at all
+  4 of 5 graded checks passed, 3 not applicable
+```
+
+**A check that did not apply is not graded**, and a report that grades
+nothing fails rather than passing vacuously — the same two rules the TCK
+follows, for the reason its README gives: a run that measured nothing once
+reported full marks.
+
+What it cannot tell you: it runs each check once, so it will not find a race;
+it supplies its own message, so use `conformance::check_with` if your
+executor only misbehaves on particular input; and it grades the executor, not
+the deployment — the TCK is still what says your *server* conforms.
+
 ## Unit Testing Executors
 
 Test your executor logic directly by creating a `RequestContext` and mock `EventQueueWriter`:
@@ -9,7 +76,6 @@ Test your executor logic directly by creating a `RequestContext` and mock `Event
 ```rust,ignore
 use a2a_protocol_sdk::prelude::*;
 use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
-use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn test_calculator_executor() {
@@ -18,24 +84,14 @@ async fn test_calculator_executor() {
     // Create a writer/reader pair directly for unit testing
     let (writer, mut reader) = new_in_memory_queue();
 
-    // Build the request context
-    let ctx = RequestContext {
-        task_id: TaskId::new("test-task"),
-        context_id: "ctx-1".into(),
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("3 + 5")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
-        stored_task: None,
-        metadata: None,
-        cancellation_token: CancellationToken::new(),
-    };
+    // Build the request context. `RequestContext` is `#[non_exhaustive]`
+    // since 0.13, so build it with `new` and the `with_*` methods rather
+    // than a struct literal.
+    let ctx = RequestContext::new(
+        Message::user_text("msg-1", "3 + 5"),
+        TaskId::new("test-task"),
+        "ctx-1".to_owned(),
+    );
 
     // Run the executor
     executor.execute(&ctx, &*writer).await.unwrap();
@@ -77,22 +133,13 @@ async fn test_end_to_end() {
         .unwrap();
 
     // Send a message
-    let response = client.send_message(MessageSendParams {
-        tenant: None,
-        context_id: None,
-        message: Message {
-            id: MessageId::new("test-msg"),
-            role: MessageRole::User,
-            parts: vec![Part::text("10 + 20")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
-        configuration: None,
-        metadata: None,
-    }).await.unwrap();
+    let response = client
+        .send_message(MessageSendParams::new(Message::user_text(
+            "test-msg",
+            "10 + 20",
+        )))
+        .await
+        .unwrap();
 
     // Verify
     if let SendMessageResponse::Task(task) = response {

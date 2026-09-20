@@ -84,8 +84,9 @@ pub(super) fn build_request_context(
     context_id: String,
     stored_task: Option<Task>,
     metadata: Option<serde_json::Value>,
+    call_context: crate::call_context::CallContext,
 ) -> RequestContext {
-    let mut ctx = RequestContext::new(message, task_id, context_id);
+    let mut ctx = RequestContext::new(message, task_id, context_id).with_call_context(call_context);
     if let Some(stored) = stored_task {
         ctx = ctx.with_stored_task(stored);
     }

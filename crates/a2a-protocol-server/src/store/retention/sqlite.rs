@@ -9,8 +9,10 @@ use super::{PurgeReport, RetentionPolicy, terminal_state_labels};
 
 /// Deletes terminal tasks older than `policy` from `table`, in batches.
 ///
-/// `journal` names an artifact-journal table to clear alongside, for the store
-/// that has one.
+/// `orphan_sweeps` are anti-join `DELETE`s, one per side table hanging off
+/// `table`, run once after the task rows are gone. Each is written beside the
+/// schema it cleans rather than assembled here, because the tenant-aware
+/// tables are keyed on two columns and the others on one.
 ///
 /// The batch is chosen *inside* the `DELETE`, by a `rowid` subquery, rather
 /// than selected first and then bound back as a list of ids. That keeps the
@@ -24,7 +26,7 @@ use super::{PurgeReport, RetentionPolicy, terminal_state_labels};
 pub async fn purge(
     pool: &SqlitePool,
     table: &'static str,
-    journal: Option<&'static str>,
+    orphan_sweeps: &[&'static str],
     policy: &RetentionPolicy,
 ) -> Result<PurgeReport, sqlx::Error> {
     let labels = terminal_state_labels();
@@ -67,21 +69,20 @@ pub async fn purge(
         report.batches += 1;
     }
 
-    // Journal rows are cleared by anti-join once, after the task rows are
+    // Side-table rows are cleared by anti-join once, after the task rows are
     // gone, rather than per batch. `journal.rs` explains why this cannot be
     // left to `ON DELETE CASCADE`: `from_pool` takes a caller's pool and
     // cannot assume `foreign_keys=ON`, and a cascade that silently does not
-    // fire leaves parts behind that would be spliced onto the next task to
-    // reuse the id.
+    // fire leaves parts behind that would be spliced onto — or, for the event
+    // log, replayed to — the next task to reuse the id.
     //
     // A row can only be an orphan because its task was deleted — the foreign
     // key means it could not have been written before the task existed — so
     // there is no race with a concurrent writer here.
-    if let Some(journal) = journal
-        && report.tasks_deleted > 0
-    {
-        let sql = format!("DELETE FROM {journal} WHERE task_id NOT IN (SELECT id FROM {table})");
-        report.journal_orphans_deleted = sqlx::query(&sql).execute(pool).await?.rows_affected();
+    if report.tasks_deleted > 0 {
+        for sweep in orphan_sweeps {
+            report.orphan_rows_deleted += sqlx::query(sweep).execute(pool).await?.rows_affected();
+        }
     }
 
     Ok(report)

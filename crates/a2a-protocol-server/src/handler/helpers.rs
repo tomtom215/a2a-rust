@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::task::Task;
+use a2a_protocol_types::trace_context::{TRACEPARENT_HEADER, TRACESTATE_HEADER, TraceContext};
 
 use crate::call_context::CallContext;
 use crate::error::{ServerError, ServerResult};
@@ -86,9 +87,46 @@ pub(super) fn build_call_context(
         if !extensions.is_empty() {
             ctx = ctx.with_extensions(extensions);
         }
+        if let Some(trace) = parse_trace_context(h) {
+            ctx = ctx.with_trace_context(trace);
+        }
         ctx = ctx.with_http_headers(h.clone());
     }
+    // The tenant is a `tokio::task_local` that every handler entry point has
+    // already scoped by the time this runs, so reading it here is correct —
+    // and copying it onto the context is what lets it survive the
+    // `tokio::spawn` into the executor, which does not inherit task-locals.
+    // Empty means no tenant was in scope: the single-tenant case, and also
+    // `resolve_tenant`, which builds its own context before the answer exists.
+    let tenant = crate::store::tenant::TenantContext::current();
+    if !tenant.is_empty() {
+        ctx = ctx.with_tenant(tenant);
+    }
     ctx
+}
+
+/// The W3C trace a request belongs to, as *this hop's* span.
+///
+/// The caller's `traceparent` names their span; ours has to be a new one, or
+/// every hop in a chain would report the same span id and the trace would be
+/// a flat list instead of a tree. The span id is 64 bits of a v4 UUID, which
+/// is what the rest of this crate already mints identifiers from.
+///
+/// A malformed `traceparent` is dropped rather than repaired. Guessing at
+/// what a peer meant would attach this work to a trace that may not exist,
+/// and a missing span is a smaller lie than a wrong one.
+fn parse_trace_context(headers: &HashMap<String, String>) -> Option<TraceContext> {
+    let inbound = TraceContext::parse(headers.get(TRACEPARENT_HEADER)?).ok()?;
+    let inbound = match headers.get(TRACESTATE_HEADER) {
+        // An unusable `tracestate` loses only the vendor state, so the trace
+        // is still worth joining without it.
+        Some(state) => inbound.clone().with_tracestate(state).unwrap_or(inbound),
+        None => inbound,
+    };
+    let uuid = uuid::Uuid::new_v4();
+    let mut span_id = [0_u8; 8];
+    span_id.copy_from_slice(&uuid.as_bytes()[..8]);
+    inbound.child_bytes(span_id).ok()
 }
 
 /// Parses the (lowercased) `a2a-extensions` header into extension URIs.
@@ -336,6 +374,51 @@ mod tests {
     }
 
     // ── build_call_context ─────────────────────────────────────────────────
+
+    /// A caller's `traceparent` has to reach the `CallContext`, or the
+    /// delegation chain this exists to join is several unrelated span trees.
+    /// Nothing asserted it: `parse_trace_context` replaced with `None`
+    /// survived the mutation gate, because every test here either sent no
+    /// headers or looked only at the ones it did send.
+    #[test]
+    fn a_traceparent_header_reaches_the_call_context() {
+        const PARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+
+        let mut headers = HashMap::new();
+        headers.insert("traceparent".to_owned(), PARENT.to_owned());
+        headers.insert("tracestate".to_owned(), "vendor=value".to_owned());
+
+        let ctx = build_call_context("message/send", Some(&headers));
+        let trace = ctx
+            .trace_context()
+            .expect("a valid traceparent must reach the context");
+
+        assert_eq!(
+            trace.trace_id(),
+            "4bf92f3577b34da6a3ce929d0e0e4736",
+            "same trace as the caller — that is the whole point"
+        );
+        assert_eq!(trace.flags(), 1, "the sampling decision carries through");
+        assert_eq!(trace.tracestate(), Some("vendor=value"));
+        assert_ne!(
+            trace.span_id(),
+            "00f067aa0ba902b7",
+            "this hop is a child, not the caller's own span"
+        );
+    }
+
+    /// A malformed `traceparent` is dropped rather than repaired, and must not
+    /// fail the request: an unusable header from a caller is their problem to
+    /// fix, not a reason to refuse the call.
+    #[test]
+    fn a_malformed_traceparent_is_dropped_not_fatal() {
+        let mut headers = HashMap::new();
+        headers.insert("traceparent".to_owned(), "not-a-traceparent".to_owned());
+
+        let ctx = build_call_context("message/send", Some(&headers));
+        assert!(ctx.trace_context().is_none());
+        assert_eq!(ctx.method(), "message/send", "the call still proceeds");
+    }
 
     #[test]
     fn build_call_context_without_headers() {

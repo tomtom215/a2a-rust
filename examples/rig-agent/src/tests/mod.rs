@@ -126,7 +126,10 @@ async fn drive(
     drop(writer);
     let mut events = Vec::new();
     while let Some(item) = reader.read().await {
-        events.push(item.expect("the queue delivered an error rather than an event"));
+        events.push(
+            item.expect("the queue delivered an error rather than an event")
+                .event,
+        );
     }
     (result, events)
 }
@@ -283,6 +286,9 @@ fn the_card_advertises_the_capabilities_the_sweep_requires() {
         "{}",
         card.description
     );
-    assert_eq!(card.url.as_deref(), Some("http://127.0.0.1:9000"));
+    // Not `card.url`: that field is `#[serde(skip_serializing)]`, so a
+    // served card never carries it. `supported_interfaces` is the address a
+    // client actually reads.
+    assert_eq!(card.supported_interfaces[0].url, "http://127.0.0.1:9000");
     assert!(!card.skills.is_empty());
 }

@@ -69,6 +69,54 @@ pub const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;
 /// [`HandlerLimits::push_delivery_timeout`]: crate::handler::HandlerLimits::push_delivery_timeout
 pub const DEFAULT_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+// ── StreamEvent ──────────────────────────────────────────────────────────────
+
+/// One event as it travels the queue, carrying the position it holds in the
+/// task's event log.
+///
+/// The position is assigned once, by [`InMemoryQueueWriter::write`], and then
+/// travels on *both* channels — the persistence channel that writes the log
+/// and the broadcast channel that feeds SSE. That is what makes the `id:` a
+/// subscriber reads and the `seq` the store holds the same number by
+/// construction rather than by agreement.
+///
+/// The alternative was to count frames at the SSE layer. It would agree with
+/// the log until the first lagged consumer, a snapshot frame, or a failed
+/// append, and a resumption offset that is off by one is worse than none:
+/// the client silently misses an event and has no way to know.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct StreamEvent {
+    /// This event's position in its task's log, when it has one.
+    ///
+    /// `None` for frames the server synthesized rather than the agent
+    /// emitting — the `SubscribeToTask` snapshot, and the terminal frame the
+    /// reattach hook builds from stored state. Those are not in the log, so
+    /// they carry no `id:` and a resuming client's offset is unaffected by
+    /// having seen them.
+    pub seq: Option<u64>,
+    /// What the agent emitted.
+    pub event: StreamResponse,
+}
+
+impl StreamEvent {
+    /// An event at a known log position.
+    #[must_use]
+    pub const fn at(seq: u64, event: StreamResponse) -> Self {
+        Self {
+            seq: Some(seq),
+            event,
+        }
+    }
+
+    /// An event with no log position: synthesized by the server, not emitted
+    /// by the agent.
+    #[must_use]
+    pub const fn unpositioned(event: StreamResponse) -> Self {
+        Self { seq: None, event }
+    }
+}
+
 // ── EventQueueWriter ─────────────────────────────────────────────────────────
 
 /// Trait for writing streaming events.
@@ -101,9 +149,8 @@ pub trait EventQueueWriter: Send + Sync + 'static {
 /// fine because this trait is never used behind `dyn`.
 pub trait EventQueueReader: Send + 'static {
     /// Reads the next event, returning `None` when the stream is closed.
-    fn read(
-        &mut self,
-    ) -> Pin<Box<dyn Future<Output = Option<A2aResult<StreamResponse>>> + Send + '_>>;
+    fn read(&mut self)
+    -> Pin<Box<dyn Future<Output = Option<A2aResult<StreamEvent>>> + Send + '_>>;
 }
 
 // ── Constructor ──────────────────────────────────────────────────────────────
@@ -181,7 +228,7 @@ pub fn new_in_memory_queue_with_persistence(
 ) -> (
     InMemoryQueueWriter,
     InMemoryQueueReader,
-    mpsc::Receiver<A2aResult<StreamResponse>>,
+    mpsc::Receiver<A2aResult<StreamEvent>>,
 ) {
     let (tx, rx) = broadcast::channel(capacity);
     // Use a large bounded mpsc channel for persistence — the background

@@ -99,6 +99,7 @@ pub mod artifact;
 pub mod error;
 pub mod events;
 pub mod extensions;
+pub mod failure;
 pub mod idempotency;
 pub mod jsonrpc;
 pub mod message;
@@ -113,6 +114,7 @@ pub mod serde_helpers;
 #[cfg(feature = "signing")]
 pub mod signing;
 pub mod task;
+pub mod trace_context;
 
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 

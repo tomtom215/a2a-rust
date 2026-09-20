@@ -8,27 +8,11 @@ Retrieve a task by ID:
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
-# use a2a_protocol_types::message::{MessageId, MessageRole};
 # use std::sync::Arc;
 # use std::time::Duration;
 # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
 # let url = "http://agent.example.com";
-# let message = Message {
-#     id: MessageId::new("m1"),
-#     role: MessageRole::User,
-#     parts: vec![Part::text("hi")],
-#     task_id: None,
-#     context_id: None,
-#     reference_task_ids: None,
-#     extensions: None,
-#     metadata: None,
-# };
-# let params = MessageSendParams {
-#     tenant: None,
-#     message,
-#     configuration: None,
-#     metadata: None,
-# };
+# let params = MessageSendParams::new(Message::user_text("m1", "hi"));
 # let (params1, params2) = (params.clone(), params.clone());
 # let client = ClientBuilder::new(url).build()?;
 # let task_id = "task-abc";
@@ -59,27 +43,11 @@ Query tasks with filtering and pagination:
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
-# use a2a_protocol_types::message::{MessageId, MessageRole};
 # use std::sync::Arc;
 # use std::time::Duration;
 # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
 # let url = "http://agent.example.com";
-# let message = Message {
-#     id: MessageId::new("m1"),
-#     role: MessageRole::User,
-#     parts: vec![Part::text("hi")],
-#     task_id: None,
-#     context_id: None,
-#     reference_task_ids: None,
-#     extensions: None,
-#     metadata: None,
-# };
-# let params = MessageSendParams {
-#     tenant: None,
-#     message,
-#     configuration: None,
-#     metadata: None,
-# };
+# let params = MessageSendParams::new(Message::user_text("m1", "hi"));
 # let (params1, params2) = (params.clone(), params.clone());
 # let client = ClientBuilder::new(url).build()?;
 # let task_id = "task-abc";
@@ -134,27 +102,11 @@ Request cancellation of a running task:
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
-# use a2a_protocol_types::message::{MessageId, MessageRole};
 # use std::sync::Arc;
 # use std::time::Duration;
 # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
 # let url = "http://agent.example.com";
-# let message = Message {
-#     id: MessageId::new("m1"),
-#     role: MessageRole::User,
-#     parts: vec![Part::text("hi")],
-#     task_id: None,
-#     context_id: None,
-#     reference_task_ids: None,
-#     extensions: None,
-#     metadata: None,
-# };
-# let params = MessageSendParams {
-#     tenant: None,
-#     message,
-#     configuration: None,
-#     metadata: None,
-# };
+# let params = MessageSendParams::new(Message::user_text("m1", "hi"));
 # let (params1, params2) = (params.clone(), params.clone());
 # let client = ClientBuilder::new(url).build()?;
 # let task_id = "task-abc";

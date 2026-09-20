@@ -33,13 +33,14 @@ use std::pin::Pin;
 use std::time::Instant;
 
 use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::MessageId;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use tokio::sync::RwLock;
 
-use super::{ArtifactDelta, IdempotencyClaim, TaskStore, TaskStoreConfig};
+use super::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore, TaskStoreConfig};
 
 /// Sort key for the update-order indexes: `(status timestamp in Unix millis,
 /// monotonic write sequence)`.
@@ -61,6 +62,13 @@ pub(super) struct TaskEntry {
     pub(super) last_updated: Instant,
     /// This entry's position in the update-order indexes.
     pub(super) order_key: OrderKey,
+    /// The task's event log, ordered by `seq`.
+    ///
+    /// Held on the entry rather than in a map of its own so it shares the
+    /// entry's lifetime exactly: eviction and `delete` both go through
+    /// [`StoreData::remove`], and a log outliving its task would be a leak
+    /// keyed by a client-reachable id.
+    pub(super) log: Vec<RecordedEvent>,
 }
 
 /// Internal data structure holding the primary store and secondary indexes.
@@ -139,6 +147,14 @@ impl StoreData {
         let key: OrderKey = (millis, seq);
 
         // On update, drop the task's previous position from both indexes.
+        // The log is carried across: `save` runs on every status change, and
+        // an update that silently emptied the log would make the record of
+        // what the agent emitted depend on how often its snapshot was
+        // written.
+        let log = self
+            .entries
+            .get_mut(&task_id)
+            .map_or_else(Vec::new, |old| std::mem::take(&mut old.log));
         if let Some(old) = self.entries.get(&task_id) {
             let old_key = old.order_key;
             let old_ctx = old.task.context_id.0.clone();
@@ -164,6 +180,7 @@ impl StoreData {
                 task,
                 last_updated,
                 order_key: key,
+                log,
             },
         );
     }
@@ -441,6 +458,77 @@ impl TaskStore for InMemoryTaskStore {
             data.idempotency_index.remove(key);
             drop(data);
             Ok(())
+        })
+    }
+
+    fn supports_event_log(&self) -> bool {
+        true
+    }
+
+    fn append_event<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        seq: u64,
+        event: &'a StreamResponse,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut store = self.data.write().await;
+            // No task, no log. Silent rather than an error: the event
+            // processor races a retention sweep, and failing the write would
+            // turn a swept task into a failed agent.
+            if let Some(entry) = store.entries.get_mut(task_id) {
+                // `seq` is a position, so an append landing on one already
+                // held is a replay and must leave one row, not two.
+                if let Err(at) = entry.log.binary_search_by_key(&seq, |e| e.seq) {
+                    entry.log.insert(
+                        at,
+                        RecordedEvent {
+                            seq,
+                            event: event.clone(),
+                        },
+                    );
+                }
+            }
+            drop(store);
+            Ok(())
+        })
+    }
+
+    fn last_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let store = self.data.read().await;
+            let seq = store
+                .entries
+                .get(task_id)
+                .and_then(|e| e.log.last())
+                .map_or(0, |e| e.seq);
+            drop(store);
+            Ok(seq)
+        })
+    }
+
+    fn read_events<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        after_seq: u64,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
+        Box::pin(async move {
+            let store = self.data.read().await;
+            let found = store.entries.get(task_id).map_or_else(Vec::new, |entry| {
+                entry
+                    .log
+                    .iter()
+                    .filter(|e| e.seq > after_seq)
+                    .take(limit)
+                    .cloned()
+                    .collect()
+            });
+            drop(store);
+            Ok(found)
         })
     }
 

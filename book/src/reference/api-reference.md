@@ -25,6 +25,7 @@ are rustdoc's job.
 | `error` | A2A protocol error types |
 | `events` | Server-sent event types for A2A streaming |
 | `extensions` | Agent extension and card-signature types |
+| `failure` | Why a task failed, as a class a caller can match on |
 | `idempotency` | Client-supplied idempotency keys for `message/send`, as a declared extension |
 | `jsonrpc` | JSON-RPC 2.0 envelope types |
 | `message` | Message types for the A2A protocol |
@@ -37,6 +38,7 @@ are rustdoc's job.
 | `serde_helpers` | Serialization helpers for reducing allocation overhead |
 | `signing` | Agent card signing and verification (spec §10) (`signing` feature) |
 | `task` | Task types for the A2A protocol |
+| `trace_context` | W3C `traceparent` / `tracestate`: parse, validate, derive a child |
 
 ### Protocol Constants
 
@@ -222,6 +224,9 @@ are rustdoc's job.
 | `ClientConfig` | Configuration for an `A2aClient` instance |
 | `EventStream` | Async SSE event stream |
 | `RetryPolicy` | Configurable retry with exponential backoff |
+| `trace_propagation` | Carrying W3C trace context on outbound calls |
+| `CurrentTrace` | The trace the current task runs under, and how to start one |
+| `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |
 | `ClientError` | Errors that can occur during A2A client operations |
 | `ClientResult<T>` | Alias for `Result<T, ClientError>` |
 
@@ -292,6 +297,7 @@ are rustdoc's job.
 | `auth` | Server-side authentication interceptors |
 | `builder` | Builder for `RequestHandler` |
 | `call_context` | Call context for server-side interceptors |
+| `conformance` | Grades an `AgentExecutor` against the protocol invariants (`conformance` feature) |
 | `dispatch` | HTTP dispatch layer — JSON-RPC and REST routing |
 | `error` | Server-specific error types |
 | `executor` | Agent executor trait |
@@ -419,6 +425,7 @@ are rustdoc's job.
 | `EventQueueManager` | struct | Per-task queue lifecycle manager (create / lookup / destroy) |
 | `InMemoryQueueWriter` | struct | Bounded-channel `EventQueueWriter` implementation |
 | `InMemoryQueueReader` | struct | Bounded-channel `EventQueueReader` implementation |
+| `StreamEvent` | struct | One queued event and its position in the task's event log (the SSE `id:`) |
 
 ### Configuration
 

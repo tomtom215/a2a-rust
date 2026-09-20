@@ -300,7 +300,7 @@ way.
 | SQLite store | ❌ | ✅ |
 | PostgreSQL store (+ migrations) | ❌ | ✅ |
 | Tenant isolation | ◑ — `tenant` is carried on requests and in `CallContext`; nothing enforces it | ✅ — tenant-scoped stores, `TenantResolver`, per-tenant limits |
-| OpenTelemetry / OTLP export | ❌ (no `opentelemetry` dependency anywhere in the workspace) | ◑ (`otel` feature: **metrics only** — no `TracerProvider`, no span export, and no `traceparent` anywhere in the workspace. Corrected 2026-09-19; this row previously read "traces + metrics", which overclaimed) |
+| OpenTelemetry / OTLP export | ❌ (no `opentelemetry` dependency anywhere in the workspace) | ◑ (`otel` feature: **metrics only** — no `TracerProvider` and no span export. W3C trace **context** is propagated as of 0.13: the server parses an inbound `traceparent` and the client writes one, so a delegation chain shares one trace id, but nothing records a span. Corrected twice: this row read "traces + metrics" until 2026-09-19, which overclaimed, then "no `traceparent` anywhere", which went stale the moment propagation shipped) |
 | Pluggable metrics trait | ❌ | ✅ |
 | `tracing` | ✅ | ✅ |
 | Graceful shutdown | ❌ — no handler-level API; the axum host closes the socket, in-flight executors and event queues are not drained (the `shutdown` symbols in `handler.rs` are test helpers) | ✅ (`RequestHandler::shutdown` cancels tokens and destroys queues) |
@@ -910,7 +910,7 @@ shows them being revised.
 
 | Row (section) | Said | Says now | How it was checked |
 |---|---|---|---|
-| OpenTelemetry / OTLP export (§4.2) | `✅ (otel feature: traces + metrics)` | `◑ (otel feature: metrics only)` | `opentelemetry_sdk` is compiled with `features = ["metrics", "experimental_metrics_custom_reader"]` and `opentelemetry-otlp` with `["grpc-tonic", "metrics"]`; there is no `TracerProvider` and no span export anywhere in `crates/`. `grep -rni 'traceparent\|tracestate' crates/ --include='*.rs'` matched nothing before this change and matches exactly one line after it — the `otel/pipeline.rs` doc comment added here to say there is no `traceparent`. No code reads or writes either header |
+| OpenTelemetry / OTLP export (§4.2) | `✅ (otel feature: traces + metrics)` | `◑ (otel feature: metrics only)` | `opentelemetry_sdk` is compiled with `features = ["metrics", "experimental_metrics_custom_reader"]` and `opentelemetry-otlp` with `["grpc-tonic", "metrics"]`; there is no `TracerProvider` and no span export anywhere in `crates/`. That part still holds. The sentence that followed it — that no code reads or writes `traceparent` — was true when written and stopped being true in 0.13, which added `a2a_protocol_types::trace_context`, inbound parsing in the server and a `TracePropagationInterceptor` in the client. Propagating the context and exporting spans are different claims, and only the second is still outstanding |
 
 The `❌` against `a2a-rs` in that row is unchanged, and was re-checked
 against its published manifest rather than carried over:

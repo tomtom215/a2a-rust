@@ -274,13 +274,17 @@ mod tests {
         store.set(SessionId::new("s1"), "bearer", "tok".into());
 
         let poisoner = std::sync::Arc::clone(&store);
-        let hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
+        // No panic-hook swap around this `catch_unwind`, deliberately, and
+        // `scripts/check_panic_hooks.sh` keeps it that way: `set_hook` is
+        // process-global, libtest runs tests as parallel threads in one
+        // process, and a silenced hook costs every other thread in this
+        // binary its panic message for as long as the window is held.
+        // libtest already captures panic output per test and discards it on
+        // success, so the swap bought nothing it did not already have.
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _guard = poisoner.inner.write().expect("uncontended");
             panic!("poison the lock");
         }));
-        std::panic::set_hook(hook);
         assert!(outcome.is_err(), "the closure must actually have panicked");
         assert!(store.inner.is_poisoned(), "and poisoned the lock");
 

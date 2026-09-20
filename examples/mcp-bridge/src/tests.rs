@@ -22,7 +22,7 @@ use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
-use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
@@ -38,41 +38,16 @@ use crate::mapping::{self, MappingError};
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
 fn skill(id: &str) -> AgentSkill {
-    AgentSkill {
-        id: id.to_owned(),
-        name: format!("{id} skill"),
-        description: format!("does {id}"),
-        tags: vec![],
-        examples: None,
-        input_modes: None,
-        output_modes: None,
-        security_requirements: None,
-    }
+    AgentSkill::new(id, format!("{id} skill"), format!("does {id}"))
 }
 
 fn card_with(url: &str, skills: Vec<AgentSkill>) -> AgentCard {
-    AgentCard {
-        url: Some(url.into()),
-        name: "Test Agent".into(),
-        description: "for tests".into(),
-        version: "0.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills,
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    let mut card = AgentCard::new("Test Agent", "0.0.0", AgentInterface::jsonrpc(url))
+        .with_description("for tests")
+        .with_input_modes(["text/plain"])
+        .with_output_modes(["text/plain"]);
+    card.skills = skills;
+    card
 }
 
 fn task_in(state: TaskState, artifact_text: Option<&str>, note: Option<&str>) -> Task {

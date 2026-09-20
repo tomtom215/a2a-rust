@@ -9,21 +9,10 @@ The most common operation: send a message to an agent and get a response.
 ```rust,ignore
 use a2a_protocol_sdk::prelude::*;
 
-let params = MessageSendParams {
-    tenant: None,
-    message: Message {
-        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-        role: MessageRole::User,
-        parts: vec![Part::text("What is the capital of France?")],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    },
-    configuration: None,
-    metadata: None,
-};
+let params = MessageSendParams::new(Message::user_text(
+    uuid::Uuid::new_v4().to_string(),
+    "What is the capital of France?",
+));
 
 let response = client.send_message(params).await?;
 ```
@@ -38,7 +27,11 @@ match response {
         println!("Task ID: {}", task.id);
         println!("Status: {:?}", task.status.state);
 
-        // Extract text from artifacts
+        // `task.text()` is the first text across every artifact, and
+        // `task.texts()` is all of them. Walk the parts yourself only when
+        // you need the non-text ones too, as below.
+        println!("Result: {:?}", task.text());
+
         if let Some(artifacts) = &task.artifacts {
             for artifact in artifacts {
                 for part in &artifact.parts {
@@ -63,17 +56,14 @@ Customize the send with `SendMessageConfiguration`:
 ```rust,ignore
 use a2a_protocol_sdk::types::params::SendMessageConfiguration;
 
-let params = MessageSendParams {
-    tenant: None,
-    message: make_message("Translate to French"),
-    configuration: Some(SendMessageConfiguration {
+let params = MessageSendParams::new(make_message("Translate to French")).with_configuration(
+    SendMessageConfiguration {
         accepted_output_modes: vec!["text/plain".into()],
         task_push_notification_config: None,
         history_length: Some(5),       // Include last 5 messages
         return_immediately: Some(false), // Wait for completion
-    }),
-    metadata: None,
-};
+    },
+);
 ```
 
 ## Continuing a Conversation
@@ -81,21 +71,13 @@ let params = MessageSendParams {
 To continue a conversation, include the `context_id` from a previous task:
 
 ```rust,ignore
-let first_response = client.send_message(MessageSendParams {
-    message: Message {
-        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-        role: MessageRole::User,
-        parts: vec![Part::text("Tell me about Rust")],
-        task_id: None,
-        context_id: None,  // New conversation
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    },
-    tenant: None,
-    configuration: None,
-    metadata: None,
-}).await?;
+// No context id on the message: this starts a new conversation.
+let first_response = client
+    .send_message(MessageSendParams::new(Message::user_text(
+        uuid::Uuid::new_v4().to_string(),
+        "Tell me about Rust",
+    )))
+    .await?;
 
 // Get the context ID from the first response
 let context_id = if let SendMessageResponse::Task(task) = &first_response {
@@ -104,22 +86,18 @@ let context_id = if let SendMessageResponse::Task(task) = &first_response {
     None
 };
 
-// Continue the conversation — put context_id on the Message itself
-let follow_up = client.send_message(MessageSendParams {
-    message: Message {
-        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-        role: MessageRole::User,
-        parts: vec![Part::text("What about error handling?")],
-        task_id: None,
-        context_id: context_id.clone(),
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    },
-    tenant: None,
-    configuration: None,
-    metadata: None,
-}).await?;
+// Continue the conversation — put the context id on the Message itself.
+// `Message::with_context_id` takes a `ContextId`; here it arrives as an
+// `Option`, so the public field is assigned directly.
+let mut message = Message::user_text(
+    uuid::Uuid::new_v4().to_string(),
+    "What about error handling?",
+);
+message.context_id = context_id.clone();
+
+let follow_up = client
+    .send_message(MessageSendParams::new(message))
+    .await?;
 ```
 
 ## Error Conditions
@@ -138,10 +116,9 @@ let follow_up = client.send_message(MessageSendParams {
 Send messages with multiple content types:
 
 ```rust,ignore
-let message = Message {
-    id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-    role: MessageRole::User,
-    parts: vec![
+let message = Message::user(
+    uuid::Uuid::new_v4().to_string(),
+    vec![
         Part::text("Analyze this image:"),
         Part::url("https://example.com/chart.png")
             .with_media_type("image/png"),
@@ -150,12 +127,7 @@ let message = Message {
             "language": "en"
         })),
     ],
-    task_id: None,
-    context_id: None,
-    reference_task_ids: None,
-    extensions: None,
-    metadata: None,
-};
+);
 ```
 
 ## Next Steps

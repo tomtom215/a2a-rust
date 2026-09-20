@@ -27,9 +27,11 @@ use a2a_protocol_server::push::{
 use a2a_protocol_server::store::ArtifactDelta;
 use a2a_protocol_server::store::tenant::TenantContext;
 use a2a_protocol_server::store::{
-    PgMigrationRunner, PostgresTaskStore, RetentionPolicy, TaskStore, TenantAwarePostgresTaskStore,
+    PgMigrationRunner, PostgresTaskStore, RecordedEvent, RetentionPolicy, TaskStore,
+    TenantAwarePostgresTaskStore,
 };
 use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
@@ -470,17 +472,17 @@ async fn migrations_apply_in_order_and_are_idempotent() {
             .await
             .expect("pending_migrations")
             .len(),
-        4,
+        5,
         "all built-in migrations should be pending"
     );
 
     let applied = runner.run_pending().await.expect("run_pending");
     assert_eq!(
         applied,
-        vec![1, 2, 3, 4],
+        vec![1, 2, 3, 4, 5],
         "migrations apply in version order"
     );
-    assert_eq!(runner.current_version().await.expect("current_version"), 4);
+    assert_eq!(runner.current_version().await.expect("current_version"), 5);
 
     // Pins the boundary in `pending_migrations`, which filters `version >
     // current`. Nothing else here observes it: `run_pending` walks
@@ -1270,7 +1272,7 @@ async fn retention_deletes_only_aged_terminal_tasks() -> A2aResult<()> {
     assert_eq!(report.tasks_deleted, 2, "the two aged terminal tasks");
     assert!(report.complete);
     assert_eq!(
-        report.journal_orphans_deleted, 0,
+        report.orphan_rows_deleted, 0,
         "PostgreSQL has no journal table"
     );
     assert!(store.get(&TaskId("done-old".into())).await?.is_none());
@@ -1623,6 +1625,493 @@ async fn idempotency_keys_are_scoped_per_tenant() {
         IdempotencyClaim::Replay(TaskId("task-a".into())),
         "a release must not reach across the tenant boundary"
     );
+
+    db.drop_db().await;
+}
+
+// ── Event log ────────────────────────────────────────────────────────────────
+//
+// The same nine cases the SQLite suite covers in
+// `store::sqlite_store::event_log_tests`, re-run against a real server. They
+// are not redundant with it: the two schemas differ (`JSONB` vs `TEXT`,
+// `BIGINT` vs `INTEGER`, no `WITHOUT ROWID`), and so do the conflict clause's
+// spelling and the JSON round trip, which goes through `serde_json::Value`
+// here and through a string there.
+
+fn log_event(task_id: &str, state: TaskState) -> StreamResponse {
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+        task_id: TaskId(task_id.to_string()),
+        context_id: ContextId("ctx1".to_string()),
+        status: TaskStatus::new(state),
+        metadata: None,
+    })
+}
+
+fn logged_states(events: &[RecordedEvent]) -> Vec<TaskState> {
+    events
+        .iter()
+        .map(|r| match &r.event {
+            StreamResponse::StatusUpdate(u) => u.status.state,
+            other => panic!("only status events are written here, got {other:?}"),
+        })
+        .collect()
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_store_advertises_event_log_support() {
+    let db = TestDb::create("evlog_support").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    assert!(
+        store.supports_event_log(),
+        "the Postgres store implements append_event; it must advertise support"
+    );
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_events_round_trip_in_order_with_their_positions() -> A2aResult<()> {
+    let db = TestDb::create("evlog_roundtrip").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    let task = make_task("t1", "ctx1");
+    store.save(&task).await?;
+    for (seq, state) in [
+        (1, TaskState::Submitted),
+        (2, TaskState::Working),
+        (3, TaskState::Completed),
+    ] {
+        store
+            .append_event(&task.id, seq, &log_event("t1", state))
+            .await?;
+    }
+
+    let all = store.read_events(&task.id, 0, 100).await?;
+    assert_eq!(all.iter().map(|r| r.seq).collect::<Vec<_>>(), vec![1, 2, 3]);
+    assert_eq!(
+        logged_states(&all),
+        vec![
+            TaskState::Submitted,
+            TaskState::Working,
+            TaskState::Completed
+        ],
+        "the payload must survive the JSONB round trip, not just the position"
+    );
+    assert_eq!(store.last_event_seq(&task.id).await?, 3);
+
+    db.drop_db().await;
+    Ok(())
+}
+
+/// `seq` is a position, so the same one written twice leaves one row. This is
+/// what makes a retried append safe without a read first — and it is the half
+/// of the design most likely to be spelled wrong in one dialect and right in
+/// the other, since Postgres wants `ON CONFLICT (cols)` where SQLite accepts
+/// `ON CONFLICT(cols)`.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_appending_the_same_position_twice_leaves_one_row() -> A2aResult<()> {
+    let db = TestDb::create("evlog_replay").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    let task = make_task("t1", "ctx1");
+    store.save(&task).await?;
+    store
+        .append_event(&task.id, 1, &log_event("t1", TaskState::Working))
+        .await?;
+    store
+        .append_event(&task.id, 1, &log_event("t1", TaskState::Completed))
+        .await?;
+
+    let all = store.read_events(&task.id, 0, 10).await?;
+    assert_eq!(all.len(), 1, "one position, one row");
+    assert_eq!(
+        logged_states(&all),
+        vec![TaskState::Working],
+        "the first write wins; a replay must not rewrite history"
+    );
+
+    db.drop_db().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_reading_after_an_offset_is_exclusive_and_honours_the_limit() -> A2aResult<()> {
+    let db = TestDb::create("evlog_offset").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    let task = make_task("t1", "ctx1");
+    store.save(&task).await?;
+    for seq in 1..=5 {
+        store
+            .append_event(&task.id, seq, &log_event("t1", TaskState::Working))
+            .await?;
+    }
+
+    let after_two = store.read_events(&task.id, 2, 100).await?;
+    assert_eq!(after_two.first().map(|r| r.seq), Some(3), "exclusive");
+    assert_eq!(after_two.len(), 3);
+
+    assert_eq!(store.read_events(&task.id, 0, 2).await?.len(), 2);
+    assert!(
+        store.read_events(&task.id, 99, 10).await?.is_empty(),
+        "a subscriber past the end gets nothing, not an error"
+    );
+
+    db.drop_db().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_a_task_with_no_events_reports_zero_rather_than_failing() -> A2aResult<()> {
+    let db = TestDb::create("evlog_empty").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    // `COALESCE(MAX(seq), 0)` over no rows: an aggregate returns one row, so
+    // this is `fetch_one` and not `fetch_optional`. Getting that pair wrong
+    // is a `RowNotFound` rather than a zero.
+    let missing = TaskId("never-existed".into());
+    assert_eq!(store.last_event_seq(&missing).await?, 0);
+    assert!(store.read_events(&missing, 0, 10).await?.is_empty());
+
+    db.drop_db().await;
+    Ok(())
+}
+
+/// The log goes with the task. An orphaned log would be replayed onto a task
+/// that later reused the id.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_deleting_a_task_removes_its_log() -> A2aResult<()> {
+    let db = TestDb::create("evlog_delete").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    let task = make_task("t1", "ctx1");
+    store.save(&task).await?;
+    store
+        .append_event(&task.id, 1, &log_event("t1", TaskState::Working))
+        .await?;
+
+    store.delete(&task.id).await?;
+    assert_eq!(store.last_event_seq(&task.id).await?, 0);
+
+    // The id is reusable, and must come back with a clean history.
+    store.save(&task).await?;
+    assert!(store.read_events(&task.id, 0, 10).await?.is_empty());
+
+    db.drop_db().await;
+    Ok(())
+}
+
+/// A snapshot rewrite must not touch the log. `save` runs on every status
+/// change, and a log that did not survive it would have a completeness that
+/// depended on how often the snapshot happened to be written.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_a_snapshot_rewrite_leaves_the_log_alone() -> A2aResult<()> {
+    let db = TestDb::create("evlog_snapshot").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    let mut task = make_task("t1", "ctx1");
+    store.save(&task).await?;
+    store
+        .append_event(&task.id, 1, &log_event("t1", TaskState::Working))
+        .await?;
+
+    task.status = TaskStatus::new(TaskState::Completed);
+    store.save(&task).await?;
+
+    assert_eq!(store.read_events(&task.id, 0, 10).await?.len(), 1);
+
+    db.drop_db().await;
+    Ok(())
+}
+
+/// Both ways of building the schema must create the table. `with_migrations`
+/// runs the migration runner; `new` and `from_pool` run their own inline DDL.
+/// Shipping the table in one and not the other is a mistake this repository
+/// has made before, and here it would be silent: `supports_event_log()` is a
+/// property of the type rather than of the schema.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_new_creates_the_event_table_too() -> A2aResult<()> {
+    let db = TestDb::create("evlog_new").await;
+    let store = PostgresTaskStore::new(&db.url)
+        .await
+        .expect("open postgres store without the migration runner");
+
+    let task = make_task("t1", "ctx1");
+    store.save(&task).await?;
+    store
+        .append_event(&task.id, 1, &log_event("t1", TaskState::Working))
+        .await?;
+    assert_eq!(store.last_event_seq(&task.id).await?, 1);
+
+    db.drop_db().await;
+    Ok(())
+}
+
+/// The other half of the schema question: the migration runner must create it
+/// too, reached here through the runner directly rather than through
+/// `with_migrations`, so a store built on a migrated pool is what is tested.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_migration_runner_creates_the_event_table_too() -> A2aResult<()> {
+    let db = TestDb::create("evlog_migrated").await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&db.url)
+        .await
+        .expect("connect to scratch database");
+    PgMigrationRunner::new(pool.clone())
+        .run_pending()
+        .await
+        .expect("run_pending");
+
+    let store = PostgresTaskStore::from_pool(pool)
+        .await
+        .expect("store from migrated pool");
+    let task = make_task("t1", "ctx1");
+    store.save(&task).await?;
+    store
+        .append_event(&task.id, 1, &log_event("t1", TaskState::Working))
+        .await?;
+    assert_eq!(store.last_event_seq(&task.id).await?, 1);
+
+    db.drop_db().await;
+    Ok(())
+}
+
+// ── Tenant-aware event log ───────────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_store_advertises_event_log_support() {
+    let db = TestDb::create("t_evlog_support").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+
+    assert!(
+        store.supports_event_log(),
+        "the tenant-aware Postgres store implements append_event; \
+         it must advertise support"
+    );
+
+    db.drop_db().await;
+}
+
+/// The security property the tenant column exists for. Task ids are
+/// caller-supplied, so two tenants may legitimately use the same one; an
+/// unscoped log would hand one tenant's resuming subscriber the other's
+/// messages.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_event_log_is_scoped_per_tenant() {
+    let db = TestDb::create("t_evlog_scope").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+
+    TenantContext::scope("tenant-a", async {
+        store
+            .save(&make_task("shared", "ctx1"))
+            .await
+            .expect("save a");
+        store
+            .append_event(
+                &TaskId("shared".into()),
+                1,
+                &log_event("shared", TaskState::Working),
+            )
+            .await
+            .expect("append a");
+    })
+    .await;
+
+    TenantContext::scope("tenant-b", async {
+        store
+            .save(&make_task("shared", "ctx1"))
+            .await
+            .expect("save b");
+        assert_eq!(
+            store
+                .last_event_seq(&TaskId("shared".into()))
+                .await
+                .expect("last b"),
+            0,
+            "tenant-b's log for this id is its own, and it is empty"
+        );
+        assert!(
+            store
+                .read_events(&TaskId("shared".into()), 0, 10)
+                .await
+                .expect("read b")
+                .is_empty(),
+            "tenant-b must not be handed tenant-a's events"
+        );
+        // Same id, same position, different tenant: two rows, not a conflict.
+        store
+            .append_event(
+                &TaskId("shared".into()),
+                1,
+                &log_event("shared", TaskState::Completed),
+            )
+            .await
+            .expect("append b");
+    })
+    .await;
+
+    TenantContext::scope("tenant-a", async {
+        let all = store
+            .read_events(&TaskId("shared".into()), 0, 10)
+            .await
+            .expect("read a");
+        assert_eq!(
+            logged_states(&all),
+            vec![TaskState::Working],
+            "tenant-b's write must not have overwritten tenant-a's position 1"
+        );
+    })
+    .await;
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_events_round_trip_and_delete_is_tenant_scoped() {
+    let db = TestDb::create("t_evlog_rt").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+
+    for tenant in ["tenant-a", "tenant-b"] {
+        TenantContext::scope(tenant, async {
+            store.save(&make_task("t1", "ctx1")).await.expect("save");
+            for (seq, state) in [(1, TaskState::Working), (2, TaskState::Completed)] {
+                store
+                    .append_event(&TaskId("t1".into()), seq, &log_event("t1", state))
+                    .await
+                    .expect("append");
+            }
+        })
+        .await;
+    }
+
+    TenantContext::scope("tenant-a", async {
+        let all = store
+            .read_events(&TaskId("t1".into()), 0, 10)
+            .await
+            .expect("read");
+        assert_eq!(all.iter().map(|r| r.seq).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            logged_states(&all),
+            vec![TaskState::Working, TaskState::Completed]
+        );
+        assert_eq!(
+            store
+                .read_events(&TaskId("t1".into()), 1, 10)
+                .await
+                .expect("read")
+                .len(),
+            1,
+            "after_seq is exclusive"
+        );
+
+        store.delete(&TaskId("t1".into())).await.expect("delete");
+        assert_eq!(
+            store
+                .last_event_seq(&TaskId("t1".into()))
+                .await
+                .expect("last"),
+            0
+        );
+    })
+    .await;
+
+    TenantContext::scope("tenant-b", async {
+        assert_eq!(
+            store
+                .last_event_seq(&TaskId("t1".into()))
+                .await
+                .expect("last"),
+            2,
+            "a delete in one tenant must not reach across the boundary"
+        );
+    })
+    .await;
+
+    db.drop_db().await;
+}
+
+/// `PostgreSQL` always enforces `ON DELETE CASCADE`, so a retention sweep —
+/// which deletes from `tenant_tasks` directly and never goes through
+/// `delete` — takes the log with it and reports nothing to reclaim.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_retention_takes_the_event_log_with_it() {
+    let db = TestDb::create("t_evlog_retention").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+
+    TenantContext::scope("tenant-a", async {
+        let mut done = make_task("t1", "ctx1");
+        done.status = TaskStatus::new(TaskState::Completed);
+        store.save(&done).await.expect("save");
+        store
+            .append_event(
+                &TaskId("t1".into()),
+                1,
+                &log_event("t1", TaskState::Completed),
+            )
+            .await
+            .expect("append");
+    })
+    .await;
+    backdate(&db.url, "tenant_tasks", 7_200, Some("tenant-a")).await;
+
+    let report = store
+        .purge_expired(&RetentionPolicy::new(Duration::from_secs(3_600)))
+        .await
+        .expect("purge");
+    assert_eq!(report.tasks_deleted, 1);
+    assert_eq!(
+        report.orphan_rows_deleted, 0,
+        "PostgreSQL enforces the cascade, so the sweep finds nothing stranded"
+    );
+
+    TenantContext::scope("tenant-a", async {
+        assert_eq!(
+            store
+                .last_event_seq(&TaskId("t1".into()))
+                .await
+                .expect("last"),
+            0,
+            "the log went with the task"
+        );
+    })
+    .await;
 
     db.drop_db().await;
 }

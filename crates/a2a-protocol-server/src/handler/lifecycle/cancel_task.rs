@@ -78,7 +78,10 @@ impl RequestHandler {
                 },
                 task_id.clone(),
                 task.context_id.0.clone(),
-            );
+            )
+            // The cancel's own call context, not the send's: an executor
+            // refusing a cancel needs to know who is asking to cancel.
+            .with_call_context(call_ctx.clone());
 
             // Use a non-registering writer: if a live queue exists (an in-flight
             // streaming task) the cancel event reaches its subscribers;

@@ -228,47 +228,29 @@ where
 
 /// Builds the agent card advertised at `/.well-known/agent-card.json`.
 fn make_agent_card(url: &str, model: &str) -> AgentCard {
-    AgentCard {
-        url: Some(url.into()),
-        name: "Rig LLM Agent".into(),
-        description: format!("A2A agent backed by the '{model}' model via rig"),
-        version: env!("CARGO_PKG_VERSION").into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "chat".into(),
-            name: "LLM Chat".into(),
-            description: "Answers the message text, calling the agent's service-inventory \
-                 tools when the question needs them"
-                .into(),
-            tags: vec![
-                "llm".into(),
-                "rig".into(),
-                "chat".into(),
-                "tool-calling".into(),
-            ],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none()
+    AgentCard::new(
+        "Rig LLM Agent",
+        env!("CARGO_PKG_VERSION"),
+        AgentInterface::jsonrpc(url),
+    )
+    .with_description(format!("A2A agent backed by the '{model}' model via rig"))
+    .with_input_modes(["text/plain"])
+    .with_output_modes(["text/plain"])
+    .with_skill(
+        AgentSkill::new(
+            "chat",
+            "LLM Chat",
+            "Answers the message text, calling the agent's service-inventory \
+             tools when the question needs them",
+        )
+        .with_tags(["llm", "rig", "chat", "tool-calling"]),
+    )
+    .with_capabilities(
+        AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true)
             .with_extended_agent_card(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    )
 }
 
 /// Serves the JSON-RPC dispatcher on an already-bound listener.

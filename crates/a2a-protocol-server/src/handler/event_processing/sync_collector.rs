@@ -216,12 +216,18 @@ impl RequestHandler {
     #[allow(clippy::too_many_lines)]
     async fn process_event(
         &self,
-        event: a2a_protocol_types::error::A2aResult<StreamResponse>,
+        event: a2a_protocol_types::error::A2aResult<crate::streaming::StreamEvent>,
         task_id: &TaskId,
         state: &mut CollectState,
     ) -> ServerResult<()> {
+        // Recorded before the fold, so what the agent emitted is durable
+        // before the state derived from it is. The blocking send folds here
+        // rather than in the background processor, and a log covering only
+        // streaming sends would be a history whose completeness depended on
+        // which method the caller happened to use.
+        super::background::record_event(&*self.task_store, task_id, &event, &*self.metrics).await;
         let last_task = &mut state.task;
-        match event {
+        match event.map(|e| e.event) {
             Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
                 let current = last_task.status.state;
                 let next = update.status.state;

@@ -16,7 +16,7 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use tokio::sync::RwLock;
 
-use super::super::task_store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
+use super::super::task_store::{InMemoryTaskStore, RecordedEvent, TaskStore, TaskStoreConfig};
 use super::context::TenantContext;
 
 // ── TenantAwareInMemoryTaskStore ────────────────────────────────────────────
@@ -380,6 +380,55 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
             match self.get_existing_store().await {
                 Some(store) => store.delete(id).await,
                 None => Ok(()),
+            }
+        })
+    }
+
+    /// Every tenant gets its own [`InMemoryTaskStore`], and each of those
+    /// keeps a log, so the partition is the scope: one tenant's task id can
+    /// never reach another tenant's events because it is never in the same
+    /// map.
+    fn supports_event_log(&self) -> bool {
+        true
+    }
+
+    fn append_event<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        seq: u64,
+        event: &'a a2a_protocol_types::events::StreamResponse,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let store = self.get_store().await?;
+            store.append_event(task_id, seq, event).await
+        })
+    }
+
+    fn last_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            // `get_existing_store`, like `get`: asking where a continuation
+            // should resume numbering must not be the thing that creates a
+            // tenant partition and spends a slot against the tenant cap.
+            match self.get_existing_store().await {
+                Some(store) => store.last_event_seq(task_id).await,
+                None => Ok(0),
+            }
+        })
+    }
+
+    fn read_events<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        after_seq: u64,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
+        Box::pin(async move {
+            match self.get_existing_store().await {
+                Some(store) => store.read_events(task_id, after_seq, limit).await,
+                None => Ok(Vec::new()),
             }
         })
     }
@@ -1154,6 +1203,110 @@ mod idempotency_isolation_tests {
         let store = TenantAwareInMemoryTaskStore::new();
         TenantContext::scope("never-seen", async {
             store.release_idempotency_key(KEY).await.unwrap();
+        })
+        .await;
+        assert_eq!(store.tenant_count().await, 0);
+    }
+}
+
+#[cfg(test)]
+mod event_log_tests {
+    use super::*;
+    use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+    use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+
+    fn make_task(id: &str, state: TaskState) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("ctx-default"),
+            status: TaskStatus::new(state),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    fn event(id: &str, state: TaskState) -> StreamResponse {
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new(id),
+            context_id: ContextId::new("ctx-default"),
+            status: TaskStatus::new(state),
+            metadata: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn the_dispatcher_reports_that_it_keeps_a_log() {
+        assert!(TenantAwareInMemoryTaskStore::new().supports_event_log());
+    }
+
+    /// Each tenant gets its own [`InMemoryTaskStore`], so the partition is the
+    /// scope. Two tenants using the same task id — which they may, ids are
+    /// caller-supplied — must not see each other's events.
+    #[tokio::test]
+    async fn one_tenants_task_id_never_reaches_another_tenants_log() {
+        let store = TenantAwareInMemoryTaskStore::new();
+
+        TenantContext::scope("tenant-a", async {
+            store
+                .save(&make_task("shared", TaskState::Working))
+                .await
+                .unwrap();
+            store
+                .append_event(
+                    &TaskId::new("shared"),
+                    1,
+                    &event("shared", TaskState::Working),
+                )
+                .await
+                .unwrap();
+        })
+        .await;
+
+        TenantContext::scope("tenant-b", async {
+            store
+                .save(&make_task("shared", TaskState::Working))
+                .await
+                .unwrap();
+            assert_eq!(
+                store.last_event_seq(&TaskId::new("shared")).await.unwrap(),
+                0
+            );
+            assert!(
+                store
+                    .read_events(&TaskId::new("shared"), 0, 10)
+                    .await
+                    .unwrap()
+                    .is_empty(),
+                "tenant-b must not be handed tenant-a's events"
+            );
+        })
+        .await;
+
+        TenantContext::scope("tenant-a", async {
+            assert_eq!(
+                store.last_event_seq(&TaskId::new("shared")).await.unwrap(),
+                1
+            );
+        })
+        .await;
+    }
+
+    /// Reading must not be what allocates a tenant partition, for the same
+    /// reason `release_idempotency_key` must not: an unknown tenant would then
+    /// spend a slot against the cap on a read that found nothing.
+    #[tokio::test]
+    async fn reading_under_an_unknown_tenant_creates_no_partition() {
+        let store = TenantAwareInMemoryTaskStore::new();
+        TenantContext::scope("never-seen", async {
+            assert_eq!(store.last_event_seq(&TaskId::new("t1")).await.unwrap(), 0);
+            assert!(
+                store
+                    .read_events(&TaskId::new("t1"), 0, 10)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
         })
         .await;
         assert_eq!(store.tenant_count().await, 0);

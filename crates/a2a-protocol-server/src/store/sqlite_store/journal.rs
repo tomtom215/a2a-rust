@@ -101,6 +101,11 @@ pub(super) const SELECT_FOR_TASK_SQL: &str = "SELECT artifact, seq, part FROM ta
 /// `delete`.
 pub(super) const DELETE_FOR_TASK_SQL: &str = "DELETE FROM task_artifact_appends WHERE task_id = ?1";
 
+/// Reclaims rows whose task is gone. Run by the retention sweep, which
+/// deletes from `tasks` directly and so never goes through `delete_for`.
+pub(super) const DELETE_ORPHANS_SQL: &str =
+    "DELETE FROM task_artifact_appends WHERE task_id NOT IN (SELECT id FROM tasks)";
+
 /// One journal row: which artifact, which position, and the part itself.
 pub(super) type Row = (i64, i64, String);
 

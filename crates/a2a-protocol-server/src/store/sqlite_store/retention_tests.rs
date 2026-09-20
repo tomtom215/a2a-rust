@@ -138,7 +138,7 @@ async fn orphan_journal_rows_go_with_their_task() {
         .unwrap();
     assert_eq!(left, 0, "the row must not survive its task either way");
     assert_eq!(
-        report.journal_orphans_deleted, 0,
+        report.orphan_rows_deleted, 0,
         "this pool has foreign_keys=ON, so the cascade took the row and the \
          sweep had nothing of its own to reclaim -- a non-zero count here \
          would mean the cascade had silently not fired"
@@ -181,7 +181,7 @@ async fn journal_orphans_are_reclaimed_when_the_cascade_does_not_fire() {
 
     assert_eq!(report.tasks_deleted, 1);
     assert_eq!(
-        report.journal_orphans_deleted, 1,
+        report.orphan_rows_deleted, 1,
         "without the cascade the sweep must reclaim the row itself, and say so"
     );
     let left: i64 = sqlx::query_scalar("SELECT count(*) FROM task_artifact_appends")
@@ -228,7 +228,7 @@ async fn the_journal_sweep_runs_only_after_a_task_was_deleted() {
 
     assert_eq!(report.tasks_deleted, 0, "nothing was old enough to delete");
     assert_eq!(
-        report.journal_orphans_deleted, 0,
+        report.orphan_rows_deleted, 0,
         "no task was deleted, so the sweep must not have run"
     );
     let left: i64 = sqlx::query_scalar("SELECT count(*) FROM task_artifact_appends")
@@ -316,5 +316,61 @@ async fn a_zero_batch_size_still_makes_progress() {
     assert_eq!(
         report.tasks_deleted, 1,
         "batch size 0 must not mean LIMIT 0"
+    );
+}
+
+/// The event log is the second side table the sweep reclaims, and the one
+/// where an orphan is worst: task ids are caller-supplied and reusable, so a
+/// log that outlives its task is a log that replays a purged task's messages
+/// to whoever next claims that id.
+#[tokio::test]
+async fn event_log_orphans_are_reclaimed_when_the_cascade_does_not_fire() {
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use std::str::FromStr;
+
+    let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+        .unwrap()
+        .pragma("foreign_keys", "OFF")
+        .create_if_missing(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(opts)
+        .await
+        .expect("pool");
+    let store = SqliteTaskStore::from_pool(pool).await.expect("store");
+
+    let done = task("e1", TaskState::Completed);
+    store.save(&done).await.unwrap();
+    store
+        .append_event(
+            &done.id,
+            1,
+            &a2a_protocol_types::events::StreamResponse::StatusUpdate(
+                a2a_protocol_types::events::TaskStatusUpdateEvent {
+                    task_id: done.id.clone(),
+                    context_id: done.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Completed),
+                    metadata: None,
+                },
+            ),
+        )
+        .await
+        .expect("append");
+    age(&store, "e1", 7_200).await;
+
+    let report = store
+        .purge_expired(&RetentionPolicy::new(Duration::from_secs(3_600)))
+        .await
+        .expect("purge");
+
+    assert_eq!(report.tasks_deleted, 1);
+    assert_eq!(
+        report.orphan_rows_deleted, 1,
+        "without the cascade the sweep must reclaim the event row itself"
+    );
+    assert_eq!(
+        store.last_event_seq(&done.id).await.expect("last"),
+        0,
+        "and the id must come back reusable, with a clean history"
     );
 }

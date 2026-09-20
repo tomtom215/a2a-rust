@@ -39,7 +39,7 @@ async fn queue_write_and_read() {
     let received = reader.read().await.expect("read");
     let update = received.expect("should be ok");
     assert!(
-        matches!(update, StreamResponse::StatusUpdate(u) if u.status.state == TaskState::Working)
+        matches!(update.event, StreamResponse::StatusUpdate(u) if u.status.state == TaskState::Working)
     );
 
     // Channel is closed after writer is dropped.
@@ -83,7 +83,7 @@ async fn queue_multiple_events() {
 
     let mut events = vec![];
     while let Some(event) = reader.read().await {
-        events.push(event.unwrap());
+        events.push(event.unwrap().event);
     }
     assert_eq!(events.len(), 2);
     assert!(matches!(&events[0], StreamResponse::StatusUpdate(_)));

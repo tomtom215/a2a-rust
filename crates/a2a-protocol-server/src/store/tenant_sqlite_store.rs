@@ -37,8 +37,10 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use sqlx::sqlite::SqlitePool;
 
-use super::task_store::TaskStore;
+use super::event_log_sql::{decode_text_row, encode_text, limit_to_i64, seq_to_i64};
+use super::task_store::{RecordedEvent, TaskStore};
 use super::tenant::TenantContext;
+use super::tenant_event_log as evlog;
 use super::tenant_idempotency as idem;
 
 /// Tenant-scoped `SQLite`-backed [`TaskStore`].
@@ -127,6 +129,15 @@ impl TenantAwareSqliteTaskStore {
             .execute(&pool)
             .await?;
 
+        // Keyed `(tenant_id, task_id, seq)` for the same reason, and with a
+        // sharper consequence: an unscoped log would hand one tenant's
+        // resuming subscriber another tenant's messages. Unlike the key
+        // table this one *does* cascade — see `tenant_event_log` for why the
+        // safe direction is the opposite one here.
+        sqlx::query(evlog::SQLITE_CREATE_TABLE)
+            .execute(&pool)
+            .await?;
+
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_ctx ON tenant_tasks(tenant_id, context_id)",
         )
@@ -186,9 +197,14 @@ impl TenantAwareSqliteTaskStore {
         &self,
         policy: &super::retention::RetentionPolicy,
     ) -> A2aResult<super::retention::PurgeReport> {
-        super::retention::sqlite::purge(&self.pool, "tenant_tasks", None, policy)
-            .await
-            .map_err(|e| to_a2a_error(&e))
+        super::retention::sqlite::purge(
+            &self.pool,
+            "tenant_tasks",
+            &[evlog::SQLITE_DELETE_ORPHANS],
+            policy,
+        )
+        .await
+        .map_err(|e| to_a2a_error(&e))
     }
 }
 
@@ -470,6 +486,17 @@ impl TaskStore for TenantAwareSqliteTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::current();
+            // Explicit as well as cascaded: the cascade only fires with
+            // `foreign_keys=ON`, which this crate's pool sets but a pool
+            // handed to `from_pool` may not, and orphaned events would be
+            // replayed to whoever next reuses the task id.
+            sqlx::query(evlog::SQLITE_DELETE_FOR_TASK)
+                .bind(&tenant)
+                .bind(id.0.as_str())
+                .execute(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+
             sqlx::query("DELETE FROM tenant_tasks WHERE tenant_id = ?1 AND id = ?2")
                 .bind(&tenant)
                 .bind(id.0.as_str())
@@ -477,6 +504,66 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 .await
                 .map_err(|e| to_a2a_error(&e))?;
             Ok(())
+        })
+    }
+
+    fn supports_event_log(&self) -> bool {
+        true
+    }
+
+    fn append_event<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        seq: u64,
+        event: &'a a2a_protocol_types::events::StreamResponse,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let tenant = TenantContext::current();
+            sqlx::query(evlog::SQLITE_APPEND)
+                .bind(&tenant)
+                .bind(task_id.0.as_str())
+                .bind(seq_to_i64(seq)?)
+                .bind(encode_text(event)?)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            Ok(())
+        })
+    }
+
+    fn last_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let tenant = TenantContext::current();
+            let (max,): (i64,) = sqlx::query_as(evlog::SQLITE_LAST_SEQ)
+                .bind(&tenant)
+                .bind(task_id.0.as_str())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            Ok(max.unsigned_abs())
+        })
+    }
+
+    fn read_events<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        after_seq: u64,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
+        Box::pin(async move {
+            let tenant = TenantContext::current();
+            let rows: Vec<(i64, String)> = sqlx::query_as(evlog::SQLITE_SELECT_AFTER)
+                .bind(&tenant)
+                .bind(task_id.0.as_str())
+                .bind(seq_to_i64(after_seq)?)
+                .bind(limit_to_i64(limit))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            rows.into_iter().map(decode_text_row).collect()
         })
     }
 
@@ -983,5 +1070,326 @@ mod idempotency_tests {
             IdempotencyClaim::Replay(TaskId::new("task-a")),
             "a release must not reach across the tenant boundary"
         );
+    }
+}
+
+#[cfg(test)]
+mod event_log_tests {
+    use super::*;
+    use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+    use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+
+    async fn store() -> TenantAwareSqliteTaskStore {
+        TenantAwareSqliteTaskStore::new("sqlite::memory:")
+            .await
+            .expect("in-memory tenant store")
+    }
+
+    fn task(id: &str) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("c-1"),
+            status: TaskStatus::new(TaskState::Working),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    fn event(id: &str, state: TaskState) -> StreamResponse {
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new(id),
+            context_id: ContextId::new("c-1"),
+            status: TaskStatus::new(state),
+            metadata: None,
+        })
+    }
+
+    fn states(events: &[RecordedEvent]) -> Vec<TaskState> {
+        events
+            .iter()
+            .map(|r| match &r.event {
+                StreamResponse::StatusUpdate(u) => u.status.state,
+                other => panic!("only status events are written here, got {other:?}"),
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn the_tenant_store_reports_that_it_keeps_a_log() {
+        assert!(store().await.supports_event_log());
+    }
+
+    /// The security property, and the reason the table is keyed on the tenant
+    /// at all. Two tenants using the same task id — which they may, ids are
+    /// caller-supplied — must not see each other's events. An unscoped log
+    /// would leak message content across the boundary, which is the most
+    /// sensitive thing this server holds.
+    #[tokio::test]
+    async fn one_tenants_task_id_never_reaches_another_tenants_log() {
+        let store = store().await;
+
+        TenantContext::scope("tenant-a", async {
+            store.save(&task("shared-id")).await.expect("save a");
+            store
+                .append_event(
+                    &TaskId::new("shared-id"),
+                    1,
+                    &event("shared-id", TaskState::Working),
+                )
+                .await
+                .expect("append a");
+        })
+        .await;
+
+        TenantContext::scope("tenant-b", async {
+            store.save(&task("shared-id")).await.expect("save b");
+            assert_eq!(
+                store
+                    .last_event_seq(&TaskId::new("shared-id"))
+                    .await
+                    .expect("last b"),
+                0,
+                "tenant-b's log for this id is its own, and it is empty"
+            );
+            assert!(
+                store
+                    .read_events(&TaskId::new("shared-id"), 0, 10)
+                    .await
+                    .expect("read b")
+                    .is_empty(),
+                "tenant-b must not be handed tenant-a's events"
+            );
+
+            store
+                .append_event(
+                    &TaskId::new("shared-id"),
+                    1,
+                    &event("shared-id", TaskState::Completed),
+                )
+                .await
+                .expect("append b");
+        })
+        .await;
+
+        // And the write from tenant-b must not have overwritten position 1 of
+        // tenant-a's log: same task id, same seq, different tenant, two rows.
+        TenantContext::scope("tenant-a", async {
+            assert_eq!(
+                states(
+                    &store
+                        .read_events(&TaskId::new("shared-id"), 0, 10)
+                        .await
+                        .expect("read a")
+                ),
+                vec![TaskState::Working],
+            );
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn events_round_trip_in_order_with_their_positions() {
+        let store = store().await;
+        TenantContext::scope("tenant-a", async {
+            store.save(&task("t-1")).await.expect("save");
+            for (seq, state) in [
+                (1, TaskState::Submitted),
+                (2, TaskState::Working),
+                (3, TaskState::Completed),
+            ] {
+                store
+                    .append_event(&TaskId::new("t-1"), seq, &event("t-1", state))
+                    .await
+                    .expect("append");
+            }
+
+            let all = store
+                .read_events(&TaskId::new("t-1"), 0, 100)
+                .await
+                .expect("read");
+            assert_eq!(all.iter().map(|r| r.seq).collect::<Vec<_>>(), vec![1, 2, 3]);
+            assert_eq!(
+                states(&all),
+                vec![
+                    TaskState::Submitted,
+                    TaskState::Working,
+                    TaskState::Completed
+                ],
+            );
+            assert_eq!(
+                store
+                    .last_event_seq(&TaskId::new("t-1"))
+                    .await
+                    .expect("last"),
+                3
+            );
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn appending_the_same_position_twice_leaves_one_row() {
+        let store = store().await;
+        TenantContext::scope("tenant-a", async {
+            store.save(&task("t-1")).await.expect("save");
+            store
+                .append_event(&TaskId::new("t-1"), 1, &event("t-1", TaskState::Working))
+                .await
+                .expect("append");
+            store
+                .append_event(&TaskId::new("t-1"), 1, &event("t-1", TaskState::Completed))
+                .await
+                .expect("replay must not error");
+
+            let all = store
+                .read_events(&TaskId::new("t-1"), 0, 10)
+                .await
+                .expect("read");
+            assert_eq!(all.len(), 1, "one position, one row");
+            assert_eq!(
+                states(&all),
+                vec![TaskState::Working],
+                "the first write wins; a replay must not rewrite history"
+            );
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn reading_after_an_offset_is_exclusive_and_honours_the_limit() {
+        let store = store().await;
+        TenantContext::scope("tenant-a", async {
+            store.save(&task("t-1")).await.expect("save");
+            for seq in 1..=5 {
+                store
+                    .append_event(&TaskId::new("t-1"), seq, &event("t-1", TaskState::Working))
+                    .await
+                    .expect("append");
+            }
+
+            let after_two = store
+                .read_events(&TaskId::new("t-1"), 2, 100)
+                .await
+                .expect("read");
+            assert_eq!(after_two.first().map(|r| r.seq), Some(3), "exclusive");
+            assert_eq!(after_two.len(), 3);
+            assert_eq!(
+                store
+                    .read_events(&TaskId::new("t-1"), 0, 2)
+                    .await
+                    .expect("read")
+                    .len(),
+                2
+            );
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn deleting_a_task_removes_its_log_and_leaves_other_tenants_alone() {
+        let store = store().await;
+        for tenant in ["tenant-a", "tenant-b"] {
+            TenantContext::scope(tenant, async {
+                store.save(&task("t-1")).await.expect("save");
+                store
+                    .append_event(&TaskId::new("t-1"), 1, &event("t-1", TaskState::Working))
+                    .await
+                    .expect("append");
+            })
+            .await;
+        }
+
+        TenantContext::scope("tenant-a", async {
+            store.delete(&TaskId::new("t-1")).await.expect("delete");
+            assert_eq!(
+                store
+                    .last_event_seq(&TaskId::new("t-1"))
+                    .await
+                    .expect("last"),
+                0
+            );
+        })
+        .await;
+
+        TenantContext::scope("tenant-b", async {
+            assert_eq!(
+                store
+                    .last_event_seq(&TaskId::new("t-1"))
+                    .await
+                    .expect("last"),
+                1,
+                "a delete in one tenant must not reach across the boundary"
+            );
+        })
+        .await;
+    }
+
+    /// The retention sweep deletes from `tenant_tasks` directly, so it never
+    /// goes through `delete`. On a pool without `foreign_keys=ON` the cascade
+    /// does not fire, and an orphaned log is one that would be replayed to
+    /// whoever next reuses the id — so the sweep reclaims the rows itself.
+    #[tokio::test]
+    async fn a_retention_sweep_reclaims_orphaned_events() {
+        // `foreign_keys` explicitly OFF: the configuration in which the
+        // cascade is silently absent, and the only one where the counter is
+        // non-zero. Note that it takes saying so — sqlx turns the pragma on
+        // by default, so an unconfigured pool does cascade.
+        use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+        use std::str::FromStr as _;
+
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+            .expect("options")
+            .pragma("foreign_keys", "OFF")
+            .create_if_missing(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .expect("pool");
+        let store = TenantAwareSqliteTaskStore::from_pool(pool.clone())
+            .await
+            .expect("store from a pool without the pragma");
+
+        TenantContext::scope("tenant-a", async {
+            let mut done = task("t-1");
+            done.status = TaskStatus::new(TaskState::Completed);
+            store.save(&done).await.expect("save");
+            store
+                .append_event(&TaskId::new("t-1"), 1, &event("t-1", TaskState::Completed))
+                .await
+                .expect("append");
+        })
+        .await;
+
+        // Age the task past any policy window.
+        sqlx::query("UPDATE tenant_tasks SET updated_at = '2000-01-01 00:00:00.000'")
+            .execute(&pool)
+            .await
+            .expect("backdate");
+
+        let report = store
+            .purge_expired(&crate::store::RetentionPolicy::new(
+                std::time::Duration::from_secs(60),
+            ))
+            .await
+            .expect("purge");
+        assert_eq!(report.tasks_deleted, 1);
+        assert_eq!(
+            report.orphan_rows_deleted, 1,
+            "without the pragma the cascade does not fire, so the sweep must \
+             reclaim the event row itself"
+        );
+
+        TenantContext::scope("tenant-a", async {
+            assert_eq!(
+                store
+                    .last_event_seq(&TaskId::new("t-1"))
+                    .await
+                    .expect("last"),
+                0
+            );
+        })
+        .await;
     }
 }

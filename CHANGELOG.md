@@ -10,7 +10,388 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-20
+
+### Breaking Changes
+
+In the `0.x` series a minor release may break and a patch may not
+(`STABILITY.md` §2), and each item below is a minor-only change by that list.
+The four crates bump in lockstep.
+
+`bindings/a2a-protocol-slimrpc` moves with them, to `0.5.0` on the `0.13`
+pins: `SlimRpcServer::builder` takes `Arc<RequestHandler>`, so
+`a2a-protocol-server` and `a2a-protocol-types` are *public* dependencies and
+its requirement on them is a tight `0.13`. That bump is in this release rather
+than after it because the binding depends on the workspace by `path` as well
+as by version, so `^0.12` stops resolving the moment the crates read 0.13.0.
+Publishing it remains the separate step `RELEASING.md` describes — and the
+one that has never been run.
+
+- **`RequestContext` is `#[non_exhaustive]` and carries a new `call_context`
+  field.** Measured with `cargo semver-checks check-release -p
+  a2a-protocol-server --baseline-version 0.12.1`: 196 checks, 195 pass, and
+  exactly one fails — `struct_marked_non_exhaustive` on `RequestContext`. The
+  added field is not a second finding, because once a struct is
+  `#[non_exhaustive]` an added field is no longer separately observable.
+
+  What breaks: constructing a `RequestContext` with a struct literal from
+  outside `a2a-protocol-server`. Nothing in this repository did —
+  `git ls-files '*.rs' | xargs grep 'RequestContext {'` finds only the
+  definition and function signatures, and all 19 construction sites already
+  use `RequestContext::new`. `book/src/deployment/testing.md` did teach a
+  literal, in a `rust,ignore` fence that nothing compiled; it now uses `new`.
+
+  Migration: replace `RequestContext { message, task_id, context_id, .. }`
+  with `RequestContext::new(message, task_id, context_id)` followed by
+  `.with_stored_task(..)` / `.with_metadata(..)` for anything else you set.
+
+  The attribute is deliberate rather than incidental. This type grows, and
+  every previous growth would have been a break for a literal nobody writes;
+  `#[non_exhaustive]` is what makes this the last time.
+
+- **`EventQueueReader::read` now yields a `StreamEvent`, not a
+  `StreamResponse`.** The event travels the queue with the position it holds
+  in the task's log: `StreamEvent { seq: Option<u64>, event: StreamResponse }`.
+  `Reattached::Channel` and the persistence channel carry the same type.
+
+  What breaks: any code that matched on the result of `read()` directly. The
+  migration is `.event` for a value, or `.map(|e| e.event)` for the `Result`:
+
+  ```rust,ignore
+  // before
+  while let Some(Ok(StreamResponse::StatusUpdate(u))) = reader.read().await { .. }
+  // after
+  while let Some(Ok(ev)) = reader.read().await {
+      if let StreamResponse::StatusUpdate(u) = ev.event { .. }
+  }
+  ```
+
+  Why it is a type change and not an accessor: the position has to be the
+  *same number* the store wrote, and the only way to guarantee that is to
+  assign it once and carry it. See the `Added` entry below.
+
+- **`PurgeReport::journal_orphans_deleted` is now `orphan_rows_deleted`.**
+  The sweep reclaims two side tables now, not one — the artifact journal and
+  the event log — so the old name described half of what the number counts.
+  Renamed rather than kept and widened: a field whose name names one of its
+  two sources is read as the count for that source.
+
+  Migration: rename the field at the read site. Its meaning is unchanged for
+  anyone who had only the journal, and it is still normally zero (a non-zero
+  count means rows outlived their task, which happens on a pool without
+  `foreign_keys=ON`).
+
 ### Added
+
+- **SSE frames carry an `id:`, and `Last-Event-ID` resumes from it.** This is
+  what the event log was for. A reconnecting client sends back the position of
+  the last frame it saw and receives exactly what it missed, after the `Task`
+  snapshot and before the live stream.
+
+  The measured problem: in `mcp-bridge`'s demo the sample agent emits three
+  progress steps 120 ms apart and the caller sees **one**, because a snapshot
+  is a fold and a poller only ever observes the latest one. Three events
+  arriving as one is not a rendering detail — it is the intermediate states
+  being unobservable.
+
+  **The position is assigned once, in `InMemoryQueueWriter::write`, and
+  carried on both channels.** That is the whole design. The writer is the
+  single fan-out point — it feeds the persistence channel that writes the log
+  and the broadcast channel that feeds SSE — so the `id:` a subscriber reads
+  and the `seq` the store holds are the same value by construction. The
+  alternative, counting frames at the SSE layer, agrees with the log right up
+  until the first lagged consumer, snapshot frame, or failed append; and a
+  resumption offset that is off by one drops an event with nothing to
+  indicate it. `tests/event_log_tests/resumption.rs` asserts the two
+  sequences are equal, end to end through `build_sse_response`.
+
+  **Frames the server synthesized carry no `id:`** — the `SubscribeToTask`
+  snapshot, and the terminal frame the reattach hook rebuilds from stored
+  state. Neither is in the log, so neither can be replayed from, and giving
+  either one a position would hand the client an offset that loses an event.
+
+  **A continuation resumes the numbering.** The queue is per-turn but the log
+  is per-task, so the writer is seeded from `last_event_seq` before the
+  executor starts. Without it a second turn would restart at 1 and, because
+  appends are idempotent *by position*, have every one of its events silently
+  swallowed as a replay.
+
+  **The offset is client-supplied, so it is bounded and parsed.** Replay is
+  capped by the new `HandlerLimits::subscribe_replay_limit` (default 1,000),
+  and truncation is not loss: each replayed frame carries its own `id:`, so a
+  client continues from the last one it got. A `Last-Event-ID` that is not a
+  position is ignored rather than rejected — a client may echo one back from
+  an unrelated stream, and failing the reconnect over it would turn a
+  harmless mistake into a dropped connection. A store that keeps no log is
+  the same: the header is ignored and the client gets the snapshot, which is
+  the pre-resumption behaviour.
+
+  `CorsConfig`'s default `Access-Control-Allow-Headers` gains `last-event-id`
+  for the same reason `a2a-version` and `a2a-extensions` are already there: a
+  cross-origin client that cannot send the header cannot resume.
+
+  WebSocket, gRPC and SLIM streams are unchanged. Resumption is the SSE
+  binding's `id:`/`Last-Event-ID` pair; inventing a spelling for the others
+  would be a protocol extension this server made up. Note that
+  `bindings/a2a-protocol-slimrpc` is outside the root workspace and takes
+  `RequestHandler` as a public dependency, so `cargo check --workspace` does
+  not compile it — its `event_stream` adapter needed the same one-line change
+  and only the binding's own gates caught it.
+
+- **An append-only event log, so what the agent emitted is recorded and not
+  just what it folded into.** `TaskStore` gains `supports_event_log`,
+  `append_event`, `last_event_seq` and `read_events`, all defaulted.
+
+  A task's state is a fold: a stored snapshot folded together with deltas.
+  Issue #130 happened because that fold was wrong in a way nothing could
+  observe — artifacts from one task appeared on another, and the only record
+  was the folded result, which is to say the bug itself. There was nothing to
+  check it against. This adds the thing there was nothing to check against.
+
+  The snapshot stays and stays authoritative for reads; the log is a
+  parallel, ordered record of the events themselves. That makes a wrong
+  snapshot *detectable*, gives a reconnecting subscriber the events it missed
+  rather than a fold it cannot interpret, and is the substrate anything like
+  a signed execution receipt would need.
+
+  **`seq` is a position, not a counter.** The same `(task_id, seq)` written
+  twice leaves one event, so a retried or overlapping append is safe without
+  a read first — the property `sqlite_store::journal` already relies on, for
+  the same reason. That makes `last_event_seq` load-bearing rather than
+  convenient: a task parked at `input-required` and then continued gets a
+  *second* processor, and a `seq` restarting at 1 would collide with
+  positions the first one wrote, so the continuation's events would be
+  silently dropped. Both processors seed from the store instead.
+
+  **Both fold paths record, which is not one site but two.** A blocking send
+  folds in `sync_collector`; a streaming one folds in the background
+  processor. A log covering only streaming sends would be a history whose
+  completeness depended on which method the caller happened to use. Each
+  records *before* folding, so what the agent emitted is durable before the
+  state derived from it is.
+
+  A failed append is logged and counted under the new `event_append`
+  persistence-error label, never fatal. The log is a record of the run, not a
+  precondition for it — and a gap is visible, because the sequence skips a
+  position.
+
+  All four methods default to refusing rather than succeeding. A custom store
+  that does not implement them reports no log, which is inconvenient;
+  defaulting `append_event` to `Ok(())` would advertise a log that silently
+  lost every event, which is worse. `supports_event_log()` is what a caller
+  checks rather than discovering it by getting nothing back.
+
+- **The event log is backed by every store this crate ships**, not only the
+  in-memory one: `SqliteTaskStore`, `PostgresTaskStore`,
+  `TenantAwareSqliteTaskStore`, `TenantAwarePostgresTaskStore` and
+  `TenantAwareInMemoryTaskStore` all report `supports_event_log() == true`.
+
+  Two tables, `task_events` and `tenant_task_events`, created both by the
+  migration runners (`SQLite` migration 7, `PostgreSQL` migration 5) and by
+  each store's `from_pool` DDL. Both paths, because a store built by one of
+  them and not the other would still answer `supports_event_log() == true` —
+  the flag is a property of the type, not of the schema — so the failure
+  would be an empty history rather than an error at startup. That is the
+  mistake the artifact journal shipped with, and there is now a test for each
+  path on each backend.
+
+  The tenant tables are keyed `(tenant_id, task_id, seq)`. Task ids are
+  caller-supplied, so two tenants may legitimately use the same one; an
+  unscoped log would hand one tenant's resuming subscriber the other's
+  messages, which is a cross-tenant read of message content rather than a
+  missed deduplication. Unlike `tenant_idempotency_keys` these tables *do*
+  carry `ON DELETE CASCADE`: a key that outlives its task is the safe
+  direction, an event that outlives its task is not.
+
+  Deletion is explicit as well as cascaded, and the `SQLite` retention sweep
+  reclaims orphans by anti-join, because `ON DELETE CASCADE` only fires with
+  `foreign_keys=ON` — which this crate's own pool sets and a pool handed to
+  `from_pool` may not.
+
+- **A conformance harness for `AgentExecutor`, behind the `conformance`
+  feature.** The TCK grades servers. Nothing graded the thing an adopter
+  actually writes, and the paths they get wrong are the awkward ones —
+  cancellation arriving mid-work, a parked task reported as an error, an
+  event emitted after a terminal status. Those are exactly the cases people
+  skip when writing tests by hand.
+
+  `conformance::check(Arc::new(MyExecutor)).await.assert_pass()` drives the
+  executor against a real event queue — no server, no ports, no model — and
+  grades eight protocol invariants that hold for any agent whatever it does:
+  it ends in a terminal or interrupted state, its transitions are legal,
+  nothing follows a terminal status, artifacts carry ids, parking is not
+  reported as an error, it observes the cancellation token, `cancel` leaves
+  subscribers a terminal state, and it does not panic. It says nothing about
+  whether the agent is any good at its job.
+
+  **Three rules keep the score honest, and each is the repository's own.** A
+  check that did not apply is *not graded* rather than counted as a pass — a
+  report that grades nothing fails rather than reporting full marks, which is
+  the failure `tck/`'s README records having shipped once. Every verdict
+  carries its reason, so a failure says what was observed and why it matters,
+  not just which check. And the executor runs inside `tokio::spawn`, so a
+  panicking executor is a graded failure rather than a panic that takes the
+  adopter's whole test run down with it.
+
+  Its own tests are fourteen deliberately broken executors, each breaking one
+  invariant, asserting the harness names that one and no other. A conformance
+  harness whose failures are untested is a gate that cannot fail, which is
+  the thing this repository checks for everywhere else — and the discipline
+  paid immediately: the first draft of one fixture broke two invariants
+  rather than one, and the harness was right where the test was wrong.
+
+  No new dependencies. Documented on `book/src/deployment/testing.md` with a
+  compiled example.
+
+- **A failed task says why, as a class a caller can `match` on.** Shipped as
+  the declared extension `https://a2a-rust.com/extensions/failure/v1`, so
+  servers stay conformant and the TCK is unaffected.
+
+  A failed task was `TaskState::Failed` plus prose written by whoever wrote
+  the executor, which left a caller matching English for decisions that are
+  genuinely different: never retry and fix the request; retry with backoff;
+  stop and escalate to a person; retry only with more budget. An orchestrator
+  without those either retries what can never succeed or abandons what would
+  have worked on the second attempt.
+
+  `a2a_protocol_types::failure` holds `FailureClass` — `InvalidRequest`,
+  `Transient`, `PolicyRefusal`, `BudgetExhausted`, `Internal` — with
+  `is_retryable()` and `needs_human()`, plus `set_class` / `class_of`.
+  `Task::failure_class()` reads it off the status message. The prose stays
+  exactly where it was, for the human reading the incident.
+
+  **Most classification is automatic and its limit is stated rather than
+  papered over.** When an executor returns `Err`, the server maps the error
+  code — which can only ever produce `InvalidRequest` or `Internal`, because
+  no `ErrorCode` carries the meaning "transient" or "refused on policy".
+  Guessing `Transient` there would tell callers to retry things that can
+  never succeed. An executor deadline is `BudgetExhausted`, since a deadline
+  is a bound that was hit rather than an agent that broke. The two classes no
+  error code can express need the agent itself, which is what
+  `EventEmitter::fail(class, reason)` is for.
+
+  `BudgetExhausted` is deliberately **not** `is_retryable()`: the identical
+  request hits the identical bound. It is retryable with a larger budget,
+  which is a different request. Asserted in its own test so the distinction
+  cannot be quietly relaxed into "retry anything that is not the caller's
+  fault".
+
+  An unrecognised class from a newer peer reads as `Internal` rather than as
+  an error. A peer that classifies more finely must not have its failures
+  become unreadable, and "something went wrong at the agent" is true of every
+  class a future version could add.
+
+  Advertised unconditionally on the card, unlike idempotency, whose
+  advertisement is gated on the store: every server classifies, because the
+  classification happens in the server's own failure path. Never `required`,
+  and an operator's own declaration is left alone.
+
+  New book page, `book/src/client/failure-classes.md`, with both examples
+  compiled and run as doctests.
+
+- **W3C trace context crosses an A2A hop.** The defining property of A2A is
+  that work crosses process and organisational boundaries, and until now
+  nothing survived the crossing: each agent mints its own task id, so even
+  correlating by hand failed at the first hop. One identifier now does —
+  `traceparent`, which every other ecosystem already speaks.
+
+  `a2a_protocol_types::trace_context` is the wire format: `TraceContext`
+  with strict [W3C](https://www.w3.org/TR/trace-context/) parsing, the
+  `traceparent`/`tracestate` header names, and `child` / `child_bytes` for
+  deriving the next hop. It mints nothing — this crate depends on `serde` and
+  `serde_json` and has no random source — so a caller supplies the identifier
+  bytes, the same call the `Artifact::new` id already makes.
+
+  The server parses an inbound `traceparent`, advances the span, and exposes
+  it as `RequestContext::trace_context()`. The client gains
+  `TracePropagationInterceptor`, which writes the ambient `CurrentTrace` onto
+  every outbound request; `CurrentTrace::scope` sets it and
+  `CurrentTrace::start_root()` begins a chain. The indirection through a
+  task-local is deliberate: a client is built once and reused for many
+  delegated calls, so a trace fixed at construction would label all of them
+  with the first request's.
+
+  Three decisions worth stating, because each could reasonably have gone the
+  other way. **The server propagates and never invents** — `None` from
+  `trace_context()` is evidence that the caller was not tracing, not a gap in
+  the plumbing, and a chain that wants a trace starts one at its first hop.
+  **A malformed `traceparent` is dropped, not repaired** — uppercase hex, an
+  all-zero id, a bad width: attaching work to a guessed-at trace is a wrong
+  answer where a missing trace is only an absent one. **An explicit header on
+  the request wins over the ambient scope**, because silently replacing it
+  would move the callee into a different trace than its caller asked for.
+
+  This is propagation, not tracing. Nothing records a span, measures a
+  duration or exports anything, and the `otel` feature is still metrics-only.
+  What it buys is that whatever *does* record spans can stitch the hops
+  together — across languages, since `traceparent` is a wire format and the
+  interoperability kit already runs Python, JavaScript, Go and Java agents.
+
+  Proven over a real socket rather than asserted: `tests/trace_propagation_e2e.rs`
+  drives two chained agents and checks that the trace id holds across both
+  hops while each hop advances the span — the two ways a propagator can be
+  wrong while looking right.
+
+- **An executor can see who called it.** `RequestContext` gains
+  `call_context`, and with it five accessors: `caller_identity()`,
+  `tenant()`, `http_header(name)`, `activated_extensions()` and
+  `request_id()`.
+
+  The handler already built a `CallContext` carrying all of this and handed
+  it to the interceptor chain — then dropped it. `build_request_context` took
+  a message, two ids and a metadata blob, so the seam was severed by
+  construction. The consequence was not cosmetic: an executor could not
+  enforce "only this tenant may invoke this skill", which rules out a large
+  class of real deployments, and the only channel left for anything
+  caller-specific was `Message.metadata` — which the *caller* writes, so it
+  is not a fact about the caller at all.
+
+  Every accessor returns `None` rather than a default when nobody said.
+  An executor that refuses anonymous work needs `None` to mean "nobody
+  established an identity", never a value that reads like an answer.
+  `call_context` is `None` when an executor is driven directly, as a unit
+  test or a conformance harness does, rather than being given a synthetic
+  context claiming a call that never happened.
+
+  `CallContext` also gains `tenant()` and `with_tenant()` — private field,
+  so additive — populated from the tenant scope the handler has already
+  entered.
+
+- **Constructors for `Message`, `Task` and `MessageSendParams`, and a
+  `# Construction` pointer on the three `agent_card` structs.** Measured on
+  this tree, the workspace holds 105 `Message` struct literals, 75
+  `MessageSendParams` literals and 82 `AgentCard` literals. `Message` had two
+  inherent methods and no constructor; `Task` and `MessageSendParams` had no
+  `impl` block at all, so sending one line of text cost a ten-line `Message`
+  literal — five of its eight fields written as `None` — inside a four-line
+  `MessageSendParams` literal, and reading the answer back out cost a
+  hand-written `artifacts → first → text` walk that six files under
+  `examples/` had each written separately.
+
+  `Message::new`, `user`, `agent`, `user_text`, `agent_text`, and `with_*` for
+  all five optional fields. `MessageSendParams::new` plus `with_tenant`,
+  `with_configuration`, `with_metadata`. `Task::text` and `Task::texts`.
+  Nothing is breaking: every field stays public and every literal still
+  compiles.
+
+  The id stays a parameter rather than something the constructor invents.
+  `a2a-protocol-types` depends on `serde` and `serde_json` and nothing else,
+  so it has no random source, and a clock-derived id is not unique under
+  concurrency — the same reason
+  [`Artifact::new`](https://docs.rs/a2a-protocol-types) already takes one.
+
+  `Task::text` skips artifacts that carry no text rather than stopping at the
+  first, so it answers where the hand-written `artifacts.first()` chain
+  returns `None`. That divergence is deliberate, documented on the method, and
+  asserted in its test; it is the rule `Message::text` already applies across
+  parts.
+
+  The `# Construction` sections exist because discoverability, not absence,
+  was the `AgentCard` problem: the twelve `with_*` builders have shipped since
+  0.10 in `agent_card/builders.rs`, one file over from the field definitions,
+  and three examples written in a single session on 2026-09-19 each reached
+  for a literal instead — 38, 43 and 45 lines, verified by counting the three
+  functions.
 
 - **Client-supplied idempotency keys on `message/send`, as a declared
   extension.** A send whose connection drops after the request bytes are on the
@@ -269,6 +650,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Seven example files and five book pages now use the new constructors.**
+  Net 113 lines removed from `examples/` and 108 from `book/`: `rig-agent`'s 43-line
+  `AgentCard` literal, `mcp-bridge`'s 45-line one and `mcp-agent`'s 38-line
+  one become chained builders; `hello-agent`'s 16-line send becomes
+  `MessageSendParams::new(Message::user("test-msg", parts))` and its
+  five-line artifact walk becomes `task.text()`. The examples are what an
+  adopter copies, so leaving them on the literal would have shipped the
+  ergonomics and taught around them.
+
+  Three cards stopped setting `AgentCard.url`. That field is
+  `#[serde(skip_serializing)]` — a served card never carries it, so no client
+  could ever read what those agents were setting — and its own doc says to
+  publish an address through `supported_interfaces`, which all three already
+  did. `rig-agent`'s test asserted on it; it now asserts on
+  `supported_interfaces[0].url`, which is the address a client actually sees.
+
+  `examples/mcp-agent` and `examples/mcp-bridge` each carried a `uuid_like()`
+  helper — a nanosecond timestamp, not unique under concurrency and
+  sequential enough to guess — written to avoid a `uuid` dependency the
+  workspace already carries and seven other examples already use. Both now
+  take `uuid` and call `Uuid::new_v4()`.
+
+  One book snippet did not compile. `book/src/deployment/testing.md` set a
+  `context_id` field on `MessageSendParams`, which has no such field — the
+  snippet was inside a `rust,ignore` fence, so nothing ever built it. It is
+  now three lines that would.
+
 - **`examples/rig-agent` defaults to `qwen3:1.7b`, not `qwen3.5:0.8b`.**
   Measured 2026-09-19 against llama.cpp `b23701f` with `--jinja` and the
   example's own catalogue: Qwen3.5-0.8B-Q4_0 answers in prose, and forced with
@@ -286,6 +694,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   properties, and only the second is one the protocol can carry.
 
 ### Fixed
+
+- **The idempotency extension's card description carried 30 literal
+  spaces.** Someone reflowed a multi-line string literal without stripping
+  the indentation, so the description a client reads off the card said "a
+  retried&nbsp;&nbsp;…&nbsp;&nbsp;send returns". Noticed while adding the
+  failure extension beside it.
+
+- **Three documents said the SDK had no `traceparent`, and now say what it
+  does have.** `otel/pipeline.rs`'s "no part of this workspace reads or
+  writes W3C `traceparent`", `book/src/deployment/observability.md`'s "There
+  are no traces", and the `docs/rust-sdk-assessment.md` comparison row were
+  all accurate on 2026-09-19 and were made false by the change above. Each
+  now separates the two claims that were being run together: no spans are
+  exported, which is still true, and trace context is not carried, which is
+  no longer. The assessment row has now been corrected twice in opposite
+  directions, which is recorded there rather than quietly overwritten.
+
+- **The spawned executor ran under the empty tenant.** `spawn_executor` used
+  a bare `tokio::spawn`, and `TenantContext` is a `tokio::task_local`, which
+  a spawned task does not inherit. So every store call an executor made ran
+  with `TenantContext::current() == ""` — against a tenant-aware store, that
+  partitions the executor's writes away from the request that caused them.
+  The handler's own doc comment recorded the mechanism and the measurement
+  ("The same probe's executor saw `\"\"`") without the spawn being fixed.
+
+  Two other spawns in the same crate already did the right thing — the
+  background event processor and the sync collector both capture the tenant
+  and re-enter `TenantContext::scope`. This one now does too.
+
+  The regression test is `the_spawned_executor_runs_inside_the_tenant_scope`
+  in `tests/request_context_tests.rs`, and it was checked against the defect
+  rather than merely written: with the scope removed it fails naming the
+  empty tenant, with it in place it passes.
+
+- **A test's panic hook was silencing every other test in its binary.** Three
+  tests — two in `a2a-protocol-server`'s `agent_card/hot_reload.rs`, one in
+  `a2a-protocol-client`'s `auth.rs` — wrapped an expected panic in
+  `take_hook()` / `set_hook(Box::new(|_| {}))` / `set_hook(hook)`. `set_hook`
+  is process-global and libtest runs a binary's tests as parallel threads in
+  one process, so each of those windows silenced *every* thread for its
+  duration: a genuinely failing test that raced one was listed under
+  `failures:` with no `---- stdout ----` section and no message, and the build
+  went red with its reason absent from the log, non-deterministically.
+
+  It had already cost something measurable. Three gates in
+  `scripts/prove_gates_fail.sh` —
+  `cargo test -p a2a-protocol-server --features {sqlite,postgres,auth-jwt}` —
+  reported `INCONCLUSIVE` rather than `PROVEN`, because the injected defect
+  failed correctly and its panic message never reached the output the prover
+  greps.
+
+  The fix is a deletion at all three sites. `catch_unwind` returns the payload
+  each test asserts on, and libtest already captures panic output per test and
+  discards it when the test passes, so the swap was buying a suppression it
+  already had. Measured on the pattern in isolation: an unrelated failing test
+  in the same binary lost its marker in 3 of 3 parallel runs with the swap and
+  kept it in 3 of 3 without, and the expected panic's own text appeared in 0 of
+  3 runs either way.
 
 - **`examples/rig-agent`'s executor was undocumented.** Its doc comment had
   run together with the one below it, so both attached to `SLOW_PREFIX` and
@@ -317,6 +783,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   should have worked.
 
 ### Internal
+
+- **`scripts/check_panic_hooks.sh` forbids process-global panic hooks.** The
+  regression test for the defect above, and for its class: a grep gate is the
+  only mechanical check available, because "some other test lost its message"
+  is not observable from inside the test that lost it. Registered in `ci.yml`'s
+  Format job, paired with an injection in `scripts/prove_gates_fail.sh`, and
+  listed in the gate-reachability input table. Proven both ways before
+  shipping — exit 0 on the fixed tree, exit 1 naming all six lines on the tree
+  as it stood, and `prove_gates_fail.sh --only check_panic_hooks` reporting
+  PROVEN with the tree clean afterwards. The harness counts 66 gates now.
+
+  The three gates the hook had made INCONCLUSIVE —
+  `cargo test -p a2a-protocol-server --features {sqlite,postgres,auth-jwt}` —
+  were re-run afterwards and all three report PROVEN, "gate exited 101 citing
+  the injected defect". With a local PostgreSQL installed, three gates that
+  had been PRE-BROKEN for want of one prove as well, so the selection is
+  9 proven, 0 unproven.
 
 - `check_doc_versions.py` gates dependency snippets in prose against the
   current release line. `a2a-protocol-sdk = "0.7"` means `^0.7`, which resolves

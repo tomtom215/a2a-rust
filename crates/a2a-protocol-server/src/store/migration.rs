@@ -115,6 +115,17 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);",
         // fails with "no such table".
         sql: super::sqlite_store::idempotency::CREATE_TABLE_SQL,
     },
+    Migration {
+        version: 7,
+        description: "Add task_events: the per-task log of what the agent emitted",
+        // Shared with `from_pool`'s inline DDL for the reason migrations 5
+        // and 6 both record. This one matters more than either: a store
+        // without the table reports `supports_event_log() == true` — the flag
+        // is a property of the type, not of the schema — and then fails every
+        // append, so the failure would be a silently empty history rather
+        // than a loud error at startup.
+        sql: super::sqlite_store::event_log::CREATE_TABLE_SQL,
+    },
 ];
 
 /// Runs schema migrations against a `SQLite` database.

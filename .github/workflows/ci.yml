@@ -69,6 +69,17 @@ jobs:
       - name: File lengths (500-line ratchet)
         run: ./scripts/check_file_lengths.sh
 
+      # Three tests in two crates swapped in a no-op panic hook to silence an
+      # expected panic. `set_hook` is process-global and libtest runs tests as
+      # parallel threads in one process, so each one silenced every other test
+      # in its binary for the length of the window: a genuinely failing test
+      # that raced it was reported with no message at all. That cost three
+      # gates in prove_gates_fail.sh their verdicts — the injected defect
+      # failed correctly and its panic message never reached the output the
+      # prover greps — and could have cost any red build its reason.
+      - name: No process-global panic hooks
+        run: ./scripts/check_panic_hooks.sh
+
       # The per-PR mutation gate scopes its diff with a git pathspec, and on
       # 2026-08-12 that pathspec was reaching 100 of 141 library sources. A git
       # pathspec without `:(glob)` is matched by fnmatch without FNM_PATHNAME,

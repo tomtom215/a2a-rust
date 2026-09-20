@@ -12,6 +12,10 @@ rust-version.workspace = true
 license.workspace      = true
 
 [dependencies]
+# Message ids. This example hand-rolled a nanosecond timestamp to avoid
+# this dependency; the workspace already carries it and seven other
+# examples use it, and a timestamp is not unique under concurrency.
+uuid = { workspace = true }
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
 a2a-protocol-client = { path = "../../crates/a2a-protocol-client" }
 a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }

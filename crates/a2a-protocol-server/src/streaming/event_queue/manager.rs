@@ -16,7 +16,8 @@ use a2a_protocol_types::events::StreamResponse;
 
 use super::{
     DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY, DEFAULT_WRITE_TIMEOUT, InMemoryQueueReader,
-    InMemoryQueueWriter, new_in_memory_queue_with_options, new_in_memory_queue_with_persistence,
+    InMemoryQueueWriter, StreamEvent, new_in_memory_queue_with_options,
+    new_in_memory_queue_with_persistence,
 };
 use crate::metrics::Metrics;
 
@@ -41,7 +42,7 @@ pub enum QueueLease {
     Created {
         writer: Arc<InMemoryQueueWriter>,
         reader: InMemoryQueueReader,
-        persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<StreamResponse>>>,
+        persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<StreamEvent>>>,
     },
     /// A queue already existed for this task. The send path treats this as a
     /// concurrent/leaked-executor condition and rejects, so no writer/reader is
@@ -226,7 +227,7 @@ impl EventQueueManager {
     ) -> (
         Arc<InMemoryQueueWriter>,
         Option<InMemoryQueueReader>,
-        Option<tokio::sync::mpsc::Receiver<A2aResult<StreamResponse>>>,
+        Option<tokio::sync::mpsc::Receiver<A2aResult<StreamEvent>>>,
     ) {
         let mut map = self.writers.write().await;
         #[allow(clippy::option_if_let_else)]
@@ -370,7 +371,7 @@ impl EventQueueManager {
     pub(crate) async fn raw_subscribe(
         &self,
         task_id: &TaskId,
-    ) -> Option<tokio::sync::broadcast::Receiver<A2aResult<StreamResponse>>> {
+    ) -> Option<tokio::sync::broadcast::Receiver<A2aResult<StreamEvent>>> {
         let map = self.writers.read().await;
         map.get(task_id).map(|writer| writer.raw_subscribe())
     }
@@ -836,7 +837,7 @@ mod tests {
             .await
             .expect("reader is open")
             .expect("snapshot is delivered as Ok");
-        match first {
+        match first.event {
             StreamResponse::StatusUpdate(ev) => {
                 assert_eq!(
                     ev.status.state,

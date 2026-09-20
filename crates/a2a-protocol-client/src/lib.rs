@@ -125,6 +125,7 @@ pub mod streaming;
 #[cfg(feature = "tls-rustls")]
 pub mod tls;
 pub mod token_provider;
+pub mod trace_propagation;
 pub mod transport;
 
 // ── Flat re-exports ───────────────────────────────────────────────────────────
@@ -141,6 +142,7 @@ pub use streaming::EventStream;
 pub use token_provider::{
     BearerAuthInterceptor, OAuth2ClientCredentials, StaticTokenProvider, TokenProvider,
 };
+pub use trace_propagation::{CurrentTrace, TracePropagationInterceptor};
 #[cfg(feature = "grpc")]
 pub use transport::GrpcTransport;
 pub use transport::{JsonRpcTransport, RestTransport, Transport};

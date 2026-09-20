@@ -37,7 +37,7 @@ Add `purge_expired` to all four persistent stores, and make it **opt-in**:
   `terminal_states()` reports, which is asserted against
   `TaskState::is_terminal` for every protocol variant — older than
   `terminal_max_age`, in batches, and returns a `PurgeReport` (`tasks_deleted`,
-  `journal_orphans_deleted`, `batches`, `complete`).
+  `orphan_rows_deleted`, `batches`, `complete`).
 - **The default is that nothing is deleted.** A store that is never asked to
   purge behaves exactly as it did in 0.9.0.
 - **No timer runs inside the store.** Retention is driven by whatever already

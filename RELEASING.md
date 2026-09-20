@@ -209,7 +209,7 @@ above, and `release.yml` does not touch it. It lives outside the workspace with
 its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
 run from `bindings/a2a-protocol-slimrpc/`.
 
-It is versioned independently — currently `0.4.0` against the SDK's `0.12.1`. Numbering it
+It is versioned independently — currently `0.5.0` against the SDK's `0.13.0`. Numbering it
 to match would claim API stability it has not earned and force a bump on every
 SDK release even when nothing in it changed.
 
@@ -219,7 +219,7 @@ easy to get wrong:
 > `SlimRpcServer::builder` takes `Arc<RequestHandler>` and `agent_interface()`
 > returns an `AgentInterface`, so `a2a-protocol-server` and
 > `a2a-protocol-types` are **public dependencies**. Its requirement on them is
-> therefore a tight `0.12`, not a range — allow two and cargo links both, and
+> therefore a tight `0.13`, not a range — allow two and cargo links both, and
 > callers get `expected RequestHandler, found RequestHandler`.
 
 So **every SDK minor release requires a follow-up release of the binding**:
@@ -240,13 +240,19 @@ SDK, which is the failure mode this note exists to prevent.
 > # {"errors":[{"detail":"crate `a2a-protocol-slimrpc` does not exist"}]}
 > ```
 >
-> Steps 1–3 have been kept up: the four SDK crates are published at `0.12.1`,
-> the binding's requirements read `0.12` — which `0.12.1` satisfies, so a patch
-> moves neither them nor the binding's own version — and that version has moved
-> `0.1.0` → `0.2.0` → `0.3.0` → `0.4.0` alongside them. Only the publish has
-> never happened, through four SDK releases — the binding's
-> `a2a-protocol-server` requirement has tracked `0.9` → `0.10` → `0.11` →
-> `0.12`, which is where that count comes from.
+> Steps 1–3 have been kept up: the four SDK crates are published at `0.12.1`
+> with `0.13.0` prepared, the binding's requirements read `0.13`, and its own
+> version has moved `0.1.0` → `0.2.0` → `0.3.0` → `0.4.0` → `0.5.0` alongside
+> them. Only the publish has never happened, through five SDK releases — the
+> binding's `a2a-protocol-server` requirement has tracked `0.9` → `0.10` →
+> `0.11` → `0.12` → `0.13`, which is where that count comes from.
+>
+> Note that on a *minor* the binding's requirement cannot lag behind: it
+> depends on the workspace by `path` as well as by version, so a requirement
+> of `0.12` stops resolving the moment the crates read `0.13.0`. Step 2 is
+> therefore done in the release-prep commit, before publishing, and only
+> step 4 waits for the SDK crates to reach crates.io. A *patch* moves
+> neither, since `version = "0.12"` means `^0.12`.
 >
 > Every number in this section was refreshed on 2026-09-12 against the
 > manifests, because they had rotted: the section said `0.3.0` against

@@ -33,6 +33,7 @@
 - [Building a Client](./client/builder.md)
 - [Sending Messages](./client/sending-messages.md)
 - [Idempotent Sends](./client/idempotency.md)
+- [Why a Task Failed](./client/failure-classes.md)
 - [Streaming Responses](./client/streaming.md)
 - [Task Management](./client/task-management.md)
 - [Error Handling](./client/error-handling.md)

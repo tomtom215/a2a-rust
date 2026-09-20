@@ -176,15 +176,17 @@ impl RetentionPolicy {
 pub struct PurgeReport {
     /// Task rows deleted.
     pub tasks_deleted: u64,
-    /// Artifact-journal rows this sweep had to reclaim itself.
+    /// Side-table rows this sweep had to reclaim itself: artifact-journal
+    /// rows and event-log rows whose task was deleted.
     ///
-    /// Normally **zero**, and that is the healthy reading: the journal has an
-    /// `ON DELETE CASCADE`, so on a pool with `foreign_keys=ON` — which
+    /// Normally **zero**, and that is the healthy reading: both tables have
+    /// an `ON DELETE CASCADE`, so on a pool with `foreign_keys=ON` — which
     /// `SqliteTaskStore::new` sets — the rows go with the task and the sweep
     /// finds nothing left to do. A non-zero count means rows had outlived
     /// their task, which happens when `from_pool` was handed a pool without
-    /// the pragma. Always zero on `PostgreSQL`, which has no journal table.
-    pub journal_orphans_deleted: u64,
+    /// the pragma. Always zero on `PostgreSQL`, where the constraint is
+    /// always enforced.
+    pub orphan_rows_deleted: u64,
     /// Batches executed.
     pub batches: u32,
     /// `false` when [`RetentionPolicy::max_batches`] stopped the sweep with

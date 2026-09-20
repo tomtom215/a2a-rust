@@ -12,6 +12,7 @@
 //! same reason.
 
 use super::*;
+use std::time::Duration;
 
 /// A minimal `TaskStore` that only implements required methods.
 struct MinimalStore;

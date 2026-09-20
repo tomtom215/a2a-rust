@@ -12,7 +12,6 @@
 use std::sync::Arc;
 
 use a2a_protocol_types::error::A2aResult;
-use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::TaskId;
 
 use super::super::RequestHandler;
@@ -26,7 +25,7 @@ use crate::streaming::{InMemoryQueueReader, InMemoryQueueWriter, QueueLease};
 pub(super) type LeasedQueue = (
     Arc<InMemoryQueueWriter>,
     InMemoryQueueReader,
-    Option<tokio::sync::mpsc::Receiver<A2aResult<StreamResponse>>>,
+    Option<tokio::sync::mpsc::Receiver<A2aResult<crate::streaming::StreamEvent>>>,
 );
 
 impl RequestHandler {
@@ -95,7 +94,20 @@ impl RequestHandler {
                 writer,
                 reader,
                 persistence_rx,
-            } => Ok((writer, reader, persistence_rx)),
+            } => {
+                // Resume the log's numbering before the executor can write.
+                // The queue is per-turn, but the log is per-task: a task
+                // parked at `input-required` and then continued gets a fresh
+                // writer, and since appends are idempotent *by position* a
+                // counter restarting at 1 would collide with the previous
+                // turn's positions and have every event of this turn silently
+                // dropped. Here, and not inside `write`, because this is the
+                // one moment no event can be in flight.
+                if self.task_store.supports_event_log() {
+                    writer.seed_seq(self.task_store.last_event_seq(task_id).await.unwrap_or(0));
+                }
+                Ok((writer, reader, persistence_rx))
+            }
             QueueLease::Existing => Err(ServerError::UnsupportedOperation(format!(
                 "task {task_id} is already being processed; wait for it to reach \
                      input-required or a terminal state before sending again"

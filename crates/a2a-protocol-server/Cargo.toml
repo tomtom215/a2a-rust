@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-server"
-version     = "0.12.1"
+version     = "0.13.0"
 description = "Agent2Agent (A2A) protocol v1.0 — server framework (hyper-backed)"
 readme      = "README.md"
 
@@ -53,6 +53,12 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls"]
 ## Enable OpenTelemetry integration for native OTLP export of traces and metrics.
 otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
+## A harness that grades an `AgentExecutor` against the protocol invariants
+## that hold for any agent — terminal states, legal transitions, cooperative
+## cancellation, parking. Intended as a dev-dependency: the TCK grades
+## servers, and this grades the thing an adopter actually writes. Pulls in no
+## extra dependencies.
+conformance = []
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["dep:axum"]
 ## Enable JWT bearer-token authentication (HS256/RS256/ES256, static or remote
@@ -61,7 +67,7 @@ axum = ["dep:axum"]
 auth-jwt = ["dep:ring", "dep:base64"]
 
 [dependencies]
-a2a-protocol-types      = { version = "0.12.1", path = "../a2a-protocol-types" }
+a2a-protocol-types      = { version = "0.13.0", path = "../a2a-protocol-types" }
 serde           = { workspace = true }
 # `#[mutants::skip]` for the three mutants no test can distinguish (ADR 0006,
 # "Equivalent mutants"). Attribute-only, zero transitive dependencies, MIT,
@@ -119,7 +125,7 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes = "1"
 serde_json = { workspace = true }
-a2a-protocol-types = { version = "0.12.1", path = "../a2a-protocol-types" }
+a2a-protocol-types = { version = "0.13.0", path = "../a2a-protocol-types" }
 criterion = { workspace = true }
 sqlx      = { workspace = true }
 axum      = { version = "0.8", features = ["json", "query", "tokio"] }

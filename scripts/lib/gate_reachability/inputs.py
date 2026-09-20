@@ -42,6 +42,7 @@ GATE_INPUTS: list[tuple[str, list[str]]] = [
                               ".book-ignore-baseline"]),
     (r"check_proto_copies\.sh", ["**/*.proto"]),
     (r"check_file_lengths\.sh", ["**/*.rs", "**/*.sh", "**/*.py"]),
+    (r"check_panic_hooks\.sh", ["**/*.rs"]),
     (r"check_mutation_scope\.sh", [".github/workflows/mutants.yml",
                                    "crates/*/src/**/*.rs"]),
     (r"gen_sitemap\.py", ["book/src/SUMMARY.md", "book/static/sitemap.xml",

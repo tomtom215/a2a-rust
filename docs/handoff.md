@@ -11,7 +11,7 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-19.
+Last updated 2026-09-19 (second session: the panic-hook fix and the type constructors).
 
 ## 0.12.1 — released 2026-09-17
 
@@ -92,12 +92,66 @@ the *content* merge.
 | `release/v0.12.1` | merged, still present | The 0.12.1 release prep. Merged as `e057c8e` via #132, and tagged. Safe to delete. |
 | `claude/a2a-rig-held` | `caa8774` | Storage. The unpublished `a2a-rig` crate, one commit on top of `caac0ec`. |
 | `claude/adk-rust-0.12-patch` | `6fbdd2f` | Storage. The outbound adk-rust patch as a file, one commit on top of `caac0ec`. |
+| `claude/relaxed-planck-c4hsn0` | open — see note | **Destined for `main`.** The 0.13.0 content branch *and* its release prep, open as #137. Trace-context propagation, `CallContext` reachable from `RequestContext`, the executor conformance harness, the typed failure taxonomy, and the event log with SQL stores plus SSE `id:` / `Last-Event-ID` resumption. |
 | `claude/wizardly-tesla-0f358t` | open — see note | **Destined for `main`.** Three examples: tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP) and `examples/mcp-bridge` (an A2A agent exposed *as* MCP). On top of `fa1a82b9`. No PR opened yet. |
 
 `release/v0.12.1` can be deleted. The two **storage** branches —
 `claude/a2a-rig-held` and `claude/adk-rust-0.12-patch` — are **not destined for
 `main`**. They exist so work survives the session that produced it; delete
 either once its contents have landed somewhere better.
+
+### `claude/relaxed-planck-c4hsn0` — 0.13.0, and two gate lessons
+
+No head SHA in the row above, for the reason the next section gives: this file
+lives on the branch it would record.
+
+Two things cost a CI cycle each and will cost the next one the same unless they
+are written down.
+
+**`check_file_lengths.sh` runs inside the `Format` job.** A commit took
+`crates/a2a-protocol-server/src/conformance.rs` to 501 lines — one over — and
+the PR went red on a check named `Format` with `cargo fmt --check` passing
+cleanly. The file was split into `conformance/{mod,report,run}.rs` rather than
+added to the exemption list, which is what `CONTRIBUTING.md` asks for and what
+the script's own message prefers. Before assuming a red `Format` is formatting,
+read further down the job: the step order is `cargo fmt --check`, then
+`check_proto_copies.sh`, then `check_file_lengths.sh`.
+
+**The `Mutants incremental (shard N)` job logs cannot be read through the
+GitHub API.** The Postgres service container's stdout is appended at the end of
+the job log and fills the whole window the API returns; an 803 KB fetch of one
+shard contained zero occurrences of "mutant", "MISSED" or any `##[group]`
+marker. Three attempts on three different shards all came back as nothing but
+`FATAL: role "root" does not exist` and checkpoint lines.
+
+What does work:
+
+* The `Mutation Testing (incremental)` aggregator job prints
+  `Aggregated surviving mutants: N`. Trust it only once all eight shards have
+  finished — while any shard is still running it sums over the artifacts
+  uploaded so far and reads low. It said 7 twice on partial runs and 2 on the
+  two complete ones.
+* Reproducing locally is the reliable route to the *identities*. `cargo-mutants`
+  27.1.0 and `cargo-nextest` (prebuilt, `https://get.nexte.st/latest/linux`, no
+  build needed) with a local PostgreSQL:
+
+  ```bash
+  A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres \
+  cargo mutants --in-diff pr-src.diff --timeout 300 --jobs 2 \
+    --test-tool=nextest --profile=mutants \
+    -- --all-features --run-ignored all \
+       -E 'not (binary(soak) or binary(soak_multi_replica))'
+  ```
+
+  where `pr-src.diff` is
+  `git diff -M origin/main...HEAD -- ':(glob)crates/*/src/**/*.rs'`.
+  `--shard K/8` reproduces one CI shard exactly; `--list` alone shows the
+  selection without running anything, which is how to find out *which* files a
+  shard holds before spending an hour on it.
+* Watch the disk. `--jobs 2` builds two scratch trees under `/tmp` at roughly
+  5 GB each, and a full disk kills the run rather than failing it. Deleting the
+  repo's own `target/` frees more than both and costs only a rebuild, because
+  `cargo-mutants` does not use it.
 
 ### `claude/wizardly-tesla-0f358t` — tool calling, and what the live run found
 
@@ -296,6 +350,16 @@ wrong encryption level) turned both `cargo-deny` jobs red without any change
 here causing it. Fixed for the four published crates in `eaf038c` — the
 workspace lockfile moves rustls 0.23.44 to 0.23.45, two lines, no manifest
 change — and that fix is now released in 0.12.1.
+
+**Before that: the binding is a blind spot for every workspace-wide check.**
+It is outside the root workspace because it takes `RequestHandler` as a public
+dependency, so `cargo check --workspace --all-targets --all-features`,
+workspace clippy and `cargo test --workspace` all pass while it does not
+compile — measured on 2026-09-20, when `EventQueueReader::read` changed shape
+and only `scripts/preflight.sh --full` (which cds into the binding) caught it.
+A breaking change to a public type in the server crate is not verified until
+`cd bindings/a2a-protocol-slimrpc && cargo clippy --all-targets -- -D warnings`
+has run.
 
 **Still not fixed for `bindings/a2a-protocol-slimrpc`, and it cannot be from
 here.** rustls 0.23.45 needs `aws-lc-rs ^1.18`; `mls-rs-crypto-awslc 0.23.0` —
@@ -685,26 +749,44 @@ Written from having actually used the SDK on 2026-09-19 to build
 `rig-agent`'s tool loop, `mcp-agent` and `mcp-bridge`, rather than from
 reading it.
 
-### The `RequestContext` blind spot is the single biggest constraint
+### The `RequestContext` blind spot — closed
 
-An executor cannot see caller identity, tenant, HTTP headers, or the
-activated extension set. `build_request_context`
-(`handler/messaging/create.rs`) takes no `CallContext`, and `tokio::spawn`
-drops `TenantContext`, so the executor observes tenant `""` — stated at
-`handler/mod.rs:157-160`.
+Recorded here as the single biggest constraint: an executor could not see
+caller identity, tenant, HTTP headers or the activated extension set, because
+`build_request_context` took no `CallContext` and `tokio::spawn` dropped
+`TenantContext`. Both halves are fixed.
 
-This was hit directly building `mcp-bridge`: the only channel for getting
-the caller's chosen skill to the agent was `Message.metadata`, because there
-is no supported alternative. The consequence in general is that **an
-executor cannot enforce "only this tenant may invoke this skill"**, which
-rules out a large class of real deployments. Every workaround fails —
-`ServerInterceptor::before` runs before the task id exists, so there is not
-even a key to stash something under.
+`RequestContext` now carries `call_context`, with `caller_identity()`,
+`tenant()`, `http_header()`, `activated_extensions()` and `request_id()` on
+top of it. The spawn re-enters `TenantContext::scope`, matching what the
+background event processor and the sync collector already did — so the
+task-local is correct inside an executor too, though `ctx.tenant()` is the
+field to reach for, since it cannot silently read empty.
 
-Of everything in this file, plumbing `CallContext` into `RequestContext`
-would most expand what people can build on top.
+**Two things worth keeping from doing it.** The tenant drop was documented at
+`handler/mod.rs:157-160` with its measurement ("the executor saw `\"\"`") and
+was still not fixed, which is what a note without a test looks like a month
+later; the regression test now fails without the scope and passes with it.
+And the break is one line, measured: `cargo semver-checks` reports 196
+checks, 195 passing, and only `struct_marked_non_exhaustive` failing. Adding
+the field was free because the `#[non_exhaustive]` subsumes it — which is the
+argument for marking it now rather than at the next field.
 
-### Five things every example hand-writes
+The `mcp-bridge` workaround this section named — passing the caller's chosen
+skill through `Message.metadata` — is still what that example does. It is
+now a choice rather than the only option: a bridge could send the skill as a
+header and read it with `ctx.http_header`. Not changed, because the metadata
+hint is what the MCP side can actually populate.
+
+### Five things every example hand-writes — three of the five are gone
+
+**Superseded in part.** The `AgentCard` literal, the `MessageSendParams`
+construction and the artifact text extraction are all one call now; the list
+below is kept because the other two are still true and because the measured
+sizes are what justified fixing them. What changed, and what did not, is in
+*What the constructors changed* below.
+
+### The original list
 
 Each of these was written three times in one session:
 
@@ -741,10 +823,72 @@ a single inherent method between them. Adding those two, plus the
 `# Construction` pointer above, would delete roughly a hundred lines from
 every agent anyone writes and make the examples shorter rather than longer.
 
+### What the constructors changed
+
+Shipped 2026-09-19 in `feat(types): constructors for Message, Task and
+MessageSendParams`. Counted on the tree with
+`git ls-files '*.rs' | xargs grep`, filtering out signatures and definitions —
+the earlier figures in this file were contaminated by `fn ... -> Message {`
+lines and by protobuf `pb::Message {`, so they ran high:
+
+| literal | sites |
+|---|---|
+| `Message {` | 105 |
+| `AgentCard {` | 82 |
+| `Task {` | 82 |
+| `MessageSendParams {` | 75 |
+| `AgentSkill {` | 54 |
+
+`Message` has 8 fields, not nine as recorded above; a one-line-of-text message
+cost a ten-line literal, five of whose fields said `None`.
+
+Added: `Message::{new, user, agent, user_text, agent_text}` and `with_*` for
+all five optional fields; `MessageSendParams::{new, with_tenant,
+with_configuration, with_metadata}`; `Task::{text, texts}`; `# Construction`
+sections on `AgentCard`, `AgentSkill` and `AgentInterface`.
+
+Three things worth not rediscovering:
+
+* **The id stays a parameter.** `a2a-protocol-types` depends on `serde` and
+  `serde_json` and nothing else. Minting an id means either a new mandatory
+  dependency for a pure-data crate or a clock-derived id that collides under
+  concurrency. `Artifact::new` already made this call.
+* **`AgentCard::new` leaves `default_input_modes` and `default_output_modes`
+  empty**, where every hand-written literal set `["text/plain"]`. Converting a
+  literal without adding `.with_input_modes(..)` silently changes the served
+  card. This is the one trap in the conversion.
+* **`Task::text` skips artifacts with no text** rather than stopping at the
+  first, so it answers where `artifacts.first().and_then(Artifact::text)`
+  returns `None`. Deliberate, documented and asserted — it is the rule
+  `Message::text` already applies across parts.
+
+Adoption: seven files under `examples/` (net −113 lines) and five book pages
+(net −108). Three cards stopped setting `AgentCard.url`, which is
+`#[serde(skip_serializing)]` and therefore unreadable by any client;
+`rig-agent`'s test now asserts `supported_interfaces[0].url` instead. One book
+snippet, `book/src/deployment/testing.md`, was setting a `context_id` field
+`MessageSendParams` does not have — it sat in a `rust,ignore` fence, so
+nothing had ever compiled it.
+
+The two hand-rolled `uuid_like()` helpers went with them. Each was a
+nanosecond timestamp — not unique under concurrency, and sequential enough to
+guess — written to avoid a `uuid` dependency the workspace already carries and
+seven other examples already use. Both examples now take `uuid` and call
+`Uuid::new_v4()`.
+
+**Still hand-written, and still worth doing:** the ~25-line hyper accept loop,
+because `serve()` does not cover "JSON-RPC and REST on one socket". That is
+the last of the five with no answer.
+
 ### The event-log absence has a measured cost now
 
 State is a folded snapshot; `sqlite_store/journal.rs` is an artifact-parts
 side table, not an event log; there is no SSE `id:` or `Last-Event-ID`.
+
+*(Written before item 5 below. Both halves have since shipped: the log is
+durable on every store this crate ships, and SSE frames carry an `id:` that
+`Last-Event-ID` resumes from. The measured cost below is what motivated
+them.)*
 
 The measurement: in `mcp-bridge`'s demo the sample agent emits three progress
 steps 120 ms apart and the MCP caller sees **one**, because a poller can only
@@ -771,26 +915,78 @@ construction.
 Ordered by value per unit of work, from the seat of someone who consumes
 agents rather than maintains the protocol.
 
-1. **Trace context as a protocol concern.** Finding 6. Biggest gap, clearest
-   differentiator, and it uses hooks that already exist.
-2. **Plumb `CallContext` into `RequestContext`.** Unblocks auth-aware
-   executors, per-tenant policy, and every higher layer anyone would build.
-3. **The executor conformance harness (A4 above) — move it up.** Three
-   executors were written this session; all three got the happy path right
-   and none is tested against cancellation arriving mid-artifact, an
-   `input-required` never answered, or a client disconnecting mid-stream,
-   because writing those by hand is exactly the work people skip. This
-   project already believes in the tooling: `cargo mutants` is the same
-   instinct pointed at tests.
-4. **A typed failure taxonomy shipped as a declared extension**, with the
-   client's retry policy consuming it. Idempotency proved the extension
-   pattern works end to end.
-5. **Make the event log the record and state the fold.** The one
-   architectural change worth making if only one can be made. It kills
-   #130-class bugs by construction, gives exact resumption from an offset
-   instead of snapshot-and-hope, makes the hand-rolled `tool-trace` artifact
-   unnecessary, and is the substrate signed execution receipts need.
-   Everything in Part B above gets easier downstream of it.
+1. ~~**Trace context as a protocol concern.**~~ Done — see *Trace context
+   is carried now* below. It did use the hooks that already existed:
+   `CallContext::http_headers` inbound, `ClientRequest::extra_headers`
+   outbound, and nothing else needed inventing.
+2. ~~**Plumb `CallContext` into `RequestContext`.**~~ Done — see *The
+   `RequestContext` blind spot — closed* above.
+3. ~~**The executor conformance harness (A4 above).**~~ Done —
+   `a2a_protocol_server::conformance` behind the `conformance` feature,
+   eight checks, fourteen tests of its own.
+
+   **What it does not cover, stated so the next person does not assume it
+   does.** It runs each check once, so it finds no races. It drives the
+   executor directly, so "a client disconnecting mid-stream" — one of the
+   three cases this item named — is still untested: that is a server-side
+   event the executor never observes, and testing it needs a real stream
+   rather than a queue. `input-required` never answered is likewise the
+   *handler's* behaviour, not the executor's; what the harness checks is the
+   half that is the executor's, that parking returns `Ok` rather than `Err`.
+   Cancellation arriving *mid-artifact* is approximated by a pre-cancelled
+   token, which catches an executor that never checks at all but not one
+   that checks only before its first emit.
+4. ~~**A typed failure taxonomy shipped as a declared extension.**~~ Done —
+   `a2a_protocol_types::failure`, `Task::failure_class()`,
+   `EventEmitter::fail`, advertised on the card, with a book page. **The
+   client's retry policy does not consume it and should not**: `retry.rs`
+   retries *transport* calls, and a task that ran and failed is not a failed
+   call — the send succeeded. Consuming it belongs in whatever drives the
+   task, not in the client's RPC retry loop. That half of the original item
+   was wrong about where the seam is.
+5. **Make the event log the record and state the fold.** Half done, and the
+   half that is done is the substrate rather than the payoff.
+
+   **Shipped:** `TaskStore::{supports_event_log, append_event,
+   last_event_seq, read_events}`, with both fold paths — the background
+   processor and `sync_collector` — recording every event before folding it.
+   Positions are idempotent, and both paths seed `seq` from the store so a
+   continuation does not collide with its own earlier run.
+
+   Also shipped: every store this crate ships backs it —
+   `InMemoryTaskStore`, `SqliteTaskStore`, `PostgresTaskStore`,
+   `TenantAwareInMemoryTaskStore`, `TenantAwareSqliteTaskStore` and
+   `TenantAwarePostgresTaskStore`. Tables `task_events` and
+   `tenant_task_events`, created by both schema paths on each backend
+   (SQLite migration 7 and Postgres migration 5, plus each `from_pool`'s
+   inline DDL), with a test pinning each path — SQLite's two paths have
+   drifted twice and `migration.rs` records both incidents. The tenant
+   tables are keyed `(tenant_id, task_id, seq)`, because task ids are
+   caller-supplied and an unscoped log is a cross-tenant read of message
+   content.
+
+   Also shipped: `id:` on every logged SSE frame and `Last-Event-ID` on
+   resubscribe — the payoff, and the fix for the measured `mcp-bridge` case
+   where three progress events arrive as one. The position is assigned in
+   `InMemoryQueueWriter::write` and carried on both channels, so the `id:` a
+   subscriber reads and the `seq` the store writes are one number rather than
+   two counts that agree; `EventQueueReader::read` yields a `StreamEvent`
+   accordingly. Server-synthesized frames (the snapshot, the rebuilt terminal
+   frame) carry no position. Replay is bounded by
+   `HandlerLimits::subscribe_replay_limit`.
+
+   **Not shipped, in the order it is worth doing:**
+
+   * **Making state a fold over the log on read.** The user's choice for this
+     round was the log with the snapshot kept as the record, so this stays
+     deliberately undone. It is what would make #130-class bugs impossible
+     rather than merely detectable, and it is a migration for existing
+     deployments.
+
+   **One thing to check before building on it.** A *custom* store inherits
+   the refusing defaults, so a deployment using one has no log at all.
+   `supports_event_log()` is the gate; anything added downstream must ask
+   rather than assume.
 6. **Publish `tck/sut`.** The fastest route to people using the server crate
    is for it to become the thing they test *their* agent against. It is
    already built.
@@ -823,6 +1019,26 @@ Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
 4. ~~Stale install snippets.~~ Done — see "Prose versions are checked now"
    below. The figure recorded here first, six, was wrong: it counted only
    `crates/`, and the real number was 28.
+5. ~~Re-run `prove_gates_fail.sh` for the three `--features {sqlite,postgres,
+   auth-jwt}` gates.~~ Done — 9 proven, 0 unproven, including three that were
+   PRE-BROKEN only for want of a local PostgreSQL. Still unrun on this branch:
+   the other 57 gates, and the two remaining PRE-BROKEN ones (SLIMRPC SPIFFE,
+   and `cargo hack clippy` with `cargo-hack` absent).
+6. ~~The two hand-rolled `uuid_like()` helpers.~~ Done — both examples take
+   `uuid` now.
+7. **`cargo doc -p a2a-protocol-client --no-deps` fails, and CI cannot see
+   it.** Three intra-doc links in `builder/mod.rs` — `crate::WebSocketTransport`
+   at `:288`, `Self::build_grpc` at `:290` and `:344` — point at items behind
+   the `websocket` and `grpc` features, which are off in that crate's default
+   build. `ci.yml`'s `doc` job runs `cargo doc --workspace --no-deps`, where
+   feature unification turns both on (the client's own dev-dependencies pull
+   them in), so the workspace build is green and the per-crate one is not.
+   docs.rs builds with `all-features = true` and is therefore also unaffected,
+   which is why nobody has hit it. Pre-existing — the same text is at
+   `f806792`, before any of this session's work. Reproduce with
+   `RUSTDOCFLAGS="-D warnings" cargo doc -p a2a-protocol-client --no-deps`.
+   The fix is three links, but the gate that would keep it fixed is a
+   per-crate doc build, which is the more interesting half.
 
 ### `prove_gates_fail.sh` was stuck at gate 5 of 65 — found and fixed 2026-09-19
 
@@ -872,59 +1088,149 @@ Of the 34 injections, `benchmark_prose` was the only one targeting a
 regenerated artifact, so this was the whole class rather than the first of
 many.
 
-**Where the harness stands now**, run to completion in a detached worktree:
-`55 proven, 10 unproven, 0 not selected (of 65 gates)`. The 10 are not stale
-needles. Seven are **PRE-BROKEN** — already red on the clean tree, so the
-harness correctly claimed nothing — and all seven are an under-provisioned
-machine rather than a repository defect: five need a PostgreSQL server, one
-is the SLIMRPC SPIFFE suite, one is `cargo hack clippy` failing in 0 s
-because `cargo-hack` is absent. The remaining three are the next entry.
+**Where the harness stood on 2026-09-19**, run to completion in a detached
+worktree: `55 proven, 10 unproven, 0 not selected (of 65 gates)`. The 10 were
+not stale needles. Seven were **PRE-BROKEN** — already red on the clean tree,
+so the harness correctly claimed nothing — and all seven were an
+under-provisioned machine rather than a repository defect: five needed a
+PostgreSQL server, one is the SLIMRPC SPIFFE suite, one is `cargo hack clippy`
+failing in 0 s because `cargo-hack` is absent. The remaining three are the
+next entry.
 
-### Three gates report INCONCLUSIVE because a test-local panic hook is process-global
+**"Under-provisioned" was doing too much work there, and it cost the session
+a measurement.** A PostgreSQL server is one `apt-get install -y postgresql`
+away in this container. Installed, started, and with the `postgres` role given
+the password `ci.yml` already expects, three of those five gates go straight
+to PROVEN — `postgres_store_tests --ignored`, `multi_replica --ignored` and
+the `rate_limit::shared --ignored` counter suite, in 10 s, 7 s and 11 s. Do
+this before recording a gate as unprovable for want of a machine:
 
-Found 2026-09-19 while running the harness past step 5 for the first time.
-Pre-existing, unrelated to the needle, **not fixed**.
-
-`cargo test -p a2a-protocol-server --features {sqlite,postgres,auth-jwt}`
-each come back `INCONCLUSIVE — gate exited 101 but its output never mentions
-the injected defect`. The injected test does fail correctly:
-`gate_probe_sqlite::gate_probe_must_fail` is in the failure list. Its panic
-*message* is missing, so cargo prints an empty `failures:` block with no
-`---- stdout ----` section and the prover's grep finds nothing to confirm.
-
-The cause is not in the prover. Two tests in
-`crates/a2a-protocol-server/src/agent_card/hot_reload.rs` silence panic
-output around an expected panic:
-
-```rust
-let hook = std::panic::take_hook();
-std::panic::set_hook(Box::new(|_| {}));
-...
-std::panic::set_hook(hook);
+```sh
+apt-get install -y postgresql
+PGV=$(ls /usr/lib/postgresql/ | head -1)
+mkdir -p /var/run/postgresql && chown postgres:postgres /var/run/postgresql
+su postgres -c "/usr/lib/postgresql/$PGV/bin/pg_ctl \
+    -D /var/lib/postgresql/$PGV/main \
+    -o '-c config_file=/etc/postgresql/$PGV/main/postgresql.conf \
+        -c listen_addresses=localhost -p 5432' -l /tmp/pg.log start"
+su postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD 'postgres';\""
 ```
 
-`set_hook` is process-global, libtest runs tests as parallel threads in one
-process, and nothing serialises these two. Any test that panics inside that
-window loses its message. Measured, not inferred — an injected panicking test
-in the same binary:
+`prove_gates_fail.sh` reads `A2A_TEST_POSTGRES_URL` out of `ci.yml` itself, so
+nothing else needs setting.
+
+### The process-global panic hook is fixed — and the recommended fix was wrong
+
+Recorded here on 2026-09-19 as found-but-not-fixed, with a proposal. Both the
+count and the proposal turned out to be wrong, so this section is rewritten
+rather than ticked off.
+
+**There were three sites, not two, in two crates rather than one.** The two in
+`crates/a2a-protocol-server/src/agent_card/hot_reload.rs` were recorded. The
+third, `crates/a2a-protocol-client/src/auth.rs:277`, was not, so the client's
+own test binary had the same hole and nobody knew. `grep -rn 'set_hook'
+--include='*.rs'` over the whole tree is what found it; the original pass had
+looked only where the symptom appeared.
+
+**The proposal — move those tests into their own integration-test binary —
+would not have worked, and rested on a false premise.** Both hot-reload tests
+reach `handler.card` and the client test reaches `store.inner`, all private,
+so an integration test in `tests/` cannot see them without making internals
+public. That trades a real encapsulation boundary for a cosmetic one. And the
+premise, that the hook swap "keeps the output clean", is false: libtest
+captures panic output per test and discards it when the test passes, so an
+expected panic in a passing test prints nothing whether the swap is there or
+not.
+
+**What shipped is the deletion**, at all three sites, plus
+`scripts/check_panic_hooks.sh` to keep them deleted. Measured rather than
+argued, on the pattern in isolation — an unrelated failing test in the same
+binary:
 
 ```text
-SERIAL   (--test-threads=1):  marker present, 1/1 runs
-PARALLEL (default):           marker present, 2/3 runs — lost in run 1
+with the hook swap:     marker LOST in 3 of 3 parallel runs
+without the hook swap:  marker present in 3 of 3
+expected panic's text:  absent in 3 of 3 either way
 ```
 
-**Severity is higher than the three INCONCLUSIVE suggest**, because those are
-only the symptom that happened to be looked at. Any genuinely failing test in
-this crate can lose its panic message when it races those two, giving a red
-CI build whose reason is absent from the log, non-deterministically.
+So the swap suppressed nothing libtest was not already suppressing, and cost
+every other test in the binary its failure message to do it.
 
-**The fix**, left for a change of its own: the silencing is cosmetic —
-`catch_unwind` captures the payload both tests actually assert on, and the
-hook only controls what gets printed. Either drop the hook swap and accept
-one backtrace in passing output, or move those two tests into their own
-integration-test binary so the global hook can only reach them. The second is
-preferable: it keeps the output clean and bounds the blast radius to a
-process containing nothing else.
+The gate is a grep, deliberately: "some other test lost its message" is not
+observable from inside the test that lost it, so there is no runtime assertion
+to write. It strips line comments before matching, so the explanatory comments
+now at the three sites are not findings. Registered in `ci.yml`'s Format job,
+paired with an injection in `scripts/prove_gates_fail.sh`, and listed in the
+gate-reachability input table. Proven three ways before shipping: exit 0 on
+the fixed tree; exit 1 naming all six lines on the tree as it stood; and
+`prove_gates_fail.sh --only check_panic_hooks` reports **PROVEN**, "gate
+exited 1 citing the injected defect", with the tree clean afterwards. The
+harness now counts 66 gates rather than 65.
+
+**Re-measured: the three gates report PROVEN.** This was recorded here as the
+one inference in the section and is now a measurement.
+`prove_gates_fail.sh --only 'test -p a2a-protocol-server --features'` on a
+clean tree selects nine gates and reports **9 proven, 0 unproven**, each
+"gate exited 101 citing the injected defect", tree clean afterwards:
+
+| gate | |
+|---|---|
+| `--features sqlite` | PROVEN, 26 s — was INCONCLUSIVE |
+| `--features postgres` | PROVEN, 23 s — was INCONCLUSIVE |
+| `--features auth-jwt` | PROVEN, 21 s — was INCONCLUSIVE |
+| `--features tls-rustls` | PROVEN, 33 s |
+| `--features axum` | PROVEN, 22 s |
+| `--features auth-jwt,tls-rustls` | PROVEN, 24 s |
+| `postgres_store_tests --ignored` | PROVEN, 10 s — was PRE-BROKEN |
+| `multi_replica --ignored` | PROVEN, 7 s — was PRE-BROKEN |
+| `rate_limit::shared --ignored` | PROVEN, 11 s — was PRE-BROKEN |
+
+So the panic hook was the whole of the INCONCLUSIVE verdict, and a local
+PostgreSQL was the whole of those three PRE-BROKEN ones.
+
+
+### Trace context is carried now
+
+Finding 6 above — "there is no tracing at all, and for *this* protocol that
+is the biggest gap" — is half answered, and the half matters because the two
+claims were being run together everywhere.
+
+**What shipped: propagation.** `a2a_protocol_types::trace_context` holds the
+W3C wire format; the server parses an inbound `traceparent`, advances the
+span and exposes `RequestContext::trace_context()`; the client gains
+`TracePropagationInterceptor` plus a `CurrentTrace` task-local. A delegation
+chain now shares one trace id, and because `traceparent` is a wire format
+rather than a Rust type, it shares it with the Python, JavaScript, Go and
+Java agents the ITK already runs.
+
+**What did not: span export.** The `otel` feature is still metrics-only, with
+no `TracerProvider`. Nothing records a duration or a parent/child edge. The
+cross-language *trace conformance result* this file named as the prize is
+therefore still unbuilt — but its precondition now exists, which it did not
+before.
+
+**Three design calls, each of which could have gone the other way.** The
+server propagates and never invents, so `None` is evidence about the caller
+rather than a hole in the plumbing — the alternative, minting a root
+server-side, makes every request traced and makes `Option` meaningless. A
+malformed `traceparent` is dropped rather than repaired. An explicit header
+on a request beats the ambient scope.
+
+**The `CurrentTrace` task-local lives in the client crate, not the server**,
+because `a2a-protocol-server` does not depend on `a2a-protocol-client` and
+should not start to. The consequence is that an executor opts in explicitly
+with one `CurrentTrace::scope` wrap rather than propagation being automatic.
+That is the honest trade and it is documented on the type; anyone tempted to
+make it implicit should check that dependency direction first.
+
+**Three documents had to be corrected in the same change**, all of which had
+been corrected *to* their previous wording on 2026-09-19:
+`otel/pipeline.rs`, `book/src/deployment/observability.md` and the
+`docs/rust-sdk-assessment.md` comparison row. Each said some version of "no
+`traceparent` anywhere in the workspace". The lesson worth keeping is that
+"no spans are exported" and "trace context is not carried" are different
+claims, and writing them as one sentence is what made all three go stale at
+once.
 
 ### Deferred by the 2026-09-19 observability review
 
@@ -952,11 +1258,9 @@ of these renames something a user's dashboards already select on:
   can win as the specification requires — `Option<&str>`, or drop the
   parameter and let `EnvResourceDetector` supply it.
 
-**Non-breaking, small, and independently useful:**
-
-* A `# Construction` line on the `AgentCard` struct doc
-  (`agent_card/mod.rs:182-190`) pointing at `AgentCard::new` and the twelve
-  `with_*` methods. Three examples written the same day all missed them.
-* A `Message` constructor — `impl Message` has `text` and `texts` and no way
-  to build one.
-* `Task::text()` — `Task` has no `impl` block at all in the types crate.
+**Non-breaking, small, and independently useful — all three shipped.** The
+`# Construction` sections are on `AgentCard`, `AgentSkill` and
+`AgentInterface`; `Message` has `new`, `user`, `agent`, `user_text`,
+`agent_text` and `with_*` for all five optional fields; `Task` has `text` and
+`texts`. `MessageSendParams` turned out to have no `impl` block either and got
+`new` plus three `with_*`. See the section below.

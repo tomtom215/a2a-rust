@@ -20,7 +20,6 @@ mod state_machine;
 use std::sync::Arc;
 
 use a2a_protocol_types::error::A2aResult;
-use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::{TaskId, TaskState, TaskStatus};
 use tokio::sync::mpsc;
 
@@ -42,7 +41,7 @@ impl RequestHandler {
         &self,
         task_id: TaskId,
         executor_handle: tokio::task::JoinHandle<()>,
-        persistence_rx: Option<mpsc::Receiver<A2aResult<StreamResponse>>>,
+        persistence_rx: Option<mpsc::Receiver<A2aResult<crate::streaming::StreamEvent>>>,
         initial_task: a2a_protocol_types::task::Task,
     ) {
         let task_store = Arc::clone(&self.task_store);
@@ -122,8 +121,9 @@ impl RequestHandler {
                         // persistence channel.
                         match persistence_reader.recv().await {
                             Some(event) => {
+                                record_event(&*task_store, &task_id, &event, &*metrics).await;
                                 process_event_bg(
-                                    event,
+                                    event.map(|e| e.event),
                                     &task_id,
                                     &mut last_task,
                                     BackgroundDeps {
@@ -144,8 +144,10 @@ impl RequestHandler {
                             event = persistence_reader.recv() => {
                                 match event {
                                     Some(event) => {
+                                        record_event(&*task_store, &task_id, &event, &*metrics)
+                                            .await;
                                         process_event_bg(
-                                            event,
+                                            event.map(|e| e.event),
                                             &task_id,
                                             &mut last_task,
                                             BackgroundDeps {
@@ -184,5 +186,57 @@ impl RequestHandler {
                 }
             },
         ));
+    }
+}
+
+/// Records one event in the task's log before it is folded into the snapshot.
+///
+/// Order matters: the log is written *first*, so what the agent emitted is
+/// durable before the state derived from it is. A snapshot written from an
+/// event that was never recorded is exactly the situation issue #130 left no
+/// way to detect.
+///
+/// A failed append is logged and counted, never fatal. The log is a record of
+/// the run, not a precondition for it: refusing to continue would turn a
+/// storage hiccup into a failed task, which is worse than a gap in the
+/// history — and the gap is visible, because the sequence skips a position.
+///
+/// The position is not chosen here. It was assigned by
+/// [`InMemoryQueueWriter::write`](crate::streaming::InMemoryQueueWriter) and
+/// travelled with the event, so the number written to the log is the same one
+/// the SSE subscriber saw as an `id:`. Counting again here would produce a
+/// second sequence that agreed until the first frame one side saw and the
+/// other did not.
+pub(in crate::handler::event_processing) async fn record_event(
+    task_store: &dyn crate::store::TaskStore,
+    task_id: &a2a_protocol_types::task::TaskId,
+    event: &a2a_protocol_types::error::A2aResult<crate::streaming::StreamEvent>,
+    metrics: &dyn crate::metrics::Metrics,
+) {
+    if !task_store.supports_event_log() {
+        return;
+    }
+    let Ok(event) = event else {
+        // An error in the stream is the queue reporting lag, not something
+        // the agent emitted, so there is nothing to record.
+        return;
+    };
+    let Some(seq) = event.seq else {
+        // Server-synthesized: the subscribe snapshot, or the terminal frame
+        // the reattach hook builds from stored state. Neither is something
+        // the agent emitted, so neither belongs in the record of what it did.
+        return;
+    };
+    if let Err(e) = task_store.append_event(task_id, seq, &event.event).await {
+        trace_warn!(
+            task_id = %task_id,
+            seq = seq,
+            error = %e,
+            "background processor: event log append failed; the history skips this position"
+        );
+        metrics.on_persistence_error(
+            crate::metrics::persistence_operation::EVENT_APPEND,
+            e.metric_label(),
+        );
     }
 }

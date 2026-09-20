@@ -235,7 +235,7 @@ async fn a_streaming_retry_replays_the_task_as_its_first_event() {
         .await
         .expect("the stream must open with an event")
         .expect("that event must not be an error");
-    match event {
+    match event.event {
         a2a_protocol_types::events::StreamResponse::Task(task) => {
             assert_eq!(task.id, first_id, "the snapshot must be the original task");
         }

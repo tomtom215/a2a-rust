@@ -71,17 +71,20 @@ async fn event_queue_write_and_read() {
     writer.write(event).await.unwrap();
     drop(writer); // Close the channel
 
-    let received: Option<a2a_protocol_types::error::A2aResult<StreamResponse>> =
-        reader.read().await;
+    let received: Option<
+        a2a_protocol_types::error::A2aResult<a2a_protocol_server::streaming::StreamEvent>,
+    > = reader.read().await;
     let received = received.expect("reader must yield an event before EOF");
     let received = received.unwrap();
     assert!(
-        matches!(received, StreamResponse::StatusUpdate(_)),
+        matches!(received.event, StreamResponse::StatusUpdate(_)),
         "expected StatusUpdate, got {received:?}"
     );
 
     // After writer is dropped, reader should get None
-    let eof: Option<a2a_protocol_types::error::A2aResult<StreamResponse>> = reader.read().await;
+    let eof: Option<
+        a2a_protocol_types::error::A2aResult<a2a_protocol_server::streaming::StreamEvent>,
+    > = reader.read().await;
     assert!(
         eof.is_none(),
         "reader must return None after writer is dropped"

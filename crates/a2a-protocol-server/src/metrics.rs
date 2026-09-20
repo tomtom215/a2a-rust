@@ -133,6 +133,8 @@ pub mod persistence_operation {
     pub const ARTIFACT_APPEND: &str = "artifact_append";
     /// Persisting a newly added artifact.
     pub const ARTIFACT_PUSH: &str = "artifact_push";
+    /// Appending one event to a task's event log.
+    pub const EVENT_APPEND: &str = "event_append";
     /// Persisting a whole-task snapshot event.
     pub const TASK_SNAPSHOT: &str = "task_snapshot";
     /// Persisting the failed state after an invalid transition was rejected.
