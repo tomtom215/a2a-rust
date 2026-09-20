@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **81 base E2E tests** across 8 test modules (94 with all optional features: WebSocket, gRPC, Axum, SQLite, signing, and OTel). All tests pass in ~6 seconds.
+The agent team runs **102 E2E tests** across 8 test modules — the figure a plain `cargo run -p agent-team` reports, because WebSocket, gRPC, Axum, SQLite, signing and OTel are the example's `default` features. `--no-default-features` compiles all six out and runs 87. All pass in ~6 seconds.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 
@@ -203,7 +203,7 @@ The agent team runs **81 base E2E tests** across 8 test modules (94 with all opt
 
 ## Dedicated Integration Tests (Outside Agent-Team)
 
-In addition to the 81 agent-team E2E tests (94 with optional features), the SDK includes dedicated integration test suites:
+In addition to the 102 agent-team E2E tests (87 with `--no-default-features`), the SDK includes dedicated integration test suites:
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|

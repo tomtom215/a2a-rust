@@ -3,10 +3,10 @@
 
 # Upgrading Between Minor Versions
 
-As of 2026-09-17, with 0.12.1 prepared. 0.12.1 is a patch and breaks nothing,
-so the newest minor boundary this page covers is still 0.12.0, whose breaking
-section is `## [0.12.0]` in
+As of 2026-09-20, with 0.13.0 prepared. The newest minor boundary this page
+covers is 0.12 → 0.13, whose breaking section is `## [0.13.0]` in
 [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
+(0.12.1 is a patch and breaks nothing, so it has no section of its own here.)
 
 This page is the migration guide the 191 KB changelog is not. One section per
 minor boundary that broke something, newest first; each names what breaks,
@@ -72,7 +72,7 @@ way:
   admonition at the top for the one that can cause an outage.
 
 From 0.12.0 onward, every breaking change is under `### Breaking Changes`,
-including ones also listed elsewhere; the 0.12.0 section does this.
+including ones also listed elsewhere; the 0.12.0 and 0.13.0 sections do this.
 
 ## How to check your own code
 
@@ -133,6 +133,144 @@ current source.
 Enums follow the same rule: `ClientError`, and the protocol enums that can
 grow with the specification, are `#[non_exhaustive]`, so a `match` on one
 already carries a wildcard arm and a new variant does not break it.
+
+## 0.12 → 0.13
+
+0.13.0 makes the event log the record and spends it on stream resumption.
+Three breaking items, all in `a2a-protocol-server`. The first is the one most
+code will meet; the third is a rename you fix at the read site.
+
+### `RequestContext` is `#[non_exhaustive]`, and gains `call_context`
+
+Building one with a struct literal from outside `a2a-protocol-server` stops
+compiling. `cargo semver-checks check-release -p a2a-protocol-server
+--baseline-version 0.12.1` runs 196 checks and reports exactly one failure,
+`struct_marked_non_exhaustive` on this type. The added field is not a second
+finding: once a struct is `#[non_exhaustive]` an added field is no longer
+separately observable.
+
+```text
+// 0.12 — a struct literal, from outside the crate
+let ctx = RequestContext {
+    message,
+    task_id,
+    context_id,
+    stored_task: None,
+    metadata: None,
+    cancellation_token: CancellationToken::new(),
+};
+```
+
+`new` takes the three fields with no sensible default; everything else has a
+`with_*`:
+
+```rust
+use a2a_protocol_server::RequestContext;
+use a2a_protocol_types::{Message, TaskId};
+
+let ctx = RequestContext::new(
+    Message::user_text("msg-1", "3 + 5"),
+    TaskId::new("task-1"),
+    "ctx-1".to_owned(),
+)
+.with_metadata(serde_json::json!({ "tier": "gold" }));
+# let _ = ctx;
+```
+
+`with_stored_task` and `with_call_context` are the other two. *Reading* a
+`RequestContext` is unaffected — the fields are still public, so an executor
+that only reads `ctx.message` needs no change. The attribute is deliberate
+rather than incidental: this type grows, and every previous growth would have
+broken a literal nobody writes.
+
+### `EventQueueReader::read` yields a `StreamEvent`, not a `StreamResponse`
+
+The event now travels the queue with the position it holds in the task's log:
+`StreamEvent { seq: Option<u64>, event: StreamResponse }`. `Reattached::Channel`
+and the persistence channel carry the same type. Only code that matched the
+result of `read()` directly is affected.
+
+```text
+// 0.12
+while let Some(Ok(StreamResponse::StatusUpdate(update))) = reader.read().await {
+    handle(update);
+}
+```
+
+Reach through `.event` for a value, or `.map(|e| e.event)` for the `Result`:
+
+```rust
+use a2a_protocol_server::{EventQueueReader, InMemoryQueueReader};
+use a2a_protocol_types::StreamResponse;
+
+async fn drain<R: EventQueueReader>(reader: &mut R) {
+    while let Some(Ok(ev)) = reader.read().await {
+        if let StreamResponse::StatusUpdate(update) = ev.event {
+            // `ev.seq` is the number the store wrote and the SSE `id:` carries.
+            println!("{:?} {:?}", ev.seq, update.status.state);
+        }
+    }
+}
+# let _ = drain::<InMemoryQueueReader>;
+```
+
+`StreamEvent` is itself `#[non_exhaustive]`, so destructure it with `..` or —
+as above — reach through `.seq` and `.event`.
+
+`seq` is `None` for frames the server synthesized rather than the agent
+emitting — the `SubscribeToTask` snapshot, and the terminal frame the reattach
+hook builds from stored state. Those are not in the log, so they carry no `id:`
+and a resuming client's offset is unaffected by having seen them. It is a type
+change rather than an accessor because the position has to be the *same* number
+the store wrote, and the only way to guarantee that is to assign it once and
+carry it.
+
+### `PurgeReport::journal_orphans_deleted` is now `orphan_rows_deleted`
+
+The retention sweep reclaims two side tables now, not one — the artifact
+journal and the event log — so the old name described half of what the number
+counts. Renamed rather than kept and widened: a field whose name names one of
+its two sources is read as the count for that source.
+
+```text
+// 0.12
+tracing::info!(orphans = report.journal_orphans_deleted, "retention sweep");
+```
+
+Rename it at the read site. The meaning is unchanged for anyone who had only
+the journal:
+
+```rust
+use a2a_protocol_server::store::PurgeReport;
+
+fn summarize(report: &PurgeReport) -> String {
+    format!(
+        "{} tasks, {} orphan side-table rows, complete={}",
+        report.tasks_deleted, report.orphan_rows_deleted, report.complete,
+    )
+}
+# let _ = summarize(&PurgeReport::default());
+```
+
+It is still normally zero: both side tables carry an `ON DELETE CASCADE`, so a
+non-zero count means rows outlived their task — which happens on a `SQLite`
+pool handed to `from_pool` without `foreign_keys=ON`.
+
+### Also in 0.13, not breaking
+
+- **`TaskStore` gains seven methods, all defaulted.** Four for the event log
+  (`supports_event_log`, `append_event`, `last_event_seq`, `read_events`) and
+  three for idempotency (`supports_idempotency`, `claim_idempotency_key`,
+  `release_idempotency_key`). A custom store keeps compiling, and the defaults
+  report *no* support rather than a successful claim or an empty log — so
+  forgetting to implement them cannot quietly produce a send that runs twice or
+  a resumption that silently skips events.
+- **`bindings/a2a-protocol-slimrpc` moves to `0.5.0`**, pinned to `0.13`. It is
+  outside the root workspace and versioned independently, so this is not a
+  break of the four published crates; it bumps in this release rather than
+  after it because the binding depends on the workspace by `path` as well as by
+  version, and `^0.12` stops resolving the moment the crates read 0.13.0. See
+  [its chapter](../bindings/slimrpc.md).
 
 ## 0.11 → 0.12
 

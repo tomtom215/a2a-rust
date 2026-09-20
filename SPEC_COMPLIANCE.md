@@ -23,7 +23,8 @@ spec section, where it lives in the code, and how it is verified.
 | **Hostile-peer** | Malicious-server harness (`crates/a2a-protocol-client/tests/hostile_server_tests.rs`). |
 
 Spec section numbers use the `§` shorthand; the same numbers are cited
-inline throughout the source (215+ `§` references) so a reviewer can grep
+inline throughout the source (400+ `§` references in `crates/` — 408 on
+2026-09-20, by `grep -rno "§" --include=*.rs crates | wc -l`) so a reviewer can grep
 from either direction (`grep -rn "§3.4.3" crates/`).
 
 ---
@@ -32,14 +33,26 @@ from either direction (`grep -rn "§3.4.3" crates/`).
 
 | Spec area | Implementation | Evidence |
 |---|---|---|
-| §3.1 `SendMessage` (create/continue task) | `handler/messaging.rs` | TCK `send_message_*`; interop send checks |
-| §3.1.2 Streaming send | `handler/messaging.rs`, `streaming/` | TCK `streaming_send_message`; interop streaming checks; ITK streaming scenarios |
+| §3.1 `SendMessage` (create/continue task) | `handler/messaging/` (`mod.rs` orchestrates; `create.rs`, `continuation.rs`) | TCK `send_message_*`; interop send checks |
+| §3.1.2 Streaming send | `handler/messaging/`, `streaming/` | TCK `streaming_send_message`; interop streaming checks; ITK streaming scenarios |
 | §3.1.4 `ListTasks` — order by `status.timestamp` desc, `statusTimestampAfter` filter | `handler/lifecycle/list_tasks.rs`; all four task stores (`store/`) | `list_tasks_*` unit tests; `statusTimestampAfter` store tests; ms-precision timestamps (`utc_now_iso8601`) |
-| §3.4.2 Unknown `taskId` → `TaskNotFound` | `handler/messaging.rs`, `handler/lifecycle/get_task.rs` | TCK `get_unknown_task_returns_error` (portable across all official SDKs) |
-| §3.4.3 `taskId`-only continuation infers `contextId` | `handler/messaging.rs` | `messaging` continuation tests |
+| §3.4.2 Unknown `taskId` → `TaskNotFound` | `handler/messaging/continuation.rs`, `handler/lifecycle/get_task.rs` | TCK `get_unknown_task_returns_error` (portable across all official SDKs) |
+| §3.4.3 `taskId`-only continuation infers `contextId` | `handler/messaging/continuation.rs` | `messaging` continuation tests |
 | §3.3.4 Required-extension negotiation | `handler/capability.rs`, `interceptor.rs` | `ExtensionSupportRequired` tests; echoed `A2A-Extensions` header tests |
-| §3.5.2 Resubscribe reconnection (snapshot-then-EOF; terminal-task rejection) | `handler/lifecycle/subscribe.rs` | subscribe tests; interop `subscribe to terminal task rejected`; ITK resubscribe scenarios |
+| §3.5.2 Resubscribe reconnection: a **non-terminal** task's stream serves the snapshot and then stays **open** until the task is terminal (§3.1.6); a terminal task is rejected | `handler/lifecycle/subscribe.rs` | `resubscribe_nonterminal_no_queue_waits_for_the_terminal_state`; other subscribe tests; interop `subscribe to terminal task rejected`; ITK resubscribe scenarios |
+| §3.5.2 resumption: a client's `Last-Event-ID` replays exactly what it missed from the task's event log, bounded by `subscribe_replay_limit`. A2A requires reconnection to work, not this mechanism — `id:` / `Last-Event-ID` is the WHATWG SSE one | `streaming/sse.rs` (`id:` emission); `handler/lifecycle/subscribe.rs` (`last_event_id`, replay, the catch-up wait) | `sse_resumption_e2e.rs`; `sse_format_tests.rs`; `event_log_tests/resumption.rs`, `event_log_tests/live_resubscribe.rs` |
+| Append-only task event log — the substrate that replay reads. **A mechanism, not an A2A requirement**: the specification has no event-log concept, and a store that does not implement it still conforms (the stream then starts from the snapshot) | `store/task_store/mod.rs` (`supports_event_log`, `append_event`, `last_event_seq`, `read_events`); `store/task_store/in_memory/mod.rs`; `store/event_log_sql.rs`; `store/tenant_event_log.rs` | `event_log_tests/log.rs`; `store/sqlite_store/event_log_tests.rs`; retention: `PurgeReport::orphan_rows_deleted` |
 | Task cancellation (working task cancelable by default) | `handler/lifecycle/cancel_task.rs`, `executor.rs` default `cancel` | `cancel_working_task_with_default_executor_succeeds`; ITK resubscribe (cancel-after-retrieval) |
+
+**Correction, 0.13.0.** Until this release the §3.5.2 row above read
+"snapshot-then-EOF", and a test asserted it. That was the `STREAM-SUB-002`
+defect written down as an expectation: §3.1.6 says the stream "MUST terminate
+when the task reaches a terminal state", and a stream that ended while its task
+was still `Working` terminated early. 0.13.0 removed the immediate EOF — the
+reasoning is in `handler/lifecycle/subscribe.rs`, on
+`resubscribe_nonterminal_no_queue_waits_for_the_terminal_state` — and this
+matrix is corrected to match. A compliance matrix that documents a defect as
+the compliance claim is worse than no matrix.
 
 ## §3.6 — Protocol versioning
 
@@ -72,7 +85,7 @@ from either direction (`grep -rn "§3.4.3" crates/`).
 |---|---|---|
 | Bearer / API-key / JWT interceptors | `auth/` (`auth-jwt` feature) | `auth_jwt_e2e`, JWKS/OIDC discovery e2e tests; live-TLS JWKS test |
 | JWKS parsing (remote keys) | `auth/jwt.rs::Jwks::from_json` | unit tests; `fuzz/jwks_parse` |
-| §7.6.4 `TASK_STATE_AUTH_REQUIRED` is not itself an authorization (added upstream 2026-07-30, `6550d34`) | `ServerInterceptor` runs before every method regardless of task state; no server code reads `AuthRequired` for any decision (`grep -rn AuthRequired crates/a2a-protocol-server/src` — tests only) | `auth_required_state_tests.rs`: a continuation of an `AUTH_REQUIRED` task without credentials is rejected by the interceptor exactly as the first request was |
+| §7.6.4 `TASK_STATE_AUTH_REQUIRED` is not itself an authorization (added upstream 2026-07-30, `6550d34`) | `ServerInterceptor` runs before every method regardless of task state; no server code reads `AuthRequired` for any decision (`grep -rn AuthRequired crates/a2a-protocol-server/src` returns **no lines**; the only mentions in the server crate are under `crates/a2a-protocol-server/tests/`) | `auth_required_state_tests.rs`: a continuation of an `AUTH_REQUIRED` task without credentials is rejected by the interceptor exactly as the first request was |
 
 ## §8 — Agent discovery
 
@@ -122,6 +135,23 @@ from either direction (`grep -rn "§3.4.3" crates/`).
 | §14.1.1 `application/a2a+json` registered constant | `A2A_CONTENT_TYPE` | accepted-on-ingress tests |
 | §4.3.3 push webhook sends `application/a2a+json` | `push/sender.rs` | `request_has_a2a_media_type_content_type` |
 | §14.2.2 `A2A-Extensions` header | `handler/helpers.rs::parse_extensions_header`; `A2A_EXTENSIONS_HEADER` | extension-activation tests |
+
+---
+
+## Beyond A2A v1.0 — extensions and mechanisms this SDK defines
+
+**Nothing in this section is an A2A v1.0 requirement, and no row here is a
+conformance claim.** The two protocol extensions below are identified by
+`a2a-rust.com` URIs precisely so that a server enabling them stays conformant
+and the official TCK is unaffected — a peer that ignores the URI sees ordinary
+A2A. They are recorded here for traceability, not for credit.
+
+| Area | Implementation | Evidence |
+|---|---|---|
+| **Idempotency extension** — `https://a2a-rust.com/extensions/idempotency/v1`. A client-supplied key on `message/send`. `Message.extensions` is a list of URIs and cannot carry a value, so the key travels in `Message.metadata` under `a2a-rust.com/idempotency-key` while `extensions` declares the URI. Keys are scoped to the **tenant** | `a2a-protocol-types/src/idempotency.rs` (URI, `set_key`, `key_of`, `validate_key`); `handler/messaging/idempotency.rs`; `store/task_store/mod.rs` (`supports_idempotency`, `claim_idempotency_key`, `release_idempotency_key`) with all four bundled stores implementing them; `builder.rs` advertises the extension only when the store reports support; client `methods/send_message.rs` | `handler/messaging/idempotency_tests/`; `store/sqlite_store/idempotency_tests.rs`; `postgres_store_tests.rs`; `book/src/client/idempotency.md` (blocks compiled) |
+| **Failure-class extension** — `https://a2a-rust.com/extensions/failure/v1`. A `FailureClass` a caller can `match` on instead of parsing English out of an error message; same metadata/extensions split, for the same reason | `a2a-protocol-types/src/failure.rs`; `executor_helpers.rs`; `handler/messaging/execute.rs` | `a2a-protocol-types/src/failure/tests.rs`; `failure_class_tests.rs` |
+| **W3C Trace Context** (`traceparent` / `tracestate`) carried across an A2A hop. A **W3C** specification, not an A2A one — A2A says nothing about tracing | `a2a-protocol-types/src/trace_context.rs` (parse, validate, re-emit, derive a child; mints no identifiers); server `handler/helpers.rs` and `call_context.rs` (inbound header → `RequestContext`); client `trace_propagation.rs` (outbound, from an ambient scope) | `a2a-protocol-types/src/trace_context/tests.rs`; `a2a-protocol-client/tests/trace_propagation_e2e.rs` |
+| **`AgentExecutor` conformance harness** (`conformance` feature). Grades an *executor* against the protocol invariants that hold for any agent, driving it against a real event queue with no server and no ports. It is **not** a statement that a server conforms — the TCK rows above are what say that | `conformance/` (`mod.rs`, `run/checks.rs`, `report.rs`) | `conformance/tests/gaps.rs` — deliberately broken executors, each breaking one invariant and asserting the harness names that one and no other; `book/src/deployment/testing.md` (block compiled) |
 
 ---
 

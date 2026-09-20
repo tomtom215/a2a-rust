@@ -77,18 +77,20 @@ removing an unsafe surface; those are documented as such.
 
 ## 4. What is designed to stay compatible
 
-- **The eleven server extension traits** (`AgentExecutor`, `TaskStore`,
+- **The twelve server extension traits** (`AgentExecutor`, `TaskStore`,
   `PushConfigStore`, `PushSender`, `ServerInterceptor`, `TenantResolver`,
-  `Metrics`, `Dispatcher`, `AgentCardProducer` and the two event-queue
-  traits) are unsealed and stay unsealed. New methods are added with default
-  implementations so external implementations keep compiling; the rules for
-  doing that are in
+  `Metrics`, `Dispatcher`, `AgentCardProducer`, `RateLimitCounter` and the two
+  event-queue traits) are unsealed and stay unsealed. New methods are added
+  with default implementations so external implementations keep compiling; the
+  rules for doing that are in
   [CONTRIBUTING.md](CONTRIBUTING.md#extending-a-public-trait).
 - **Protocol enums and structs that can grow with the A2A specification** are
   `#[non_exhaustive]`, so a new variant or field from a specification
-  revision is a patch-level addition. The two deliberate exceptions are
-  closed sets fixed by their underlying standards: `ApiKeyLocation` and
-  `JsonRpcResponse` stay exhaustive so consumers can match them completely.
+  revision is a patch-level addition. The three deliberate exceptions are
+  closed sets fixed by their underlying standards — `ApiKeyLocation` (OpenAPI's
+  header/query/cookie), `JsonRpcResponse` (JSON-RPC 2.0's result/error) and
+  `JsonRpcRequestId` (JSON-RPC 2.0's absent/null/value id states) — and stay
+  exhaustive so consumers can match them completely.
 - **The configuration structs** (`HandlerLimits`, `DispatchConfig`,
   `CorsConfig`, `GrpcConfig`, `CacheConfig`, `PushRetryPolicy`,
   `RateLimitConfig`, `TaskStoreConfig`, `TenantStoreConfig`,

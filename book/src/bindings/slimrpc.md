@@ -17,8 +17,8 @@ service:         lf.a2a.v1.A2AService
 itself as "community contributed … not part of the core A2A specification", and
 the ratified v1.0 spec contains no occurrence of "slim" or "agntcy". Nothing
 here is required for A2A conformance, and the project's TCK conformance claims
-cover the four spec bindings (JSON-RPC, HTTP+JSON, gRPC) plus WebSocket — not
-this one.
+cover the three spec bindings (JSON-RPC, HTTP+JSON, gRPC) plus WebSocket,
+which §12 admits as a custom binding — four in all, and not this one.
 
 It exists because the SLIM fabric is where some deployments already are.
 
@@ -69,8 +69,9 @@ Independence applies to the *numbers*, not the schedule. `SlimRpcServer::builder
 takes an `Arc<RequestHandler>` and `agent_interface()` returns an
 `AgentInterface`, so `a2a-protocol-server` and `a2a-protocol-types` are **public
 dependencies**: your `RequestHandler` must come from the same SDK version this
-crate was built against. That is why the requirement is a tight `0.9` and not a
-range — allow two and cargo links both, and you get `expected RequestHandler,
+crate was built against. That is why the requirement is a tight pin on one SDK
+minor — whichever minor the `[dependencies]` block above names — and not a
+range: allow two and cargo links both, and you get `expected RequestHandler,
 found RequestHandler`, which is among the least helpful errors in Rust.
 
 Two consequences:
@@ -125,9 +126,11 @@ Every other Rust block in this book is compiled as a doctest by the
 `a2a-book-tests` crate. These are not, and the reason is structural rather than
 neglect: `a2a-protocol-slimrpc` is deliberately outside the root workspace with
 its own `Cargo.lock`, because `agntcy-slim-rpc` pulls 379 transitive
-dependencies including `aws-lc-sys`, a native C crypto build. Against 12 for
-`a2a-protocol-types` and 191 for `a2a-protocol-server` at all features, none of
-that belongs in the published crates' audit surface — or in the book's test
+dependencies including `aws-lc-sys`, a native C crypto build. Against 188 for
+`a2a-protocol-server` at all features and 12 for `a2a-protocol-types` at its
+defaults — both counting normal edges only, as `cargo tree --edges normal`
+reports them; add build-dependencies and the server reading is 222 — none of
+that belongs in the published crates' audit surface, or in the book's test
 build.
 
 The snippets above are kept in step with the crate's own README and its test

@@ -20,7 +20,7 @@
 [![Guide](https://img.shields.io/badge/guide-a2a--rust.com-blue)](https://a2a-rust.com)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
-[![A2A Conformance](https://img.shields.io/badge/official%20TCK-92%2F114%20MUST%2C%200%20failing-blue)](docs/official-tck-findings.md)
+[![A2A Conformance](https://img.shields.io/badge/official%20TCK-88%2F114%20MUST%2C%204%20failing-blue)](docs/official-tck-findings.md)
 
 Pure Rust implementation of the [**Agent2Agent (A2A) protocol**](https://a2a-protocol.org/), written against the **v1.0.1** wire specification — the open, vendor-neutral standard for AI-agent interoperability.
 
@@ -65,6 +65,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | | |
 |---|---|
 | **Retry policy** | Configurable `RetryPolicy` with jittered exponential backoff (connection errors, timeouts, 429/502/503/504) |
+| **Idempotency keys** | A client-supplied key on `message/send` that the server deduplicates on, so a send that failed ambiguously can be retried without starting a second task. An extension (`https://a2a-rust.com/extensions/idempotency/v1`), **not** part of A2A v1.0, advertised on the agent card exactly when the configured `TaskStore` supports it |
 | **TLS support** | HTTPS via `rustls`, no OpenSSL dependency — on by default in the client/SDK (`tls-rustls`; opt out with `default-features = false`), and the server's push sender delivers to HTTPS webhooks with it |
 | **Axum integration** | Feature-gated `A2aRouter` for idiomatic Axum servers (`axum` feature) |
 | **Zero framework lock-in** | Core built on raw `hyper` 1.x; Axum optional, or bring your own |
@@ -93,7 +94,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | | |
 |---|---|
 | **Mutation-tested** | `cargo-mutants` runs on every pull request (incremental, changed-files only) and fails the build if any mutant goes undetected by the test suite; mutants that time out are reported separately in the job summary rather than failing the build. A full-sweep matrix runs on demand |
-| **No `unsafe`** | `#![forbid(unsafe_code)]` at every library crate root; zero `unsafe` blocks in `crates/`, `tck/`, or the benches harness |
+| **No `unsafe`** | `#![forbid(unsafe_code)]` at the root of all four published library crates, the benches harness crate, and the TCK runner; zero `unsafe` in `crates/*/src`, `tck/src`, or `benches/src`. The attribute is an inner one, so it reaches neither build scripts nor bench targets, and two places outside its reach do use `unsafe`: the four `build.rs` files each wrap `std::env::set_var("PROTOC", …)` in it, and `benches/benches/memory_overhead.rs` carries an `unsafe impl GlobalAlloc` for its allocation counter. The out-of-workspace `a2a-protocol-slimrpc` binding does not carry the attribute either, though it contains no `unsafe` |
 | **Regression-gated benchmarks** | Pull requests run `transport_throughput` and `protocol_overhead` twice (base branch vs PR) and fail when the 95 %-CI lower bound of a benchmark's median regression exceeds 50 % (default; individually noisy benchmarks carry documented per-benchmark overrides, e.g. `from_str/16384` at 75 %) — only statistically confident, substantial regressions trip the gate. See [`book/src/reference/regression-gate.md`](book/src/reference/regression-gate.md) for the threshold's derivation and the runner-noise limitations behind it |
 | **Conformance-gated** | The in-repo conformance runner grades all four bindings — JSON-RPC, REST, WebSocket, and gRPC — plus cross-binding equivalence, on every push to `main` and every pull request. Measurement against the A2A project's *official* TCK is reported separately under [Project Status](#project-status), including what that suite does not cover |
 
@@ -112,9 +113,12 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 `a2a-protocol-slimrpc` sits outside the workspace with its own lockfile, because
 `agntcy-slim-rpc` brings 379 transitive dependencies (including a native C
 crypto build) against 12 for `a2a-protocol-types`. None of that reaches the four
-crates above, which do not depend on it. It is versioned independently and
-is at `0.2` — see [the book chapter](https://a2a-rust.com/bindings/slimrpc.html)
-for why, and for the version-coupling rule that independence does *not* remove.
+crates above, which do not depend on it. It is versioned independently and is
+currently on the `0.5` line —
+[`bindings/a2a-protocol-slimrpc/Cargo.toml`](bindings/a2a-protocol-slimrpc/Cargo.toml)
+is the authority for its exact version — see
+[the book chapter](https://a2a-rust.com/bindings/slimrpc.html) for why, and for
+the version-coupling rule that independence does *not* remove.
 
 ## Quick Start
 
@@ -219,7 +223,7 @@ cargo run -p incident-response
 
 ### Agent Team (Full Dogfood)
 
-A 4-agent team that exercises the SDK broadly — 81 base E2E tests (94 with all optional features: WebSocket, gRPC, Axum, SQLite, signing, and OTel) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
+A 4-agent team that exercises the SDK broadly — 102 end-to-end tests on the default feature set, which already enables WebSocket, gRPC, Axum, SQLite, signing and OTel (87 with `--no-default-features`; both figures are what `cargo run -p agent-team` prints) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
 
 ```bash
 cargo run -p agent-team
@@ -381,7 +385,7 @@ The server uses a 3-layer architecture:
 ```bash
 # Run the test suite (2,837 passing with --all-features, measured 2026-08-17;
 # 157 more are #[ignore]d behind a live database and run in CI's postgres job.
-# CI runs sixteen feature combinations)
+# CI's `test` job runs fourteen feature combinations per matrix cell)
 cargo test --workspace --all-features
 
 # Run the end-to-end example
@@ -394,10 +398,11 @@ cargo fmt --all -- --check
 # Build documentation
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-# Run benchmarks (Criterion suites ×14 — transport, protocol,
+# Run benchmarks (Criterion suites ×15 — transport, protocol,
 # lifecycle, concurrency, cross-language, realistic, error paths, backpressure,
-# data volume, memory, enterprise, production, advanced scenarios, and
-# coordinator chain under fault — the last is the only agent-level one,
+# data volume, memory, enterprise, production, advanced scenarios,
+# coordinator chain under fault, and send latency breakdown — the coordinator
+# chain is the only agent-level one,
 # see book/src/reference/benchmarks.md for caveats on how to read it)
 cargo bench -p a2a-benchmarks
 
@@ -424,7 +429,7 @@ Against the A2A project's official Technology Compatibility Kit, **88 of 114 MUS
 
 All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Since 2026-09-09 that is governed by [STABILITY.md](STABILITY.md): deprecate for at least one minor release before removing, batch breaking changes into at most one minor release per month, label them under a `### Breaking` heading, and prove compatibility with `cargo-semver-checks` on every pull request. It also states what is designed to stay compatible and the criteria for `1.0`.
 
-The server crate's eleven public traits — `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushSender`, `ServerInterceptor`, `TenantResolver`, `Metrics`, `Dispatcher`, `AgentCardProducer`, and the two event-queue traits — are **unsealed and will stay that way**: they are the extension points a deployment substitutes its own infrastructure into, and the out-of-workspace [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) binding exists only because they are open. New trait methods are always added with defaults so external implementations keep compiling; the rules maintainers follow when doing so — including why a defaulted method is *not* free — are in [CONTRIBUTING.md](CONTRIBUTING.md#extending-a-public-trait). Protocol enums and key structs that can grow with the A2A specification are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases; the two deliberate exceptions are closed sets fixed by their underlying standards (`ApiKeyLocation` — OpenAPI's header/query/cookie — and `JsonRpcResponse` — JSON-RPC 2.0's result/error), which stay exhaustive so consumers can match them completely.
+The server crate's twelve public traits — `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushSender`, `ServerInterceptor`, `TenantResolver`, `Metrics`, `Dispatcher`, `AgentCardProducer`, `RateLimitCounter`, and the two event-queue traits — are **unsealed and will stay that way**: they are the extension points a deployment substitutes its own infrastructure into, and the out-of-workspace [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) binding exists only because they are open. New trait methods are always added with defaults so external implementations keep compiling; the rules maintainers follow when doing so — including why a defaulted method is *not* free — are in [CONTRIBUTING.md](CONTRIBUTING.md#extending-a-public-trait). Protocol enums and key structs that can grow with the A2A specification are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases; the three deliberate exceptions are closed sets fixed by their underlying standards (`ApiKeyLocation` — OpenAPI's header/query/cookie; `JsonRpcResponse` — JSON-RPC 2.0's result/error; and `JsonRpcRequestId` — JSON-RPC 2.0's absent/null/value id states), which stay exhaustive so consumers can match them completely.
 
 ## Minimum Supported Rust Version
 

@@ -1,6 +1,6 @@
 # Agent Team
 
-The project's primary integration test and SDK dogfood. Deploys 4 specialized agents communicating over multiple transports, then runs **81+ E2E tests** (94 with all optional features) exercising every major SDK feature.
+The project's primary integration test and SDK dogfood. Deploys 4 specialized agents communicating over multiple transports, then runs **102 E2E tests** exercising every major SDK feature. That is what a plain `cargo run -p agent-team` reports: WebSocket, gRPC, Axum, SQLite, signing and OTel are the example's `default` features, so the default run is the full run. `--no-default-features` compiles all six out and runs 87.
 
 **Source:** [`examples/agent-team/`](https://github.com/tomtom215/a2a-rust/tree/main/examples/agent-team)
 
@@ -19,19 +19,26 @@ If this passes, the SDK works.
 ## Running
 
 ```bash
-# Base suite (81 tests):
+# The full run — 102 tests. WebSocket, gRPC, Axum, SQLite, signing and OTel
+# are this example's DEFAULT features, so nothing is compiled out here:
 cargo run -p agent-team
 
-# All optional features (94+ tests):
+# Identical — 102. --all-features adds only `tracing`, which changes output
+# volume and not coverage:
 cargo run -p agent-team --all-features
 
-# Individual features:
-cargo run -p agent-team --features websocket   # +2 WebSocket tests
-cargo run -p agent-team --features grpc        # +3 gRPC tests
-cargo run -p agent-team --features axum        # +3 Axum framework tests
-cargo run -p agent-team --features sqlite      # +2 SQLite store tests
-cargo run -p agent-team --features signing     # +1 JWS signing test
-cargo run -p agent-team --features otel        # +1 OpenTelemetry test
+# All six compiled out — 87 tests. Exits 2: a narrowed build leaves claimed
+# feature areas unexercised, and that is reported rather than passed over:
+cargo run -p agent-team --no-default-features
+
+# Individual features on top of that narrowed build:
+cargo run -p agent-team --no-default-features --features websocket   # +2 WebSocket tests
+cargo run -p agent-team --no-default-features --features grpc        # +3 gRPC tests
+cargo run -p agent-team --no-default-features --features axum        # +3 Axum framework tests
+cargo run -p agent-team --no-default-features --features sqlite      # +2 SQLite store tests
+cargo run -p agent-team --no-default-features --features axum,sqlite # the two above, +1 combined test
+cargo run -p agent-team --no-default-features --features signing     # +1 JWS signing test
+cargo run -p agent-team --no-default-features --features otel        # +1 OpenTelemetry test
 ```
 
 ## Test categories

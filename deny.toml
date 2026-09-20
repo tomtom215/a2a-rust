@@ -132,7 +132,17 @@ skip = [
     # Added 2026-09-10 with the dependency refresh for 0.12. Each is a
     # transition another crate is mid-way through, measured from the full
     # `cargo deny check bans` output on that day:
-    { crate = "base64", reason = "0.22 in the published crates (hyper-util, tonic, sqlx still require it); 0.23 only through the examples' reqwest 0.13 and rcgen's pem 4" },
+    # Re-derived from Cargo.lock 2026-09-20; the reason here was backwards and
+    # had been since `e168ed12` (2026-09-17, "deps: Bump base64 from 0.22.1 to
+    # 0.23.1"). It is the *published* crates that are on the newer line:
+    # a2a-protocol-types, -client and -server each declare `base64 = "0.23"`
+    # (client directly; types under `signing` and as a dev-dep; server under
+    # `auth-jwt`) and resolve 0.23.1. 0.22.1 is held by transitive deps alone.
+    #   0.23.1 <- a2a-protocol-{types,client,server}, serde_with, rmcp,
+    #             reqwest 0.13, rcgen's pem 4, and the agent-team /
+    #             incident-response examples
+    #   0.22.1 <- hyper-util, tonic, sqlx-{core,mysql,postgres}, rig-core, genai
+    { crate = "base64", reason = "0.23 in the published crates (they declare `base64 = \"0.23\"` directly); 0.22 held only by transitive deps — hyper-util, tonic, sqlx, rig-core, genai — until they move" },
     { crate = "digest", reason = "RustCrypto 0.10 -> 0.11: tungstenite 0.30 moved sha1 to 0.11 while sqlx 0.8's hmac/hkdf/sha2 stay on 0.10" },
     { crate = "block-buffer", reason = "follows digest (RustCrypto 0.10 -> 0.11)" },
     { crate = "crypto-common", reason = "follows digest (RustCrypto 0.10 -> 0.11)" },

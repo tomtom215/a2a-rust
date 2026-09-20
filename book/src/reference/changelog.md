@@ -71,12 +71,23 @@ requires. Full detail in
 - **An executor can see who called it.** `RequestContext` gains a
   `call_context`, carrying caller identity, tenant, activated extensions and
   inbound headers across the `tokio::spawn` that task-locals do not survive.
+- **Idempotency keys on `message/send`, as an SDK extension.** A send whose
+  connection drops is ambiguous — the task may exist or it may not — and
+  `message/send` creates server-side state, so a client is right to refuse the
+  retry. A key the server deduplicates on makes that retry safe: the same
+  message replays to the first task in whatever state it reached, and a
+  *different* message on the same key is refused rather than silently answered.
+  Keys are tenant-scoped, every bundled store honours them, and the card
+  advertises support only when the store actually has it. This is **not part of
+  A2A v1.0** — it ships as `https://a2a-rust.com/extensions/idempotency/v1`, so
+  a server that enables it stays conformant. See
+  [Idempotent Sends](../client/idempotency.md).
 - **W3C trace context crosses an A2A hop**, so a delegation chain is one trace
   rather than several unrelated span trees.
 - **A failed task says why**, as a `FailureClass` a caller can `match` on
   instead of parsing English out of a message.
 - **A conformance harness for `AgentExecutor`**, behind the `conformance`
-  feature: eight checks an implementation can run against itself.
+  feature: thirteen checks an implementation can run against itself.
 - **Breaking:** `RequestContext` is `#[non_exhaustive]`;
   `EventQueueReader::read` yields a `StreamEvent` carrying the log position;
   `PurgeReport::journal_orphans_deleted` is now `orphan_rows_deleted`. See

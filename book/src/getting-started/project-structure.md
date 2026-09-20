@@ -166,7 +166,7 @@ a2a-rust/
 │
 ├── examples/
 │   ├── echo-agent/         # Minimal echo agent example
-│   ├── agent-team/         # Comprehensive 4-agent dogfood suite (81 base / 94 all-features E2E tests)
+│   ├── agent-team/         # Comprehensive 4-agent dogfood suite (102 E2E tests by default, 87 bare)
 │   ├── multi-lang-team/    # Multi-language team example
 │   ├── rig-agent/          # Integration with the Rig framework
 │   └── genai-agent/        # Integration with the GenAI framework

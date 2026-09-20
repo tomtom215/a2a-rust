@@ -11,7 +11,13 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-19 (second session: the panic-hook fix and the type constructors).
+Last updated 2026-09-20 — the 0.13.0 branch and two gate lessons (`4db4c87f`),
+then the branch table's three merges and the corrections under **Still open**.
+
+This line said 2026-09-19 and named "the panic-hook fix and the type
+constructors", which was two commits out of date. It is hand-maintained and
+will rot again; `git log -1 --format='%ci %s' -- docs/handoff.md` is the
+authority, and takes a second.
 
 ## 0.12.1 — released 2026-09-17
 
@@ -92,17 +98,30 @@ the *content* merge.
 | `release/v0.12.1` | merged, still present | The 0.12.1 release prep. Merged as `e057c8e` via #132, and tagged. Safe to delete. |
 | `claude/a2a-rig-held` | `caa8774` | Storage. The unpublished `a2a-rig` crate, one commit on top of `caac0ec`. |
 | `claude/adk-rust-0.12-patch` | `6fbdd2f` | Storage. The outbound adk-rust patch as a file, one commit on top of `caac0ec`. |
-| `claude/relaxed-planck-c4hsn0` | open — see note | **Destined for `main`.** The 0.13.0 content branch *and* its release prep, open as #137. Trace-context propagation, `CallContext` reachable from `RequestContext`, the executor conformance harness, the typed failure taxonomy, and the event log with SQL stores plus SSE `id:` / `Last-Event-ID` resumption. |
-| `claude/wizardly-tesla-0f358t` | open — see note | **Destined for `main`.** Three examples: tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP) and `examples/mcp-bridge` (an A2A agent exposed *as* MCP). On top of `fa1a82b9`. No PR opened yet. |
+| `claude/relaxed-planck-c4hsn0` | merged, still present | The 0.13.0 content branch *and* its release prep. **Merged as `707092f8` via [#137](https://github.com/tomtom215/a2a-rust/pull/137) on 2026-09-20.** Trace-context propagation, `CallContext` reachable from `RequestContext`, the executor conformance harness, the typed failure taxonomy, and the event log with SQL stores plus SSE `id:` / `Last-Event-ID` resumption. Safe to delete. |
+| `claude/wizardly-tesla-0f358t` | merged, still present | Three examples: tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP) and `examples/mcp-bridge` (an A2A agent exposed *as* MCP). **Merged as `19766afb` via [#135](https://github.com/tomtom215/a2a-rust/pull/135) on 2026-09-19.** The row previously said "open … No PR opened yet"; both halves were false, which is what `git merge-base --is-ancestor origin/claude/wizardly-tesla-0f358t HEAD` answers in one command. Safe to delete. |
+| `claude/prove-gates-needle` | merged, still present | The benchmark-prose prover fix — the gate matched its sentence by value rather than by shape, so it could not be made to fail — plus the panic-hook race it exposed. **Merged as `f732fe3b` via [#136](https://github.com/tomtom215/a2a-rust/pull/136) on 2026-09-19.** This branch had no row at all while its content was described further down the file. Safe to delete. |
+| `claude/optimistic-bell-680i9p` | open — see note | **Destined for `main`.** The current branch: documentation corrections on top of 0.13.0. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
 
-`release/v0.12.1` can be deleted. The two **storage** branches —
-`claude/a2a-rig-held` and `claude/adk-rust-0.12-patch` — are **not destined for
-`main`**. They exist so work survives the session that produced it; delete
-either once its contents have landed somewhere better.
+`release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
+and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
+`main`. The two **storage** branches — `claude/a2a-rig-held` and
+`claude/adk-rust-0.12-patch` — are **not destined for `main`**. They exist so
+work survives the session that produced it; delete either once its contents
+have landed somewhere better.
+
+**Check a row before trusting it.** Every "open" above rots the moment the pull
+request merges, and two rows here said "open" for a branch already on `main`.
+`git merge-base --is-ancestor origin/<branch> HEAD && echo merged` settles it
+in one command, and `git log --oneline --merges | grep <pr-number>` names the
+merge commit.
 
 ### `claude/relaxed-planck-c4hsn0` — 0.13.0, and two gate lessons
 
-No head SHA in the row above, for the reason the next section gives: this file
+**Merged 2026-09-20 as `707092f8` (#137).** Written while the branch was open,
+and kept because the two lessons below are about the gates, not about the
+branch. The row above has its merge commit now; it had no head SHA while the
+branch was open, for the reason the `wizardly-tesla` section gives — this file
 lives on the branch it would record.
 
 Two things cost a CI cycle each and will cost the next one the same unless they
@@ -155,10 +174,13 @@ What does work:
 
 ### `claude/wizardly-tesla-0f358t` — tool calling, and what the live run found
 
-No head SHA in the row above, deliberately: this file lives on that branch, so
-any commit recording a head invalidates the head it recorded. That is the trap
-`dacfc88` fixed for the 0.12.1 branch and it re-forms every time. Read the
-branch with `git log --oneline origin/main..claude/wizardly-tesla-0f358t`.
+**Merged 2026-09-19 as `19766afb` (#135).** While it was open this section said
+the row carried no head SHA deliberately, because this file lived on that
+branch, so any commit recording a head invalidated the head it recorded — the
+trap `dacfc88` fixed for the 0.12.1 branch, which re-forms on every branch this
+file rides. That reasoning still applies to whichever branch currently carries
+this file; it no longer applies here, so the row names the merge commit. Read
+what landed with `git log --oneline 19766afb^1..19766afb^2`.
 
 The repository had no tool calling anywhere: `grep -ril
 'tool_call\|ToolCall\|tool_choice\|function_call'` over `examples/`, `crates/`
@@ -317,16 +339,23 @@ Eight documentation sites said some version of "no CI job gates it". All eight
 now name the job instead. The cost of a minor release is one extra build per
 agent and no secret.
 
-**One caveat, because it is the honest limit of what was checked.** `tck.yml`
-triggers only on push to `main` and pull requests targeting `main` (`:6`-`:9`),
-so the job has not yet run on a GitHub runner — it first executes when this
-work reaches a pull request. What *was* exercised, on this machine, is every
-leg's full sequence using the workflow's own startup blocks and the same
-`a2a-tck --binding jsonrpc` invocation: all three reach 21/21 with exit 0, and
-the `incident-response` leg brings its two dependencies up and answers on
-`:9200` within a second of each poll starting. What that does not cover is the
-runner environment itself — a clean build and free ports. Watch the first
-`TCK` run on the pull request.
+**That caveat is now closed, and it is worth recording how.** While the work
+was open this paragraph read: `tck.yml` triggers only on push to `main` and
+pull requests targeting `main` (`:6`-`:9`), so the job *"has not yet run on a
+GitHub runner"* — everything measured had been measured on one developer
+machine, and what that did not cover was the runner environment itself, a clean
+build and free ports.
+
+It has run since. The job landed on `main` in `623be9e2`, carried by
+[#135](https://github.com/tomtom215/a2a-rust/pull/135) (`19766afb`,
+2026-09-19), and `tck.yml` has run on every push and pull request since. The
+most recent run on `main` at the time of writing is
+[35504742095](https://github.com/tomtom215/a2a-rust/actions/runs/35504742095)
+(push, `707092f8`, 2026-09-20, conclusion `success`), in which all three legs —
+`TCK example agent (incident-response)`, `(rig-a2a-agent)` and
+`(genai-a2a-agent)` — each completed `Start example agent` and
+`TCK — JSON-RPC binding` green on an `ubuntu-latest` runner. Clean build and
+free ports are therefore exercised, not assumed.
 
 ## Issue #130 — released in 0.12.1 and closed
 
@@ -923,7 +952,12 @@ agents rather than maintains the protocol.
    `RequestContext` blind spot — closed* above.
 3. ~~**The executor conformance harness (A4 above).**~~ Done —
    `a2a_protocol_server::conformance` behind the `conformance` feature,
-   eight checks, fourteen tests of its own.
+   thirteen checks, twenty-one tests of its own. (Recorded here first as
+   "eight checks, fourteen tests"; both grew as the harness gained the
+   cancel-path, clock and call-context grading. `grep -c results.push
+   crates/a2a-protocol-server/src/conformance/mod.rs` gives the first, and
+   `cargo test -p a2a-protocol-server --features conformance --lib
+   conformance:: -- --list` the second.)
 
    **What it does not cover, stated so the next person does not assume it
    does.** It runs each check once, so it finds no races. It drives the
@@ -1026,19 +1060,46 @@ Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
    and `cargo hack clippy` with `cargo-hack` absent).
 6. ~~The two hand-rolled `uuid_like()` helpers.~~ Done — both examples take
    `uuid` now.
-7. **`cargo doc -p a2a-protocol-client --no-deps` fails, and CI cannot see
-   it.** Three intra-doc links in `builder/mod.rs` — `crate::WebSocketTransport`
-   at `:288`, `Self::build_grpc` at `:290` and `:344` — point at items behind
-   the `websocket` and `grpc` features, which are off in that crate's default
-   build. `ci.yml`'s `doc` job runs `cargo doc --workspace --no-deps`, where
-   feature unification turns both on (the client's own dev-dependencies pull
-   them in), so the workspace build is green and the per-crate one is not.
-   docs.rs builds with `all-features = true` and is therefore also unaffected,
-   which is why nobody has hit it. Pre-existing — the same text is at
-   `f806792`, before any of this session's work. Reproduce with
-   `RUSTDOCFLAGS="-D warnings" cargo doc -p a2a-protocol-client --no-deps`.
-   The fix is three links, but the gate that would keep it fixed is a
-   per-crate doc build, which is the more interesting half.
+7. ~~**`cargo doc -p a2a-protocol-client --no-deps` fails, and CI cannot see
+   it.**~~ **The links are being fixed on `claude/optimistic-bell-680i9p`; the
+   missing gate is not, and that half stays open.**
+
+   The count and the locations recorded here were both wrong, and the
+   correction is the point: this entry said **three** links, all in
+   `builder/mod.rs`. Running the reproducer prints **five**, and two of them
+   are in a file this entry never named:
+
+   ```text
+   $ RUSTDOCFLAGS="-D warnings" cargo doc -p a2a-protocol-client --no-deps
+   error: unresolved link to `crate::WebSocketTransport`
+     --> crates/a2a-protocol-client/src/builder/mod.rs:288:32
+   error: unresolved link to `Self::build_grpc`
+     --> crates/a2a-protocol-client/src/builder/mod.rs:290:24
+   error: unresolved link to `Self::build_grpc`
+     --> crates/a2a-protocol-client/src/builder/mod.rs:344:24
+   error: unresolved link to `crate::WebSocketTransport`
+     --> crates/a2a-protocol-client/src/config.rs:165:34
+   error: unresolved link to `crate::WebSocketTransportConfig`
+     --> crates/a2a-protocol-client/src/config.rs:166:58
+   error: could not document `a2a-protocol-client`
+   ```
+
+   Counting from a reading of one file is how three became the recorded
+   number; the reproducer was already written down two lines below it and
+   would have said five.
+
+   The cause is unchanged: each link points at an item behind the `websocket`
+   or `grpc` feature, which are off in that crate's default build. `ci.yml`'s
+   `doc` job runs `cargo doc --workspace --no-deps`, where feature unification
+   turns both on (the client's own dev-dependencies pull them in), so the
+   workspace build is green and the per-crate one is not. docs.rs builds with
+   `all-features = true` and is unaffected too, which is why nobody has hit
+   it. Pre-existing — the same text is at `f806792`, before any of this
+   session's work.
+
+   **What is still open** is the half that matters: a per-crate doc build in
+   CI. Without it the next feature-gated link rots exactly the same way, and
+   nothing goes red.
 
 ### `prove_gates_fail.sh` was stuck at gate 5 of 65 — found and fixed 2026-09-19
 

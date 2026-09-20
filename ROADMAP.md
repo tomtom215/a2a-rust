@@ -100,6 +100,17 @@ nothing else. Every count was re-derived from the raw artifacts rather than read
 off the summary, and the arithmetic closes: 2262 + 4 + 1 + 1293 = 3560, which is
 the total number of entries in the shards' `mutants.json` files.
 
+**That is a 2026-08-14 figure about `1d51be0`, and it is not the current
+score.** The latest *recorded* scheduled sweep is the 2026-09-07 row of
+[`mutation-history.md`](book/src/reference/mutation-history.md) — at
+[`d3ebb72`](https://github.com/tomtom215/a2a-rust/commit/d3ebb72), run
+34078555778, scheduled, on `main`: **97%, 2609 caught / 55 missed / 0 timeout
+/ 1397 unviable**. Those 55 were burned down afterwards by targeted local
+runs, which is not the same as a clean sweep. **No full-workspace sweep has
+been run on the 0.13.0 code at all** — `mutation-history.md` has no row at or
+after the 0.13.0 work — so there is no 0.13.0 mutation score, and none should
+be quoted until a scheduled sweep produces one.
+
 **Three of those 53 were claimed before they were true, and the confirming
 sweep caught all three.** Recorded here because the burn-down's credibility
 rests on the claims being checkable, and these were not:
@@ -158,11 +169,31 @@ without  TIMEOUT  …manager.rs:385:9: replace EventQueueManager::destroy with (
 with     1 mutant tested in 3m: 1 caught
 ```
 
-Same tree, same command, one file the difference — and no `.rs` file differs
-from the sweep at `1d51be0` that reported the same mutant as `TIMEOUT`
-(`git diff 1d51be0 HEAD -- '*.rs' 'Cargo.*'` is empty). The claim is measured in
-both directions rather than inferred from the fixed one, which is the whole
-lesson of the two bullets above it.
+Same tree, same command, one file the difference — and, on the tree this was
+written against, no `.rs` file differed from the sweep at `1d51be0` that
+reported the same mutant as `TIMEOUT`.
+
+**Re-anchor the check before you run it.** The sentence was written at
+`ef4b1090` (2026-08-14), and it is still reproducible *there*:
+
+```sh
+git diff ef4b1090 1d51be0 -- '*.rs' 'Cargo.*'   # empty — the claim holds
+```
+
+It does **not** hold at `HEAD`, and running the original form now proves the
+opposite of what it asserted:
+
+```sh
+git diff --stat 1d51be0 HEAD -- '*.rs' 'Cargo.*' | tail -1
+# 423 files changed, 66850 insertions(+), 10800 deletions(-)   (2026-09-20)
+```
+
+So the equality is a statement about the tree of 2026-08-14, not about the
+tree you are reading. What it established — that the `TIMEOUT` was the
+harness and not the code — stands on that tree; it is not evidence about
+HEAD, and the `1d51be0`-to-HEAD form of the command must not be cited as if
+it were. The claim is measured in both directions rather than inferred from
+the fixed one, which is the whole lesson of the two bullets above it.
 
 The general rule this produced: **a passing test is not evidence that a mutant
 died — only a mutation run is.** The third adds the corollary that was still
@@ -216,12 +247,27 @@ eviction cost.
 
 All eleven spec methods plus multicast, deliberately outside the workspace with
 its own `Cargo.lock` (`agntcy-slim-rpc` brings 379 transitive dependencies
-including `aws-lc-sys`; `a2a-protocol-types` has 12). 65 tests across ten
-topologies — in-process, multicast group, one node over TCP, that node with
-verified TLS, mutual TLS, two peered nodes, a node in its own OS process, and
-three suites against a real SPIRE deployment (identity, federation, rotation).
+including `aws-lc-sys`; `a2a-protocol-types` has 12). **86 test functions**
+across ten topologies — in-process, multicast group, one node over TCP, that
+node with verified TLS, mutual TLS, two peered nodes, a node in its own OS
+process, and three suites against a real SPIRE deployment (identity,
+federation, rotation).
 The crate README carries a security posture table separating what is *verified
 by a test* from what is merely *available*.
+
+Re-measure the 86 with:
+
+```sh
+grep -rn '#\[test\]\|#\[tokio::test\]' bindings/a2a-protocol-slimrpc \
+  --include=*.rs | grep -v '/target/' | wc -l
+```
+
+The `grep -v '/target/'` is load-bearing: without it the same command returns
+**184**, because a stale build directory holds
+`target/debug/build/aws-lc-sys-*/out/bindings.rs`, a generated file with 98
+`#[test]` attributes that are not this crate's. It counts attributes, not
+executed tests — a `#[test]` behind a `#[cfg]` that is off still counts — so
+treat it as an upper bound on first-party test functions, not a pass count.
 
 **One change to a published crate was needed**, and it is the finding worth
 carrying forward: `Transport::send_streaming_request` must return an
@@ -444,7 +490,10 @@ This is the category most worth clearing before any external review.
   `main()`, not `#[test]`s, so `cargo test --workspace` compiled it and ran none
   of it; it appeared in the workflows only inside `cargo package --exclude`
   lists. First local run: **86 tests, 71 passed, 15 failed, exit 1**.
-  Now **100 tests, 100 passing** with `--all-features`, gated by `ci.yml`'s
+  Now **102 tests, 102 passing** on the default feature set and with
+  `--all-features` alike — `agent-team`'s `default` already turns on the six
+  optional areas, so the two builds measure the same thing; 87 with
+  `--no-default-features`, gated by `ci.yml`'s
   `dogfood` job.
 
   This was the sixth gate found structurally incapable of failing, and the
@@ -467,10 +516,24 @@ This is the category most worth clearing before any external review.
   all 21 shards complete, aggregated by CI: **92%**, 2168 caught / 183 missed.
   Reproduced across two different shardings, which is why the number is
   trustworthy rather than merely produced.
-  **The current figure is 97% (2254/63), from the 2026-08-13 sweep** (run
-  31681284244, all 21 shards complete, 21/21 `COMPLETED` markers verified
-  against the artifacts) — this bullet records the first complete sweep, not
-  the latest one. See
+  **The latest recorded sweep is 2026-09-07 at
+  [`d3ebb72`](https://github.com/tomtom215/a2a-rust/commit/d3ebb72): 97%,
+  2609 caught / 55 missed / 0 timeout / 1397 unviable** (run 34078555778,
+  scheduled, on `main`) — this bullet records the first complete sweep, not
+  the latest one. It replaces the figure this bullet used to carry, "97%
+  (2254/63), from the 2026-08-13 sweep", which was three scheduled sweeps
+  stale (2026-08-24, 2026-08-31, 2026-09-07) and five recorded rows behind.
+
+  **No full-workspace sweep has been run on the 0.13.0 code.**
+  `mutation-history.md` has no row at or after the 0.13.0 work, and the
+  2026-09-07 row's own note says so of its burn-down: "This is a targeted run
+  over the survivors' functions, not a workspace sweep." The survivors killed
+  on the 0.13.0 branch were likewise found by *local, targeted* sweeps and by
+  the incremental per-PR gate, not by a workspace one — `d501e322`
+  (2026-09-18), then `b3d67222`, `c928b1e1`, `931a2f0e` and `e62786ef` (all
+  2026-09-20). So there is no 0.13.0 score to quote; the next scheduled sweep
+  is the figure to record, and inventing one in the meantime is exactly the
+  defect the rest of this section is about. See
   [`mutation-history.md`](book/src/reference/mutation-history.md) for the
   dated table, and the burn-down item below for the survivor clusters.
   Getting there took three rounds of gate fixes, because each one exposed the
@@ -808,11 +871,35 @@ This is the category most worth clearing before any external review.
 
 ## Reporting accuracy
 
-* **All 39 CI gates re-run locally at `6ebf821` on 2026-08-12 — 39 of 39 pass.**
+* **The last complete gate sweep is 2026-09-19: `55 proven, 10 unproven, 0 not
+  selected (of 65 gates)`.** That is `scripts/prove_gates_fail.sh` run to
+  completion in a detached worktree; `docs/handoff.md` records the run and why
+  the ten are not stale needles (seven were already red on the clean tree —
+  five wanting a PostgreSQL server, one the SLIMRPC SPIFFE suite, one a
+  missing `cargo-hack`).
+
+  **The harness has grown since: it now enumerates 66 gates.** Re-checked
+  2026-09-20 —
+
+  ```sh
+  bash scripts/prove_gates_fail.sh --list | head -1
+  # Gate / injection pairing (66 gates):
+  ```
+
+  So the 2026-09-19 sweep does not cover the current set, and **no sweep has
+  been run against the 66**. This bullet deliberately states no current pass
+  rate: what is proven is 55 gates as of 2026-09-19 against a 65-gate harness,
+  and what is unproven is everything added or unresolved since. A run of the
+  harness is the only thing that may replace this paragraph, and it must be
+  recorded with its date, its commit and its three counts.
+
+  Superseded, kept for the timings and the lesson: **all 39 CI gates re-run
+  locally at `6ebf821` on 2026-08-12 — 39 of 39 pass**, via
   `scripts/preflight.sh --full`, with a live PostgreSQL so the 16 `#[ignore]`d
   `postgres_store_tests` actually execute rather than being skipped into a
   green. Notable timings: workspace clippy 233s, `cargo test --workspace` 233s,
-  `agent-team --release --all-features` 343s.
+  `agent-team --release --all-features` 343s. That figure describes a 39-gate
+  harness and says nothing about the 66 that exist now.
 
   The first pass reported 38 pass / 1 fail, and the failure was **an artefact of
   the harness, not a defect**: `examples/incident-response` binds ports
@@ -828,11 +915,30 @@ This is the category most worth clearing before any external review.
   alongside this suite must avoid 9200-9202**, along with the TCK's
   9994-9999 and 9897-9899.
 
-* **Codecov's total excludes less than `codecov.yml` says — and the glob-token
-  fix did NOT take.** Verified 2026-08-06 against Codecov's per-file report for
-  `615d01f8`: the three `**` directory globs are applied, the five bare Postgres
-  file paths are not, so 793 permanently-uncoverable lines sit in the public
-  denominator. The entries were rewritten into glob-token form
+* **~~Codecov's total excludes less than `codecov.yml` says.~~ CLOSED
+  2026-09-09 — by measuring the Postgres files instead of excluding them.**
+  `codecov.yml`'s `ignore:` list no longer contains a single Postgres path;
+  the comment that stands in their place records the resolution in the file
+  itself: "Resolved 2026-09-09 by measuring them rather than hiding them."
+  `coverage.yml` now runs the same live-database suites the `test-postgres`
+  CI job runs (`postgres_store_tests` and `multi_replica`) under
+  instrumentation against a `postgres:16` service, and the profiles merge into
+  one report. `codecov.yml`'s comment records the figure measured that day —
+  the seven files at 84.87% line coverage in aggregate, up from 0-8% — and
+  that number is quoted from there, dated 2026-09-09, not re-measured here.
+  So the question below — why a pattern did or did not apply — was retired by
+  removing the need for the pattern, not by answering it. **There is no third
+  `codecov.yml` fix to write, because there is nothing left to exclude.**
+
+  The rest of this entry is the history of the two attempts that failed, kept
+  because the repository values recording what was tried and why. **It
+  describes a configuration that no longer exists — do not read any of it as
+  a live open question.**
+
+  Verified 2026-08-06 against Codecov's per-file report for `615d01f8`: the
+  three `**` directory globs were applied, the five bare Postgres file paths
+  were not, so 793 lines then believed permanently uncoverable sat in the
+  public denominator. The entries were rewritten into glob-token form
   (`**/store/postgres_store.rs` etc.) in `0e64636` on the hypothesis that
   "the three patterns that do work here all contain a glob token".
 
@@ -859,11 +965,31 @@ This is the category most worth clearing before any external review.
   Reported at `db1da90`: 35343 lines / 33290 hits = **94.19%**. With the five
   genuinely ignored: 34550 / 33250 = **96.24%** — a 2.05 point gap.
 
-  So "contains a glob token" is *not* the discriminating property. What is
-  remains **UNKNOWN** — no experiment here isolated it, and this entry will not
-  name a cause it has not tested. **Do not write a third fix into `codecov.yml`
-  without a way to test it before merge**; the first two were each plausible and
-  each shipped without a pre-merge check that could have caught them.
+  So "contains a glob token" was *not* the discriminating property. What is
+  was never isolated, and this entry will not name a cause it did not test —
+  it stays **UNKNOWN as a matter of Codecov's behaviour**, and that is now a
+  question nothing in this repository depends on.
+
+  **How it was actually closed, and the rule that came out of it.** Two fixes
+  shipped, each plausible, each without a pre-merge check that could have
+  caught it; the second (`0e64636`, 2026-08-09) was not disproven until
+  2026-08-12, three days later, and only because somebody went looking. The
+  third
+  attempt was not a third pattern. It was the observation that the files were
+  never *permanently* uncoverable — they were uncovered because nothing ran
+  them against a database — so the honest move was to run them. Two artefacts
+  survive from the failed approach and are worth keeping:
+  `scripts/check_codecov_ignores.py`, which fails on any `ignore:` entry
+  Codecov is still counting, so a future exclusion cannot be *recorded* as
+  applied without *being* applied; and `coverage.yml`'s weekly
+  `ignores-applied` job, which has run it since 2026-09-10 (before that,
+  nothing ran it). The rule: **an exclusion you cannot test before merge is a
+  claim, not a fix — prefer measuring the thing to hiding it.**
+
+  Two file names cited above are also stale as paths: `postgres_store.rs` and
+  `tenant_postgres_store.rs` became *directories* in 0.13.0. They are left as
+  written because they name what the 2026-08 patterns targeted, which is the
+  point of the record.
 * **Say which coverage number is meant.** A bare "coverage: N%" in this
   project is ambiguous between at least four figures, and the *file set*
   matters as much as the metric. Re-measured 2026-08-10 with
