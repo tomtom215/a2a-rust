@@ -1116,27 +1116,45 @@ misreported as passing more than once in these sessions.
 1. **Watch CI on this branch.** The last push is `7182aac3`. Everything below
    was verified locally; CI is what says the fourteen-combination matrix and
    the live-PostgreSQL jobs agree.
-2. **The PostgreSQL half is unverified here.** This container has no server, so
-   `pg_migration` migration 6, the two Postgres `CHECK (seq > 0)` constraints,
-   `rows_affected()` on `ON CONFLICT DO NOTHING`, and the JSONB replay
-   comparison were reviewed as SQL and compile under `--features postgres`, but
-   were **not executed**. The SQLite equivalents of all four are exercised.
-   CI's `test-postgres` job is the first real run.
+2. ~~**The PostgreSQL half is unverified here.**~~ **Done, and the premise was
+   wrong.** I recorded this as a container limitation; PostgreSQL installs from
+   apt in under a minute. `apt-get install -y postgresql postgresql-contrib`,
+   `service postgresql start`, `ALTER USER postgres PASSWORD 'postgres'`, then
+   `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`.
+   Server 16.13 — the same major version as CI's `postgres:16`.
+
+   **Run it before claiming a Postgres change is verified.** It caught a real
+   failure on the first run: `migrations_apply_in_order_and_are_idempotent`
+   hard-coded five migrations and a sixth had been added. Only a live server
+   runs that test, so the drift was invisible until CI. It now derives the
+   list from `BUILTIN_PG_MIGRATIONS` and asserts contiguity, so bumping the
+   number is not a trap that rearms for migration 7.
 3. **Regenerate `docs/provenance-manifest.md` as the last commit before the
    tag.** `RELEASING.md` step 4 has the ordering constraint; a manifest
    generated before any later commit is stale by definition and the gate fails
-   the tag.
+   the tag. `scripts/provenance_manifest.sh HEAD` regenerates it and
+   `python3 scripts/check_provenance_manifest.py` is the gate — run it
+   *without* a pipe, or you read `head`'s exit status instead of the script's
+   and a failing gate looks green.
 4. **Then the two 0.13.0 release steps that were already outstanding:**
    `git tag -a v0.13.0`, and the `bindings/a2a-protocol-slimrpc` 0.5.0 publish
    (`RELEASING.md` step 4), which has never been run.
 
 ### Still not started
 
-- **Idempotency key expiry (H13).** A key is claimed and released, or it
-  outlives its task deliberately — but nothing ages one out. A store
-  accumulates keys for the life of the process. `is_prunable` now stops the
-  tenant prune from discarding them, which makes the absence of a TTL more
-  visible rather than less.
+- ~~**Idempotency key expiry (H13).**~~ **Done.**
+  `RetentionPolicy::idempotency_key_max_age` and
+  `TaskStoreConfig::idempotency_key_ttl`, both 24 hours by default, `None` to
+  keep the old behaviour. No migration was needed — all four SQL tables
+  already carried a `created_at` column that nothing read.
+
+  Two things worth carrying forward. The sweep refuses to delete a key younger
+  than `terminal_max_age`, because a key expiring while its task is still
+  retained produces a *second* task rather than a replay — the clamp is in
+  `effective_idempotency_key_max_age`, not in a doc comment. And a replay does
+  not refresh the claim time, or a client retrying on a loop would hold a key
+  open for ever and the TTL would bound nothing for exactly the caller most
+  likely to reach it.
 - `supports_event_log()` is hard-coded `true` on `InMemoryTaskStore`. With the
   log now bounded, an opt-out would make the server advertise no resumption at
   all rather than a bounded one, so it was judged the wrong trade — recorded
