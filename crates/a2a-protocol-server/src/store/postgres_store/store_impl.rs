@@ -392,7 +392,7 @@ impl TaskStore for PostgresTaskStore {
             // number the log from their own in-process queues.
             let position = seq_to_i64(seq)?;
             let payload = encode_json(event)?;
-            let wrote = sqlx::query(event_log::APPEND_SQL)
+            let changed_nothing = sqlx::query(event_log::APPEND_SQL)
                 .bind(task_id.0.as_str())
                 .bind(position)
                 .bind(&payload)
@@ -400,8 +400,8 @@ impl TaskStore for PostgresTaskStore {
                 .await
                 .map_err(to_a2a_error)?
                 .rows_affected()
-                > 0;
-            if !wrote {
+                == 0;
+            if changed_nothing {
                 // Only on the collision path. `Value` compares structurally,
                 // so `JSONB` normalization cannot fake a replay.
                 let stored: Option<(serde_json::Value,)> =

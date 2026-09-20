@@ -544,7 +544,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             let payload = encode_text(event)?;
             // `rows_affected()` was discarded here until 0.13; see
             // `event_log_sql::report_no_op_append` for what it hid.
-            let wrote = sqlx::query(evlog::SQLITE_APPEND)
+            let changed_nothing = sqlx::query(evlog::SQLITE_APPEND)
                 .bind(&tenant)
                 .bind(task_id.0.as_str())
                 .bind(position)
@@ -553,8 +553,8 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 .await
                 .map_err(|e| to_a2a_error(&e))?
                 .rows_affected()
-                > 0;
-            if !wrote {
+                == 0;
+            if changed_nothing {
                 let stored: Option<(String,)> = sqlx::query_as(evlog::SQLITE_SELECT_PAYLOAD)
                     .bind(&tenant)
                     .bind(task_id.0.as_str())

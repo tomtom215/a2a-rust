@@ -2254,4 +2254,15 @@ async fn a_limit_above_the_floor_is_used_as_given() {
         crate::handler::MIN_MESSAGE_ID_LENGTH,
         "below the floor, the floor wins"
     );
+
+    // The boundary itself. Both sides of the clamp agree here, which is
+    // exactly why the `>` this was once spelled with had an equivalent
+    // mutant; the arithmetic that replaced it still has to land on 36.
+    let exactly = crate::handler::HandlerLimits::default()
+        .with_max_id_length(crate::handler::MIN_MESSAGE_ID_LENGTH);
+    assert_eq!(
+        exactly.effective_max_message_id_length(),
+        crate::handler::MIN_MESSAGE_ID_LENGTH,
+        "a limit set to the floor is the floor"
+    );
 }

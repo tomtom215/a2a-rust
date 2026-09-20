@@ -124,3 +124,50 @@ async fn a_replay_does_not_extend_the_window() {
         "the window runs from the first claim; replays must not extend it"
     );
 }
+
+/// The boundary itself: *"claimed at least `ttl` ago"* includes exactly
+/// `ttl` ago.
+///
+/// Reached by calling the pass with the clock it reads, which is why it
+/// takes one. A test that ages a key with a real sleep lands somewhere past
+/// `ttl` and can never distinguish `<` from `<=` — the reason `replace < with
+/// <=` survived the incremental mutation gate on this pull request (shard 7
+/// of run 35523981742) while the two tests above both passed.
+#[test]
+fn a_key_claimed_exactly_ttl_ago_is_expired_and_one_tick_later_is_kept() {
+    use std::time::Instant;
+
+    const TTL: Duration = Duration::from_secs(60);
+
+    let build = |age: Duration| {
+        let now = Instant::now();
+        let mut data = super::StoreData::with_capacity(1);
+        data.idempotency_index.insert(
+            KEY.to_owned(),
+            (
+                MessageId::new("m1"),
+                TaskId::new("t1"),
+                now.checked_sub(age).expect("the test clock predates now"),
+            ),
+        );
+        (data, now)
+    };
+
+    let (mut at_the_boundary, now) = build(TTL);
+    InMemoryTaskStore::expire_idempotency_keys(&mut at_the_boundary, TTL, now);
+    assert!(
+        at_the_boundary.idempotency_index.is_empty(),
+        "a key claimed exactly ttl ago was claimed at least ttl ago"
+    );
+
+    let just_short = TTL
+        .checked_sub(Duration::from_nanos(1))
+        .expect("a minute minus a nanosecond is a duration");
+    let (mut just_inside, now) = build(just_short);
+    InMemoryTaskStore::expire_idempotency_keys(&mut just_inside, TTL, now);
+    assert_eq!(
+        just_inside.idempotency_index.len(),
+        1,
+        "one nanosecond short of the ttl is still inside it"
+    );
+}

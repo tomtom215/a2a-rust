@@ -352,7 +352,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             let payload = encode_json(event)?;
             // `rows_affected()` was discarded here until 0.13; see
             // `event_log_sql::report_no_op_append` for what it hid.
-            let wrote = sqlx::query(evlog::PG_APPEND)
+            let changed_nothing = sqlx::query(evlog::PG_APPEND)
                 .bind(&tenant)
                 .bind(task_id.0.as_str())
                 .bind(position)
@@ -361,8 +361,8 @@ impl TaskStore for TenantAwarePostgresTaskStore {
                 .await
                 .map_err(|e| to_a2a_error(&e))?
                 .rows_affected()
-                > 0;
-            if !wrote {
+                == 0;
+            if changed_nothing {
                 let stored: Option<(serde_json::Value,)> = sqlx::query_as(evlog::PG_SELECT_PAYLOAD)
                     .bind(&tenant)
                     .bind(task_id.0.as_str())

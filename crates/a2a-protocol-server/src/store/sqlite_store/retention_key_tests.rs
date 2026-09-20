@@ -169,3 +169,46 @@ async fn the_sweep_will_not_expire_a_key_younger_than_the_task_age() {
         "the clamp must hold in the sweep: this key's task is still retained"
     );
 }
+
+/// The key sweep is batched, and each batch is charged to `report.batches`.
+///
+/// It has to be: `max_batches` is what bounds how long one sweep runs, and
+/// the key loop checks it against the same counter the task and orphan loops
+/// increment. A key loop that deleted rows without charging for them would
+/// run past a bound an operator set. Nothing read the number — which is why
+/// `replace += with *= in expire_keys` survived the incremental mutation gate
+/// on this pull request (shard 5 of run 35523981742).
+#[tokio::test]
+async fn the_key_sweep_charges_a_batch_for_every_pass_it_makes() {
+    let store = make_store().await;
+    store
+        .save(&task("t1", TaskState::Completed))
+        .await
+        .expect("save");
+    // Three keys, deleted one at a time, and no expired task or orphan row —
+    // so every batch in the report is one of the key loop's.
+    let keys = [OLD_KEY, NEW_KEY, "fedcba9876543210fedcba9876543210"];
+    for key in keys {
+        store
+            .claim_idempotency_key(key, &MessageId::new("m1"), &TaskId::new("t1"))
+            .await
+            .expect("claim");
+        age_key(&store, key, 7200).await;
+    }
+
+    let report = store
+        .purge_expired(
+            &RetentionPolicy::new(Duration::from_secs(1))
+                .with_idempotency_key_max_age(Some(Duration::from_secs(3600)))
+                .with_batch_size(1),
+        )
+        .await
+        .expect("purge");
+
+    assert_eq!(report.idempotency_keys_deleted, 3);
+    assert_eq!(key_count(&store).await, 0);
+    assert_eq!(
+        report.batches, 3,
+        "three keys at one per batch is three batches, and they are charged for"
+    );
+}

@@ -2331,6 +2331,71 @@ async fn postgres_a_replay_is_not_reported_but_a_second_writer_is() -> A2aResult
     Ok(())
 }
 
+/// The tenant table's twin of the classification above.
+///
+/// `tenant_task_events` is a different statement — every clause carries the
+/// tenant, and the position is unique *within* one — so passing on the
+/// single-tenant table says nothing about this one. Nothing exercised it:
+/// the incremental mutation gate on this pull request (shard 6 of run
+/// 35523981742) reported three mutants surviving in this append, covering
+/// the `rows_affected()` guard, the `if !wrote` that reads it, and the
+/// payload comparison that decides whether a collision lost anything.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_a_replay_is_not_reported_but_a_second_writer_is() {
+    let db = TestDb::create("tenant_evlog_classify").await;
+    let recorder = std::sync::Arc::new(RecordingMetrics::default());
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant postgres store")
+        .with_metrics(a2a_protocol_server::metrics::MetricsHandle::from_arc(
+            std::sync::Arc::clone(&recorder) as std::sync::Arc<dyn a2a_protocol_server::Metrics>,
+        ));
+
+    TenantContext::scope("alpha", async {
+        let task = make_task("t1", "ctx1");
+        store.save(&task).await.expect("save");
+        let first = log_event("t1", TaskState::Working);
+        store
+            .append_event(&task.id, 1, &first)
+            .await
+            .expect("append");
+
+        // The identical event again: a retry, nothing lost, nothing to report.
+        store
+            .append_event(&task.id, 1, &first)
+            .await
+            .expect("replay");
+        assert_eq!(
+            recorder.persistence_errors(),
+            0,
+            "an identical replay is not a lost append and must not be counted"
+        );
+
+        // A different event on the same position: a second writer, and a
+        // real loss. `jsonb` normalises key order and whitespace, so the
+        // comparison is structural — this is what says the normalisation
+        // cannot make two different events look like one replay.
+        store
+            .append_event(&task.id, 1, &log_event("t1", TaskState::Completed))
+            .await
+            .expect("a collision must not fail the agent");
+        assert_eq!(
+            recorder.persistence_errors(),
+            1,
+            "a different event on a taken position is a lost append and must be counted"
+        );
+
+        // One position, one row, and it is still the first writer's.
+        let events = store.read_events(&task.id, 0, 10).await.expect("read");
+        assert_eq!(events.len(), 1, "ON CONFLICT DO NOTHING leaves one row");
+        assert_eq!(events[0].seq, 1);
+    })
+    .await;
+
+    db.drop_db().await;
+}
+
 // ── Idempotency key expiry, PostgreSQL ───────────────────────────────────────
 
 /// The `ctid`/`$1::interval` sweep, run against a real server.
@@ -2384,6 +2449,18 @@ async fn postgres_the_sweep_expires_old_keys_and_keeps_recent_ones() {
     assert_eq!(
         report.idempotency_keys_deleted, 1,
         "exactly the expired key, and the report says so"
+    );
+    // `t1` is Submitted, so the task loop deletes nothing and charges no
+    // batch: every batch in this report is the key loop's. That loop shares
+    // `report.batches` with the task loop because `max_batches` bounds the
+    // whole sweep, so a key pass that did not charge for itself would run
+    // past an operator's bound. Nothing read the number, which is why
+    // `replace += with *= in purge` survived the incremental mutation gate on
+    // this pull request (shard 4 of run 35523981742).
+    assert_eq!(report.tasks_deleted, 0, "the task is not terminal");
+    assert_eq!(
+        report.batches, 1,
+        "the one key pass that deleted a row is charged for"
     );
     let remaining: Vec<String> =
         sqlx::query_scalar::<_, String>("SELECT key FROM idempotency_keys")

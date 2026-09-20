@@ -269,7 +269,15 @@ impl RequestHandler {
                 return Some(found);
             }
             tokio::time::sleep(backoff).await;
-            backoff = (backoff * 2).min(MAX_BACKOFF);
+            // `saturating_mul` rather than `*`: the doubling is politeness,
+            // not correctness, so `*` mutated to `/` shrinks the interval to
+            // zero and spins until the same deadline, returning the same
+            // events and reporting the same metric — an equivalent mutant
+            // that survived the incremental mutation gate on this pull
+            // request (shard 4 of run 35523981742). A saturating call has no
+            // weakened operator form, and it also cannot panic on overflow
+            // if MAX_BACKOFF is ever raised near Duration::MAX.
+            backoff = backoff.saturating_mul(2).min(MAX_BACKOFF);
         }
     }
 

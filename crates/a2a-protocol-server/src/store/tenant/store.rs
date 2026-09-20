@@ -518,6 +518,65 @@ mod tests {
         }
     }
 
+    /// `with_metrics` has to reach the partitions, which are built lazily
+    /// on a tenant's first use.
+    ///
+    /// Each partition is an [`InMemoryTaskStore`] reporting its own dropped
+    /// appends. A `with_metrics` that returned a fresh store rather than
+    /// `self` would leave every partition on the no-op sink, and the
+    /// deployment shape that most needs the signal is the one that would
+    /// then have none. Reported by the incremental mutation gate on this
+    /// pull request (shard 5 of run 35523981742):
+    /// `replace TenantAwareInMemoryTaskStore::with_metrics -> Self with
+    /// Default::default()` survived.
+    #[tokio::test]
+    async fn with_metrics_reaches_the_per_tenant_stores() {
+        use a2a_protocol_types::events::StreamResponse;
+        use a2a_protocol_types::events::TaskStatusUpdateEvent;
+
+        #[derive(Default)]
+        struct Recorder(std::sync::Mutex<Vec<(String, String)>>);
+
+        impl crate::metrics::Metrics for Recorder {
+            fn on_persistence_error(&self, operation: &str, error_kind: &str) {
+                self.0
+                    .lock()
+                    .expect("not poisoned")
+                    .push((operation.to_owned(), error_kind.to_owned()));
+            }
+        }
+
+        let recorder = Arc::new(Recorder::default());
+        let store = TenantAwareInMemoryTaskStore::new()
+            .with_metrics(crate::metrics::MetricsHandle::from_arc(recorder.clone()));
+
+        // An append for a task no partition holds. The in-memory store cannot
+        // return that failure — the agent has already emitted the event — so
+        // it counts it, and the count is the only way to see it.
+        store
+            .append_event(
+                &TaskId::new("gone"),
+                1,
+                &StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: TaskId::new("gone"),
+                    context_id: ContextId::new("ctx-default"),
+                    status: TaskStatus::new(TaskState::Working),
+                    metadata: None,
+                }),
+            )
+            .await
+            .expect("a missing task must not fail the agent");
+
+        assert_eq!(
+            *recorder.0.lock().expect("not poisoned"),
+            vec![(
+                crate::metrics::persistence_operation::EVENT_APPEND.to_owned(),
+                crate::metrics::event_append_error::TASK_ABSENT.to_owned(),
+            )],
+            "the partition must report to the handle the store was given"
+        );
+    }
+
     // ── per-tenant bounds reach the per-tenant stores ────────────────────
     //
     // This store names none of `TaskStoreConfig`'s bounds; it holds one

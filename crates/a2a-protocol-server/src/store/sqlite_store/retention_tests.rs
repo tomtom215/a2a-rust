@@ -316,6 +316,16 @@ async fn an_orphan_sweep_clears_more_tasks_than_one_batch_holds() {
         .expect("purge");
 
     assert_eq!(report.orphan_rows_deleted, 5);
+    // Three batches of at most two, and the count is what `max_batches`
+    // spends: an orphan loop that deleted rows without charging for them
+    // would let a bounded sweep run for ever. Nothing asserted this, which
+    // is why `replace += with *= in purge` survived the incremental mutation
+    // gate on this pull request (shard 5 of run 35523981742) — `0 *= 1` is
+    // still 0, and no other assertion here reads the number.
+    assert_eq!(
+        report.batches, 3,
+        "five rows at two per batch is three batches, and they are charged for"
+    );
     assert!(report.complete, "nothing was left to do");
     let left: i64 = sqlx::query_scalar("SELECT count(*) FROM task_events")
         .fetch_one(&store.pool)

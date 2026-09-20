@@ -122,6 +122,37 @@ fn build(seq: i64, parsed: serde_json::Result<StreamResponse>) -> A2aResult<Reco
 /// `_task_id` and `_seq`: `trace_warn!` compiles to nothing without the
 /// `tracing` feature, and neither value may reach the metric, which carries
 /// low-cardinality discriminants only.
+///
+/// # Why every caller spells the guard `rows_affected() == 0`
+///
+/// All four write `if <the insert>.rows_affected() == 0 { … }` rather than
+/// the `let wrote = … > 0; if !wrote` they had until this release. The
+/// behaviour is the same; what changes is that a mutation of the comparison
+/// is now observable. `rows_affected()` is a `u64`, so `> 0` weakened to
+/// `< 0` is never true: the collision path then runs on *every* append, the
+/// read-back finds the row that call just wrote, the payloads compare equal,
+/// and this function returns without reporting — the same metric the
+/// unmutated code produces, at the cost of one extra `SELECT` per append.
+/// The incremental mutation gate reported it surviving in all four stores
+/// (shards 2 and 6 of run 35523981742 on pull request #138). `== 0` weakens
+/// only to `!= 0`, which skips this report on a real conflict and fails
+/// each store's own collision test.
+///
+/// Strictly the two spellings differ in one state: a successful insert
+/// whose read-back then fails leaves `stored` at `None`, so the mutated
+/// form reports a conflict that did not happen. Reaching it needs fault
+/// injection into the pool, which no test here has, so within the suite the
+/// mutant is equivalent.
+///
+/// This does *not* generalise to every `rows_affected() > 0` in these
+/// stores. `insert_if_absent` returns the comparison, so `< 0` collapses it
+/// to "never inserted" and a test kills it; the expression is left alone
+/// there. What makes this one equivalent is that the boolean never leaves
+/// the function.
+///
+/// `mutants.toml` records the general form: an equivalent mutant is usually
+/// an operator whose weakened form reaches the same state, and changing the
+/// spelling is better than a gate agreeing not to look.
 pub(super) fn report_no_op_append(
     metrics: &dyn Metrics,
     _task_id: &TaskId,

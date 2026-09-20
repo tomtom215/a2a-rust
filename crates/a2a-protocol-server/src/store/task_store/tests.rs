@@ -81,6 +81,24 @@ fn task_store_config_default_values() {
         "the default is documented as roughly a 500-chunk stream; changing it \
          changes how far back a reconnect can resume"
     );
+    assert_eq!(
+        config.idempotency_key_ttl,
+        Some(super::DEFAULT_IDEMPOTENCY_KEY_TTL)
+    );
+    // Spelled `24 * 3600` at the definition, so the arithmetic is pinned to
+    // the day it documents rather than to whatever that expression evaluates
+    // to. A key kept for an hour instead of a day would expire inside a
+    // client's retry window and let a send execute twice.
+    assert_eq!(
+        super::DEFAULT_IDEMPOTENCY_KEY_TTL,
+        Duration::from_secs(86_400),
+        "one day, matching the SQL stores' DEFAULT_IDEMPOTENCY_KEY_MAX_AGE"
+    );
+    assert_eq!(
+        super::DEFAULT_IDEMPOTENCY_KEY_TTL,
+        crate::store::retention::DEFAULT_IDEMPOTENCY_KEY_MAX_AGE,
+        "the two backends must not disagree about how long a retry is honoured"
+    );
 }
 
 /// Covers `TaskStoreConfig` Clone + Debug derives.

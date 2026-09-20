@@ -47,8 +47,8 @@ pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // here, which made the obvious import line fail to compile for exactly the
 // audience this module exists to serve.
 pub use task_store::{
-    ArtifactDelta, DEFAULT_MAX_EVENTS_PER_TASK, DEFAULT_MAX_PAGE_SIZE, IdempotencyClaim,
-    InMemoryTaskStore, RecordedEvent, TaskStore, TaskStoreConfig,
+    ArtifactDelta, DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK, DEFAULT_MAX_PAGE_SIZE,
+    IdempotencyClaim, InMemoryTaskStore, RecordedEvent, TaskStore, TaskStoreConfig,
 };
 pub use tenant::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
 

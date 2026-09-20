@@ -55,7 +55,7 @@ pub const DEFAULT_MAX_EVENTS_PER_TASK: usize = 512;
 /// How long the in-memory store keeps an idempotency key by default.
 ///
 /// One day, matching
-/// [`DEFAULT_IDEMPOTENCY_KEY_MAX_AGE`](crate::store::DEFAULT_IDEMPOTENCY_KEY_MAX_AGE),
+/// [`DEFAULT_IDEMPOTENCY_KEY_MAX_AGE`](crate::store::retention::DEFAULT_IDEMPOTENCY_KEY_MAX_AGE),
 /// which is the SQL stores' equivalent — the two backends should not disagree
 /// about how long a retry is honoured. See
 /// [`TaskStoreConfig::idempotency_key_ttl`] for what expiring a key costs.

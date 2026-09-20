@@ -184,7 +184,7 @@ impl InMemoryTaskStore {
         // TTL still accumulates keys, and it is the one most likely to,
         // having been configured to keep everything.
         if let Some(key_ttl) = config.idempotency_key_ttl.filter(|_| passes.ttl) {
-            Self::expire_idempotency_keys(store, key_ttl);
+            Self::expire_idempotency_keys(store, key_ttl, Instant::now());
         }
     }
 
@@ -229,8 +229,15 @@ impl InMemoryTaskStore {
     /// `retain` rather than collect-then-remove: unlike a task, a key has no
     /// secondary index to keep in step, so there is nothing that has to go
     /// through a removal helper.
-    fn expire_idempotency_keys(store: &mut StoreData, ttl: Duration) {
-        let now = Instant::now();
+    ///
+    /// `now` is a parameter rather than an `Instant::now()` inside, so that
+    /// "at least `ttl` ago" can be tested *at* `ttl` rather than near it. It
+    /// had to be: with the clock read in here, no test can make
+    /// `duration_since` land exactly on `ttl`, which made `<` and `<=`
+    /// indistinguishable and left `replace < with <=` surviving the
+    /// incremental mutation gate on this pull request (shard 7 of run
+    /// 35523981742). The one caller passes `Instant::now()`.
+    fn expire_idempotency_keys(store: &mut StoreData, ttl: Duration, now: Instant) {
         store
             .idempotency_index
             .retain(|_, (_, _, claimed_at)| now.duration_since(*claimed_at) < ttl);

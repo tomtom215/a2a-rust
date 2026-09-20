@@ -117,12 +117,22 @@ impl RequestHandler {
         const ATTEMPTS: u32 = 10;
         const INTERVAL: std::time::Duration = std::time::Duration::from_millis(25);
 
-        for attempt in 0..ATTEMPTS {
+        // Read, then wait-and-read nine more times. Ten reads and nine waits,
+        // exactly as a single loop with an `attempt + 1 < ATTEMPTS` guard
+        // around the sleep gave — but without the guard, whose only job was
+        // to skip the last sleep. Every weakening of it (`<` to `<=`, `==`
+        // or `>`, and `+` to `*`) changed how long a *failing* wait takes and
+        // nothing a caller can observe, so all four were equivalent mutants;
+        // the incremental mutation gate on this pull request reported them
+        // surviving (shard 4 of run 35523981742). Putting the waits between
+        // the reads removes the guard instead of exempting it.
+        if let Some(task) = self.task_store.get(existing).await? {
+            return Ok(task);
+        }
+        for _ in 1..ATTEMPTS {
+            tokio::time::sleep(INTERVAL).await;
             if let Some(task) = self.task_store.get(existing).await? {
                 return Ok(task);
-            }
-            if attempt + 1 < ATTEMPTS {
-                tokio::time::sleep(INTERVAL).await;
             }
         }
         Err(ServerError::TaskNotFound(existing.clone()))

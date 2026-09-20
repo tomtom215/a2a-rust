@@ -567,6 +567,43 @@ mod tests {
         );
     }
 
+    /// Every request mints its *own* span, not just a span different from
+    /// the caller's. The assertions above compare this hop's span id with
+    /// the peer's, so a `fresh_span_id` returning one fixed value satisfies
+    /// all of them while putting every request in the process on a single
+    /// span — a trace that parses, is rooted correctly, and is wrong.
+    /// Uniqueness is the property, so uniqueness is what this asserts.
+    ///
+    /// Reported by the incremental mutation gate on this pull request
+    /// (shard 1 of run 35523981742): `replace fresh_span_id -> [u8; 8] with
+    /// [1; 8]` survived, and `[1; 8]` is a non-zero span id, so even §3.2.2.3's
+    /// all-zeroes rule would not have caught it.
+    #[test]
+    fn each_call_mints_its_own_span_id() {
+        const PARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let mut headers = HashMap::new();
+        headers.insert("traceparent".to_owned(), PARENT.to_owned());
+
+        let span_of = |policy| {
+            build_call_context("message/send", Some(&headers), policy)
+                .trace_context()
+                .expect("this policy traces the request")
+                .span_id()
+                .to_owned()
+        };
+
+        assert_ne!(
+            span_of(InboundTracePolicy::Continue),
+            span_of(InboundTracePolicy::Continue),
+            "two requests joining one caller trace are two spans, not one"
+        );
+        assert_ne!(
+            span_of(InboundTracePolicy::Restart),
+            span_of(InboundTracePolicy::Restart),
+            "a restarted trace mints a fresh span id on every request too"
+        );
+    }
+
     #[test]
     fn build_call_context_without_headers() {
         let ctx = build_call_context("message/send", None, InboundTracePolicy::Continue);

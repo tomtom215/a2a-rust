@@ -269,13 +269,20 @@ impl HandlerLimits {
     /// bound should not have to know that one identifier has a protocol-
     /// imposed floor, and a configuration that cannot serve a conformant
     /// client is not one worth honouring exactly.
+    ///
+    /// Spelled as a saturating offset from the floor rather than the
+    /// `self.max_id_length > MIN_MESSAGE_ID_LENGTH` it reads as, for the
+    /// reason `mutants.toml` records for `InMemoryTaskStore::evict`: `>`
+    /// mutates to `>=`, and at exactly the floor both arms return the same
+    /// number, so the weakened operator is an *equivalent* mutant that no
+    /// test can kill. The arithmetic below has no such form —
+    /// `saturating_sub` is 0 at or below the floor, which lands the sum on
+    /// the floor, and is the excess above it otherwise. Reported by the
+    /// incremental mutation gate on this pull request (shard 1 of run
+    /// 35523981742); the fix is the spelling, not the logic.
     #[must_use]
     pub const fn effective_max_message_id_length(&self) -> usize {
-        if self.max_id_length > MIN_MESSAGE_ID_LENGTH {
-            self.max_id_length
-        } else {
-            MIN_MESSAGE_ID_LENGTH
-        }
+        MIN_MESSAGE_ID_LENGTH + self.max_id_length.saturating_sub(MIN_MESSAGE_ID_LENGTH)
     }
 
     /// Sets how often an idle `SubscribeToTask` stream re-checks its task.

@@ -783,6 +783,76 @@ mod tests {
         assert!(result.is_err(), "empty interfaces should return error");
     }
 
+    // ── idempotency extension detection ───────────────────────────────────
+    //
+    // `peer_honours_idempotency` is what makes a keyed send retryable
+    // (`retry::carries_idempotency_key`), and the agent card's extension
+    // list is the only evidence the client has for setting it. So the
+    // comparison that reads it has to be exact in both directions. Reading
+    // some *other* extension as the idempotency one would have the client
+    // retry against a peer that ignores the key, and that retry runs as a
+    // second task — the duplicate execution the key exists to prevent.
+    //
+    // Measured: with `==` weakened to `!=` at the comparison in
+    // `from_card_preferring`, `a_card_advertising_only_other_extensions_…`
+    // and `a_card_advertising_the_idempotency_extension_…` both fail. No
+    // test before these two did.
+
+    fn card_advertising(extension_uris: &[&str]) -> AgentCard {
+        let mut card = card_with(vec![iface(BINDING_JSONRPC, "http://localhost:1111")]);
+        card.capabilities.extensions = Some(
+            extension_uris
+                .iter()
+                .map(|uri| a2a_protocol_types::AgentExtension::new(*uri))
+                .collect(),
+        );
+        card
+    }
+
+    fn peer_honours(card: &AgentCard) -> bool {
+        ClientBuilder::from_card_preferring(card, &[BINDING_JSONRPC.into()])
+            .expect("from_card_preferring")
+            .peer_honours_idempotency
+    }
+
+    #[test]
+    fn a_card_advertising_the_idempotency_extension_marks_the_peer_as_honouring_keys() {
+        let card = card_advertising(&[a2a_protocol_types::idempotency::IDEMPOTENCY_EXTENSION_URI]);
+
+        assert!(
+            peer_honours(&card),
+            "the card advertises the extension, so a keyed send is retryable"
+        );
+    }
+
+    #[test]
+    fn a_card_advertising_only_other_extensions_leaves_the_peer_unmarked() {
+        // The second URI is the idempotency URI with a different version
+        // segment — a near neighbour that a prefix match, or a comparison
+        // inverted to `!=`, accepts and full equality rejects.
+        let card = card_advertising(&[
+            "https://example.com/extensions/unrelated/v1",
+            "https://a2a-rust.com/extensions/idempotency/v2",
+        ]);
+
+        assert!(
+            !peer_honours(&card),
+            "no extension on this card is the idempotency extension; marking \
+             the peer as honouring keys would make the client retry a send \
+             that the peer runs a second time"
+        );
+    }
+
+    #[test]
+    fn a_card_advertising_no_extensions_at_all_leaves_the_peer_unmarked() {
+        // `capabilities.extensions` is `None` here, not an empty list: the
+        // absent-list arm is reached by a different path than the empty one.
+        let card = card_with(vec![iface(BINDING_JSONRPC, "http://localhost:1111")]);
+        assert!(card.capabilities.extensions.is_none());
+
+        assert!(!peer_honours(&card));
+    }
+
     #[test]
     fn builder_from_card_uses_card_url() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
