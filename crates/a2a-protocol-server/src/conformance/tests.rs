@@ -322,7 +322,7 @@ async fn a_panicking_join_is_a_panic_and_a_cancelled_one_is_not() {
         .await
         .expect_err("a panicking task fails its join");
     assert!(panicked.is_panic(), "fixture must actually be a panic");
-    assert!(super::is_panic(&panicked));
+    assert!(super::run::is_panic(&panicked));
 
     let handle = tokio::spawn(std::future::pending::<()>());
     handle.abort();
@@ -332,7 +332,7 @@ async fn a_panicking_join_is_a_panic_and_a_cancelled_one_is_not() {
         "fixture must actually be a cancel"
     );
     assert!(
-        !super::is_panic(&cancelled),
+        !super::run::is_panic(&cancelled),
         "a cancelled task did not panic, and the harness must not report it as one"
     );
 }
