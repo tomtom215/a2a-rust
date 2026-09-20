@@ -47,6 +47,41 @@ Topological order over **all** dependency edges: server precedes client
 because the client has a versioned dev-dependency on the server, which
 `cargo publish` resolves against the crates.io index.
 
+## v0.13.0 (2026-09-20)
+
+A minor release that makes the event log the record, and spends it on stream
+resumption. Carries three deliberate breaking changes, batched and labelled as
+[STABILITY.md](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md)
+requires. Full detail in
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
+
+- **An append-only event log, beside the snapshot.** A task's state is a fold,
+  and until now the fold was the only thing kept — so a wrong fold had nothing
+  to be checked against, which is how
+  [#130](https://github.com/tomtom215/a2a-rust/issues/130) went unobserved.
+  `TaskStore` gains `supports_event_log`, `append_event`, `last_event_seq` and
+  `read_events`, implemented by every store this crate ships. The snapshot
+  stays authoritative for reads; this is not event sourcing.
+- **SSE frames carry an `id:`, and `Last-Event-ID` resumes from it.** A client
+  that was disconnected sends back the position of the last frame it saw and
+  receives exactly what it missed, rather than a snapshot it has to diff. The
+  position is assigned once, where the event fans out to both the log and the
+  stream, so the `id:` on the wire and the `seq` in the store are the same
+  number by construction.
+- **An executor can see who called it.** `RequestContext` gains a
+  `call_context`, carrying caller identity, tenant, activated extensions and
+  inbound headers across the `tokio::spawn` that task-locals do not survive.
+- **W3C trace context crosses an A2A hop**, so a delegation chain is one trace
+  rather than several unrelated span trees.
+- **A failed task says why**, as a `FailureClass` a caller can `match` on
+  instead of parsing English out of a message.
+- **A conformance harness for `AgentExecutor`**, behind the `conformance`
+  feature: eight checks an implementation can run against itself.
+- **Breaking:** `RequestContext` is `#[non_exhaustive]`;
+  `EventQueueReader::read` yields a `StreamEvent` carrying the log position;
+  `PurgeReport::journal_orphans_deleted` is now `orphan_rows_deleted`. See
+  [Upgrading Between Minor Versions](./upgrading.md).
+
 ## v0.12.1 (2026-09-17)
 
 A patch release: one specification correction, one security advisory, and

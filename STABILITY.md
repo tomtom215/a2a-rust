@@ -12,12 +12,21 @@ happen before a `1.0`. [ROADMAP.md](ROADMAP.md) tracks the open items;
 
 ## 1. Where the project is
 
-The crates are at `0.12` (prepared 2026-09-10). Between `0.7.0` (2026-07-24) and `0.11.0`
+The crates are at `0.13` (prepared 2026-09-20). Between `0.7.0` (2026-07-24) and `0.11.0`
 (2026-08-30) there were four minor releases in five weeks, and the changelog
 for that span names nine breaking changes. That cadence was appropriate while
 the A2A `v1.0` wire contract, the tenant model and the four bindings were
 being brought to conformance; it is not appropriate for a dependency someone
 has to keep compiling. The policy below is the commitment that replaces it.
+
+`0.13.0` carries three breaking changes, batched and labelled as §2 and §3
+require. It is worth saying plainly what that costs: §7 cuts `1.0` after
+**two consecutive** minor releases with no break, and `0.12.0` was the last
+one to break, so that count restarts at zero here rather than reaching one.
+The three are the `#[non_exhaustive]` marking of `RequestContext`, the event
+position `EventQueueReader::read` now carries, and one renamed `PurgeReport`
+field; each has a one-line migration in the changelog. Nothing in
+`ROADMAP.md` is pending that requires another.
 
 ## 2. Semantic versioning, and what "breaking" means here
 

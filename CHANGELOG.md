@@ -10,14 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-20
+
 ### Breaking Changes
 
-Targeting **0.13.0**. In the `0.x` series a minor release may break and a
-patch may not (`STABILITY.md` §2), and each item below is a minor-only change
-by that list. The four crates bump in lockstep, and
-`bindings/a2a-protocol-slimrpc` needs its `a2a-protocol-*` requirements moved
-to `0.13` afterwards (`RELEASING.md` §"every SDK minor release requires a
-follow-up release of the binding").
+In the `0.x` series a minor release may break and a patch may not
+(`STABILITY.md` §2), and each item below is a minor-only change by that list.
+The four crates bump in lockstep.
+
+`bindings/a2a-protocol-slimrpc` moves with them, to `0.5.0` on the `0.13`
+pins: `SlimRpcServer::builder` takes `Arc<RequestHandler>`, so
+`a2a-protocol-server` and `a2a-protocol-types` are *public* dependencies and
+its requirement on them is a tight `0.13`. That bump is in this release rather
+than after it because the binding depends on the workspace by `path` as well
+as by version, so `^0.12` stops resolving the moment the crates read 0.13.0.
+Publishing it remains the separate step `RELEASING.md` describes — and the
+one that has never been run.
 
 - **`RequestContext` is `#[non_exhaustive]` and carries a new `call_context`
   field.** Measured with `cargo semver-checks check-release -p

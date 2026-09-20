@@ -54,14 +54,14 @@ complete — neither is.
 
 ```toml
 [dependencies]
-a2a-protocol-slimrpc = "0.4"
-a2a-protocol-server  = "0.12"
+a2a-protocol-slimrpc = "0.5"
+a2a-protocol-server  = "0.13"
 ```
 
 ### Why two version numbers
 
-`a2a-protocol-slimrpc` is versioned independently of the SDK — it is at `0.4`
-while the SDK is at `0.12`. Numbering it to match would claim nine minor
+`a2a-protocol-slimrpc` is versioned independently of the SDK — it is at `0.5`
+while the SDK is at `0.13`. Numbering it to match would claim eight minor
 versions of API stability it has not earned, and would force a bump
 on every SDK release even when nothing here changed.
 

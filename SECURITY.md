@@ -12,8 +12,8 @@ workflow checks that it covers the version being tagged.)
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.12.x  | :white_check_mark: |
-| < 0.12  | :x:                |
+| 0.13.x  | :white_check_mark: |
+| < 0.13  | :x:                |
 
 ## Scope
 
