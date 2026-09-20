@@ -210,3 +210,119 @@ fn every_error_renders_a_distinct_message() {
         );
     }
 }
+
+// ── Boundaries and byte-level constructors ───────────────────────────────────
+//
+// Six mutants survived here in CI: both `>` comparisons in `with_tracestate`
+// relaxed to `>=`, `flags()` replaced with the constant `1`, and the three
+// all-zero guards in `from_bytes` and `child_bytes` inverted. Each is a real
+// gap rather than an equivalent mutant — the tests above check one side of
+// every limit and never the other, and the two byte-level constructors had
+// no tests at all.
+
+/// The limits are inclusive: 32 members and 4096 bytes are *legal*, and it is
+/// 33 and 4097 that are not. Testing only the rejecting side leaves `>` and
+/// `>=` indistinguishable, which is exactly what CI reported.
+#[test]
+fn the_tracestate_limits_admit_their_own_boundary() {
+    let tc = TraceContext::parse(SPEC_EXAMPLE).expect("valid");
+
+    // Exactly 32 list members — the most W3C 3.3.3 allows.
+    let at_limit = (0..32)
+        .map(|i| format!("k{i}=v"))
+        .collect::<Vec<_>>()
+        .join(",");
+    assert_eq!(
+        at_limit.split(',').count(),
+        32,
+        "the fixture must sit on it"
+    );
+    assert_eq!(
+        tc.clone()
+            .with_tracestate(&at_limit)
+            .expect("32 members is the limit, not past it")
+            .tracestate(),
+        Some(at_limit.as_str()),
+    );
+
+    // Exactly 4096 bytes — one member, so only the length bound is in play.
+    let at_len = "a".repeat(4096);
+    assert_eq!(
+        tc.with_tracestate(&at_len)
+            .expect("4096 bytes is the limit, not past it")
+            .tracestate()
+            .map(str::len),
+        Some(4096),
+    );
+}
+
+/// `flags()` returns the byte it was given. The sampled example above is `01`,
+/// so every assertion on it is also satisfied by a function that ignores its
+/// input and returns 1; an unsampled context is what distinguishes them.
+#[test]
+fn flags_reports_the_byte_it_was_given_not_a_constant() {
+    let unsampled = TraceContext::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00")
+        .expect("flags 00 is valid — unsampled, not malformed");
+    assert_eq!(unsampled.flags(), 0);
+    assert!(!unsampled.is_sampled());
+
+    // A byte that is neither 0 nor 1: §3.3.1 says an unknown flag bit is
+    // carried through unchanged rather than masked off.
+    let other = TraceContext::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-fe")
+        .expect("unknown flag bits parse");
+    assert_eq!(other.flags(), 0xfe);
+}
+
+/// `from_bytes` rejects an all-zero id and accepts everything else. The
+/// rejecting half was covered; the accepting half was not, so inverting
+/// `*b == 0` to `*b != 0` — which rejects ids with *no* zero byte — changed
+/// nothing any test could see.
+#[test]
+fn from_bytes_accepts_ids_with_no_zero_byte_and_rejects_the_all_zero_ones() {
+    let tc = TraceContext::from_bytes([0xff; 16], [0xab; 8], 0x01)
+        .expect("an id with no zero byte is valid");
+    assert_eq!(tc.trace_id(), "ffffffffffffffffffffffffffffffff");
+    assert_eq!(tc.span_id(), "abababababababab");
+    assert_eq!(tc.flags(), 0x01);
+    assert_eq!(tc.tracestate(), None);
+
+    // A single zero byte is fine; it is *all* zeros that the spec forbids.
+    let mut mostly_zero = [0u8; 16];
+    mostly_zero[15] = 1;
+    let mut span_mostly_zero = [0u8; 8];
+    span_mostly_zero[7] = 1;
+    assert!(TraceContext::from_bytes(mostly_zero, span_mostly_zero, 0).is_ok());
+
+    assert_eq!(
+        TraceContext::from_bytes([0; 16], [0xab; 8], 0),
+        Err(TraceContextError::ZeroTraceId)
+    );
+    assert_eq!(
+        TraceContext::from_bytes([0xff; 16], [0; 8], 0),
+        Err(TraceContextError::ZeroSpanId)
+    );
+}
+
+/// The same asymmetry in `child_bytes`, plus the property that makes it worth
+/// having: the child keeps the trace, the flags and the `tracestate`, and
+/// changes only the span.
+#[test]
+fn child_bytes_keeps_the_trace_and_changes_only_the_span() {
+    let parent = TraceContext::parse(SPEC_EXAMPLE)
+        .expect("valid")
+        .with_tracestate("vendor=value")
+        .expect("valid tracestate");
+
+    let child = parent
+        .child_bytes([0x11; 8])
+        .expect("a span id with no zero byte is valid");
+    assert_eq!(child.span_id(), "1111111111111111");
+    assert_eq!(child.trace_id(), parent.trace_id());
+    assert_eq!(child.flags(), parent.flags());
+    assert_eq!(child.tracestate(), parent.tracestate());
+
+    assert_eq!(
+        parent.child_bytes([0; 8]),
+        Err(TraceContextError::ZeroSpanId)
+    );
+}
