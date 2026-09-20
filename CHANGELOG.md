@@ -10,6 +10,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`RequestHandlerBuilder::with_inbound_trace_policy`** and
+  `InboundTracePolicy` (`Continue` — the default and the previous behaviour —
+  `Restart`, `Drop`). The inbound `traceparent` is joined while the
+  `CallContext` is built, which is *before* the interceptor chain, which is
+  where authentication happens: so on a public endpoint the peer choosing the
+  `trace-id` and the sampling bit is, at that moment, anonymous. W3C Trace
+  Context §7.2 names the consequences — forged `trace-id` collisions, and an
+  attacker deciding what the operator's tracing vendor is billed for — and
+  §3.4 names the remedy. Per handler rather than per process, so one process
+  serving both a public front gate and an internal endpoint can hold a
+  different policy on each.
+
+- **`TaskStore::earliest_event_seq` and `TaskStore::event_log_covers`**, both
+  defaulted, so an out-of-tree store compiles unchanged (`STABILITY.md` §4).
+  `event_log_covers` is provided rather than implemented per store, so the
+  comparison and its off-by-one live in one place. A resubscribe naming a
+  position the log has dropped is now served the snapshot rather than a replay
+  that silently begins later than asked.
+
+- **`TaskStoreConfig::max_events_per_task`** (default `Some(512)`) and
+  `DEFAULT_MAX_EVENTS_PER_TASK`. **Behaviour change:** the in-memory event log
+  was unbounded and is now bounded.
+
+- **`metrics::event_append_error`** with `position_conflict` and
+  `task_absent`, both reported under `persistence_operation::EVENT_APPEND`
+  alongside a warning. A collision whose stored payload matches what was
+  offered is a replay rather than a loss and is deliberately not counted.
+
+- **`metrics::MetricsHandle`**, and `with_metrics` on the five directly
+  constructed stores, including `TenantAwareInMemoryTaskStore`, which hands it
+  to every partition it creates.
+
+- **`InMemoryTaskStore::is_prunable` and `idempotency_key_count`.**
+
+- **`CHECK (seq > 0)`** on `task_events` and `tenant_task_events`. Postgres
+  migration 6 adds it to existing databases. SQLite cannot — `ALTER TABLE` has
+  no `ADD CONSTRAINT`, so an existing SQLite database keeps the unconstrained
+  table; a database the runner builds from scratch gets it.
+
+- **A `trace_context` fuzz target**, and `scripts/check_fuzz_matrix.py`, which
+  fails when a fuzz target exists but no runner executes it. A target reaches
+  CI through three files and only the workflow matrix has no build error
+  behind it; `trace_context` itself shipped registered in `fuzz/Cargo.toml`
+  and absent from the matrix, which is the drift the gate caught on its first
+  run.
+
+### Fixed
+
+- **`TraceContext::parse` could abort the process.** A `traceparent` whose
+  55th byte falls inside a multi-byte character panicked, and the root
+  manifest sets `panic = "abort"`, so a peer-supplied header on the public
+  `on_send_message` path was process death rather than a rejected request.
+
+- **A version-`00` `traceparent` with a trailing field was accepted.** W3C
+  §3.2.2.2 gives version 00's grammar exactly; the lenient trailing-field rule
+  is §3.2.4's and applies only to a *higher* version.
+
+- **Reserved `trace-flags` bits were propagated.** W3C §3.2.2.5.2 and §4.3
+  both require a vendor to zero unknown bits on outgoing requests. `flags()`
+  still reports the byte as received, for diagnostics.
+
+- **An oversized or over-32-member `tracestate` was discarded whole**, taking
+  every vendor's state with it. W3C §3.3.1.5 requires truncating *entries* —
+  those over 128 characters first, then from the end — which is what happens
+  now. `MAX_TRACESTATE_LEN` is public and documented because §3.3.1.5 requires
+  the maximum to be documented.
+
+- **`TracePropagationInterceptor`'s "never overwrite" guard was
+  case-sensitive**, and `http`'s builder appends rather than replaces, so a
+  user interceptor setting `Traceparent` put two `traceparent` fields on the
+  wire and which one the peer joined was its parser's choice. `tracestate` had
+  no guard at all.
+
+- **An append that wrote nothing was discarded in silence.** All four SQL
+  stores dropped `rows_affected()` from their `ON CONFLICT ... DO NOTHING`
+  insert, and both in-memory stores returned `Ok(())` for a task they no
+  longer held.
+
+- **The SQLite retention orphan sweep ran only when a purge deleted a task**,
+  so rows stranded by a partly-failed purge survived to be replayed to
+  whoever next reused the task id. It runs on every sweep now, batched.
+
+- **A negative stored event position was made positive** by `unsigned_abs`
+  instead of refused.
+
+- **`prune_empty_tenants` destroyed live idempotency indexes.** It decided on
+  `count()`, which counts tasks, and an idempotency key deliberately outlives
+  the task it names. A partition whose tasks had all been swept still held a
+  live index, and pruning it discarded that index — so the next retry carrying
+  one of those keys found no claim and executed the send a second time, which
+  is the one outcome a key exists to prevent.
+
+
 ## [0.13.0] - 2026-09-20
 
 ### Breaking Changes
@@ -398,7 +493,14 @@ one that has never been run.
   The server parses an inbound `traceparent`, advances the span, and exposes
   it as `RequestContext::trace_context()`. The client gains
   `TracePropagationInterceptor`, which writes the ambient `CurrentTrace` onto
-  every outbound request; `CurrentTrace::scope` sets it and
+  every outbound request on the canonical A2A transports — JSON-RPC, REST and
+  gRPC. **The `websocket` transport is the exception, and cannot be
+  otherwise:** it carries headers only on the HTTP upgrade, and a
+  `traceparent` fixed at connect time would report every request on that
+  connection as the same span, which W3C §3.4 forbids. A dropped trace header
+  is reported once per connection at `warn`; a dropped *credential* header is
+  still reported on every call, because that one can be fixed by reconnecting.
+  `CurrentTrace::scope` sets it and
   `CurrentTrace::start_root()` begins a chain. The indirection through a
   task-local is deliberate: a client is built once and reused for many
   delegated calls, so a trace fixed at construction would label all of them

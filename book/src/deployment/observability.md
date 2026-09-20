@@ -312,13 +312,33 @@ than repaired, because attaching work to a guessed-at trace is a wrong
 answer where a missing trace is only an absent one.
 
 **Calling.** Add `TracePropagationInterceptor` to the client and it writes
-the ambient `CurrentTrace` onto every request. An agent that is the first hop
-starts one with `CurrentTrace::start_root()`.
+the ambient `CurrentTrace` onto every request over JSON-RPC, REST or gRPC. An
+agent that is the first hop starts one with `CurrentTrace::start_root()`.
 
-**What is not done.** Nothing reads or acts on `tracestate` beyond carrying
-it unchanged; there is no sampler; and the SDK adds no vendor entry of its
-own. The `a2a.task.id` of each hop is still not attached to anything, because
-there is no span to attach it to.
+Not over the `websocket` transport, which has no per-request header channel —
+it carries headers only on the HTTP upgrade, and a `traceparent` fixed there
+would report every request on the connection as one span, which W3C §3.4
+forbids. The interceptor is silently ineffective on an established WebSocket
+connection; the transport warns once per connection when it drops one. Send
+traced calls over one of the other three.
+
+**Trusting the caller's trace.** The inbound `traceparent` is read while the
+`CallContext` is built, which is before your interceptors run — so on a public
+endpoint the peer choosing the `trace-id` and the sampling bit has not been
+authenticated yet. W3C §7.2 names what that allows: forged `trace-id`
+collisions that make the data unusable, and an anonymous caller deciding what
+your tracing vendor bills you for. A front gate sets
+`RequestHandlerBuilder::with_inbound_trace_policy(InboundTracePolicy::Restart)`
+to mint its own ids (§3.4's "Restart trace"), or `Drop` to refuse to trace an
+unauthenticated request at all. The default is `Continue`, which joins the
+caller's trace — right inside a trusted mesh, and the reason A2A delegation
+chains are readable end to end.
+
+**What is not done.** Nothing *interprets* `tracestate` — the SDK adds no
+vendor entry of its own and reads nobody else's; it only truncates whole
+entries when a list exceeds the documented 4096-character or 32-member cap
+(W3C §3.3.1.5). There is no sampler. The `a2a.task.id` of each hop is still
+not attached to anything, because there is no span to attach it to.
 
 See also [Troubleshooting](./troubleshooting.md) for the symptom-first version
 of this page, and [Production Hardening](./production.md) for health checks.

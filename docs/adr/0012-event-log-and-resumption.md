@@ -110,14 +110,47 @@ event that outlives its task is replayed to whoever next claims that id.
   `StreamResponse`. Breaking, and taken in 0.13.0.
 - A lagged SSE consumer now produces a **visible gap** in the numbering rather
   than a dense sequence that silently mis-numbers. A gap is the honest report.
-- A failed append leaves a gap too, and is logged and counted under the
-  `event_append` persistence-error label rather than failing the task. The log
-  is a record of the run, not a precondition for it.
+- An append that fails **or records nothing** leaves a gap too, and is logged
+  and counted under the `event_append` persistence-error label rather than
+  failing the task. The log is a record of the run, not a precondition for it.
+  Two kinds are distinguished: `event_append_error::POSITION_CONFLICT`, where
+  a second writer already holds the position, and
+  `event_append_error::TASK_ABSENT`, where the task is gone. A collision whose
+  stored payload matches what was offered is a **replay**, not a loss, and is
+  deliberately not counted — the comparison is on the serialized form, which
+  is the log's own round-trip form, not on event identity.
+
+  Worth stating plainly, because the original framing of position collision as
+  purely a safety mechanism was too kind to it: a collision is also the one way
+  this design loses an event without an error. The mitigation is observation,
+  not prevention. There is still no database-backed lease, so two replicas
+  numbering the same task independently remains possible; what changed is that
+  it is now visible.
+- **The log may not go back as far as a subscriber asks.** The in-memory log
+  is bounded (`TaskStoreConfig::max_events_per_task`, default 512) and a
+  persistent one is swept, so "resume after position N" can name a position
+  that no longer exists. This is a different thing from the numbering gaps
+  above, which are positions that were skipped: here the position was real and
+  the record of it is gone. A store reports the earliest position it still
+  holds (`TaskStore::earliest_event_seq`), a caller asks
+  `TaskStore::event_log_covers`, and a resubscribe for a dropped position is
+  served **from the snapshot** rather than as a partial replay — a replay that
+  silently begins later than asked is a hole the subscriber cannot detect,
+  because its own next `Last-Event-ID` would skip straight past it.
+  Truncation never empties a log (a zero bound is floored at one), which is
+  what keeps `earliest_event_seq` answerable.
 - The log grows with the task and is reclaimed with it: by `delete`, by the
   foreign key, and — because `ON DELETE CASCADE` only fires with
   `foreign_keys=ON`, which a pool handed to `from_pool` may not set — by the
   SQLite retention sweep's anti-join, reported as
-  `PurgeReport::orphan_rows_deleted`.
+  `PurgeReport::orphan_rows_deleted`. That sweep ran only when a purge had
+  deleted at least one task until 2026-09-20, which meant rows stranded by a
+  partly-failed purge — whose earlier batches are already committed — survived
+  until some later sweep happened to delete something. It runs every time now.
+  `orphan_rows_deleted` is structurally zero on PostgreSQL: there is no orphan
+  statement there rather than one that finds nothing, because Postgres has no
+  per-session equivalent of `foreign_keys=OFF` and a declared cascade always
+  fires.
 - WebSocket, gRPC and SLIM streams carry no position. Resumption is the SSE
   binding's `id:`/`Last-Event-ID` pair; a spelling for the others would be a
   protocol extension this SDK invented.
