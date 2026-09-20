@@ -165,13 +165,13 @@ impl RequestHandler {
             // Safe to delete: the executor has not been spawned and the
             // context guard is still held, so nothing has been able to
             // observe this task.
-            if let Err(delete_err) = self.task_store.delete(task_id).await {
+            if let Err(_delete_err) = self.task_store.delete(task_id).await {
                 // Best effort. The caller is already receiving an error, and
                 // an orphan row is a smaller wrong than reporting success.
                 trace_warn!(
                     task_id = %task_id,
-                    "push config rejected the send, and rolling the task row back failed: \
-                     {delete_err}"
+                    error = %_delete_err,
+                    "push config rejected the send, and rolling the task row back failed"
                 );
             }
             return Err(e);
