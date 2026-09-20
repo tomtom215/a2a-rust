@@ -3,11 +3,11 @@
 
 # Provenance Manifest
 
-**Measured 2026-09-20 at `7db4fef8`. Regenerate with `scripts/provenance_manifest.sh`.**
+**Measured 2026-09-20 at `587569c2`. Regenerate with `scripts/provenance_manifest.sh`.**
 
 > Re-measured for 0.13.0, as `release.yml` requires: it fails a release whose
 > manifest was measured at a different commit. The share of history that
-> passes the project's own DCO gate is **51.4%** (47.5% at 0.12.1, 46.5% at
+> passes the project's own DCO gate is **51.5%** (47.5% at 0.12.1, 46.5% at
 > 0.12.0, 41.4% at 0.11.0, 19.4% at `c008ab0` on 2026-08-11) — the figure moves
 > with every signed-off commit,
 > and a document written for counsel that silently understates the project
@@ -74,19 +74,19 @@ scripts/provenance_manifest.sh
 
 ## 1. What the history contains
 
-At `7db4fef8`, **1235 commits**, spanning **2026-03-15 to 2026-09-20**.
+At `587569c2`, **1237 commits**, spanning **2026-03-15 to 2026-09-20**.
 
 | | Commits |
 |---|---:|
-| Total reachable | 1235 |
+| Total reachable | 1237 |
 | Merge commits (`dco.yml` does not examine these) | 125 |
-| **Non-merge commits — the population `dco.yml` grades** | **1110** |
+| **Non-merge commits — the population `dco.yml` grades** | **1112** |
 
-Git author field, all 1235 commits:
+Git author field, all 1237 commits:
 
 | Author | Commits |
 |---|---:|
-| `Tom F. <tomf@tomtomtech.net>` | 574 |
+| `Tom F. <tomf@tomtomtech.net>` | 576 |
 | `Claude <noreply@anthropic.com>` | 479 |
 | `Tom F <tomtom215@users.noreply.github.com>` | 136 |
 | `github-actions[bot] <41898282+…>` | 44 |
@@ -98,18 +98,18 @@ the 136 no-reply commits are merge commits created by GitHub's merge button.
 
 ## 2. Verdict under the project's own DCO gate
 
-Applying `dco.yml`'s rules to all 1110 non-merge commits:
+Applying `dco.yml`'s rules to all 1112 non-merge commits:
 
 | Outcome | Commits | Share |
 |---|---:|---:|
-| **Would pass** — human author, matching `Signed-off-by` | **571** | 51.4% |
-| Fail — author `noreply@anthropic.com` | 477 | 43.0% |
+| **Would pass** — human author, matching `Signed-off-by` | **573** | 51.5% |
+| Fail — author `noreply@anthropic.com` | 477 | 42.9% |
 | Fail — author `github-actions[bot]` | 46 | 4.1% |
 | Fail — human author, no matching `Signed-off-by` | 16 | 1.4% |
 
 The passing count has more than quadrupled since the 2026-08-11 measurement —
-126 to 571, and at this measurement the compliant commits become the **majority**
-of the graded population for the first time (51.4%).
+126 to 573, and at this measurement the compliant commits become the **majority**
+of the graded population for the first time (51.5%).
 The AI-authored count has not moved at all, which is the shape a closed pattern
 makes: that population is fixed and the compliant one grows past it.
 
@@ -127,12 +127,12 @@ authorship rule, which short-circuits before the sign-off check.
 
 **The pattern is closed, not ongoing.** The AI-authored *contributions* run
 2026-03-15 to **2026-07-24** and stop there. `b416c1a` (2026-07-24, tagged
-`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **594 non-merge
+`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **596 non-merge
 commits since** — the population `dco.yml` grades — **zero** are AI-authored:
 
-| Author, `b416c1a..7db4fef` | Commits |
+| Author, `b416c1a..587569c` | Commits |
 |---|---:|
-| `Tom F. <tomf@tomtomtech.net>` | 574 |
+| `Tom F. <tomf@tomtomtech.net>` | 576 |
 | `Tom F <tomtom215@users.noreply.github.com>` | 29 |
 | `github-actions[bot]` | 21 |
 | `dependabot[bot]` | 2 |
@@ -237,11 +237,11 @@ mechanical. Its cost is not.
 
 **There is no partial rewrite.** The earliest commit failing `dco.yml` is
 `c6b33cb`, **the initial commit** (2026-03-15, "Initial commit", no sign-off).
-Amending it changes its SHA, and therefore the SHA of all 1234 descendants.
+Amending it changes its SHA, and therefore the SHA of all 1236 descendants.
 
 | | |
 |---|---|
-| Commits whose SHA changes | **1235 — all of them** |
+| Commits whose SHA changes | **1237 — all of them** |
 | Release tags that must be re-cut | **15** (`v0.2.0` … `v0.12.0`) |
 | Published crates.io releases whose source link breaks | 15 versions × 4 crates |
 | SLSA provenance attestations that stop resolving | all, for every published tag |
