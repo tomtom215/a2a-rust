@@ -297,6 +297,16 @@ here causing it. Fixed for the four published crates in `eaf038c` — the
 workspace lockfile moves rustls 0.23.44 to 0.23.45, two lines, no manifest
 change — and that fix is now released in 0.12.1.
 
+**Before that: the binding is a blind spot for every workspace-wide check.**
+It is outside the root workspace because it takes `RequestHandler` as a public
+dependency, so `cargo check --workspace --all-targets --all-features`,
+workspace clippy and `cargo test --workspace` all pass while it does not
+compile — measured on 2026-09-20, when `EventQueueReader::read` changed shape
+and only `scripts/preflight.sh --full` (which cds into the binding) caught it.
+A breaking change to a public type in the server crate is not verified until
+`cd bindings/a2a-protocol-slimrpc && cargo clippy --all-targets -- -D warnings`
+has run.
+
 **Still not fixed for `bindings/a2a-protocol-slimrpc`, and it cannot be from
 here.** rustls 0.23.45 needs `aws-lc-rs ^1.18`; `mls-rs-crypto-awslc 0.23.0` —
 the only release in the range `agntcy-slim-auth 0.15.4` admits — pins
