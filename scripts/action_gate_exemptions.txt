@@ -1,0 +1,40 @@
+# scripts/action_gate_exemptions.txt — read by scripts/lib/ci_gate_audit.sh
+#
+# `uses:` steps in .github/workflows/ci.yml that render a blocking verdict and
+# that `scripts/prove_gates_fail.sh` cannot prove. Each line is that decision,
+# written down, so the omission is a thing somebody chose rather than a thing
+# nobody noticed.
+#
+# Why these cannot be proven, once, rather than three times below: that harness
+# proves a gate by running the step's own command against an injected defect. A
+# `uses:` step has no command — it names an action that GitHub's runner
+# resolves, at a version the action itself pins, in a container this harness
+# does not build. The nearest local stand-in would be invoking whatever
+# `cargo deny` or `cargo semver-checks` happens to be on PATH, which is a
+# different tool at a different version reading a different config. The rule
+# against that is already written down, in prove_workflow_gates_fail.py: "a
+# harness that runs the block under a stricter shell than CI does is not
+# reproducing the gate, it is inventing a different one."
+#
+# What this file buys, given that: the steps are enumerated, so a new
+# marketplace action cannot join ci.yml as a blocking check that no inventory
+# knows about (which is what happened to the binding's cargo-deny step); and an
+# entry that stops naming a real step fails the gate, so deleting or renaming
+# one of these is loud.
+#
+# Format — one entry per line:
+#
+#   JOB::STEP NAME  # reason
+#
+#   JOB        the job's key under `jobs:` in ci.yml
+#   STEP NAME  the step's `name:`, exactly. A verdict-bearing step must have
+#              one; an unnamed one fails the check rather than being guessed at
+#   reason     required. Why its failure is not proven here
+#
+# Infrastructure actions — checkout, toolchain, cache, setup-python — are not
+# listed: they are classified by SETUP_ACTIONS in scripts/lib/ci_gates.sh,
+# which is itself checked for entries that match nothing.
+
+deny::cargo-deny (the workspace dependency tree)  # advisory/licence/source audit of the four published crates, run by a pinned marketplace action against the root deny.toml; no `run:` command exists to re-run against an injected defect. deny.toml's own `skip` list carries the per-exemption reasons for what it does not flag.
+semver::Check semver (types, client, server, sdk; all features)  # blocks (no continue-on-error, and ci.yml's comment above the job records the measurements). cargo-semver-checks runs inside a marketplace action at its own pinned version, against a baseline downloaded from crates.io, so a local re-run proves a different tool against a different baseline.
+slimrpc-binding::cargo-deny (the binding's own dependency tree)  # the only audit of the binding's 379 transitive dependencies, `aws-lc-sys` and its native C toolchain among them; the root deny.toml resolves against the workspace manifest and cannot see them. Same action, same reason it is not provable here — and the reason this file exists, since until it did nothing in the repository knew this step was a gate.

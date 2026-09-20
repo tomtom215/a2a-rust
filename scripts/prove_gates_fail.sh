@@ -147,6 +147,11 @@ revert_all() {
         git rm -q --cached --ignore-unmatch "crates/a2a-protocol-types/src/$probe.rs" \
             2>/dev/null || true
     done
+    # The `mutants_config` injection's copy, and the directory it needed.
+    # `rmdir` and not `rm -rf`: if `.cargo/` ever holds a real config.toml,
+    # removing it would be the injection doing damage rather than undoing it.
+    rm -f .cargo/mutants.toml
+    rmdir .cargo 2>/dev/null || true
     if [ -n "$PACKAGE_CLONE" ]; then
         rm -rf "$PACKAGE_CLONE"
         PACKAGE_CLONE=""
@@ -323,6 +328,10 @@ injection_for() {
             echo "panic_hook" ;;
         "./scripts/check_mutation_scope.sh")
             echo "mutation_scope" ;;
+        "./scripts/check_gate_inventory.sh")
+            echo "gate_inventory" ;;
+        *"check_mutants_config.py"*)
+            echo "mutants_config" ;;
         "./scripts/check_benchmark_prose.sh")
             echo "benchmark_prose" ;;
         "./scripts/check_book_code.sh")
@@ -476,6 +485,14 @@ expected_marker() {
         # line, so the marker does not need editing at every minor bump.
         doc_versions)     echo "prose names a version" ;;
         gate_reachability) echo "unreachable:ci.yml" ;;
+        # The probe step's own name, so a run that failed on some *other*
+        # inventory drift — a job somebody added in the same branch, say — is
+        # INCONCLUSIVE rather than counted as proof of this one.
+        gate_inventory)   echo "Gate probe (unregistered action)" ;;
+        # The effective-config half specifically, not the headline. A run that
+        # went red because the banner had been edited would prove a different
+        # claim than the one this injection makes.
+        mutants_config)   echo ".cargo/mutants.toml is in effect and carries key(s) cargo-mutants rejects" ;;
         timeout_nesting)  echo "push_delivery_timeout / HttpPushSender" ;;
         inert_bounds)     echo "max_probe_rows" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
@@ -601,9 +618,74 @@ PROBE
             # exact decay this gate exists for, and the state 28 snippets were
             # actually in at 0.12.1. The root README is the injection site
             # because it is the first thing a reader copies from.
+            #
+            # Matched by SHAPE, never by a pinned pair of literals, for the
+            # reason 04308afc gives about the benchmark sentence: the "from"
+            # side of this rewrite named the then-current line (`"0.12"` ->
+            # `"0.11"`), so the release that moved the README to 0.13 turned
+            # the whole step into a no-op and the gate reported UNPROVEN.
+            # This is worse than a stale anchor that aborts, because it costs
+            # nothing visible: the sweep carries on and one gate quietly
+            # stops being proven at every minor bump.
+            #
+            # The needle now carries no version at all. It reads whatever
+            # line the snippet names and rewrites it to the one below, which
+            # is what a snippet nobody updated at the last release would say.
             note_touched "README.md"
-            sed -i 's/a2a-protocol-sdk = "0.12"/a2a-protocol-sdk = "0.11"/' \
-                README.md
+            python3 - <<'PY'
+import pathlib
+import re
+import sys
+
+README = pathlib.Path("README.md")
+
+# The install snippet, as `check_doc_versions.py`'s own SNIPPET regex reads
+# it: `a2a-protocol-sdk = "X.Y"`, optionally with a patch component, because
+# the gate reports an over-precise snippet too.
+SNIPPET = re.compile(
+    r'(?P<head>\ba2a-protocol-sdk[ \t]*=[ \t]*")'
+    r"(?P<major>\d+)\.(?P<minor>\d+)(?P<patch>\.\d+)?"
+    r'(?P<tail>")'
+)
+
+
+def previous_line(m: "re.Match[str]") -> str:
+    """The release line before the one this snippet names."""
+    major, minor = int(m.group("major")), int(m.group("minor"))
+    if minor > 0:
+        return f"{major}.{minor - 1}"
+    if major > 0:
+        # A major bump: the line before 1.0 is the newest 0.x, which this
+        # script cannot know. 0.x is close enough — the gate only cares that
+        # the snippet names something other than the current line.
+        return f"{major - 1}.0"
+    sys.exit(
+        "doc_versions injection: the README names 0.0, which has no previous "
+        "release line to decay to. Nothing was injected."
+    )
+
+
+text = README.read_text(encoding="utf-8")
+text, hits = SNIPPET.subn(
+    lambda m: m.group("head") + previous_line(m) + m.group("tail"), text
+)
+
+# Exactly one, or inject nothing and say which way it went wrong. Zero means
+# the root README no longer carries an install snippet for the SDK — which is
+# itself worth a human look, since this gate exists because that snippet is
+# the first thing a reader copies. Two or more means the README grew a second
+# one, and rewriting both would leave the gate proving a wider defect than
+# the single stale snippet it is asked to catch.
+if hits != 1:
+    sys.exit(
+        f"doc_versions injection: matched {hits} `a2a-protocol-sdk = \"X.Y\"` "
+        "snippet(s) in README.md, expected exactly 1. Nothing was injected. "
+        "Re-read the README's Quick Start and re-anchor this injection — do "
+        "not leave the gate reporting UNPROVEN against an empty edit."
+    )
+
+README.write_text(text, encoding="utf-8")
+PY
             ;;
         book_code)
             # Append an `ignore`d block: the exact move that would defeat the
@@ -668,6 +750,63 @@ if s.count(old) != 1:
 p.write_text(s.replace(old, "on:\n  pull_request:"))
 PY
             ;;
+        mutants_config)
+            # Make the root config effective without touching it: copy it to
+            # the location cargo-mutants actually reads. That is the defect
+            # verbatim — the file becomes live, `cap_timeout` and `jobs` come
+            # with it, and every mutation shard would abort on `unknown field`
+            # while the banner in the root file still says nothing here is in
+            # effect.
+            #
+            # A copy rather than a move, and no edit to mutants.toml, because
+            # the gate must object to the *situation* and not to a defect
+            # written into the text it reads. `revert_all` removes the copy and
+            # the directory; neither is tracked, so `git checkout HEAD --`
+            # could not.
+            if [ -e .cargo/mutants.toml ]; then
+                printf 'mutants_config: .cargo/mutants.toml already exists — refusing to\n' >&2
+                printf 'overwrite it. The repository has grown a real cargo-mutants config;\n' >&2
+                printf 'this injection needs rewriting against whatever it now contains.\n' >&2
+                return 1
+            fi
+            mkdir -p .cargo
+            cp mutants.toml .cargo/mutants.toml
+            ;;
+        gate_inventory)
+            # A blocking `uses:` step nothing has registered — the exact hole
+            # this gate exists for, and the state the binding's own cargo-deny
+            # step was in until 2026-09-20. It has to be a `uses:` step and not
+            # a `run:` one: a `run:` step becomes a gate, and the
+            # unregistered-gate guard at the top of this script would refuse
+            # before a single gate ran, which proves something about *that*
+            # guard rather than about this one.
+            note_touched ".github/workflows/ci.yml"
+            python3 - <<'PY'
+import pathlib
+import sys
+
+CI = pathlib.Path(".github/workflows/ci.yml")
+
+# Anchored on the step this gate *is*, so the probe lands in the same job and
+# the two move together if the job is ever renamed again.
+ANCHOR = "      - name: Gate inventory is complete\n"
+PROBE = (
+    "      - name: Gate probe (unregistered action)\n"
+    "        uses: some-vendor/some-audit-action"
+    "@0000000000000000000000000000000000000000 # gate probe\n"
+)
+
+s = CI.read_text(encoding="utf-8")
+if s.count(ANCHOR) != 1:
+    sys.exit(
+        f"gate_inventory injection: found {s.count(ANCHOR)} copies of the "
+        "`Gate inventory is complete` step in ci.yml, expected exactly 1. "
+        "Nothing was injected — the step was renamed or removed, and this "
+        "injection needs re-anchoring on it."
+    )
+CI.write_text(s.replace(ANCHOR, PROBE + ANCHOR), encoding="utf-8")
+PY
+            ;;
         timeout_nesting)
             # Reintroduce the push_delivery_timeout / HttpPushSender
             # contradiction in the form Addendum 8 found it: the sender's 98 s
@@ -685,17 +824,113 @@ PY
             # not — the shape B21 promoted the sweep to a gate for. The field
             # goes on `TaskStoreConfig` and its only read into the in-memory
             # store, so signature A (a knob nothing reads) stays silent and
-            # signature C is what has to object. Three lines rather than one
-            # so the library still compiles with the probe in it.
-            local cfg=crates/a2a-protocol-server/src/store/task_store/mod.rs
-            local mem=crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs
-            inject_after "$cfg" "    pub max_page_size: u32," \
-                "    pub max_probe_rows: usize,"
-            inject_after "$cfg" "            max_page_size: DEFAULT_MAX_PAGE_SIZE," \
-                "            max_probe_rows: 0,"
-            inject_after "$mem" \
-                "let capacity = config.max_capacity.unwrap_or(DEFAULT_INITIAL_CAPACITY);" \
-                "        let _ = config.max_probe_rows;"
+            # signature C is what has to object. Three insertions rather than
+            # one so the library still compiles with the probe in it.
+            #
+            # Located by SHAPE, and deliberately not by a file path plus a
+            # literal field line. This block used to anchor on
+            # `    pub max_page_size: u32,` inside
+            # `store/task_store/mod.rs`; `check_file_lengths.sh` split that
+            # module and the struct moved to `config.rs`, so `inject_after`
+            # refused — and a refusal is a non-zero exit under `set -Eeuo
+            # pipefail`, which took the whole sweep down with it. Gate 20 of
+            # 66 aborted the run and gates 21..66 went unproven, the same way
+            # a pinned benchmark figure used to abort it at gate 5 (04308afc).
+            #
+            # So the anchors below name the *declarations* they need — the
+            # `TaskStoreConfig` struct, its `Default` body, and a constructor
+            # that already reads a bound off `config` — and search the whole
+            # task-store module for whichever file currently holds each one. A
+            # further split moves them without touching this script.
+            #
+            # Each edit still asserts that it matched, and says what it was
+            # looking for when it did not, because the two ways this can rot
+            # are opposite and need different fixes: a silent no-op reports
+            # the gate UNPROVEN with nothing naming the cause, and more
+            # matches than expected injects a defect larger than the one
+            # claim the gate is being asked to catch.
+            #
+            # The whole module is registered as touched before anything is
+            # written, so a partial injection (first edit applied, second
+            # refusing) is still fully reverted.
+            note_touched "crates/a2a-protocol-server/src/store/task_store"
+            python3 - <<'PY'
+import pathlib
+import re
+import sys
+
+MODULE = pathlib.Path("crates/a2a-protocol-server/src/store/task_store")
+
+# The struct the probe field goes on.
+STRUCT = re.compile(r"^pub struct TaskStoreConfig[ \t]*\{[ \t]*\n", re.M)
+
+# The `Self {` that opens its `Default` body. `Self` must start a line: the
+# `-> Self {` of the `fn default()` signature above it is the same three
+# characters, and matching that one would put a struct field inside a
+# function body.
+DEFAULT_BODY = re.compile(
+    r"(impl\s+Default\s+for\s+TaskStoreConfig\b.*?\n(?P<indent>[ \t]*)Self[ \t]*\{[ \t]*\n)",
+    re.S,
+)
+
+# A constructor that already reads a bound off a `TaskStoreConfig`. The
+# in-memory store has two (`new` and `with_config`); both are the in-memory
+# store, so injecting beside each is still "read by this one implementation
+# and by none of its siblings", which is the shape signature C looks for.
+READ_SITE = re.compile(
+    r"^(?P<indent>[ \t]*)let capacity = config\.max_capacity\b[^\n]*\n", re.M
+)
+
+SOURCES = sorted(MODULE.rglob("*.rs"))
+if not SOURCES:
+    sys.exit(
+        f"inert_bounds injection: no .rs sources under {MODULE}. The task-store "
+        "module was moved or renamed; re-anchor this injection."
+    )
+
+
+def edit(pattern, repl, what, exactly_one=True):
+    total = 0
+    for path in SOURCES:
+        text = path.read_text(encoding="utf-8")
+        new_text, hits = pattern.subn(repl, text)
+        if hits:
+            path.write_text(new_text, encoding="utf-8")
+            total += hits
+    wanted = "exactly 1" if exactly_one else "at least 1"
+    if total == 0 or (exactly_one and total != 1):
+        sys.exit(
+            f"inert_bounds injection: found {total} site(s) for {what} under "
+            f"{MODULE}, expected {wanted}, so the probe bound was not injected "
+            "as intended. Zero means the declaration was renamed, reshaped or "
+            "moved out of this module; more than expected means a second "
+            "declaration now shares its shape and the injected defect would be "
+            "wider than the single partial bound this gate is asked to catch. "
+            "Either way, read the module and re-anchor this injection rather "
+            "than letting the gate report UNPROVEN against an empty edit."
+        )
+    return total
+
+
+edit(
+    STRUCT,
+    "pub struct TaskStoreConfig {\n"
+    "    /// Gate probe: a `max_*` bound only the in-memory store reads.\n"
+    "    pub max_probe_rows: usize,\n",
+    "the `TaskStoreConfig` declaration",
+)
+edit(
+    DEFAULT_BODY,
+    lambda m: m.group(1) + m.group("indent") + "    max_probe_rows: 0,\n",
+    "the `Default for TaskStoreConfig` body",
+)
+edit(
+    READ_SITE,
+    lambda m: m.group(0) + m.group("indent") + "let _ = config.max_probe_rows;\n",
+    "a `config.max_capacity` read to sit beside",
+    exactly_one=False,
+)
+PY
             ;;
         package_excludes)
             # Drop one `publish = false` member from ci.yml's exclude list.
@@ -1016,7 +1251,24 @@ PY
 
 # ── Drift guard ──────────────────────────────────────────────────────────────
 
+# The full set of completeness guards, not just the SKIP_STEPS one.
+#
+# This script called `require_known_skips` alone. The assertion that every job
+# in ci.yml appears in GATE_JOBS or NON_GATE_JOBS lived only in
+# scripts/preflight.sh, which runs in no workflow, so a job added to ci.yml was
+# covered by nothing while this script went on reporting "N of N proven" — a
+# total over a job set nobody had confirmed was the whole set. That is this
+# script's own defect class, one level up: a count that cannot come out wrong.
+#
+# All four now live in scripts/lib/ci_gate_audit.sh and run here, in
+# scripts/preflight.sh, and in scripts/check_gate_inventory.sh, which ci.yml
+# runs — the last of those being the only one of the three that CI executes.
+require_known_jobs
+require_nonempty_gate_jobs
 require_known_skips
+# Silenced: its success line is a count for the gate's own output, and this
+# script prints its own inventory below. A failure still goes to stderr.
+require_registered_actions >/dev/null
 mapfile -t ALL_GATES < <(gates_for_jobs "$GATE_JOBS")
 
 if [ "${#ALL_GATES[@]}" -eq 0 ]; then

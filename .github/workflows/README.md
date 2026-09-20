@@ -10,7 +10,7 @@ GitHub Actions workflows for the a2a-rust project.
 | Workflow | File | Trigger | Purpose |
 |----------|------|---------|---------|
 | **DCO** | `dco.yml` | PRs | Every non-merge commit carries a `Signed-off-by:` matching a human git author (see `../../DCO`, `../../PROVENANCE.md`) |
-| **CI** | `ci.yml` | Push to `main`/`claude/**`, PRs | Format, clippy, feature matrix (`cargo hack --each-feature` over every published crate), tests across nine feature combinations, docs, cargo-deny, MSRV, package validation |
+| **CI** | `ci.yml` | Push to `main`/`claude/**`, PRs | Static checks (formatting plus twenty source, prose and gate-inventory audits), clippy, feature matrix (`cargo hack --each-feature` over every published crate), tests across nine feature combinations, docs, cargo-deny, MSRV, package validation |
 | **Official TCK** | `official-tck.yml` | Push to `main`, PRs, nightly | The A2A project's own conformance suite (`a2aproject/a2a-tck`) against `tck/sut`. Gated differentially against `tck/conformance-baseline.json`: fails on a MUST failure not in the baseline **and** on a baseline entry that starts passing. See `docs/official-tck-findings.md` |
 | **TCK** | `tck.yml` | Push to `main`, PRs | Conformance self-test (echo-agent) plus cross-language agents (Python, JS, Go, Java) over the JSON-RPC and REST bindings |
 | **Coverage** | `coverage.yml` | Push to `main`, PRs | Code coverage via `cargo-llvm-cov`, Codecov upload (policy in `codecov.yml`) |
@@ -32,7 +32,9 @@ requirement there):
 
 - `DCO / Sign-off and authorship`
 - `Official TCK / a2a-tck conformance`
-- All `CI` jobs (Format, Clippy, Feature matrix, Test, Documentation, cargo-deny, Package validation)
+- All `CI` jobs (Static checks, Clippy, Feature matrix, Test, Documentation, cargo-deny, Package validation)
+  The `Static checks` job was named `Format` until 2026-09-20; a required-status-check rule
+  still naming `Format` matches nothing and must be re-pointed.
 - `TCK self-test (echo-agent)` and the `TCK cross-language` matrix
 - `Mutation Testing (incremental)`
 - `Regression Gate` (benchmarks)

@@ -7,7 +7,7 @@
 # Why this exists as a script rather than a list in CONTRIBUTING.md: a list of
 # commands in prose gets partially run. In August 2026 two commits landed with
 # unformatted test modules because `cargo clippy` and `cargo test` were run by
-# hand and `cargo fmt --all -- --check` was not, leaving CI's Format job red
+# hand and `cargo fmt --all -- --check` was not, leaving CI's formatting job red
 # across two pushes. One command that runs every gate and reports each one
 # removes the chance to skip a step by accident.
 #
@@ -131,79 +131,22 @@ note_skipped_steps() {
 # cannot be introduced without someone deciding what it should mean.
 
 
-# Bidirectional drift guard.
+# The completeness guards these three calls run — every ci.yml job classified,
+# every GATE_JOBS job actually yielding a gate, every SKIP_STEPS and `uses:`
+# exemption still naming something real — are defined in
+# scripts/lib/ci_gate_audit.sh, which scripts/lib/ci_gates.sh sources.
 #
-# `require_ci_gate` catches one direction: a tier naming a command CI no longer
-# runs. It cannot catch the other, and that is how two real gates went
-# uncovered for as long as they did — `test-postgres` and `package` were simply
-# jobs the script had never been told about, so nothing anywhere noticed they
-# were missing. A guard that only fails on staleness is half a guard.
-#
-# This asserts the script knows about every job in ci.yml. A new job is either
-# a gate or an explicit exemption; it cannot be neither, and it cannot be
-# silence.
-require_known_jobs() {
-    local unknown
-    # Only names under the top-level `jobs:` key. Without that anchor this also
-    # collects `push:` and `pull_request:` from the `on:` block, which are
-    # triggers, not jobs.
-    unknown=$(awk '
-        /^jobs:[[:space:]]*$/ { in_jobs = 1; next }
-        /^[^[:space:]#]/      { in_jobs = 0 }
-        in_jobs && /^  [a-z][a-z0-9_-]*:[[:space:]]*$/ {
-            job = $1; sub(/:$/, "", job); print job
-        }
-    # `|| true`: the success case is grep matching nothing, which exits 1 and
-    # would take the script down under `set -e`. An empty result is the good
-    # outcome here, not a failure.
-    ' "$CI_YML" | grep -Ev "$GATE_JOBS" | grep -Ev "$NON_GATE_JOBS" | sort -u || true)
-    if [ -n "$unknown" ]; then
-        cat >&2 <<EOF
-preflight: unknown CI job(s) — gate coverage cannot be trusted.
-
-  ci.yml defines job(s) this script has never been told about:
-$(printf '      %s\n' $unknown)
-
-  Add each to GATE_JOBS (so preflight runs it) or to NON_GATE_JOBS with a
-  reason (so the exemption is visible). Refusing to run rather than report a
-  green that silently skips a gate.
-EOF
-        exit 2
-    fi
-}
-
-# The other half of `require_known_jobs`. That one asserts every ci.yml job is
-# *classified*; this asserts the classification is true — that a job filed under
-# GATE_JOBS actually yields a gate to run. `deny` and `semver` sat in GATE_JOBS
-# and yielded none, because `gates_for_jobs` reads `run:` steps and both jobs
-# are pure `uses:`. Listing a job you cannot run is the same defect as not
-# listing it, minus the error message, and it is the more dangerous of the two:
-# `require_known_jobs` prints a refusal, this one printed a green.
-require_nonempty_gate_jobs() {
-    local job empty=""
-    for job in $(printf '%s' "$GATE_JOBS" | tr -d '^$()' | tr '|' ' '); do
-        if [ -z "$(gates_for_jobs "^${job}\$")" ]; then
-            empty="$empty $job"
-        fi
-    done
-    if [ -n "$empty" ]; then
-        cat >&2 <<EOF
-preflight: GATE_JOBS names job(s) that contribute no gate.
-
-  Listed as gates, but no runnable step was extracted from them:
-$(printf '      %s\n' $empty)
-
-  A job whose steps are all \`uses:\` (a marketplace action) has no \`run:\`
-  line to copy, so it is filed as a gate and then silently skipped. Move it to
-  NON_GATE_JOBS with a reason, or teach the parser to reach its steps.
-EOF
-        exit 2
-    fi
-}
-
+# The first two were defined here, in this file, and nowhere else. That is why
+# they never ran in CI: this script runs in no workflow (`grep -rn preflight
+# .github/workflows/` finds only comments), so the only assertion that ci.yml's
+# job list was complete ran on whichever laptop chose to run it. Moving them to
+# the shared library is the same argument ci_gates.sh's own header makes about
+# the parser it used to be two copies of — with the addition that the library
+# is reachable from a gate ci.yml runs, and this file is not.
 require_known_jobs
 require_nonempty_gate_jobs
 require_known_skips
+require_registered_actions >/dev/null
 ALL_GATES=$(gates_for_jobs "$GATE_JOBS" | sed $'s/\t//')
 
 # Same reasoning as the gate list: copy CI's environment rather than restate it.

@@ -12,6 +12,15 @@
 # ║  27.1.0. Read this before reasoning from any value below.                ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 #
+# Since 2026-09-20 that banner is checked rather than merely written down:
+# `scripts/check_mutants_config.py` runs in ci.yml and fails if this file's
+# inert/effective status stops matching what it claims — if `.cargo/mutants.toml`
+# appears while this banner still denies it, if the banner is deleted while the
+# file is still inert, if the keys named below as rejected stop being here, or
+# if `mutants.yml` ever points `--config` at a file carrying one of them. The
+# measurements below remain prose; what the gate holds is the one claim that
+# invalidates all of them at once.
+#
 # cargo-mutants does not discover a `mutants.toml` at the repository root; it
 # looks for `.cargo/mutants.toml`. Individual keys were already known to be
 # ignored — `test_tool`, `profile` and `exclude_re` each carry a note below
