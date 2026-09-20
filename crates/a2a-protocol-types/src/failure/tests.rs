@@ -19,7 +19,7 @@ fn status() -> Message {
 #[test]
 fn every_class_has_a_distinct_wire_token_that_round_trips() {
     let mut seen = std::collections::HashSet::new();
-    for class in FailureClass::ALL {
+    for &class in FailureClass::ALL {
         let token = class.as_str();
         assert!(seen.insert(token), "wire tokens must be distinct: {token}");
         assert_eq!(

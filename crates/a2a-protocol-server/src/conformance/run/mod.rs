@@ -57,6 +57,11 @@ pub(super) enum RunOutcome {
 /// Thirty seconds is far longer than a conforming executor needs for a
 /// one-message probe, and short enough that a hung one is reported rather than
 /// waited on.
+///
+/// It bounds the **whole** drive, not each phase of it. Both phases — waiting
+/// on the executor, then draining what it wrote — share one deadline taken
+/// once at the start, so the figure documented here is the figure a caller
+/// waits, rather than twice it.
 pub(super) const RUN_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Every emitted status, in order.
@@ -181,8 +186,9 @@ impl Run {
             tokio::spawn(async move { exec.execute(&ctx, write_handle.as_ref()).await })
         };
         let drainer = tokio::spawn(drain(reader));
+        let deadline = tokio::time::Instant::now() + RUN_TIMEOUT;
 
-        let outcome = match tokio::time::timeout(RUN_TIMEOUT, &mut handle).await {
+        let outcome = match tokio::time::timeout_at(deadline, &mut handle).await {
             Ok(Ok(Ok(()))) => RunOutcome::Ok,
             Ok(Ok(Err(e))) => RunOutcome::Err(e.to_string()),
             Ok(Err(join)) => {
@@ -202,7 +208,7 @@ impl Run {
             }
         };
         drop(writer);
-        let (events, truncated) = match tokio::time::timeout(RUN_TIMEOUT, drainer).await {
+        let (events, truncated) = match tokio::time::timeout_at(deadline, drainer).await {
             Ok(Ok(collected)) => collected,
             // The drain could not finish. Reporting the events collected so
             // far as complete would grade a hole, so say it is incomplete.
@@ -263,17 +269,18 @@ pub(super) async fn cancel_emits_a_terminal_state(
     let write_handle = Arc::clone(&writer);
     let mut handle = tokio::spawn(async move { exec.cancel(&ctx, write_handle.as_ref()).await });
     let drainer = tokio::spawn(drain(reader));
-    let Ok(joined) = tokio::time::timeout(RUN_TIMEOUT, &mut handle).await else {
+    let deadline = tokio::time::Instant::now() + RUN_TIMEOUT;
+    let Ok(joined) = tokio::time::timeout_at(deadline, &mut handle).await else {
         handle.abort();
         drop(writer);
-        let _ = tokio::time::timeout(RUN_TIMEOUT, drainer).await;
+        let _ = tokio::time::timeout_at(deadline, drainer).await;
         return CheckResult::fail(
             NAME,
             format!("cancel did not return within {RUN_TIMEOUT:?}"),
         );
     };
     drop(writer);
-    let (events, _truncated) = match tokio::time::timeout(RUN_TIMEOUT, drainer).await {
+    let (events, _truncated) = match tokio::time::timeout_at(deadline, drainer).await {
         Ok(Ok(collected)) => collected,
         _ => (Vec::new(), true),
     };

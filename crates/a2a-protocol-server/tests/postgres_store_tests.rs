@@ -1519,6 +1519,11 @@ async fn idempotency_concurrent_claims_produce_exactly_one_winner() {
             IdempotencyClaim::Conflict { held_by } => {
                 panic!("one message cannot conflict with itself (held_by {held_by})")
             }
+            // `IdempotencyClaim` is `#[non_exhaustive]`, so a future outcome
+            // reaches this arm rather than failing to compile here. Naming it
+            // is the point: a new variant that this concurrency test should
+            // count must be counted deliberately, not folded into a replay.
+            other => panic!("unexpected claim outcome: {other:?}"),
         }
     }
     assert_eq!(claimed, 1, "exactly one claim may win");

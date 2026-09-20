@@ -88,7 +88,12 @@ pub enum FailureClass {
 
 impl FailureClass {
     /// Every class, for exhaustiveness in tests and for rendering a table.
-    pub const ALL: [Self; 5] = [
+    ///
+    /// A slice, not `[Self; N]`. The length was in the type, so adding the
+    /// sixth variant this enum is `#[non_exhaustive]` to allow would have
+    /// changed `ALL`'s type and broken every caller that bound it — the exact
+    /// break the attribute three lines up promises not to inflict.
+    pub const ALL: &'static [Self] = &[
         Self::InvalidRequest,
         Self::Transient,
         Self::PolicyRefusal,
@@ -116,7 +121,8 @@ impl FailureClass {
     #[must_use]
     pub fn from_wire(token: &str) -> Self {
         Self::ALL
-            .into_iter()
+            .iter()
+            .copied()
             .find(|c| c.as_str() == token)
             .unwrap_or(Self::Internal)
     }
