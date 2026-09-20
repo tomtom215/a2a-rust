@@ -9,7 +9,6 @@
 
 use super::*;
 use crate::store::retention::RetentionPolicy;
-use a2a_protocol_types::message::MessageId;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 use std::time::Duration;
 
