@@ -2106,3 +2106,78 @@ fn token_still_evictable_spares_fresh_live_token() {
         .expect("now + max_age is representable");
     assert!(token_still_evictable(&aged, later, max_age));
 }
+
+// ── message.id takes the same rule as the other ids ──────────────────────
+
+/// `message.id` was validated nowhere, while reaching further than either id
+/// that was.
+///
+/// It is stored verbatim in `idempotency_keys.message_id`, it keys the
+/// history de-duplication in `helpers.rs`, and it is interpolated into the
+/// error a caller sees when a key is already held by a different message. The
+/// key beside it in that same row is capped and charset-restricted precisely
+/// because a value reaching store keys and log lines is where log injection
+/// starts; the message id reached both with no defence at all, bounded only
+/// by the dispatcher's request-body limit. An empty id was accepted and
+/// stored, and every empty id collides with every other one.
+///
+/// `validate_id` had its own unit tests throughout. What was missing was the
+/// call, so these drive the whole send path rather than the helper: they fail
+/// if the call site is removed again.
+#[tokio::test]
+async fn an_empty_message_id_is_refused() {
+    let handler = make_handler();
+    let mut params = make_params(None);
+    params.message.id = MessageId::new("");
+
+    let err = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect_err("an empty message id must be refused, not stored");
+
+    match err {
+        ServerError::InvalidParams(msg) => assert!(
+            msg.contains("message.id"),
+            "the error must name the field the caller has to fix, got: {msg}"
+        ),
+        other => panic!("expected InvalidParams, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn an_over_long_message_id_is_refused() {
+    let handler = make_handler();
+    let over_limit = handler.limits.max_id_length + 1;
+    let mut params = make_params(None);
+    params.message.id = MessageId::new("m".repeat(over_limit));
+
+    let err = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect_err("a message id past max_id_length must be refused");
+
+    match err {
+        ServerError::InvalidParams(msg) => assert!(
+            msg.contains("message.id"),
+            "the error must name the field the caller has to fix, got: {msg}"
+        ),
+        other => panic!("expected InvalidParams, got {other:?}"),
+    }
+}
+
+/// Counter-test: an id *at* the limit is accepted.
+///
+/// Without it, an off-by-one that rejected every id — or a check that
+/// rejected on `>=` — would satisfy both tests above.
+#[tokio::test]
+async fn a_message_id_at_the_limit_is_accepted() {
+    let handler = make_handler();
+    let at_limit = handler.limits.max_id_length;
+    let mut params = make_params(None);
+    params.message.id = MessageId::new("m".repeat(at_limit));
+
+    handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("an id exactly at max_id_length is valid and must be accepted");
+}

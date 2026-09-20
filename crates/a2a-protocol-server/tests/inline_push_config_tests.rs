@@ -22,7 +22,7 @@
 
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
+use a2a_protocol_types::params::{ListTasksParams, MessageSendParams, SendMessageConfiguration};
 use a2a_protocol_types::push::{AuthenticationInfo, TaskPushNotificationConfig};
 use a2a_protocol_types::task::ContextId;
 
@@ -291,5 +291,109 @@ async fn inline_config_respects_the_per_task_quota() {
     assert!(
         inline.is_err(),
         "the inline path must enforce the same per-task quota as the standalone create"
+    );
+}
+
+// ── a refused inline config leaves nothing behind ────────────────────────────
+
+/// A send its inline push config rejects must leave no task row.
+///
+/// The row is written before the config is validated — the validation checks
+/// that the task exists, so it has to be — and until 2026-09-20 a rejection
+/// released only the event queue and the cancellation token. The task stayed
+/// in `Submitted` for ever: the retention sweeps delete terminal states only,
+/// so neither the SQLite nor the PostgreSQL store ever collected it, and it
+/// stayed visible to `tasks/get` and `tasks/list`. The caller's idempotency
+/// key was released alongside, so their retry created a *second* task and
+/// they ended up with two ids for one logical send.
+///
+/// Drives the SSRF screen specifically, because that is a guard which rejects
+/// *after* the row is written. `inline_config_is_rejected_when_push_is_unsupported`
+/// rejects before it, so it cannot see this defect at all.
+///
+/// The successful send first is what stops this asserting nothing: it proves
+/// on this same handler and store that `tasks/list` does report a task that
+/// was created, so the empty result after the rejection is a rollback rather
+/// than a listing that never worked.
+#[tokio::test]
+async fn a_send_its_inline_config_refuses_leaves_no_task_behind() {
+    let handler = RequestHandlerBuilder::new(NoopExecutor)
+        .with_agent_card(push_card())
+        // No allow_private_urls: a loopback webhook fails the SSRF screen.
+        .with_push_sender(HttpPushSender::new())
+        .build()
+        .expect("handler must build");
+
+    // A send with no push config at all succeeds and leaves exactly one row.
+    let accepted = handler
+        .on_send_message(send_with(None, "ctx-kept"), false, None)
+        .await
+        .expect("a send without a push config must succeed");
+    let kept_id = task_id_of(accepted);
+
+    let err = handler
+        .on_send_message(
+            send_with(Some(inline_config("http://127.0.0.1:9/hook")), "ctx-rolled-back"),
+            false,
+            None,
+        )
+        .await
+        .expect_err("a loopback webhook URL must be rejected on the inline path");
+    assert!(
+        !matches!(err, ServerError::PushNotSupported),
+        "the rejection must come from the SSRF screen, which runs after the task \
+         row is written — a capability rejection would prove nothing here: {err:?}"
+    );
+
+    let listed = handler
+        .on_list_tasks(ListTasksParams::default(), None)
+        .await
+        .expect("listing tasks must succeed");
+    let ids: Vec<&str> = listed.tasks.iter().map(|t| t.id.0.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec![kept_id.as_str()],
+        "only the accepted send's task may remain; the refused send's row must be \
+         rolled back rather than left in Submitted for ever"
+    );
+}
+
+/// The refused send must not leave its task findable by context either.
+///
+/// `find_task_by_context` is the lookup a *concurrent* send for the same
+/// context uses, and it is why the per-context guard is now held across the
+/// push-config step rather than dropped before it: dropping it first
+/// published the task for the window between the row write and the rollback.
+#[tokio::test]
+async fn a_refused_send_leaves_nothing_findable_by_its_context() {
+    let handler = RequestHandlerBuilder::new(NoopExecutor)
+        .with_agent_card(push_card())
+        .with_push_sender(HttpPushSender::new())
+        .build()
+        .expect("handler must build");
+
+    let _ = handler
+        .on_send_message(
+            send_with(Some(inline_config("http://127.0.0.1:9/hook")), "ctx-orphan"),
+            false,
+            None,
+        )
+        .await
+        .expect_err("a loopback webhook URL must be rejected on the inline path");
+
+    let listed = handler
+        .on_list_tasks(
+            ListTasksParams {
+                context_id: Some("ctx-orphan".to_owned()),
+                ..ListTasksParams::default()
+            },
+            None,
+        )
+        .await
+        .expect("listing tasks must succeed");
+    assert!(
+        listed.tasks.is_empty(),
+        "the refused send's context must hold no task — got {:?}",
+        listed.tasks
     );
 }
