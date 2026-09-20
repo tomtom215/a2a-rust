@@ -44,7 +44,7 @@
 
 # ── CallInterceptor: AuthInterceptor, BearerAuthInterceptor ──────────────────
 
-CallInterceptor  request_timeout  AuthInterceptor  # Name collision, not a bound. The "read" is OAuth2ClientCredentials::request_timeout (token_provider.rs:253, applied at :430), the token-endpoint call's own timeout, which happens to live in the file holding `impl CallInterceptor for BearerAuthInterceptor`. Neither interceptor reads ClientConfig::request_timeout; AuthInterceptor copies a stored credential into a header (auth.rs:226) and makes no request to time out.
+CallInterceptor  request_timeout  AuthInterceptor,TracePropagationInterceptor  # Name collision, not a bound. The "read" is OAuth2ClientCredentials::request_timeout (token_provider.rs:253, applied at :430), the token-endpoint call's own timeout, which happens to live in the file holding `impl CallInterceptor for BearerAuthInterceptor`. None of the three reads ClientConfig::request_timeout: AuthInterceptor copies a stored credential into a header (auth.rs:226) and TracePropagationInterceptor writes traceparent/tracestate (trace_propagation.rs:128-138); neither makes a request to time out.
 
 # ── PushConfigStore: InMemory, Sqlite, Postgres, and the TenantAware three ───
 
@@ -61,8 +61,6 @@ ServerInterceptor  requests_per_window  ApiKeyAuthInterceptor,BearerTokenAuthInt
 # ── TaskStore: InMemory, Sqlite, Postgres, and the TenantAware three ─────────
 
 TaskStore  max_capacity  PostgresTaskStore,SqliteTaskStore,TenantAwareInMemoryTaskStore,TenantAwarePostgresTaskStore,TenantAwareSqliteTaskStore  # TaskStoreConfig is "Configuration for InMemoryTaskStore" (store/task_store/mod.rs:393): an in-memory row cap driving eviction (in_memory/eviction/mod.rs:128, :176). TenantAwareInMemoryTaskStore honours it by DELEGATION — every partition is InMemoryTaskStore::with_config(per_tenant) (store/tenant/store.rs:208-213). The SQL stores bound rows through purge_expired(&RetentionPolicy) (sqlite_store/mod.rs:219, postgres_store/mod.rs:178, tenant_sqlite_store.rs, tenant_postgres_store.rs) rather than a count.
-
-TaskStore  max_connections  InMemoryTaskStore,PostgresTaskStore,SqliteTaskStore,TenantAwareInMemoryTaskStore,TenantAwareSqliteTaskStore  # Name collision, as for PushConfigStore: the knob is ServeConfig::max_connections; the "honouring" is sqlx's PgPoolOptions::max_connections(10) in tenant_postgres_store.rs:77. PostgresTaskStore makes the same call in postgres_store/pool.rs:28 — the sibling-file blind spot the audit script documents — so it shows here as not honouring. SQLite pools are sized in sqlite_pool.rs:59; the in-memory stores have no connections.
 
 TaskStore  max_page_size  TenantAwareInMemoryTaskStore  # DELEGATION. TenantAwareInMemoryTaskStore::list forwards to the current tenant's InMemoryTaskStore (store/tenant/store.rs:297-306), which clamps to self.config.max_page_size (in_memory/mod.rs:480) from the per_tenant config it was built with. Tested in store/tenant/store.rs ("the caller asked for 100; per_tenant.max_page_size is 2"). The five direct readers each carry their own copy of the knob, by design (tenant_sqlite_store.rs:75-79).
 
