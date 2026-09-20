@@ -411,66 +411,85 @@ impl RequestHandlerBuilder {
             .task_store
             .unwrap_or_else(|| Arc::new(InMemoryTaskStore::with_config(self.task_store_config)));
 
-        // A server advertises the idempotency extension exactly when its store
-        // can honour a key, and the card is derived from the store rather than
-        // set by hand so the two cannot drift. Swapping in a store without the
-        // index removes the advertisement in the same change, and a client can
-        // read the card to learn whether a key will be deduplicated or
-        // refused — never discovering it by having a send run twice.
+        // A server advertises an extension exactly when it can honour it. The
+        // idempotency entry is derived from the store rather than set by hand,
+        // so swapping in a store without the index removes the advertisement
+        // in the same change, and a client can read the card to learn whether
+        // a key will be deduplicated or refused instead of discovering it by
+        // having a send run twice. The failure taxonomy needs no such gate:
+        // every server classifies, because the classification happens in this
+        // crate's own failure path rather than in a store that may or may not
+        // support it.
         //
-        // An operator who already declared the extension keeps their entry
-        // untouched, `required` flag included.
+        // An operator who already declared an extension keeps their entry
+        // untouched, `required` flag included. Neither entry is ever
+        // `required` — a client that does not know the extension sends nothing
+        // and is served exactly as before, and making one required would lock
+        // those clients out for a feature they do not use.
         let mut agent_card = self.agent_card;
-        if task_store.supports_idempotency()
-            && let Some(card) = agent_card.as_mut()
-        {
-            {
-                let extensions = card.capabilities.extensions.get_or_insert_with(Vec::new);
-                if !extensions
-                    .iter()
-                    .any(|e| e.uri == idempotency::IDEMPOTENCY_EXTENSION_URI)
-                {
-                    extensions.push(AgentExtension {
-                        uri: idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned(),
-                        description: Some(
-                            "Client-supplied idempotency keys on message/send: a \
-                             retried send returns the task the first one created \
-                             instead of starting a second."
-                                .to_owned(),
-                        ),
-                        // Never required. A client that does not know the
-                        // extension sends no key and is served exactly as
-                        // before; making it required would lock those clients
-                        // out of a server for a feature they do not use.
-                        required: Some(false),
-                        params: None,
-                    });
-                }
-            }
-        }
-
-        // The failure taxonomy needs no capability gate the way idempotency
-        // does: every server classifies, because the classification happens
-        // in this crate's own failure path rather than in a store that may
-        // or may not support it. So the advertisement is unconditional — and
-        // still never `required`, and still never overwrites an operator's
-        // own entry.
         if let Some(card) = agent_card.as_mut() {
-            let extensions = card.capabilities.extensions.get_or_insert_with(Vec::new);
-            if !extensions
-                .iter()
-                .any(|e| e.uri == a2a_protocol_types::failure::FAILURE_EXTENSION_URI)
-            {
-                extensions.push(AgentExtension {
-                    uri: a2a_protocol_types::failure::FAILURE_EXTENSION_URI.to_owned(),
+            let mut wanted: Vec<AgentExtension> = Vec::new();
+            if task_store.supports_idempotency() {
+                wanted.push(AgentExtension {
+                    uri: idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned(),
                     description: Some(
-                        "A failed task says why in a form a caller can match on, \
-                         rather than only in prose."
+                        "Client-supplied idempotency keys on message/send: a \
+                         retried send returns the task the first one created \
+                         instead of starting a second."
                             .to_owned(),
                     ),
                     required: Some(false),
                     params: None,
                 });
+            }
+            wanted.push(AgentExtension {
+                uri: a2a_protocol_types::failure::FAILURE_EXTENSION_URI.to_owned(),
+                description: Some(
+                    "A failed task says why in a form a caller can match on, \
+                     rather than only in prose."
+                        .to_owned(),
+                ),
+                required: Some(false),
+                params: None,
+            });
+
+            let declared = card.capabilities.extensions.as_deref().unwrap_or(&[]);
+            let missing: Vec<AgentExtension> = wanted
+                .into_iter()
+                .filter(|w| !declared.iter().any(|have| have.uri == w.uri))
+                .collect();
+
+            // `canonicalize_card` strips only `signatures`, so
+            // `capabilities.extensions` is inside the bytes a signature covers.
+            // Appending an entry to a card that is already signed would leave
+            // the served card canonicalizing to bytes the operator never
+            // signed, and every client that verifies would fail — silently,
+            // because nothing on this side reads the signature again. Refusing
+            // is the only honest answer: declare the extensions on the card and
+            // sign the card that results, or serve it unsigned.
+            if !missing.is_empty()
+                && card
+                    .signatures
+                    .as_ref()
+                    .is_some_and(|sigs| !sigs.is_empty())
+            {
+                let uris: Vec<&str> = missing.iter().map(|e| e.uri.as_str()).collect();
+                return Err(crate::error::ServerError::InvalidParams(format!(
+                    "the agent card carries a signature but does not declare {}. \
+                     Advertising an extension edits `capabilities.extensions`, \
+                     which is inside the signed bytes, so the card this server \
+                     would serve no longer verifies against its own signature. \
+                     Declare the extension on the card before signing it, or \
+                     supply the card unsigned.",
+                    uris.join(", ")
+                )));
+            }
+
+            if !missing.is_empty() {
+                card.capabilities
+                    .extensions
+                    .get_or_insert_with(Vec::new)
+                    .extend(missing);
             }
         }
 
@@ -848,5 +867,105 @@ mod tests {
         assert_eq!(entries.len(), 1, "the entry must not be duplicated");
         assert_eq!(entries[0].required, Some(true));
         assert_eq!(entries[0].description.as_deref(), Some("mine"));
+    }
+
+    /// Builds a card an operator would sign: no extensions declared.
+    fn unsigned_card() -> a2a_protocol_types::agent_card::AgentCard {
+        a2a_protocol_types::agent_card::AgentCard::new(
+            "t",
+            "0.0.0",
+            a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
+        )
+    }
+
+    fn a_signature() -> a2a_protocol_types::extensions::AgentCardSignature {
+        a2a_protocol_types::extensions::AgentCardSignature {
+            protected: "eyJhbGciOiJFUzI1NiJ9".to_owned(),
+            signature: "c2ln".to_owned(),
+            header: None,
+        }
+    }
+
+    /// The defect this guards: `build()` used to append its advertisements to
+    /// whatever card it was handed. `canonicalize_card` strips only
+    /// `signatures`, so those appends land inside the signed bytes and every
+    /// client that verifies the served card fails — with nothing on this side
+    /// to notice. Refusing names the fix instead of shipping a broken card.
+    #[test]
+    fn a_signed_card_missing_an_advertisement_is_refused_not_edited() {
+        let mut card = unsigned_card();
+        card.signatures = Some(vec![a_signature()]);
+
+        let err = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect_err("a signed card that would be edited must not build");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains(a2a_protocol_types::failure::FAILURE_EXTENSION_URI),
+            "the error must name the extension to declare: {msg}"
+        );
+        assert!(
+            msg.contains("signature"),
+            "the error must say why refusing is right: {msg}"
+        );
+    }
+
+    /// The other side of the same rule: a signed card that already declares
+    /// everything this server advertises has nothing to append, so it builds
+    /// and is served byte-identical to what was signed.
+    #[test]
+    fn a_signed_card_that_declares_everything_is_served_unchanged() {
+        use a2a_protocol_types::extensions::AgentExtension;
+
+        let mut card = unsigned_card();
+        card.capabilities.extensions = Some(vec![
+            AgentExtension::new(idempotency::IDEMPOTENCY_EXTENSION_URI),
+            AgentExtension::new(a2a_protocol_types::failure::FAILURE_EXTENSION_URI),
+        ]);
+        card.signatures = Some(vec![a_signature()]);
+
+        let signed = serde_json::to_value(&card).expect("serialize");
+
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect("a fully-declared signed card must build");
+
+        let served =
+            serde_json::to_value(handler.agent_card.as_ref().expect("card")).expect("serialize");
+
+        assert_eq!(
+            signed, served,
+            "the served card must be what was signed, field for field"
+        );
+    }
+
+    /// `Some(vec![])` is not a signature. An empty list must not make the
+    /// server refuse a card nobody signed.
+    #[test]
+    fn an_empty_signature_list_does_not_count_as_signed() {
+        let mut card = unsigned_card();
+        card.signatures = Some(Vec::new());
+
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect("an unsigned card still gets its advertisements");
+
+        assert!(
+            handler
+                .agent_card
+                .as_ref()
+                .expect("card")
+                .capabilities
+                .extensions
+                .as_ref()
+                .is_some_and(|e| e
+                    .iter()
+                    .any(|x| x.uri == a2a_protocol_types::failure::FAILURE_EXTENSION_URI)),
+            "the failure extension must still be advertised"
+        );
     }
 }
