@@ -938,7 +938,8 @@ construction.
 * **A documented wrong default.** `HandlerLimits::push_delivery_timeout` is
   5 s while `HttpPushSender::new()`'s retry schedule totals 98 s, so at
   defaults 1 of 3 attempts runs. Honestly recorded at
-  `handler/limits.rs:44-84` — but a reader who sees `max_attempts: 3` and
+  `handler/limits/mod.rs` (`push_delivery_timeout`'s own rustdoc) — but a
+  reader who sees `max_attempts: 3` and
   does not open the other file gets one attempt and no warning.
 
 ## What to build next, ranked
