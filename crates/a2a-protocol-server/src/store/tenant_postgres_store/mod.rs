@@ -32,8 +32,10 @@
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
-#[allow(unused_imports)] // referenced by intra-doc links only
+#[allow(unused_imports)] // both referenced by intra-doc links only
 use super::task_store::TaskStore;
+#[allow(unused_imports)]
+use super::tenant::TenantContext;
 use super::tenant_event_log as evlog;
 use super::tenant_idempotency as idem;
 

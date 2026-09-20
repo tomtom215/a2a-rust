@@ -244,7 +244,7 @@ async fn a_subscriber_on_the_other_replica_still_sees_the_stream_end() {
         .await
         .expect("A produces a first event")
         .expect("and it is not an error frame");
-    let task_id = task_id_of(&first).expect("the first frame names its task");
+    let task_id = task_id_of(&first.event).expect("the first frame names its task");
 
     // B subscribes to a task whose executor is running on A.
     let mut stream_b = b
@@ -265,7 +265,7 @@ async fn a_subscriber_on_the_other_replica_still_sees_the_stream_end() {
     let mut last_state = None;
     let ended = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(Ok(event)) = stream_b.read().await {
-            if let Some(state) = terminal_state_of(&event) {
+            if let Some(state) = terminal_state_of(&event.event) {
                 last_state = Some(state);
             }
         }
@@ -348,7 +348,7 @@ async fn intermediate_events_do_not_cross_replicas() {
         .await
         .expect("A produces a first event")
         .expect("and it is not an error frame");
-    let task_id = task_id_of(&first).expect("the first frame names its task");
+    let task_id = task_id_of(&first.event).expect("the first frame names its task");
 
     let mut stream_b = b
         .on_resubscribe(
@@ -364,7 +364,7 @@ async fn intermediate_events_do_not_cross_replicas() {
     let a_artifacts = tokio::spawn(async move {
         let mut count = 0_usize;
         while let Some(Ok(event)) = stream_a.read().await {
-            if matches!(event, StreamResponse::ArtifactUpdate(_)) {
+            if matches!(event.event, StreamResponse::ArtifactUpdate(_)) {
                 count += 1;
             }
         }
@@ -374,7 +374,7 @@ async fn intermediate_events_do_not_cross_replicas() {
     let mut b_artifacts = 0_usize;
     let _ = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(Ok(event)) = stream_b.read().await {
-            if matches!(event, StreamResponse::ArtifactUpdate(_)) {
+            if matches!(event.event, StreamResponse::ArtifactUpdate(_)) {
                 b_artifacts += 1;
             }
         }

@@ -69,13 +69,13 @@ async fn send_message_streaming_returns_reader() {
 
             // First event should be the Task snapshot (spec requirement).
             assert!(
-                matches!(&events[0], StreamResponse::Task(_)),
+                matches!(&events[0].event, StreamResponse::Task(_)),
                 "first event must be Task snapshot, got {:?}",
-                std::mem::discriminant(&events[0])
+                std::mem::discriminant(&events[0].event)
             );
 
             // Second event should be Working status.
-            match &events[1] {
+            match &events[1].event {
                 StreamResponse::StatusUpdate(u) => {
                     assert_eq!(
                         u.status.state,
@@ -87,12 +87,12 @@ async fn send_message_streaming_returns_reader() {
             }
             // Third should be an artifact update.
             assert!(
-                matches!(&events[2], StreamResponse::ArtifactUpdate(_)),
+                matches!(&events[2].event, StreamResponse::ArtifactUpdate(_)),
                 "third event must be ArtifactUpdate, got {:?}",
                 events[2]
             );
             // Fourth should be Completed status.
-            match &events[3] {
+            match &events[3].event {
                 StreamResponse::StatusUpdate(u) => {
                     assert_eq!(
                         u.status.state,

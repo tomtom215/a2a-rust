@@ -58,12 +58,6 @@ struct CollectState {
     /// their own blocking `SendMessage` by up to the 30s delivery budget.
     /// Streaming already delivers off-path; this makes the sync path match.
     push_events: Vec<StreamResponse>,
-    /// Next position in the task's event log. Seeded from the store rather
-    /// than from 1, for the same reason the background processor seeds it: a
-    /// continuation is a second collection run over the same task, and
-    /// appends are idempotent by position, so a restarted counter would have
-    /// its events silently dropped.
-    event_seq: u64,
 }
 
 /// Restores an artifact to its pre-append state after a failed save.
@@ -111,20 +105,6 @@ impl RequestHandler {
     /// Takes the executor's `JoinHandle` so that if the executor panics or
     /// terminates without closing the queue properly, we detect it and avoid
     /// blocking forever (CB-3).
-    /// Where this run's event-log positions start.
-    ///
-    /// Zero when the store keeps no log, and zero when it does but the task
-    /// has none yet. A continuation resumes from the last position the
-    /// previous run wrote, because appends are idempotent by position and a
-    /// restarted counter would have its events silently dropped.
-    async fn seed_event_seq(&self, task_id: &TaskId) -> u64 {
-        if self.task_store.supports_event_log() {
-            self.task_store.last_event_seq(task_id).await.unwrap_or(0)
-        } else {
-            0
-        }
-    }
-
     pub(crate) async fn collect_events(
         &self,
         mut reader: InMemoryQueueReader,
@@ -140,7 +120,6 @@ impl RequestHandler {
             first_message: None,
             saw_task_shaped_event: false,
             push_events: Vec::new(),
-            event_seq: self.seed_event_seq(&task_id).await,
         };
 
         // Pin the executor handle so we can poll it alongside the reader.
@@ -237,7 +216,7 @@ impl RequestHandler {
     #[allow(clippy::too_many_lines)]
     async fn process_event(
         &self,
-        event: a2a_protocol_types::error::A2aResult<StreamResponse>,
+        event: a2a_protocol_types::error::A2aResult<crate::streaming::StreamEvent>,
         task_id: &TaskId,
         state: &mut CollectState,
     ) -> ServerResult<()> {
@@ -246,16 +225,9 @@ impl RequestHandler {
         // rather than in the background processor, and a log covering only
         // streaming sends would be a history whose completeness depended on
         // which method the caller happened to use.
-        super::background::record_event(
-            &*self.task_store,
-            task_id,
-            &mut state.event_seq,
-            &event,
-            &*self.metrics,
-        )
-        .await;
+        super::background::record_event(&*self.task_store, task_id, &event, &*self.metrics).await;
         let last_task = &mut state.task;
-        match event {
+        match event.map(|e| e.event) {
             Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
                 let current = last_task.status.state;
                 let next = update.status.state;

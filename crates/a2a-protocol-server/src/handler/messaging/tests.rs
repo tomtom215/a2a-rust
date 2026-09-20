@@ -1752,7 +1752,8 @@ async fn streaming_executor_failure_writes_error_event() {
     // which is what reaches a blocking caller and the store.
     let mut failed = None;
     while let Some(event) = reader.read().await {
-        if let Ok(StreamResponse::StatusUpdate(update)) = event
+        if let Ok(queued) = event
+            && let StreamResponse::StatusUpdate(update) = queued.event
             && update.status.state == TaskState::Failed
         {
             failed = Some(update);

@@ -42,7 +42,7 @@ async fn write_then_read_single_event() {
 
     let event = reader.read().await.unwrap().unwrap();
     assert!(
-        matches!(event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
+        matches!(event.event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
     );
 }
 
@@ -61,7 +61,7 @@ async fn write_multiple_events_read_in_order() {
 
     for expected in &states {
         let event = reader.read().await.unwrap().unwrap();
-        match event {
+        match event.event {
             StreamResponse::StatusUpdate(ref u) => assert_eq!(u.status.state, *expected),
             _ => panic!("expected StatusUpdate"),
         }
@@ -133,7 +133,7 @@ async fn cloned_writer_still_works_after_original_dropped() {
 
     let event = reader.read().await.unwrap().unwrap();
     assert!(
-        matches!(event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
+        matches!(event.event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
     );
     // Channel now closed.
     assert!(reader.read().await.is_none());
@@ -159,11 +159,11 @@ async fn broadcast_writes_never_block() {
     // Read both events in order.
     let e1 = reader.read().await.unwrap().unwrap();
     assert!(
-        matches!(e1, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
+        matches!(e1.event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
     );
     let e2 = reader.read().await.unwrap().unwrap();
     assert!(
-        matches!(e2, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
+        matches!(e2.event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
     );
 }
 
@@ -217,7 +217,7 @@ async fn slow_reader_gets_explicit_lag_error() {
     );
     let last = events.last().unwrap();
     assert!(
-        matches!(last, StreamResponse::StatusUpdate(u) if u.status.state == TaskState::Completed),
+        matches!(last.event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed),
         "last event should be Completed"
     );
 }
@@ -365,7 +365,7 @@ async fn event_within_size_limit_accepted() {
         .unwrap();
 
     let event = reader.read().await.unwrap().unwrap();
-    assert!(matches!(event, StreamResponse::StatusUpdate(_)));
+    assert!(matches!(event.event, StreamResponse::StatusUpdate(_)));
 }
 
 #[tokio::test]
@@ -489,7 +489,7 @@ async fn existing_writer_can_still_send_to_original_reader() {
 
     let event = reader1.read().await.unwrap().unwrap();
     assert!(
-        matches!(event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
+        matches!(event.event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
     );
 }
 
@@ -566,10 +566,10 @@ async fn subscribe_creates_additional_reader() {
     let e1 = reader1.read().await.unwrap().unwrap();
     let e2 = reader2.read().await.unwrap().unwrap();
     assert!(
-        matches!(e1, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
+        matches!(e1.event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
     );
     assert!(
-        matches!(e2, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
+        matches!(e2.event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
     );
 }
 
@@ -611,7 +611,7 @@ async fn multiple_subscribers_all_receive_events() {
     for reader in [&mut reader1, &mut reader2, &mut reader3] {
         let event = reader.read().await.unwrap().unwrap();
         assert!(
-            matches!(event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
+            matches!(event.event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
         );
     }
 

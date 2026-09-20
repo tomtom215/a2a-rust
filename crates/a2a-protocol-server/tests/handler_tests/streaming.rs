@@ -26,7 +26,7 @@ async fn streaming_events_arrive_in_order() {
 
     let mut states = vec![];
     while let Some(event) = reader.read().await {
-        if let Ok(StreamResponse::StatusUpdate(u)) = event {
+        if let Ok(StreamResponse::StatusUpdate(u)) = event.map(|e| e.event) {
             states.push(u.status.state);
         }
     }
@@ -56,7 +56,7 @@ async fn streaming_failure_produces_failed_event() {
 
     let mut saw_failed = false;
     while let Some(event) = reader.read().await {
-        if let Ok(StreamResponse::StatusUpdate(u)) = event
+        if let Ok(StreamResponse::StatusUpdate(u)) = event.map(|e| e.event)
             && u.status.state == TaskState::Failed
         {
             saw_failed = true;

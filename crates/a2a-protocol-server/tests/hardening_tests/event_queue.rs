@@ -79,7 +79,7 @@ async fn event_queue_write_and_read_events() {
     let received = reader.read().await.expect("read should return Some");
     let update = received.expect("event should be Ok");
     assert!(
-        matches!(update, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working),
+        matches!(update.event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working),
         "should read back the Working status event"
     );
 

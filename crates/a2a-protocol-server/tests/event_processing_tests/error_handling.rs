@@ -128,7 +128,7 @@ async fn streaming_mode_work_then_error_marks_failed_in_store() {
                 let mut saw_working = false;
                 let mut saw_failed = false;
                 while let Some(event) = reader.read().await {
-                    match event {
+                    match event.map(|e| e.event) {
                         Ok(StreamResponse::StatusUpdate(u))
                             if u.status.state == TaskState::Working =>
                         {

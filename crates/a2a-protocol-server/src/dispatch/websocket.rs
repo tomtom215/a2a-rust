@@ -907,10 +907,15 @@ async fn stream_events(
     id: JsonRpcId,
 ) {
     while let Some(event) = reader.read().await {
-        match event {
+        match event.map(|e| e.event) {
             Ok(stream_resp) => {
                 // Wrap each event in a JSON-RPC success envelope so the client
                 // can route it by `id` and deserialize as `JsonRpcResponse<StreamResponse>`.
+                //
+                // No log position on the wire here: resumption is the SSE
+                // binding's `id:`/`Last-Event-ID` pair, and inventing a
+                // WebSocket spelling for it would be a protocol extension
+                // this server made up.
                 let envelope = JsonRpcSuccessResponse {
                     jsonrpc: JsonRpcVersion,
                     id: id.clone(),

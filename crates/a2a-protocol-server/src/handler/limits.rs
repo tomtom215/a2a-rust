@@ -173,6 +173,20 @@ pub struct HandlerLimits {
     /// reconnection an expected flow, and the client gets a fresh snapshot
     /// when it resubscribes.
     pub subscribe_max_idle: Duration,
+    /// How many logged events a resuming `SubscribeToTask` replays at most.
+    /// Default: 1,000.
+    ///
+    /// A client reconnecting with `Last-Event-ID` is sent what it missed,
+    /// read from the task's event log. The bound matters because the offset
+    /// is client-supplied: `Last-Event-ID: 0` on a long-running task asks for
+    /// the whole history, and without a cap that is an unbounded read and an
+    /// unbounded burst of frames on one connection.
+    ///
+    /// Truncation is not silent data loss. Every replayed frame carries its
+    /// own `id:`, so a client that receives the cap's worth reconnects at the
+    /// last one and continues — the replay is resumable by the same mechanism
+    /// that started it.
+    pub subscribe_replay_limit: usize,
 }
 
 impl Default for HandlerLimits {
@@ -192,6 +206,7 @@ impl Default for HandlerLimits {
             max_total_push_configs: 100_000,
             subscribe_reattach_interval: Duration::from_millis(250),
             subscribe_max_idle: Duration::from_secs(300),
+            subscribe_replay_limit: 1_000,
         }
     }
 }
@@ -208,6 +223,13 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_subscribe_max_idle(mut self, max_idle: Duration) -> Self {
         self.subscribe_max_idle = max_idle;
+        self
+    }
+
+    /// Sets how many logged events a resuming `SubscribeToTask` replays.
+    #[must_use]
+    pub const fn with_subscribe_replay_limit(mut self, limit: usize) -> Self {
+        self.subscribe_replay_limit = limit;
         self
     }
 

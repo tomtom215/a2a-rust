@@ -122,7 +122,7 @@ async fn full_handler_lifecycle_with_streaming() {
     let mut states = vec![];
     let mut artifact_count = 0;
     while let Some(event) = reader.read().await {
-        match event.expect("event ok") {
+        match event.expect("event ok").event {
             StreamResponse::StatusUpdate(u) => states.push(u.status.state),
             StreamResponse::ArtifactUpdate(_) => artifact_count += 1,
             _ => {}
@@ -202,7 +202,7 @@ async fn full_handler_lifecycle_failing_executor() {
 
     let mut saw_failed = false;
     while let Some(event) = reader.read().await {
-        if let Ok(StreamResponse::StatusUpdate(u)) = event
+        if let Ok(StreamResponse::StatusUpdate(u)) = event.map(|e| e.event)
             && u.status.state == TaskState::Failed
         {
             saw_failed = true;

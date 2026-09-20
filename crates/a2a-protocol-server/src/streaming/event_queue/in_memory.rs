@@ -18,12 +18,13 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
 use tokio::sync::{broadcast, mpsc};
 
-use super::{EventQueueReader, EventQueueWriter};
+use super::{EventQueueReader, EventQueueWriter, StreamEvent};
 
 /// A zero-allocation writer that counts bytes written without storing them.
 ///
@@ -56,14 +57,14 @@ impl std::io::Write for CountingWriter {
 /// the writer.
 #[derive(Clone)]
 pub struct InMemoryQueueWriter {
-    tx: broadcast::Sender<A2aResult<StreamResponse>>,
+    tx: broadcast::Sender<A2aResult<StreamEvent>>,
     /// Optional dedicated channel for the background persistence processor.
     /// Unlike the broadcast channel, this mpsc channel is not affected by
     /// slow SSE consumers, so it cannot lag in the broadcast sense — a slow
     /// reader makes it *full*, which `write` reports, rather than making it
     /// silently skip. It said "will never lag" until 2026-08-19, three fields
     /// above the `write_timeout` that exists because a full one is a real state.
-    persistence_tx: Option<mpsc::Sender<A2aResult<StreamResponse>>>,
+    persistence_tx: Option<mpsc::Sender<A2aResult<StreamEvent>>>,
     /// Maximum serialized event size in bytes.
     max_event_size: usize,
     /// Deadline for handing one event to the persistence channel.
@@ -74,6 +75,19 @@ pub struct InMemoryQueueWriter {
     /// Where a dropped event is reported. `None` for the sync-mode queue,
     /// which has no persistence channel to drop from.
     metrics: Option<Arc<dyn crate::metrics::Metrics>>,
+    /// The position last handed out, shared by every clone of this writer.
+    ///
+    /// This is the single point where an event's place in the log is decided.
+    /// Both channels then carry that number, so the `id:` an SSE subscriber
+    /// reads and the `seq` the store writes are the same value and not two
+    /// counts that happen to agree.
+    ///
+    /// Seeded by [`seed_seq`](Self::seed_seq) rather than starting at zero: a
+    /// task parked at `input-required` and continued gets a second queue, and
+    /// since appends are idempotent *by position* a restarted counter would
+    /// collide with the first turn's positions — the continuation's events
+    /// would be silently dropped.
+    seq: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for InMemoryQueueWriter {
@@ -89,8 +103,8 @@ impl std::fmt::Debug for InMemoryQueueWriter {
 
 impl InMemoryQueueWriter {
     /// Creates a new `InMemoryQueueWriter`.
-    pub(super) const fn new(
-        tx: broadcast::Sender<A2aResult<StreamResponse>>,
+    pub(super) fn new(
+        tx: broadcast::Sender<A2aResult<StreamEvent>>,
         max_event_size: usize,
         write_timeout: std::time::Duration,
     ) -> Self {
@@ -100,13 +114,14 @@ impl InMemoryQueueWriter {
             max_event_size,
             write_timeout,
             metrics: None,
+            seq: Arc::new(AtomicU64::new(0)),
         }
     }
 
     /// Creates a new `InMemoryQueueWriter` with a dedicated persistence channel.
-    pub(super) const fn new_with_persistence(
-        tx: broadcast::Sender<A2aResult<StreamResponse>>,
-        persistence_tx: mpsc::Sender<A2aResult<StreamResponse>>,
+    pub(super) fn new_with_persistence(
+        tx: broadcast::Sender<A2aResult<StreamEvent>>,
+        persistence_tx: mpsc::Sender<A2aResult<StreamEvent>>,
         max_event_size: usize,
         write_timeout: std::time::Duration,
     ) -> Self {
@@ -116,7 +131,19 @@ impl InMemoryQueueWriter {
             max_event_size,
             write_timeout,
             metrics: None,
+            seq: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Resumes numbering after `last`, the highest position the task's log
+    /// already holds.
+    ///
+    /// Called once, before the executor is spawned, so no write can race it.
+    /// Leaving it unseeded on a continued task would restart at 1 and, because
+    /// appends are idempotent by position, silently discard every event of the
+    /// new turn.
+    pub(crate) fn seed_seq(&self, last: u64) {
+        self.seq.store(last, Ordering::Relaxed);
     }
 
     /// Reports dropped events to `metrics` — see
@@ -140,7 +167,7 @@ impl InMemoryQueueWriter {
     ///
     /// Used by [`crate::streaming::EventQueueManager::subscribe_with_snapshot`]
     /// to create a reader with a pending first event.
-    pub(crate) fn raw_subscribe(&self) -> broadcast::Receiver<A2aResult<StreamResponse>> {
+    pub(crate) fn raw_subscribe(&self) -> broadcast::Receiver<A2aResult<StreamEvent>> {
         self.tx.subscribe()
     }
 }
@@ -180,6 +207,12 @@ impl EventQueueWriter for InMemoryQueueWriter {
             // stream can still serve live subscribers — but a full one is
             // reported, because the caller is producing state that will not be
             // persisted and only the caller can decide to stop.
+            // The position, assigned exactly once and carried on both
+            // channels below. `Relaxed` is enough: this is the only writer of
+            // the counter and the value travels with the event, so no other
+            // memory is ordered against it.
+            let event = StreamEvent::at(self.seq.fetch_add(1, Ordering::Relaxed) + 1, event);
+
             if let Some(ref persistence_tx) = self.persistence_tx {
                 match persistence_tx
                     .send_timeout(Ok(event.clone()), self.write_timeout)
@@ -252,8 +285,13 @@ impl EventQueueWriter for InMemoryQueueWriter {
 /// broadcast events. This is used by `SubscribeToTask` to emit a `Task`
 /// snapshot as the first event without broadcasting it to all subscribers.
 pub struct InMemoryQueueReader {
-    rx: broadcast::Receiver<A2aResult<StreamResponse>>,
-    pending_first: Option<A2aResult<StreamResponse>>,
+    rx: broadcast::Receiver<A2aResult<StreamEvent>>,
+    /// Yielded, in order, before anything from the broadcast channel.
+    ///
+    /// A queue rather than one slot because a resuming subscriber gets the
+    /// snapshot *and* every event it missed, replayed from the log, before
+    /// the live stream starts.
+    pending: std::collections::VecDeque<A2aResult<StreamEvent>>,
     /// Consulted when the channel closes; see [`Self::with_reattach`].
     reattach: Option<ReattachFn>,
     /// Set once a frame reporting a terminal state has been handed to the
@@ -269,7 +307,7 @@ pub struct InMemoryQueueReader {
 impl std::fmt::Debug for InMemoryQueueReader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("InMemoryQueueReader")
-            .field("pending_first", &self.pending_first.is_some())
+            .field("pending", &self.pending.len())
             .field("reattach", &self.reattach.is_some())
             .field("saw_terminal", &self.saw_terminal)
             .finish()
@@ -282,7 +320,7 @@ impl std::fmt::Debug for InMemoryQueueReader {
 #[allow(clippy::large_enum_variant)]
 pub enum Reattached {
     /// Continue on a fresh queue — the task has more turns to run.
-    Channel(broadcast::Receiver<A2aResult<StreamResponse>>),
+    Channel(broadcast::Receiver<A2aResult<StreamEvent>>),
     /// The task finished while no queue was attached. Emit this frame, then
     /// end: without it the client would see the stream close having never
     /// observed a terminal state, which is the `STREAM-SUB-002` symptom even
@@ -327,28 +365,49 @@ impl InMemoryQueueReader {
     }
 
     /// Creates a new `InMemoryQueueReader`.
-    pub(crate) const fn new(rx: broadcast::Receiver<A2aResult<StreamResponse>>) -> Self {
+    pub(crate) fn new(rx: broadcast::Receiver<A2aResult<StreamEvent>>) -> Self {
         Self {
             rx,
-            pending_first: None,
+            pending: std::collections::VecDeque::new(),
             reattach: None,
             saw_terminal: false,
         }
     }
 
     /// Sets a pending first event to be yielded before broadcast events.
+    ///
+    /// The frame is server-synthesized rather than emitted by the agent, so it
+    /// carries no log position and no SSE `id:`; a resuming client's offset is
+    /// unaffected by having seen it.
     pub fn set_first_event(&mut self, event: StreamResponse) {
-        self.pending_first = Some(Ok(event));
+        self.pending
+            .push_front(Ok(StreamEvent::unpositioned(event)));
+    }
+
+    /// Queues events replayed from the task's log, after anything already
+    /// pending and before the live stream.
+    ///
+    /// Each carries the position it holds in the log, which is what a client
+    /// sends back as `Last-Event-ID` to resume again from where this one
+    /// stopped.
+    pub(crate) fn queue_replay(
+        &mut self,
+        events: impl IntoIterator<Item = crate::store::RecordedEvent>,
+    ) {
+        for recorded in events {
+            self.pending
+                .push_back(Ok(StreamEvent::at(recorded.seq, recorded.event)));
+        }
     }
 
     /// Creates a reader with a snapshot event that will be yielded first.
-    pub(crate) const fn with_first_event(
-        rx: broadcast::Receiver<A2aResult<StreamResponse>>,
+    pub(crate) fn with_first_event(
+        rx: broadcast::Receiver<A2aResult<StreamEvent>>,
         first: StreamResponse,
     ) -> Self {
         Self {
             rx,
-            pending_first: Some(Ok(first)),
+            pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
             saw_terminal: false,
         }
@@ -367,7 +426,7 @@ impl InMemoryQueueReader {
         drop(tx);
         Self {
             rx,
-            pending_first: Some(Ok(first)),
+            pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
             saw_terminal: false,
         }
@@ -403,13 +462,14 @@ pub(crate) fn is_lag_error(err: &a2a_protocol_types::error::A2aError) -> bool {
 impl EventQueueReader for InMemoryQueueReader {
     fn read(
         &mut self,
-    ) -> Pin<Box<dyn Future<Output = Option<A2aResult<StreamResponse>>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Option<A2aResult<StreamEvent>>> + Send + '_>> {
         Box::pin(async move {
-            // Yield the pending first event (e.g., Task snapshot for SubscribeToTask)
-            // before reading from the broadcast channel.
-            if let Some(first) = self.pending_first.take() {
+            // Drain anything queued ahead of the live channel: the
+            // `SubscribeToTask` snapshot, then any events replayed from the
+            // log for a client resuming at a `Last-Event-ID`.
+            if let Some(first) = self.pending.pop_front() {
                 if let Ok(ref ev) = first {
-                    self.saw_terminal |= carries_terminal_state(ev);
+                    self.saw_terminal |= carries_terminal_state(&ev.event);
                 }
                 return Some(first);
             }
@@ -417,7 +477,7 @@ impl EventQueueReader for InMemoryQueueReader {
                 match self.rx.recv().await {
                     Ok(event) => {
                         if let Ok(ref ev) = event {
-                            self.saw_terminal |= carries_terminal_state(ev);
+                            self.saw_terminal |= carries_terminal_state(&ev.event);
                         }
                         return Some(event);
                     }
@@ -441,7 +501,10 @@ impl EventQueueReader for InMemoryQueueReader {
                             Reattached::Channel(rx) => self.rx = rx,
                             Reattached::Final(event) => {
                                 self.saw_terminal = true;
-                                return Some(Ok(event));
+                                // Synthesized from stored state, not emitted
+                                // by the agent, so it is not in the log and
+                                // carries no position.
+                                return Some(Ok(StreamEvent::unpositioned(event)));
                             }
                             Reattached::End => return None,
                         }
@@ -653,7 +716,7 @@ mod tests {
             "the type name must appear: {rendered}"
         );
         assert!(
-            rendered.contains("pending_first: true"),
+            rendered.contains("pending: 1"),
             "a pending snapshot must be visible: {rendered}"
         );
         assert!(
@@ -689,7 +752,7 @@ mod tests {
             .await
             .expect("persistence channel should have the event")
             .expect("event should be Ok");
-        match persisted {
+        match persisted.event {
             StreamResponse::StatusUpdate(evt) => {
                 assert_eq!(evt.status.state, TaskState::Working);
             }
@@ -726,7 +789,7 @@ mod tests {
         assert!(received.is_some(), "reader should return the written event");
         let result = received.unwrap();
         let event = result.expect("event should be Ok");
-        match &event {
+        match &event.event {
             StreamResponse::StatusUpdate(evt) => {
                 assert_eq!(
                     evt.status.state,
@@ -759,7 +822,7 @@ mod tests {
         // Read first event.
         let r1 = reader.read().await.expect("should read first event");
         let sr1 = r1.expect("first event should be Ok");
-        match &sr1 {
+        match &sr1.event {
             StreamResponse::StatusUpdate(evt) => {
                 assert_eq!(
                     evt.status.state,
@@ -773,7 +836,7 @@ mod tests {
         // Read second event.
         let r2 = reader.read().await.expect("should read second event");
         let sr2 = r2.expect("second event should be Ok");
-        match &sr2 {
+        match &sr2.event {
             StreamResponse::StatusUpdate(evt) => {
                 assert_eq!(
                     evt.status.state,
@@ -876,7 +939,7 @@ mod tests {
             .expect("reader1 should see first event");
         let evt1a = r1a.expect("first event should be Ok");
         assert!(
-            matches!(&evt1a, StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Submitted),
+            matches!(&evt1a.event, StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Submitted),
             "reader1 first event should be Submitted"
         );
         let r1b = reader1
@@ -885,7 +948,7 @@ mod tests {
             .expect("reader1 should see second event");
         let evt_1b = r1b.expect("second event should be Ok");
         assert!(
-            matches!(&evt_1b, StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Working),
+            matches!(&evt_1b.event, StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Working),
             "reader1 second event should be Working"
         );
         assert!(reader1.read().await.is_none());
@@ -897,7 +960,7 @@ mod tests {
             .expect("reader2 should see second event");
         let evt2a = r2a.expect("event should be Ok");
         assert!(
-            matches!(&evt2a, StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Working),
+            matches!(&evt2a.event, StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Working),
             "reader2 should see Working event"
         );
         assert!(

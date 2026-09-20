@@ -75,7 +75,7 @@ fn reader_to_native_stream(
         loop {
             match reader.read().await {
                 Some(Ok(event)) => {
-                    let item = apb::StreamResponse::try_from(event).map_err(bad_response);
+                    let item = apb::StreamResponse::try_from(event.event).map_err(bad_response);
                     let is_err = item.is_err();
                     if tx.send(item).await.is_err() || is_err {
                         break;

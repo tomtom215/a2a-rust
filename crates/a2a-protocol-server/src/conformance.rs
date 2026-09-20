@@ -237,7 +237,7 @@ async fn drain(mut reader: InMemoryQueueReader) -> Vec<StreamResponse> {
     let mut events = Vec::new();
     while let Some(item) = reader.read().await {
         match item {
-            Ok(event) => events.push(event),
+            Ok(event) => events.push(event.event),
             // A lag error is the queue's, not the executor's, and the
             // default capacity is far above anything a check emits.
             Err(_) => break,

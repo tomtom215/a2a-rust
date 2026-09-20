@@ -30,7 +30,7 @@ async fn streaming_mode_delivers_status_events() {
 
     let mut states = vec![];
     while let Some(event) = reader.read().await {
-        if let Ok(StreamResponse::StatusUpdate(u)) = event {
+        if let Ok(StreamResponse::StatusUpdate(u)) = event.map(|e| e.event) {
             states.push(u.status.state);
         }
     }
@@ -61,7 +61,7 @@ async fn streaming_mode_delivers_artifact_events() {
     let mut artifact_count = 0;
     let mut states = vec![];
     while let Some(event) = reader.read().await {
-        match event {
+        match event.map(|e| e.event) {
             Ok(StreamResponse::ArtifactUpdate(_)) => artifact_count += 1,
             Ok(StreamResponse::StatusUpdate(u)) => states.push(u.status.state),
             _ => {}
@@ -94,7 +94,7 @@ async fn streaming_mode_error_produces_failed_event() {
 
     let mut saw_failed = false;
     while let Some(event) = reader.read().await {
-        if let Ok(StreamResponse::StatusUpdate(u)) = event
+        if let Ok(StreamResponse::StatusUpdate(u)) = event.map(|e| e.event)
             && u.status.state == TaskState::Failed
         {
             saw_failed = true;
@@ -152,7 +152,7 @@ async fn streaming_mode_message_event_passes_through() {
     let mut saw_message = false;
     let mut states = vec![];
     while let Some(event) = reader.read().await {
-        match event {
+        match event.map(|e| e.event) {
             Ok(StreamResponse::Message(_)) => saw_message = true,
             Ok(StreamResponse::StatusUpdate(u)) => states.push(u.status.state),
             _ => {}
@@ -181,7 +181,7 @@ async fn streaming_mode_task_snapshot_in_stream() {
 
     let mut saw_task = false;
     while let Some(event) = reader.read().await {
-        if let Ok(StreamResponse::Task(_)) = event {
+        if let Ok(StreamResponse::Task(_)) = event.map(|e| e.event) {
             saw_task = true;
         }
     }

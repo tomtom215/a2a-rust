@@ -81,7 +81,7 @@ struct Started {
     /// The first reader on the task's event queue.
     reader: InMemoryQueueReader,
     /// The background processor's channel, present when one was requested.
-    persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<StreamResponse>>>,
+    persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<crate::streaming::StreamEvent>>>,
     /// The spawned executor.
     executor_handle: JoinHandle<()>,
 }

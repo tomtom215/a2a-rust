@@ -821,9 +821,10 @@ the last of the five with no answer.
 State is a folded snapshot; `sqlite_store/journal.rs` is an artifact-parts
 side table, not an event log; there is no SSE `id:` or `Last-Event-ID`.
 
-*(Written before item 5 below. The log now exists and is durable on every
-store this crate ships; the SSE half is still open, and is what the measured
-cost below is about.)*
+*(Written before item 5 below. Both halves have since shipped: the log is
+durable on every store this crate ships, and SSE frames carry an `id:` that
+`Last-Event-ID` resumes from. The measured cost below is what motivated
+them.)*
 
 The measurement: in `mcp-bridge`'s demo the sample agent emits three progress
 steps 120 ms apart and the MCP caller sees **one**, because a poller can only
@@ -900,16 +901,18 @@ agents rather than maintains the protocol.
    caller-supplied and an unscoped log is a cross-tenant read of message
    content.
 
+   Also shipped: `id:` on every logged SSE frame and `Last-Event-ID` on
+   resubscribe — the payoff, and the fix for the measured `mcp-bridge` case
+   where three progress events arrive as one. The position is assigned in
+   `InMemoryQueueWriter::write` and carried on both channels, so the `id:` a
+   subscriber reads and the `seq` the store writes are one number rather than
+   two counts that agree; `EventQueueReader::read` yields a `StreamEvent`
+   accordingly. Server-synthesized frames (the snapshot, the rebuilt terminal
+   frame) carry no position. Replay is bounded by
+   `HandlerLimits::subscribe_replay_limit`.
+
    **Not shipped, in the order it is worth doing:**
 
-   * **`id:` on SSE frames and `Last-Event-ID` on resubscribe.** This is the
-     payoff — exact resumption from an offset instead of snapshot-and-hope,
-     and the thing that would fix the measured `mcp-bridge` case where three
-     progress events arrive as one. `build_sse_message_frame`
-     (`streaming/sse.rs:70`) emits no `id:` line, and `subscribe.rs`'s
-     reattach hook polls for a snapshot. `read_events(after_seq)` is already
-     the right shape for it: `after_seq` is exclusive precisely so it matches
-     the `Last-Event-ID` contract.
    * **Making state a fold over the log on read.** The user's choice for this
      round was the log with the snapshot kept as the record, so this stays
      deliberately undone. It is what would make #130-class bugs impossible

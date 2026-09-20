@@ -67,15 +67,58 @@ std::thread_local! {
 /// to 0 amortized (reused `Vec<u8>` → `Bytes`). Since `serde_json` never emits
 /// raw newlines in compact mode (they are escaped as `\n`), the data is always
 /// single-line and does not need the multi-line `data:` splitting of [`write_event`].
-fn build_sse_message_frame<T: serde::Serialize>(value: &T) -> Result<Bytes, serde_json::Error> {
+fn build_sse_message_frame<T: serde::Serialize>(
+    value: &T,
+    seq: Option<u64>,
+) -> Result<Bytes, serde_json::Error> {
     SSE_FRAME_BUF.with(|cell| {
         let mut buf = cell.borrow_mut();
         buf.clear();
+        // `id:` first, as the SSE grammar allows in any order but every
+        // reference implementation writes it. A client that reconnects sends
+        // the last one it saw back as `Last-Event-ID`, and the server replays
+        // the log from exactly there.
+        //
+        // Only for events that are in the log. A frame the server
+        // synthesized — the `SubscribeToTask` snapshot, the terminal frame
+        // rebuilt from stored state — has no position, and giving it one
+        // would name an offset the log cannot be replayed from.
+        if let Some(seq) = seq {
+            buf.extend_from_slice(b"id: ");
+            push_decimal(&mut buf, seq);
+            buf.push(b'\n');
+        }
         buf.extend_from_slice(b"event: message\ndata: ");
         serde_json::to_writer(&mut *buf, value)?;
         buf.extend_from_slice(b"\n\n");
         Ok(Bytes::from(buf.clone()))
     })
+}
+
+/// Appends `n` to `buf` as decimal digits, without allocating.
+///
+/// `write!` into the buffer would be the obvious spelling, but its error type
+/// is `io::Error` — which a `Vec` cannot produce and which does not convert to
+/// the `serde_json::Error` the caller returns. It would cost either an
+/// `expect` on an impossible branch or a second error type, on the hot path,
+/// to format at most twenty digits.
+fn push_decimal(buf: &mut Vec<u8>, n: u64) {
+    let mut digits = [0u8; 20]; // u64::MAX is 20 digits
+    let mut i = digits.len();
+    let mut n = n;
+    loop {
+        i -= 1;
+        // `n % 10` is 0..=9, so the cast is exact.
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            digits[i] = b'0' + (n % 10) as u8;
+        }
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    buf.extend_from_slice(&digits[i..]);
 }
 
 /// Formats a keep-alive SSE comment.
@@ -245,7 +288,9 @@ pub fn build_sse_response(
 
                 event = reader.read() => {
                     match event {
-                        Some(Ok(stream_response)) => {
+                        Some(Ok(queued)) => {
+                            let seq = queued.seq;
+                            let stream_response = queued.event;
                             // Optimized path: serialize directly into the SSE
                             // frame buffer, avoiding the intermediate String
                             // allocation from serde_json::to_string(). This
@@ -258,10 +303,10 @@ pub fn build_sse_response(
                                     id: envelope_id.clone(),
                                     result: stream_response,
                                 };
-                                build_sse_message_frame(&envelope)
+                                build_sse_message_frame(&envelope, seq)
                             } else {
                                 // REST binding: bare StreamResponse per Section 11.7
-                                build_sse_message_frame(&stream_response)
+                                build_sse_message_frame(&stream_response, seq)
                             };
                             let frame_bytes = match frame_bytes {
                                 Ok(b) => b,
@@ -708,9 +753,12 @@ mod tests {
         let data = frame.into_data().expect("should be a data frame");
         let text = String::from_utf8_lossy(&data);
 
+        // The `id:` comes first and carries the event's log position, which
+        // is what a disconnected client sends back as `Last-Event-ID`. This
+        // is the first event written to this queue, so it is position 1.
         assert!(
-            text.starts_with("event: message\n"),
-            "SSE frame should start with 'event: message\\n', got: {text}"
+            text.starts_with("id: 1\nevent: message\n"),
+            "SSE frame should open with its log position then the event line, got: {text}"
         );
         assert!(
             text.contains("data: "),
@@ -781,5 +829,64 @@ mod tests {
         let envelope: serde_json::Value =
             serde_json::from_str(json_part).expect("data must be valid JSON");
         assert_eq!(envelope["id"], serde_json::json!("req-abc"));
+    }
+
+    // ── the `id:` line ───────────────────────────────────────────────────
+    //
+    // The frame-level half of resumption. `tests/event_log_tests.rs` pins
+    // the end-to-end claim — that the number on the wire is the position the
+    // store holds — while these pin the frame shape it travels in.
+
+    #[test]
+    fn a_positioned_event_carries_its_id_before_the_event_line() {
+        let frame =
+            build_sse_message_frame(&serde_json::json!({"a": 1}), Some(42)).expect("serialize");
+        assert_eq!(
+            String::from_utf8_lossy(&frame),
+            "id: 42\nevent: message\ndata: {\"a\":1}\n\n"
+        );
+    }
+
+    /// A frame the server synthesized — the `SubscribeToTask` snapshot, the
+    /// terminal frame rebuilt from stored state — is not in the log. Giving
+    /// it an `id:` would name an offset `read_events` cannot replay from, and
+    /// the client would send it back and silently lose an event.
+    #[test]
+    fn an_unpositioned_event_carries_no_id_at_all() {
+        let frame = build_sse_message_frame(&serde_json::json!({"a": 1}), None).expect("serialize");
+        let text = String::from_utf8_lossy(&frame);
+        assert!(!text.contains("id:"), "no id line: {text}");
+        assert!(text.starts_with("event: message\n"), "{text}");
+    }
+
+    /// The buffer is reused across frames, so a stale `id:` from the previous
+    /// event would be the exact failure that is invisible in a single-frame
+    /// test: every subsequent frame would carry the first one's position.
+    #[test]
+    fn the_reused_buffer_does_not_carry_an_id_into_the_next_frame() {
+        let _ = build_sse_message_frame(&serde_json::json!({"a": 1}), Some(7)).expect("first");
+        let second = build_sse_message_frame(&serde_json::json!({"a": 2}), None).expect("second");
+        assert!(
+            !String::from_utf8_lossy(&second).contains("id:"),
+            "the second frame must not inherit the first frame's id"
+        );
+    }
+
+    #[test]
+    fn positions_are_formatted_across_the_whole_u64_range() {
+        // `push_decimal` is hand-rolled to avoid an `expect` on an
+        // impossible io::Error, so the digits are worth pinning — including
+        // the two ends, where an off-by-one in the index would show.
+        for (n, expected) in [
+            (0_u64, "0"),
+            (7, "7"),
+            (10, "10"),
+            (1_234_567_890, "1234567890"),
+            (u64::MAX, "18446744073709551615"),
+        ] {
+            let mut buf = Vec::new();
+            push_decimal(&mut buf, n);
+            assert_eq!(String::from_utf8_lossy(&buf), expected);
+        }
     }
 }

@@ -59,7 +59,10 @@ async fn drive(
     drop(writer);
     let mut events = Vec::new();
     while let Some(item) = reader.read().await {
-        events.push(item.expect("the queue delivered an error rather than an event"));
+        events.push(
+            item.expect("the queue delivered an error rather than an event")
+                .event,
+        );
     }
     (result, events)
 }

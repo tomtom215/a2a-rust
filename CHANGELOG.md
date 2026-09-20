@@ -41,6 +41,27 @@ follow-up release of the binding").
   every previous growth would have been a break for a literal nobody writes;
   `#[non_exhaustive]` is what makes this the last time.
 
+- **`EventQueueReader::read` now yields a `StreamEvent`, not a
+  `StreamResponse`.** The event travels the queue with the position it holds
+  in the task's log: `StreamEvent { seq: Option<u64>, event: StreamResponse }`.
+  `Reattached::Channel` and the persistence channel carry the same type.
+
+  What breaks: any code that matched on the result of `read()` directly. The
+  migration is `.event` for a value, or `.map(|e| e.event)` for the `Result`:
+
+  ```rust,ignore
+  // before
+  while let Some(Ok(StreamResponse::StatusUpdate(u))) = reader.read().await { .. }
+  // after
+  while let Some(Ok(ev)) = reader.read().await {
+      if let StreamResponse::StatusUpdate(u) = ev.event { .. }
+  }
+  ```
+
+  Why it is a type change and not an accessor: the position has to be the
+  *same number* the store wrote, and the only way to guarantee that is to
+  assign it once and carry it. See the `Added` entry below.
+
 - **`PurgeReport::journal_orphans_deleted` is now `orphan_rows_deleted`.**
   The sweep reclaims two side tables now, not one — the artifact journal and
   the event log — so the old name described half of what the number counts.
@@ -53,6 +74,53 @@ follow-up release of the binding").
   `foreign_keys=ON`).
 
 ### Added
+
+- **SSE frames carry an `id:`, and `Last-Event-ID` resumes from it.** This is
+  what the event log was for. A reconnecting client sends back the position of
+  the last frame it saw and receives exactly what it missed, after the `Task`
+  snapshot and before the live stream.
+
+  The measured problem: in `mcp-bridge`'s demo the sample agent emits three
+  progress steps 120 ms apart and the caller sees **one**, because a snapshot
+  is a fold and a poller only ever observes the latest one. Three events
+  arriving as one is not a rendering detail — it is the intermediate states
+  being unobservable.
+
+  **The position is assigned once, in `InMemoryQueueWriter::write`, and
+  carried on both channels.** That is the whole design. The writer is the
+  single fan-out point — it feeds the persistence channel that writes the log
+  and the broadcast channel that feeds SSE — so the `id:` a subscriber reads
+  and the `seq` the store holds are the same value by construction. The
+  alternative, counting frames at the SSE layer, agrees with the log right up
+  until the first lagged consumer, snapshot frame, or failed append; and a
+  resumption offset that is off by one drops an event with nothing to
+  indicate it. `tests/event_log_tests/resumption.rs` asserts the two
+  sequences are equal, end to end through `build_sse_response`.
+
+  **Frames the server synthesized carry no `id:`** — the `SubscribeToTask`
+  snapshot, and the terminal frame the reattach hook rebuilds from stored
+  state. Neither is in the log, so neither can be replayed from, and giving
+  either one a position would hand the client an offset that loses an event.
+
+  **A continuation resumes the numbering.** The queue is per-turn but the log
+  is per-task, so the writer is seeded from `last_event_seq` before the
+  executor starts. Without it a second turn would restart at 1 and, because
+  appends are idempotent *by position*, have every one of its events silently
+  swallowed as a replay.
+
+  **The offset is client-supplied, so it is bounded and parsed.** Replay is
+  capped by the new `HandlerLimits::subscribe_replay_limit` (default 1,000),
+  and truncation is not loss: each replayed frame carries its own `id:`, so a
+  client continues from the last one it got. A `Last-Event-ID` that is not a
+  position is ignored rather than rejected — a client may echo one back from
+  an unrelated stream, and failing the reconnect over it would turn a
+  harmless mistake into a dropped connection. A store that keeps no log is
+  the same: the header is ignored and the client gets the snapshot, which is
+  the pre-resumption behaviour.
+
+  WebSocket and gRPC streams are unchanged. Resumption is the SSE binding's
+  `id:`/`Last-Event-ID` pair; inventing a spelling for the others would be a
+  protocol extension this server made up.
 
 - **An append-only event log, so what the agent emitted is recorded and not
   just what it folded into.** `TaskStore` gains `supports_event_log`,
