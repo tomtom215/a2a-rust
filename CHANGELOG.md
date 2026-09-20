@@ -297,17 +297,28 @@ one that has never been run.
   `ClientBuilder::with_peer_honouring_idempotency(true)` asserts it for a peer
   you know implements the extension.
 
-- **`message.id` is validated at ingress.** It is now checked with the same
-  rule as `context_id` and `task_id` — non-empty after trimming, and within
-  `HandlerLimits::max_id_length`. It was checked nowhere, while being stored
-  verbatim in `idempotency_keys.message_id`, keying history de-duplication,
-  and interpolated into the error a caller sees when an idempotency key is
-  held by a different message. A spec-invalid empty id was accepted, stored,
-  and echoed in task history, where an empty id collides with every other
-  empty id.
+- **`message.id` is validated at ingress.** It is now checked for being
+  non-empty after trimming, and bounded in length. It was checked nowhere,
+  while being stored verbatim in `idempotency_keys.message_id`, keying history
+  de-duplication, and interpolated into the error a caller sees when an
+  idempotency key is held by a different message. A spec-invalid empty id was
+  accepted, stored, and echoed in task history, where an empty id collides
+  with every other empty id.
+
+  **The length bound is not `max_id_length`**, and the difference matters.
+  That field is documented as covering task and context ids, which are
+  commonly short and often chosen by the deployment; a message id is minted by
+  the client and is conventionally a UUID — 36 characters, which is what
+  `Message::id`'s rustdoc tells a caller to send. Holding both to one number
+  meant a deployment tightening `max_id_length` below 36, a reasonable thing
+  to do for the two ids it was documented to cover, refused *every* message
+  from a conformant client. `HandlerLimits::effective_max_message_id_length`
+  is `max_id_length` floored at `MIN_MESSAGE_ID_LENGTH` (36), so the bound
+  still tightens with the field but never past what the protocol requires.
 
   What breaks: a send whose `messageId` is empty, whitespace-only, or longer
-  than `max_id_length` is rejected with `InvalidParams` instead of accepted.
+  than `effective_max_message_id_length()` is rejected with `InvalidParams`
+  instead of accepted.
 
 ### Added
 

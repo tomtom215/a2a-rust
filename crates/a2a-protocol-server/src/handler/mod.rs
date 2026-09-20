@@ -52,7 +52,7 @@ use crate::streaming::{EventQueueManager, InMemoryQueueReader};
 use crate::tenant_config::PerTenantConfig;
 use crate::tenant_resolver::TenantResolver;
 
-pub use limits::HandlerLimits;
+pub use limits::{HandlerLimits, MIN_MESSAGE_ID_LENGTH};
 
 // Re-export the response type alongside the handler.
 pub use a2a_protocol_types::responses::SendMessageResponse;

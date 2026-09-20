@@ -332,6 +332,7 @@ are rustdoc's job.
 | `CallContext` | Per-request metadata (request ID, headers, tenant) |
 | `HandlerLimits` | Configurable validation limits |
 | `InboundTracePolicy` | What this handler does with a `traceparent` an as-yet unauthenticated peer sent (W3C Trace Context §7.2) |
+| `MIN_MESSAGE_ID_LENGTH` | The floor `message.id`'s length bound is never taken below: 36, a hyphenated UUID |
 | `SendMessageResult` | Result of `RequestHandler::on_send_message`: a synchronous response or a streaming reader |
 | `ShutdownReport` | What a shutdown actually managed to do (queues force-destroyed, whether executor cleanup completed) |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |

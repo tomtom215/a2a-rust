@@ -29,6 +29,11 @@ use std::time::Duration;
 #[non_exhaustive]
 pub struct HandlerLimits {
     /// Maximum allowed length for task/context IDs. Default: 1024.
+    ///
+    /// `message.id` is bounded too, but never below
+    /// [`MIN_MESSAGE_ID_LENGTH`] — see
+    /// [`effective_max_message_id_length`](Self::effective_max_message_id_length)
+    /// for why it cannot simply share this number.
     pub max_id_length: usize,
     /// Maximum allowed serialized size for metadata fields in bytes. Default: 1 MiB.
     pub max_metadata_size: usize,
@@ -231,7 +236,48 @@ impl Default for HandlerLimits {
     }
 }
 
+/// The smallest bound `message.id` may be held to: the length of a hyphenated
+/// UUID.
+///
+/// A2A requires `messageId` on every message, and a v4 UUID is what this
+/// SDK's own documentation tells a caller to use — `Message::id`'s rustdoc
+/// says so, and every example does it. 36 characters is therefore not a
+/// preference, it is the smallest id a conformant client actually sends.
+pub const MIN_MESSAGE_ID_LENGTH: usize = 36;
+
 impl HandlerLimits {
+    /// The bound `message.id` is actually held to: never below
+    /// [`MIN_MESSAGE_ID_LENGTH`].
+    ///
+    /// # Why this is not just [`max_id_length`](Self::max_id_length)
+    ///
+    /// It was, for one release, and that was a defect. `context_id` and
+    /// `task_id` are commonly short and often chosen by the deployment;
+    /// `message.id` is minted by the client and is conventionally a UUID. A
+    /// deployment tightening `max_id_length` to anything under 36 — which is
+    /// a reasonable thing to do for the two ids it was documented to cover —
+    /// then rejected *every* message from a conformant client, including
+    /// every one this SDK's own examples send.
+    ///
+    /// Caught by `examples/incident-response`'s handler-limits check, which
+    /// sets `max_id_length` to 32 and asserts that an id within the bound is
+    /// accepted. It failed on a 36-character UUID, which is exactly the
+    /// report an adopter would have filed.
+    ///
+    /// The clamp rather than a separate knob, for the same reason
+    /// `effective_batch_size` floors a zero batch: an operator tightening a
+    /// bound should not have to know that one identifier has a protocol-
+    /// imposed floor, and a configuration that cannot serve a conformant
+    /// client is not one worth honouring exactly.
+    #[must_use]
+    pub const fn effective_max_message_id_length(&self) -> usize {
+        if self.max_id_length > MIN_MESSAGE_ID_LENGTH {
+            self.max_id_length
+        } else {
+            MIN_MESSAGE_ID_LENGTH
+        }
+    }
+
     /// Sets how often an idle `SubscribeToTask` stream re-checks its task.
     #[must_use]
     pub const fn with_subscribe_reattach_interval(mut self, interval: Duration) -> Self {

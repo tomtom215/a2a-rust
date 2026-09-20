@@ -2181,3 +2181,77 @@ async fn a_message_id_at_the_limit_is_accepted() {
         .await
         .expect("an id exactly at max_id_length is valid and must be accepted");
 }
+
+/// A tightened `max_id_length` must not refuse a conformant client.
+///
+/// `message.id` was bounded by `max_id_length` for one release. That number
+/// is documented as covering task and context ids, which are commonly short,
+/// and a deployment tightening it to 32 is doing exactly what the field
+/// invites. But a message id is conventionally a UUID — 36 characters, which
+/// is what `Message::id`'s own rustdoc tells a caller to send and what every
+/// example in this workspace does send — so the tightened deployment refused
+/// every message it received.
+///
+/// Caught by `examples/incident-response`'s handler-limits check, which sets
+/// `max_id_length` to 32 and failed on a UUID.
+#[tokio::test]
+async fn a_uuid_message_id_survives_a_max_id_length_below_it() {
+    let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .with_handler_limits(crate::handler::HandlerLimits::default().with_max_id_length(32))
+        .build()
+        .expect("handler must build");
+
+    let mut params = make_params(None);
+    params.message.id = MessageId::new(uuid::Uuid::new_v4().to_string());
+    assert_eq!(
+        params.message.id.0.len(),
+        36,
+        "precondition: a hyphenated v4 UUID is 36 characters"
+    );
+
+    handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("a UUID message id must be accepted however tight max_id_length is");
+}
+
+/// Counter-test: the floor is a floor, not an exemption.
+///
+/// Without it, dropping the `message.id` check altogether would satisfy the
+/// test above while restoring the defect that check exists for — an id
+/// reaching `idempotency_keys.message_id` and a caller-visible error with no
+/// bound at all.
+#[tokio::test]
+async fn an_id_past_the_floor_is_still_refused_when_the_limit_is_tight() {
+    let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .with_handler_limits(crate::handler::HandlerLimits::default().with_max_id_length(32))
+        .build()
+        .expect("handler must build");
+
+    let mut params = make_params(None);
+    params.message.id = MessageId::new("m".repeat(37));
+
+    let err = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect_err("37 characters is past the 36-character floor and must be refused");
+    assert!(
+        matches!(err, ServerError::InvalidParams(ref msg) if msg.contains("message.id")),
+        "the error must still name the field, got: {err:?}"
+    );
+}
+
+/// And a limit above the floor is honoured as given, so the clamp does not
+/// quietly loosen a deployment that asked for more room.
+#[tokio::test]
+async fn a_limit_above_the_floor_is_used_as_given() {
+    let limits = crate::handler::HandlerLimits::default().with_max_id_length(100);
+    assert_eq!(limits.effective_max_message_id_length(), 100);
+
+    let tight = crate::handler::HandlerLimits::default().with_max_id_length(8);
+    assert_eq!(
+        tight.effective_max_message_id_length(),
+        crate::handler::MIN_MESSAGE_ID_LENGTH,
+        "below the floor, the floor wins"
+    );
+}

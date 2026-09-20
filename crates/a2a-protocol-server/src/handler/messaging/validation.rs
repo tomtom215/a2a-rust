@@ -40,10 +40,15 @@ impl RequestHandler {
         // control character or newline in either is how log injection starts";
         // the message id reached both with neither defence, bounded only by
         // the dispatcher's request-body limit.
+        //
+        // Bounded by `effective_max_message_id_length`, not `max_id_length`:
+        // a message id is conventionally a UUID, so a deployment that
+        // tightened `max_id_length` below 36 refused every conformant client.
+        // See that method for the whole account.
         validate_id(
             &params.message.id.0,
             "message.id",
-            self.limits.max_id_length,
+            self.limits.effective_max_message_id_length(),
         )?;
         if let Some(ref ctx_id) = params.message.context_id {
             validate_id(&ctx_id.0, "context_id", self.limits.max_id_length)?;
