@@ -118,9 +118,13 @@ follow-up release of the binding").
   the same: the header is ignored and the client gets the snapshot, which is
   the pre-resumption behaviour.
 
-  WebSocket and gRPC streams are unchanged. Resumption is the SSE binding's
-  `id:`/`Last-Event-ID` pair; inventing a spelling for the others would be a
-  protocol extension this server made up.
+  WebSocket, gRPC and SLIM streams are unchanged. Resumption is the SSE
+  binding's `id:`/`Last-Event-ID` pair; inventing a spelling for the others
+  would be a protocol extension this server made up. Note that
+  `bindings/a2a-protocol-slimrpc` is outside the root workspace and takes
+  `RequestHandler` as a public dependency, so `cargo check --workspace` does
+  not compile it — its `event_stream` adapter needed the same one-line change
+  and only the binding's own gates caught it.
 
 - **An append-only event log, so what the agent emitted is recorded and not
   just what it folded into.** `TaskStore` gains `supports_event_log`,

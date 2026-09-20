@@ -399,10 +399,15 @@ type EventStream = futures::stream::BoxStream<'static, Result<Pb<pb::StreamRespo
 /// failure ends the stream with an error rather than dropping the event
 /// silently, because a client that stops receiving events with no terminal
 /// state has no way to tell "finished" from "broken".
+///
+/// The queue also carries each event's position in the task's log, which this
+/// binding drops. Resumption is the SSE binding's `id:`/`Last-Event-ID` pair;
+/// putting the position on a SLIM frame would be a protocol extension this
+/// binding invented, and there is nothing on this wire that sends one back.
 fn event_stream(reader: a2a_protocol_server::InMemoryQueueReader) -> EventStream {
     futures::stream::unfold(reader, |mut reader| async move {
         let event = reader.read().await?;
-        let item = match event {
+        let item = match event.map(|e| e.event) {
             Ok(domain) => pb::StreamResponse::try_from(domain)
                 .map(Pb)
                 .map_err(|e| RpcError::internal(format!("InternalError: {e}"))),
