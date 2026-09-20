@@ -92,12 +92,66 @@ the *content* merge.
 | `release/v0.12.1` | merged, still present | The 0.12.1 release prep. Merged as `e057c8e` via #132, and tagged. Safe to delete. |
 | `claude/a2a-rig-held` | `caa8774` | Storage. The unpublished `a2a-rig` crate, one commit on top of `caac0ec`. |
 | `claude/adk-rust-0.12-patch` | `6fbdd2f` | Storage. The outbound adk-rust patch as a file, one commit on top of `caac0ec`. |
+| `claude/relaxed-planck-c4hsn0` | open — see note | **Destined for `main`.** The 0.13.0 content branch *and* its release prep, open as #137. Trace-context propagation, `CallContext` reachable from `RequestContext`, the executor conformance harness, the typed failure taxonomy, and the event log with SQL stores plus SSE `id:` / `Last-Event-ID` resumption. |
 | `claude/wizardly-tesla-0f358t` | open — see note | **Destined for `main`.** Three examples: tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP) and `examples/mcp-bridge` (an A2A agent exposed *as* MCP). On top of `fa1a82b9`. No PR opened yet. |
 
 `release/v0.12.1` can be deleted. The two **storage** branches —
 `claude/a2a-rig-held` and `claude/adk-rust-0.12-patch` — are **not destined for
 `main`**. They exist so work survives the session that produced it; delete
 either once its contents have landed somewhere better.
+
+### `claude/relaxed-planck-c4hsn0` — 0.13.0, and two gate lessons
+
+No head SHA in the row above, for the reason the next section gives: this file
+lives on the branch it would record.
+
+Two things cost a CI cycle each and will cost the next one the same unless they
+are written down.
+
+**`check_file_lengths.sh` runs inside the `Format` job.** A commit took
+`crates/a2a-protocol-server/src/conformance.rs` to 501 lines — one over — and
+the PR went red on a check named `Format` with `cargo fmt --check` passing
+cleanly. The file was split into `conformance/{mod,report,run}.rs` rather than
+added to the exemption list, which is what `CONTRIBUTING.md` asks for and what
+the script's own message prefers. Before assuming a red `Format` is formatting,
+read further down the job: the step order is `cargo fmt --check`, then
+`check_proto_copies.sh`, then `check_file_lengths.sh`.
+
+**The `Mutants incremental (shard N)` job logs cannot be read through the
+GitHub API.** The Postgres service container's stdout is appended at the end of
+the job log and fills the whole window the API returns; an 803 KB fetch of one
+shard contained zero occurrences of "mutant", "MISSED" or any `##[group]`
+marker. Three attempts on three different shards all came back as nothing but
+`FATAL: role "root" does not exist` and checkpoint lines.
+
+What does work:
+
+* The `Mutation Testing (incremental)` aggregator job prints
+  `Aggregated surviving mutants: N`. Trust it only once all eight shards have
+  finished — while any shard is still running it sums over the artifacts
+  uploaded so far and reads low. It said 7 twice on partial runs and 2 on the
+  two complete ones.
+* Reproducing locally is the reliable route to the *identities*. `cargo-mutants`
+  27.1.0 and `cargo-nextest` (prebuilt, `https://get.nexte.st/latest/linux`, no
+  build needed) with a local PostgreSQL:
+
+  ```bash
+  A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres \
+  cargo mutants --in-diff pr-src.diff --timeout 300 --jobs 2 \
+    --test-tool=nextest --profile=mutants \
+    -- --all-features --run-ignored all \
+       -E 'not (binary(soak) or binary(soak_multi_replica))'
+  ```
+
+  where `pr-src.diff` is
+  `git diff -M origin/main...HEAD -- ':(glob)crates/*/src/**/*.rs'`.
+  `--shard K/8` reproduces one CI shard exactly; `--list` alone shows the
+  selection without running anything, which is how to find out *which* files a
+  shard holds before spending an hour on it.
+* Watch the disk. `--jobs 2` builds two scratch trees under `/tmp` at roughly
+  5 GB each, and a full disk kills the run rather than failing it. Deleting the
+  repo's own `target/` frees more than both and costs only a rebuild, because
+  `cargo-mutants` does not use it.
 
 ### `claude/wizardly-tesla-0f358t` — tool calling, and what the live run found
 
