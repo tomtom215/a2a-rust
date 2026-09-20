@@ -821,6 +821,10 @@ the last of the five with no answer.
 State is a folded snapshot; `sqlite_store/journal.rs` is an artifact-parts
 side table, not an event log; there is no SSE `id:` or `Last-Event-ID`.
 
+*(Written before item 5 below. The log now exists and is durable on every
+store this crate ships; the SSE half is still open, and is what the measured
+cost below is about.)*
+
 The measurement: in `mcp-bridge`'s demo the sample agent emits three progress
 steps 120 ms apart and the MCP caller sees **one**, because a poller can only
 ever observe the latest fold. That transcript is in the example's README with
@@ -879,22 +883,25 @@ agents rather than maintains the protocol.
    half that is done is the substrate rather than the payoff.
 
    **Shipped:** `TaskStore::{supports_event_log, append_event,
-   last_event_seq, read_events}`, implemented for `InMemoryTaskStore`, with
-   both fold paths — the background processor and `sync_collector` —
-   recording every event before folding it. Positions are idempotent, and
-   both paths seed `seq` from the store so a continuation does not collide
-   with its own earlier run.
+   last_event_seq, read_events}`, with both fold paths — the background
+   processor and `sync_collector` — recording every event before folding it.
+   Positions are idempotent, and both paths seed `seq` from the store so a
+   continuation does not collide with its own earlier run.
+
+   Also shipped: every store this crate ships backs it —
+   `InMemoryTaskStore`, `SqliteTaskStore`, `PostgresTaskStore`,
+   `TenantAwareInMemoryTaskStore`, `TenantAwareSqliteTaskStore` and
+   `TenantAwarePostgresTaskStore`. Tables `task_events` and
+   `tenant_task_events`, created by both schema paths on each backend
+   (SQLite migration 7 and Postgres migration 5, plus each `from_pool`'s
+   inline DDL), with a test pinning each path — SQLite's two paths have
+   drifted twice and `migration.rs` records both incidents. The tenant
+   tables are keyed `(tenant_id, task_id, seq)`, because task ids are
+   caller-supplied and an unscoped log is a cross-tenant read of message
+   content.
 
    **Not shipped, in the order it is worth doing:**
 
-   * **SQLite and Postgres implementations.** Without them the log is not
-     durable, which is most of the point. The shape is settled — a
-     `task_events(task_id, seq, kind, payload, created_at)` table with
-     `PRIMARY KEY (task_id, seq)` and `ON CONFLICT DO NOTHING`, generalising
-     `sqlite_store::journal`'s positional design, plus migration V7 and the
-     matching `from_pool` DDL. Note that SQLite has **two** independent
-     schema-construction paths and they have drifted twice; `migration.rs`
-     records both incidents.
    * **`id:` on SSE frames and `Last-Event-ID` on resubscribe.** This is the
      payoff — exact resumption from an offset instead of snapshot-and-hope,
      and the thing that would fix the measured `mcp-bridge` case where three
@@ -909,10 +916,10 @@ agents rather than maintains the protocol.
      rather than merely detectable, and it is a migration for existing
      deployments.
 
-   **One thing to check before building on it.** The tenant-aware stores and
-   both SQL stores inherit the refusing defaults, so a deployment using them
-   has no log at all. `supports_event_log()` is the gate; anything added
-   downstream must ask rather than assume.
+   **One thing to check before building on it.** A *custom* store inherits
+   the refusing defaults, so a deployment using one has no log at all.
+   `supports_event_log()` is the gate; anything added downstream must ask
+   rather than assume.
 6. **Publish `tck/sut`.** The fastest route to people using the server crate
    is for it to become the thing they test *their* agent against. It is
    already built.

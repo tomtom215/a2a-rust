@@ -23,13 +23,15 @@ use std::future::Future;
 use std::pin::Pin;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use sqlx::Row as _;
 use sqlx::sqlite::SqlitePool;
 
-use super::task_store::{ArtifactDelta, TaskStore};
+use super::event_log_sql::{decode_text_row, encode_text, limit_to_i64, seq_to_i64};
+use super::task_store::{ArtifactDelta, RecordedEvent, TaskStore};
 
 /// SQLite-backed [`TaskStore`].
 ///
@@ -142,6 +144,12 @@ impl SqliteTaskStore {
             .execute(&pool)
             .await?;
 
+        // The other half of migration 7. After `tasks`, like the journal,
+        // because it carries the same foreign key.
+        sqlx::query(event_log::CREATE_TABLE_SQL)
+            .execute(&pool)
+            .await?;
+
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_context_id ON tasks(context_id)")
             .execute(&pool)
             .await?;
@@ -227,9 +235,14 @@ impl SqliteTaskStore {
         &self,
         policy: &super::retention::RetentionPolicy,
     ) -> A2aResult<super::retention::PurgeReport> {
-        super::retention::sqlite::purge(&self.pool, "tasks", Some("task_artifact_appends"), policy)
-            .await
-            .map_err(to_a2a_error)
+        super::retention::sqlite::purge(
+            &self.pool,
+            "tasks",
+            &[journal::DELETE_ORPHANS_SQL, event_log::DELETE_ORPHANS_SQL],
+            policy,
+        )
+        .await
+        .map_err(to_a2a_error)
     }
 }
 
@@ -238,6 +251,7 @@ impl SqliteTaskStore {
 // `crate::sqlite_pool` for what each one is load-bearing for.
 use crate::sqlite_pool::sqlite_pool;
 
+pub(super) mod event_log;
 pub(super) mod idempotency;
 pub(super) mod journal;
 
@@ -794,11 +808,75 @@ impl TaskStore for SqliteTaskStore {
         })
     }
 
+    fn supports_event_log(&self) -> bool {
+        true
+    }
+
+    fn append_event<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        seq: u64,
+        event: &'a StreamResponse,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            sqlx::query(event_log::APPEND_SQL)
+                .bind(task_id.0.as_str())
+                .bind(seq_to_i64(seq)?)
+                .bind(encode_text(event)?)
+                .execute(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            Ok(())
+        })
+    }
+
+    fn last_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let (max,): (i64,) = sqlx::query_as(event_log::LAST_SEQ_SQL)
+                .bind(task_id.0.as_str())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            Ok(max.unsigned_abs())
+        })
+    }
+
+    fn read_events<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        after_seq: u64,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
+        Box::pin(async move {
+            let rows: Vec<(i64, String)> = sqlx::query_as(event_log::SELECT_AFTER_SQL)
+                .bind(task_id.0.as_str())
+                .bind(seq_to_i64(after_seq)?)
+                .bind(limit_to_i64(limit))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            rows.into_iter().map(decode_text_row).collect()
+        })
+    }
+
     fn delete<'a>(
         &'a self,
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            // The event log goes with the task, for the same reason and with
+            // the same caveat as the journal rows below: the cascade only
+            // fires with `foreign_keys=ON`, and orphaned events would be
+            // replayed onto a task that later reused the id.
+            sqlx::query(event_log::DELETE_FOR_TASK_SQL)
+                .bind(id.0.as_str())
+                .execute(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+
             // Explicit rather than left to `ON DELETE CASCADE`: the cascade
             // only fires when `foreign_keys=ON`, which this crate's own pool
             // sets but a pool handed to `from_pool` may not. Orphaned journal
@@ -837,5 +915,7 @@ mod retention_tests;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod event_log_tests;
 #[cfg(test)]
 mod idempotency_tests;

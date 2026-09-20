@@ -41,6 +41,17 @@ follow-up release of the binding").
   every previous growth would have been a break for a literal nobody writes;
   `#[non_exhaustive]` is what makes this the last time.
 
+- **`PurgeReport::journal_orphans_deleted` is now `orphan_rows_deleted`.**
+  The sweep reclaims two side tables now, not one — the artifact journal and
+  the event log — so the old name described half of what the number counts.
+  Renamed rather than kept and widened: a field whose name names one of its
+  two sources is read as the count for that source.
+
+  Migration: rename the field at the read site. Its meaning is unchanged for
+  anyone who had only the journal, and it is still normally zero (a non-zero
+  count means rows outlived their task, which happens on a pool without
+  `foreign_keys=ON`).
+
 ### Added
 
 - **An append-only event log, so what the agent emitted is recorded and not
@@ -83,9 +94,35 @@ follow-up release of the binding").
   All four methods default to refusing rather than succeeding. A custom store
   that does not implement them reports no log, which is inconvenient;
   defaulting `append_event` to `Ok(())` would advertise a log that silently
-  lost every event, which is worse. Implemented for `InMemoryTaskStore`; the
-  SQL stores report no log for now, and `supports_event_log()` is what a
-  caller checks rather than discovering it by getting nothing back.
+  lost every event, which is worse. `supports_event_log()` is what a caller
+  checks rather than discovering it by getting nothing back.
+
+- **The event log is backed by every store this crate ships**, not only the
+  in-memory one: `SqliteTaskStore`, `PostgresTaskStore`,
+  `TenantAwareSqliteTaskStore`, `TenantAwarePostgresTaskStore` and
+  `TenantAwareInMemoryTaskStore` all report `supports_event_log() == true`.
+
+  Two tables, `task_events` and `tenant_task_events`, created both by the
+  migration runners (`SQLite` migration 7, `PostgreSQL` migration 5) and by
+  each store's `from_pool` DDL. Both paths, because a store built by one of
+  them and not the other would still answer `supports_event_log() == true` —
+  the flag is a property of the type, not of the schema — so the failure
+  would be an empty history rather than an error at startup. That is the
+  mistake the artifact journal shipped with, and there is now a test for each
+  path on each backend.
+
+  The tenant tables are keyed `(tenant_id, task_id, seq)`. Task ids are
+  caller-supplied, so two tenants may legitimately use the same one; an
+  unscoped log would hand one tenant's resuming subscriber the other's
+  messages, which is a cross-tenant read of message content rather than a
+  missed deduplication. Unlike `tenant_idempotency_keys` these tables *do*
+  carry `ON DELETE CASCADE`: a key that outlives its task is the safe
+  direction, an event that outlives its task is not.
+
+  Deletion is explicit as well as cascaded, and the `SQLite` retention sweep
+  reclaims orphans by anti-join, because `ON DELETE CASCADE` only fires with
+  `foreign_keys=ON` — which this crate's own pool sets and a pool handed to
+  `from_pool` may not.
 
 - **A conformance harness for `AgentExecutor`, behind the `conformance`
   feature.** The TCK grades servers. Nothing graded the thing an adopter

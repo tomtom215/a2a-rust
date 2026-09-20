@@ -34,6 +34,12 @@ pub mod tenant_postgres_store;
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 mod tenant_idempotency;
 
+// Shared by all four SQL event-log implementations, for the same reason.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod event_log_sql;
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod tenant_event_log;
+
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 pub use task_store::{
     ArtifactDelta, DEFAULT_MAX_PAGE_SIZE, InMemoryTaskStore, RecordedEvent, TaskStore,

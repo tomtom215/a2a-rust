@@ -19,6 +19,7 @@
 //! ```
 
 mod artifact_delta;
+pub(super) mod event_log;
 pub(super) mod idempotency;
 mod pool;
 mod store_impl;
@@ -126,6 +127,12 @@ impl PostgresTaskStore {
         // The other half of pg migration 4. It must exist here too, or a
         // store built by `from_pool` refuses every keyed send.
         sqlx::query(idempotency::CREATE_TABLE_SQL)
+            .execute(&pool)
+            .await?;
+
+        // The other half of pg migration 5. After `tasks`, because it carries
+        // a foreign key to it.
+        sqlx::query(event_log::CREATE_TABLE_SQL)
             .execute(&pool)
             .await?;
 

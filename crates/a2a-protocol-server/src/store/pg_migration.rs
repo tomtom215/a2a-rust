@@ -85,6 +85,16 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)",
         // every keyed send then fails.
         sql: super::postgres_store::idempotency::CREATE_TABLE_SQL,
     },
+    PgMigration {
+        version: 5,
+        description: "Add task_events: the per-task log of what the agent emitted",
+        // Shared with `from_pool`'s inline DDL, as migration 4 is. A store
+        // without the table still reports `supports_event_log() == true`,
+        // because that flag is a property of the type rather than of the
+        // schema, so a missing table shows up as an empty history rather than
+        // as a loud error.
+        sql: super::postgres_store::event_log::CREATE_TABLE_SQL,
+    },
 ];
 
 /// Runs schema migrations against a `PostgreSQL` database.

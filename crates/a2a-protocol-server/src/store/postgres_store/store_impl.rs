@@ -14,17 +14,19 @@ use std::future::Future;
 use std::pin::Pin;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 
 use super::PostgresTaskStore;
 use super::pool::to_a2a_error;
-use crate::store::task_store::{ArtifactDelta, IdempotencyClaim, TaskStore};
+use crate::store::event_log_sql::{decode_json_row, encode_json, limit_to_i64, seq_to_i64};
+use crate::store::task_store::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore};
 use a2a_protocol_types::message::MessageId;
 use sqlx::Row as _;
 
-use super::idempotency;
+use super::{event_log, idempotency};
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for PostgresTaskStore {
@@ -372,11 +374,76 @@ impl TaskStore for PostgresTaskStore {
         })
     }
 
+    fn supports_event_log(&self) -> bool {
+        true
+    }
+
+    fn append_event<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        seq: u64,
+        event: &'a StreamResponse,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // `JSONB` rather than text, so the column matches `tasks.data`
+            // beside it and the log is queryable with the same operators.
+            sqlx::query(event_log::APPEND_SQL)
+                .bind(task_id.0.as_str())
+                .bind(seq_to_i64(seq)?)
+                .bind(encode_json(event)?)
+                .execute(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            Ok(())
+        })
+    }
+
+    fn last_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let (max,): (i64,) = sqlx::query_as(event_log::LAST_SEQ_SQL)
+                .bind(task_id.0.as_str())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            Ok(max.unsigned_abs())
+        })
+    }
+
+    fn read_events<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        after_seq: u64,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
+        Box::pin(async move {
+            let rows: Vec<(i64, serde_json::Value)> = sqlx::query_as(event_log::SELECT_AFTER_SQL)
+                .bind(task_id.0.as_str())
+                .bind(seq_to_i64(after_seq)?)
+                .bind(limit_to_i64(limit))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            rows.into_iter().map(decode_json_row).collect()
+        })
+    }
+
     fn delete<'a>(
         &'a self,
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            // Explicit as well as cascaded: a pool handed to `from_pool` is
+            // not guaranteed to have the constraint enforced, and orphaned
+            // events would be replayed onto a task that reused the id.
+            sqlx::query(event_log::DELETE_FOR_TASK_SQL)
+                .bind(id.0.as_str())
+                .execute(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+
             sqlx::query("DELETE FROM tasks WHERE id = $1")
                 .bind(id.0.as_str())
                 .execute(&self.pool)
