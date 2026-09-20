@@ -6,7 +6,7 @@
 //! `SubscribeToTask` handler — resubscribe to a task's event stream.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use a2a_protocol_types::params::TaskIdParams;
 use a2a_protocol_types::task::TaskId;
@@ -150,26 +150,95 @@ impl RequestHandler {
             );
             return;
         }
-        match self
-            .task_store
-            .read_events(task_id, after_seq, self.limits.subscribe_replay_limit)
+
+        let Some(events) = self.read_log_with_catchup(task_id, after_seq).await else {
+            return;
+        };
+
+        trace_info!(
+            task_id = %task_id,
+            after_seq = after_seq,
+            replayed = events.len(),
+            "resubscribe replaying missed events"
+        );
+        reader.queue_replay(events);
+    }
+
+    /// Reads the task's log from `after_seq`, waiting — bounded by
+    /// [`HandlerLimits::subscribe_replay_catchup`](crate::handler::HandlerLimits::subscribe_replay_catchup)
+    /// — for it to catch up with what the live writer has already broadcast.
+    ///
+    /// The barrier is the writer's current position. Every position at or
+    /// below it has been handed to the persistence channel, so once the log
+    /// reaches it the replay covers everything the broadcast receiver —
+    /// attached before this runs — could not have seen. Without the wait, a
+    /// position broadcast just before the receiver existed and appended just
+    /// after the log was read is in neither source, and the subscriber loses
+    /// it with nothing in what it receives to reveal that.
+    ///
+    /// `None` means the read failed and the caller should serve the stream
+    /// without a replay: that is the pre-resumption behaviour, a snapshot then
+    /// live events, and refusing to subscribe because the history could not be
+    /// read would turn a storage hiccup into a dropped connection.
+    async fn read_log_with_catchup(
+        &self,
+        task_id: &TaskId,
+        after_seq: u64,
+    ) -> Option<Vec<crate::store::RecordedEvent>> {
+        // Backoff rather than a fixed tick: the common case is the processor
+        // being an event or two behind, which the first retry catches, and the
+        // cap keeps a full budget to roughly a dozen store reads instead of a
+        // poll every few milliseconds.
+        const FIRST_BACKOFF: Duration = Duration::from_millis(10);
+        const MAX_BACKOFF: Duration = Duration::from_millis(200);
+
+        // `None` means no live queue: the task is parked or the process
+        // restarted, nothing is being written, and the log is already whole.
+        let target = self
+            .event_queue_manager
+            .current_seq(task_id)
             .await
-        {
-            Ok(events) => {
-                trace_info!(
-                    task_id = %task_id,
-                    after_seq = after_seq,
-                    replayed = events.len(),
-                    "resubscribe replaying missed events"
-                );
-                reader.queue_replay(events);
+            .unwrap_or(0);
+
+        let limit = self.limits.subscribe_replay_limit;
+        let deadline = Instant::now() + self.limits.subscribe_replay_catchup;
+        let mut backoff = FIRST_BACKOFF;
+
+        loop {
+            let found = match self.task_store.read_events(task_id, after_seq, limit).await {
+                Ok(found) => found,
+                Err(_e) => {
+                    trace_warn!(
+                        task_id = %task_id,
+                        "resubscribe: event log read failed; the stream starts from the snapshot"
+                    );
+                    return None;
+                }
+            };
+
+            let reached = found.last().map_or(after_seq, |e| e.seq);
+            // Caught up, or capped by `subscribe_replay_limit` — which is
+            // truncation, not lag, and is resumable by the client's own next
+            // `Last-Event-ID`, so there is nothing to wait for.
+            if reached >= target || found.len() >= limit {
+                return Some(found);
             }
-            Err(_e) => {
+            if Instant::now() >= deadline {
                 trace_warn!(
                     task_id = %task_id,
-                    "resubscribe: event log read failed; the stream starts from the snapshot"
+                    reached = reached,
+                    target = target,
+                    "resubscribe: the event log did not catch up within \
+                     subscribe_replay_catchup; the replay is short by the difference"
                 );
+                self.metrics.on_persistence_error(
+                    crate::metrics::persistence_operation::EVENT_LOG_CATCHUP,
+                    crate::metrics::event_log_catchup_error::TIMED_OUT,
+                );
+                return Some(found);
             }
+            tokio::time::sleep(backoff).await;
+            backoff = (backoff * 2).min(MAX_BACKOFF);
         }
     }
 

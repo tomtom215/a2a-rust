@@ -187,6 +187,25 @@ pub struct HandlerLimits {
     /// last one and continues — the replay is resumable by the same mechanism
     /// that started it.
     pub subscribe_replay_limit: usize,
+    /// How long a resuming `SubscribeToTask` waits for the task's event log to
+    /// catch up with what has already been broadcast. Default: 2 seconds.
+    ///
+    /// Events reach the log through the background processor, so a position
+    /// can have been broadcast to live subscribers before it has been
+    /// appended. A resubscribe attaches its broadcast receiver first and reads
+    /// the log second; without this wait, a position broadcast just before the
+    /// receiver existed and appended just after the log was read appears in
+    /// neither, and the subscriber loses it with no gap it could detect.
+    ///
+    /// The wait is bounded because the processor can be slow for reasons that
+    /// are not this subscriber's problem — a registered webhook is delivered
+    /// inline, under `push_delivery_budget`. On expiry the replay is served
+    /// with what the log does hold and the shortfall is logged and counted
+    /// under the `event_log_catchup` persistence-error label, rather than
+    /// being passed off as a complete history.
+    ///
+    /// Zero disables the wait.
+    pub subscribe_replay_catchup: Duration,
 }
 
 impl Default for HandlerLimits {
@@ -207,6 +226,7 @@ impl Default for HandlerLimits {
             subscribe_reattach_interval: Duration::from_millis(250),
             subscribe_max_idle: Duration::from_secs(300),
             subscribe_replay_limit: 1_000,
+            subscribe_replay_catchup: Duration::from_secs(2),
         }
     }
 }
@@ -230,6 +250,14 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_subscribe_replay_limit(mut self, limit: usize) -> Self {
         self.subscribe_replay_limit = limit;
+        self
+    }
+
+    /// Sets how long a resuming `SubscribeToTask` waits for the event log to
+    /// catch up with what has already been broadcast. Zero disables the wait.
+    #[must_use]
+    pub const fn with_subscribe_replay_catchup(mut self, catchup: Duration) -> Self {
+        self.subscribe_replay_catchup = catchup;
         self
     }
 

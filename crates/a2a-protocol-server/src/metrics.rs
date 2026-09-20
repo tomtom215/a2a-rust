@@ -141,6 +141,15 @@ pub mod persistence_operation {
     pub const FAILED_STATE: &str = "failed_state";
     /// Persisting an agent message appended to the task's history.
     pub const HISTORY_APPEND: &str = "history_append";
+    /// Waiting for a task's event log to catch up with what was already
+    /// broadcast, on a resubscribe that asked to resume.
+    ///
+    /// Reported when the wait bounded by
+    /// [`HandlerLimits::subscribe_replay_catchup`](crate::handler::HandlerLimits::subscribe_replay_catchup)
+    /// expired with the log still short of the writer's position. The replay
+    /// was served with what the log held, so the subscriber is missing the
+    /// shortfall — this is the only signal that it happened.
+    pub const EVENT_LOG_CATCHUP: &str = "event_log_catchup";
     /// Handing an event from the executor's queue to the persistence processor.
     ///
     /// Reported with `error_kind = "channel_closed"` when the processor is
@@ -148,6 +157,14 @@ pub mod persistence_operation {
     /// subscribers, but the task's stored state stops advancing, and until
     /// 0.12 a default build said nothing about it.
     pub const QUEUE_HANDOFF: &str = "queue_handoff";
+}
+
+/// Error kinds passed to [`Metrics::on_persistence_error`] for
+/// [`persistence_operation::EVENT_LOG_CATCHUP`].
+pub mod event_log_catchup_error {
+    /// The bounded wait expired with the log still behind the position the
+    /// writer had already broadcast. The replay was served short.
+    pub const TIMED_OUT: &str = "timed_out";
 }
 
 /// Error kinds passed to [`Metrics::on_persistence_error`] for

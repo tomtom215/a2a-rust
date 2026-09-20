@@ -335,6 +335,20 @@ impl EventQueueManager {
     /// so its events have nowhere to go, and registering one here would leak a
     /// map entry (and consume a concurrency slot) that nothing ever removes —
     /// which is exactly what `get_or_create` did on the cancel path.
+    /// The highest log position a live queue for `task_id` has assigned, or
+    /// `None` when no queue is registered.
+    ///
+    /// The resubscribe path reads this immediately after attaching its
+    /// broadcast receiver, and then waits for the task's log to reach it. That
+    /// is what closes the window in which an event was broadcast before the
+    /// receiver existed but had not yet been appended when the log was read —
+    /// an event that would otherwise appear in neither source and be lost with
+    /// nothing to show for it.
+    pub(crate) async fn current_seq(&self, task_id: &TaskId) -> Option<u64> {
+        let map = self.writers.read().await;
+        map.get(task_id).map(|w| w.current_seq())
+    }
+
     pub(crate) async fn writer_for_cancel(&self, task_id: &TaskId) -> Arc<InMemoryQueueWriter> {
         {
             let map = self.writers.read().await;

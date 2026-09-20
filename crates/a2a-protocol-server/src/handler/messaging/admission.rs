@@ -241,8 +241,7 @@ mod tests {
         let err = handler
             .lease_event_queue(&task_id, true)
             .await
-            .err()
-            .expect("an unreadable log position must refuse the lease");
+            .expect_err("an unreadable log position must refuse the lease");
 
         assert!(
             matches!(err, ServerError::Internal(_)),
