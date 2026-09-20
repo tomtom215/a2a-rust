@@ -537,6 +537,52 @@ mod tests {
         }
     }
 
+    /// `failure_class` reads the class off the status message, and this
+    /// crate's own suite never exercised it: the assertions live in the
+    /// server crate's `failure_class_tests.rs` and in a doctest, and the
+    /// mutation gate runs neither — nextest does not run doctests, and a
+    /// per-crate mutant is graded only by its own crate's tests. Replacing
+    /// the body with `None` therefore survived.
+    #[test]
+    fn failure_class_reads_the_class_off_the_status_message() {
+        use crate::failure::{FailureClass, set_class};
+        use crate::message::Message;
+
+        let mut task = make_task();
+        assert_eq!(
+            task.failure_class(),
+            None,
+            "a task with no status message has no class to read"
+        );
+
+        let mut msg = Message::agent_text("m-1", "upstream timed out");
+        assert_eq!(
+            Task {
+                status: TaskStatus {
+                    state: TaskState::Failed,
+                    message: Some(msg.clone()),
+                    timestamp: None,
+                },
+                ..make_task()
+            }
+            .failure_class(),
+            None,
+            "a message carrying no class is unclassified, not a default"
+        );
+
+        set_class(&mut msg, FailureClass::Transient);
+        task.status = TaskStatus {
+            state: TaskState::Failed,
+            message: Some(msg),
+            timestamp: None,
+        };
+        assert_eq!(task.failure_class(), Some(FailureClass::Transient));
+        assert!(
+            task.failure_class().expect("classified").is_retryable(),
+            "Transient is the class a caller retries on"
+        );
+    }
+
     #[test]
     fn task_state_screaming_snake_serde() {
         assert_eq!(
