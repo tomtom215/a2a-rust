@@ -321,7 +321,8 @@ fn cors_config_construction_with_allowed_origin() {
     assert_eq!(cors.allow_methods, "GET, POST, PUT, DELETE, OPTIONS");
     assert_eq!(
         cors.allow_headers,
-        "content-type, authorization, a2a-version, a2a-extensions, x-a2a-notification-token"
+        "content-type, authorization, a2a-version, a2a-extensions, last-event-id, \
+         x-a2a-notification-token"
     );
     assert_eq!(cors.max_age_secs, 86400);
 }
@@ -333,7 +334,8 @@ fn cors_default_permissive() {
     assert_eq!(cors.allow_methods, "GET, POST, PUT, DELETE, OPTIONS");
     assert_eq!(
         cors.allow_headers,
-        "content-type, authorization, a2a-version, a2a-extensions, x-a2a-notification-token"
+        "content-type, authorization, a2a-version, a2a-extensions, last-event-id, \
+         x-a2a-notification-token"
     );
     assert_eq!(cors.max_age_secs, 86400);
 }
@@ -356,7 +358,8 @@ fn cors_preflight_response_status_and_headers() {
     );
     assert_eq!(
         headers.get("access-control-allow-headers").unwrap(),
-        "content-type, authorization, a2a-version, a2a-extensions, x-a2a-notification-token"
+        "content-type, authorization, a2a-version, a2a-extensions, last-event-id, \
+         x-a2a-notification-token"
     );
     assert_eq!(headers.get("access-control-max-age").unwrap(), "86400");
 }
@@ -387,7 +390,8 @@ fn cors_apply_headers_adds_to_existing_response() {
     );
     assert_eq!(
         headers.get("access-control-allow-headers").unwrap(),
-        "content-type, authorization, a2a-version, a2a-extensions, x-a2a-notification-token"
+        "content-type, authorization, a2a-version, a2a-extensions, last-event-id, \
+         x-a2a-notification-token"
     );
     assert_eq!(headers.get("access-control-max-age").unwrap(), "86400");
 }

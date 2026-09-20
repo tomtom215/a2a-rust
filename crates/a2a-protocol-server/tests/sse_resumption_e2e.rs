@@ -14,7 +14,12 @@
 //! no client could ever resume.
 //!
 //! So this goes through the socket: a hyper request with the header on it,
-//! and the `id:` lines parsed back out of the SSE body.
+//! and the `id:` lines parsed back out of the SSE body — once for the REST
+//! dispatcher and once for the axum router, because those two do not share a
+//! header extractor. `dispatch::rest` keys its map on `HeaderName::as_str()`,
+//! which `http` has already lowercased; `dispatch::axum_adapter` has its own
+//! function that calls `.to_lowercase()` itself. Two implementations of the
+//! same rule is two places it can be broken.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -219,4 +224,57 @@ async fn the_header_name_is_matched_case_insensitively() {
     let task_id = parked(&store, 3).await;
 
     assert_eq!(subscribe_ids(addr, &task_id.0, Some("1")).await, vec![2, 3]);
+}
+
+// ── The axum router, which extracts headers with its own function ────────────
+
+#[cfg(feature = "axum")]
+mod axum_router {
+    use super::{Idle, Shared, parked, subscribe_ids};
+    use a2a_protocol_server::RequestHandler;
+    use a2a_protocol_server::builder::RequestHandlerBuilder;
+    use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
+    use a2a_protocol_server::store::InMemoryTaskStore;
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+
+    async fn serve(store: &Arc<InMemoryTaskStore>) -> SocketAddr {
+        let handler: Arc<RequestHandler> = Arc::new(
+            RequestHandlerBuilder::new(Idle)
+                .with_task_store(Shared(Arc::clone(store)))
+                .build()
+                .expect("handler"),
+        );
+        let app = A2aRouter::new(handler).into_router();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        addr
+    }
+
+    /// The same contract as the REST case, through the other extractor.
+    #[tokio::test]
+    async fn a_last_event_id_sent_to_the_axum_router_replays_what_was_missed() {
+        let store = Arc::new(InMemoryTaskStore::new());
+        let addr = serve(&store).await;
+        let task_id = parked(&store, 5).await;
+
+        assert_eq!(
+            subscribe_ids(addr, &task_id.0, Some("2")).await,
+            vec![3, 4, 5]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_axum_router_replays_nothing_without_the_header() {
+        let store = Arc::new(InMemoryTaskStore::new());
+        let addr = serve(&store).await;
+        let task_id = parked(&store, 5).await;
+
+        assert!(subscribe_ids(addr, &task_id.0, None).await.is_empty());
+    }
 }
