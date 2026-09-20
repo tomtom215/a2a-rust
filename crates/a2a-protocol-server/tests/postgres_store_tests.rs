@@ -27,8 +27,8 @@ use a2a_protocol_server::push::{
 use a2a_protocol_server::store::ArtifactDelta;
 use a2a_protocol_server::store::tenant::TenantContext;
 use a2a_protocol_server::store::{
-    PgMigrationRunner, PostgresTaskStore, RecordedEvent, RetentionPolicy, TaskStore,
-    TenantAwarePostgresTaskStore,
+    BUILTIN_PG_MIGRATIONS, PgMigrationRunner, PostgresTaskStore, RecordedEvent, RetentionPolicy,
+    TaskStore, TenantAwarePostgresTaskStore,
 };
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
@@ -466,23 +466,37 @@ async fn migrations_apply_in_order_and_are_idempotent() {
         0,
         "fresh database starts at version 0"
     );
+    // Derived from the migration list rather than hard-coded. This assertion
+    // read `5` and `vec![1, 2, 3, 4, 5]` until migration 6 was added, and the
+    // literal is the only reason it went red — the runner was correct. A
+    // hard-coded count cannot tell "the runner is broken" from "somebody
+    // added a migration", and only a live PostgreSQL ever runs this, so the
+    // drift is invisible until CI.
+    let expected: Vec<u32> = BUILTIN_PG_MIGRATIONS.iter().map(|m| m.version).collect();
+    let head = *expected.last().expect("there is at least one migration");
+    assert_eq!(
+        expected,
+        (1..=head).collect::<Vec<u32>>(),
+        "versions must be contiguous and ascending from 1 — a gap or a \
+         duplicate would make `current_version` a number that cannot be \
+         reasoned about"
+    );
     assert_eq!(
         runner
             .pending_migrations()
             .await
             .expect("pending_migrations")
             .len(),
-        5,
-        "all built-in migrations should be pending"
+        expected.len(),
+        "every built-in migration should be pending on a fresh database"
     );
 
     let applied = runner.run_pending().await.expect("run_pending");
+    assert_eq!(applied, expected, "migrations apply in version order");
     assert_eq!(
-        applied,
-        vec![1, 2, 3, 4, 5],
-        "migrations apply in version order"
+        runner.current_version().await.expect("current_version"),
+        head
     );
-    assert_eq!(runner.current_version().await.expect("current_version"), 5);
 
     // Pins the boundary in `pending_migrations`, which filters `version >
     // current`. Nothing else here observes it: `run_pending` walks
@@ -2119,4 +2133,199 @@ async fn tenant_postgres_retention_takes_the_event_log_with_it() {
     .await;
 
     db.drop_db().await;
+}
+
+/// Counts the persistence errors a store reports.
+///
+/// The SQLite twin of these tests has its own copy inside the crate; this one
+/// lives here because the Postgres store is only reachable from an
+/// integration test.
+#[derive(Default)]
+struct RecordingMetrics {
+    seen: std::sync::Mutex<Vec<(String, String)>>,
+}
+
+impl RecordingMetrics {
+    fn persistence_errors(&self) -> usize {
+        self.seen.lock().expect("recorder mutex").len()
+    }
+}
+
+impl a2a_protocol_server::Metrics for RecordingMetrics {
+    fn on_persistence_error(&self, operation: &str, error_kind: &str) {
+        self.seen
+            .lock()
+            .expect("recorder mutex")
+            .push((operation.to_owned(), error_kind.to_owned()));
+    }
+}
+
+// ── The Postgres half of the 0.13 event-log work ─────────────────────────────
+//
+// Each of these has a SQLite twin that has been running all along. The
+// Postgres side was reviewed as SQL and compiled, never executed, because no
+// server was available where it was written — so these are the first runs.
+
+/// `CHECK (seq > 0)` on `task_events`, applied to a database the runner built.
+///
+/// The constraint is declared inline in the table DDL *and* added to existing
+/// databases by migration 6, so a fresh run exercises the inline one. Positions
+/// start at 1, so a zero or negative `seq` is not something this crate can
+/// write — the constraint is there to stop a row that arrived some other way
+/// from being read back as a plausible position.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_a_non_positive_position_is_refused_by_the_schema() {
+    let db = TestDb::create("evlog_check").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+    // The task row first. `task_events` has a foreign key to `tasks`, so
+    // without it every insert below fails on the key and the CHECK is never
+    // reached — which is how the first draft of this test passed its negative
+    // cases for the wrong reason.
+    let task = make_task("t1", "ctx1");
+    store
+        .save(&task)
+        .await
+        .expect("save the task the events belong to");
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&db.url)
+        .await
+        .expect("connect to scratch database");
+
+    for bad in [0_i64, -1] {
+        let err = sqlx::query(
+            "INSERT INTO task_events (task_id, seq, payload) VALUES ($1, $2, $3::jsonb)",
+        )
+        .bind("t1")
+        .bind(bad)
+        .bind("{}")
+        .execute(&pool)
+        .await
+        .expect_err("a non-positive position must be refused by the schema");
+        let text = err.to_string();
+        assert!(
+            text.contains("violates check constraint"),
+            "seq = {bad} must be refused by the CHECK constraint specifically — \
+             a foreign-key or not-null rejection would prove nothing about it. \
+             Got: {err}"
+        );
+        assert!(
+            text.contains("seq_positive"),
+            "and by the seq constraint by name, so a future unrelated CHECK \
+             cannot satisfy this test. Got: {err}"
+        );
+    }
+
+    // The counter-test: 1 is the first legitimate position and must be taken.
+    sqlx::query("INSERT INTO task_events (task_id, seq, payload) VALUES ($1, $2, $3::jsonb)")
+        .bind("t1")
+        .bind(1_i64)
+        .bind("{}")
+        .execute(&pool)
+        .await
+        .expect("position 1 is valid and must be accepted");
+
+    pool.close().await;
+    db.drop_db().await;
+}
+
+/// Migration 6 is idempotent against a database that already carries the
+/// constraint inline.
+///
+/// It runs `DROP CONSTRAINT IF EXISTS` then `ADD CONSTRAINT`, and the runner
+/// splits a migration on `;`, so both halves execute as separate statements
+/// inside one transaction. A fresh database gets the constraint from migration
+/// 5's inline DDL and then immediately has migration 6 applied to it, which is
+/// the case the drop-first exists for — and the one that would fail loudly
+/// with a duplicate-object error if the drop were omitted.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_the_seq_constraint_migration_is_idempotent() {
+    let db = TestDb::create("evlog_mig6").await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&db.url)
+        .await
+        .expect("connect to scratch database");
+
+    let runner = PgMigrationRunner::new(pool.clone());
+    runner.run_pending().await.expect("first run");
+    // A second run applies nothing; the constraint survives and stays single.
+    let second = runner.run_pending().await.expect("second run");
+    assert!(
+        second.is_empty(),
+        "a fully migrated database must have nothing pending, got {second:?}"
+    );
+
+    let constraints: Vec<String> = sqlx::query_scalar(
+        "SELECT conname FROM pg_constraint \
+         WHERE conrelid = 'task_events'::regclass AND contype = 'c'",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("read check constraints");
+    assert_eq!(
+        constraints
+            .iter()
+            .filter(|c| c.contains("seq_positive"))
+            .count(),
+        1,
+        "exactly one seq CHECK constraint, not a duplicate per run: {constraints:?}"
+    );
+
+    pool.close().await;
+    db.drop_db().await;
+}
+
+/// A byte-identical replay is not counted as a lost append; a different event
+/// on the same position is.
+///
+/// This is the classification `ON CONFLICT ... DO NOTHING` made possible and
+/// `rows_affected() == 0` made necessary: the insert reports nothing written
+/// either way, so the store re-reads the stored payload to tell a retry from a
+/// second writer. On Postgres the column is `jsonb`, which normalises key
+/// order and whitespace — so the comparison is structural, and this test is
+/// what says that normalisation cannot make two *different* events look like
+/// one replay.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_a_replay_is_not_reported_but_a_second_writer_is() -> A2aResult<()> {
+    let db = TestDb::create("evlog_classify").await;
+    let recorder = std::sync::Arc::new(RecordingMetrics::default());
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store")
+        .with_metrics(a2a_protocol_server::metrics::MetricsHandle::from_arc(
+            std::sync::Arc::clone(&recorder) as std::sync::Arc<dyn a2a_protocol_server::Metrics>,
+        ));
+
+    let task = make_task("t1", "ctx1");
+    store.save(&task).await?;
+    let first = log_event("t1", TaskState::Working);
+    store.append_event(&task.id, 1, &first).await?;
+
+    // The identical event again: a retry, nothing lost, nothing to report.
+    store.append_event(&task.id, 1, &first).await?;
+    assert_eq!(
+        recorder.persistence_errors(),
+        0,
+        "an identical replay is not a lost append and must not be counted"
+    );
+
+    // A different event on the same position: a second writer, and a real loss.
+    store
+        .append_event(&task.id, 1, &log_event("t1", TaskState::Completed))
+        .await?;
+    assert_eq!(
+        recorder.persistence_errors(),
+        1,
+        "a different event on a taken position is a lost append and must be counted"
+    );
+
+    db.drop_db().await;
+    Ok(())
 }

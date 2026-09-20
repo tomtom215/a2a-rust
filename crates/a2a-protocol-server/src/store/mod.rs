@@ -90,7 +90,7 @@ pub use sqlite_store::SqliteTaskStore;
 pub use tenant_sqlite_store::TenantAwareSqliteTaskStore;
 
 #[cfg(feature = "postgres")]
-pub use pg_migration::{PgMigration, PgMigrationRunner};
+pub use pg_migration::{BUILTIN_PG_MIGRATIONS, PgMigration, PgMigrationRunner};
 #[cfg(feature = "postgres")]
 pub use postgres_store::PostgresTaskStore;
 #[cfg(feature = "postgres")]
