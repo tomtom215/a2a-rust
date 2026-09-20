@@ -12,7 +12,9 @@ stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
 Last updated 2026-09-20 — the 0.13.0 branch and two gate lessons (`4db4c87f`),
-then the branch table's three merges and the corrections under **Still open**.
+then the branch table's three merges and the corrections under **Still open**,
+then the post-0.13.0 audit work on `claude/optimistic-bell-680i9p` (see its
+section below), which closed item 7 and changed the branch's own row.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -101,7 +103,7 @@ the *content* merge.
 | `claude/relaxed-planck-c4hsn0` | merged, still present | The 0.13.0 content branch *and* its release prep. **Merged as `707092f8` via [#137](https://github.com/tomtom215/a2a-rust/pull/137) on 2026-09-20.** Trace-context propagation, `CallContext` reachable from `RequestContext`, the executor conformance harness, the typed failure taxonomy, and the event log with SQL stores plus SSE `id:` / `Last-Event-ID` resumption. Safe to delete. |
 | `claude/wizardly-tesla-0f358t` | merged, still present | Three examples: tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP) and `examples/mcp-bridge` (an A2A agent exposed *as* MCP). **Merged as `19766afb` via [#135](https://github.com/tomtom215/a2a-rust/pull/135) on 2026-09-19.** The row previously said "open … No PR opened yet"; both halves were false, which is what `git merge-base --is-ancestor origin/claude/wizardly-tesla-0f358t HEAD` answers in one command. Safe to delete. |
 | `claude/prove-gates-needle` | merged, still present | The benchmark-prose prover fix — the gate matched its sentence by value rather than by shape, so it could not be made to fail — plus the panic-hook race it exposed. **Merged as `f732fe3b` via [#136](https://github.com/tomtom215/a2a-rust/pull/136) on 2026-09-19.** This branch had no row at all while its content was described further down the file. Safe to delete. |
-| `claude/optimistic-bell-680i9p` | open — see note | **Destined for `main`.** The current branch: documentation corrections on top of 0.13.0. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
+| `claude/optimistic-bell-680i9p` | open — see note | **Destined for `main`.** The current branch. It began as documentation corrections on top of 0.13.0 and is now substantially code: six audit fixes and the regression tests three of them shipped without, W3C Trace Context conformance, event-log durability, `InboundTracePolicy`, and two new CI gates. See its section below. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -1042,6 +1044,104 @@ maintainer claims took an hour rather than a day. And three non-trivial
 examples were built against the core in one day without fighting it once.
 The foundation is sound; what is missing is mostly *above* it.
 
+## `claude/optimistic-bell-680i9p` — the post-0.13.0 audit
+
+Six defects were fixed in `1f5c5e2f`, three of them without a regression test.
+That is worth stating first, because it is the pattern this whole branch is
+about: the fixes were verified by reading the code, which is the standard of
+evidence that let the original defects through.
+
+### The verification gap that cost a red CI run
+
+`1f5c5e2f` broke CI in fourteen jobs. One root cause, in code I had written
+and checked: `trace_warn!` expands to nothing unless the `tracing` feature is
+on, so an error bound only to be logged is an **unused variable** in every
+default-feature build, and `RUSTFLAGS: -D warnings` makes that a hard error.
+
+The gate that catches it — `cargo clippy --workspace --all-targets -- -D
+warnings`, ci.yml line 386 — already existed and works. What failed was local
+verification with `--all-features`, where `tracing` is on, the macro consumes
+the binding, and the whole class of defect is invisible.
+
+**The rule, for any future session:** `--all-features` is not a superset for
+lint purposes. It compiles a different set of `#[cfg]` arms and it hides every
+defect whose only consumer is a feature-gated macro. Verify with the
+default-feature leg too. The convention for a value bound only to be logged is
+a leading underscore plus a structured field —
+`if let Err(_e) = … { trace_warn!(error = %_e, "…"); }` — and the macros carry
+`#[allow(clippy::used_underscore_binding)]` for exactly that.
+
+Related: `cmd | tail` reports `tail`'s exit status, not the command's. Capture
+`${PIPESTATUS[0]}` or redirect to a file. A gate read through a pipe has been
+misreported as passing more than once in these sessions.
+
+### What landed
+
+- **The three missing regression tests** (`61359911`), each proven to fail
+  against the un-fixed code by reverting that fix alone: `message.id`
+  validation, the idempotency replay wait, and the push-config rollback. The
+  last of those includes a **deterministic** test of the per-context guard
+  ordering — a gated push-config store parks the first send inside the
+  push-config step while a task-store double reports when a concurrent send
+  reaches `find_task_by_context`. No sleeps.
+- **W3C Trace Context** (`569bbbfd`). A `traceparent` whose 55th byte fell
+  inside a multi-byte character aborted the process (`panic = "abort"`, peer
+  input, public path). Reserved `trace-flags` bits were propagated; an
+  oversized `tracestate` was discarded whole; a version-`00` header with a
+  trailing field was accepted; nineteen citations were wrong, two of them
+  naming sections that said the opposite of the code beside them.
+- **`InboundTracePolicy`**, reworked from the process-global `AtomicU8` it
+  arrived as into a per-handler field set by
+  `RequestHandlerBuilder::with_inbound_trace_policy`. The global could not
+  express a process serving both a public front gate and an internal endpoint,
+  and needed a test-only mutex to stop one test's policy leaking into another's.
+- **Event-log durability** (`569bbbfd`): appends that wrote nothing were
+  discarded silently; the in-memory log was unbounded; a reader asking for an
+  evicted position got a gapped stream it could not detect; the SQLite orphan
+  sweep ran only when a purge deleted something.
+- **`prune_empty_tenants` destroyed live idempotency indexes.** It decided on
+  `count()`, which counts tasks, and a key deliberately outlives its task. This
+  one is worth remembering as a shape: a memory-reclamation path that looks
+  unrelated to correctness, reopening the exact double execution the feature
+  exists to prevent.
+- **Two new gates.** `scripts/check_fuzz_matrix.py` fails when a fuzz target
+  exists but no runner executes it — `trace_context` shipped registered in
+  `fuzz/Cargo.toml` and absent from `fuzz.yml`'s matrix, which the gate caught
+  on its first run. Registered in ci.yml and in `prove_gates_fail.sh`, and
+  PROVEN (the harness is at 70 gates now, from 69). The per-crate rustdoc gate
+  from `1f5c5e2f` is the other, and closes item 7 under **Still open**.
+
+### What the next session should do first
+
+1. **Watch CI on this branch.** The last push is `7182aac3`. Everything below
+   was verified locally; CI is what says the fourteen-combination matrix and
+   the live-PostgreSQL jobs agree.
+2. **The PostgreSQL half is unverified here.** This container has no server, so
+   `pg_migration` migration 6, the two Postgres `CHECK (seq > 0)` constraints,
+   `rows_affected()` on `ON CONFLICT DO NOTHING`, and the JSONB replay
+   comparison were reviewed as SQL and compile under `--features postgres`, but
+   were **not executed**. The SQLite equivalents of all four are exercised.
+   CI's `test-postgres` job is the first real run.
+3. **Regenerate `docs/provenance-manifest.md` as the last commit before the
+   tag.** `RELEASING.md` step 4 has the ordering constraint; a manifest
+   generated before any later commit is stale by definition and the gate fails
+   the tag.
+4. **Then the two 0.13.0 release steps that were already outstanding:**
+   `git tag -a v0.13.0`, and the `bindings/a2a-protocol-slimrpc` 0.5.0 publish
+   (`RELEASING.md` step 4), which has never been run.
+
+### Still not started
+
+- **Idempotency key expiry (H13).** A key is claimed and released, or it
+  outlives its task deliberately — but nothing ages one out. A store
+  accumulates keys for the life of the process. `is_prunable` now stops the
+  tenant prune from discarding them, which makes the absence of a TTL more
+  visible rather than less.
+- `supports_event_log()` is hard-coded `true` on `InMemoryTaskStore`. With the
+  log now bounded, an opt-out would make the server advertise no resumption at
+  all rather than a bounded one, so it was judged the wrong trade — recorded
+  here because it was considered, not overlooked.
+
 ## Still open
 
 Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
@@ -1061,8 +1161,13 @@ Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
 6. ~~The two hand-rolled `uuid_like()` helpers.~~ Done — both examples take
    `uuid` now.
 7. ~~**`cargo doc -p a2a-protocol-client --no-deps` fails, and CI cannot see
-   it.**~~ **The links are being fixed on `claude/optimistic-bell-680i9p`; the
-   missing gate is not, and that half stays open.**
+   it.**~~ **Done, both halves.** The five links are fixed, and `ci.yml`'s
+   `doc` job now documents each published crate on its own in that crate's own
+   default feature set (`1f5c5e2f`). The gate caught two further breaks within
+   minutes of being added, and a third on 2026-09-20 —
+   `InboundTracePolicy`'s rustdoc linking to a private item — which is the
+   behaviour it was added for. The history below is kept because the
+   *counting* lesson in it is the durable part.
 
    The count and the locations recorded here were both wrong, and the
    correction is the point: this entry said **three** links, all in
@@ -1097,9 +1202,9 @@ Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
    it. Pre-existing — the same text is at `f806792`, before any of this
    session's work.
 
-   **What is still open** is the half that matters: a per-crate doc build in
-   CI. Without it the next feature-gated link rots exactly the same way, and
-   nothing goes red.
+   That half — a per-crate doc build in CI — is the one that shipped. Without
+   it the next feature-gated link would rot exactly the same way with nothing
+   going red, which is why it was the half that mattered.
 
 ### `prove_gates_fail.sh` was stuck at gate 5 of 65 — found and fixed 2026-09-19
 

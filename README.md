@@ -383,9 +383,10 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run the test suite (2,837 passing with --all-features, measured 2026-08-17;
-# 157 more are #[ignore]d behind a live database and run in CI's postgres job.
-# CI's `test` job runs fourteen feature combinations per matrix cell)
+# Run the test suite (3,601 passing with --all-features, measured 2026-09-20:
+# 3,425 unit and integration tests plus 176 doctests. 199 more are #[ignore]d
+# behind a live database and run in CI's postgres job. CI's `test` job runs
+# fourteen feature combinations per matrix cell)
 cargo test --workspace --all-features
 
 # Run the end-to-end example
