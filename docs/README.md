@@ -16,7 +16,11 @@ Architecture Decision Records (ADRs) and implementation planning documents for t
 | [0005](adr/0005-sse-streaming-design.md) | SSE Streaming Design | In-tree SSE with zero additional dependencies |
 | [0006](adr/0006-mutation-testing.md) | Mutation Testing | Systematic mutation testing strategy |
 | [0007](adr/0007-axum-integration-and-tck.md) | Axum Integration & TCK | Axum adapter and wire-format conformance testing |
-| [0008](adr/0008-agent-executor-trait-shape.md) | AgentExecutor trait shape | Accepted |
+| [0008](adr/0008-agent-executor-trait-shape.md) | Object-Safe `AgentExecutor` Trait Shape | A manual boxed future, with helpers to pay the ergonomic tax |
+| [0009](adr/0009-protobuf-native-grpc.md) | Protobuf-Native gRPC Binding | Generated types on the wire, not JSON in a gRPC envelope |
+| [0010](adr/0010-auth-integration.md) | First-party authentication helpers | Which auth schemes ship in-tree, and where they sit |
+| [0011](adr/0011-task-retention.md) | Task Retention | Explicit, opt-in purging; the store schedules nothing |
+| [0012](adr/0012-event-log-and-resumption.md) | Event Log and Resumption | An append-only log beside the snapshot; SSE `id:` and `Last-Event-ID` |
 
 ## Implementation Documents
 
