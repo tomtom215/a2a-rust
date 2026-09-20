@@ -92,6 +92,7 @@ fn task_store_config_clone_and_debug() {
         eviction_interval: 32,
         max_page_size: 100,
         max_events_per_task: Some(8),
+        idempotency_key_ttl: None,
     };
     let cloned = config;
     assert_eq!(cloned.max_capacity, Some(500));

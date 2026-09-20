@@ -10,7 +10,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **`RetentionPolicy` and `PurgeReport` are `#[non_exhaustive]`.** Construct a
+  policy with `RetentionPolicy::new` and the `with_*` setters, and read a
+  report's fields rather than destructuring it exhaustively. `STABILITY.md` §4
+  lists the configuration structs that carry this marking so a new option is
+  additive; `RetentionPolicy` was missed by the 0.12.0 conversion that
+  introduced the rule, and the list said otherwise until now. Marking both is
+  what makes the two additions below — and the next one — non-breaking.
+
 ### Added
+
+- **`RetentionPolicy::idempotency_key_max_age`** (default 24 hours) and
+  **`TaskStoreConfig::idempotency_key_ttl`** (default 24 hours), with
+  `DEFAULT_IDEMPOTENCY_KEY_MAX_AGE` and `DEFAULT_IDEMPOTENCY_KEY_TTL`.
+  `PurgeReport::idempotency_keys_deleted` reports what a sweep removed.
+
+  **Behaviour change, and it is a trade rather than a pure fix.** Nothing ever
+  removed an idempotency key. A key is released when the send holding it
+  fails, and otherwise kept deliberately — it has to outlive the task it names
+  or a late retry would execute the send a second time — so neither the
+  retention sweep, which deletes tasks, nor the in-memory store's `task_ttl`
+  and `max_capacity`, which bound tasks, touched the key index. A busy
+  deployment accumulated one row per keyed send for the life of the database
+  or the process.
+
+  What expiring a key costs is exactly what the key was preventing: a retry
+  arriving *after* the key expires re-executes the send. That is inherent to
+  any expiring idempotency key, and it is why the default is a full day rather
+  than something tidier — it has to exceed the longest window in which a client
+  might still retry, and this SDK's own `RetryPolicy` is bounded in the low
+  tens of seconds.
+
+  The sweep will not delete a key younger than `terminal_max_age`
+  (`effective_idempotency_key_max_age` clamps it). A key expiring while the
+  task it names is still retained does not produce a replay and does not
+  produce a clear "that task is gone" — it produces a *second* task alongside
+  the first, and the caller ends up with two ids for one logical send. The
+  invariant holds by construction rather than by the operator having read the
+  documentation.
+
+  Set either to `None` to keep the previous behaviour. The four SQL tables
+  already carried a `created_at` column, defaulted and never read, so no
+  migration is needed.
+
 
 - **`RequestHandlerBuilder::with_inbound_trace_policy`** and
   `InboundTracePolicy` (`Continue` — the default and the previous behaviour —

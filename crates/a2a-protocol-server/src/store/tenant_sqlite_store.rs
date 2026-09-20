@@ -221,6 +221,7 @@ impl TenantAwareSqliteTaskStore {
             &self.pool,
             "tenant_tasks",
             &[evlog::SQLITE_DELETE_ORPHANS],
+            super::tenant_idempotency::SQLITE_EXPIRE,
             policy,
         )
         .await

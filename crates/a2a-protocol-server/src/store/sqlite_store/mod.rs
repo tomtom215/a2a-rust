@@ -262,6 +262,7 @@ impl SqliteTaskStore {
             &self.pool,
             "tasks",
             &[journal::DELETE_ORPHANS_SQL, event_log::DELETE_ORPHANS_SQL],
+            idempotency::EXPIRE_SQL,
             policy,
         )
         .await
@@ -967,6 +968,8 @@ impl TaskStore for SqliteTaskStore {
 
 #[cfg(test)]
 mod artifact_delta_tests;
+#[cfg(test)]
+mod retention_key_tests;
 #[cfg(test)]
 mod retention_tests;
 #[cfg(test)]

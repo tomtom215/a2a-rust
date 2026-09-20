@@ -24,10 +24,17 @@ use super::{PurgeReport, RetentionPolicy, terminal_state_labels};
 ///
 /// `rowid` and not `id`: `tenant_tasks` is keyed on `(tenant_id, id)`, so a
 /// delete matching `id` alone would take that task id from every tenant.
+///
+/// `key_sweep` is the statement that deletes expired idempotency keys, taking
+/// the cutoff modifier and the batch size. It is separate from
+/// `orphan_sweeps` because it is not an anti-join and not a repair: an orphan
+/// row is something that should not exist, while an expired key is one whose
+/// time is simply up, and the report counts them apart for that reason.
 pub async fn purge(
     pool: &SqlitePool,
     table: &'static str,
     orphan_sweeps: &[&'static str],
+    key_sweep: &'static str,
     policy: &RetentionPolicy,
 ) -> Result<PurgeReport, sqlx::Error> {
     let labels = terminal_state_labels();
@@ -128,5 +135,53 @@ pub async fn purge(
         }
     }
 
+    // Expired idempotency keys, last. Ordering is not load-bearing — the key
+    // table has no foreign key to `tasks`, deliberately, so nothing here
+    // depends on the task rows being gone first — but a sweep that ran out of
+    // batches should spend them on task rows, which are the larger table and
+    // the reason an operator called this at all.
+    expire_keys(pool, key_sweep, policy, batch, &mut report).await?;
+
     Ok(report)
+}
+
+/// Deletes expired idempotency keys, in batches, updating `report`.
+///
+/// Separate from [`purge`] to keep that function inside the 60-line bound
+/// `clippy::too_many_lines` sets, and the seam is a real one: this is the only
+/// pass whose subject is not a task or a row hanging off one.
+///
+/// A no-op when the policy keeps keys for ever, which is what every release
+/// before this one did.
+async fn expire_keys(
+    pool: &SqlitePool,
+    key_sweep: &'static str,
+    policy: &RetentionPolicy,
+    batch: i64,
+    report: &mut PurgeReport,
+) -> Result<(), sqlx::Error> {
+    let Some(max_age) = policy.effective_idempotency_key_max_age() else {
+        return Ok(());
+    };
+    // Evaluated by `SQLite` against its own clock, as the task cutoff is: a
+    // host running fast would delete keys younger than the policy allows, and
+    // a key deleted early is a send that can execute twice.
+    let cutoff = format!("-{} seconds", max_age.as_secs());
+    loop {
+        if policy.max_batches.is_some_and(|max| report.batches >= max) {
+            report.complete = false;
+            return Ok(());
+        }
+        let deleted = sqlx::query(key_sweep)
+            .bind(&cutoff)
+            .bind(batch)
+            .execute(pool)
+            .await?
+            .rows_affected();
+        if deleted == 0 {
+            return Ok(());
+        }
+        report.idempotency_keys_deleted += deleted;
+        report.batches += 1;
+    }
 }

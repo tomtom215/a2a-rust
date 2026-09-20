@@ -111,7 +111,11 @@ pub(super) struct StoreData {
     /// evicted replays to a task id that no longer resolves, which the caller
     /// sees, whereas dropping the key would let the same send execute a second
     /// time — the very thing the key was presented to prevent.
-    pub(super) idempotency_index: HashMap<String, (MessageId, TaskId)>,
+    /// The third element is when the key was claimed, for
+    /// [`TaskStoreConfig::idempotency_key_ttl`]. Without it nothing here ever
+    /// shrank: a key is removed when its send fails, and otherwise stayed for
+    /// the life of the process.
+    pub(super) idempotency_index: HashMap<String, (MessageId, TaskId, Instant)>,
 }
 
 impl StoreData {
@@ -529,15 +533,21 @@ impl TaskStore for InMemoryTaskStore {
             // This is the whole atomicity guarantee the trait asks for.
             let mut data = self.data.write().await;
             let outcome = match data.idempotency_index.get(key) {
-                Some((held_by, held_task)) if held_by == message_id => {
+                Some((held_by, held_task, _)) if held_by == message_id => {
                     IdempotencyClaim::Replay(held_task.clone())
                 }
-                Some((held_by, _)) => IdempotencyClaim::Conflict {
+                Some((held_by, _, _)) => IdempotencyClaim::Conflict {
                     held_by: held_by.clone(),
                 },
                 None => {
-                    data.idempotency_index
-                        .insert(key.to_owned(), (message_id.clone(), task_id.clone()));
+                    // The claim time is the insert's, and a replay does not
+                    // refresh it: the window a key guards runs from the send
+                    // it was first presented with, so a client retrying on a
+                    // loop cannot hold one open indefinitely.
+                    data.idempotency_index.insert(
+                        key.to_owned(),
+                        (message_id.clone(), task_id.clone(), Instant::now()),
+                    );
                     IdempotencyClaim::Claimed
                 }
             };
@@ -1541,6 +1551,7 @@ mod tests {
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
+            idempotency_key_ttl: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -1579,6 +1590,7 @@ mod tests {
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
+            idempotency_key_ttl: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -1614,6 +1626,7 @@ mod tests {
             eviction_interval: 0,
             max_page_size: 100,
             max_events_per_task: Some(8),
+            idempotency_key_ttl: None,
         });
 
         for i in 0..4 {
@@ -1643,6 +1656,7 @@ mod tests {
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
+            idempotency_key_ttl: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -1689,6 +1703,7 @@ mod tests {
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
+            idempotency_key_ttl: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -1730,6 +1745,7 @@ mod tests {
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
+            idempotency_key_ttl: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 

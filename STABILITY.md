@@ -103,13 +103,21 @@ removing an unsafe surface; those are documented as such.
 - **The configuration structs** (`HandlerLimits`, `DispatchConfig`,
   `CorsConfig`, `GrpcConfig`, `CacheConfig`, `PushRetryPolicy`,
   `RateLimitConfig`, `TaskStoreConfig`, `TenantStoreConfig`,
-  `PerTenantConfig`, `TenantLimits`, `ServeConfig`; `ClientConfig`,
-  `RetryPolicy`, `WebSocketTransportConfig`, `GrpcTransportConfig`) are
-  `#[non_exhaustive]` with `Default` (or a documented constructor) and a
-  `with_*` setter per field, so a new option on any of them is additive.
-  Until `0.12.0` most of them were exhaustive and adding a field was a
-  breaking change under §2; that conversion was the bulk of the `0.12.0`
-  breaking batch, and this exception no longer exists.
+  `PerTenantConfig`, `TenantLimits`, `ServeConfig`, `RetentionPolicy`;
+  `ClientConfig`, `RetryPolicy`, `WebSocketTransportConfig`,
+  `GrpcTransportConfig`) are `#[non_exhaustive]` with `Default` (or a
+  documented constructor) and a `with_*` setter per field, so a new option on
+  any of them is additive. Until `0.12.0` most of them were exhaustive and
+  adding a field was a breaking change under §2; that conversion was the bulk
+  of the `0.12.0` breaking batch, and this exception no longer exists.
+
+  `RetentionPolicy` was missed by that conversion and this list claimed
+  otherwise until 2026-09-20 — the claim was found by needing to add a field
+  to it, which is the only way an omission from a list of things that are
+  *already done* ever gets found. `PurgeReport` is marked for the same reason:
+  it is a report rather than a configuration struct, but a sweep that learns
+  to count something new should not be a breaking change, and `0.13.0`'s own
+  breaking list already carries one renamed field of it.
 - **Feature flags** are additive: enabling a feature never removes or changes
   an API that is available without it.
 

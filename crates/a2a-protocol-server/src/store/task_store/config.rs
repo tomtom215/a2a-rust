@@ -52,6 +52,15 @@ pub const DEFAULT_MAX_PAGE_SIZE: u32 = 1000;
 /// at all and how this number was chosen.
 pub const DEFAULT_MAX_EVENTS_PER_TASK: usize = 512;
 
+/// How long the in-memory store keeps an idempotency key by default.
+///
+/// One day, matching
+/// [`DEFAULT_IDEMPOTENCY_KEY_MAX_AGE`](crate::store::DEFAULT_IDEMPOTENCY_KEY_MAX_AGE),
+/// which is the SQL stores' equivalent — the two backends should not disagree
+/// about how long a retry is honoured. See
+/// [`TaskStoreConfig::idempotency_key_ttl`] for what expiring a key costs.
+pub const DEFAULT_IDEMPOTENCY_KEY_TTL: Duration = Duration::from_secs(24 * 3600);
+
 /// Configuration for [`InMemoryTaskStore`].
 ///
 /// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
@@ -88,6 +97,35 @@ pub struct TaskStoreConfig {
     ///
     /// Larger requested page sizes are clamped to this limit.
     pub max_page_size: u32,
+
+    /// How long an idempotency key is kept after it is claimed. `None` keeps
+    /// them for the life of the process, which is what every release before
+    /// this one did. Default: `Some(24h)`.
+    ///
+    /// # Why this has to be bounded at all
+    ///
+    /// [`max_capacity`](Self::max_capacity) and [`task_ttl`](Self::task_ttl)
+    /// bound the number of *tasks*, and a key is deliberately not evicted with
+    /// the task it names — dropping it there would let a late retry execute
+    /// the send a second time. So nothing removed a key except the send that
+    /// failed while holding it, and the index grew by one entry per keyed send
+    /// for as long as the process ran.
+    ///
+    /// # What expiring one costs
+    ///
+    /// Exactly what the key was preventing: a retry arriving **after** the key
+    /// expires re-executes the send rather than replaying. That trade is
+    /// inherent to any expiring idempotency key, and it is why the default is
+    /// a full day rather than something tidier — it has to exceed the longest
+    /// window in which a client might still retry, and this SDK's own
+    /// `RetryPolicy` is bounded in the low tens of seconds.
+    ///
+    /// A day is also comfortably above the one-hour default
+    /// [`task_ttl`](Self::task_ttl), which keeps the ordering the design rests
+    /// on: the key outlives the task it names, so a retry inside the window
+    /// gets a replay or a clear "that task is gone", never a second task
+    /// alongside the first.
+    pub idempotency_key_ttl: Option<Duration>,
 
     /// How many events one task's log may hold before the oldest are dropped.
     /// `None` means no limit. Default: `Some(512)`.
@@ -138,11 +176,24 @@ impl Default for TaskStoreConfig {
             eviction_interval: 64,
             max_page_size: DEFAULT_MAX_PAGE_SIZE,
             max_events_per_task: Some(DEFAULT_MAX_EVENTS_PER_TASK),
+            idempotency_key_ttl: Some(DEFAULT_IDEMPOTENCY_KEY_TTL),
         }
     }
 }
 
 impl TaskStoreConfig {
+    /// Sets how long an idempotency key is kept; `None` keeps it for the life
+    /// of the process.
+    ///
+    /// See [`idempotency_key_ttl`](Self::idempotency_key_ttl) for what
+    /// expiring one costs, and why it should stay above
+    /// [`task_ttl`](Self::task_ttl).
+    #[must_use]
+    pub const fn with_idempotency_key_ttl(mut self, ttl: Option<Duration>) -> Self {
+        self.idempotency_key_ttl = ttl;
+        self
+    }
+
     /// Sets the maximum number of tasks kept; `None` is no limit. See
     /// [`max_capacity`](Self::max_capacity) for what happens past it.
     #[must_use]

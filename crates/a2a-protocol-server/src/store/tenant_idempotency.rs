@@ -73,6 +73,34 @@ pub(super) const SQLITE_RELEASE: &str =
 pub(super) const PG_RELEASE: &str =
     "DELETE FROM tenant_idempotency_keys WHERE tenant_id = $1 AND key = $2";
 
+/// Deletes one batch of expired keys, across every tenant.
+///
+/// Deliberately not tenant-scoped. The sweep is an operator action against the
+/// whole database, and a per-tenant sweep would need the operator to enumerate
+/// tenants — which is exactly the list that grows without bound in the
+/// deployment this exists to protect. The batch is keyed on `(tenant_id, key)`
+/// because that is the primary key; keying on `key` alone would take one
+/// tenant's key from every other tenant.
+/// `rowid`, not a `(tenant_id, key)` row value: a row-value `IN` needs `SQLite`
+/// 3.15 and this crate pins no minimum. This table carries a rowid — unlike
+/// the single-tenant one it is not `WITHOUT ROWID` — so the task sweep's own
+/// shape is available here, and keying on `key` alone would take one tenant's
+/// key from every other tenant.
+#[cfg(feature = "sqlite")]
+pub(super) const SQLITE_EXPIRE: &str = "DELETE FROM tenant_idempotency_keys WHERE rowid IN ( \
+         SELECT rowid FROM tenant_idempotency_keys \
+          WHERE created_at < strftime('%Y-%m-%d %H:%M:%S', 'now', ?1) \
+          LIMIT ?2 \
+     )";
+
+/// The `PostgreSQL` half of [`SQLITE_EXPIRE`], whose doc comment applies.
+#[cfg(feature = "postgres")]
+pub(super) const PG_EXPIRE: &str = "DELETE FROM tenant_idempotency_keys WHERE ctid IN ( \
+         SELECT ctid FROM tenant_idempotency_keys \
+          WHERE created_at < now() - $1::interval \
+          LIMIT $2 \
+     )";
+
 /// Turns the row a losing claim read into its outcome.
 ///
 /// A holder whose message matches is the caller's own earlier attempt — a

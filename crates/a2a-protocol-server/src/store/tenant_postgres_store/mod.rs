@@ -186,9 +186,14 @@ impl TenantAwarePostgresTaskStore {
         &self,
         policy: &super::retention::RetentionPolicy,
     ) -> A2aResult<super::retention::PurgeReport> {
-        super::retention::postgres::purge(&self.pool, "tenant_tasks", policy)
-            .await
-            .map_err(|e| to_a2a_error(&e))
+        super::retention::postgres::purge(
+            &self.pool,
+            "tenant_tasks",
+            crate::store::tenant_idempotency::PG_EXPIRE,
+            policy,
+        )
+        .await
+        .map_err(|e| to_a2a_error(&e))
     }
 }
 

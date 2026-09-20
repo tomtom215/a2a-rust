@@ -32,6 +32,7 @@ use a2a_protocol_server::store::{
 };
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::MessageId;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
@@ -2328,4 +2329,145 @@ async fn postgres_a_replay_is_not_reported_but_a_second_writer_is() -> A2aResult
 
     db.drop_db().await;
     Ok(())
+}
+
+// ── Idempotency key expiry, PostgreSQL ───────────────────────────────────────
+
+/// The `ctid`/`$1::interval` sweep, run against a real server.
+///
+/// The SQLite twin of this is a unit test. This one exists because the two
+/// statements are written separately — `strftime` against `now()`,
+/// `WITHOUT ROWID` against `ctid` — so passing on one backend says nothing
+/// about the other.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_the_sweep_expires_old_keys_and_keeps_recent_ones() {
+    const OLD_KEY: &str = "8f14e45fceea167a5a36dedd4bea2543";
+    const NEW_KEY: &str = "0123456789abcdef0123456789abcdef";
+
+    let db = TestDb::create("key_expiry").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+    let task = make_task("t1", "ctx1");
+    store.save(&task).await.expect("save");
+    for key in [OLD_KEY, NEW_KEY] {
+        store
+            .claim_idempotency_key(key, &MessageId::new("m1"), &task.id)
+            .await
+            .expect("claim");
+    }
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&db.url)
+        .await
+        .expect("connect");
+    sqlx::query(
+        "UPDATE idempotency_keys SET created_at = now() - interval '2 hours' WHERE key = $1",
+    )
+    .bind(OLD_KEY)
+    .execute(&pool)
+    .await
+    .expect("backdate");
+
+    // One second of task age so the clamp does not raise the key age above
+    // the two hours the old key was backdated by.
+    let report = store
+        .purge_expired(
+            &RetentionPolicy::new(Duration::from_secs(1))
+                .with_idempotency_key_max_age(Some(Duration::from_secs(3600))),
+        )
+        .await
+        .expect("purge");
+
+    assert_eq!(
+        report.idempotency_keys_deleted, 1,
+        "exactly the expired key, and the report says so"
+    );
+    let remaining: Vec<String> =
+        sqlx::query_scalar::<_, String>("SELECT key FROM idempotency_keys")
+            .fetch_all(&pool)
+            .await
+            .expect("remaining");
+    assert_eq!(
+        remaining,
+        vec![NEW_KEY.to_owned()],
+        "the recent key must survive: expiring it early is a send that runs twice"
+    );
+
+    pool.close().await;
+    db.drop_db().await;
+}
+
+/// The tenant table's sweep, which is a different statement again — it bounds
+/// its batch on `ctid` because keying on `key` alone would take one tenant's
+/// key from every other tenant.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_key_expiry_is_scoped_to_age_not_tenant() {
+    const KEY: &str = "8f14e45fceea167a5a36dedd4bea2543";
+
+    let db = TestDb::create("tenant_key_expiry").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant postgres store");
+
+    // The same key in two tenants: distinct rows, because the key is scoped
+    // to the tenant.
+    for tenant in ["alpha", "beta"] {
+        TenantContext::scope(tenant, async {
+            let task = make_task("t1", "ctx1");
+            store.save(&task).await.expect("save");
+            store
+                .claim_idempotency_key(KEY, &MessageId::new("m1"), &task.id)
+                .await
+                .expect("claim");
+        })
+        .await;
+    }
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&db.url)
+        .await
+        .expect("connect");
+    let before = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM tenant_idempotency_keys")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(before, 2, "precondition: one key per tenant");
+
+    // Age only alpha's.
+    sqlx::query(
+        "UPDATE tenant_idempotency_keys SET created_at = now() - interval '2 hours' \
+         WHERE tenant_id = $1",
+    )
+    .bind("alpha")
+    .execute(&pool)
+    .await
+    .expect("backdate");
+
+    let report = store
+        .purge_expired(
+            &RetentionPolicy::new(Duration::from_secs(1))
+                .with_idempotency_key_max_age(Some(Duration::from_secs(3600))),
+        )
+        .await
+        .expect("purge");
+
+    assert_eq!(report.idempotency_keys_deleted, 1);
+    let survivors =
+        sqlx::query_scalar::<_, String>("SELECT tenant_id FROM tenant_idempotency_keys")
+            .fetch_all(&pool)
+            .await
+            .expect("survivors");
+    assert_eq!(
+        survivors,
+        vec!["beta".to_owned()],
+        "the sweep expires by age across every tenant, and takes only the aged one"
+    );
+
+    pool.close().await;
+    db.drop_db().await;
 }

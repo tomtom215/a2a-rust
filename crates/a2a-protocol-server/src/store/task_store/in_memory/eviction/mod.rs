@@ -29,6 +29,8 @@
 mod capacity;
 #[cfg(test)]
 mod fixtures;
+#[cfg(test)]
+mod key_expiry_tests;
 
 use std::time::{Duration, Instant};
 
@@ -176,6 +178,14 @@ impl InMemoryTaskStore {
         if let Some(max) = config.max_capacity.filter(|_| passes.capacity) {
             Self::evict_over_capacity(store, max);
         }
+
+        // On the TTL pass, because it is a TTL and its scan has the same
+        // shape. Independent of `task_ttl` being set: a store with no task
+        // TTL still accumulates keys, and it is the one most likely to,
+        // having been configured to keep everything.
+        if let Some(key_ttl) = config.idempotency_key_ttl.filter(|_| passes.ttl) {
+            Self::expire_idempotency_keys(store, key_ttl);
+        }
     }
 
     /// Removes every terminal task whose last update is at least `ttl` old.
@@ -202,6 +212,28 @@ impl InMemoryTaskStore {
         for id in expired {
             store.remove(&id);
         }
+    }
+
+    /// Removes every idempotency key claimed at least `ttl` ago.
+    ///
+    /// A key is otherwise removed only when its send fails, and it
+    /// deliberately outlives the task it names — so without this the index
+    /// grew for the life of the process, one entry per keyed send. It is not
+    /// covered by `max_capacity`, which counts tasks.
+    ///
+    /// Expiring a key means a retry arriving after it re-executes the send,
+    /// which is what the key was presented to prevent. See
+    /// [`TaskStoreConfig::idempotency_key_ttl`] for why the default is far
+    /// longer than any client retry window.
+    ///
+    /// `retain` rather than collect-then-remove: unlike a task, a key has no
+    /// secondary index to keep in step, so there is nothing that has to go
+    /// through a removal helper.
+    fn expire_idempotency_keys(store: &mut StoreData, ttl: Duration) {
+        let now = Instant::now();
+        store
+            .idempotency_index
+            .retain(|_, (_, _, claimed_at)| now.duration_since(*claimed_at) < ttl);
     }
 }
 

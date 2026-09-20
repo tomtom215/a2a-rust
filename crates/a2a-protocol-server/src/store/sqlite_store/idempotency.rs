@@ -40,3 +40,20 @@ pub(super) const HOLDER_SQL: &str =
 
 /// Releases a key, so a send that failed after claiming does not keep it.
 pub(super) const RELEASE_SQL: &str = "DELETE FROM idempotency_keys WHERE key = ?1";
+
+/// Deletes one batch of keys older than the cutoff.
+///
+/// `?1` is the cutoff as a `strftime` modifier (`-86400 seconds`) and `?2` the
+/// batch size. The cutoff is evaluated by `SQLite` against its own clock, for
+/// the same reason the task sweep's is: a host running fast would otherwise
+/// delete keys that are younger than the policy allows, and a deleted key is
+/// a send that can execute twice.
+///
+/// The table is `WITHOUT ROWID`, so the batch is chosen by a `key IN
+/// (SELECT ... LIMIT ?2)` subquery rather than the `rowid IN` shape the task
+/// sweep uses — `WITHOUT ROWID` tables have no `rowid` to select.
+pub(super) const EXPIRE_SQL: &str = "DELETE FROM idempotency_keys WHERE key IN ( \
+         SELECT key FROM idempotency_keys \
+          WHERE created_at < strftime('%Y-%m-%d %H:%M:%S', 'now', ?1) \
+          LIMIT ?2 \
+     )";

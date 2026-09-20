@@ -210,7 +210,7 @@ impl PostgresTaskStore {
         &self,
         policy: &super::retention::RetentionPolicy,
     ) -> A2aResult<super::retention::PurgeReport> {
-        super::retention::postgres::purge(&self.pool, "tasks", policy)
+        super::retention::postgres::purge(&self.pool, "tasks", idempotency::EXPIRE_SQL, policy)
             .await
             .map_err(to_a2a_error)
     }

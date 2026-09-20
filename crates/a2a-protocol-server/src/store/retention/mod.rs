@@ -101,8 +101,30 @@ pub fn terminal_states() -> Vec<TaskState> {
     TERMINAL_STATES.to_vec()
 }
 
+/// How long an idempotency key is kept when nothing else is asked for.
+///
+/// One day. The number has to exceed the longest window in which a client
+/// might still retry a send and expect a replay rather than a second
+/// execution, and clients retry in seconds — `RetryPolicy`'s own schedule is
+/// bounded in the low tens of seconds. A day is the figure the wider industry
+/// settled on for the same trade, and it is far enough above any retry budget
+/// this SDK ships that the choice is not delicate.
+///
+/// See [`RetentionPolicy::idempotency_key_max_age`] for what expiring a key
+/// costs.
+pub const DEFAULT_IDEMPOTENCY_KEY_MAX_AGE: Duration = Duration::from_secs(24 * 3600);
+
 /// How long terminal tasks are kept, and how aggressively they are removed.
+///
+/// `#[non_exhaustive]`: build it with [`new`](Self::new) and the `with_*`
+/// setters, which cover every field. `STABILITY.md` §4 lists the
+/// configuration structs that carry this marking so a new option on any of
+/// them is additive; this one was missed by the 0.12.0 conversion that
+/// introduced the rule, and adding
+/// [`idempotency_key_max_age`](Self::idempotency_key_max_age) is what found
+/// it.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct RetentionPolicy {
     /// Terminal tasks whose last update is older than this are eligible.
     ///
@@ -118,6 +140,38 @@ pub struct RetentionPolicy {
     /// as it takes; a thousand statements deleting a thousand rows each let
     /// every other query through in between.
     pub batch_size: u32,
+
+    /// Idempotency keys older than this are deleted. `None` keeps them for
+    /// ever, which is what every release before this one did.
+    ///
+    /// # Why a key has to expire at all
+    ///
+    /// A key is released when the send it guards fails, and otherwise it
+    /// stays — deliberately, because it has to outlive the task it names or a
+    /// late retry would execute a second time. Nothing else ever removed one.
+    /// A busy deployment therefore accumulated a row per keyed send for the
+    /// life of the database, and the index that makes the claim atomic grew
+    /// with it.
+    ///
+    /// # What expiring one costs
+    ///
+    /// Exactly what the key was preventing: a retry arriving **after** the
+    /// key expires re-executes the send. That is the trade every idempotency
+    /// key has, and the reason the default is a full day rather than
+    /// something tidier — it has to exceed the longest window in which a
+    /// client might still retry, and clients retry in seconds.
+    ///
+    /// # It is never allowed below `terminal_max_age`
+    ///
+    /// A key expiring while the task it names is still retained is the bad
+    /// case: the retry does not replay, it creates a *second* task alongside
+    /// the first, and the caller ends up with two ids for one logical send.
+    /// So the sweep uses
+    /// [`effective_idempotency_key_max_age`](Self::effective_idempotency_key_max_age),
+    /// which never returns less than
+    /// [`terminal_max_age`](Self::terminal_max_age) — the invariant holds by
+    /// construction rather than by the operator having read this paragraph.
+    pub idempotency_key_max_age: Option<Duration>,
 
     /// Stop after this many batches, leaving the rest for the next call.
     /// `None` runs until nothing is left.
@@ -135,6 +189,7 @@ impl RetentionPolicy {
         Self {
             terminal_max_age,
             batch_size: 1_000,
+            idempotency_key_max_age: Some(DEFAULT_IDEMPOTENCY_KEY_MAX_AGE),
             max_batches: None,
         }
     }
@@ -144,6 +199,33 @@ impl RetentionPolicy {
     pub const fn with_batch_size(mut self, batch_size: u32) -> Self {
         self.batch_size = batch_size;
         self
+    }
+
+    /// Sets how long an idempotency key is kept; `None` keeps them for ever.
+    ///
+    /// See [`idempotency_key_max_age`](Self::idempotency_key_max_age) for what
+    /// expiring one costs and why the sweep will not honour a value below
+    /// [`terminal_max_age`](Self::terminal_max_age).
+    #[must_use]
+    pub const fn with_idempotency_key_max_age(mut self, max_age: Option<Duration>) -> Self {
+        self.idempotency_key_max_age = max_age;
+        self
+    }
+
+    /// The key age the sweep actually uses: never below
+    /// [`terminal_max_age`](Self::terminal_max_age).
+    ///
+    /// A key must outlive the task it names. Deleting one while its task is
+    /// still retained turns the next retry into a second task rather than a
+    /// replay, so a policy that asks for that is clamped rather than obeyed —
+    /// the same shape as `effective_batch_size` — which is `pub(crate)` and
+    /// feature-gated, so it cannot be linked from a public doc comment —
+    /// where a nonsensical value is floored at the nearest sensible one
+    /// instead of being honoured into a defect.
+    #[must_use]
+    pub fn effective_idempotency_key_max_age(&self) -> Option<Duration> {
+        self.idempotency_key_max_age
+            .map(|age| age.max(self.terminal_max_age))
     }
 
     /// Bounds how many batches a single sweep runs.
@@ -172,7 +254,13 @@ impl RetentionPolicy {
 }
 
 /// What one call to `purge_expired` did.
+///
+/// `#[non_exhaustive]`: read its fields, do not construct or exhaustively
+/// destructure it. A sweep that learns to count something new should not be a
+/// breaking change — 0.13.0's breaking list already carries one renamed field
+/// of this struct.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PurgeReport {
     /// Task rows deleted.
     pub tasks_deleted: u64,
@@ -206,6 +294,15 @@ pub struct PurgeReport {
     /// one that deleted a task: a purge that fails part way strands rows that
     /// outlive it, and the sweep is what reclaims them.
     pub orphan_rows_deleted: u64,
+    /// Idempotency keys deleted for being older than
+    /// [`RetentionPolicy::idempotency_key_max_age`].
+    ///
+    /// Zero when that is `None`, and zero on a sweep that finds none expired.
+    /// Unlike [`orphan_rows_deleted`](Self::orphan_rows_deleted) a non-zero
+    /// count here is the healthy reading, not a warning: it is the sweep doing
+    /// the job it was given.
+    pub idempotency_keys_deleted: u64,
+
     /// Batches executed.
     pub batches: u32,
     /// `false` when [`RetentionPolicy::max_batches`] stopped the sweep with
@@ -291,5 +388,74 @@ mod tests {
         let report = PurgeReport::default();
         assert_eq!(report.tasks_deleted, 0);
         assert!(!report.complete, "default must not claim a completed sweep");
+    }
+}
+
+// ── The idempotency key TTL and its floor ────────────────────────────────────
+
+#[cfg(test)]
+mod key_age_tests {
+    use super::{DEFAULT_IDEMPOTENCY_KEY_MAX_AGE, RetentionPolicy};
+    use std::time::Duration;
+
+    #[test]
+    fn a_new_policy_expires_keys_after_a_day() {
+        let policy = RetentionPolicy::new(Duration::from_secs(3600));
+        assert_eq!(
+            policy.idempotency_key_max_age,
+            Some(DEFAULT_IDEMPOTENCY_KEY_MAX_AGE),
+            "keys accumulated for ever before this default existed"
+        );
+        assert_eq!(DEFAULT_IDEMPOTENCY_KEY_MAX_AGE, Duration::from_secs(86_400));
+    }
+
+    /// The invariant the whole design rests on: a key outlives the task it
+    /// names.
+    ///
+    /// A key expiring while its task is still retained does not produce a
+    /// replay and does not produce a clear "that task is gone" — it produces
+    /// a *second* task alongside the first, and the caller ends up with two
+    /// ids for one logical send. So a policy asking for that is clamped
+    /// rather than obeyed.
+    #[test]
+    fn a_key_age_below_the_task_age_is_raised_to_it() {
+        let policy = RetentionPolicy::new(Duration::from_secs(30 * 24 * 3600))
+            .with_idempotency_key_max_age(Some(Duration::from_secs(60)));
+        assert_eq!(
+            policy.effective_idempotency_key_max_age(),
+            Some(Duration::from_secs(30 * 24 * 3600)),
+            "a key must not be swept while the task it names is still kept"
+        );
+        assert_eq!(
+            policy.idempotency_key_max_age,
+            Some(Duration::from_secs(60)),
+            "the field itself is untouched — the clamp is in the accessor, so \
+             what the operator set stays readable"
+        );
+    }
+
+    /// Counter-test: a key age above the task age is honoured exactly.
+    ///
+    /// Without it, an accessor that always returned `terminal_max_age` would
+    /// satisfy the test above.
+    #[test]
+    fn a_key_age_above_the_task_age_is_used_as_given() {
+        let policy = RetentionPolicy::new(Duration::from_secs(3600))
+            .with_idempotency_key_max_age(Some(Duration::from_secs(7 * 24 * 3600)));
+        assert_eq!(
+            policy.effective_idempotency_key_max_age(),
+            Some(Duration::from_secs(7 * 24 * 3600))
+        );
+    }
+
+    #[test]
+    fn opting_out_stays_opted_out() {
+        let policy =
+            RetentionPolicy::new(Duration::from_secs(3600)).with_idempotency_key_max_age(None);
+        assert_eq!(
+            policy.effective_idempotency_key_max_age(),
+            None,
+            "the clamp must not resurrect a sweep the operator turned off"
+        );
     }
 }
