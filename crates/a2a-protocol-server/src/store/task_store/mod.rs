@@ -313,10 +313,14 @@ pub trait TaskStore: Send + Sync + 'static {
     /// which the send path grows by one message per turn up to
     /// [`MAX_TASK_HISTORY_MESSAGES`](crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES),
     /// so a turn emitting `n` status events through `save` on a channel
-    /// holding `h` messages does `n * h` work. Measured on one turn of 512
-    /// events against the in-memory store, 54,239µs at `h` = 600 became
-    /// 1,839µs, and the turn stopped growing with the channel's age. It does
-    /// not measurably change a turn that emits one event — four other
+    /// holding `h` messages does `n * h` work. Measured back to back on one
+    /// turn of 512 events, concurrency one, in-memory store, by
+    /// `tests/swarm_scale::cost::a_turn_that_emits_many_events_on_an_aged_channel`:
+    /// with `save`, 1,706µs / 18,609µs / 54,301µs at `h` of 1 / 200 / 600;
+    /// with this method, 1,044µs / 1,280µs / 2,248µs. The turn stops growing
+    /// with the channel's age, which matters more than the 24x at `h` = 600.
+    ///
+    /// It does not measurably change a turn that emits one event — four other
     /// O(history) copies dominate that. `docs/swarm-scale-findings.md` has
     /// both runs and the attribution.
     ///

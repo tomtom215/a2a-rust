@@ -314,13 +314,19 @@ messages was `n * h` work. One turn of 512 events, concurrency one:
 
 | history | turn with `save` | turn with `save_status_delta` |
 |---|---|---|
-| 1 | 1,853µs | 1,068µs |
-| 200 | 19,591µs | 1,276µs |
-| 600 | 54,239µs | 1,839µs |
+| 1 | 1,706µs | 1,044µs |
+| 200 | 18,609µs | 1,280µs |
+| 600 | 54,301µs | 2,248µs |
 
-The ratio at 600 messages is 31x, but the shape matters more than the ratio:
+The ratio at 600 messages is 24x, but the shape matters more than the ratio:
 with `save` the turn grows with the channel's age and with the delta it does
 not.
+
+These are back-to-back runs of the final code. An earlier measurement of the
+same arm reported 31x; that run predates the eviction-pacing fix below, which
+adds a store-length read, a counter bump and an occasional sweep to every
+delta. 31x was real for the code that existed then and is not the number to
+quote for what shipped.
 
 **Where it does not.** On the ageing probe — turns that emit one event each —
 it is within noise: the plateau moved from about 2,495µs to about 2,477µs.
@@ -345,6 +351,44 @@ append, the snapshot read for the response, and HTTP.
 This is why the remaining work is structural rather than more delta methods:
 the unit passed through the send path is a `Task`, and a `Task` carries its
 history, so every stage that touches one pays for the conversation's length.
+
+### Two things the delta broke, found by auditing it rather than by a test
+
+Both were caught by reading the change back against the code it touched, not
+by the suite, which is worth saying because the suite was green for both.
+
+**A failed history save stopped repairing itself.** `process_event_bg`'s own
+doc states the rule: "when a save fails, the in-memory `last_task` is reverted
+to its previous state so it stays consistent with what's actually persisted."
+Every branch obeys it except the agent-`Message` branch, which logged and
+carried on — leaving the snapshot holding a message the store had refused.
+That divergence used to be repaired by accident, because the *next* status
+transition wrote the whole task and carried the orphaned message with it. A
+status delta writes only the status, so the accident is gone.
+
+The fix is the branch obeying its own contract: the refused message is popped
+back off. Reinstating the accident was the alternative and is worse — the
+store is the record, and a snapshot ahead of it is exactly the "phantom state"
+the contract names.
+
+Exposure today is nil, which is why no test caught it: the only store that
+overrides `save_status_delta` is the in-memory one, whose `save` cannot fail,
+and the SQL stores take the default that delegates to `save`. It would have
+become live the moment a third-party store — the trait is unsealed and meant
+for them — overrode the delta with a fallible backend.
+
+**The TTL sweep lost its pacing.** `should_evict` advances a write counter and
+fires the TTL pass every `eviction_interval` writes; both of this store's
+memory bounds run off it. Only `save` and `insert_if_absent` advanced it, so
+every transition the delta replaced became invisible to eviction — a
+deployment whose writes are mostly transitions would have swept expired tasks
+more and more rarely the better this method worked. The delta now advances the
+counter and runs the sweep exactly as `save` does, which is what the second
+measurement above already includes.
+
+`save_artifact_delta` has the same gap and is **not** fixed here: closing it
+changes the cadence of an already-shipped path and needs its own measurement
+against the artifact benchmarks. It is worth doing and is not this change.
 
 ## What this means for building a coordination channel on A2A
 

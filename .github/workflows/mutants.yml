@@ -374,7 +374,7 @@ jobs:
             --test-tool=nextest \
             --profile=mutants \
             -- --all-features --run-ignored all \
-               -E 'not (binary(soak) or binary(soak_multi_replica))' \
+               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -1028,7 +1028,7 @@ jobs:
             --test-tool=nextest \
             --profile=mutants \
             -- --all-features --run-ignored all \
-               -E 'not (binary(soak) or binary(soak_multi_replica))' \
+               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e

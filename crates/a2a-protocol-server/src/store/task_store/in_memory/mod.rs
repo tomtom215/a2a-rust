@@ -792,19 +792,28 @@ impl TaskStore for InMemoryTaskStore {
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let applied = {
+            let outcome = {
                 let mut store = self.data.write().await;
                 let applied = store.update_status(&task.id, task.status.clone(), Instant::now());
+                let len = store.len();
                 drop(store);
-                applied
+                applied.then(|| self.should_evict(len))
             };
-            if applied {
-                trace_debug!(task_id = %task.id, "applied status delta in place");
-                // No new entry, so the store cannot have grown past its bound
-                // and there is nothing for eviction to reconsider.
-                return Ok(());
+            let Some(passes) = outcome else {
+                return self.save(task).await;
+            };
+            trace_debug!(task_id = %task.id, "applied status delta in place");
+            // `should_evict` is called for its side effect as much as its
+            // answer: it advances the write counter that paces the TTL sweep,
+            // and both of this store's memory bounds run off that counter. A
+            // delta that skipped it would make every status transition it
+            // replaces invisible to eviction, so a workload dominated by
+            // transitions would sweep expired tasks more and more rarely the
+            // better this method worked.
+            if passes.any() {
+                self.maybe_evict(passes).await;
             }
-            self.save(task).await
+            Ok(())
         })
     }
 
@@ -1134,6 +1143,60 @@ mod tests {
             after.tasks.len(),
             2,
             "re-keying must not lose or duplicate the record"
+        );
+    }
+
+    /// A status delta paces the TTL sweep exactly as a save does.
+    ///
+    /// `should_evict` advances a write counter, and the TTL pass fires every
+    /// `eviction_interval` writes. Both of this store's memory bounds run off
+    /// that counter, so a delta that skipped it would make every transition it
+    /// replaces invisible to eviction — and a deployment whose writes are
+    /// mostly transitions would sweep expired tasks more and more rarely the
+    /// better this method worked.
+    #[tokio::test]
+    async fn a_status_delta_still_paces_the_eviction_sweep() {
+        let store = InMemoryTaskStore::with_config(TaskStoreConfig {
+            max_capacity: None,
+            task_ttl: Some(Duration::from_millis(1)),
+            eviction_interval: 1,
+            max_page_size: 100,
+            max_events_per_task: Some(8),
+            idempotency_key_ttl: None,
+        });
+        store
+            .save(&make_task("expired", TaskState::Completed))
+            .await
+            .expect("seed the task that should be swept");
+        let live = make_task("live", TaskState::Working);
+        store.save(&live).await.expect("seed the live task");
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // The only write from here on is a status delta. If it does not pace
+        // the sweep, nothing ever collects the expired task.
+        let mut moved = live.clone();
+        moved.status = TaskStatus::with_timestamp(TaskState::Working);
+        store.save_status_delta(&moved).await.expect("delta");
+        // The sweep runs outside the write lock, so give it a turn.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert!(
+            store
+                .get(&TaskId::new("expired"))
+                .await
+                .expect("get")
+                .is_none(),
+            "a status delta must advance the eviction counter as a save does; \
+             the expired terminal task is still here, so it did not"
+        );
+        assert!(
+            store
+                .get(&TaskId::new("live"))
+                .await
+                .expect("get")
+                .is_some(),
+            "the sweep must take the expired task and leave the live one"
         );
     }
 

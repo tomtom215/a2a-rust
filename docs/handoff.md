@@ -1243,8 +1243,9 @@ The fix program, in the order the evidence supports:
    the first piece landed.** `TaskStore::save_status_delta` is additive (its
    default delegates to `save`), overridden in the in-memory store to edit the
    status in place and re-key the indexes. One turn of 512 status events on a
-   channel holding 600 messages: 54,239µs with `save`, 1,839µs with the delta,
-   and the turn stops growing with the channel's age. It does **not**
+   channel holding 600 messages: 54,301µs with `save`, 2,248µs with the delta,
+   measured back to back on the final code, and the turn stops growing with
+   the channel's age. It does **not**
    measurably move a turn that emits one event, and the report says so.
 
    What that bought, and what it did not, is now measured rather than guessed.

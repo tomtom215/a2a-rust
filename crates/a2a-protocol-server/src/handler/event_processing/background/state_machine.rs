@@ -284,6 +284,8 @@ pub(super) async fn process_event_bg(
             // Task.history (same cap as the send path) and persist.
             let history = last_task.history.get_or_insert_with(Vec::new);
             history.push(msg);
+            // What the append cost, so a failed save can undo exactly it.
+            let appended_len = history.len();
             // Third copy of this cap; same shape as `messaging.rs` and the sync
             // collector, and for the same reason. The `if` this replaces
             // guarded only a no-op, which made `>` to `>=` an equivalent
@@ -298,10 +300,29 @@ pub(super) async fn process_event_bg(
                 trace_error!(
                     task_id = %task_id,
                     error = %e,
-                    "background processor: task store save failed for agent message"
+                    "background processor: task store save failed for agent message; \
+                     reverting the appended message"
                 );
                 metrics
                     .on_persistence_error(persistence_operation::HISTORY_APPEND, e.metric_label());
+                // This function's contract, stated on it: a failed save reverts
+                // the in-memory task so it stays consistent with what is
+                // persisted. Every other branch here does; this one did not,
+                // and the divergence used to be repaired by accident, because
+                // the *next* status transition wrote the whole task and carried
+                // the message with it. `save_status_delta` writes only the
+                // status, so that accident is gone and the divergence would
+                // have lasted until some unrelated full save.
+                //
+                // Reverting rather than reinstating the accident: the store is
+                // the record, a message it refused is not in the record, and a
+                // snapshot claiming otherwise is the "phantom state" the
+                // contract names.
+                if let Some(history) = last_task.history.as_mut()
+                    && history.len() == appended_len
+                {
+                    history.pop();
+                }
             }
         }
         Ok(_) => {}
@@ -651,6 +672,77 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
             self.inner.delete(id)
         }
+    }
+
+    /// A refused history append leaves the in-memory task as it was.
+    ///
+    /// This function's contract is that a failed save reverts, so the snapshot
+    /// never claims state the store refused. The message branch was the one
+    /// that did not, and the gap was invisible while the *next* status
+    /// transition wrote the whole task and carried the orphaned message with
+    /// it. `save_status_delta` writes only the status, so nothing repairs it
+    /// by accident any more.
+    #[tokio::test]
+    async fn a_failed_history_save_reverts_the_appended_message() {
+        use a2a_protocol_types::message::{Message, MessageId, MessageRole};
+        let task_store = FailingSaveStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-msg-revert");
+
+        task_store
+            .inner
+            .save(&make_task("t-msg-revert", TaskState::Working))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-msg-revert", TaskState::Working);
+        last_task.history = Some(vec![Message {
+            id: MessageId::new("m-existing"),
+            role: MessageRole::User,
+            parts: vec![Part::text("already recorded")],
+            context_id: None,
+            task_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        }]);
+
+        let msg = Message {
+            id: MessageId::new("agent-refused"),
+            role: MessageRole::Agent,
+            parts: vec![Part::text("this write will fail")],
+            context_id: None,
+            task_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        };
+        process_event_bg(
+            Ok(StreamResponse::Message(msg)),
+            &task_id,
+            &mut last_task,
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
+        )
+        .await;
+
+        let history = last_task.history.expect("the pre-existing message stays");
+        assert_eq!(
+            history.len(),
+            1,
+            "the store refused the append, so the in-memory task must not hold \
+             it either — a snapshot ahead of the store is the phantom state \
+             this function's contract forbids"
+        );
+        assert_eq!(
+            history[0].id,
+            MessageId::new("m-existing"),
+            "the revert must remove the appended message and only that one"
+        );
     }
 
     #[tokio::test]
