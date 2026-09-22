@@ -432,15 +432,36 @@ concurrency one, in-memory store:
 is the honest shape of the change. A fresh channel has no accumulated history
 to avoid copying, so there is nothing there to win.
 
-**It does not make a send O(1), and the reason is worth recording.** Of the
-three O(history) stages, this removes one and a half: `build_initial_task`'s
-clone, and the full-record write that `persist_initial_task` used to do. The
-other two are still there. `find_task_by_context` still lists and clones up to
-ten whole tasks, history included, to pick one. And the background processor
-re-reads the task from the store on startup (`background/mod.rs:84`) rather
-than trusting the send path's snapshot — which is why the refactor did not
-corrupt anything, and also why an O(history) read survives it. That read is
-off the request's critical path, so it costs throughput rather than latency.
+**It does not make a send O(1), and the reason is now measured rather than
+reasoned.** Re-instrumenting the three stages in a temporary build (reverted;
+`git diff` over `src/` carries none of it) and reading the first 50 posts of
+the run against the last 50:
+
+| stage | fresh channel | at the history cap |
+|---|---|---|
+| `find_task_by_context` | 34µs | **511µs** |
+| `build_initial_task` | 4µs | 7µs |
+| `persist_initial_task` | 30µs | 42µs |
+
+Both stages this change targeted are now flat: `build_initial_task` went from
+~300µs to 7µs and `persist_initial_task` from ~440µs to 42µs. What is left
+is concentrated almost entirely in one place. `find_task_by_context` costs
+**511µs at the cap, 15x its own cost on a fresh channel and roughly 73x
+`build_initial_task`** — it lists and clones up to ten whole tasks, history
+included, to pick one.
+
+That settles the question the previous attribution left open. It was read from
+source and said "which of the four clones dominates is unmeasured"; it is
+`find_task_by_context`'s, and not narrowly. It is also the one blocked on an
+API decision rather than on effort: its result becomes `RequestContext`'s
+`stored_task`, a `pub` field documented as the executor's view of the previous
+turn, so serving it without history changes what every user-written executor
+sees.
+
+The background processor's re-read at `background/mod.rs:84` survives too. It
+is why the refactor did not corrupt anything — it is the reason a continuation
+still accumulates history — and being off the request's critical path it costs
+throughput rather than latency.
 
 Two regressions this could have shipped, both found by predicting the failure
 and writing the test rather than by the suite going green:
@@ -547,9 +568,14 @@ against the artifact benchmarks. It is worth doing and is not this change.
 
 ## What is still unmeasured
 
-* The attribution in finding 6 is read from the source and supported by the
+* ~~The attribution in finding 6 is read from the source and supported by the
   history-cap experiment, but no profiler ran; which of the four clones
-  dominates is unmeasured.
+  dominates is unmeasured.~~ **Measured.** See the stage table under Fix 2:
+  `find_task_by_context` dominates at 511µs against `build_initial_task`'s
+  7µs and `persist_initial_task`'s 42µs at the history cap. Done by timing
+  the stages directly rather than with a sampling profiler, which on an async
+  runtime attributes to the executor rather than to the call that scheduled
+  the work.
 * Every figure here uses the in-memory store. The SQL stores write to a disk
   this experiment never touches; their append throughput is unknown.
 * One replica. Nothing here says what a shared PostgreSQL store does when two
