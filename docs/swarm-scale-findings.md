@@ -218,6 +218,86 @@ SSE delivery". The consumer does not skip and resume; its stream ends. The
 behaviour is the better of the two, and the documentation describes the other
 one.
 
+## Finding 5 — the transport has 11x headroom the handler never uses
+
+Everything above is about contention. This one is not, and it is the one that
+decides whether "fast" is a claim this project can make.
+
+Every row below is measured twice at the same concurrency: `GET /health`,
+which takes the same socket, the same hyper connection handling and the same
+dispatcher routing and then returns a fixed body without touching the handler,
+the store or the executor; and `POST /message:send` to a channel **only that
+agent uses**, so nothing in the handler contends. The first bounds what this
+box and this load generator cost. The second is the workload.
+
+| agents | `/health` per s | `/health` p50 | posts per s | post p50 | handler's share | accepted |
+|---|---|---|---|---|---|---|
+| 1 | 11,064 | 21µs | 3,685 | 206µs | 90% | 100.0% |
+| 4 | 30,270 | 85µs | 5,250 | 708µs | 88% | 98.8% |
+| 16 | 52,799 | 199µs | 4,671 | 3.2ms | 94% | 99.1% |
+| 64 | 32,556 | 734µs | 4,410 | 12.8ms | 94% | 98.5% |
+| 256 | 4,984 | 1.8ms | 3,691 | 42.6ms | 96% | 94.9% |
+| 1,000 | 17,240 | 5.8ms | 3,669 | 202.5ms | 97% | 100.0% |
+
+The HTTP stack answers 52,799 requests a second on this box while an
+uncontended send answers 4,671. At a concurrency of one the split is 21µs of
+transport against 206µs of request — **about 90% of a send is work behind the
+dispatcher**, and that share only grows with load.
+
+Posts also do not scale with concurrency. They sit between 3,669 and 5,250 per
+second from one agent to a thousand, which is the signature of a per-request
+cost that is simply large, not of a box that has run out of cores — the same
+box does ten times that number through the same sockets.
+
+## Finding 6 — a channel makes its own posts slower, and history is why
+
+Concurrency held at one, so these are service times rather than queueing.
+One channel, 1,400 sequential posts, timed individually:
+
+| posts | p50 | p95 | reply size |
+|---|---|---|---|
+| 0–100 | 385µs | 656µs | 152 B |
+| 200–300 | 1,009µs | 1,264µs | 152 B |
+| 500–600 | 1,774µs | 2,852µs | 152 B |
+| 900–1,000 | 2,634µs | 3,986µs | 152 B |
+| 1,000–1,100 | 2,678µs | 4,997µs | 152 B |
+| 1,300–1,400 | 2,495µs | 3,800µs | 152 B |
+
+Service time grows **6.5x** over the run and then flattens. The reply is a
+constant 152 bytes throughout, so none of it is payload: the response to a
+send carries the task's id, context and status and not its history.
+
+Two things grow per post on one channel — the task's `history`, capped at
+`MAX_TASK_HISTORY_MESSAGES` (1,024), and its event log, which is not capped
+the same way. The curve turning over between 1,000 and 1,100 posts points at
+the first. A controlled run settles it: with that constant lowered from 1,024
+to 64 and nothing else changed, the plateau falls from about 2,500µs to about
+540µs and the growth from 6.5x to 1.3x.
+
+| history cap | p50 at posts 0–100 | p50 at posts 1,300–1,400 | growth |
+|---|---|---|---|
+| 1,024 (default) | 385µs | 2,495µs | 6.5x |
+| 64 (probe only) | 419µs | 547µs | 1.3x |
+
+**History length is the driver**, at roughly 2µs of service time per retained
+message per post. The 64 figure comes from a temporary edit to
+`handler::messaging::decisions::MAX_TASK_HISTORY_MESSAGES`, made to run this
+experiment and reverted; the constant in the tree is 1,024.
+
+The store is not implicated. Filling it with other channels in other contexts
+leaves one channel's own cost flat — 538µs, 485µs, 671µs and 538µs at 0, 100,
+1,000 and 4,000 other tasks — so `InMemoryTaskStore`'s `context_index` is
+doing its job and the cost is per-channel, not global.
+
+Reading the send path for where O(history) work happens finds at least four
+places a continuation touches the whole history: `find_task_by_context` calls
+`TaskStore::list`, which clones every task it collects; `messaging::create`
+clones the stored history to append one message to it; `TaskStore::save`
+stores a clone of the resulting task; and the background state machine saves
+again on each status event. That attribution is **read from the source and
+consistent with the controlled result above, but not independently profiled** —
+no profiler is available in this container.
+
 ## What this means for building a coordination channel on A2A
 
 * **Shard by context, at roughly 4–16 writers per channel.** Not by task:
@@ -234,6 +314,9 @@ one.
 
 ## What is still unmeasured
 
+* The attribution in finding 6 is read from the source and supported by the
+  history-cap experiment, but no profiler ran; which of the four clones
+  dominates is unmeasured.
 * Every figure here uses the in-memory store. The SQL stores write to a disk
   this experiment never touches; their append throughput is unknown.
 * One replica. Nothing here says what a shared PostgreSQL store does when two

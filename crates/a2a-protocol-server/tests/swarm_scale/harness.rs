@@ -269,6 +269,13 @@ pub struct Posted {
     pub task: Option<String>,
     /// What the server said, verbatim, when it refused.
     pub detail: String,
+    /// Response body size in bytes.
+    ///
+    /// Recorded because `SendMessage` answers with the whole `Task`, and a
+    /// `Task` carries its `history` — so the reply to a one-message post is
+    /// as large as the conversation is long, and a latency curve that tracks
+    /// this is a payload curve rather than a lookup curve.
+    pub bytes: usize,
 }
 
 /// Posts once, and classifies what came back.
@@ -298,6 +305,7 @@ pub async fn post(
             elapsed: started.elapsed(),
             task: None,
             detail: "no response".to_owned(),
+            bytes: 0,
         };
     };
     let status = response.status();
@@ -307,6 +315,7 @@ pub async fn post(
             elapsed: started.elapsed(),
             task: None,
             detail: "no body".to_owned(),
+            bytes: 0,
         };
     };
     let elapsed = started.elapsed();
@@ -322,6 +331,7 @@ pub async fn post(
             elapsed,
             task: landed,
             detail: String::new(),
+            bytes: body.len(),
         };
     }
     let outcome = if text.contains("already being processed") {
@@ -334,6 +344,7 @@ pub async fn post(
         elapsed,
         task: None,
         detail: text,
+        bytes: body.len(),
     }
 }
 

@@ -15,7 +15,8 @@ Last updated 2026-09-20 — the 0.13.0 branch and two gate lessons (`4db4c87f`),
 then the branch table's three merges and the corrections under **Still open**,
 then the post-0.13.0 audit work on `claude/optimistic-bell-680i9p` (see its
 section below), which closed item 7 and changed the branch's own row, and then
-the swarm-scale experiment on `claude/busy-cerf-ta682r`.
+the swarm-scale experiment on `claude/busy-cerf-ta682r`, then its
+shared-nothing and cost arms and the fix program they imply.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -1197,6 +1198,61 @@ Two things for the maintainer that are not about swarms:
 
 Neither was changed here. Both are one-line fixes in crate source, which this
 branch deliberately does not touch.
+
+#### Then the measurement that matters more than any of it
+
+Two further modules, `independent.rs` and `cost.rs`, ask what the send path
+costs when nothing contends at all. The answer reframes findings 1 to 4 as the
+smaller problem.
+
+`GET /health` — the same socket, listener and dispatcher, with no handler
+behind it — answers 52,799 requests a second on this box. An uncontended
+`POST /message:send` answers 4,671. At a concurrency of one the split is 21µs
+of transport against a 206µs request, so **about 90% of a send is work behind
+the dispatcher**, and posts stay between 3,669 and 5,250 per second from one
+agent to a thousand. That flatness is a per-request cost, not a saturated box:
+the same box does ten times the number through the same sockets.
+
+Worse, the cost grows with the channel's age. One channel, 1,400 sequential
+posts at concurrency one: service time rises 6.5x, from 385µs to about
+2,500µs, and then flattens. The reply is a constant 152 bytes throughout, so
+none of it is payload.
+
+A controlled run names the cause. With `MAX_TASK_HISTORY_MESSAGES` lowered
+from 1,024 to 64 and nothing else changed, the plateau falls from ~2,500µs to
+~540µs and the growth from 6.5x to 1.3x. **History length drives it**, at
+roughly 2µs per retained message per post. That edit was made to run the
+experiment and reverted; the constant in the tree is 1,024.
+
+The store is not implicated: one channel's cost is flat at 0, 100, 1,000 and
+4,000 other tasks, so `context_index` is doing its job.
+
+Reading the send path finds at least four O(history) touches per continuation
+— `find_task_by_context`'s `list` clones each task it collects, `create`
+clones the stored history to append one message, `save` stores a clone, and
+the background state machine saves again per status event. That attribution is
+read from source and consistent with the cap experiment; **no profiler ran**,
+so which clone dominates is unmeasured. `perf` is not available in this
+container.
+
+#### What the next session should pick up
+
+The fix program, in the order the evidence supports:
+
+1. **Stop the avoidable O(history) work on the send path.** Non-breaking and
+   needed under any larger plan: take the stored task by value into `create`
+   so its history moves rather than clones, and give the send path a way to
+   learn `(task id, is terminal)` from a context without materialising tasks.
+2. **Decide whether `Task::history` belongs inside the `Task` snapshot.** The
+   root cause is that it does, so every clone and every save is O(history).
+   Moving it beside the snapshot — the shape the event log already has — makes
+   save and get O(1) and assembles history only for `GetTask`. It touches the
+   `TaskStore` trait and all four implementations, so it is a decision, not a
+   patch.
+3. **The context lockout (finding 2)** and **the reattach poll (finding 4)**,
+   each with a regression test that is shown to fail without its fix.
+4. **Re-run every arm after each fix**, and keep the before-and-after in
+   `docs/swarm-scale-findings.md` rather than overwriting it.
 
 ### Still not started
 
