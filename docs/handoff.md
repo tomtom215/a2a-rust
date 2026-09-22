@@ -1333,13 +1333,30 @@ The fix program, in the order the evidence supports:
    `build_request_context` needs the stored task for the executor's view of
    the previous turn, so neither clone can simply become a move. That is item
    2, not a cleanup.
-2. **Decide whether `Task::history` belongs inside the `Task` snapshot.**
-   Approved on 2026-09-21 as the next piece, after the local cleanup. The
-   root cause is that it does, so every clone and every save is O(history).
-   Moving it beside the snapshot — the shape the event log already has — makes
-   save and get O(1) and assembles history only for `GetTask`. It touches the
-   `TaskStore` trait and all four implementations, so it is a decision, not a
-   patch.
+2. ~~**Decide whether `Task::history` belongs inside the `Task` snapshot.**~~
+   **Decided and done, and it did not reach O(1).** `Task::history` cannot
+   move: it is the A2A wire type in a published crate, and cargo-semver-checks
+   holds that. So the change took the seam the trait already used twice.
+   `TaskStore::save_appending_history` takes the snapshot plus only the
+   messages the turn added; `build_initial_task` stopped cloning the stored
+   conversation forward. Measured back to back, 1,400 sequential posts:
+   3,962µs → 2,748µs at the history cap, growth 3.2x → 2.1x, and nothing at
+   the start.
+
+   **What is left, and why it stopped here.** Three stages were O(history);
+   this removed one and a half. The other two:
+
+   * `find_task_by_context` still lists and clones up to ten whole tasks to
+     pick one. It could ask for no history now that `build_initial_task` does
+     not need it — **except** that its result becomes `RequestContext`'s
+     `stored_task`, a `pub` field on a `pub` struct, documented as the
+     executor's view of the previous turn. Stripping history from it would
+     silently change what every user-written executor sees. That is an API
+     decision, not a refactor, and it is the next one to take.
+   * The background processor re-reads the task at `background/mod.rs:84`.
+     That read is why the refactor did not corrupt anything — it is the reason
+     a continuation still accumulates history — and it is off the request's
+     critical path, so it costs throughput rather than latency.
 3. **The context lockout (finding 2)** and **the reattach poll (finding 4)**,
    each with a regression test that is shown to fail without its fix.
 4. **Re-run every arm after each fix**, and keep the before-and-after in
