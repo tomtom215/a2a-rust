@@ -1235,9 +1235,53 @@ read from source and consistent with the cap experiment; **no profiler ran**,
 so which clone dominates is unmeasured. `perf` is not available in this
 container.
 
+#### Verification, once the tools existed
+
+Everything the last session said it had not run, run. Recorded because three
+of the five said something.
+
+- **CI is green.** Run
+  [35597781502](https://github.com/tomtom215/a2a-rust/actions/runs/35597781502)
+  at `ab9c9a7`, all 20 jobs, including `cargo-semver-checks` — which is the
+  independent check on "additive, non-breaking" — the PostgreSQL integration
+  leg, and the test matrix on Linux, macOS and Windows.
+- **CI caught two doc links nothing local had.** Run
+  [35593616804](https://github.com/tomtom215/a2a-rust/actions/runs/35593616804)
+  failed its Documentation job on
+  `crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES` (private module, so
+  not linkable from a public doc comment) and on `[StoreData::update_status]`
+  (private item linked from public docs). `cargo doc --workspace --no-deps`
+  with `-D warnings` is in the PR checklist and had not been run. Fixed in
+  `ab9c9a7`.
+- **The mutation gate passes: 0 missed.** `cargo-mutants` was not installed in
+  the container; it is now. 19 in-diff mutants, 3 caught, 13 unviable, **3
+  timeouts** — all three in `StoreData::update_status`. Timeouts fail no gate
+  but `mutants.yml` says in as many words not to read past them, so they were
+  re-run at `--jobs 1 --timeout 900`: 4 caught, 4 unviable, **0 timeouts, 0
+  missed**. The timeouts were four parallel test suites on this box's four
+  cores, not an adequacy gap.
+- **Soak is clean after the store change.** 120s, 688,438 requests, 16.7 bytes
+  per request against the 1,024 ceiling, p95 latency 1.01x head to tail.
+- **The two findings are fixed**, each with a test shown to fail under a
+  mutation that breaks exactly what it checks. See the commits.
+
+Two things worth knowing for next time. `cargo mutants` needs a live
+PostgreSQL or its **baseline** fails — two `rate_limit::shared::postgres`
+tests — and it reports that as "cargo test failed in an unmutated tree", which
+reads like a broken tree rather than a missing service. The handoff's own
+apt recipe above is what fixes it. And this container's disk allowance fills
+quickly: a release build of the workspace plus two `cargo install`s exhausted
+it twice, both times fixed by `rm -rf target/debug target/release`.
+
 #### What the next session should pick up
 
 The fix program, in the order the evidence supports:
+
+0. **`save_artifact_delta` has the same eviction-pacing gap `save_status_delta`
+   just had** — it does not advance the write counter that paces the TTL
+   sweep. Not fixed with the other one, because closing it changes the cadence
+   of an already-shipped path and needs its own measurement against the
+   artifact benchmarks. Small, and worth doing before it is forgotten.
 
 1. ~~**Stop the avoidable O(history) work on the send path.**~~ **Started, and
    the first piece landed.** `TaskStore::save_status_delta` is additive (its
