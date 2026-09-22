@@ -765,18 +765,6 @@ impl TaskStore for InMemoryTaskStore {
         })
     }
 
-    /// Applies the delta to the stored task in place, copying only what grew.
-    ///
-    /// `save` clones the whole task, so using it per artifact event makes a
-    /// stream cost quadratic in its own length — see
-    /// [`TaskStore::save_artifact_delta`] for the measurement. Here the work is
-    /// proportional to the appended parts instead of the accumulated ones.
-    ///
-    /// Falls back to `save` whenever the stored record is not the one this
-    /// delta describes: absent, no artifacts, index out of range, a different
-    /// artifact at that index, or fewer parts present than the delta claims
-    /// were appended. Those are all "cannot apply safely", and a whole-record
-    /// replace is always right — a wrong in-place edit would not be.
     /// Edits the stored status in place rather than replacing the record.
     ///
     /// `save` here is a deep clone of the whole task, history included, so a
@@ -817,32 +805,66 @@ impl TaskStore for InMemoryTaskStore {
         })
     }
 
+    /// Applies the delta to the stored task in place, copying only what grew.
+    ///
+    /// `save` clones the whole task, so using it per artifact event makes a
+    /// stream cost quadratic in its own length — see
+    /// [`TaskStore::save_artifact_delta`] for the measurement. Here the work is
+    /// proportional to the appended parts instead of the accumulated ones.
+    ///
+    /// Falls back to `save` whenever the stored record is not the one this
+    /// delta describes: absent, no artifacts, index out of range, a different
+    /// artifact at that index, or fewer parts present than the delta claims
+    /// were appended. Those are all "cannot apply safely", and a whole-record
+    /// replace is always right — a wrong in-place edit would not be.
     fn save_artifact_delta<'a>(
         &'a self,
         task: &'a Task,
         delta: ArtifactDelta,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let mut store = self.data.write().await;
-            let applied = store
-                .entries
-                .get_mut(&task.id)
-                .is_some_and(|entry| apply_delta(&mut entry.task, task, delta));
-            if applied && let Some(entry) = store.entries.get_mut(&task.id) {
-                entry.last_updated = Instant::now();
-            }
-            // Released before the fallback below, which takes the lock again
-            // through `save`.
-            drop(store);
+            let outcome = {
+                let mut store = self.data.write().await;
+                let applied = store
+                    .entries
+                    .get_mut(&task.id)
+                    .is_some_and(|entry| apply_delta(&mut entry.task, task, delta));
+                if applied && let Some(entry) = store.entries.get_mut(&task.id) {
+                    entry.last_updated = Instant::now();
+                }
+                let len = store.len();
+                // Released before the fallback below, which takes the lock
+                // again through `save`.
+                drop(store);
+                applied.then(|| self.should_evict(len))
+            };
 
-            if applied {
-                trace_debug!(task_id = %task.id, "applied artifact delta in place");
-                // No new entry, so the store cannot have grown past its bound
-                // and there is nothing for eviction to reconsider.
-                return Ok(());
+            let Some(passes) = outcome else {
+                return self.save(task).await;
+            };
+            trace_debug!(task_id = %task.id, "applied artifact delta in place");
+            // `should_evict` is called for its side effect as much as its
+            // answer: it advances the write counter that paces the TTL sweep.
+            //
+            // The comment that stood here said there was "nothing for eviction
+            // to reconsider" because no entry was added. That is true of the
+            // capacity bound and false of the TTL one: expiry is driven by
+            // elapsed time, not by growth, so a stream that only appends parts
+            // to tasks already in the store still ages every other task in it.
+            // Skipping the counter made those writes invisible to the sweep,
+            // so a workload dominated by artifact streaming swept expired
+            // tasks more and more rarely the better this method worked.
+            //
+            // The capacity pass is kept rather than special-cased away: it is
+            // one comparison against `max_capacity`, it is already false
+            // whenever the store is under its bound, and it is still the right
+            // answer when a delta lands on a store that was over the bound
+            // before this write. Matching `save` exactly is worth more than
+            // eliding a comparison.
+            if passes.any() {
+                self.maybe_evict(passes).await;
             }
-
-            self.save(task).await
+            Ok(())
         })
     }
 
@@ -2462,6 +2484,71 @@ mod artifact_delta_tests {
             .collect();
 
         assert_eq!(before, after, "appending an artifact reordered the list");
+    }
+
+    /// An artifact delta paces the TTL sweep exactly as a save does.
+    ///
+    /// `should_evict` advances a write counter, and the TTL pass fires every
+    /// `eviction_interval` writes. The comment this test retired reasoned that
+    /// an in-place delta adds no entry, so eviction has nothing to reconsider.
+    /// That holds for the capacity bound and not for the TTL one: expiry is
+    /// driven by elapsed time, not by growth, so a stream that only appends
+    /// parts to tasks already in the store still ages every other task in it.
+    #[tokio::test]
+    async fn an_artifact_delta_still_paces_the_eviction_sweep() {
+        use std::time::Duration;
+
+        let store = InMemoryTaskStore::with_config(TaskStoreConfig {
+            max_capacity: None,
+            task_ttl: Some(Duration::from_millis(1)),
+            eviction_interval: 1,
+            max_page_size: 100,
+            max_events_per_task: Some(8),
+            idempotency_key_ttl: None,
+        });
+
+        let mut expired = task_with("expired", None);
+        expired.status = TaskStatus::new(TaskState::Completed);
+        store
+            .save(&expired)
+            .await
+            .expect("seed the task that should be swept");
+        let streaming = task_with("streaming", Some(vec![artifact("a", 2)]));
+        store
+            .save(&streaming)
+            .await
+            .expect("seed the task the stream appends to");
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // The only write from here on is an artifact delta. If it does not
+        // pace the sweep, nothing ever collects the expired task.
+        let grown = task_with("streaming", Some(vec![artifact("a", 3)]));
+        store
+            .save_artifact_delta(&grown, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+            .await
+            .expect("delta");
+        // The sweep runs outside the write lock, so give it a turn.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert!(
+            store
+                .get(&TaskId::new("expired"))
+                .await
+                .expect("get")
+                .is_none(),
+            "an artifact delta must advance the eviction counter as a save \
+             does; the expired terminal task is still here, so it did not"
+        );
+        assert!(
+            store
+                .get(&TaskId::new("streaming"))
+                .await
+                .expect("get")
+                .is_some(),
+            "the sweep must take the expired task and leave the one the \
+             stream is still appending to"
+        );
     }
 }
 

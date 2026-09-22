@@ -1273,15 +1273,45 @@ apt recipe above is what fixes it. And this container's disk allowance fills
 quickly: a release build of the workspace plus two `cargo install`s exhausted
 it twice, both times fixed by `rm -rf target/debug target/release`.
 
+#### Both delta paths now pace eviction, and a doc comment had come adrift
+
+`save_artifact_delta` carried the same eviction-pacing gap as the status one
+and is now fixed too. Its `// No new entry, so the store cannot have grown
+past its bound and there is nothing for eviction to reconsider` was right
+about the capacity bound and wrong about the TTL one — expiry is driven by
+elapsed time, not by growth — so a workload dominated by artifact streaming
+swept expired tasks ever more rarely. Regression test
+`an_artifact_delta_still_paces_the_eviction_sweep`, shown to fail under a
+mutation that drops only the counter bump while the status test still passes.
+
+Measured on this box, 500-chunk stream, in-memory store, snapshots built
+outside the timer, medians of nine: `save` 18.6 ms against the delta's 0.89 ms
+with the fix and 0.86 ms without it. Between-run variance is around 400 µs —
+a third run of the fixed code came back at 1.26 ms — so the ~36 µs between the
+arms is well inside the noise: **no measurable regression**, which is the only
+claim the measurement supports. The first version of that harness rebuilt an
+n-part task inside the timing loop and so measured its own O(n²) setup,
+reporting the delta at 17.7 ms; the numbers above are from the corrected one.
+The 43.4 ms → 2.5 ms in the trait docs was measured on different hardware and
+is left alone.
+
+Separately, and this is the one nothing mechanical would have caught: the
+status delta had been inserted **between `save_artifact_delta`'s doc comment
+and its function**, so the artifact doc was attached to the status method —
+where "no artifacts, index out of range, a different artifact at that index"
+is simply false — and the artifact method had no doc at all. rustdoc does not
+check that a doc comment describes its item, so CI was green through it. Both
+are back where they belong.
+
+`TaskStore::save_artifact_delta`'s "Implementing this" section now states the
+general rule both bugs broke: a delta is a cheaper way to do a write, not a
+way to do fewer writes, so whatever per-write bookkeeping an implementation's
+`save` does, an override must do too. That matters because the trait is
+unsealed and third-party stores will override these.
+
 #### What the next session should pick up
 
 The fix program, in the order the evidence supports:
-
-0. **`save_artifact_delta` has the same eviction-pacing gap `save_status_delta`
-   just had** — it does not advance the write counter that paces the TTL
-   sweep. Not fixed with the other one, because closing it changes the cadence
-   of an already-shipped path and needs its own measurement against the
-   artifact benchmarks. Small, and worth doing before it is forgotten.
 
 1. ~~**Stop the avoidable O(history) work on the send path.**~~ **Started, and
    the first piece landed.** `TaskStore::save_status_delta` is additive (its

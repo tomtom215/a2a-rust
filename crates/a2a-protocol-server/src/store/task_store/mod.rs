@@ -293,6 +293,27 @@ pub trait TaskStore: Send + Sync + 'static {
     /// or its shape does not match — it must fall back to `save(task)` rather
     /// than persist a divergent record.
     ///
+    /// ## "What `save` would have left it holding" includes the bookkeeping
+    ///
+    /// A delta is a cheaper way to perform a write, not a way to perform
+    /// fewer writes. Whatever per-write maintenance an implementation's `save`
+    /// does — advancing an eviction or compaction counter, refreshing a
+    /// last-touched timestamp, updating a metric — an override has to do too,
+    /// or that maintenance silently stops happening in proportion to how often
+    /// the fast path is taken.
+    ///
+    /// Both deltas shipped here got this wrong, and the failure is worth
+    /// stating because it is invisible to the obvious test. [`InMemoryTaskStore`]
+    /// paces its TTL sweep off a counter that every write advances, and neither
+    /// override advanced it. The reasoning in the artifact one was explicit and
+    /// wrong in an instructive way: an in-place delta adds no entry, so it
+    /// cannot push the store past its capacity bound. True — and irrelevant to
+    /// the *other* bound, because expiry is driven by elapsed time rather than
+    /// by growth, so a stream that only appends to tasks already stored still
+    /// ages every other task in the store. The better the fast path worked, the
+    /// more rarely anything was collected. Every functional test still passed:
+    /// the store held exactly the right bytes, just for ever.
+    ///
     /// # Errors
     ///
     /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
