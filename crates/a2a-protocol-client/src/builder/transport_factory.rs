@@ -10,23 +10,33 @@
 //! together into an [`A2aClient`].
 
 use crate::client::A2aClient;
-use crate::config::{BINDING_GRPC, BINDING_HTTP_JSON, BINDING_JSONRPC, BINDING_REST};
+use crate::config::{BINDING_GRPC, BINDING_HTTP_JSON, BINDING_JSONRPC, ClientConfig};
 use crate::error::{ClientError, ClientResult};
 use crate::retry::RetryTransport;
 use crate::transport::{JsonRpcTransport, RestTransport, Transport};
 
 use super::ClientBuilder;
+use super::selection::canonical_binding;
 
 impl ClientBuilder {
     /// Validates configuration and constructs the [`A2aClient`].
+    ///
+    /// Binding names are matched ignoring ASCII case, as card selection
+    /// matches them. When the builder came from a card and the chosen
+    /// interface cannot be constructed here — gRPC (which needs
+    /// `build_grpc`), a binding this SDK does not implement, or a malformed
+    /// URL — the card's next compatible interface is tried, in
+    /// [`from_card_preferring`](Self::from_card_preferring)'s order, and its
+    /// endpoint and tenant are used. A binding set with
+    /// [`with_protocol_binding`](Self::with_protocol_binding) is never
+    /// substituted.
     ///
     /// # Errors
     ///
     /// - [`ClientError::InvalidEndpoint`] if the endpoint URL is malformed.
     /// - [`ClientError::Transport`] if the selected transport cannot be
-    ///   initialized.
-    #[allow(clippy::too_many_lines)]
-    pub fn build(self) -> ClientResult<A2aClient> {
+    ///   initialized; after fallbacks, it names every interface tried.
+    pub fn build(mut self) -> ClientResult<A2aClient> {
         if self.config.request_timeout.is_zero() {
             return Err(ClientError::Transport(
                 "request_timeout must be non-zero".into(),
@@ -43,61 +53,16 @@ impl ClientBuilder {
             ));
         }
 
-        let transport: Box<dyn Transport> = if let Some(t) = self.transport_override {
+        let transport: Box<dyn Transport> = if let Some(t) = self.transport_override.take() {
             t
         } else {
             let binding = self
                 .preferred_binding
+                .clone()
                 .unwrap_or_else(|| BINDING_JSONRPC.into());
-
-            match binding.as_str() {
-                BINDING_JSONRPC => {
-                    let t = JsonRpcTransport::with_all_timeouts(
-                        &self.endpoint,
-                        self.config.request_timeout,
-                        self.config.stream_connect_timeout,
-                        self.config.connection_timeout,
-                    )?
-                    .with_max_response_size(self.config.max_response_size);
-                    Box::new(t)
-                }
-                // `HTTP+JSON` is the A2A spec name for the REST binding;
-                // `REST` is the legacy alias. An agent card published by an
-                // official Go/Python/Java SDK advertises the spec name, so both
-                // must resolve to the REST transport.
-                BINDING_REST | BINDING_HTTP_JSON => {
-                    let t = RestTransport::with_all_timeouts(
-                        &self.endpoint,
-                        self.config.request_timeout,
-                        self.config.stream_connect_timeout,
-                        self.config.connection_timeout,
-                    )?
-                    .with_max_response_size(self.config.max_response_size);
-                    Box::new(t)
-                }
-                #[cfg(feature = "grpc")]
-                BINDING_GRPC => {
-                    // gRPC transport requires async connect; can't do in
-                    // sync build(). Use with_custom_transport() instead,
-                    // or use ClientBuilder::build_async().
-                    return Err(ClientError::Transport(
-                        "gRPC transport requires async connect; \
-                         use ClientBuilder::build_grpc() or \
-                         with_custom_transport(GrpcTransport::connect(...))"
-                            .into(),
-                    ));
-                }
-                #[cfg(not(feature = "grpc"))]
-                BINDING_GRPC => {
-                    return Err(ClientError::Transport(
-                        "gRPC transport requires the `grpc` feature flag".into(),
-                    ));
-                }
-                other => {
-                    return Err(ClientError::Transport(format!(
-                        "unknown protocol binding: {other}"
-                    )));
-                }
+            match http_transport(&self.config, &binding, &self.endpoint) {
+                Ok(t) => t,
+                Err(first) => self.fall_back(&binding, first)?,
             }
         };
 
@@ -112,6 +77,45 @@ impl ClientBuilder {
         };
 
         Ok(A2aClient::new(transport, self.interceptors, self.config))
+    }
+
+    /// Tries the card's remaining interfaces after the chosen one failed
+    /// with `first`, moving the endpoint and tenant to the one that builds.
+    fn fall_back(&mut self, binding: &str, first: ClientError) -> ClientResult<Box<dyn Transport>> {
+        if self.fallback_interfaces.is_empty() {
+            return Err(first);
+        }
+        let mut failures = vec![format!("{binding} at {}: {first}", self.endpoint)];
+        // A tenant the caller set with `with_tenant` is theirs to keep; one
+        // that came from the failed interface belongs to that interface.
+        let tenant_from_card = self
+            .chosen_interface()
+            .is_some_and(|i| i.tenant == self.config.tenant);
+        for iface in std::mem::take(&mut self.fallback_interfaces) {
+            match http_transport(&self.config, &iface.protocol_binding, &iface.url) {
+                Ok(t) => {
+                    trace_warn!(
+                        chosen = %binding,
+                        used = %iface.protocol_binding,
+                        url = %iface.url,
+                        "chosen interface could not be built; using the next one on the card"
+                    );
+                    if tenant_from_card {
+                        self.config.tenant = iface.tenant;
+                    }
+                    self.endpoint = iface.url;
+                    self.preferred_binding = Some(iface.protocol_binding);
+                    return Ok(t);
+                }
+                Err(e) => {
+                    failures.push(format!("{} at {}: {e}", iface.protocol_binding, iface.url));
+                }
+            }
+        }
+        Err(ClientError::Transport(format!(
+            "no interface on the agent card could be built: {}",
+            failures.join("; ")
+        )))
     }
 
     /// Validates configuration and constructs a gRPC-backed [`A2aClient`].
@@ -180,6 +184,55 @@ impl ClientBuilder {
         };
 
         Ok(A2aClient::new(transport, self.interceptors, self.config))
+    }
+}
+
+/// Why a synchronous `build()` cannot construct a gRPC transport.
+///
+/// A constant per feature set rather than a `cfg`'d match arm each: an arm
+/// compiled out of the build under test can be deleted without any test
+/// noticing, which is a mutant no test can kill.
+#[cfg(feature = "grpc")]
+const GRPC_NOT_SYNC: &str = "gRPC transport requires async connect; \
+     use ClientBuilder::build_grpc() or \
+     with_custom_transport(GrpcTransport::connect(...))";
+#[cfg(not(feature = "grpc"))]
+const GRPC_NOT_SYNC: &str = "gRPC transport requires the `grpc` feature flag";
+
+/// Constructs the HTTP transport for `binding` at `endpoint`.
+///
+/// `binding` is matched ignoring ASCII case. `HTTP+JSON` is the spec name
+/// for the REST binding and `REST` the legacy alias; a card published by an
+/// official Go/Python/Java SDK advertises the spec name, so both resolve to
+/// the REST transport.
+fn http_transport(
+    config: &ClientConfig,
+    binding: &str,
+    endpoint: &str,
+) -> ClientResult<Box<dyn Transport>> {
+    match canonical_binding(binding) {
+        Some(BINDING_JSONRPC) => Ok(Box::new(
+            JsonRpcTransport::with_all_timeouts(
+                endpoint,
+                config.request_timeout,
+                config.stream_connect_timeout,
+                config.connection_timeout,
+            )?
+            .with_max_response_size(config.max_response_size),
+        )),
+        Some(BINDING_HTTP_JSON) => Ok(Box::new(
+            RestTransport::with_all_timeouts(
+                endpoint,
+                config.request_timeout,
+                config.stream_connect_timeout,
+                config.connection_timeout,
+            )?
+            .with_max_response_size(config.max_response_size),
+        )),
+        Some(BINDING_GRPC) => Err(ClientError::Transport(GRPC_NOT_SYNC.into())),
+        _ => Err(ClientError::Transport(format!(
+            "unknown protocol binding: {binding}"
+        ))),
     }
 }
 

@@ -31,7 +31,11 @@
 //! # }
 //! ```
 
+mod selection;
 mod transport_factory;
+
+#[cfg(test)]
+mod selection_tests;
 
 use std::time::Duration;
 
@@ -43,45 +47,12 @@ use crate::interceptor::{CallInterceptor, InterceptorChain};
 use crate::retry::RetryPolicy;
 use crate::transport::Transport;
 
-/// The major protocol version supported by this client.
+/// The major A2A protocol version this client speaks, from
+/// [`A2A_VERSION`](a2a_protocol_types::A2A_VERSION) `"1.0"`.
 ///
-/// Used to warn when an agent card advertises an incompatible version.
-/// The `allow(dead_code)` is needed because the only consumer is the
-/// tracing-feature-gated warn in [`ClientBuilder::from_card`]; tests still
-/// reference this constant so a `cfg(feature = "tracing")` gate would be
-/// wrong.
-#[allow(dead_code)]
+/// Card interfaces advertising another major are not candidates; see
+/// `selection`.
 pub(crate) const SUPPORTED_PROTOCOL_MAJOR: u32 = 1;
-
-/// Returns the mismatched major-version string when `protocol_version`
-/// advertises a major that differs from [`SUPPORTED_PROTOCOL_MAJOR`].
-///
-/// Empty strings are treated as "unknown" and considered compatible
-/// (returning `None`) so we don't flag agent cards that omit the field.
-/// Unparseable versions are treated as incompatible.
-///
-/// Returning the original string lets callers emit a tracing warning that
-/// includes the offending value, and — importantly — gives the function an
-/// observable return value so tests can differentiate compatibility cases
-/// directly, avoiding the `!compat()` negation that would otherwise create
-/// an unkillable mutant (deleting the `!` produces a semantically opposite
-/// warning, which is not detectable via test assertions since the only
-/// effect is a tracing emit).
-#[allow(dead_code)] // Only used when the `tracing` feature is enabled.
-pub(crate) fn protocol_version_mismatch(protocol_version: &str) -> Option<&str> {
-    if protocol_version.is_empty() {
-        return None;
-    }
-    let major = protocol_version
-        .split('.')
-        .next()
-        .and_then(|s| s.parse::<u32>().ok());
-    if major == Some(SUPPORTED_PROTOCOL_MAJOR) {
-        None
-    } else {
-        Some(protocol_version)
-    }
-}
 
 // ── ClientBuilder ─────────────────────────────────────────────────────────────
 
@@ -110,6 +81,12 @@ pub struct ClientBuilder {
     /// own URL, so the two are a pair; changing one without the other points
     /// the client at the wrong port.
     pub(super) card_interfaces: Vec<AgentInterface>,
+    /// The card's other compatible interfaces, in the order `build()` tries
+    /// them when the chosen one cannot be constructed. Empty unless the
+    /// builder came from a card, and cleared by an explicit
+    /// [`ClientBuilder::with_protocol_binding`]: a binding the caller named
+    /// is a decision, not a preference to substitute for.
+    pub(super) fallback_interfaces: Vec<AgentInterface>,
     /// How a bare `host:port` gRPC address is dialled by [`build_grpc`].
     ///
     /// Lives on the builder rather than on [`ClientConfig`] because it is a
@@ -125,27 +102,6 @@ pub struct ClientBuilder {
     /// [`build_grpc`]: ClientBuilder::build_grpc
     #[cfg(feature = "grpc-tls")]
     pub(super) grpc_tls_config: Option<crate::transport::grpc::ClientTlsConfig>,
-}
-
-/// The interface to talk to: the first of `preferences` the card offers, or
-/// the card's own first interface when it offers none of them.
-///
-/// Comparison is ASCII-case-insensitive. The spec's canonical binding names are
-/// upper-case (`"JSONRPC"`, `"GRPC"`, `"HTTP+JSON"`), and a card written by
-/// hand or by another SDK may not match that exactly — matching case-sensitively
-/// would reintroduce, quietly, the same "preference that does not apply" this
-/// function exists to fix.
-fn select_interface<'a>(card: &'a AgentCard, preferences: &[String]) -> Option<&'a AgentInterface> {
-    for wanted in preferences {
-        if let Some(iface) = card
-            .supported_interfaces
-            .iter()
-            .find(|i| i.protocol_binding.eq_ignore_ascii_case(wanted))
-        {
-            return Some(iface);
-        }
-    }
-    card.supported_interfaces.first()
 }
 
 impl ClientBuilder {
@@ -167,15 +123,19 @@ impl ClientBuilder {
             #[cfg(feature = "grpc-tls")]
             grpc_tls_config: None,
             card_interfaces: Vec::new(),
+            fallback_interfaces: Vec::new(),
         }
     }
 
     /// Creates a builder pre-configured from an [`AgentCard`], preferring the
     /// bindings in [`ClientConfig::preferred_bindings`] order.
     ///
+    /// Selection follows [`from_card_preferring`](Self::from_card_preferring).
+    ///
     /// # Errors
     ///
-    /// Returns [`ClientError::InvalidEndpoint`] if the card has no interfaces.
+    /// Returns [`ClientError::InvalidEndpoint`] if the card has no interfaces,
+    /// or none for this SDK's A2A protocol major.
     pub fn from_card(card: &AgentCard) -> ClientResult<Self> {
         Self::from_card_preferring(card, &ClientConfig::default().preferred_bindings)
     }
@@ -183,7 +143,13 @@ impl ClientBuilder {
     /// Creates a builder from an [`AgentCard`], choosing the first interface
     /// whose binding appears in `preferences`.
     ///
-    /// `preferences` is the *client's* order, not the card's: the first
+    /// Only interfaces whose `protocolVersion` has this SDK's major (1; an
+    /// empty version counts, and a leading `v` is allowed) are considered.
+    /// An agent that also serves v0.3 often lists that endpoint first; it
+    /// speaks another protocol, so it is skipped rather than connected to.
+    ///
+    /// Binding names compare ignoring ASCII case. `preferences` is the
+    /// *client's* order, not the card's: the first
     /// preference the agent actually offers wins. When the agent offers none
     /// of them, the card's first interface is used, because an agent that
     /// speaks only bindings this caller did not rank is still worth talking to
@@ -200,28 +166,30 @@ impl ClientBuilder {
     /// A caller who ranked `GRPC` first and met a card listing
     /// `[JSONRPC, GRPC]` silently got JSONRPC.
     ///
-    /// Logs a warning (via `tracing`, if enabled) when the agent's protocol
-    /// version is outside the supported range.
+    /// The remaining compatible interfaces are kept, in the same order, as
+    /// fallbacks: [`build`](Self::build) moves to the next one when the chosen
+    /// interface cannot be constructed (a gRPC interface needs
+    /// `build_grpc`, a binding this SDK does not implement, a malformed URL).
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError::InvalidEndpoint`] if the card has no interfaces.
+    /// Returns [`ClientError::InvalidEndpoint`] if the card has no interfaces,
+    /// or none for this SDK's A2A protocol major; the message lists what the
+    /// card offers. Earlier releases accepted such a card with a warning, and
+    /// it failed at the first call instead.
     pub fn from_card_preferring(card: &AgentCard, preferences: &[String]) -> ClientResult<Self> {
-        let first = select_interface(card, preferences).ok_or_else(|| {
-            ClientError::InvalidEndpoint("agent card has no supported interfaces".into())
-        })?;
-        let (endpoint, binding) = (first.url.clone(), first.protocol_binding.clone());
-
-        // Warn if agent advertises a different major version than we support.
-        #[cfg(feature = "tracing")]
-        if let Some(mismatched) = protocol_version_mismatch(&first.protocol_version) {
-            trace_warn!(
-                agent = %card.name,
-                protocol_version = %mismatched,
-                supported_major = SUPPORTED_PROTOCOL_MAJOR,
-                "agent protocol version may be incompatible with this client"
-            );
-        }
+        let mut candidates = selection::candidates(card, preferences)?.into_iter();
+        let Some(first) = candidates.next() else {
+            return Err(ClientError::InvalidEndpoint(
+                "agent card has no supported interfaces".into(),
+            ));
+        };
+        let AgentInterface {
+            url: endpoint,
+            protocol_binding: binding,
+            tenant,
+            ..
+        } = first;
 
         // The card advertises the idempotency extension exactly when the
         // agent's configured store can honour a key, so it is the one piece of
@@ -240,7 +208,7 @@ impl ClientBuilder {
             peer_honours_idempotency,
             config: ClientConfig {
                 // Preserve tenant from AgentInterface for multi-tenancy (Java #772).
-                tenant: first.tenant.clone(),
+                tenant,
                 // Record the ranking that actually chose the interface. Leaving
                 // this at the default would put the builder back in the state
                 // this method exists to fix: a `preferred_bindings` that does
@@ -254,6 +222,7 @@ impl ClientBuilder {
             #[cfg(feature = "grpc-tls")]
             grpc_tls_config: None,
             card_interfaces: card.supported_interfaces.clone(),
+            fallback_interfaces: candidates.collect(),
         })
     }
 
@@ -393,6 +362,7 @@ impl ClientBuilder {
             self.config.tenant = tenant;
         }
         self.preferred_binding = Some(binding);
+        self.fallback_interfaces.clear();
         self
     }
 
@@ -996,8 +966,9 @@ mod tests {
         );
     }
 
-    /// Covers line 107 (version mismatch warning branch in `from_card` with tracing).
-    /// Even without tracing feature, this exercises the code path.
+    /// A card whose only interface speaks another protocol major is refused
+    /// at `from_card`. It used to be accepted with a warning and fail at the
+    /// first call, with the far less useful error the wire produced.
     #[test]
     fn builder_from_card_mismatched_version() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
@@ -1025,40 +996,11 @@ mod tests {
             signatures: None,
         };
 
-        let builder = ClientBuilder::from_card(&card).unwrap();
-        assert_eq!(builder.endpoint, "http://localhost:9091");
-    }
-
-    // ── protocol_version_mismatch tests ───────────────────────────────────
-
-    #[test]
-    fn version_mismatch_matching_major_returns_none() {
-        assert_eq!(protocol_version_mismatch("1.0.0"), None);
-        assert_eq!(protocol_version_mismatch("1.2.3"), None);
-        assert_eq!(protocol_version_mismatch("1"), None);
-    }
-
-    #[test]
-    fn version_mismatch_returns_original_on_mismatch() {
-        assert_eq!(protocol_version_mismatch("0.5.0"), Some("0.5.0"));
-        assert_eq!(protocol_version_mismatch("2.0.0"), Some("2.0.0"));
-        assert_eq!(protocol_version_mismatch("99.0.0"), Some("99.0.0"));
-    }
-
-    #[test]
-    fn version_mismatch_empty_is_compatible() {
-        // Empty string means "unknown", treated as compatible to avoid noise.
-        assert_eq!(protocol_version_mismatch(""), None);
-    }
-
-    #[test]
-    fn version_mismatch_unparseable_is_incompatible() {
-        assert_eq!(
-            protocol_version_mismatch("not-a-version"),
-            Some("not-a-version")
+        let err = ClientBuilder::from_card(&card).expect_err("major 99 is not major 1");
+        assert!(
+            matches!(err, ClientError::InvalidEndpoint(ref m) if m.contains("JSONRPC 99.0.0")),
+            "{err:?}"
         );
-        assert_eq!(protocol_version_mismatch("v1.0.0"), Some("v1.0.0"));
-        assert_eq!(protocol_version_mismatch("1-preview"), Some("1-preview"));
     }
 
     // ── tenant propagation from AgentCard ─────────────────────────────────
