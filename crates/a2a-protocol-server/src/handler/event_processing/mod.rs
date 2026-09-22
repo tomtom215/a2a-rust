@@ -10,6 +10,8 @@
 //! streaming mode, which cannot hold a reference to `RequestHandler`).
 
 mod background;
+#[cfg(test)]
+mod stale_reads;
 mod sync_collector;
 
 /// What a background processor needs from the send that spawned it, beyond

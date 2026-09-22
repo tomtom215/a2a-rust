@@ -1995,4 +1995,71 @@ mod tests {
             "collect_events should return the task in its final state"
         );
     }
+
+    /// Another writer finished the task, and the store's reads lag its
+    /// writes. The collector must answer with the state the refusal named —
+    /// the one the write path saw — not with the stale read that says the
+    /// task is still running, and it must stop collecting there.
+    #[tokio::test]
+    async fn a_refusal_is_trusted_over_a_stale_read() {
+        let inner = InMemoryTaskStore::new();
+        inner
+            .save(&make_task("t-stale", TaskState::Canceled))
+            .await
+            .unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store(super::super::stale_reads::StaleReads::always(inner))
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        writer
+            .write(make_status_event("t-stale", TaskState::Completed))
+            .await
+            .unwrap();
+        writer
+            .write(make_status_event("t-stale", TaskState::Completed))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let collected = handler
+            .collect_events(reader, TaskId::new("t-stale"), tokio::spawn(async {}))
+            .await
+            .expect("a refusal is not the request's failure");
+        assert_eq!(collected.task.status.state, TaskState::Canceled);
+        assert!(
+            collected.direct_message.is_none(),
+            "a superseded task is still a task-shaped answer"
+        );
+    }
+
+    /// The collector read the task while it ran; another writer finished it
+    /// after. Once the refusal arrives and the store reads fresh, the answer
+    /// is the stored task itself — its status timestamp included — not a
+    /// status rebuilt from the refusal.
+    #[tokio::test]
+    async fn a_refusal_adopts_the_stored_task_when_the_read_is_fresh() {
+        let inner = InMemoryTaskStore::new();
+        let mut stored = make_task("t-fresh", TaskState::Canceled);
+        stored.status = TaskStatus::with_timestamp(TaskState::Canceled);
+        inner.save(&stored).await.unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store(super::super::stale_reads::StaleReads::first(inner, 1))
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        writer
+            .write(make_status_event("t-fresh", TaskState::Completed))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let collected = handler
+            .collect_events(reader, TaskId::new("t-fresh"), tokio::spawn(async {}))
+            .await
+            .expect("a refusal is not the request's failure");
+        assert_eq!(collected.task.status, stored.status);
+    }
 }

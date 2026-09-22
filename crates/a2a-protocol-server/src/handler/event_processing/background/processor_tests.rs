@@ -167,8 +167,18 @@ async fn a_refused_write_supersedes_the_run() {
     let id = TaskId::new("t");
     let mut run = f.processor(&id);
 
+    // Stored with a timestamp, so adopting the stored task is told apart from
+    // rebuilding a bare status out of the refusal.
+    let mut stored = task(TaskState::Canceled);
+    stored.status = TaskStatus::with_timestamp(TaskState::Canceled);
+    f.store.save(&stored).await.expect("re-seed");
+
     run.handle(Ok(artifact(1))).await;
     assert!(f.cancel.is_cancelled(), "the executor is told");
+    assert_eq!(
+        run.last_task.status, stored.status,
+        "the stored task, adopted"
+    );
     assert_eq!(f.pushed(), vec![TaskState::Canceled], "pushed once");
     assert_eq!(run.last_task.status.state, TaskState::Canceled, "adopted");
 
@@ -290,4 +300,38 @@ async fn a_panic_fails_a_running_task_but_not_a_finished_one() {
     let stored = f.store.get(&id).await.expect("get").expect("stored");
     assert_eq!(stored.status.state, TaskState::Completed);
     assert!(!f.cancel.is_cancelled());
+}
+
+/// The store's reads lag its writes: the refusal names `Canceled`, and the
+/// read after it still says `Working`. The verdict — for the gate, the push
+/// and the task this run adopts — is the refusal's.
+#[tokio::test]
+async fn a_refusal_is_trusted_over_a_stale_read() {
+    let inner = InMemoryTaskStore::new();
+    inner.save(&task(TaskState::Canceled)).await.expect("seed");
+    let store = crate::handler::event_processing::stale_reads::StaleReads::always(inner);
+    let f = Fixture::new(TaskState::Canceled).await;
+    let id = TaskId::new("t");
+    let mut run = Processor::new(
+        &id,
+        BackgroundDeps {
+            task_store: &store,
+            push_config_store: &f.configs,
+            push_sender: Some(&f.pushes),
+            limits: &f.limits,
+            metrics: &crate::metrics::NoopMetrics,
+        },
+        task(TaskState::Working),
+        f.cancel.clone(),
+        Some(&f.gate),
+    );
+
+    let ticket = f.gate.arm(1).expect("gate open");
+    run.handle(Ok(status(1, TaskState::Completed))).await;
+    assert_eq!(
+        state_of(&ticket.await.expect("answered")),
+        Some(TaskState::Canceled)
+    );
+    assert_eq!(run.last_task.status.state, TaskState::Canceled);
+    assert_eq!(f.pushed(), vec![TaskState::Canceled]);
 }
