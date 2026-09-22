@@ -82,7 +82,9 @@ impl A2aClient {
     /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport),
     /// which never sees the config.
     pub(crate) const fn configure_stream(&self, stream: EventStream) -> EventStream {
-        stream.with_idle_timeout(self.config.stream_idle_timeout)
+        stream
+            .with_first_event_timeout(self.config.stream_first_event_timeout)
+            .with_idle_timeout(self.config.stream_idle_timeout)
     }
 
     /// Creates a new [`A2aClient`] from its constituent parts.

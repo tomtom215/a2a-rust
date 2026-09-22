@@ -126,6 +126,20 @@ pub enum GrpcBareAddressScheme {
 /// the cost of no bound is a consumer that never returns.
 pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
+/// Default for [`ClientConfig::stream_first_event_timeout`]: 5 minutes.
+///
+/// The same value as [`DEFAULT_STREAM_IDLE_TIMEOUT`], for the same reasons:
+/// silence before the first event is no different, as evidence of a dead
+/// peer, from silence between events, and the peers that matter produce
+/// both. The specification asks a server to open a stream with its `Task`
+/// or `Message`, and this repository's server does so at once; but a2a-go
+/// v2.5.0 writes nothing until the agent emits its first event, so an agent
+/// that makes a slow model call first is silent for as long as the call
+/// takes. The 30 seconds this bound inherited from `stream_connect_timeout`
+/// cut such an agent off. Callers that know their agent answers at once can
+/// tighten it to fail fast.
+pub const DEFAULT_STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 // ── ClientConfig ──────────────────────────────────────────────────────────────
 
 /// Configuration for an [`crate::A2aClient`] instance.
@@ -164,11 +178,32 @@ pub struct ClientConfig {
     /// Defaults to 30 seconds.
     pub request_timeout: Duration,
 
-    /// Per-request timeout for establishing the SSE stream.
+    /// Timeout for **establishing** a stream: until the response headers
+    /// arrive (for gRPC, until the call is accepted), and — when the answer is
+    /// an error rather than a stream — for reading that error body too.
     ///
-    /// Once the stream is established this timeout no longer applies.
+    /// It does not bound the wait for the first event; that is
+    /// [`stream_first_event_timeout`](Self::stream_first_event_timeout).
+    /// Until that knob existed this one did both, so an agent that flushed
+    /// its headers and then thought for longer than 30 seconds before its
+    /// first event was cut off. If you shortened this to fail fast on a
+    /// silent agent, set `stream_first_event_timeout` to the same value.
+    ///
     /// Defaults to 30 seconds.
     pub stream_connect_timeout: Duration,
+
+    /// Longest an established stream may wait for its **first** data.
+    ///
+    /// Defaults to [`DEFAULT_STREAM_FIRST_EVENT_TIMEOUT`] (5 minutes). Any
+    /// bytes satisfy it, an SSE keep-alive comment included; after that,
+    /// [`stream_idle_timeout`](Self::stream_idle_timeout) governs. Expiry
+    /// yields [`ClientError::Timeout`](crate::ClientError::Timeout) naming the
+    /// first-event timeout.
+    ///
+    /// Applied by [`A2aClient`](crate::A2aClient) to every stream it opens,
+    /// on every transport — for a WebSocket transport this replaces
+    /// `WebSocketTransportConfig::request_timeout` as the first-frame bound.
+    pub stream_first_event_timeout: Duration,
 
     /// TCP connection timeout (DNS + handshake).
     ///
@@ -252,6 +287,7 @@ impl ClientConfig {
             return_immediately: false,
             request_timeout: Duration::from_secs(30),
             stream_connect_timeout: Duration::from_secs(30),
+            stream_first_event_timeout: DEFAULT_STREAM_FIRST_EVENT_TIMEOUT,
             connection_timeout: Duration::from_secs(10),
             stream_idle_timeout: Some(DEFAULT_STREAM_IDLE_TIMEOUT),
             max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
@@ -270,6 +306,7 @@ impl Default for ClientConfig {
             return_immediately: false,
             request_timeout: Duration::from_secs(30),
             stream_connect_timeout: Duration::from_secs(30),
+            stream_first_event_timeout: DEFAULT_STREAM_FIRST_EVENT_TIMEOUT,
             connection_timeout: Duration::from_secs(10),
             stream_idle_timeout: Some(DEFAULT_STREAM_IDLE_TIMEOUT),
             max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
@@ -315,10 +352,19 @@ impl ClientConfig {
         self
     }
 
-    /// Sets the timeout for establishing the SSE stream.
+    /// Sets the timeout for establishing a stream (headers, or an error
+    /// body). See [`stream_connect_timeout`](Self::stream_connect_timeout).
     #[must_use]
     pub const fn with_stream_connect_timeout(mut self, timeout: Duration) -> Self {
         self.stream_connect_timeout = timeout;
+        self
+    }
+
+    /// Sets how long an established stream may wait for its first data. See
+    /// [`stream_first_event_timeout`](Self::stream_first_event_timeout).
+    #[must_use]
+    pub const fn with_stream_first_event_timeout(mut self, timeout: Duration) -> Self {
+        self.stream_first_event_timeout = timeout;
         self
     }
 
@@ -420,6 +466,15 @@ mod tests {
             Some(DEFAULT_STREAM_IDLE_TIMEOUT)
         );
         assert_eq!(DEFAULT_STREAM_IDLE_TIMEOUT, Duration::from_secs(300));
+        assert_eq!(
+            cfg.stream_first_event_timeout,
+            DEFAULT_STREAM_FIRST_EVENT_TIMEOUT
+        );
+        assert_eq!(
+            ClientConfig::default_http().stream_first_event_timeout,
+            DEFAULT_STREAM_FIRST_EVENT_TIMEOUT
+        );
+        assert_eq!(DEFAULT_STREAM_FIRST_EVENT_TIMEOUT, Duration::from_secs(300));
     }
 
     #[test]
@@ -444,6 +499,7 @@ mod tests {
             .with_return_immediately(true)
             .with_request_timeout(Duration::from_secs(1))
             .with_stream_connect_timeout(Duration::from_secs(2))
+            .with_stream_first_event_timeout(Duration::from_secs(6))
             .with_connection_timeout(Duration::from_secs(3))
             .with_stream_idle_timeout(Some(Duration::from_secs(5)))
             .with_max_response_size(4)
@@ -455,6 +511,7 @@ mod tests {
         assert!(cfg.return_immediately);
         assert_eq!(cfg.request_timeout, Duration::from_secs(1));
         assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(2));
+        assert_eq!(cfg.stream_first_event_timeout, Duration::from_secs(6));
         assert_eq!(cfg.connection_timeout, Duration::from_secs(3));
         assert_eq!(cfg.stream_idle_timeout, Some(Duration::from_secs(5)));
         assert_eq!(cfg.max_response_size, 4);

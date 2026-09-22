@@ -152,3 +152,78 @@ async fn a_disabled_idle_bound_leaves_a_quiet_stream_open() {
     let pending = tokio::time::timeout(Duration::from_millis(600), stream.next()).await;
     assert!(pending.is_err(), "must still be pending: {pending:?}");
 }
+
+// ── First event ──────────────────────────────────────────────────────────
+
+/// A stub that flushes its headers, then writes nothing until `go` fires,
+/// then sends `sse_frame` and ends the body. The shape of an agent that
+/// answers the request at once and then makes a slow model call.
+async fn slow_first_event_server(sse_frame: String) -> (String, tokio::sync::mpsc::Sender<()>) {
+    let (go_tx, go_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let go_rx = std::sync::Arc::new(tokio::sync::Mutex::new(go_rx));
+    let url = serve(move |mut s, _| {
+        let frame = sse_frame.clone();
+        let go_rx = go_rx.clone();
+        async move {
+            write(&mut s, SSE_HEAD).await;
+            let _ = go_rx.lock().await.recv().await;
+            write(&mut s, &chunk(&frame)).await;
+            write(&mut s, LAST_CHUNK).await;
+        }
+    })
+    .await;
+    (url, go_tx)
+}
+
+/// `stream_connect_timeout` bounds establishment only. A first event that
+/// arrives after it has elapsed — but inside the first-event bound — is
+/// delivered, on both HTTP bindings.
+#[tokio::test]
+async fn a_first_event_later_than_the_connect_timeout_is_delivered() {
+    for (binding, frame) in [
+        ("JSONRPC", jsonrpc_status_frame("TASK_STATE_COMPLETED")),
+        ("HTTP+JSON", rest_status_frame("TASK_STATE_COMPLETED")),
+    ] {
+        let (url, go) = slow_first_event_server(frame).await;
+        let client = ClientBuilder::new(&url)
+            .with_protocol_binding(binding)
+            .with_stream_connect_timeout(Duration::from_millis(200))
+            .build()
+            .expect("build");
+        let mut stream = client.stream_message(params()).await.expect("stream");
+
+        // Three connect-timeouts pass with nothing sent: still waiting.
+        let early = tokio::time::timeout(Duration::from_millis(600), stream.next()).await;
+        assert!(
+            early.is_err(),
+            "{binding}: the connect timeout must not bound the first event: {early:?}"
+        );
+
+        go.send(()).await.expect("signal");
+        let first = tokio::time::timeout(GUARD, stream.next())
+            .await
+            .expect("guard");
+        assert!(
+            matches!(first, Some(Ok(_))),
+            "{binding}: the late first event is delivered: {first:?}"
+        );
+    }
+}
+
+/// The first-event bound is its own knob, and it still fires.
+#[tokio::test]
+async fn the_first_event_timeout_fires_on_its_own_knob() {
+    let (url, _go) = slow_first_event_server(jsonrpc_status_frame("TASK_STATE_COMPLETED")).await;
+    let client = ClientBuilder::new(&url)
+        .with_stream_first_event_timeout(Duration::from_millis(300))
+        .build()
+        .expect("build");
+    let mut stream = client.stream_message(params()).await.expect("stream");
+    let result = tokio::time::timeout(GUARD, stream.next())
+        .await
+        .expect("the first-event bound must fire, not hang");
+    assert!(
+        matches!(result, Some(Err(ClientError::Timeout(ref m))) if m.contains("first-event")),
+        "expected a first-event Timeout, got {result:?}"
+    );
+}

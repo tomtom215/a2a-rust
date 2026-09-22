@@ -253,13 +253,13 @@ struct Inner {
     channel: Channel,
     endpoint: String,
     config: GrpcTransportConfig,
-    /// Bound on the wait for a stream's *first* event.
+    /// Bound on *opening* a stream: until the server accepts the call.
     ///
-    /// Held here rather than on [`GrpcTransportConfig`] because that type is a
-    /// plain `pub struct` with public fields: adding one would break every
-    /// struct-literal construction of it. The same reason
-    /// `GrpcDispatcher`'s connection knobs live on the dispatcher rather than
-    /// on the server's `GrpcConfig`.
+    /// Held here rather than on [`GrpcTransportConfig`] because that type was
+    /// a plain `pub struct` with public fields when this was added: a field
+    /// would have broken every struct-literal construction of it. The same
+    /// reason `GrpcDispatcher`'s connection knobs live on the dispatcher
+    /// rather than on the server's `GrpcConfig`.
     ///
     /// `None` means "use `config.timeout`", which is what this transport did
     /// unconditionally before 2026-08-19 — see
@@ -378,20 +378,26 @@ impl GrpcTransport {
         }
     }
 
-    /// Bounds the wait for a stream's **first** event, separately from
-    /// [`GrpcTransportConfig::timeout`].
+    /// Bounds **opening** a stream — until the server accepts the call —
+    /// separately from [`GrpcTransportConfig::timeout`].
     ///
     /// `ClientBuilder` has carried a `with_stream_connect_timeout` knob since
     /// long before this method, documented as "per-request timeout for
     /// establishing the SSE stream", and the sync `build()` path even refuses a
     /// zero value for it. The gRPC path never received it: `build_grpc` passed
-    /// `request_timeout` and `connection_timeout` and dropped the third, and
-    /// this transport then bounded its first event on `config.timeout`. Both
-    /// default to 30 seconds, which is why nothing caught it — the knob only
-    /// does nothing once you set it to something.
+    /// `request_timeout` and `connection_timeout` and dropped the third.
     ///
-    /// Unset means `config.timeout`, so a caller constructing this transport
-    /// directly sees no change.
+    /// Until 2026-09-22 this bounded the stream's *first event* instead, as
+    /// the HTTP transports' connect timeout also did; an agent that accepted
+    /// the call and then thought for longer than it was cut off. The first
+    /// event now has its own bound
+    /// ([`DEFAULT_STREAM_FIRST_EVENT_TIMEOUT`](crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT),
+    /// or [`ClientConfig::stream_first_event_timeout`](crate::ClientConfig::stream_first_event_timeout)
+    /// through `A2aClient`), and this knob bounds what its name says.
+    ///
+    /// Unset means `config.timeout`, which is what opening a stream was
+    /// bounded by before, so a caller constructing this transport directly
+    /// sees no change there.
     #[must_use]
     pub fn with_stream_connect_timeout(mut self, timeout: Duration) -> Self {
         // `Arc::make_mut` needs `Inner: Clone`, and `Channel` is cheap to
@@ -407,13 +413,12 @@ impl GrpcTransport {
         self
     }
 
-    /// The bound applied to a stream's first event.
+    /// The bound applied to opening a stream.
     ///
     /// Extracted so the *choice of knob* is testable. That choice is what
-    /// regressed: bounding the first event on the unary request timeout is
-    /// indistinguishable from bounding it correctly whenever the two are
-    /// equal, which they are by default.
-    fn first_event_bound(&self) -> Duration {
+    /// regressed once already: the wrong knob is indistinguishable from the
+    /// right one whenever the two are equal, which they are by default.
+    fn stream_open_bound(&self) -> Duration {
         self.inner
             .stream_connect_timeout
             .unwrap_or(self.inner.config.timeout)
@@ -695,7 +700,7 @@ impl GrpcTransport {
         );
 
         let mut client = self.client();
-        let stream = tokio::time::timeout(self.inner.config.timeout, async {
+        let stream = tokio::time::timeout(self.stream_open_bound(), async {
             match method {
                 "SendStreamingMessage" => {
                     let p: a2a_protocol_types::params::MessageSendParams =
@@ -740,14 +745,14 @@ impl GrpcTransport {
         // gRPC does not use HTTP status codes for application responses;
         // a successful stream establishment is analogous to HTTP 200.
         //
-        // The connect timeout above only bounds stream establishment. Bound
-        // the wait for the first event too (the spec requires streams to
-        // begin with a Task/Message event immediately), so a server that
-        // accepts the stream and then goes silent cannot hang the consumer
-        // forever. The bound lifts after the first frame.
+        // The timeout above only bounds opening the stream. The first event
+        // has its own bound, so a server that accepts the call and then goes
+        // silent cannot hang the consumer, while one that thinks before its
+        // first event is not cut off at the open bound. `A2aClient` replaces
+        // this with `ClientConfig`'s value.
         Ok(
             EventStream::with_status(rx, task_handle.abort_handle(), 200)
-                .with_first_event_timeout(self.first_event_bound()),
+                .with_first_event_timeout(crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT),
         )
     }
 }
@@ -1402,7 +1407,7 @@ mod tests {
         assert_eq!(transport.endpoint(), endpoint_str);
     }
 
-    /// The first-event bound follows `stream_connect_timeout` when one is set,
+    /// The stream-open bound follows `stream_connect_timeout` when one is set,
     /// and falls back to the unary `timeout` when it is not.
     ///
     /// This asserts the *choice of knob*, which is the thing that was wrong.
@@ -1411,7 +1416,7 @@ mod tests {
     /// seconds — the wrong knob and the right knob hold the same value until a
     /// caller changes one, which is exactly when they would want it to work.
     #[tokio::test]
-    async fn the_first_event_bound_follows_stream_connect_timeout_when_set() {
+    async fn the_stream_open_bound_follows_stream_connect_timeout_when_set() {
         let endpoint = "http://example.com:1234".to_string();
         let mk = || {
             let channel = tonic::transport::Channel::from_shared(endpoint.clone())
@@ -1428,14 +1433,14 @@ mod tests {
         };
 
         assert_eq!(
-            mk().first_event_bound(),
+            mk().stream_open_bound(),
             Duration::from_secs(30),
             "unset must fall back to the unary timeout, so a caller who \
              constructs this transport directly sees no change"
         );
         assert_eq!(
             mk().with_stream_connect_timeout(Duration::from_secs(3))
-                .first_event_bound(),
+                .stream_open_bound(),
             Duration::from_secs(3),
             "and a set stream_connect_timeout must win over the unary timeout"
         );

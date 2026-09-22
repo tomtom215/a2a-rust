@@ -266,13 +266,30 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the timeout for establishing SSE stream connections.
+    /// Sets the timeout for establishing a stream: until the response
+    /// headers arrive, or for reading the error body when the answer is not
+    /// a stream. Defaults to 30 seconds.
     ///
-    /// Once the stream is established, this timeout no longer applies.
-    /// Defaults to 30 seconds.
+    /// It no longer bounds the wait for the first event — use
+    /// [`with_stream_first_event_timeout`](Self::with_stream_first_event_timeout)
+    /// for that. If you set this short to fail fast on a silent agent, set
+    /// that one to the same value.
     #[must_use]
     pub const fn with_stream_connect_timeout(mut self, timeout: Duration) -> Self {
         self.config.stream_connect_timeout = timeout;
+        self
+    }
+
+    /// Sets how long an established stream may wait for its first data —
+    /// an event or a keep-alive comment — before it fails with
+    /// [`ClientError::Timeout`](crate::ClientError::Timeout).
+    ///
+    /// Defaults to 5 minutes; see
+    /// [`DEFAULT_STREAM_FIRST_EVENT_TIMEOUT`](crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT)
+    /// for why.
+    #[must_use]
+    pub const fn with_stream_first_event_timeout(mut self, timeout: Duration) -> Self {
+        self.config.stream_first_event_timeout = timeout;
         self
     }
 
@@ -1131,5 +1148,25 @@ mod tests {
             client.config().stream_connect_timeout,
             Duration::from_secs(15)
         );
+    }
+
+    /// Each stream-liveness setter writes its own field, and only it.
+    #[test]
+    fn builder_stream_liveness_setters() {
+        let client = ClientBuilder::new("http://localhost:8080")
+            .with_stream_first_event_timeout(Duration::from_secs(7))
+            .with_stream_idle_timeout(Some(Duration::from_secs(8)))
+            .build()
+            .expect("build");
+        let cfg = client.config();
+        assert_eq!(cfg.stream_first_event_timeout, Duration::from_secs(7));
+        assert_eq!(cfg.stream_idle_timeout, Some(Duration::from_secs(8)));
+        assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(30));
+
+        let off = ClientBuilder::new("http://localhost:8080")
+            .with_stream_idle_timeout(None)
+            .build()
+            .expect("build");
+        assert_eq!(off.config().stream_idle_timeout, None);
     }
 }

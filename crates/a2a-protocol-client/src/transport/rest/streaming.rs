@@ -79,12 +79,11 @@ impl RestTransport {
             body_reader_task(body, tx).await;
         });
         // `stream_connect_timeout` above only bounds header arrival; the
-        // first-event bound (lifted after the first frame) keeps a server
-        // that sends headers then goes silent from hanging the consumer.
+        // first event has its own bound — see the JSON-RPC transport.
         Ok(
             EventStream::with_status(rx, task_handle.abort_handle(), actual_status)
                 .with_jsonrpc_envelope(false)
-                .with_first_event_timeout(self.inner.stream_connect_timeout),
+                .with_first_event_timeout(crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT),
         )
     }
 

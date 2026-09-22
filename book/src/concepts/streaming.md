@@ -215,7 +215,7 @@ The SSE parser includes safety limits:
 
 - **16 MiB buffer cap** — Prevents OOM from malicious servers
 - **30-second connect timeout** — Fails fast on unreachable servers
-- **First-event timeout** — A stream that is accepted but silent before its first event times out (lifted after the first frame), on every transport
+- **First-event timeout** — A stream that is accepted but silent before its first data times out after 5 minutes by default (`with_stream_first_event_timeout`; separate from the 30-second connect timeout), on every transport
 - **Idle timeout** — After the first frame, a stream that receives nothing at all (keep-alive comments count) for 5 minutes by default ends with `ClientError::Timeout`; resubscribe to continue
 - **Partial line buffering** — Handles TCP frame boundaries correctly (CRLF, LF, and bare-CR line endings per the SSE spec)
 

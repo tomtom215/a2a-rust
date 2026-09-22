@@ -124,7 +124,8 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `with_protocol_binding` | `&str` | Auto-detect | Transport: `"JSONRPC"`, `"REST"`, or `"GRPC"` |
 | `with_timeout` | `Duration` | 30s | Per-request timeout |
 | `with_connection_timeout` | `Duration` | 10s | TCP connection timeout |
-| `with_stream_connect_timeout` | `Duration` | 30s | SSE connect timeout |
+| `with_stream_connect_timeout` | `Duration` | 30s | Establishing a stream: until the response headers (gRPC: until the call is accepted) |
+| `with_stream_first_event_timeout` | `Duration` | 5 min | Wait for a stream's first data (an event or a keep-alive) once established |
 | `with_stream_idle_timeout` | `Option<Duration>` | 5 min | Longest an established stream may receive nothing — keep-alive comments count — after its first data; `None` disables |
 | `with_retry_policy` | `RetryPolicy` | None | Retry on transient errors with jittered backoff |
 | `with_accepted_output_modes` | `Vec<String>` | `["text/plain", "application/json"]` | MIME types accepted |

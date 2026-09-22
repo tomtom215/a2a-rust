@@ -199,6 +199,12 @@ struct WriteCommand {
 pub struct WebSocketTransportConfig {
     /// Timeout for unary responses and for the first frame of a stream.
     /// Default: 30 seconds.
+    ///
+    /// Through [`A2aClient`](crate::A2aClient) a stream's first-frame bound
+    /// is [`ClientConfig::stream_first_event_timeout`](crate::ClientConfig::stream_first_event_timeout)
+    /// instead: the client applies its own stream bounds to every stream it
+    /// returns, whichever transport produced it. This value remains the
+    /// bound for a stream taken from the transport directly.
     pub request_timeout: Duration,
     /// Extra HTTP headers for the WebSocket upgrade request (e.g. an
     /// `Authorization` header produced by an

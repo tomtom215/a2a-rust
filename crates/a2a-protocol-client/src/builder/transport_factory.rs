@@ -161,8 +161,9 @@ impl ClientBuilder {
             // The third timeout. `with_timeout`/`with_connect_timeout` above
             // carry two of the builder's three, and this one used to be
             // dropped on the floor — so a caller who set it got the *unary
-            // request* timeout as their stream's first-event bound. Invisible
-            // by default, because both default to 30s.
+            // request* timeout instead. Invisible by default, because both
+            // default to 30s. It bounds opening the stream; the first event's
+            // bound is applied by `A2aClient` from `ClientConfig`.
             let t = GrpcTransport::connect_with_config(&self.endpoint, grpc_config)
                 .await?
                 .with_stream_connect_timeout(self.config.stream_connect_timeout);
@@ -254,7 +255,7 @@ mod tests {
     /// `build_grpc` passed `request_timeout` and `connection_timeout` and
     /// dropped the third. The validation is the cheap, serverless half of
     /// "this path reads the field at all"; the other half is
-    /// `the_first_event_bound_follows_stream_connect_timeout_when_set` in
+    /// `the_stream_open_bound_follows_stream_connect_timeout_when_set` in
     /// `transport::grpc`.
     ///
     /// The endpoint is deliberately one nothing is listening on. Validation

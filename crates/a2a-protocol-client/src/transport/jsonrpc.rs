@@ -384,14 +384,14 @@ impl JsonRpcTransport {
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(64);
         let task_handle = self.forward_stream_body(resp, deadline, tx).await?;
 
-        // `stream_connect_timeout` above only bounds header arrival. Bound
-        // the wait for the first SSE event too (the spec requires streams to
-        // begin with a Task/Message event immediately), so a server that
-        // sends headers and then goes silent cannot hang the consumer
-        // forever. The bound lifts after the first frame.
+        // `stream_connect_timeout` above only bounds header arrival. The
+        // first event gets its own, longer bound: an agent may answer the
+        // request at once and think before its first event, and reusing the
+        // connect timeout here cut such an agent off at 30 seconds.
+        // `A2aClient` replaces this with `ClientConfig`'s value.
         Ok(
             EventStream::with_status(rx, task_handle.abort_handle(), actual_status)
-                .with_first_event_timeout(self.inner.stream_connect_timeout),
+                .with_first_event_timeout(crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT),
         )
     }
 }

@@ -273,8 +273,12 @@ impl EventStream {
     /// Wired by every streaming transport (JSON-RPC, REST, gRPC, WebSocket):
     /// their connect timeouts only bound establishment, and a server that
     /// establishes a stream and then goes silent must not hang the consumer.
+    /// [`A2aClient`](crate::A2aClient) then replaces the transport's value
+    /// with
+    /// [`ClientConfig::stream_first_event_timeout`](crate::ClientConfig::stream_first_event_timeout)
+    /// on every stream it returns.
     #[must_use]
-    pub(crate) const fn with_first_event_timeout(mut self, timeout: std::time::Duration) -> Self {
+    pub const fn with_first_event_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.first_event_timeout = Some(timeout);
         self
     }
