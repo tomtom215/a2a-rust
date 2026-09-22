@@ -332,6 +332,17 @@ impl EventStream {
         self
     }
 
+    /// Sets the largest single event this stream accepts, in bytes. An event
+    /// over it is refused with [`ClientError::Transport`] and skipped; see
+    /// [`ClientConfig::max_event_size`](crate::ClientConfig::max_event_size),
+    /// which [`A2aClient`](crate::A2aClient) applies to every stream it
+    /// returns.
+    #[must_use]
+    pub const fn with_max_event_size(mut self, max_bytes: usize) -> Self {
+        self.parser.set_max_event_size(max_bytes);
+        self
+    }
+
     /// Ties `resource`'s lifetime to the stream's: it is dropped when the
     /// stream is.
     ///

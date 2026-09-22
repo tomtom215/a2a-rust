@@ -153,7 +153,7 @@ The SSE parser protects against resource exhaustion:
 
 | Limit | Value | Purpose |
 |-------|-------|---------|
-| Buffer cap | 16 MiB | Prevents OOM from oversized events |
+| Event size | 16 MiB (`with_max_event_size`) | Refuses an oversized event with an error and skips it; a line with no end is refused once it outgrows the limit, so memory stays bounded |
 | Connect timeout | 30s (default) | Fails fast on unreachable servers |
 | Idle timeout | 5 min (default) | Ends a stream whose server stopped sending, keep-alives included |
 

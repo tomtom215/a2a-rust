@@ -264,6 +264,20 @@ pub struct ClientConfig {
     ///   settable at all.
     pub max_response_size: usize,
 
+    /// Largest single stream event accepted, in bytes: the `data:` of one SSE
+    /// event, or one gRPC or WebSocket stream message (those are bridged
+    /// through the same parser). Defaults to 16 MiB, the server's own default.
+    ///
+    /// An event over the limit is refused with
+    /// [`ClientError::Transport`](crate::ClientError::Transport) naming the
+    /// sizes and skipped, and the stream carries on with the next event. A
+    /// line that outgrows every legal event — a peer sending bytes with no
+    /// newline — is refused as soon as it does, so the parser never holds
+    /// more than about this many bytes of one line.
+    ///
+    /// Applied by [`A2aClient`](crate::A2aClient) to every stream it opens.
+    pub max_event_size: usize,
+
     /// TLS configuration.
     pub tls: TlsConfig,
 
@@ -291,6 +305,7 @@ impl ClientConfig {
             connection_timeout: Duration::from_secs(10),
             stream_idle_timeout: Some(DEFAULT_STREAM_IDLE_TIMEOUT),
             max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
+            max_event_size: crate::streaming::DEFAULT_MAX_EVENT_SIZE,
             tls: TlsConfig::Disabled,
             tenant: None,
         }
@@ -310,6 +325,7 @@ impl Default for ClientConfig {
             connection_timeout: Duration::from_secs(10),
             stream_idle_timeout: Some(DEFAULT_STREAM_IDLE_TIMEOUT),
             max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
+            max_event_size: crate::streaming::DEFAULT_MAX_EVENT_SIZE,
             tls: TlsConfig::default(),
             tenant: None,
         }
@@ -390,6 +406,14 @@ impl ClientConfig {
     #[must_use]
     pub const fn with_max_response_size(mut self, max_bytes: usize) -> Self {
         self.max_response_size = max_bytes;
+        self
+    }
+
+    /// Sets the largest single stream event accepted. See
+    /// [`max_event_size`](Self::max_event_size).
+    #[must_use]
+    pub const fn with_max_event_size(mut self, max_bytes: usize) -> Self {
+        self.max_event_size = max_bytes;
         self
     }
 
@@ -475,6 +499,11 @@ mod tests {
             DEFAULT_STREAM_FIRST_EVENT_TIMEOUT
         );
         assert_eq!(DEFAULT_STREAM_FIRST_EVENT_TIMEOUT, Duration::from_secs(300));
+        assert_eq!(cfg.max_event_size, 16 * 1024 * 1024);
+        assert_eq!(
+            ClientConfig::default_http().max_event_size,
+            16 * 1024 * 1024
+        );
     }
 
     #[test]
@@ -503,6 +532,7 @@ mod tests {
             .with_connection_timeout(Duration::from_secs(3))
             .with_stream_idle_timeout(Some(Duration::from_secs(5)))
             .with_max_response_size(4)
+            .with_max_event_size(9)
             .with_tls(TlsConfig::Disabled)
             .with_tenant(Some("acme".to_owned()));
         assert_eq!(cfg.preferred_bindings, vec!["GRPC".to_owned()]);
@@ -515,6 +545,7 @@ mod tests {
         assert_eq!(cfg.connection_timeout, Duration::from_secs(3));
         assert_eq!(cfg.stream_idle_timeout, Some(Duration::from_secs(5)));
         assert_eq!(cfg.max_response_size, 4);
+        assert_eq!(cfg.max_event_size, 9);
         assert!(matches!(cfg.tls, TlsConfig::Disabled));
         assert_eq!(cfg.tenant.as_deref(), Some("acme"));
     }

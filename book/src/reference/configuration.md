@@ -126,6 +126,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `with_connection_timeout` | `Duration` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout` | `Duration` | 30s | Establishing a stream: until the response headers (gRPC: until the call is accepted) |
 | `with_stream_first_event_timeout` | `Duration` | 5 min | Wait for a stream's first data (an event or a keep-alive) once established |
+| `with_max_event_size` | `usize` | 16 MiB | Largest single stream event accepted; larger ones are refused and skipped |
 | `with_stream_idle_timeout` | `Option<Duration>` | 5 min | Longest an established stream may receive nothing — keep-alive comments count — after its first data; `None` disables |
 | `with_retry_policy` | `RetryPolicy` | None | Retry on transient errors with jittered backoff |
 | `with_accepted_output_modes` | `Vec<String>` | `["text/plain", "application/json"]` | MIME types accepted |
@@ -164,7 +165,7 @@ and the `with_*` setters.
 
 | Limit | Value | Description |
 |-------|-------|-------------|
-| Buffer cap | 16 MiB | Max buffered SSE data (aligned with server) |
+| Event size | 16 MiB (`ClientBuilder::with_max_event_size`) | Largest single stream event; larger ones are refused with an error and skipped, and a line that outgrows it is refused as soon as it does (aligned with server) |
 | Connect timeout | 30s (default) | Initial connection timeout |
 
 ## HTTP Caching (Agent Card)

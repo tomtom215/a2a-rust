@@ -134,6 +134,7 @@ let client = ClientBuilder::new(url)
 | `with_connection_timeout(Duration)` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout(Duration)` | 30s | Establishing a stream (headers, or an error body) |
 | `with_stream_first_event_timeout(Duration)` | 5 min | Wait for a stream's first data once established |
+| `with_max_event_size(usize)` | 16 MiB | Largest single stream event accepted; larger ones are refused and skipped |
 | `with_stream_idle_timeout(Option<Duration>)` | 5 min | Silence allowed between chunks after a stream's first data; SSE keep-alives reset it; `None` disables |
 | `with_retry_policy(RetryPolicy)` | None | Retry on transient errors with jittered exponential backoff |
 | `with_accepted_output_modes(Vec<String>)` | `["text/plain", "application/json"]` | MIME types the client handles |

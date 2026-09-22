@@ -330,6 +330,15 @@ impl ClientBuilder {
         self
     }
 
+    /// Sets the largest single stream event accepted, in bytes; larger events
+    /// are refused and skipped. Defaults to 16 MiB. See
+    /// [`ClientConfig::max_event_size`](crate::ClientConfig::max_event_size).
+    #[must_use]
+    pub const fn with_max_event_size(mut self, max_bytes: usize) -> Self {
+        self.config.max_event_size = max_bytes;
+        self
+    }
+
     /// The card interface this builder will connect to, when it came from one.
     ///
     /// [`from_card`](Self::from_card) takes the first interface whose binding
@@ -1162,6 +1171,12 @@ mod tests {
         assert_eq!(cfg.stream_first_event_timeout, Duration::from_secs(7));
         assert_eq!(cfg.stream_idle_timeout, Some(Duration::from_secs(8)));
         assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(30));
+
+        let sized = ClientBuilder::new("http://localhost:8080")
+            .with_max_event_size(1234)
+            .build()
+            .expect("build");
+        assert_eq!(sized.config().max_event_size, 1234);
 
         let off = ClientBuilder::new("http://localhost:8080")
             .with_stream_idle_timeout(None)

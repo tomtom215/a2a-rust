@@ -213,7 +213,7 @@ while let Some(event) = stream.next().await {
 
 The SSE parser includes safety limits:
 
-- **16 MiB buffer cap** — Prevents OOM from malicious servers
+- **16 MiB event cap** — An oversized event, or a line that never ends, is refused with an error rather than buffered (`with_max_event_size`)
 - **30-second connect timeout** — Fails fast on unreachable servers
 - **First-event timeout** — A stream that is accepted but silent before its first data times out after 5 minutes by default (`with_stream_first_event_timeout`; separate from the 30-second connect timeout), on every transport
 - **Idle timeout** — After the first frame, a stream that receives nothing at all (keep-alive comments count) for 5 minutes by default ends with `ClientError::Timeout`; resubscribe to continue

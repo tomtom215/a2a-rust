@@ -85,6 +85,7 @@ impl A2aClient {
         stream
             .with_first_event_timeout(self.config.stream_first_event_timeout)
             .with_idle_timeout(self.config.stream_idle_timeout)
+            .with_max_event_size(self.config.max_event_size)
     }
 
     /// Creates a new [`A2aClient`] from its constituent parts.
