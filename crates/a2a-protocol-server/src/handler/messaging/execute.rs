@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_protocol_types::failure::{FailureClass, set_class};
+use a2a_protocol_types::failure::{FailureClass, error_class, set_class};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 use tokio::sync::OwnedSemaphorePermit;
@@ -166,7 +166,10 @@ impl RequestHandler {
 /// Runs the executor under the resolved timeout, if there is one.
 ///
 /// A timeout is reported as an internal error, so it takes the same failure
-/// path as an executor that returned `Err`.
+/// path as an executor that returned `Err`. An executor's own error is
+/// classified by [`error_class`]: a class the executor recorded on it with
+/// `set_error_class` (as the client's `From<ClientError>` does for a
+/// delegated call's timeout) wins over the one its code implies.
 async fn run_executor(
     executor: &dyn AgentExecutor,
     ctx: &RequestContext,
@@ -177,13 +180,13 @@ async fn run_executor(
         return executor
             .execute(ctx, writer)
             .await
-            .map_err(|e| (FailureClass::from(e.code), e))
+            .map_err(|e| (error_class(&e), e))
             .map_err(|(class, e)| (e, class));
     };
     match tokio::time::timeout(timeout, executor.execute(ctx, writer)).await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => {
-            let class = FailureClass::from(e.code);
+            let class = error_class(&e);
             Err((e, class))
         }
         // A deadline is a bound that was hit, not an agent that broke, and

@@ -200,6 +200,42 @@ Box::pin(async move {
 })
 ```
 
+### Delegating to Another Agent with `?`
+
+An executor that calls another agent can use `?` on client calls:
+`ClientError` converts into `A2aError`, and the server turns the returned
+error into a `Failed` task whose failure class says whether a retry is worth
+it.
+
+```rust,no_run
+use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::message::Message;
+use a2a_protocol_types::params::MessageSendParams;
+use a2a_protocol_types::responses::SendMessageResponse;
+
+// The body of an `AgentExecutor::execute` that delegates.
+async fn delegate(downstream_url: &str) -> A2aResult<Option<String>> {
+    let client = ClientBuilder::new(downstream_url).build()?;
+    let params = MessageSendParams::new(Message::user_text("m1", "summarise this"));
+    let reply = client.send_message(params).await?; // ClientError -> A2aError
+    Ok(match reply {
+        SendMessageResponse::Task(task) => task.text().map(str::to_owned),
+        _ => None,
+    })
+}
+```
+
+| Client error | Task's failure class |
+|---|---|
+| `Protocol(e)` from the downstream agent | passed through unchanged (code, message, data), classified by its code |
+| timeouts, connection failures, HTTP `429`/`502`/`503`/`504`, `TooManyPendingRequests` | `Transient` (retry with backoff) |
+| anything else | `Internal` |
+
+`Transient` is given exactly when `ClientError::is_retryable()` is true, so the
+client's retry policy and the caller's agree. The failed task's status text is
+`downstream A2A call failed: ` followed by the client error and its causes.
+
 ### Stream Error Recovery
 
 For streaming, handle errors per-event:

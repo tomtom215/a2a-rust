@@ -8,8 +8,9 @@
 
 use super::{
     FAILURE_EXTENSION_URI, FAILURE_METADATA_KEY, FailureClass, class_of, declares_extension,
-    set_class,
+    error_class, set_class, set_error_class,
 };
+use crate::error::{A2aError, ErrorCode};
 use crate::message::Message;
 
 fn status() -> Message {
@@ -167,8 +168,6 @@ fn a_non_string_class_reads_as_absent() {
 /// An orchestrator built on `is_retryable()` burned a retry on each.
 #[test]
 fn capability_refusals_are_not_retryable() {
-    use crate::error::ErrorCode;
-
     for code in [
         ErrorCode::PushNotificationNotSupported,
         ErrorCode::ExtendedAgentCardNotConfigured,
@@ -190,4 +189,55 @@ fn capability_refusals_are_not_retryable() {
         FailureClass::from(ErrorCode::InternalError),
         FailureClass::Internal
     );
+}
+
+// ── Classes carried on an A2aError ───────────────────────────────────────────
+
+#[test]
+fn an_error_with_no_recorded_class_is_classified_by_its_code() {
+    assert_eq!(
+        error_class(&A2aError::invalid_params("x")),
+        FailureClass::InvalidRequest
+    );
+    assert_eq!(
+        error_class(&A2aError::internal("x")),
+        FailureClass::Internal
+    );
+    // Data that says nothing about the class changes nothing.
+    let e = A2aError::with_data(ErrorCode::InvalidParams, "x", serde_json::json!({"k": 1}));
+    assert_eq!(error_class(&e), FailureClass::InvalidRequest);
+}
+
+#[test]
+fn a_recorded_class_wins_over_the_code_and_keeps_other_data() {
+    let mut e = A2aError::with_data(ErrorCode::InvalidParams, "x", serde_json::json!({"k": 1}));
+    set_error_class(&mut e, FailureClass::Transient);
+    assert_eq!(error_class(&e), FailureClass::Transient);
+    let data = e.data.as_ref().expect("data");
+    assert_eq!(data["k"], 1, "existing object members are kept");
+    assert_eq!(data[FAILURE_METADATA_KEY], "transient");
+
+    // No data at all: one is created.
+    let mut e = A2aError::internal("x");
+    set_error_class(&mut e, FailureClass::PolicyRefusal);
+    assert_eq!(error_class(&e), FailureClass::PolicyRefusal);
+    assert_eq!(e.code, ErrorCode::InternalError, "the code is untouched");
+}
+
+#[test]
+fn a_non_object_error_data_is_replaced_so_the_class_is_not_lost() {
+    let mut e = A2aError::with_data(ErrorCode::InternalError, "x", serde_json::json!([1, 2]));
+    set_error_class(&mut e, FailureClass::Transient);
+    assert_eq!(error_class(&e), FailureClass::Transient);
+    assert!(e.data.as_ref().is_some_and(serde_json::Value::is_object));
+}
+
+#[test]
+fn a_non_string_error_class_falls_back_to_the_code() {
+    let e = A2aError::with_data(
+        ErrorCode::InvalidParams,
+        "x",
+        serde_json::json!({ FAILURE_METADATA_KEY: 7 }),
+    );
+    assert_eq!(error_class(&e), FailureClass::InvalidRequest);
 }
