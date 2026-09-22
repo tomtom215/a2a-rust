@@ -230,10 +230,10 @@ reached it as zero events and no error.
 | Binding | Error frame `data:` |
 |---|---|
 | JSON-RPC | the JSON-RPC error response, echoing the request id: `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,…}}` |
-| HTTP+JSON | the bare `A2aError`: `{"code":-32603,"message":…,"data":…}` |
+| HTTP+JSON | a `google.rpc.Status` (§11.6): `{"error":{"code":404,"status":"NOT_FOUND","message":…,"details":[…]}}`; `A2aError::data` rides as a flattened `google.protobuf.Struct` detail |
 
-Over HTTP+JSON a refusal *before* the stream starts is an HTTP error status
-with a `google.rpc.Status` body.
+Over HTTP+JSON a refusal *before* the stream starts is still an HTTP error
+status with the same `google.rpc.Status` body.
 
 This client accepts every shape a peer sends: a JSON-RPC refusal as SSE, as a
 plain JSON body (the Python SDK's server, and this one through 0.13), or as an

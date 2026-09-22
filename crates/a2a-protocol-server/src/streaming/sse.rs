@@ -208,7 +208,7 @@ impl hyper::body::Body for ChannelBody {
 /// Serializes a stream error into the payload shape its binding requires.
 ///
 /// JSON-RPC (§9.4.2): a full `JsonRpcErrorResponse` echoing the request id.
-/// REST (§11.7): the bare `A2aError`.
+/// REST (§11.6, §11.7): a `google.rpc.Status` object, see [`rest_stream_error`].
 ///
 /// Both error sites in the stream loop go through here. Emitting an ad-hoc or
 /// bare shape on the JSON-RPC binding produces a frame carrying neither
@@ -219,7 +219,7 @@ fn stream_error_payload(
     jsonrpc_envelope_id: Option<&JsonRpcId>,
 ) -> Result<String, serde_json::Error> {
     jsonrpc_envelope_id.map_or_else(
-        || serde_json::to_string(err),
+        || serde_json::to_string(&rest_stream_error(err)),
         |id| {
             let mut jsonrpc_error = JsonRpcError::new(err.code.as_i32(), err.message.clone());
             // Preserve `data`: it carries the `streamLagged` marker a client
@@ -228,6 +228,53 @@ fn stream_error_payload(
             serde_json::to_string(&JsonRpcErrorResponse::new(id.clone(), jsonrpc_error))
         },
     )
+}
+
+/// `@type` of a `google.protobuf.Struct` error detail.
+const STRUCT_DETAIL_TYPE: &str = "type.googleapis.com/google.protobuf.Struct";
+
+/// A REST stream's error frame: `{"error":{"code","status","message","details"}}`.
+///
+/// §11.6 represents every REST error as a `google.rpc.Status` (AIP-193), and
+/// a stream frame is no exception. It was a bare `A2aError`
+/// (`{"code":-32603,"message":…}`) before, which a2a-go v2.5.0's REST
+/// stream parser (`internal/rest/rest.go`, `ParseStreamResponse`) cannot
+/// read: it accepts a frame only when exactly one of `message`, `task`,
+/// `statusUpdate`, `artifactUpdate` or `error` is present, and the bare
+/// shape's `message` string made it look like a `Message` event. The Python
+/// SDK's REST server writes this same object under `event: error`.
+///
+/// `code`, `status` and the `ErrorInfo` detail are what the unary REST
+/// response carries for the same error. `A2aError::data` — where the
+/// `streamLagged` marker lives — becomes a `google.protobuf.Struct` detail,
+/// written flat (`{"@type":…,"streamLagged":6}`) the way a2a-go writes and
+/// reads one (`errordetails.Typed`); a non-object value goes under `value`.
+fn rest_stream_error(err: &a2a_protocol_types::error::A2aError) -> serde_json::Value {
+    let mut details = match err.error_info_data(None) {
+        serde_json::Value::Array(items) => items,
+        _ => Vec::new(),
+    };
+    if let Some(data) = &err.data {
+        let mut detail = match data {
+            serde_json::Value::Object(fields) => fields.clone(),
+            other => {
+                let mut fields = serde_json::Map::new();
+                fields.insert("value".into(), other.clone());
+                fields
+            }
+        };
+        detail.insert("@type".into(), STRUCT_DETAIL_TYPE.into());
+        details.push(serde_json::Value::Object(detail));
+    }
+    let mut status = serde_json::json!({
+        "code": err.code.http_status(),
+        "status": err.code.grpc_status(),
+        "message": err.message,
+    });
+    if !details.is_empty() {
+        status["details"] = serde_json::Value::Array(details);
+    }
+    serde_json::json!({ "error": status })
 }
 
 // ── build_sse_response ───────────────────────────────────────────────────────
@@ -888,5 +935,53 @@ mod tests {
             push_decimal(&mut buf, n);
             assert_eq!(String::from_utf8_lossy(&buf), expected);
         }
+    }
+
+    // ── rest_stream_error ────────────────────────────────────────────────
+
+    #[test]
+    fn rest_stream_error_for_an_a2a_error_carries_its_error_info_only() {
+        use a2a_protocol_types::error::A2aError;
+        let v = rest_stream_error(&A2aError::task_not_found("t-1"));
+        assert_eq!(
+            v,
+            serde_json::json!({"error": {
+                "code": 404,
+                "status": "NOT_FOUND",
+                "message": "Task not found: t-1",
+                "details": [{
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "TASK_NOT_FOUND",
+                    "domain": "a2a-protocol.org"
+                }]
+            }})
+        );
+    }
+
+    #[test]
+    fn rest_stream_error_without_details_omits_the_member() {
+        use a2a_protocol_types::error::A2aError;
+        let v = rest_stream_error(&A2aError::internal("boom"));
+        assert_eq!(
+            v,
+            serde_json::json!({"error": {"code": 500, "status": "INTERNAL", "message": "boom"}})
+        );
+    }
+
+    #[test]
+    fn rest_stream_error_wraps_non_object_data_under_value() {
+        use a2a_protocol_types::error::{A2aError, ErrorCode};
+        let v = rest_stream_error(&A2aError::with_data(
+            ErrorCode::InternalError,
+            "boom",
+            serde_json::json!([1, 2]),
+        ));
+        assert_eq!(
+            v["error"]["details"],
+            serde_json::json!([{
+                "@type": "type.googleapis.com/google.protobuf.Struct",
+                "value": [1, 2]
+            }])
+        );
     }
 }
