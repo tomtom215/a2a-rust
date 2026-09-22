@@ -162,7 +162,11 @@ With Axum (or anything else that owns the sockets), call
 `handler.cancel_in_flight(grace)` at the end of the future you pass to
 `with_graceful_shutdown`, so it runs before Axum starts draining —
 `examples/deploy-agent` does exactly that — and `handler.shutdown()` after
-`serve` returns.
+`serve` returns. The gRPC and WebSocket dispatchers' `serve` methods take no
+shutdown signal: serve `GrpcDispatcher::into_service()` with tonic's
+`serve_with_incoming_shutdown` and end its signal future the same way, and
+race `WebSocketDispatcher::serve` against your signal and call
+`cancel_in_flight` after it.
 
 Implement `on_shutdown` in your executor for cleanup:
 

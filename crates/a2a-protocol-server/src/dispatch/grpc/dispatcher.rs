@@ -157,6 +157,14 @@ impl GrpcDispatcher {
     /// Blocks until the server shuts down. Uses the configured message
     /// size limits and concurrency settings.
     ///
+    /// It takes no shutdown signal. For a graceful stop, serve
+    /// [`into_service`](Self::into_service) with tonic's own
+    /// `serve_with_incoming_shutdown`, and end the signal future with
+    /// [`RequestHandler::cancel_in_flight`](crate::RequestHandler::cancel_in_flight):
+    /// tonic waits for in-flight RPCs once the signal completes, and a
+    /// server-streaming RPC finishes only when its task does, so the tasks
+    /// must be cancelled first or that wait never ends.
+    ///
     /// # Errors
     ///
     /// Returns `std::io::Error` if binding fails.
