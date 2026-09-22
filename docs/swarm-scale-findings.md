@@ -566,6 +566,56 @@ against the artifact benchmarks. It is worth doing and is not this change.
 * **Budget about 3,300 posts/s for 1,000 agents on four cores**, sharded, with
   an in-memory store — and treat that as a ceiling, not a target.
 
+## Finding 7 — what the stores people deploy actually cost
+
+Every arm above drives `InMemoryTaskStore`. These run the same ageing probe
+against the two the README tells people to deploy, changing nothing but the
+store: same executor, same limits, same queue capacity, same connection
+ceiling. 300 sequential posts on one channel, concurrency one, SQLite
+file-backed rather than `:memory:` because the claim is about a store that
+writes to a disk.
+
+| store | first 100 posts | posts 200–300 | growth |
+|---|---|---|---|
+| `InMemoryTaskStore` | 1,288µs | ~1,702µs | 2.1x over 1,400 posts |
+| `SqliteTaskStore` | 7,277µs | 12,344µs | 1.7x |
+| `PostgresTaskStore` | 9,516µs | 22,889µs | 2.4x |
+
+At 300 posts a SQLite send costs roughly 7x an in-memory one and a Postgres
+send roughly 13x. Both still age, and for a reason that is now actionable:
+neither SQL store overrides `save_appending_history`, so both take the default
+— read the record, append, write the whole thing back — which is O(history)
+twice per send. Overriding it the way both already override
+`save_status_delta` is the obvious next win and is not done here.
+
+## Finding 8 — the single-writer refusal does not cross replicas
+
+Two replicas behind a load balancer sharing one Postgres is the first
+architecture anyone deploying this reaches for. `multi_replica.rs` already
+pinned what works across it — a task created on one is readable on the other,
+a subscriber on the other still sees the stream end. This is what does not.
+
+`reject_in_flight_send` reads `self.cancellation_tokens`, a map held by one
+handler, and the send path serialises on `keyed_lock`, a mutex held by one
+handler. Neither lives in the shared store, so neither is shared. Measured
+directly (`the_single_writer_refusal_does_not_cross_replicas`), with one
+executor still running:
+
+| continuation sent to | result |
+|---|---|
+| the replica running the executor | **Refused** — "already being processed" |
+| the other replica | **Accepted** |
+
+So the property finding 1 rests on — concurrent posters to one task are turned
+away loudly rather than racing — holds *within* a replica and not *between*
+them. Two replicas will both admit a continuation for the same task, both
+spawn an executor, and both write the same row. Sharding by context, which
+finding 3 recommends, does not help: the shard key is enforced by the same
+in-process lock.
+
+The test asserts today's behaviour rather than the desired one, so anything
+that later makes admission shared fails it and has to say so.
+
 ## What is still unmeasured
 
 * ~~The attribution in finding 6 is read from the source and supported by the
@@ -576,10 +626,12 @@ against the artifact benchmarks. It is worth doing and is not this change.
   the stages directly rather than with a sampling profiler, which on an async
   runtime attributes to the executor rather than to the call that scheduled
   the work.
-* Every figure here uses the in-memory store. The SQL stores write to a disk
-  this experiment never touches; their append throughput is unknown.
-* One replica. Nothing here says what a shared PostgreSQL store does when two
-  servers write to the same channel.
+* ~~Every figure here uses the in-memory store. The SQL stores write to a disk
+  this experiment never touches; their append throughput is unknown.~~
+  **Measured** — see finding 7.
+* ~~One replica. Nothing here says what a shared PostgreSQL store does when two
+  servers write to the same channel.~~ **Measured, and the answer is a
+  correctness limit rather than a number** — see finding 8.
 * Agent-card fetch under swarm load, `ListTasks` pagination as a context fills,
   and push-notification config CRUD as a coordination path are all untouched.
 * The `grpc` and `websocket` bindings. Only REST was driven.

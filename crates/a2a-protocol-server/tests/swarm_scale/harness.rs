@@ -130,11 +130,25 @@ pub struct Deployment {
 impl Deployment {
     /// Starts a server on an ephemeral port with every limit set explicitly.
     pub async fn start() -> Self {
+        Self::start_with_store(InMemoryTaskStore::with_config(
+            TaskStoreConfig::default().with_max_capacity(Some(STORE_CAPACITY)),
+        ))
+        .await
+    }
+
+    /// The same deployment against a caller-supplied store.
+    ///
+    /// Every arm in this suite drove the in-memory store, which left the two
+    /// the README tells people to deploy unmeasured. The store is the only
+    /// thing that varies: same executor, same limits, same queue capacity,
+    /// same connection ceiling, so a difference between two runs is the store
+    /// and not the harness.
+    pub async fn start_with_store(
+        store: impl a2a_protocol_server::store::TaskStore + 'static,
+    ) -> Self {
         let handler = Arc::new(
             RequestHandlerBuilder::new(ChannelExec)
-                .with_task_store(InMemoryTaskStore::with_config(
-                    TaskStoreConfig::default().with_max_capacity(Some(STORE_CAPACITY)),
-                ))
+                .with_task_store(store)
                 .with_event_queue_capacity(QUEUE_CAPACITY)
                 .with_handler_limits(HandlerLimits::default())
                 .build()
