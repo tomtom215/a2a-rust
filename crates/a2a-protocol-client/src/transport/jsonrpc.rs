@@ -130,9 +130,7 @@ impl JsonRpcTransport {
 
         #[cfg(not(feature = "tls-rustls"))]
         let client = {
-            let mut connector = HttpConnector::new();
-            connector.set_connect_timeout(Some(connection_timeout));
-            connector.set_nodelay(true);
+            let connector = super::connector::http_connector(connection_timeout);
             Client::builder(TokioExecutor::new())
                 .pool_idle_timeout(Duration::from_secs(90))
                 .build(connector)

@@ -23,6 +23,7 @@
 //! [`JsonRpcTransport`]: jsonrpc::JsonRpcTransport
 //! [`RestTransport`]: rest::RestTransport
 
+pub(crate) mod connector;
 #[cfg(feature = "grpc")]
 pub mod grpc;
 pub mod jsonrpc;

@@ -303,7 +303,14 @@ impl GrpcTransport {
         let endpoint = tonic::transport::Channel::from_shared(endpoint_str.clone())
             .map_err(|e| ClientError::InvalidEndpoint(format!("invalid gRPC endpoint: {e}")))?
             .connect_timeout(config.connect_timeout)
-            .timeout(config.timeout);
+            .timeout(config.timeout)
+            // The same TCP keepalive the HTTP transports dial with — see
+            // `connector::TCP_KEEPALIVE_TIME`. TCP-level, so unlike HTTP/2
+            // PINGs it cannot trip a server's ping-abuse policy (grpc-go
+            // answers pings more frequent than 5 minutes with GOAWAY).
+            .tcp_keepalive(Some(super::connector::TCP_KEEPALIVE_TIME))
+            .tcp_keepalive_interval(Some(super::connector::TCP_KEEPALIVE_INTERVAL))
+            .tcp_keepalive_retries(Some(super::connector::TCP_KEEPALIVE_RETRIES));
         let endpoint = Self::apply_tls(endpoint, &endpoint_str, &config)?;
         let channel = endpoint.connect().await.map_err(|e| {
             if tls_by_policy {
