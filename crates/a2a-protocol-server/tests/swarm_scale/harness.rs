@@ -127,6 +127,50 @@ pub struct Deployment {
     handler: Arc<a2a_protocol_server::RequestHandler>,
 }
 
+/// The card the deployment serves.
+///
+/// Every agent fetches this before it can talk to anyone, so a deployment
+/// without one cannot measure the discovery path at all — the dispatcher's
+/// `card_handler` is `None` and `/.well-known/agent-card.json` is a 404. That
+/// is how the first run of `the_agent_card_under_a_starting_fleet` came back
+/// with a full latency column and `ok` of zero.
+fn swarm_card() -> a2a_protocol_types::agent_card::AgentCard {
+    use a2a_protocol_types::agent_card::{
+        AgentCapabilities, AgentCard, AgentInterface, AgentSkill,
+    };
+    AgentCard {
+        url: None,
+        name: "swarm-scale".into(),
+        description: "Coordination-channel experiment fixture".into(),
+        version: "1.0.0".into(),
+        supported_interfaces: vec![AgentInterface {
+            url: "http://127.0.0.1:0".into(),
+            protocol_binding: "HTTP+JSON".into(),
+            protocol_version: "1.0".into(),
+            tenant: None,
+        }],
+        default_input_modes: vec!["text/plain".into()],
+        default_output_modes: vec!["text/plain".into()],
+        skills: vec![AgentSkill {
+            id: "channel".into(),
+            name: "Channel".into(),
+            description: "Appends a post to a channel".into(),
+            tags: vec![],
+            examples: None,
+            input_modes: None,
+            output_modes: None,
+            security_requirements: None,
+        }],
+        capabilities: AgentCapabilities::none().with_push_notifications(true),
+        provider: None,
+        icon_url: None,
+        documentation_url: None,
+        security_schemes: None,
+        security_requirements: None,
+        signatures: None,
+    }
+}
+
 impl Deployment {
     /// Starts a server on an ephemeral port with every limit set explicitly.
     pub async fn start() -> Self {
@@ -151,6 +195,18 @@ impl Deployment {
                 .with_task_store(store)
                 .with_event_queue_capacity(QUEUE_CAPACITY)
                 .with_handler_limits(HandlerLimits::default())
+                .with_agent_card(swarm_card())
+                // The card advertising push notifications is not what enables
+                // them: without a store the handler answers
+                // PUSH_NOTIFICATION_NOT_SUPPORTED, which is what the CRUD arm
+                // first measured.
+                .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
+                // A store is not enough: the push-config handlers require a
+                // wired sender too, and answer PUSH_NOTIFICATION_NOT_SUPPORTED
+                // without one. Nothing is ever delivered here — the arm
+                // measures the CRUD path, not the callback — but the sender has
+                // to exist for the CRUD path to be reachable at all.
+                .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
                 .build()
                 .expect("handler builds"),
         );

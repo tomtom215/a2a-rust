@@ -616,6 +616,55 @@ in-process lock.
 The test asserts today's behaviour rather than the desired one, so anything
 that later makes admission shared fails it and has to say so.
 
+## Finding 9 — the three surfaces a fleet uses constantly
+
+None of these had a number. Same deployment, same limits, same generator as
+the other arms.
+
+**The agent card, fetched by a starting fleet.** Every agent fetches it before
+it can talk to anyone, so a swarm's first act is N simultaneous fetches of one
+823-byte static document. Each agent uses its own client, so this includes the
+connection each one has to make — which is what a cold start actually pays:
+
+| agents | p50 | p95 |
+|---|---|---|
+| 1 | 1,637µs | 1,637µs |
+| 64 | 18,347µs | 20,601µs |
+| 512 | 77,572µs | 1,036,873µs |
+
+At 512 the p95 is over a second. That is connection establishment, not card
+serving — the document is static and 823 bytes — but a fleet starting all at
+once pays it, and a tail of one second before an agent has even read the card
+is worth knowing before blaming the send path.
+
+**`ListTasks` on one context, as the context fills.** This is the read a
+coordinator does, and the worry is that it gets slower exactly as the thing it
+coordinates grows. It does not:
+
+| tasks in context | p50 | bytes |
+|---|---|---|
+| 1 | 525µs | 312 |
+| 32 | 1,078µs | 9,789 |
+| 128 | 1,436µs | 15,403 |
+| 512 | 1,477µs | 15,424 |
+
+Both the latency and the payload plateau by 128 tasks, because the default
+page size caps the page. A supervisor polling a context does not degrade as
+the context fills. This is the reassuring one.
+
+**Push-notification config CRUD.** Registering a callback per task is how a
+fleet avoids polling, so a swarm of N agents performs N of these before doing
+any work: `set` 800µs p50 at 1,169/s, `list` 1,109µs p50 at 868/s with 50
+configs on the task (8,063 bytes).
+
+Two things the harness had to be told, both of which first produced a
+measurement of nothing. The deployment served no agent card, so every fetch
+was a 404 and the first run of the card arm printed a full latency column
+beside `ok` of zero — it now asserts that every fetch succeeded. And push
+config CRUD needs both a config store **and** a wired sender; a card
+advertising `pushNotifications` is not what enables it, and without the sender
+every call is `PUSH_NOTIFICATION_NOT_SUPPORTED`.
+
 ## What is still unmeasured
 
 * ~~The attribution in finding 6 is read from the source and supported by the
@@ -632,6 +681,7 @@ that later makes admission shared fails it and has to say so.
 * ~~One replica. Nothing here says what a shared PostgreSQL store does when two
   servers write to the same channel.~~ **Measured, and the answer is a
   correctness limit rather than a number** — see finding 8.
-* Agent-card fetch under swarm load, `ListTasks` pagination as a context fills,
-  and push-notification config CRUD as a coordination path are all untouched.
+* ~~Agent-card fetch under swarm load, `ListTasks` pagination as a context fills,
+  and push-notification config CRUD as a coordination path are all untouched.~~
+  **Measured** — see finding 9.
 * The `grpc` and `websocket` bindings. Only REST was driven.
