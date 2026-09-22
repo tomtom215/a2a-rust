@@ -334,7 +334,8 @@ are rustdoc's job.
 | `InboundTracePolicy` | What this handler does with a `traceparent` an as-yet unauthenticated peer sent (W3C Trace Context §7.2) |
 | `MIN_MESSAGE_ID_LENGTH` | The floor `message.id`'s length bound is never taken below: 36, a hyphenated UUID |
 | `SendMessageResult` | Result of `RequestHandler::on_send_message`: a synchronous response or a streaming reader |
-| `ShutdownReport` | What a shutdown actually managed to do (queues force-destroyed, whether executor cleanup completed) |
+| `ShutdownReport` | What a shutdown actually managed to do (live queues it had to destroy, whether executor cleanup completed) |
+| `InFlightReport` | What `RequestHandler::cancel_in_flight` did: tasks cancelled, still running at the end of the grace period, whether everything finished |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 
 ### Traits
@@ -370,7 +371,7 @@ are rustdoc's job.
 | `serve_with_addr(addr, dispatcher) -> io::Result<SocketAddr>` | `async` — binds, spawns the accept loop, returns the bound `SocketAddr` (useful for port-0 in tests) |
 | `Server` | A bound listener that has not started accepting yet; binding is separated from serving so the caller can learn the address |
 | `ServeConfig` | Limits applied to a `Server` |
-| `ServeReport` | What the socket layer did, and whether it finished |
+| `ServeReport` | What the server's shutdown did: connections accepted, drained or abandoned, and (with a handler-backed dispatcher) the `InFlightReport` for its tasks |
 | `DispatchConfig` | Configuration for dispatch-layer limits shared by both JSON-RPC and REST dispatchers |
 | `GrpcConfig` | Configuration for the gRPC dispatcher (`grpc` feature) |
 | `validate_version_metadata(metadata, required)` | Validates the A2A version carried in a binding's request metadata |

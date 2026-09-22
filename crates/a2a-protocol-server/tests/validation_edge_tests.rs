@@ -466,7 +466,15 @@ async fn shutdown_cancels_in_flight_tasks() {
         }
     }
 
-    // Shutdown should cancel all tasks, and report that it did so cleanly.
+    // Cancelling the in-flight work first is what lets the shutdown report
+    // itself clean: `shutdown()` alone would destroy the live queue and, now
+    // that it counts, say so.
+    let in_flight = handler.cancel_in_flight(Duration::from_secs(10)).await;
+    assert_eq!(
+        (in_flight.cancelled, in_flight.finished),
+        (1, true),
+        "{in_flight:?}"
+    );
     let report = handler.shutdown().await;
     assert!(
         report.is_graceful(),

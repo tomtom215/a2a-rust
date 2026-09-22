@@ -17,7 +17,7 @@
 //! | `lifecycle` | Get, list, cancel, resubscribe, extended agent card |
 //! | `push_config` | Push notification config CRUD |
 //! | `event_processing` | Event collection, state transitions, push delivery |
-//! | `shutdown` | Graceful shutdown with optional timeout |
+//! | `shutdown` | Ending in-flight work, then graceful shutdown with optional timeout |
 
 mod capability;
 mod concurrency;
@@ -33,7 +33,8 @@ mod push_config;
 mod shutdown;
 
 pub use helpers::InboundTracePolicy;
-pub use shutdown::ShutdownReport;
+pub(crate) use shutdown::InFlight;
+pub use shutdown::{InFlightReport, ShutdownReport};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -118,6 +119,10 @@ pub struct RequestHandler {
     /// One semaphore per tenant, enforcing `TenantLimits::max_concurrent_tasks`.
     /// See [`concurrency`](self::concurrency) for how it is sized and bounded.
     pub(crate) tenant_slots: Arc<tokio::sync::RwLock<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
+    /// The shutdown token every task's token descends from, and the trackers
+    /// every executor and background processor is spawned on. See
+    /// [`RequestHandler::cancel_in_flight`].
+    pub(crate) in_flight: shutdown::InFlight,
 }
 
 /// Entry in the cancellation token map, tracking creation time for eviction.

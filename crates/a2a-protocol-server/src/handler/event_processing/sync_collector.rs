@@ -436,10 +436,13 @@ impl RequestHandler {
         // `task_local` tenant context does not cross `tokio::spawn`, so capture
         // it explicitly, exactly as the streaming background processor does.
         let tenant = crate::store::tenant::TenantContext::current();
-        tokio::spawn(crate::store::tenant::TenantContext::scope(
-            tenant,
-            job.run(),
-        ));
+        // Tracked, so a shutdown waits for the delivery it would otherwise cut.
+        self.in_flight
+            .background()
+            .spawn(crate::store::tenant::TenantContext::scope(
+                tenant,
+                job.run(),
+            ));
     }
 }
 

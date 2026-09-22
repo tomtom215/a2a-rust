@@ -375,7 +375,9 @@ async fn shutdown_with_no_traffic_reports_a_clean_empty_drain() {
         ServeReport {
             accepted: 0,
             drained: true,
-            abandoned: 0
+            abandoned: 0,
+            // `SlowDispatcher` has no handler, so there are no tasks to end.
+            tasks: None,
         }
     );
 }

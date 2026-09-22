@@ -12,6 +12,11 @@ use std::time::Instant;
 
 use super::RequestHandler;
 
+mod in_flight;
+
+pub use in_flight::InFlight;
+pub use in_flight::InFlightReport;
+
 /// What a shutdown actually managed to do.
 ///
 /// Returned by [`RequestHandler::shutdown`] and
@@ -24,10 +29,17 @@ use super::RequestHandler;
 #[must_use = "a shutdown that was not graceful is worth reporting; \
               call .is_graceful() or log the report"]
 pub struct ShutdownReport {
-    /// Event queues still active when the drain deadline passed, and therefore
-    /// destroyed with work possibly still in flight.
+    /// Event queues still active when they were destroyed — each one a task
+    /// whose executor had not finished, and whose subscribers saw their
+    /// stream end without it.
     ///
-    /// Always `0` for [`RequestHandler::shutdown`], which does not wait.
+    /// [`RequestHandler::shutdown_with_timeout`] counts the queues left when
+    /// its deadline passed. [`RequestHandler::shutdown`] does not wait, so it
+    /// counts every queue still active when it was called; it read a
+    /// hard-coded `0` until 2026-09-22, which made a
+    /// shutdown that cut live streams report itself graceful. Call
+    /// [`RequestHandler::cancel_in_flight`] first and this is `0` because
+    /// the work ended, not because nobody counted.
     pub queues_force_destroyed: usize,
 
     /// Whether the executor's `on_shutdown` hook returned within the timeout.
@@ -55,23 +67,30 @@ impl ShutdownReport {
 const UNTIMED_CLEANUP_BUDGET: Duration = Duration::from_secs(10);
 
 impl RequestHandler {
-    /// Initiates graceful shutdown of the handler.
+    /// Finishes shutting the handler down: the last step, after
+    /// [`cancel_in_flight`](RequestHandler::cancel_in_flight) has ended the
+    /// work and the sockets have drained.
     ///
     /// This method:
     /// 1. Cancels all in-flight tasks by signalling their cancellation tokens.
     /// 2. Destroys all event queues, causing readers to see EOF.
+    /// 3. Runs the executor's `on_shutdown` hook, bounded to 10 seconds.
     ///
-    /// After calling `shutdown()`, new requests will still be accepted but
-    /// in-flight tasks will observe cancellation. The caller should stop
-    /// accepting new connections after calling this method.
+    /// It does not wait for executors. Called on its own while tasks are
+    /// running, it cuts their streams off without a terminal event and leaves
+    /// whatever they delegated running — which the report now says, in
+    /// `queues_force_destroyed`. [`Server::serve_with_shutdown`] runs
+    /// `cancel_in_flight` before its drain, so calling this after it finds
+    /// nothing left to cut.
     ///
-    /// Returns a [`ShutdownReport`] describing whether the executor's cleanup
-    /// hook finished. This method does not wait for queues to drain, so
-    /// `queues_force_destroyed` is always `0` — use
-    /// [`shutdown_with_timeout`](RequestHandler::shutdown_with_timeout) when
-    /// in-flight work should be given a chance to finish.
+    /// Tasks admitted after this call start with their tokens cancelled.
+    ///
+    /// [`Server::serve_with_shutdown`]: crate::serve::Server::serve_with_shutdown
     pub async fn shutdown(&self) -> ShutdownReport {
-        // Cancel all in-flight tasks.
+        // Cancel all in-flight tasks: every task token descends from the
+        // handler's, and the map is walked as well for any token that was
+        // registered without being one of its children.
+        self.in_flight.cancel_all();
         {
             let tokens = self.cancellation_tokens.read().await;
             for entry in tokens.values() {
@@ -79,6 +98,16 @@ impl RequestHandler {
             }
         }
 
+        // Counted before they go, because destroying one is cutting a live
+        // stream off, and a report that says `0` here is claiming nothing was.
+        let queues_force_destroyed = self.event_queue_manager.active_count().await;
+        if queues_force_destroyed > 0 {
+            trace_warn!(
+                active_queues = queues_force_destroyed,
+                "shutdown() destroyed live event queues; call cancel_in_flight first \
+                 so their tasks end with a terminal event"
+            );
+        }
         // Destroy all event queues so readers see EOF.
         self.event_queue_manager.destroy_all().await;
 
@@ -106,7 +135,7 @@ impl RequestHandler {
         }
 
         ShutdownReport {
-            queues_force_destroyed: 0,
+            queues_force_destroyed,
             executor_cleanup_completed,
         }
     }
@@ -146,7 +175,8 @@ impl RequestHandler {
     /// how a rollout can truncate every in-flight stream without anyone
     /// noticing.
     pub async fn shutdown_with_timeout(&self, timeout: Duration) -> ShutdownReport {
-        // Cancel all in-flight tasks.
+        // Cancel all in-flight tasks; see `shutdown` for why both.
+        self.in_flight.cancel_all();
         {
             let tokens = self.cancellation_tokens.read().await;
             for entry in tokens.values() {

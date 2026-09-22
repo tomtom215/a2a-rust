@@ -59,7 +59,10 @@ impl RequestHandler {
         // across tokio::spawn).
         let tenant = crate::store::tenant::TenantContext::current();
 
-        tokio::spawn(crate::store::tenant::TenantContext::scope(
+        // On the handler's tracker: this is what persists the executor's last
+        // events and delivers their push notifications, so shutdown waits for
+        // it as well as for the executor.
+        self.in_flight.background().spawn(crate::store::tenant::TenantContext::scope(
             tenant,
             async move {
                 // H5 FIX: Use the dedicated persistence mpsc channel instead

@@ -514,4 +514,8 @@ impl Dispatcher for JsonRpcDispatcher {
     > {
         Box::pin(self.dispatch(req))
     }
+
+    fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
+        Some(&self.handler)
+    }
 }

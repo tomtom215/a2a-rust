@@ -42,6 +42,7 @@ mod eviction;
 mod execute;
 mod idempotency;
 mod respond;
+mod terminal;
 mod validation;
 
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;
@@ -297,7 +298,7 @@ impl RequestHandler {
                 stored_task.as_ref(),
                 &params.message,
             );
-            let ctx = create::build_request_context(
+            let mut ctx = create::build_request_context(
                 params.message,
                 task_id.clone(),
                 context_id,
@@ -305,6 +306,9 @@ impl RequestHandler {
                 params.metadata,
                 call_ctx.clone(),
             );
+            // A child of the handler's shutdown token, so shutdown reaches this
+            // task too — even if it began a moment ago (`cancel_in_flight`).
+            ctx.cancellation_token = self.in_flight.task_token();
 
             // From here on there is something to release on failure: the queue
             // first, then the token, then the row.

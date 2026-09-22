@@ -14,7 +14,7 @@ things a container platform requires, and nothing else.
 |---|---|---|
 | Configuration | `PORT`, `AGENT_URL` from the environment | Examples hardcode a port; a scheduler assigns one |
 | Health checks | `GET /healthz`, `GET /readyz` | Nothing probes an example, so nobody notices there is no probe endpoint |
-| Graceful shutdown | `SIGTERM`/`SIGINT` drain in-flight work | Examples die to Ctrl-C and nobody minds the truncated stream |
+| Graceful shutdown | `SIGTERM`/`SIGINT` end in-flight tasks, then drain connections | Examples die to Ctrl-C and nobody minds the truncated stream |
 | Bind address | `0.0.0.0` | A loopback bind works locally and is unreachable in a container |
 
 The agent logic is deliberately trivial. Everything worth reading is the
