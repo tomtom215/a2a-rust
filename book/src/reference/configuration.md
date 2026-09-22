@@ -125,6 +125,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `with_timeout` | `Duration` | 30s | Per-request timeout |
 | `with_connection_timeout` | `Duration` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout` | `Duration` | 30s | SSE connect timeout |
+| `with_stream_idle_timeout` | `Option<Duration>` | 5 min | Longest an established stream may receive nothing — keep-alive comments count — after its first data; `None` disables |
 | `with_retry_policy` | `RetryPolicy` | None | Retry on transient errors with jittered backoff |
 | `with_accepted_output_modes` | `Vec<String>` | `["text/plain", "application/json"]` | MIME types accepted |
 | `with_history_length` | `u32` | None | Messages in responses |

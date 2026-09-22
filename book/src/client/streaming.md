@@ -109,7 +109,9 @@ let client = ClientBuilder::new(url)
     .build()?;
 ```
 
-The connect timeout applies to establishing the SSE connection. The same duration also bounds the wait for the *first* event (lifted once any data arrives — the spec requires streams to begin with a Task/Message event immediately, and SSE keep-alives count), so a server that accepts the stream and then goes silent fails fast instead of hanging the consumer. After the first frame the stream stays open until the server closes it or an error occurs.
+The connect timeout applies to establishing the SSE connection. The same duration also bounds the wait for the *first* event (lifted once any data arrives — the spec requires streams to begin with a Task/Message event immediately, and SSE keep-alives count), so a server that accepts the stream and then goes silent fails fast instead of hanging the consumer. After the first frame, the **idle timeout** (`with_stream_idle_timeout`, default 5 minutes) bounds the silence between chunks. Any bytes reset it, including the `: keep-alive` comments this repository's server writes every 30 seconds, so a healthy stream from it runs for as long as the task does. A stream that receives nothing for the whole bound ends with `ClientError::Timeout` ("stream idle timeout: …"); the task on the server is not cancelled, so resubscribe with `subscribe_to_task` to continue. Set `None` to disable it.
+
+The default is five minutes because a healthy peer is never that quiet on the wire: this repository's server heartbeats every 30 seconds; a2a-go v2.5.0 sends no keep-alives unless the server opts in, but its own client gives a whole request 3 minutes; and common proxies close a connection that is silent for about 60 seconds. gRPC and WebSocket streams carry no heartbeat the stream can see, so on those bindings the bound is on the gap between *events* — raise it for agents that think silently for longer.
 
 ## Safety Limits
 
@@ -119,6 +121,7 @@ The SSE parser protects against resource exhaustion:
 |-------|-------|---------|
 | Buffer cap | 16 MiB | Prevents OOM from oversized events |
 | Connect timeout | 30s (default) | Fails fast on unreachable servers |
+| Idle timeout | 5 min (default) | Ends a stream whose server stopped sending, keep-alives included |
 
 ## Next Steps
 

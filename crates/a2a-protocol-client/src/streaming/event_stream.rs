@@ -91,7 +91,16 @@ pub struct EventStream {
     /// arrives the bound is lifted, so legitimately long-idle subscriptions are
     /// not cut off mid-stream.
     first_event_timeout: Option<std::time::Duration>,
-    /// Whether at least one chunk has been received (clears `first_event_timeout`).
+    /// Optional bound on the silence **between** chunks once the first has
+    /// arrived. Any bytes reset it, SSE keep-alive comments included.
+    idle_timeout: Option<std::time::Duration>,
+    /// When data last arrived — or, before any has, when the stream was
+    /// created. Both bounds are deadlines measured from here rather than
+    /// fresh timeouts per `next()` call, so a consumer that polls `next()`
+    /// inside a `select!` and keeps cancelling it cannot restart the clock.
+    last_activity: tokio::time::Instant,
+    /// Whether at least one chunk has been received (switches the bound in
+    /// force from `first_event_timeout` to `idle_timeout`).
     first_chunk_received: bool,
     /// A resource whose lifetime is the stream's, released when the stream is
     /// dropped. Set by [`EventStream::holding`]; see that method for why.
@@ -127,6 +136,8 @@ impl EventStream {
             status_code: 200,
             jsonrpc_envelope: true,
             first_event_timeout: None,
+            idle_timeout: Some(crate::config::DEFAULT_STREAM_IDLE_TIMEOUT),
+            last_activity: tokio::time::Instant::now(),
             first_chunk_received: false,
             held: None,
         }
@@ -150,6 +161,8 @@ impl EventStream {
             status_code: 200,
             jsonrpc_envelope: true,
             first_event_timeout: None,
+            idle_timeout: Some(crate::config::DEFAULT_STREAM_IDLE_TIMEOUT),
+            last_activity: tokio::time::Instant::now(),
             first_chunk_received: false,
             held: None,
         }
@@ -233,6 +246,8 @@ impl EventStream {
             status_code,
             jsonrpc_envelope: true,
             first_event_timeout: None,
+            idle_timeout: Some(crate::config::DEFAULT_STREAM_IDLE_TIMEOUT),
+            last_activity: tokio::time::Instant::now(),
             first_chunk_received: false,
             held: None,
         }
@@ -250,10 +265,10 @@ impl EventStream {
 
     /// Bounds the wait for the first chunk of stream data.
     ///
-    /// If no data arrives within `timeout`, [`EventStream::next`] yields a
-    /// [`ClientError::Timeout`] instead of blocking forever. The bound applies
-    /// only to establishment — once any data is received, subsequent waits are
-    /// unbounded so long-idle subscriptions are not interrupted.
+    /// If no data arrives within `timeout` of the stream being created,
+    /// [`EventStream::next`] yields a [`ClientError::Timeout`] instead of
+    /// blocking forever. Once any data is received this bound is spent and
+    /// [`with_idle_timeout`](Self::with_idle_timeout) governs instead.
     ///
     /// Wired by every streaming transport (JSON-RPC, REST, gRPC, WebSocket):
     /// their connect timeouts only bound establishment, and a server that
@@ -261,6 +276,26 @@ impl EventStream {
     #[must_use]
     pub(crate) const fn with_first_event_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.first_event_timeout = Some(timeout);
+        self
+    }
+
+    /// Bounds the silence between chunks once the first has arrived; `None`
+    /// removes the bound.
+    ///
+    /// Defaults to
+    /// [`DEFAULT_STREAM_IDLE_TIMEOUT`](crate::config::DEFAULT_STREAM_IDLE_TIMEOUT).
+    /// Any bytes reset it, so an SSE server that sends keep-alive comments
+    /// keeps a quiet stream open indefinitely. When it expires,
+    /// [`next`](Self::next) yields [`ClientError::Timeout`] once and the stream
+    /// ends; the background reader is aborted, which closes the connection.
+    ///
+    /// [`A2aClient`](crate::A2aClient) sets this from
+    /// [`ClientConfig::stream_idle_timeout`](crate::ClientConfig::stream_idle_timeout)
+    /// on every stream it returns. Call it yourself on a stream obtained from
+    /// a [`Transport`](crate::Transport) directly.
+    #[must_use]
+    pub const fn with_idle_timeout(mut self, timeout: Option<std::time::Duration>) -> Self {
+        self.idle_timeout = timeout;
         self
     }
 
@@ -324,21 +359,16 @@ impl EventStream {
                 return None;
             }
 
-            // Need more bytes — wait for the next chunk from the body reader.
-            // Until the first chunk arrives, bound the wait by
-            // `first_event_timeout` (if set) so a server that accepts the
-            // stream but never responds cannot hang the consumer forever.
-            let chunk = match self.first_event_timeout {
-                Some(timeout) if !self.first_chunk_received => {
-                    let Ok(chunk) = tokio::time::timeout(timeout, self.rx.recv()).await else {
-                        self.done = true;
-                        return Some(Err(ClientError::Timeout(
-                            "stream produced no data before the first-event timeout".into(),
-                        )));
+            // Need more bytes — wait for the next chunk from the body reader,
+            // no later than the deadline of whichever bound is in force.
+            let chunk = match self.silence_deadline() {
+                Some((deadline, bound)) => {
+                    let Ok(chunk) = tokio::time::timeout_at(deadline, self.rx.recv()).await else {
+                        return Some(Err(self.fail_silent(bound)));
                     };
                     chunk
                 }
-                _ => self.rx.recv().await,
+                None => self.rx.recv().await,
             };
             match chunk {
                 None => {
@@ -361,6 +391,7 @@ impl EventStream {
                 }
                 Some(Ok(bytes)) => {
                     self.first_chunk_received = true;
+                    self.last_activity = tokio::time::Instant::now();
                     self.parser.feed(&bytes);
                 }
             }
@@ -368,6 +399,43 @@ impl EventStream {
     }
 
     // ── internals ─────────────────────────────────────────────────────────────
+
+    /// The deadline for the next chunk and the bound it came from, or `None`
+    /// when no bound is in force.
+    ///
+    /// Before the first chunk the first-event bound applies; after it, the
+    /// idle bound. A bound too large to add to an `Instant` (`Duration::MAX`)
+    /// is treated as no bound rather than panicking on the overflow.
+    fn silence_deadline(&self) -> Option<(tokio::time::Instant, std::time::Duration)> {
+        let bound = if self.first_chunk_received {
+            self.idle_timeout
+        } else {
+            self.first_event_timeout
+        }?;
+        Some((self.last_activity.checked_add(bound)?, bound))
+    }
+
+    /// Ends the stream because a silence bound expired, and says which.
+    ///
+    /// Aborts the body reader so the connection is released now rather than
+    /// when the consumer eventually drops the stream.
+    fn fail_silent(&mut self, bound: std::time::Duration) -> ClientError {
+        self.done = true;
+        if let Some(handle) = self.abort_handle.take() {
+            handle.abort();
+        }
+        if self.first_chunk_received {
+            ClientError::Timeout(format!(
+                "stream idle timeout: no data, not even a keep-alive comment, for {bound:?} \
+                 since the last data received; the task on the server is not cancelled, \
+                 so resubscribe to continue"
+            ))
+        } else {
+            ClientError::Timeout(format!(
+                "stream produced no data before the first-event timeout ({bound:?})"
+            ))
+        }
+    }
 
     fn decode_frame(&mut self, data: &str) -> ClientResult<StreamResponse> {
         if self.jsonrpc_envelope {
@@ -856,7 +924,7 @@ mod tests {
             .await
             .expect("first-event timeout must fire well within 2s");
         assert!(
-            matches!(result, Some(Err(ClientError::Timeout(_)))),
+            matches!(result, Some(Err(ClientError::Timeout(ref m))) if m.contains("first-event")),
             "expected first-event timeout, got {result:?}"
         );
         // After timing out the stream is done.
@@ -891,6 +959,149 @@ mod tests {
             pending.is_err(),
             "stream must remain open (pending) after first chunk, got {pending:?}"
         );
+    }
+
+    // ── Idle bound ───────────────────────────────────────────────────────
+    //
+    // Paused time: the bounds are deadlines on tokio's clock, so these run
+    // instantly and measure exactly.
+
+    const IDLE: Duration = Duration::from_secs(10);
+
+    /// A stream with one event delivered and its sender held open.
+    async fn stream_after_one_event() -> (mpsc::Sender<BodyChunk>, EventStream) {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx)
+            .with_jsonrpc_envelope(false)
+            .with_idle_timeout(Some(IDLE));
+        let event = make_status_event(TaskState::Working, false);
+        tx.send(Ok(Bytes::from(bare_sse_frame(&event))))
+            .await
+            .unwrap();
+        assert!(matches!(stream.next().await, Some(Ok(_))));
+        (tx, stream)
+    }
+
+    /// Silence past the idle bound after the first event ends the stream with
+    /// a `Timeout` that says it was the idle bound, at the bound and not
+    /// before.
+    #[tokio::test(start_paused = true)]
+    async fn idle_timeout_fires_after_the_first_event() {
+        let (_tx, mut stream) = stream_after_one_event().await;
+        let start = tokio::time::Instant::now();
+        let result = stream.next().await;
+        assert_eq!(start.elapsed(), IDLE, "fires exactly at the bound");
+        match result {
+            Some(Err(ClientError::Timeout(msg))) => {
+                assert!(msg.contains("idle timeout"), "{msg}");
+                assert!(msg.contains("10s"), "names the bound: {msg}");
+            }
+            other => panic!("expected idle Timeout, got {other:?}"),
+        }
+        assert!(stream.next().await.is_none(), "the stream has ended");
+    }
+
+    /// The deadline survives a `next()` that is cancelled — the shape of a
+    /// consumer polling inside `select!` with a shorter tick. A per-call
+    /// timeout would restart on every poll and never fire.
+    #[tokio::test(start_paused = true)]
+    async fn cancelled_polls_do_not_restart_the_idle_clock() {
+        let (_tx, mut stream) = stream_after_one_event().await;
+        for _ in 0..3 {
+            let poll = tokio::time::timeout(IDLE / 4, stream.next()).await;
+            assert!(poll.is_err(), "still inside the bound: {poll:?}");
+        }
+        // 0.75 × IDLE has passed: the next poll fails a quarter-bound later,
+        // where a restarted clock would wait a whole one.
+        let start = tokio::time::Instant::now();
+        let result = tokio::time::timeout(IDLE, stream.next())
+            .await
+            .expect("the original deadline falls inside this poll");
+        assert_eq!(start.elapsed(), IDLE / 4);
+        assert!(matches!(result, Some(Err(ClientError::Timeout(_)))));
+    }
+
+    /// Any bytes are liveness: a keep-alive comment restarts the idle clock
+    /// even though it produces no event.
+    #[tokio::test(start_paused = true)]
+    async fn a_keep_alive_comment_restarts_the_idle_clock() {
+        let (tx, mut stream) = stream_after_one_event().await;
+        let quiet = IDLE * 3 / 4;
+        tokio::time::advance(quiet).await;
+        tx.send(Ok(Bytes::from_static(b": keep-alive\n\n")))
+            .await
+            .unwrap();
+        // Well past the original deadline, but inside the renewed one.
+        let poll = tokio::time::timeout(quiet, stream.next()).await;
+        assert!(poll.is_err(), "the comment renewed the bound: {poll:?}");
+        // And the renewed one still fires.
+        let result = stream.next().await;
+        assert!(matches!(result, Some(Err(ClientError::Timeout(_)))));
+    }
+
+    /// `None` is no bound; `Duration::MAX` is too large to add to an instant
+    /// and must mean the same rather than panic on the overflow.
+    #[tokio::test(start_paused = true)]
+    async fn an_absent_or_unrepresentable_idle_bound_never_fires() {
+        for bound in [None, Some(Duration::MAX)] {
+            let (tx, rx) = mpsc::channel(8);
+            let mut stream = EventStream::new(rx)
+                .with_jsonrpc_envelope(false)
+                .with_idle_timeout(bound);
+            let event = make_status_event(TaskState::Working, false);
+            tx.send(Ok(Bytes::from(bare_sse_frame(&event))))
+                .await
+                .unwrap();
+            assert!(matches!(stream.next().await, Some(Ok(_))));
+            let poll = tokio::time::timeout(IDLE * 1000, stream.next()).await;
+            assert!(poll.is_err(), "{bound:?} must not fire: {poll:?}");
+        }
+    }
+
+    /// The default applies without any setter: a bare stream is bounded.
+    #[tokio::test(start_paused = true)]
+    async fn streams_carry_the_default_idle_bound() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx).with_jsonrpc_envelope(false);
+        let event = make_status_event(TaskState::Working, false);
+        tx.send(Ok(Bytes::from(bare_sse_frame(&event))))
+            .await
+            .unwrap();
+        assert!(matches!(stream.next().await, Some(Ok(_))));
+        let start = tokio::time::Instant::now();
+        let result = stream.next().await;
+        assert_eq!(
+            start.elapsed(),
+            crate::config::DEFAULT_STREAM_IDLE_TIMEOUT,
+            "the default bound applies"
+        );
+        assert!(matches!(result, Some(Err(ClientError::Timeout(_)))));
+    }
+
+    /// Expiry releases the connection: the body-reader task is aborted then,
+    /// not when the consumer gets round to dropping the stream.
+    #[tokio::test(start_paused = true)]
+    async fn idle_expiry_aborts_the_body_reader() {
+        let (tx, rx) = mpsc::channel::<BodyChunk>(8);
+        let reader = tokio::spawn(async move {
+            let event = make_status_event(TaskState::Working, false);
+            let _ = tx.send(Ok(Bytes::from(bare_sse_frame(&event)))).await;
+            std::future::pending::<()>().await;
+        });
+        let mut stream = EventStream::with_abort_handle(rx, reader.abort_handle())
+            .with_jsonrpc_envelope(false)
+            .with_idle_timeout(Some(IDLE));
+        assert!(matches!(stream.next().await, Some(Ok(_))));
+        assert!(matches!(
+            stream.next().await,
+            Some(Err(ClientError::Timeout(_)))
+        ));
+        let joined = reader.await;
+        assert!(
+            joined.is_err_and(|e| e.is_cancelled()),
+            "the reader must be aborted at expiry while the stream is still alive"
+        );
+        drop(stream);
     }
 
     /// Test transport error propagation (covers lines 148-149, 165-168).

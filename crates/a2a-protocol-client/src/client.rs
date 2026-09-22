@@ -26,6 +26,7 @@ use crate::builder::ClientBuilder;
 use crate::config::ClientConfig;
 use crate::error::ClientResult;
 use crate::interceptor::InterceptorChain;
+use crate::streaming::EventStream;
 use crate::transport::Transport;
 
 // ── A2aClient ────────────────────────────────────────────────────────────────
@@ -71,6 +72,17 @@ impl A2aClient {
     #[must_use]
     pub const fn config(&self) -> &ClientConfig {
         &self.config
+    }
+
+    /// Applies this client's stream bounds to a stream a transport returned.
+    ///
+    /// Done here rather than in each transport so that every stream the
+    /// client hands out obeys [`ClientConfig`] — including one from a
+    /// transport supplied through
+    /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport),
+    /// which never sees the config.
+    pub(crate) const fn configure_stream(&self, stream: EventStream) -> EventStream {
+        stream.with_idle_timeout(self.config.stream_idle_timeout)
     }
 
     /// Creates a new [`A2aClient`] from its constituent parts.

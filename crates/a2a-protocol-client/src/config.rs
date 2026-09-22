@@ -94,6 +94,38 @@ pub enum GrpcBareAddressScheme {
     Http,
 }
 
+// ── Stream liveness defaults ─────────────────────────────────────────────────
+
+/// Default for [`ClientConfig::stream_idle_timeout`]: 5 minutes.
+///
+/// The bound exists because a stream whose server stops sending — a hung
+/// agent, a half-open connection behind a proxy — otherwise holds its
+/// consumer forever. The value is chosen against what a healthy peer does:
+///
+/// * **This repository's server** writes an SSE `: keep-alive` comment after
+///   30 seconds without an event (`DispatchConfig::sse_keep_alive_interval`),
+///   so a healthy stream from it is never quiet for 5 minutes; the bound
+///   sits ten heartbeats out, and a server whose interval was raised to a few
+///   minutes still clears it.
+/// * **a2a-go v2.5.0** sends keep-alives only when the server opts in
+///   (`a2asrv.WithTransportKeepAlive`; "If interval is 0 or negative,
+///   keep-alive is disabled (default behavior)"), so a Go agent is silent
+///   between events. Its own client gives a whole request, stream included,
+///   3 minutes by default (`a2aclient/transport.go`:
+///   `defaultRequestTimeout = 3 * time.Minute`), so a Go agent that is
+///   silent for longer than this is already outside what its own SDK's
+///   defaults tolerate.
+/// * Common reverse proxies and load balancers close a connection that is
+///   silent for about 60 seconds (nginx `proxy_read_timeout`, AWS ALB
+///   `idle_timeout`), so a stream that survives 5 silent minutes is one that
+///   crossed no such hop.
+///
+/// Expiry is recoverable — the task keeps running and
+/// [`A2aClient::subscribe_to_task`](crate::A2aClient::subscribe_to_task)
+/// picks it up — so the cost of a too-short bound is one resubscribe, while
+/// the cost of no bound is a consumer that never returns.
+pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 // ── ClientConfig ──────────────────────────────────────────────────────────────
 
 /// Configuration for an [`crate::A2aClient`] instance.
@@ -143,6 +175,30 @@ pub struct ClientConfig {
     /// Prevents the client from hanging for the OS default (~2 minutes)
     /// when the server is unreachable. Defaults to 10 seconds.
     pub connection_timeout: Duration,
+
+    /// Longest an established stream may go without receiving **any** data
+    /// once its first data has arrived. `None` disables the bound.
+    ///
+    /// Defaults to [`DEFAULT_STREAM_IDLE_TIMEOUT`] (5 minutes). See that
+    /// constant for why this value.
+    ///
+    /// Any bytes reset it, including SSE keep-alive comments
+    /// (`: keep-alive`), which is what lets a quiet-but-healthy stream from a
+    /// server that sends heartbeats run for as long as the task does. When it
+    /// expires, [`EventStream::next`](crate::EventStream::next) yields
+    /// [`ClientError::Timeout`](crate::ClientError::Timeout) and the stream
+    /// ends; the task on the server is not cancelled, so resubscribe with
+    /// [`A2aClient::subscribe_to_task`](crate::A2aClient::subscribe_to_task)
+    /// to pick it up again.
+    ///
+    /// Applied by [`A2aClient`](crate::A2aClient) to every stream it opens, on
+    /// every transport — including one supplied through
+    /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport).
+    /// gRPC and WebSocket streams carry no heartbeat the stream can see, so
+    /// on those bindings this bounds the gap between *events*: a task that
+    /// emits nothing for longer is cut off, and resubscribing is the remedy.
+    /// Raise it, or set `None`, for agents known to think silently for longer.
+    pub stream_idle_timeout: Option<Duration>,
 
     /// Maximum size in bytes of a buffered (non-streaming) response body.
     ///
@@ -197,6 +253,7 @@ impl ClientConfig {
             request_timeout: Duration::from_secs(30),
             stream_connect_timeout: Duration::from_secs(30),
             connection_timeout: Duration::from_secs(10),
+            stream_idle_timeout: Some(DEFAULT_STREAM_IDLE_TIMEOUT),
             max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
             tls: TlsConfig::Disabled,
             tenant: None,
@@ -214,6 +271,7 @@ impl Default for ClientConfig {
             request_timeout: Duration::from_secs(30),
             stream_connect_timeout: Duration::from_secs(30),
             connection_timeout: Duration::from_secs(10),
+            stream_idle_timeout: Some(DEFAULT_STREAM_IDLE_TIMEOUT),
             max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
             tls: TlsConfig::default(),
             tenant: None,
@@ -268,6 +326,15 @@ impl ClientConfig {
     #[must_use]
     pub const fn with_connection_timeout(mut self, timeout: Duration) -> Self {
         self.connection_timeout = timeout;
+        self
+    }
+
+    /// Sets how long an established stream may receive nothing before it is
+    /// failed with a timeout; `None` disables the bound. See
+    /// [`stream_idle_timeout`](Self::stream_idle_timeout).
+    #[must_use]
+    pub const fn with_stream_idle_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.stream_idle_timeout = timeout;
         self
     }
 
@@ -347,6 +414,12 @@ mod tests {
         assert_eq!(cfg.request_timeout, Duration::from_secs(30));
         assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(30));
         assert_eq!(cfg.connection_timeout, Duration::from_secs(10));
+        assert_eq!(cfg.stream_idle_timeout, Some(DEFAULT_STREAM_IDLE_TIMEOUT));
+        assert_eq!(
+            ClientConfig::default_http().stream_idle_timeout,
+            Some(DEFAULT_STREAM_IDLE_TIMEOUT)
+        );
+        assert_eq!(DEFAULT_STREAM_IDLE_TIMEOUT, Duration::from_secs(300));
     }
 
     #[test]
@@ -372,6 +445,7 @@ mod tests {
             .with_request_timeout(Duration::from_secs(1))
             .with_stream_connect_timeout(Duration::from_secs(2))
             .with_connection_timeout(Duration::from_secs(3))
+            .with_stream_idle_timeout(Some(Duration::from_secs(5)))
             .with_max_response_size(4)
             .with_tls(TlsConfig::Disabled)
             .with_tenant(Some("acme".to_owned()));
@@ -382,6 +456,7 @@ mod tests {
         assert_eq!(cfg.request_timeout, Duration::from_secs(1));
         assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(2));
         assert_eq!(cfg.connection_timeout, Duration::from_secs(3));
+        assert_eq!(cfg.stream_idle_timeout, Some(Duration::from_secs(5)));
         assert_eq!(cfg.max_response_size, 4);
         assert!(matches!(cfg.tls, TlsConfig::Disabled));
         assert_eq!(cfg.tenant.as_deref(), Some("acme"));

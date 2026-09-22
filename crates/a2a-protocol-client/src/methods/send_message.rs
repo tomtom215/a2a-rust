@@ -126,6 +126,7 @@ impl A2aClient {
             .transport
             .send_streaming_request(METHOD, req.params, &req.extra_headers)
             .await?;
+        let stream = self.configure_stream(stream);
 
         // FIX(#6): Call run_after() for streaming requests so interceptors
         // get their cleanup/logging hook. The response body is empty since

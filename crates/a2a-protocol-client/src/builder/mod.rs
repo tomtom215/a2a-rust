@@ -286,6 +286,22 @@ impl ClientBuilder {
         self
     }
 
+    /// Sets how long an established stream may receive no data at all —
+    /// events and keep-alive comments alike — before it fails with
+    /// [`ClientError::Timeout`](crate::ClientError::Timeout). `None` disables
+    /// the bound.
+    ///
+    /// Defaults to 5 minutes; see
+    /// [`ClientConfig::stream_idle_timeout`](crate::ClientConfig::stream_idle_timeout)
+    /// for how it applies per transport and
+    /// [`DEFAULT_STREAM_IDLE_TIMEOUT`](crate::config::DEFAULT_STREAM_IDLE_TIMEOUT)
+    /// for why that value.
+    #[must_use]
+    pub const fn with_stream_idle_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.config.stream_idle_timeout = timeout;
+        self
+    }
+
     /// Sets the maximum size in bytes of a buffered (non-streaming) response
     /// body. Responses exceeding the cap fail with a transport error instead
     /// of being buffered without bound.
