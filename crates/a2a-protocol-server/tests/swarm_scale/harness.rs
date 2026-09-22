@@ -77,7 +77,7 @@ pub fn set_turn_shape(dwell_ms: u64, events: u64) {
 /// terminal task, and `resolve_task_id` refuses a message naming one, so a
 /// task that completes can neither be posted to again nor tailed — it would
 /// be a channel with exactly one post in it.
-struct ChannelExec;
+pub struct ChannelExec;
 
 impl a2a_protocol_server::executor::AgentExecutor for ChannelExec {
     fn execute<'a>(
@@ -127,50 +127,6 @@ pub struct Deployment {
     handler: Arc<a2a_protocol_server::RequestHandler>,
 }
 
-/// The card the deployment serves.
-///
-/// Every agent fetches this before it can talk to anyone, so a deployment
-/// without one cannot measure the discovery path at all — the dispatcher's
-/// `card_handler` is `None` and `/.well-known/agent-card.json` is a 404. That
-/// is how the first run of `the_agent_card_under_a_starting_fleet` came back
-/// with a full latency column and `ok` of zero.
-fn swarm_card() -> a2a_protocol_types::agent_card::AgentCard {
-    use a2a_protocol_types::agent_card::{
-        AgentCapabilities, AgentCard, AgentInterface, AgentSkill,
-    };
-    AgentCard {
-        url: None,
-        name: "swarm-scale".into(),
-        description: "Coordination-channel experiment fixture".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://127.0.0.1:0".into(),
-            protocol_binding: "HTTP+JSON".into(),
-            protocol_version: "1.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "channel".into(),
-            name: "Channel".into(),
-            description: "Appends a post to a channel".into(),
-            tags: vec![],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none().with_push_notifications(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
-}
-
 impl Deployment {
     /// Starts a server on an ephemeral port with every limit set explicitly.
     pub async fn start() -> Self {
@@ -195,7 +151,7 @@ impl Deployment {
                 .with_task_store(store)
                 .with_event_queue_capacity(QUEUE_CAPACITY)
                 .with_handler_limits(HandlerLimits::default())
-                .with_agent_card(swarm_card())
+                .with_agent_card(super::fixtures::swarm_card())
                 // The card advertising push notifications is not what enables
                 // them: without a store the handler answers
                 // PUSH_NOTIFICATION_NOT_SUPPORTED, which is what the CRUD arm

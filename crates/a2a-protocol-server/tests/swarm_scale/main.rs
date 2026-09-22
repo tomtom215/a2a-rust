@@ -79,9 +79,11 @@
 //! which calls are refused and which posts a subscriber never sees — do not
 //! depend on any of that, and they are the point.
 
+mod bindings;
 mod cost;
 mod fan_in;
 mod fan_out;
+mod fixtures;
 mod harness;
 mod independent;
 mod surfaces;

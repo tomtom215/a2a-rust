@@ -13,6 +13,23 @@
 # docs/swarm-scale-findings.md rather than in the doc comment, for this
 # reason.
 #
+# postgres_store/store_impl.rs is one `impl TaskStore for PostgresTaskStore`.
+# It crossed the limit on 2026-09-21 at 550 lines, adding `save_status_delta`
+# beside `save_artifact_delta`, and it is listed rather than split for a
+# blunter reason than the trait above: a single `impl Trait for Type` block
+# cannot be split across files at all. What can be extracted is free helper
+# functions -- the SQLite store does that with `artifact_delta_sql` -- and
+# doing it here would move about twenty lines while scattering the SQL away
+# from the method whose contract explains it. The measurements behind the new
+# method live in docs/swarm-scale-findings.md.
+#
+# `tests/swarm_scale/harness.rs` is NOT listed, and that is the point of
+# recording this here: it crossed at 519 on the same day and was split instead,
+# because the agent card it had grown was a static document the server hands
+# out rather than part of how the server is started. It now lives in
+# `tests/swarm_scale/fixtures.rs` and the harness is 475 lines. Exempt what
+# genuinely cannot be split; split what can.
+#
 # NOTE: `--update` regenerates this file from scratch and drops every comment
 # below, including this one. Add an entry by hand.
 # handler/messaging/ is split, and one entry remains from it:
@@ -109,6 +126,7 @@ crates/a2a-protocol-server/src/handler/push_config.rs
 crates/a2a-protocol-server/src/push/config_store.rs
 crates/a2a-protocol-server/src/push/sender.rs
 crates/a2a-protocol-server/src/rate_limit/tests.rs
+crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs
 crates/a2a-protocol-server/src/store/sqlite_store/mod.rs
 crates/a2a-protocol-server/src/store/sqlite_store/tests.rs
 crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs

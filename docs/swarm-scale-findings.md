@@ -665,6 +665,40 @@ config CRUD needs both a config store **and** a wired sender; a card
 advertising `pushNotifications` is not what enables it, and without the sender
 every call is `PUSH_NOTIFICATION_NOT_SUPPORTED`.
 
+## Finding 10 — the binding costs more than the work behind it
+
+Every number above is a REST number. `bindings.rs` drives the same
+uncontended send — one agent, its own channel, nothing contending — over the
+other two bindings, against the same handler, store and executor. Per-post
+service time at concurrency one:
+
+| binding | p50 | relative |
+|---|---|---|
+| REST | 206µs | 1x |
+| WebSocket | 481µs | 2.3x |
+| gRPC | 2,170µs | 10.5x |
+
+**One caveat that has to travel with those numbers.** The three arms do not
+drive the server through equivalent client stacks, and cannot: REST is a raw
+`hyper` request, WebSocket is a raw JSON-RPC frame over `tokio-tungstenite`,
+and gRPC goes through `a2a-protocol-client`'s full `A2aClient`, because that
+is the only gRPC client there is — this crate's `build.rs` sets
+`build_client(false)`. So the gRPC figure includes client-side SDK work that
+the other two bypass, and 10.5x is an upper bound on what the binding itself
+costs rather than a measurement of it. The REST-to-WebSocket ratio is the
+clean one: both are raw frames, and the framing is the only difference.
+
+Throughput at higher agent counts (WebSocket 2,792/s at 64, gRPC 1,269/s at
+64) is reported in the arms but is the weaker figure, because each agent's
+connect and opening send are inside the wall clock and only 20 posts follow
+them. Read the p50 column.
+
+What this does **not** say is that REST is the right binding for a
+coordination channel. It says that if you are choosing on per-post cost, that
+choice is worth more than several of the optimisations in this report — the
+history-append change in Fix 2 bought 31% at the history cap, and the gap
+between REST and gRPC here is larger than that by an order of magnitude.
+
 ## What is still unmeasured
 
 * ~~The attribution in finding 6 is read from the source and supported by the
@@ -684,4 +718,5 @@ every call is `PUSH_NOTIFICATION_NOT_SUPPORTED`.
 * ~~Agent-card fetch under swarm load, `ListTasks` pagination as a context fills,
   and push-notification config CRUD as a coordination path are all untouched.~~
   **Measured** — see finding 9.
-* The `grpc` and `websocket` bindings. Only REST was driven.
+* ~~The `grpc` and `websocket` bindings. Only REST was driven.~~ **Measured**
+  — see finding 10.
