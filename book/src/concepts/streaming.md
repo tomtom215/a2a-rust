@@ -270,6 +270,13 @@ other readers or the writer.
 
 ### Resuming from where you left off
 
+With `a2a-protocol-client`, a broken stream tells you: `next()` yields
+`ClientError::IncompleteStream` when the body ends before the stream's final
+event, carrying the last `id:` received (also available as
+`EventStream::last_event_id()`). Pass it to
+`client.subscribe_to_task_from(task_id, id)`, which sends it as
+`Last-Event-ID` on JSON-RPC and HTTP+JSON. The wire contract underneath:
+
 A snapshot tells you where the task *is*, not what happened while you were
 disconnected. An agent that emitted three progress updates during the outage
 folds them into one state, and a client polling or resubscribing sees one.

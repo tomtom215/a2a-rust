@@ -67,6 +67,29 @@ pub enum ClientError {
         limit: usize,
     },
 
+    /// A stream ended before the event that finishes it.
+    ///
+    /// A stream finishes cleanly on a `Message`, or on a `Task` or status
+    /// update whose state is terminal (`completed`, `failed`, `canceled`,
+    /// `rejected`) or interrupted (`input-required`, `auth-required`) — the
+    /// states at which the specification says the server closes it (§3.1.2,
+    /// §11.7). A body that ends, or a connection that closes, anywhere else
+    /// is this error rather than a quiet `None`: the task is very likely still
+    /// running, and the consumer is missing the rest of it.
+    ///
+    /// Retryable in the sense that matters for a stream: resubscribe with
+    /// [`A2aClient::subscribe_to_task_from`](crate::A2aClient::subscribe_to_task_from),
+    /// passing `last_event_id`, and a server that keeps an event log replays
+    /// what was missed.
+    IncompleteStream {
+        /// The last SSE `id:` received before the stream ended — the value to
+        /// resume from. `None` when the server sent none: gRPC and WebSocket
+        /// streams carry no ids, and neither does a server without resumption.
+        last_event_id: Option<String>,
+        /// What was missing, for the message.
+        detail: String,
+    },
+
     /// The server appears to use a different protocol binding than the client.
     ///
     /// For example, a JSON-RPC client connected to a REST-only server (or
@@ -96,6 +119,9 @@ impl fmt::Display for ClientError {
                     f,
                     "too many pending requests on this connection (limit {limit})"
                 )
+            }
+            Self::IncompleteStream { detail, .. } => {
+                write!(f, "stream ended before its final event: {detail}")
             }
             Self::ProtocolBindingMismatch(msg) => {
                 write!(

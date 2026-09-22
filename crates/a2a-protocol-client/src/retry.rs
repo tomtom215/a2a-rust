@@ -152,12 +152,15 @@ impl ClientError {
     /// - Server errors (HTTP 502, 503, 504, 429)
     /// - The client's own in-flight cap (`TooManyPendingRequests`), which
     ///   clears as responses arrive
+    /// - A stream that ended before its final event (`IncompleteStream`),
+    ///   which a resubscribe resumes
     #[must_use]
     pub const fn is_retryable(&self) -> bool {
         match self {
             Self::Http(_)
             | Self::HttpClient(_)
             | Self::Timeout(_)
+            | Self::IncompleteStream { .. }
             | Self::TooManyPendingRequests { .. } => true,
             Self::UnexpectedStatus { status, .. } => {
                 matches!(status, 429 | 502 | 503 | 504)
@@ -511,6 +514,20 @@ mod tests {
     fn timeout_is_retryable() {
         let e = ClientError::Timeout("request timed out".into());
         assert!(e.is_retryable());
+    }
+
+    /// A stream cut off before its final event is resumable, so retryable.
+    #[test]
+    fn incomplete_stream_is_retryable() {
+        let e = ClientError::IncompleteStream {
+            last_event_id: Some("7".into()),
+            detail: "cut off".into(),
+        };
+        assert!(e.is_retryable());
+        assert_eq!(
+            e.to_string(),
+            "stream ended before its final event: cut off"
+        );
     }
 
     #[test]

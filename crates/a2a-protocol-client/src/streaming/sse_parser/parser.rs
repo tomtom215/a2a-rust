@@ -165,6 +165,28 @@ impl SseParser {
         }
     }
 
+    /// Bytes of an event that has started but not been dispatched: `data:`
+    /// lines still waiting for their blank line, plus an unterminated line
+    /// that is not a comment. `None` when there is none.
+    ///
+    /// What is left here when the byte stream ends is an event the server
+    /// did not finish writing. The SSE specification discards it at end of
+    /// stream, and so does the parser; this is how a caller finds out that
+    /// it did, instead of the loss passing unseen. An unterminated comment
+    /// (`: keep-alive` cut off before its newline) carries no event and is
+    /// not counted.
+    #[must_use]
+    pub fn incomplete_event_len(&self) -> Option<usize> {
+        let data: usize = self.data_lines.iter().map(String::len).sum();
+        let line = if self.line_buf.starts_with(b":") {
+            0
+        } else {
+            self.line_buf.len()
+        };
+        let pending = data + line;
+        (!self.data_lines.is_empty() || line > 0).then_some(pending)
+    }
+
     /// Returns the next complete [`SseFrame`], or `None` if none are ready.
     ///
     /// Returns `Err` if an event exceeded the maximum size limit.
@@ -320,6 +342,30 @@ impl SseParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only an unfinished *event* counts: data lines awaiting their blank
+    /// line, or a partial non-comment line. A dispatched frame, a comment,
+    /// and an empty parser leave nothing.
+    #[test]
+    fn incomplete_event_len_counts_only_an_unfinished_event() {
+        let fed = |bytes: &[u8]| {
+            let mut p = SseParser::new();
+            p.feed(bytes);
+            p.incomplete_event_len()
+        };
+        assert_eq!(fed(b""), None);
+        assert_eq!(fed(b"data: done\n\n"), None, "dispatched");
+        assert_eq!(fed(b": keep-al"), None, "a cut-off comment is no event");
+        assert_eq!(fed(b"id: 3\n"), None, "an id alone dispatches nothing");
+        assert_eq!(fed(b"data: abc\n"), Some(3), "data awaiting its blank line");
+        assert_eq!(fed(b"data: ab"), Some(8), "a partial line");
+        assert_eq!(fed(b"data: abc\ndata: de"), Some(11), "both, summed");
+        assert_eq!(
+            fed(b"data:\n"),
+            Some(0),
+            "an empty data line is still an event"
+        );
+    }
 
     fn parse_all(input: &str) -> Vec<SseFrame> {
         let mut p = SseParser::new();

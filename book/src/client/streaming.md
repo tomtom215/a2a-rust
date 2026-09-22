@@ -97,6 +97,32 @@ while let Some(event) = stream.next().await {
 }
 ```
 
+## How a Stream Ends
+
+`next()` returns `None` only when the stream has finished: after a `Message`,
+or a task or status update in a terminal or interrupted state. A body that
+ends anywhere else — the server went away, a proxy cut the connection — yields
+`ClientError::IncompleteStream` first, carrying the last SSE `id:` so you can
+resume without losing events:
+
+```rust,ignore
+let mut stream = client.subscribe_to_task(&task_id).await?;
+loop {
+    match stream.next().await {
+        Some(Ok(event)) => handle(event),
+        Some(Err(ClientError::IncompleteStream { last_event_id: Some(id), .. })) => {
+            stream = client.subscribe_to_task_from(&task_id, id).await?;
+        }
+        Some(Err(e)) => return Err(e.into()),
+        None => break,
+    }
+}
+```
+
+`EventStream::last_event_id()` exposes the same id at any point. gRPC and
+WebSocket streams carry no ids, so there it is always `None` and a resubscribe
+starts from the `Task` snapshot.
+
 ## Stream Timeouts
 
 A stream has three bounds, one per phase:

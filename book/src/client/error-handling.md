@@ -66,6 +66,29 @@ match client.send_message(params).await {
 }
 ```
 
+### A Stream That Ends Early
+
+A stream finishes cleanly on a `Message`, or on a task or status update in a
+terminal (`completed`, `failed`, `canceled`, `rejected`) or interrupted
+(`input-required`, `auth-required`) state. If the body ends — or the
+connection closes — anywhere else, `next()` yields
+`ClientError::IncompleteStream` instead of `None`, and a frame the server did
+not finish writing is named in its message rather than dropped silently. The
+task is very likely still running; the error carries the last SSE `id:` to
+resume from:
+
+```rust,ignore
+match stream.next().await {
+    Some(Err(ClientError::IncompleteStream { last_event_id: Some(id), .. })) => {
+        stream = client.subscribe_to_task_from(task_id, id).await?;
+    }
+    Some(Err(ClientError::IncompleteStream { last_event_id: None, .. })) => {
+        stream = client.subscribe_to_task(task_id).await?; // snapshot + live
+    }
+    other => { /* ... */ }
+}
+```
+
 ### Connection Errors
 
 ```rust,ignore
@@ -97,7 +120,7 @@ match client.send_message(params).await {
 }
 ```
 
-Retryable errors include: `Http`, `HttpClient`, `Timeout`, and `UnexpectedStatus` with codes 429, 502, 503, or 504. gRPC `DeadlineExceeded` and `Cancelled` errors also map to `Timeout` (retryable), and `Unavailable` maps to `HttpClient` (retryable).
+Retryable errors include: `Http`, `HttpClient`, `Timeout`, `IncompleteStream`, and `UnexpectedStatus` with codes 429, 502, 503, or 504. gRPC `DeadlineExceeded` and `Cancelled` errors also map to `Timeout` (retryable), and `Unavailable` maps to `HttpClient` (retryable).
 
 Retry backoff uses full jitter (0.5–1.0× randomization) to prevent thundering-herd storms when multiple clients experience the same failure simultaneously.
 
