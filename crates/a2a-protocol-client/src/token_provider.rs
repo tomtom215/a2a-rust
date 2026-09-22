@@ -60,8 +60,8 @@
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -91,19 +91,17 @@ const DEFAULT_TOKEN_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Default margin before expiry at which a cached token is refreshed.
 const DEFAULT_REFRESH_LEEWAY: Duration = Duration::from_secs(30);
 
-/// Whether a cached token is still usable at `now`.
+/// Default time a failed refresh is remembered and returned to later callers
+/// without a new attempt.
 ///
-/// Fresh means *strictly* before the deadline: at exactly `refresh_after` the
-/// token is due for refresh, not still good.
-///
-/// Extracted from [`OAuth2ClientCredentials::cached`] rather than left inline
-/// so the boundary is reachable from a test. `Instant::now()` cannot be made
-/// to land exactly on a stored deadline, so an inline `now < refresh_after`
-/// leaves `<` and `<=` indistinguishable to any test and to mutation testing
-/// — both mutants of that comparison survived the 2026-08-13 sweep.
-fn is_fresh(now: Instant, refresh_after: Instant) -> bool {
-    now < refresh_after
-}
+/// One second: long enough that a tight caller loop against a dead token
+/// endpoint makes one attempt a second rather than one per call, short
+/// enough that recovery is noticed within a second and nobody mistakes the
+/// cached error for the endpoint's real recovery time. Callers already
+/// waiting on an attempt share its outcome regardless of this value.
+const DEFAULT_FAILURE_BACKOFF: Duration = Duration::from_secs(1);
+
+mod flight;
 
 /// Cache lifetime applied when the token response omits `expires_in`
 /// (RFC 6749 leaves expiry unspecified in that case — re-check soon rather
@@ -233,7 +231,14 @@ pub enum TokenEndpointAuthStyle {
 ///   ([`with_refresh_leeway`](Self::with_refresh_leeway), default 30 s before
 ///   `expires_in` elapses) and refreshed on demand.
 /// - Concurrent callers needing a refresh collapse into a single token
-///   request (single-flight).
+///   request (single-flight), and all of them get that request's outcome —
+///   its failure as well as its success, so a dead endpoint costs every
+///   waiting caller one timeout, not one each in turn.
+/// - A failed refresh is remembered for
+///   [`with_failure_backoff`](Self::with_failure_backoff) (default 1 s):
+///   callers in that window get the same error without a new request.
+/// - A caller that is cancelled mid-refresh does not strand the others: the
+///   attempt is marked abandoned and the next waiter starts a new one.
 /// - The client secret is never logged, never echoed in errors, and redacted
 ///   from `Debug` output.
 ///
@@ -251,15 +256,9 @@ pub struct OAuth2ClientCredentials {
     auth_style: TokenEndpointAuthStyle,
     refresh_leeway: Duration,
     request_timeout: Duration,
+    failure_backoff: Duration,
     client: TokenHttpClient,
-    cache: RwLock<Option<CachedToken>>,
-    refresh_lock: tokio::sync::Mutex<()>,
-}
-
-#[derive(Clone)]
-struct CachedToken {
-    token: String,
-    refresh_after: Instant,
+    tokens: flight::TokenCache,
 }
 
 impl fmt::Debug for OAuth2ClientCredentials {
@@ -293,9 +292,9 @@ impl OAuth2ClientCredentials {
             auth_style: TokenEndpointAuthStyle::Basic,
             refresh_leeway: DEFAULT_REFRESH_LEEWAY,
             request_timeout: DEFAULT_TOKEN_REQUEST_TIMEOUT,
+            failure_backoff: DEFAULT_FAILURE_BACKOFF,
             client: build_token_http_client(),
-            cache: RwLock::new(None),
-            refresh_lock: tokio::sync::Mutex::new(()),
+            tokens: flight::TokenCache::default(),
         }
     }
 
@@ -407,23 +406,21 @@ impl OAuth2ClientCredentials {
         self
     }
 
-    /// Returns the cached token when still fresh.
-    fn cached(&self) -> Option<String> {
-        let guard = self
-            .cache
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.as_ref().and_then(|c| {
-            if is_fresh(Instant::now(), c.refresh_after) {
-                Some(c.token.clone())
-            } else {
-                None
-            }
-        })
+    /// Sets how long a failed refresh is remembered (default 1 s).
+    ///
+    /// Callers arriving within this window after a failure get the same
+    /// error immediately instead of a new token request. `Duration::ZERO`
+    /// turns the negative cache off; callers already waiting on an attempt
+    /// share its outcome either way.
+    #[must_use]
+    pub const fn with_failure_backoff(mut self, backoff: Duration) -> Self {
+        self.failure_backoff = backoff;
+        self
     }
 
-    /// Fetches a fresh token from the endpoint and caches it.
-    async fn refresh(&self) -> ClientResult<String> {
+    /// Fetches a fresh token from the endpoint, returning it and how long it
+    /// may be served from cache.
+    async fn refresh(&self) -> ClientResult<(String, Duration)> {
         check_endpoint_reachable(&self.token_url, "token endpoint")?;
 
         let req = self.build_token_request()?;
@@ -463,15 +460,7 @@ impl OAuth2ClientCredentials {
         let ttl = token_resp.expires_in.map_or(NO_EXPIRY_CACHE_TTL, |secs| {
             Duration::from_secs(secs).saturating_sub(self.refresh_leeway)
         });
-        *self
-            .cache
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(CachedToken {
-            token: token_resp.access_token.clone(),
-            refresh_after: Instant::now() + ttl,
-        });
-
-        Ok(token_resp.access_token)
+        Ok((token_resp.access_token, ttl))
     }
 
     /// Builds the token-endpoint POST (form body + optional Basic auth header).
@@ -530,17 +519,9 @@ fn token_error(status: hyper::StatusCode, body: &[u8]) -> ClientError {
 
 impl TokenProvider for OAuth2ClientCredentials {
     fn access_token(&self) -> Pin<Box<dyn Future<Output = ClientResult<String>> + Send + '_>> {
-        Box::pin(async move {
-            if let Some(token) = self.cached() {
-                return Ok(token);
-            }
-            // Single-flight: concurrent refreshes collapse into one request.
-            let _guard = self.refresh_lock.lock().await;
-            if let Some(token) = self.cached() {
-                return Ok(token); // Another caller refreshed while we waited.
-            }
-            self.refresh().await
-        })
+        // Single-flight with a shared outcome; see `flight` for the rules
+        // and for why this is cancellation-safe.
+        Box::pin(self.tokens.get(self.failure_backoff, || self.refresh()))
     }
 }
 
@@ -716,6 +697,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Instant;
 
     // -- form encoding --------------------------------------------------------
 
@@ -778,28 +760,6 @@ mod tests {
         assert!(
             dbg.contains("BearerAuthInterceptor"),
             "Debug must name the type, got: {dbg:?}"
-        );
-    }
-
-    /// Kills both mutants on the cached-token freshness comparison
-    /// (`<` → `<=`), which survived because `Instant::now()` can never be
-    /// made to land exactly on a stored deadline. Testing the extracted
-    /// predicate is what makes the boundary reachable.
-    #[test]
-    fn is_fresh_is_exclusive_at_the_deadline() {
-        let t = Instant::now();
-
-        assert!(
-            !is_fresh(t, t),
-            "at exactly the refresh deadline a token is due for refresh, not fresh"
-        );
-        assert!(
-            is_fresh(t, t + Duration::from_secs(1)),
-            "before the deadline the token is still usable"
-        );
-        assert!(
-            !is_fresh(t + Duration::from_secs(1), t),
-            "after the deadline the token is stale"
         );
     }
 
@@ -1124,6 +1084,71 @@ mod tests {
             hits.load(Ordering::SeqCst),
             1,
             "8 concurrent callers must produce exactly one token request"
+        );
+    }
+
+    /// C3 (audit 2026-09-22): a failed refresh cached nothing, so every
+    /// caller queued on the refresh lock ran its own full attempt, one after
+    /// another. Concurrent callers must share the one attempt's failure.
+    #[tokio::test]
+    async fn concurrent_failures_share_one_attempt() {
+        let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let addr = spawn_token_server(
+            vec![(500, r#"{"error":"temporarily_unavailable"}"#.to_owned())],
+            Arc::clone(&captured),
+            Arc::clone(&hits),
+        )
+        .await;
+
+        let p = Arc::new(OAuth2ClientCredentials::new(
+            format!("http://{addr}/token"),
+            "cid",
+            "csec",
+        ));
+        let tasks: Vec<_> = (0..5)
+            .map(|_| {
+                let p = Arc::clone(&p);
+                tokio::spawn(async move { p.access_token().await })
+            })
+            .collect();
+        for t in tasks {
+            let err = t.await.unwrap().expect_err("the endpoint only fails");
+            assert!(err.to_string().contains("HTTP 500"), "{err}");
+        }
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "5 concurrent callers must share one failed token request"
+        );
+    }
+
+    /// The audit's measurement: with a 1 s timeout, 5 callers failed at 1,
+    /// 2, 3, 4 and 5 s. Sharing the attempt makes it one timeout for all.
+    #[tokio::test]
+    async fn concurrent_timeouts_cost_one_timeout_not_one_each() {
+        let timeout = Duration::from_millis(300);
+        let addr = spawn_stalling_server("HTTP/1.1 200 OK", Duration::ZERO).await;
+        let p = Arc::new(
+            OAuth2ClientCredentials::new(format!("http://{addr}/token"), "cid", "csec")
+                .with_request_timeout(timeout),
+        );
+
+        let started = Instant::now();
+        let tasks: Vec<_> = (0..5)
+            .map(|_| {
+                let p = Arc::clone(&p);
+                tokio::spawn(async move { p.access_token().await })
+            })
+            .collect();
+        for t in tasks {
+            let err = t.await.unwrap().expect_err("a stalled endpoint must fail");
+            assert!(matches!(err, ClientError::Timeout(_)), "{err:?}");
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < timeout * 2,
+            "5 callers must wait out one shared timeout, took {elapsed:?} against {timeout:?}"
         );
     }
 

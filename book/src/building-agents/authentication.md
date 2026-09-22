@@ -154,6 +154,13 @@ let provider = OAuth2ClientCredentials::from_oidc_issuer(
 ).await?;
 ```
 
+When the token endpoint fails, every caller waiting on that refresh gets the
+same error from the one request: a dead endpoint costs them one
+`with_request_timeout` together, not one each in turn. The failure is then
+remembered for `with_failure_backoff` (default 1 s; `Duration::ZERO` turns it
+off), so a tight loop makes at most one attempt per backoff. A caller cancelled
+mid-refresh does not strand the others; the next one starts a new attempt.
+
 The client secret is never logged, never echoed in an error, and redacted from
 `Debug`. `Basic` client authentication is the default; switch to form-body
 credentials with `.with_auth_style(TokenEndpointAuthStyle::Post)`.
