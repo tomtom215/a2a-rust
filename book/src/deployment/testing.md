@@ -372,15 +372,23 @@ straightforward: add a test that asserts the specific behavior.
 # Install cargo-mutants and cargo-nextest (one-time setup)
 cargo install cargo-mutants cargo-nextest --locked
 
-# A live database, or every Postgres mutant survives for want of one
-# rather than for want of a test:
+# A live database. Without one the run does not produce weak results, it
+# produces none: two `rate_limit::shared::postgres` tests fail in the
+# UNMUTATED tree, cargo-mutants stops before testing a single mutant, and it
+# says so as "cargo test failed in an unmutated tree", which reads like a
+# broken checkout rather than a missing service.
 export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres
 
 # What CI actually runs, per crate. Reproduce this exactly before concluding
 # anything about a survivor — a narrower invocation measures a smaller
 # feature set and reports survivors that a full one kills.
+#
+# The -E filter is part of "exactly". Both invocations in mutants.yml carry
+# it, because --run-ignored all otherwise picks up the soak and swarm-scale
+# binaries, whose tests run for 30 to 140 seconds EACH, once per mutant.
 cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants \
-  -- --all-features --run-ignored all
+  -- --all-features --run-ignored all \
+     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'
 
 # Test a specific file
 cargo mutants --file crates/a2a-protocol-types/src/task.rs \
