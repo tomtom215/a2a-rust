@@ -525,3 +525,94 @@ async fn admit_count(limiter: &RateLimitInterceptor, caller: &str) -> u64 {
     }
     admitted
 }
+
+// ── What a shared store does not give you ───────────────────────────────────
+
+/// **The single-writer refusal does not cross replicas.**
+///
+/// `reject_in_flight_send` reads `self.cancellation_tokens`, a map held by one
+/// handler, and the send path serialises on `keyed_lock`, a mutex held by one
+/// handler. Neither is in the shared store, so neither is shared. Two replicas
+/// behind a load balancer will both admit a continuation for the same task,
+/// both spawn an executor for it, and both write to the same row.
+///
+/// Within one replica this is the property `fan_in.rs` measures as obstacle 1
+/// and the reason a swarm has to shard by context: concurrent posters to one
+/// task are *turned away*, loudly, rather than racing. Across replicas they
+/// are not turned away at all.
+///
+/// This test asserts the current behaviour rather than the desired one. It is
+/// here so the limit is measured instead of inferred, and so that anything
+/// which later makes admission shared fails this test and has to say so.
+#[tokio::test]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn the_single_writer_refusal_does_not_cross_replicas() {
+    let db = TestDb::create("cross_replica_admission").await;
+    // Long enough that the first executor is still running when the second
+    // send arrives, which is exactly the window the refusal exists to close.
+    let step = Duration::from_millis(400);
+    let a = replica(&db.url(), step).await;
+    let b = replica(&db.url(), step).await;
+
+    // Open a channel on A and let its executor start. `returnImmediately` is
+    // what makes this a test of the in-flight window: a blocking send waits
+    // for the executor, so by the time it returns the task is terminal and
+    // both replicas would refuse for that reason instead, which measures
+    // nothing about admission.
+    let mut open = message("m-open");
+    open.configuration = Some(a2a_protocol_types::params::SendMessageConfiguration {
+        accepted_output_modes: vec![],
+        task_push_notification_config: None,
+        history_length: None,
+        return_immediately: Some(true),
+    });
+    let opened = a
+        .on_send_message(open, false, None)
+        .await
+        .expect("replica A accepts the opening message");
+    let task_id = match opened {
+        SendMessageResult::Response(a2a_protocol_types::responses::SendMessageResponse::Task(
+            t,
+        )) => t.id,
+        other => panic!("expected a task, got {other:?}"),
+    };
+
+    // A continuation naming that task, sent to A while its executor runs, is
+    // the case the refusal is for.
+    let mut to_a = message("m-second-on-a");
+    to_a.message.task_id = Some(task_id.clone());
+    let a_again = a.on_send_message(to_a, false, None).await;
+
+    // The same continuation, to B.
+    let mut to_b = message("m-second-on-b");
+    to_b.message.task_id = Some(task_id.clone());
+    let b_first = b.on_send_message(to_b, false, None).await;
+
+    println!("\n── one task, a continuation to each replica ───────────────");
+    println!(
+        "  same replica that owns the executor -> {:?}",
+        a_again.as_ref().err()
+    );
+    println!(
+        "  the other replica                   -> {:?}",
+        b_first.as_ref().err()
+    );
+
+    assert!(
+        a_again.is_err(),
+        "the refusal must still hold within one replica; if this passes, \
+         `reject_in_flight_send` stopped working and the cross-replica result \
+         below says nothing"
+    );
+    assert!(
+        b_first.is_ok(),
+        "measured limit: the other replica admits the same continuation, \
+         because admission state is per-handler and not in the shared store. \
+         If this now fails, admission became shared — good, but this test and \
+         the multi-replica guidance both need rewriting"
+    );
+
+    let _ = a.shutdown().await;
+    let _ = b.shutdown().await;
+    db.drop_db().await;
+}

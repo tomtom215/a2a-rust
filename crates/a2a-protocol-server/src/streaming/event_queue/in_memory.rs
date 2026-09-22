@@ -6,8 +6,19 @@
 //! In-memory event queue backed by a `tokio::sync::broadcast` channel.
 //!
 //! The broadcast channel has a fixed capacity and is used for SSE fan-out.
-//! When a slow SSE consumer falls behind, it receives `Lagged(n)` and skips
-//! missed events — this is acceptable for SSE delivery.
+//! When a slow SSE consumer falls behind it receives `Lagged(n)`, and its
+//! stream **ends**: `InMemoryQueueReader::read` turns the lag into
+//! `A2aError::stream_lagged`, which `streaming::sse` writes as an
+//! `event: error` frame before closing.
+//!
+//! This paragraph used to say the consumer "skips missed events", which
+//! described the behaviour `broadcast` offers rather than the one built on it
+//! — a receiver that resumes at the next live event. It does not resume.
+//! What a lagging tail gets is a contiguous prefix and then an announced end,
+//! never a silent hole, which is the stronger of the two properties and the
+//! one a reader can recover from: `docs/swarm-scale-findings.md` finding 4
+//! emitted 1,024 events into a 256-capacity channel at every subscriber count
+//! from 1 to 64 and measured zero gaps, with every cut-off stream told.
 //!
 //! For the background event processor (state persistence, push notifications),
 //! a separate `tokio::sync::mpsc` channel can be created via

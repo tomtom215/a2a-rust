@@ -14,7 +14,9 @@ the repository commits to, move it there and delete it here.
 Last updated 2026-09-20 — the 0.13.0 branch and two gate lessons (`4db4c87f`),
 then the branch table's three merges and the corrections under **Still open**,
 then the post-0.13.0 audit work on `claude/optimistic-bell-680i9p` (see its
-section below), which closed item 7 and changed the branch's own row.
+section below), which closed item 7 and changed the branch's own row, and then
+the swarm-scale experiment on `claude/busy-cerf-ta682r`, then its
+shared-nothing and cost arms, the fix program they imply, and the first fix.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -103,6 +105,7 @@ the *content* merge.
 | `claude/relaxed-planck-c4hsn0` | merged, still present | The 0.13.0 content branch *and* its release prep. **Merged as `707092f8` via [#137](https://github.com/tomtom215/a2a-rust/pull/137) on 2026-09-20.** Trace-context propagation, `CallContext` reachable from `RequestContext`, the executor conformance harness, the typed failure taxonomy, and the event log with SQL stores plus SSE `id:` / `Last-Event-ID` resumption. Safe to delete. |
 | `claude/wizardly-tesla-0f358t` | merged, still present | Three examples: tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP) and `examples/mcp-bridge` (an A2A agent exposed *as* MCP). **Merged as `19766afb` via [#135](https://github.com/tomtom215/a2a-rust/pull/135) on 2026-09-19.** The row previously said "open … No PR opened yet"; both halves were false, which is what `git merge-base --is-ancestor origin/claude/wizardly-tesla-0f358t HEAD` answers in one command. Safe to delete. |
 | `claude/prove-gates-needle` | merged, still present | The benchmark-prose prover fix — the gate matched its sentence by value rather than by shape, so it could not be made to fail — plus the panic-hook race it exposed. **Merged as `f732fe3b` via [#136](https://github.com/tomtom215/a2a-rust/pull/136) on 2026-09-19.** This branch had no row at all while its content was described further down the file. Safe to delete. |
+| `claude/busy-cerf-ta682r` | open | **Destined for `main`.** The swarm-scale experiment: `crates/a2a-protocol-server/tests/swarm_scale/` and `docs/swarm-scale-findings.md`. Test-only — it adds no crate code and changes none. See its section below. |
 | `claude/optimistic-bell-680i9p` | open — see note | **Destined for `main`.** The current branch. It began as documentation corrections on top of 0.13.0 and is now substantially code: six audit fixes and the regression tests three of them shipped without, W3C Trace Context conformance, event-log durability, `InboundTracePolicy`, and two new CI gates. See its section below. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
@@ -1141,6 +1144,287 @@ misreported as passing more than once in these sessions.
    `git tag -a v0.13.0`, and the `bindings/a2a-protocol-slimrpc` 0.5.0 publish
    (`RELEASING.md` step 4), which has never been run.
 
+### `claude/busy-cerf-ta682r` — what A2A does at a thousand agents
+
+A new `#[ignore]`d load experiment,
+`crates/a2a-protocol-server/tests/swarm_scale/`, and its write-up,
+`docs/swarm-scale-findings.md`. Test-only: no crate source is added or changed.
+Run it with
+
+```text
+A2A_SWARM_MAX=1000 cargo test -p a2a-protocol-server --release \
+  --test swarm_scale -- --ignored --nocapture --test-threads=1
+```
+
+The question was whether many agents sharing **one** object works, which
+nothing here had ever measured — `concurrent_agents.rs` stops at 64 and gives
+every agent its own task, and `soak.rs` runs eight workers each on their own
+task. Four findings, all reproducible from that command; the report has the
+tables:
+
+1. One task peaks at **four** concurrent writers and falls 18× by a thousand,
+   to a 1.31s median post. It queues rather than refuses: `commit_task` holds
+   the per-context lock across find-decide-save.
+2. **A context holds exactly one addressable task, and which one it is
+   changes.** `resolve_task_id` mints a fresh task whenever a message names
+   none — unconditionally — and `find_task_by_context` resolves a context to
+   its most-recently-updated non-terminal task. So one message without a
+   `taskId` permanently locks every other caller out of the task they were
+   using, with a 400 that says only `message task_id does not match task found
+   for context`.
+3. Sharding by **context** recovers it: 6.4× the throughput at a thousand
+   agents, refusals gone from K=4, and the knee at roughly 4–16 writers per
+   task.
+4. A `SubscribeToTask` tail is live only when a turn outlasts
+   `subscribe_reattach_interval` (250ms). Turns that park instantly deliver
+   nothing to any tail at any subscriber count; turns that outlast the poll
+   deliver everything to a thousand tails with zero gaps.
+
+Two things for the maintainer that are not about swarms:
+
+- The comment on the no-`taskId` branch of `resolve_task_id` says "If the found
+  stored task is terminal, a new task will be created on this context". That
+  path never reads `stored_task`. The comment names a condition the code does
+  not check, and finding 2 is the measured behaviour. Whether the spec wants a
+  context-only message to join the live task or fork a new one is an open
+  question this experiment does not answer.
+- `streaming::event_queue::in_memory`'s module docs say a lagging SSE consumer
+  "receives `Lagged(n)` and skips missed events". It does not skip and resume:
+  `read` returns `A2aError::stream_lagged`, `streaming::sse` writes it as an
+  `event: error` frame and closes the stream. Measured across the 85 lagged
+  tails of the burst arm (1 + 4 + 16 + 64), every one was cut off and every one
+  was told, with zero undetectable gaps — the behaviour is the better of the
+  two and the documentation describes the other one.
+
+Neither was changed here. Both are one-line fixes in crate source, which this
+branch deliberately does not touch.
+
+#### Then the measurement that matters more than any of it
+
+Two further modules, `independent.rs` and `cost.rs`, ask what the send path
+costs when nothing contends at all. The answer reframes findings 1 to 4 as the
+smaller problem.
+
+`GET /health` — the same socket, listener and dispatcher, with no handler
+behind it — answers 52,799 requests a second on this box. An uncontended
+`POST /message:send` answers 4,671. At a concurrency of one the split is 21µs
+of transport against a 206µs request, so **about 90% of a send is work behind
+the dispatcher**, and posts stay between 3,669 and 5,250 per second from one
+agent to a thousand. That flatness is a per-request cost, not a saturated box:
+the same box does ten times the number through the same sockets.
+
+Worse, the cost grows with the channel's age. One channel, 1,400 sequential
+posts at concurrency one: service time rises 6.5x, from 385µs to about
+2,500µs, and then flattens. The reply is a constant 152 bytes throughout, so
+none of it is payload.
+
+A controlled run names the cause. With `MAX_TASK_HISTORY_MESSAGES` lowered
+from 1,024 to 64 and nothing else changed, the plateau falls from ~2,500µs to
+~540µs and the growth from 6.5x to 1.3x. **History length drives it**, at
+roughly 2µs per retained message per post. That edit was made to run the
+experiment and reverted; the constant in the tree is 1,024.
+
+The store is not implicated: one channel's cost is flat at 0, 100, 1,000 and
+4,000 other tasks, so `context_index` is doing its job.
+
+Reading the send path finds at least four O(history) touches per continuation
+— `find_task_by_context`'s `list` clones each task it collects, `create`
+clones the stored history to append one message, `save` stores a clone, and
+the background state machine saves again per status event. That attribution is
+read from source and consistent with the cap experiment; **no profiler ran**,
+so which clone dominates is unmeasured. `perf` is not available in this
+container.
+
+#### Everything the findings report listed as open, closed
+
+The report's "still unmeasured" list is empty and its two behavioural findings
+are fixed. What that produced, in the order it happened:
+
+* **`save_status_delta` reached the SQL stores.** It was overridden only
+  in-memory, so SQLite and Postgres deployments got nothing from it and
+  neither doc said so. Both override it now: 122,071µs → 37,216µs (SQLite)
+  and 287,287µs → 120,104µs (Postgres) over 100 status events on a
+  200-message channel. The SQLite override deliberately does **not** delete
+  the artifact journal that its `save` deletes, and that divergence has its
+  own test — copying `save` there would have silently dropped appended parts.
+* **The context lockout (finding 2) is fixed, and the spec moved the defect.**
+  §3.4.3 line 651 *permits* the fork; the bug was the 400 that followed it,
+  because the server rejected any task that was not the one
+  `find_task_by_context` returned while §3.4.3 mandates rejecting only a
+  *contextId* mismatch. Two existing tests changed expectations and the commit
+  says why at length: both named a task that did not exist and asserted
+  `InvalidParams` where §3.4.2 requires `TaskNotFound`.
+* **The send path stopped carrying the conversation (fix-program item 2).**
+  `Task::history` cannot move — wire type, published crate, semver gate — so
+  `TaskStore::save_appending_history` takes the snapshot plus only the turn's
+  new messages. 3,962µs → 2,748µs at the history cap, growth 3.2x → 2.1x.
+  **Not O(1)**, and the remaining stages are named below.
+* **The dominant clone is measured, not inferred.** `find_task_by_context`
+  511µs at the cap against `build_initial_task` 7µs and `persist_initial_task`
+  42µs. So the next win is worth ~500µs of a ~2,750µs send and is blocked on
+  one API decision, not on effort.
+* **Findings 7–10 are new**: the SQL stores under the ageing probe, the
+  single-writer refusal not crossing replicas, the three untouched surfaces,
+  and the three bindings.
+
+#### The one that is a correctness limit, not a number
+
+`the_single_writer_refusal_does_not_cross_replicas`: two replicas sharing one
+Postgres will **both** admit a continuation for the same task, both spawn an
+executor, and both write the same row. `reject_in_flight_send` reads
+`self.cancellation_tokens` and the send path serialises on `keyed_lock`, both
+per-handler. Sharding by context does not help, because the shard key is
+enforced by that same in-process lock. The test pins today's behaviour, so
+anything that later makes admission shared has to fail it and say so.
+
+#### Three near-misses worth carrying forward
+
+Each of these passed something before it was caught, which is the reason to
+write them down rather than the reason not to.
+
+1. **A green suite is not coverage.** 2,037 tests passed with the
+   history-append change in place and none of them covered a continuation
+   keeping what an earlier turn wrote. The truncation did not happen —
+   `background/mod.rs:84` re-reads the task — but nothing in the suite knew
+   that, and I had predicted the opposite. `historyLength` *was* broken by the
+   same change and also uncaught. Both have tests now.
+2. **An arm that measures nothing can look like an arm that measures well.**
+   The agent-card arm printed a full latency column beside `ok` of zero,
+   because the deployment served no card and every fetch was a 404. The
+   WebSocket arm posted with `contextId` alone, which forks, so it measured
+   task creation and called it a channel post. Both now assert what they
+   claim to measure.
+3. **`cargo update -p rustls --precise 0.23.45` is the rustls waiver's own
+   removal test.** Running it beats reasoning about it; it still fails, so the
+   entry stays, now date-stamped.
+
+#### Verification, once the tools existed
+
+Everything the last session said it had not run, run. Recorded because three
+of the five said something.
+
+- **CI is green.** Run
+  [35597781502](https://github.com/tomtom215/a2a-rust/actions/runs/35597781502)
+  at `ab9c9a7`, all 20 jobs, including `cargo-semver-checks` — which is the
+  independent check on "additive, non-breaking" — the PostgreSQL integration
+  leg, and the test matrix on Linux, macOS and Windows.
+- **CI caught two doc links nothing local had.** Run
+  [35593616804](https://github.com/tomtom215/a2a-rust/actions/runs/35593616804)
+  failed its Documentation job on
+  `crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES` (private module, so
+  not linkable from a public doc comment) and on `[StoreData::update_status]`
+  (private item linked from public docs). `cargo doc --workspace --no-deps`
+  with `-D warnings` is in the PR checklist and had not been run. Fixed in
+  `ab9c9a7`.
+- **The mutation gate passes: 0 missed.** `cargo-mutants` was not installed in
+  the container; it is now. 19 in-diff mutants, 3 caught, 13 unviable, **3
+  timeouts** — all three in `StoreData::update_status`. Timeouts fail no gate
+  but `mutants.yml` says in as many words not to read past them, so they were
+  re-run at `--jobs 1 --timeout 900`: 4 caught, 4 unviable, **0 timeouts, 0
+  missed**. The timeouts were four parallel test suites on this box's four
+  cores, not an adequacy gap.
+- **Soak is clean after the store change.** 120s, 688,438 requests, 16.7 bytes
+  per request against the 1,024 ceiling, p95 latency 1.01x head to tail.
+- **The two findings are fixed**, each with a test shown to fail under a
+  mutation that breaks exactly what it checks. See the commits.
+
+Two things worth knowing for next time. `cargo mutants` needs a live
+PostgreSQL or its **baseline** fails — two `rate_limit::shared::postgres`
+tests — and it reports that as "cargo test failed in an unmutated tree", which
+reads like a broken tree rather than a missing service. The handoff's own
+apt recipe above is what fixes it. And this container's disk allowance fills
+quickly: a release build of the workspace plus two `cargo install`s exhausted
+it twice, both times fixed by `rm -rf target/debug target/release`.
+
+#### Both delta paths now pace eviction, and a doc comment had come adrift
+
+`save_artifact_delta` carried the same eviction-pacing gap as the status one
+and is now fixed too. Its `// No new entry, so the store cannot have grown
+past its bound and there is nothing for eviction to reconsider` was right
+about the capacity bound and wrong about the TTL one — expiry is driven by
+elapsed time, not by growth — so a workload dominated by artifact streaming
+swept expired tasks ever more rarely. Regression test
+`an_artifact_delta_still_paces_the_eviction_sweep`, shown to fail under a
+mutation that drops only the counter bump while the status test still passes.
+
+Measured on this box, 500-chunk stream, in-memory store, snapshots built
+outside the timer, medians of nine: `save` 18.6 ms against the delta's 0.89 ms
+with the fix and 0.86 ms without it. Between-run variance is around 400 µs —
+a third run of the fixed code came back at 1.26 ms — so the ~36 µs between the
+arms is well inside the noise: **no measurable regression**, which is the only
+claim the measurement supports. The first version of that harness rebuilt an
+n-part task inside the timing loop and so measured its own O(n²) setup,
+reporting the delta at 17.7 ms; the numbers above are from the corrected one.
+The 43.4 ms → 2.5 ms in the trait docs was measured on different hardware and
+is left alone.
+
+Separately, and this is the one nothing mechanical would have caught: the
+status delta had been inserted **between `save_artifact_delta`'s doc comment
+and its function**, so the artifact doc was attached to the status method —
+where "no artifacts, index out of range, a different artifact at that index"
+is simply false — and the artifact method had no doc at all. rustdoc does not
+check that a doc comment describes its item, so CI was green through it. Both
+are back where they belong.
+
+`TaskStore::save_artifact_delta`'s "Implementing this" section now states the
+general rule both bugs broke: a delta is a cheaper way to do a write, not a
+way to do fewer writes, so whatever per-write bookkeeping an implementation's
+`save` does, an override must do too. That matters because the trait is
+unsealed and third-party stores will override these.
+
+#### What the next session should pick up
+
+The fix program, in the order the evidence supports:
+
+1. ~~**Stop the avoidable O(history) work on the send path.**~~ **Started, and
+   the first piece landed.** `TaskStore::save_status_delta` is additive (its
+   default delegates to `save`), overridden in the in-memory store to edit the
+   status in place and re-key the indexes. One turn of 512 status events on a
+   channel holding 600 messages: 54,301µs with `save`, 2,248µs with the delta,
+   measured back to back on the final code, and the turn stops growing with
+   the channel's age. It does **not**
+   measurably move a turn that emits one event, and the report says so.
+
+   What that bought, and what it did not, is now measured rather than guessed.
+   Timing the stages of `commit_task` in a temporary build (reverted) gives,
+   per send at the history cap: `find_task_by_context` ~280µs,
+   `build_initial_task` ~300µs, `persist_initial_task` ~440µs — together
+   roughly 40-50% of a 2,400µs request, and all three scale with history.
+
+   The rest of item 1 as originally written turns out not to be separable.
+   `build_initial_task` needs the stored history to carry it forward and
+   `build_request_context` needs the stored task for the executor's view of
+   the previous turn, so neither clone can simply become a move. That is item
+   2, not a cleanup.
+2. ~~**Decide whether `Task::history` belongs inside the `Task` snapshot.**~~
+   **Decided and done, and it did not reach O(1).** `Task::history` cannot
+   move: it is the A2A wire type in a published crate, and cargo-semver-checks
+   holds that. So the change took the seam the trait already used twice.
+   `TaskStore::save_appending_history` takes the snapshot plus only the
+   messages the turn added; `build_initial_task` stopped cloning the stored
+   conversation forward. Measured back to back, 1,400 sequential posts:
+   3,962µs → 2,748µs at the history cap, growth 3.2x → 2.1x, and nothing at
+   the start.
+
+   **What is left, and why it stopped here.** Three stages were O(history);
+   this removed one and a half. The other two:
+
+   * `find_task_by_context` still lists and clones up to ten whole tasks to
+     pick one. It could ask for no history now that `build_initial_task` does
+     not need it — **except** that its result becomes `RequestContext`'s
+     `stored_task`, a `pub` field on a `pub` struct, documented as the
+     executor's view of the previous turn. Stripping history from it would
+     silently change what every user-written executor sees. That is an API
+     decision, not a refactor, and it is the next one to take.
+   * The background processor re-reads the task at `background/mod.rs:84`.
+     That read is why the refactor did not corrupt anything — it is the reason
+     a continuation still accumulates history — and it is off the request's
+     critical path, so it costs throughput rather than latency.
+3. **The context lockout (finding 2)** and **the reattach poll (finding 4)**,
+   each with a regression test that is shown to fail without its fix.
+4. **Re-run every arm after each fix**, and keep the before-and-after in
+   `docs/swarm-scale-findings.md` rather than overwriting it.
+
 ### Still not started
 
 - ~~**Idempotency key expiry (H13).**~~ **Done.**
@@ -1165,18 +1449,58 @@ misreported as passing more than once in these sessions.
 
 Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
 
-1. Delete `release/v0.12.1`, whose contents are merged and tagged.
+1. ~~Delete `release/v0.12.1`, whose contents are merged and tagged.~~
+   **Done by the owner, 2026-09-22.** Verified after the fact:
+   `git ls-remote --heads origin 'release/*'` returns nothing, and tag
+   `v0.12.1` still resolves to `e057c8e`, so the release stays identifiable
+   and the merged commits stay reachable from `main`. Nothing was lost.
+
+   Kept as a record of how it was handled rather than deleted outright: this
+   was the one irreversible outward-facing action on the list, it was verified
+   ready here (branch at `2e9262e`, listed by
+   `git branch -r --merged origin/main`) and then left for the owner, who
+   asked to do it themselves.
 2. Submit the adk-rust work if it is still wanted: issue first, then the patch.
-3. The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
-   command that says when it can be deleted.
+   **Blocked on repository access, not on the work.** The patch is prepared and
+   intact on `claude/adk-rust-0.12-patch` at `6fbdd2f` (verified against origin
+   2026-09-21). This session's GitHub scope is `tomtom215/a2a-rust` alone, so
+   the issue and PR cannot be opened from here. To unblock: add the adk-rust
+   repository to a session, or open the issue by hand and apply the held patch.
+3. ~~The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
+   command that says when it can be deleted.~~ **Re-checked 2026-09-21: it
+   stays.** `cargo update -p rustls --precise 0.23.45` in
+   `bindings/a2a-protocol-slimrpc` still fails with the documented conflict
+   against a freshly fetched index — `^1.18` offers 1.18.1/1.18.0,
+   mls-rs-crypto-awslc 0.23.0 still pins `=1.16.2`, and slim-auth 0.15.4 still
+   admits only that 0.23.x. Neither release condition has been met. The date
+   stamp in `deny.toml` records the re-check.
 4. ~~Stale install snippets.~~ Done — see "Prose versions are checked now"
    below. The figure recorded here first, six, was wrong: it counted only
    `crates/`, and the real number was 28.
 5. ~~Re-run `prove_gates_fail.sh` for the three `--features {sqlite,postgres,
-   auth-jwt}` gates.~~ Done — 9 proven, 0 unproven, including three that were
-   PRE-BROKEN only for want of a local PostgreSQL. Still unrun on this branch:
-   the other 57 gates, and the two remaining PRE-BROKEN ones (SLIMRPC SPIFFE,
-   and `cargo hack clippy` with `cargo-hack` absent).
+   auth-jwt}` gates.~~ **All 70 run, 2026-09-22: 70 proven, 0 unproven.**
+   Nothing PRE-BROKEN, nothing INCONCLUSIVE. The two that had never been
+   provable here needed tools, not fixes — `cargo install cargo-hack --locked`
+   (0.6.45) and SPIRE 1.11.2 unpacked to `/tmp/spire-1.11.2/bin` with
+   `SPIRE_BIN_DIR` exported. Both now pass, the SPIFFE suites running 9 tests
+   against a real server.
+
+   **Run the whole set, not a subset, and run it last.** The first full sweep
+   reported 13 PRE-BROKEN, and 11 of those were breaks this branch had
+   introduced: `swarm_scale/bindings.rs` and `swarm_scale/cost.rs` used types
+   that only exist under `websocket`, `grpc`, `sqlite` or `postgres`, so every
+   single-feature build of the test targets failed to compile. A twelfth,
+   `cargo package`, was the `a2a-protocol-client` dev-dependency making the
+   server crate unverifiable. Every check while writing those arms had used
+   `--all-features`, where all of it compiles. A green `--all-features` build
+   says nothing about a single-feature one, which is what that gate is for.
+
+   Two mechanics worth keeping. The script injects defects into **tracked
+   source**, so nothing else may touch the repo while it runs and a clean
+   `git status` is a precondition — if it dies mid-gate, discard with
+   `git checkout -- <file>`, never commit. And its log prints each verdict
+   twice, once per gate and again in the summary, so grepping verdict words
+   doubles the count: read the summary block.
 6. ~~The two hand-rolled `uuid_like()` helpers.~~ Done — both examples take
    `uuid` now.
 7. ~~**`cargo doc -p a2a-protocol-client --no-deps` fails, and CI cannot see

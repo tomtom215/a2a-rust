@@ -34,10 +34,10 @@ use std::time::Instant;
 
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::StreamResponse;
-use a2a_protocol_types::message::MessageId;
+use a2a_protocol_types::message::{Message, MessageId};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
-use a2a_protocol_types::task::{Task, TaskId};
+use a2a_protocol_types::task::{Task, TaskId, TaskStatus};
 use tokio::sync::RwLock;
 
 use super::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore, TaskStoreConfig};
@@ -195,6 +195,95 @@ impl StoreData {
                 log,
             },
         );
+    }
+
+    /// Replaces a stored task's status in place, re-keying the indexes.
+    ///
+    /// [`StoreData::insert`] is the general path and takes the whole task to
+    /// do it; a status change needs none of the rest. The order key is derived
+    /// from the status timestamp (§3.1.4), so the record still has to move
+    /// between keys — but its history, artifacts and log stay exactly where
+    /// they are rather than being rebuilt around a new clone.
+    ///
+    /// Returns `false` when there is no such task, which is the caller's
+    /// signal to fall back to a full save rather than drop the transition.
+    pub(super) fn update_status(
+        &mut self,
+        task_id: &TaskId,
+        status: TaskStatus,
+        last_updated: Instant,
+    ) -> bool {
+        let Some(entry) = self.entries.get(task_id) else {
+            return false;
+        };
+        let old_key = entry.order_key;
+        let ctx = entry.task.context_id.0.clone();
+
+        // Same key derivation as `insert`, including the sequence bump, so a
+        // delta and a save order identically against each other.
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        let millis = status
+            .timestamp
+            .as_deref()
+            .and_then(a2a_protocol_types::parse_iso8601_to_unix_millis)
+            .unwrap_or_else(now_unix_millis);
+        let key: OrderKey = (millis, seq);
+
+        self.order_index.remove(&old_key);
+        if let Some(map) = self.context_index.get_mut(&ctx) {
+            map.remove(&old_key);
+            if map.is_empty() {
+                self.context_index.remove(&ctx);
+            }
+        }
+        self.order_index.insert(key, task_id.clone());
+        self.context_index
+            .entry(ctx)
+            .or_default()
+            .insert(key, task_id.clone());
+
+        if let Some(entry) = self.entries.get_mut(task_id) {
+            entry.task.status = status;
+            entry.order_key = key;
+            entry.last_updated = last_updated;
+        }
+        true
+    }
+
+    /// Appends to the stored history in place and replaces the rest of the
+    /// snapshot, returning `false` when there is no such record.
+    ///
+    /// The append is the point: the caller hands over only the new messages,
+    /// so neither side copies the conversation. Everything else follows
+    /// `save`'s contract — the other fields of `task` replace what is stored,
+    /// including `artifacts` and `metadata`, so a caller that passes `None`
+    /// clears them exactly as a full save would.
+    pub(super) fn append_history(
+        &mut self,
+        task: &Task,
+        messages: &[Message],
+        max_history: usize,
+        last_updated: Instant,
+    ) -> bool {
+        // Re-keys the indexes for the new status timestamp, which §3.1.4
+        // orders by, and returns false for an absent record.
+        if !self.update_status(&task.id, task.status.clone(), last_updated) {
+            return false;
+        }
+        let Some(entry) = self.entries.get_mut(&task.id) else {
+            return false;
+        };
+        let mut history = entry.task.history.take().unwrap_or_default();
+        history.extend_from_slice(messages);
+        // `drain(..0)` skips its memmove, so this is O(1) under the cap.
+        let excess = history.len().saturating_sub(max_history);
+        history.drain(..excess);
+        entry.task.history = Some(history);
+        entry.task.context_id.clone_from(&task.context_id);
+        entry.task.artifacts.clone_from(&task.artifacts);
+        entry.task.metadata.clone_from(&task.metadata);
+        true
     }
 
     /// Removes a task by ID, maintaining all indexes.
@@ -711,6 +800,46 @@ impl TaskStore for InMemoryTaskStore {
         })
     }
 
+    /// Edits the stored status in place rather than replacing the record.
+    ///
+    /// `save` here is a deep clone of the whole task, history included, so a
+    /// status transition on a long conversation costs what that conversation
+    /// has accumulated. This costs a `TaskStatus` and two index re-keys.
+    ///
+    /// Falls back to `save` when the record is absent, which is the one case
+    /// the in-place update cannot apply — the same discipline
+    /// [`TaskStore::save_artifact_delta`] follows, and for the same reason: a
+    /// dropped transition would be worse than a slow one.
+    fn save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let outcome = {
+                let mut store = self.data.write().await;
+                let applied = store.update_status(&task.id, task.status.clone(), Instant::now());
+                let len = store.len();
+                drop(store);
+                applied.then(|| self.should_evict(len))
+            };
+            let Some(passes) = outcome else {
+                return self.save(task).await;
+            };
+            trace_debug!(task_id = %task.id, "applied status delta in place");
+            // `should_evict` is called for its side effect as much as its
+            // answer: it advances the write counter that paces the TTL sweep,
+            // and both of this store's memory bounds run off that counter. A
+            // delta that skipped it would make every status transition it
+            // replaces invisible to eviction, so a workload dominated by
+            // transitions would sweep expired tasks more and more rarely the
+            // better this method worked.
+            if passes.any() {
+                self.maybe_evict(passes).await;
+            }
+            Ok(())
+        })
+    }
+
     /// Applies the delta to the stored task in place, copying only what grew.
     ///
     /// `save` clones the whole task, so using it per artifact event makes a
@@ -729,26 +858,86 @@ impl TaskStore for InMemoryTaskStore {
         delta: ArtifactDelta,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let mut store = self.data.write().await;
-            let applied = store
-                .entries
-                .get_mut(&task.id)
-                .is_some_and(|entry| apply_delta(&mut entry.task, task, delta));
-            if applied && let Some(entry) = store.entries.get_mut(&task.id) {
-                entry.last_updated = Instant::now();
-            }
-            // Released before the fallback below, which takes the lock again
-            // through `save`.
-            drop(store);
+            let outcome = {
+                let mut store = self.data.write().await;
+                let applied = store
+                    .entries
+                    .get_mut(&task.id)
+                    .is_some_and(|entry| apply_delta(&mut entry.task, task, delta));
+                if applied && let Some(entry) = store.entries.get_mut(&task.id) {
+                    entry.last_updated = Instant::now();
+                }
+                let len = store.len();
+                // Released before the fallback below, which takes the lock
+                // again through `save`.
+                drop(store);
+                applied.then(|| self.should_evict(len))
+            };
 
-            if applied {
-                trace_debug!(task_id = %task.id, "applied artifact delta in place");
-                // No new entry, so the store cannot have grown past its bound
-                // and there is nothing for eviction to reconsider.
-                return Ok(());
+            let Some(passes) = outcome else {
+                return self.save(task).await;
+            };
+            trace_debug!(task_id = %task.id, "applied artifact delta in place");
+            // `should_evict` is called for its side effect as much as its
+            // answer: it advances the write counter that paces the TTL sweep.
+            //
+            // The comment that stood here said there was "nothing for eviction
+            // to reconsider" because no entry was added. That is true of the
+            // capacity bound and false of the TTL one: expiry is driven by
+            // elapsed time, not by growth, so a stream that only appends parts
+            // to tasks already in the store still ages every other task in it.
+            // Skipping the counter made those writes invisible to the sweep,
+            // so a workload dominated by artifact streaming swept expired
+            // tasks more and more rarely the better this method worked.
+            //
+            // The capacity pass is kept rather than special-cased away: it is
+            // one comparison against `max_capacity`, it is already false
+            // whenever the store is under its bound, and it is still the right
+            // answer when a delta lands on a store that was over the bound
+            // before this write. Matching `save` exactly is worth more than
+            // eliding a comparison.
+            if passes.any() {
+                self.maybe_evict(passes).await;
             }
+            Ok(())
+        })
+    }
 
-            self.save(task).await
+    /// Appends the new messages to the stored history in place.
+    ///
+    /// `save` here is a deep clone of the whole task, so a send on an aged
+    /// channel costs what that channel has accumulated. This extends a `Vec`
+    /// by the messages the turn actually added.
+    ///
+    /// Falls back to `save` when the record is absent, which is the one case
+    /// an in-place append cannot serve — and `task` carries the full initial
+    /// history in that case, because a first turn has nothing to append to.
+    fn save_appending_history<'a>(
+        &'a self,
+        task: &'a Task,
+        messages: &'a [Message],
+        max_history: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let outcome = {
+                let mut store = self.data.write().await;
+                let applied = store.append_history(task, messages, max_history, Instant::now());
+                let len = store.len();
+                drop(store);
+                applied.then(|| self.should_evict(len))
+            };
+
+            let Some(passes) = outcome else {
+                return self.save(task).await;
+            };
+            trace_debug!(task_id = %task.id, "appended history in place");
+            // Advances the write counter that paces the TTL sweep, for the
+            // same reason the status delta does: a write this store cannot
+            // see is a write that never ages anything out.
+            if passes.any() {
+                self.maybe_evict(passes).await;
+            }
+            Ok(())
         })
     }
 
@@ -944,6 +1133,224 @@ mod tests {
             artifacts: None,
             metadata: None,
         }
+    }
+
+    // ── save_status_delta ────────────────────────────────────────────────
+    //
+    // The contract in `TaskStore::save_status_delta` is that the store ends
+    // up holding exactly what `save` would have left it holding. Each of
+    // these names one way an in-place edit could fail to and does not.
+
+    /// The status moves and nothing else does.
+    ///
+    /// The whole reason the method exists is that history is expensive to
+    /// carry, so a delta that silently dropped it would be fast and wrong.
+    #[tokio::test]
+    async fn a_status_delta_moves_the_status_and_keeps_the_rest() {
+        let store = InMemoryTaskStore::new();
+        let mut task = make_task("t-delta", TaskState::Working);
+        task.history = Some(vec![
+            a2a_protocol_types::message::Message::user_text("m-1", "first"),
+            a2a_protocol_types::message::Message::user_text("m-2", "second"),
+        ]);
+        task.metadata = Some(serde_json::json!({"keep": true}));
+        store.save(&task).await.expect("seed");
+
+        let mut next = task.clone();
+        next.status = TaskStatus::with_timestamp(TaskState::Completed);
+        // Deliberately not carrying the rest: the delta must read it from
+        // what is stored, not from what the caller happened to pass.
+        next.history = None;
+        next.metadata = None;
+        store.save_status_delta(&next).await.expect("delta");
+
+        let stored = store
+            .get(&TaskId::new("t-delta"))
+            .await
+            .expect("get")
+            .expect("present");
+        assert_eq!(
+            stored.status.state,
+            TaskState::Completed,
+            "the status is the one field a status delta must move"
+        );
+        assert_eq!(
+            stored.history.as_ref().map(Vec::len),
+            Some(2),
+            "history is what `save` would have kept, so the delta must keep it"
+        );
+        assert_eq!(
+            stored.metadata,
+            Some(serde_json::json!({"keep": true})),
+            "metadata is not the caller's to drop by omitting it"
+        );
+    }
+
+    /// The record moves in the ordering, because §3.1.4 orders by status
+    /// timestamp and a status delta changes exactly that.
+    ///
+    /// An in-place edit that skipped the re-key would leave `list` — and so
+    /// `find_task_by_context`, which every send calls — answering with a
+    /// stale order.
+    #[tokio::test]
+    async fn a_status_delta_re_keys_the_ordering() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(&make_task_with_ctx(
+                "older",
+                "ctx-order",
+                TaskState::Working,
+            ))
+            .await
+            .expect("seed older");
+        store
+            .save(&make_task_with_ctx(
+                "newer",
+                "ctx-order",
+                TaskState::Working,
+            ))
+            .await
+            .expect("seed newer");
+
+        let params = ListTasksParams {
+            context_id: Some("ctx-order".to_owned()),
+            ..Default::default()
+        };
+        let before = store.list(&params).await.expect("list");
+        assert_eq!(
+            before.tasks.first().map(|t| t.id.0.as_str()),
+            Some("newer"),
+            "most recently updated first, before any delta"
+        );
+
+        let mut moved = make_task_with_ctx("older", "ctx-order", TaskState::Working);
+        moved.status = TaskStatus::with_timestamp(TaskState::Completed);
+        store.save_status_delta(&moved).await.expect("delta");
+
+        let after = store.list(&params).await.expect("list");
+        assert_eq!(
+            after.tasks.first().map(|t| t.id.0.as_str()),
+            Some("older"),
+            "a status delta changes the status timestamp, so the record has to \
+             move to the front exactly as a full save would have moved it"
+        );
+        assert_eq!(
+            after.tasks.len(),
+            2,
+            "re-keying must not lose or duplicate the record"
+        );
+    }
+
+    /// A status delta paces the TTL sweep exactly as a save does.
+    ///
+    /// `should_evict` advances a write counter, and the TTL pass fires every
+    /// `eviction_interval` writes. Both of this store's memory bounds run off
+    /// that counter, so a delta that skipped it would make every transition it
+    /// replaces invisible to eviction — and a deployment whose writes are
+    /// mostly transitions would sweep expired tasks more and more rarely the
+    /// better this method worked.
+    #[tokio::test]
+    async fn a_status_delta_still_paces_the_eviction_sweep() {
+        let store = InMemoryTaskStore::with_config(TaskStoreConfig {
+            max_capacity: None,
+            task_ttl: Some(Duration::from_millis(1)),
+            eviction_interval: 1,
+            max_page_size: 100,
+            max_events_per_task: Some(8),
+            idempotency_key_ttl: None,
+        });
+        store
+            .save(&make_task("expired", TaskState::Completed))
+            .await
+            .expect("seed the task that should be swept");
+        let live = make_task("live", TaskState::Working);
+        store.save(&live).await.expect("seed the live task");
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // The only write from here on is a status delta. If it does not pace
+        // the sweep, nothing ever collects the expired task.
+        let mut moved = live.clone();
+        moved.status = TaskStatus::with_timestamp(TaskState::Working);
+        store.save_status_delta(&moved).await.expect("delta");
+        // The sweep runs outside the write lock, so give it a turn.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert!(
+            store
+                .get(&TaskId::new("expired"))
+                .await
+                .expect("get")
+                .is_none(),
+            "a status delta must advance the eviction counter as a save does; \
+             the expired terminal task is still here, so it did not"
+        );
+        assert!(
+            store
+                .get(&TaskId::new("live"))
+                .await
+                .expect("get")
+                .is_some(),
+            "the sweep must take the expired task and leave the live one"
+        );
+    }
+
+    /// A delta for a task the store does not hold falls back to saving it.
+    ///
+    /// The alternative is dropping a transition, which is the one outcome
+    /// worse than a slow one.
+    #[tokio::test]
+    async fn a_status_delta_for_an_absent_task_falls_back_to_a_save() {
+        let store = InMemoryTaskStore::new();
+        let task = make_task("t-absent", TaskState::Completed);
+
+        store.save_status_delta(&task).await.expect("delta");
+
+        let stored = store
+            .get(&TaskId::new("t-absent"))
+            .await
+            .expect("get")
+            .expect("the fallback must have inserted it");
+        assert_eq!(stored.status.state, TaskState::Completed);
+    }
+
+    /// The task's event log survives a status delta.
+    ///
+    /// `StoreData::insert` carries the log across a replace on purpose; an
+    /// in-place edit that rebuilt the entry would be the one path that did
+    /// not, and the log is what a resuming subscriber reads.
+    #[tokio::test]
+    async fn a_status_delta_keeps_the_event_log() {
+        let store = InMemoryTaskStore::new();
+        let task = make_task("t-log", TaskState::Working);
+        store.save(&task).await.expect("seed");
+        let event = a2a_protocol_types::events::StreamResponse::StatusUpdate(
+            a2a_protocol_types::events::TaskStatusUpdateEvent {
+                task_id: task.id.clone(),
+                context_id: task.context_id.clone(),
+                status: TaskStatus::new(TaskState::Working),
+                metadata: None,
+            },
+        );
+        store
+            .append_event(&task.id, 1, &event)
+            .await
+            .expect("append");
+
+        let mut next = task.clone();
+        next.status = TaskStatus::with_timestamp(TaskState::Completed);
+        store.save_status_delta(&next).await.expect("delta");
+
+        let read = store
+            .read_events(&task.id, 0, 10)
+            .await
+            .expect("read events");
+        assert_eq!(
+            read.len(),
+            1,
+            "the log is the record of what the agent emitted; a status delta \
+             is not an event and must not clear it"
+        );
     }
 
     // ── CRUD basics ──────────────────────────────────────────────────────
@@ -2150,6 +2557,71 @@ mod artifact_delta_tests {
             .collect();
 
         assert_eq!(before, after, "appending an artifact reordered the list");
+    }
+
+    /// An artifact delta paces the TTL sweep exactly as a save does.
+    ///
+    /// `should_evict` advances a write counter, and the TTL pass fires every
+    /// `eviction_interval` writes. The comment this test retired reasoned that
+    /// an in-place delta adds no entry, so eviction has nothing to reconsider.
+    /// That holds for the capacity bound and not for the TTL one: expiry is
+    /// driven by elapsed time, not by growth, so a stream that only appends
+    /// parts to tasks already in the store still ages every other task in it.
+    #[tokio::test]
+    async fn an_artifact_delta_still_paces_the_eviction_sweep() {
+        use std::time::Duration;
+
+        let store = InMemoryTaskStore::with_config(TaskStoreConfig {
+            max_capacity: None,
+            task_ttl: Some(Duration::from_millis(1)),
+            eviction_interval: 1,
+            max_page_size: 100,
+            max_events_per_task: Some(8),
+            idempotency_key_ttl: None,
+        });
+
+        let mut expired = task_with("expired", None);
+        expired.status = TaskStatus::new(TaskState::Completed);
+        store
+            .save(&expired)
+            .await
+            .expect("seed the task that should be swept");
+        let streaming = task_with("streaming", Some(vec![artifact("a", 2)]));
+        store
+            .save(&streaming)
+            .await
+            .expect("seed the task the stream appends to");
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // The only write from here on is an artifact delta. If it does not
+        // pace the sweep, nothing ever collects the expired task.
+        let grown = task_with("streaming", Some(vec![artifact("a", 3)]));
+        store
+            .save_artifact_delta(&grown, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+            .await
+            .expect("delta");
+        // The sweep runs outside the write lock, so give it a turn.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert!(
+            store
+                .get(&TaskId::new("expired"))
+                .await
+                .expect("get")
+                .is_none(),
+            "an artifact delta must advance the eviction counter as a save \
+             does; the expired terminal task is still here, so it did not"
+        );
+        assert!(
+            store
+                .get(&TaskId::new("streaming"))
+                .await
+                .expect("get")
+                .is_some(),
+            "the sweep must take the expired task and leave the one the \
+             stream is still appending to"
+        );
     }
 }
 

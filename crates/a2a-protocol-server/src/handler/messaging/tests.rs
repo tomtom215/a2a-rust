@@ -13,9 +13,11 @@ use super::decisions::{
     token_still_evictable,
 };
 use super::*;
+use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::events::TaskStatusUpdateEvent;
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
+use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
 use crate::agent_executor;
@@ -904,32 +906,126 @@ async fn whitespace_only_task_id_returns_invalid_params() {
     );
 }
 
-#[tokio::test]
-async fn task_id_mismatch_returns_invalid_params() {
-    // Covers context/task mismatch when stored task exists with different task_id.
-    use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
+/// Saves `id` in `context`, non-terminal unless `state` says otherwise.
+async fn seed_task(handler: &RequestHandler, id: &str, context: &str, state: TaskState) {
+    use a2a_protocol_types::task::{Task, TaskStatus};
 
-    let handler = make_handler();
-
-    // Save a non-terminal task with context_id "ctx-existing".
     let task = Task {
-        id: TaskId::new("stored-task-id"),
-        context_id: ContextId::new("ctx-existing"),
-        status: TaskStatus::new(TaskState::InputRequired),
+        id: TaskId::new(id),
+        context_id: ContextId::new(context),
+        status: TaskStatus::with_timestamp(state),
         history: None,
         artifacts: None,
         metadata: None,
     };
     handler.task_store.save(&task).await.unwrap();
+}
 
-    // Send a message with the same context_id but a different task_id.
+/// A `taskId` naming no task at all is `TaskNotFound`, whether or not the
+/// context happens to hold one.
+///
+/// This test previously expected `InvalidParams`, and that expectation was
+/// wrong. §3.4.2: "When a client includes a taskId in a Message, it MUST
+/// reference an existing task" — and the handler already returned
+/// `TaskNotFound` for this very input when the context was empty, because
+/// that branch looks the task up. The only reason the same input produced
+/// `InvalidParams` here was that a *different* task existed in the context,
+/// which says nothing about whether the named one does. Same input, two
+/// answers, decided by something irrelevant to the question.
+#[tokio::test]
+async fn task_id_naming_no_existing_task_returns_task_not_found() {
+    let handler = make_handler();
+    seed_task(
+        &handler,
+        "stored-task-id",
+        "ctx-existing",
+        TaskState::InputRequired,
+    )
+    .await;
+
     let mut params = make_params(Some("ctx-existing"));
-    params.message.task_id = Some(TaskId::new("different-task-id"));
+    params.message.task_id = Some(TaskId::new("no-such-task"));
 
     let result = handler.on_send_message(params, false, None).await;
     assert!(
-        matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("does not match")),
-        "expected InvalidParams for task_id mismatch, got: {result:?}"
+        matches!(result, Err(ServerError::TaskNotFound(ref id)) if id.0 == "no-such-task"),
+        "expected TaskNotFound for a taskId that names nothing, got: {result:?}"
+    );
+}
+
+/// The one mismatch §3.4.3 requires an agent to reject: a `taskId` whose task
+/// exists, but under a different `contextId`.
+#[tokio::test]
+async fn task_id_from_another_context_returns_invalid_params() {
+    let handler = make_handler();
+    seed_task(&handler, "ours", "ctx-existing", TaskState::InputRequired).await;
+    seed_task(&handler, "theirs", "ctx-other", TaskState::InputRequired).await;
+
+    let mut params = make_params(Some("ctx-existing"));
+    params.message.task_id = Some(TaskId::new("theirs"));
+
+    let result = handler.on_send_message(params, false, None).await;
+    assert!(
+        matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("different context")),
+        "expected InvalidParams for a cross-context taskId, got: {result:?}"
+    );
+}
+
+/// A context holds more than one task, and every live one stays addressable.
+///
+/// Finding 2 of `docs/swarm-scale-findings.md`: `find_task_by_context` returns
+/// a single task, the most recently updated live one, and naming any other
+/// used to be rejected outright. So one participant posting without a `taskId`
+/// forked the channel and locked everyone else out of the original — which was
+/// still live, still in the same context, and by §3.4.1 still part of the group
+/// the context denotes. §3.4.3 permits continuing "a specific task"; the only
+/// rejection it mandates is a contextId that differs from the referenced
+/// task's, which is not this.
+#[tokio::test]
+async fn a_live_sibling_task_in_the_same_context_is_still_addressable() {
+    let handler = make_handler();
+    // `older` is the one a participant holds a reference to. `newer` is the
+    // fork that displaced it as what `find_task_by_context` returns.
+    seed_task(&handler, "older", "ctx-shared", TaskState::InputRequired).await;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    seed_task(&handler, "newer", "ctx-shared", TaskState::InputRequired).await;
+
+    let mut params = make_params(Some("ctx-shared"));
+    params.message.task_id = Some(TaskId::new("older"));
+
+    let result = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("a live task in this context must stay addressable after a fork displaced it");
+    match result {
+        SendMessageResult::Response(SendMessageResponse::Task(task)) => {
+            assert_eq!(
+                task.id,
+                TaskId::new("older"),
+                "the send must land on the task it named, not on the one the \
+                 context lookup happens to return"
+            );
+        }
+        other => panic!("expected a task response, got {other:?}"),
+    }
+}
+
+/// Terminality is judged on the task actually named, not on whichever one the
+/// context lookup returned.
+#[tokio::test]
+async fn a_terminal_sibling_task_is_still_rejected() {
+    let handler = make_handler();
+    seed_task(&handler, "done", "ctx-shared", TaskState::Completed).await;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    seed_task(&handler, "live", "ctx-shared", TaskState::InputRequired).await;
+
+    let mut params = make_params(Some("ctx-shared"));
+    params.message.task_id = Some(TaskId::new("done"));
+
+    let result = handler.on_send_message(params, false, None).await;
+    assert!(
+        matches!(result, Err(ServerError::UnsupportedOperation(ref msg)) if msg.contains("terminal")),
+        "CORE-SEND-002 still applies to the named task, got: {result:?}"
     );
 }
 
@@ -2264,5 +2360,161 @@ async fn a_limit_above_the_floor_is_used_as_given() {
         exactly.effective_max_message_id_length(),
         crate::handler::MIN_MESSAGE_ID_LENGTH,
         "a limit set to the floor is the floor"
+    );
+}
+
+// ── multi-turn history accumulation ──────────────────────────────────────
+//
+// Nothing covered this. The suite has tests that a single send records its
+// user message, and tests that the background processor appends an agent
+// message, but none that a *continuation* keeps what earlier turns wrote.
+// That gap is why `build_initial_task` could stop carrying the stored history
+// forward and 2037 tests stayed green while a second turn truncated the
+// conversation to the two messages it had itself produced.
+
+/// An executor that replies once, so each turn writes both a user and an
+/// agent message into the record.
+struct ReplyingExecutor;
+agent_executor!(ReplyingExecutor, |_ctx, queue| async {
+    use a2a_protocol_types::events::StreamResponse;
+    let _ = queue
+        .write(StreamResponse::Message(Message {
+            id: MessageId::new("agent-reply"),
+            role: MessageRole::Agent,
+            parts: vec![Part::text("ack")],
+            context_id: None,
+            task_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        }))
+        .await;
+    // A message alone makes the handler answer with the message rather than
+    // the task (the "direct message" path). A non-terminal status keeps the
+    // channel continuable, which is what a multi-turn conversation needs.
+    let _ = queue
+        .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
+            a2a_protocol_types::events::TaskStatusUpdateEvent {
+                task_id: _ctx.task_id.clone(),
+                context_id: ContextId::new(_ctx.context_id.clone()),
+                status: a2a_protocol_types::task::TaskStatus::with_timestamp(
+                    a2a_protocol_types::task::TaskState::InputRequired,
+                ),
+                metadata: None,
+            },
+        ))
+        .await;
+    Ok(())
+});
+
+/// Three turns on one channel keep every message all three wrote.
+#[tokio::test]
+async fn a_continuation_keeps_what_earlier_turns_wrote() {
+    let handler = RequestHandlerBuilder::new(ReplyingExecutor)
+        .build()
+        .expect("build handler");
+
+    let mut task_id: Option<TaskId> = None;
+    for turn in 0..3 {
+        let mut params = make_params(Some("ctx-multi"));
+        params.message.id = MessageId::new(format!("user-{turn}"));
+        params.message.task_id = task_id.clone();
+
+        let result = handler
+            .on_send_message(params, false, None)
+            .await
+            .unwrap_or_else(|e| panic!("turn {turn} failed: {e:?}"));
+        let task = match result {
+            SendMessageResult::Response(SendMessageResponse::Task(t)) => t,
+            other => panic!("turn {turn}: expected a task, got {other:?}"),
+        };
+        task_id = Some(task.id);
+
+        // The executor runs in the background; give it a turn to reply and
+        // for the reply to be persisted.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    let id = task_id.expect("a task id");
+    let stored = handler
+        .task_store
+        .get(&id)
+        .await
+        .expect("get")
+        .expect("the task must still be stored");
+    let history = stored.history.unwrap_or_default();
+    let user_messages: Vec<_> = history
+        .iter()
+        .filter(|m| m.role == MessageRole::User)
+        .map(|m| m.id.0.as_str())
+        .collect();
+
+    assert_eq!(
+        user_messages,
+        vec!["user-0", "user-1", "user-2"],
+        "every turn's user message must survive into the record; got a \
+         history of {} message(s) overall, which means a later turn replaced \
+         the conversation instead of extending it",
+        history.len()
+    );
+}
+
+/// A send that asks for history gets the conversation, not just its own turn.
+///
+/// `build_initial_task` stopped carrying the stored history forward, so the
+/// task the send path holds now contains only the message this turn added.
+/// The response is shaped from that task, which is why this needs its own
+/// test: `historyLength` is the one caller that reads history off the send
+/// response rather than off `GetTask`.
+#[tokio::test]
+async fn a_send_asking_for_history_gets_the_whole_conversation() {
+    use a2a_protocol_types::params::SendMessageConfiguration;
+
+    let handler = RequestHandlerBuilder::new(ReplyingExecutor)
+        .build()
+        .expect("build handler");
+
+    let mut first = make_params(Some("ctx-histlen"));
+    first.message.id = MessageId::new("user-0");
+    let result = handler
+        .on_send_message(first, false, None)
+        .await
+        .expect("first send");
+    let task_id = match result {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t.id,
+        other => panic!("expected a task, got {other:?}"),
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let mut second = make_params(Some("ctx-histlen"));
+    second.message.id = MessageId::new("user-1");
+    second.message.task_id = Some(task_id.clone());
+    second.configuration = Some(SendMessageConfiguration {
+        accepted_output_modes: vec![],
+        task_push_notification_config: None,
+        history_length: Some(10),
+        return_immediately: Some(true),
+    });
+
+    let result = handler
+        .on_send_message(second, false, None)
+        .await
+        .expect("second send");
+    let task = match result {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t,
+        other => panic!("expected a task, got {other:?}"),
+    };
+
+    let ids: Vec<_> = task
+        .history
+        .unwrap_or_default()
+        .iter()
+        .map(|m| m.id.0.clone())
+        .collect();
+    assert!(
+        ids.contains(&"user-0".to_string()),
+        "historyLength asked for 10 messages and the response carried {ids:?}; \
+         the earlier turns are missing, so the response was shaped from the \
+         send path's own one-message task instead of the stored conversation"
     );
 }

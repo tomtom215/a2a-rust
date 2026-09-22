@@ -95,6 +95,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no `ADD CONSTRAINT`, so an existing SQLite database keeps the unconstrained
   table; a database the runner builds from scratch gets it.
 
+- **`TaskStore::save_appending_history`**, which persists a task whose history
+  grew by the messages a turn added, without the caller shipping the history
+  it has already stored. Additive: the default reads the record, appends,
+  trims and writes it back through `save`, which is exactly what the send path
+  did before, so a store that does not override it behaves as it always has.
+  `InMemoryTaskStore` overrides it to extend a `Vec` in place.
+
+  `task.history` is **ignored** by this method — the appended messages come
+  from their own parameter. That is deliberate: reusing the field for the tail
+  would put the caller back in possession of the whole conversation, which is
+  the cost being removed. `max_history` is a parameter rather than a constant
+  in the store, because retention is the handler's policy and a store
+  inventing its own cap would silently disagree with the rest of the server.
+
+  Measured on one box, 1,400 sequential posts to one channel: 3,962µs →
+  2,748µs per send at the 1,024-message history cap, and growth across the run
+  3.2x → 2.1x. It does **not** make a send O(1);
+  `docs/swarm-scale-findings.md` has the per-stage attribution showing what
+  still dominates.
+
 - **A `trace_context` fuzz target**, and `scripts/check_fuzz_matrix.py`, which
   fails when a fuzz target exists but no runner executes it. A target reaches
   CI through three files and only the workflow matrix has no build error
@@ -102,7 +122,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and absent from the matrix, which is the drift the gate caught on its first
   run.
 
+### Changed
+
+- **`save_status_delta` is now overridden by `SqliteTaskStore` and
+  `PostgresTaskStore`**, not only by `InMemoryTaskStore`. Until now a SQL
+  deployment got nothing from it — no regression, since the trait's default
+  delegates to `save`, but no win either, and neither the trait docs nor the
+  findings report said so. Measured on one box, 100 status events on a channel
+  holding 200 messages, medians of five runs:
+
+  | store | `save` | `save_status_delta` |
+  |---|---|---|
+  | `InMemoryTaskStore` | 8,499µs | 639µs |
+  | `SqliteTaskStore` | 122,071µs | 37,216µs |
+  | `PostgresTaskStore` | 287,287µs | 120,104µs |
+
+  Both overrides update the `state` column that `list` filters on and the
+  `updated_at` that §3.1.4 orders by, either of which is wrong in a way no
+  round-trip through `get` would reveal. The SQLite override deliberately does
+  *not* delete the artifact journal that its `save` deletes: `save` has just
+  rewritten the document with every part in it, a status delta has not, so
+  those rows are still the only record of appended parts.
+
 ### Fixed
+
+- **A message naming a live task in its own context is no longer refused.**
+  `resolve_task_id` accepted only the single task `find_task_by_context`
+  returns — the most recently updated non-terminal one — and rejected every
+  other, including tasks that were live and in the same context. Since a
+  message carrying a `contextId` and no `taskId` starts a *new* task
+  (§3.4.3), one participant posting without a `taskId` forked the channel,
+  the fork became the context's canonical task, and every other participant
+  was locked out of the original permanently with
+  `InvalidParams: message task_id does not match task found for context`.
+
+  §3.4.3 permits continuing "a specific task" by `taskId`, and mandates
+  rejecting exactly one mismatch: a `contextId` differing from that of the
+  referenced task. §3.4.1 says a `contextId` "logically groups multiple `Task`
+  objects". The implementation treated a context as holding one. It now
+  resolves against the task the message actually names and refuses only a
+  genuine cross-context reference.
+
+- **A `taskId` that names no existing task now returns `TaskNotFound`**
+  (§3.4.2) rather than `InvalidParams`, whether or not the context happens to
+  hold some other task. The handler already returned `TaskNotFound` for that
+  input when the context was empty; the only thing deciding between the two
+  answers was whether an unrelated task existed nearby.
+
+- **The in-memory event queue's documentation described the wrong lag
+  behaviour.** It said a slow SSE consumer "receives `Lagged(n)` and skips
+  missed events". The consumer does not resume: `InMemoryQueueReader::read`
+  turns the lag into `A2aError::stream_lagged`, which `streaming::sse` writes
+  as an `event: error` frame before closing the stream. A lagging tail gets a
+  contiguous prefix and an announced end, never a silent hole — the stronger
+  of the two behaviours, and the one a reader can recover from. Documentation
+  only; no code changed.
+
 
 - **`TraceContext::parse` could abort the process.** A `traceparent` whose
   55th byte falls inside a multi-byte character panicked, and the root

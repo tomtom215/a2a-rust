@@ -17,7 +17,7 @@ use std::pin::Pin;
 
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::StreamResponse;
-use a2a_protocol_types::message::MessageId;
+use a2a_protocol_types::message::{Message, MessageId};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
@@ -293,6 +293,27 @@ pub trait TaskStore: Send + Sync + 'static {
     /// or its shape does not match — it must fall back to `save(task)` rather
     /// than persist a divergent record.
     ///
+    /// ## "What `save` would have left it holding" includes the bookkeeping
+    ///
+    /// A delta is a cheaper way to perform a write, not a way to perform
+    /// fewer writes. Whatever per-write maintenance an implementation's `save`
+    /// does — advancing an eviction or compaction counter, refreshing a
+    /// last-touched timestamp, updating a metric — an override has to do too,
+    /// or that maintenance silently stops happening in proportion to how often
+    /// the fast path is taken.
+    ///
+    /// Both deltas shipped here got this wrong, and the failure is worth
+    /// stating because it is invisible to the obvious test. [`InMemoryTaskStore`]
+    /// paces its TTL sweep off a counter that every write advances, and neither
+    /// override advanced it. The reasoning in the artifact one was explicit and
+    /// wrong in an instructive way: an in-place delta adds no entry, so it
+    /// cannot push the store past its capacity bound. True — and irrelevant to
+    /// the *other* bound, because expiry is driven by elapsed time rather than
+    /// by growth, so a stream that only appends to tasks already stored still
+    /// ages every other task in the store. The better the fast path worked, the
+    /// more rarely anything was collected. Every functional test still passed:
+    /// the store held exactly the right bytes, just for ever.
+    ///
     /// # Errors
     ///
     /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
@@ -303,6 +324,136 @@ pub trait TaskStore: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         let _ = delta;
         self.save(task)
+    }
+
+    /// Persists a task whose **status alone** changed, without rewriting the
+    /// rest of the record.
+    ///
+    /// The same argument as [`TaskStore::save_artifact_delta`], applied to the
+    /// other per-event write on the hot path. A `Task` carries its `history`,
+    /// which the send path grows by one message per turn up to an internal cap
+    /// of 1,024 messages (`handler::messaging::MAX_TASK_HISTORY_MESSAGES`,
+    /// which is crate-private and so not linkable from here),
+    /// so a turn emitting `n` status events through `save` on a channel
+    /// holding `h` messages does `n * h` work. Measured back to back on one
+    /// turn of 512 events, concurrency one, in-memory store, by
+    /// `tests/swarm_scale::cost::a_turn_that_emits_many_events_on_an_aged_channel`:
+    /// with `save`, 1,706µs / 18,609µs / 54,301µs at `h` of 1 / 200 / 600;
+    /// with this method, 1,044µs / 1,280µs / 2,248µs. The turn stops growing
+    /// with the channel's age, which matters more than the 24x at `h` = 600.
+    ///
+    /// It does not measurably change a turn that emits one event — four other
+    /// O(history) copies dominate that. `docs/swarm-scale-findings.md` has
+    /// both runs and the attribution.
+    ///
+    /// # What an override must preserve
+    ///
+    /// It **must** leave the store holding exactly what `save(task)` would
+    /// have, which for an ordered store includes the position: §3.1.4 orders
+    /// by status timestamp, so a status change moves the record and an
+    /// in-place edit still has to re-key its indexes. An implementation that
+    /// cannot apply the change — no such record — must fall back to
+    /// `save(task)` rather than drop the transition.
+    ///
+    /// # Implementing this
+    ///
+    /// The default replaces the whole record via `save`, which is always
+    /// correct. All three stores shipped here override it, and what each one
+    /// wins differs with its storage model. Measured on this box, 100 status
+    /// events on a channel holding 200 messages, medians of five runs:
+    ///
+    /// | Store | Approach | `save` | this method |
+    /// |---|---|---|---|
+    /// | [`InMemoryTaskStore`] | Edits the stored status, re-keys the indexes | 8,499µs | 639µs |
+    /// | `SqliteTaskStore` | `json_set` on `$.status`, plus `state`/`updated_at` | 122,071µs | 37,216µs |
+    /// | `PostgresTaskStore` | `jsonb_set` on `ARRAY['status']`, plus `state`/`updated_at` | 287,287µs | 120,104µs |
+    ///
+    /// The in-memory win is the largest because a full `save` there is a deep
+    /// clone and the delta is a field assignment. The SQL stores keep one JSON
+    /// document per row and still rewrite the row internally; what the delta
+    /// removes is the Rust-side serialization of the whole task — history
+    /// included — and its transfer as a bind parameter.
+    ///
+    /// Two columns are as much part of "what `save` would have left" as the
+    /// document is, and an override that misses either is wrong in a way no
+    /// round-trip test of `get` would show: the `state` column that `list`
+    /// filters on, and `updated_at`, which carries the §3.1.4 ordering key.
+    ///
+    /// `SqliteTaskStore` additionally must **not** delete its artifact journal
+    /// here, though its `save` does. `save` deletes those rows because it has
+    /// just rewritten the document with every part in it; a status delta has
+    /// not, so the rows are still the only record of the appended parts and
+    /// deleting them would lose data.
+    ///
+    /// Callers must use this only when the status is genuinely the only field
+    /// that moved; the background processor appends to `history` on an agent
+    /// `Message` event and calls `save` for exactly that reason.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
+    fn save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.save(task)
+    }
+
+    /// Persists a task whose history grew by `messages`, without the caller
+    /// shipping the history it has already stored.
+    ///
+    /// **`task.history` is ignored.** The appended messages come from
+    /// `messages` and nothing else. That is deliberate and is the whole point:
+    /// the caller does not have to hold, clone or transfer the conversation in
+    /// order to add one turn to it, so a send stops costing what the channel
+    /// has accumulated. Reusing `task.history` for the tail — the shape
+    /// [`TaskStore::save_artifact_delta`] uses — would have put the caller
+    /// back in possession of the whole thing.
+    ///
+    /// Every other field of `task` is the new snapshot and replaces what is
+    /// stored, exactly as `save` would.
+    ///
+    /// `max_history` is the cap the merged history is trimmed to, oldest
+    /// first. It is a parameter rather than a constant here because retention
+    /// is the handler's policy, not the store's; a store that invented its own
+    /// cap would silently disagree with the one the rest of the server
+    /// enforces.
+    ///
+    /// # Implementing this
+    ///
+    /// The default reads the record, appends, trims and writes the whole thing
+    /// back through `save`, which is always correct and is what the send path
+    /// did before this method existed — so a store that does not override it
+    /// is no worse off than it was. Overriding is worthwhile for any store
+    /// that can append without rewriting: the in-memory one extends a `Vec` in
+    /// place, and the SQL stores splice the tail into the stored document.
+    ///
+    /// An override **must** leave the store holding exactly what the default
+    /// would have left it holding, including the trim, and must fall back to
+    /// inserting `task` when no such record exists rather than dropping the
+    /// turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
+    fn save_appending_history<'a>(
+        &'a self,
+        task: &'a Task,
+        messages: &'a [Message],
+        max_history: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let stored = self.get(&task.id).await?;
+            let mut history = stored.and_then(|s| s.history).unwrap_or_default();
+            history.extend_from_slice(messages);
+            // `drain(..0)` is a no-op rather than a shift, so this is O(1)
+            // whenever the history is at or under the cap.
+            let excess = history.len().saturating_sub(max_history);
+            history.drain(..excess);
+            let mut merged = task.clone();
+            merged.history = Some(history);
+            self.save(&merged).await
+        })
     }
 
     // ── The event log ───────────────────────────────────────────────────

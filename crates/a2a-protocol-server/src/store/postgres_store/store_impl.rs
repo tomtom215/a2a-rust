@@ -212,6 +212,56 @@ impl TaskStore for PostgresTaskStore {
         })
     }
 
+    /// Rewrites the stored document's `status` alone.
+    ///
+    /// `save` serializes the whole task — history included, up to 1,024
+    /// messages — and ships it as a bind parameter, so a status transition on
+    /// an aged channel costs what that channel has accumulated. This sends one
+    /// `TaskStatus` and lets `jsonb_set` splice it in server side.
+    ///
+    /// Three things are what `save` would have left behind and so are what
+    /// this has to leave behind: the document's `status` key, the `state`
+    /// column that `list` filters on, and `updated_at`, which carries the
+    /// status timestamp that §3.1.4 orders by. Missing the last one would
+    /// leave the row correct and mis-ordered.
+    ///
+    /// Falls back to `save` when no row matched, which means the task is not
+    /// stored yet and there is nothing to update in place.
+    fn save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let status = serde_json::to_value(&task.status)
+                .map_err(|e| A2aError::internal(format!("failed to serialize status: {e}")))?;
+            let state = task.status.state.to_string();
+            let status_ts =
+                crate::store::status_timestamp_rfc3339(task.status.timestamp.as_deref());
+
+            let affected = sqlx::query(
+                "UPDATE tasks
+                    SET data = jsonb_set(data, ARRAY['status'], $1),
+                        state = $2,
+                        updated_at = COALESCE(($3)::timestamptz, now())
+                  WHERE id = $4",
+            )
+            .bind(&status)
+            .bind(&state)
+            .bind(&status_ts)
+            .bind(task.id.0.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(to_a2a_error)?
+            .rows_affected();
+
+            if affected == 0 {
+                return self.save(task).await;
+            }
+
+            Ok(())
+        })
+    }
+
     fn get<'a>(
         &'a self,
         id: &'a TaskId,

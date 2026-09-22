@@ -263,8 +263,17 @@ async fn task_id_only_unknown_task_returns_task_not_found() {
     );
 }
 
+/// A `taskId` naming no task is `TaskNotFound`, even when the context holds
+/// some other task.
+///
+/// This asserted `InvalidParams` until the lockout fix, and that expectation
+/// was wrong on its own terms: `unknown_task_id_rejected` directly above
+/// asserts `TaskNotFound` for the *same* input, and the only difference
+/// between them is whether an unrelated task happens to exist in the context.
+/// §3.4.2 requires a client's `taskId` to reference an existing task; whether
+/// some other task exists nearby has no bearing on whether this one does.
 #[tokio::test]
-async fn context_task_mismatch_rejected() {
+async fn context_task_id_naming_no_existing_task_rejected() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .build()
         .expect("build handler");
@@ -304,11 +313,58 @@ async fn context_task_mismatch_rejected() {
             None,
         )
         .await;
-    let err = result.expect_err("expected error for task_id mismatch");
+    let err = result.expect_err("expected error for a taskId that names nothing");
 
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(ref msg) if msg.contains("task") && msg.contains("match")),
-        "expected InvalidParams for task_id mismatch, got {err:?}"
+        matches!(err, a2a_protocol_server::ServerError::TaskNotFound(ref id) if id.0.as_str() == "wrong-task-id"),
+        "expected TaskNotFound for a taskId that names nothing, got {err:?}"
+    );
+}
+
+/// The mismatch §3.4.3 does require an agent to reject: a `taskId` whose task
+/// exists under a *different* `contextId`.
+#[tokio::test]
+async fn task_id_from_another_context_rejected() {
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .build()
+        .expect("build handler");
+
+    let send = |msg| {
+        handler.on_send_message(
+            MessageSendParams {
+                tenant: None,
+                message: msg,
+                configuration: None,
+                metadata: None,
+            },
+            false,
+            None,
+        )
+    };
+
+    let mut theirs = make_message("theirs");
+    theirs.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-theirs"));
+    let created = send(theirs).await.expect("their send");
+    let their_task_id = match created {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t.id,
+        other => panic!("expected a task, got {other:?}"),
+    };
+
+    let mut ours = make_message("ours");
+    ours.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-ours"));
+    send(ours).await.expect("our send");
+
+    // Name their task through our context.
+    let mut crossing = make_message("crossing");
+    crossing.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-ours"));
+    crossing.task_id = Some(their_task_id);
+
+    let err = send(crossing)
+        .await
+        .expect_err("a task from another context must not be addressable here");
+    assert!(
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(ref msg) if msg.contains("different context")),
+        "expected InvalidParams naming the context mismatch, got {err:?}"
     );
 }
 

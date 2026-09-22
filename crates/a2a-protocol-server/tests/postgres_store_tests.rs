@@ -2548,3 +2548,136 @@ async fn tenant_postgres_key_expiry_is_scoped_to_age_not_tenant() {
     pool.close().await;
     db.drop_db().await;
 }
+
+// ── Incremental status persistence (`save_status_delta`) ─────────────────────
+//
+// Same contract as the artifact delta: the store ends up holding exactly what
+// `save` would have left it holding. These compare against a `save`-driven
+// database rather than hand-written expectations.
+
+fn task_with_history_pg(id: &str, messages: usize) -> Task {
+    use a2a_protocol_types::message::Message;
+
+    let mut task = make_task(id, "ctx");
+    task.status = TaskStatus::with_timestamp(TaskState::Working);
+    task.history = Some(
+        (0..messages)
+            .map(|i| Message::user_text(format!("m-{i}"), format!("turn-{i}")))
+            .collect(),
+    );
+    task
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn status_delta_matches_full_save() -> A2aResult<()> {
+    let db = TestDb::create("status_delta").await;
+    let delta_store = PostgresTaskStore::new(&db.url).await.expect("delta store");
+    let save_db = TestDb::create("status_delta_ref").await;
+    let save_store = PostgresTaskStore::new(&save_db.url)
+        .await
+        .expect("save store");
+
+    let initial = task_with_history_pg("t", 12);
+    delta_store.save(&initial).await?;
+    save_store.save(&initial).await?;
+
+    // Every state a turn walks through, one delta each.
+    for state in [TaskState::Working, TaskState::Completed] {
+        let mut moved = initial.clone();
+        moved.status = TaskStatus::with_timestamp(state);
+        delta_store.save_status_delta(&moved).await?;
+        save_store.save(&moved).await?;
+
+        let id = TaskId::new("t");
+        assert_eq!(
+            delta_store.get(&id).await?,
+            save_store.get(&id).await?,
+            "diverged after a delta to {state}; history is the field a \
+             status-only rewrite is most likely to drop"
+        );
+    }
+
+    db.drop_db().await;
+    save_db.drop_db().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn status_delta_updates_the_state_column_list_filters_on() -> A2aResult<()> {
+    let db = TestDb::create("status_delta_state").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+    let task = task_with_history_pg("t", 3);
+    store.save(&task).await?;
+    let mut done = task.clone();
+    done.status = TaskStatus::with_timestamp(TaskState::Completed);
+    store.save_status_delta(&done).await?;
+
+    // `state` is a column, not just a key inside `data`. A delta that rewrote
+    // only the document would leave `list` filtering on the old value.
+    let completed = store
+        .list(&ListTasksParams {
+            status: Some(TaskState::Completed),
+            ..Default::default()
+        })
+        .await?;
+    assert_eq!(
+        completed.tasks.len(),
+        1,
+        "the state column still holds the old value, so a filtered list \
+         cannot see the task the delta just completed"
+    );
+
+    db.drop_db().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn status_delta_moves_the_record_to_the_front_of_list_order() -> A2aResult<()> {
+    let db = TestDb::create("status_delta_order").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+    let older = task_with_history_pg("t-older", 2);
+    store.save(&older).await?;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let newer = task_with_history_pg("t-newer", 2);
+    store.save(&newer).await?;
+
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let mut moved = older.clone();
+    moved.status = TaskStatus::with_timestamp(TaskState::Working);
+    store.save_status_delta(&moved).await?;
+
+    let listed = store.list(&ListTasksParams::default()).await?;
+    assert_eq!(
+        listed.tasks[0].id,
+        TaskId::new("t-older"),
+        "§3.1.4 orders by status timestamp, so a status change moves the \
+         record; a delta that skipped `updated_at` would leave it mis-ordered"
+    );
+
+    db.drop_db().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn status_delta_for_an_absent_task_falls_back_to_a_save() -> A2aResult<()> {
+    let db = TestDb::create("status_delta_absent").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+    let task = task_with_history_pg("t-absent", 1);
+    store.save_status_delta(&task).await?;
+
+    let stored = store.get(&TaskId::new("t-absent")).await?.expect(
+        "the fallback must have inserted it; dropping a transition is \
+                 the one outcome worse than a slow one",
+    );
+    assert_eq!(stored.status.state, TaskState::Working);
+
+    db.drop_db().await;
+    Ok(())
+}

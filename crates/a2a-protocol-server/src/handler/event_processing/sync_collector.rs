@@ -249,7 +249,7 @@ impl RequestHandler {
                     message: update.status.message.clone(),
                     timestamp: update.status.timestamp.clone(),
                 };
-                self.task_store.save(last_task).await?;
+                self.task_store.save_status_delta(last_task).await?;
                 state.saw_task_shaped_event = true;
                 state.push_events.push(stream_resp.clone());
             }
@@ -375,7 +375,7 @@ impl RequestHandler {
             }
             Err(e) => {
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                self.task_store.save(last_task).await?;
+                self.task_store.save_status_delta(last_task).await?;
                 state.saw_task_shaped_event = true;
                 return Err(ServerError::Protocol(e));
             }

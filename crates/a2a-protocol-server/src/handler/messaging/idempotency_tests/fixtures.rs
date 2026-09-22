@@ -25,7 +25,8 @@ use crate::handler::RequestHandler;
 use crate::request_context::RequestContext;
 use crate::streaming::EventQueueWriter;
 
-use super::super::{SendMessageResponse, SendMessageResult};
+use super::super::SendMessageResult;
+use a2a_protocol_types::responses::SendMessageResponse;
 
 /// Counts how many times the send path actually ran an agent.
 ///

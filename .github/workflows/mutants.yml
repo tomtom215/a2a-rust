@@ -374,7 +374,7 @@ jobs:
             --test-tool=nextest \
             --profile=mutants \
             -- --all-features --run-ignored all \
-               -E 'not (binary(soak) or binary(soak_multi_replica))' \
+               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -859,9 +859,12 @@ jobs:
               echo ""
               echo '```bash'
               echo "cargo install cargo-mutants cargo-nextest --locked"
-              echo "# a live database, or every Postgres mutant survives for want of one:"
+              echo "# A live database. Without one the baseline itself fails, and"
+              echo "# cargo-mutants stops before testing a single mutant."
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
-              echo "cargo mutants -p <crate-name> --test-tool=nextest -- --all-features --run-ignored all"
+              echo "cargo mutants -p <crate-name> --test-tool=nextest --profile=mutants \\"
+              echo "  -- --all-features --run-ignored all \\"
+              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'"
               echo '```'
             } >> /tmp/final-summary.md
           fi
@@ -1028,7 +1031,7 @@ jobs:
             --test-tool=nextest \
             --profile=mutants \
             -- --all-features --run-ignored all \
-               -E 'not (binary(soak) or binary(soak_multi_replica))' \
+               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -1186,9 +1189,12 @@ jobs:
               echo ""
               echo '```bash'
               echo "cargo install cargo-mutants cargo-nextest --locked"
-              echo "# a live database, or every Postgres mutant survives for want of one:"
+              echo "# A live database. Without one the baseline itself fails, and"
+              echo "# cargo-mutants stops before testing a single mutant."
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
-              echo "cargo mutants --file <path-to-file> --test-tool=nextest -- --all-features --run-ignored all"
+              echo "cargo mutants --file <path-to-file> --test-tool=nextest --profile=mutants \\"
+              echo "  -- --all-features --run-ignored all \\"
+              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'"
               echo '```'
               echo ""
             fi

@@ -14,6 +14,45 @@ use a2a_protocol_types::task::{Task, TaskId};
 use super::super::RequestHandler;
 use crate::error::{ServerError, ServerResult};
 
+/// What [`resolve_task_id`](super::MessageHandler::resolve_task_id) decided.
+pub(super) struct Resolution {
+    /// The id this send will use.
+    pub(super) id: TaskId,
+    /// The task this send continues, set **only** when that is not the one
+    /// `find_task_by_context` returned.
+    ///
+    /// `None` is the common case and means the caller's own `stored_task` is
+    /// still the right view of the past: it covers both a fresh task and a
+    /// continuation of the context's canonical one. The caller substitutes
+    /// this when it is `Some`, so every path that existed before this type
+    /// behaves exactly as it did.
+    ///
+    /// It has to be carried rather than re-derived, because
+    /// `create::build_initial_task` keeps the stored history and artifacts
+    /// only when the stored task's id equals the resolved one. Handing it a
+    /// task whose id does not match silently starts the continuation from an
+    /// empty history.
+    pub(super) continues: Option<Task>,
+}
+
+impl Resolution {
+    /// The resolved id, with the caller's `stored_task` left in place.
+    pub(super) const fn fresh(id: TaskId) -> Self {
+        Self {
+            id,
+            continues: None,
+        }
+    }
+
+    /// The resolved id, continuing a task other than the canonical one.
+    pub(super) const fn continues(id: TaskId, task: Task) -> Self {
+        Self {
+            id,
+            continues: Some(task),
+        }
+    }
+}
+
 impl RequestHandler {
     /// Resolves the context id from the message, per the proto
     /// `SendMessageRequest` definition.
@@ -41,18 +80,18 @@ impl RequestHandler {
         }
     }
 
-    /// Determines the task id: the client-provided one when it matches the
-    /// stored non-terminal task for this context (an input-required
-    /// continuation, A2A spec §3.4.3), otherwise a fresh one.
+    /// Determines which task this send belongs to: the client-provided one
+    /// when it names a live task in this context, otherwise a fresh one
+    /// (A2A spec §3.4.3).
     ///
     /// Must be called under the per-context lock, with `stored_task` the
     /// task found for the context while holding it.
     ///
     /// # Errors
     ///
-    /// * [`ServerError::InvalidParams`] when the message names a task other
-    ///   than the one stored for its context, or a task that exists under a
-    ///   different context.
+    /// * [`ServerError::InvalidParams`] when the message names a task that
+    ///   exists under a different context — the one mismatch §3.4.3 requires
+    ///   an agent to reject.
     /// * [`ServerError::UnsupportedOperation`] when the named task is in a
     ///   terminal state (SPEC CORE-SEND-002).
     /// * [`ServerError::TaskNotFound`] when the named task does not exist at
@@ -61,12 +100,15 @@ impl RequestHandler {
         &self,
         message: &Message,
         stored_task: Option<&Task>,
-    ) -> ServerResult<TaskId> {
+    ) -> ServerResult<Resolution> {
         let Some(ref msg_task_id) = message.task_id else {
-            // No explicit task_id from client. If the found stored task is
-            // terminal, a new task will be created on this context — this is
-            // allowed (new conversation round on same context).
-            return Ok(TaskId::new(uuid::Uuid::new_v4().to_string()));
+            // §3.4.3: "Clients MAY use contextId without taskId to start a new
+            // task within an existing conversation context." So this forks
+            // unconditionally, and deliberately: it does not consult
+            // `stored_task` at all, terminal or not.
+            return Ok(Resolution::fresh(TaskId::new(
+                uuid::Uuid::new_v4().to_string(),
+            )));
         };
         let Some(stored) = stored_task else {
             // SPEC §3.4.2: When a client includes a taskId in a Message, it
@@ -82,9 +124,35 @@ impl RequestHandler {
             ));
         };
         if msg_task_id != &stored.id {
-            return Err(ServerError::InvalidParams(
-                "message task_id does not match task found for context".into(),
-            ));
+            // Not the task `find_task_by_context` returned — which is only
+            // ever *one* task, the most recently updated live one. That does
+            // not make this a mismatch. §3.4.1: "A contextId logically groups
+            // multiple Task objects"; §3.4.3: "Clients MAY use taskId (with or
+            // without contextId) to continue or refine a specific task", and
+            // the sole rejection it mandates is a contextId differing from the
+            // referenced task's. So the question to ask is about the named
+            // task's context, not about its identity with the canonical one.
+            //
+            // This used to reject outright, which locked every participant out
+            // of a channel as soon as one of them posted without a taskId: the
+            // fork became canonical and the original, still live and still in
+            // the same context, became unaddressable. Finding 2 of
+            // `docs/swarm-scale-findings.md` measured that.
+            let Some(named) = self.task_store.get(msg_task_id).await? else {
+                return Err(ServerError::TaskNotFound(msg_task_id.clone()));
+            };
+            if named.context_id != stored.context_id {
+                return Err(ServerError::InvalidParams(
+                    "task_id exists but belongs to a different context".into(),
+                ));
+            }
+            if named.status.state.is_terminal() {
+                return Err(ServerError::UnsupportedOperation(format!(
+                    "task {} is in terminal state '{}' and cannot accept new messages",
+                    named.id, named.status.state
+                )));
+            }
+            return Ok(Resolution::continues(msg_task_id.clone(), named));
         }
         // SPEC CORE-SEND-002: Reject messages explicitly targeting a task in
         // terminal state. Tasks in Completed, Failed, Canceled, or Rejected
@@ -96,6 +164,6 @@ impl RequestHandler {
             )));
         }
         // Reuse the existing task_id for non-terminal continuations.
-        Ok(msg_task_id.clone())
+        Ok(Resolution::fresh(msg_task_id.clone()))
     }
 }

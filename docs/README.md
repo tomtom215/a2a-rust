@@ -37,6 +37,7 @@ Architecture Decision Records (ADRs) and implementation planning documents for t
 - **Debugging streaming?** Read ADR-0005 (SSE design)
 - **Understanding the test strategy?** Read ADR-0006 (mutation testing) and ADR-0007 (TCK)
 - **Planning a feature?** Check the implementation plan for architectural context
+- **Wondering whether this scales to a swarm?** Read [swarm-scale-findings.md](swarm-scale-findings.md) — measured behaviour at a thousand agents sharing one task, and why the shard key has to be the context
 - **Picking up work mid-stream?** Read [handoff.md](handoff.md) — branch state, what is in flight outside this repository, what to do first, and the ideas the project has not committed to
 
 ## License
