@@ -99,6 +99,10 @@ pub struct InMemoryQueueWriter {
     /// collide with the first turn's positions — the continuation's events
     /// would be silently dropped.
     seq: Arc<AtomicU64>,
+    /// Holds a terminal event back until the background processor has ruled
+    /// on it. `None` unless the send path enabled it; see
+    /// [`TerminalGate`](super::terminal_gate::TerminalGate).
+    terminal_gate: Option<Arc<super::terminal_gate::TerminalGate>>,
 }
 
 impl std::fmt::Debug for InMemoryQueueWriter {
@@ -126,6 +130,7 @@ impl InMemoryQueueWriter {
             write_timeout,
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
+            terminal_gate: None,
         }
     }
 
@@ -143,6 +148,7 @@ impl InMemoryQueueWriter {
             write_timeout,
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
+            terminal_gate: None,
         }
     }
 
@@ -193,6 +199,60 @@ impl InMemoryQueueWriter {
     pub(crate) fn raw_subscribe(&self) -> broadcast::Receiver<A2aResult<StreamEvent>> {
         self.tx.subscribe()
     }
+
+    /// Makes this writer hold each terminal event back until the consumer of
+    /// its persistence channel resolves the event's ticket on the returned
+    /// gate. Meaningless without a persistence channel, where nothing would
+    /// answer; such a writer is returned unchanged.
+    #[must_use]
+    pub(crate) fn with_terminal_gate(mut self) -> Self {
+        if self.persistence_tx.is_some() {
+            self.terminal_gate = Some(Arc::new(super::terminal_gate::TerminalGate::default()));
+        }
+        self
+    }
+
+    /// The gate [`with_terminal_gate`](Self::with_terminal_gate) installed.
+    pub(crate) fn terminal_gate(&self) -> Option<Arc<super::terminal_gate::TerminalGate>> {
+        self.terminal_gate.clone()
+    }
+
+    /// A ticket for `event`'s verdict, when this writer is gated and the
+    /// event carries a terminal state.
+    fn ticket_for(&self, event: &StreamEvent) -> Option<Ticket<'_>> {
+        let gate = self.terminal_gate.as_deref()?;
+        let seq = event.seq?;
+        if !carries_terminal_state(&event.event) {
+            return None;
+        }
+        gate.arm(seq).map(|verdict| Ticket { gate, seq, verdict })
+    }
+}
+
+/// A writer's claim on one verdict. Disarms its ticket when dropped, so a
+/// write abandoned mid-wait — the executor's future dropped, say — leaves
+/// nothing behind in the gate.
+struct Ticket<'a> {
+    gate: &'a super::terminal_gate::TerminalGate,
+    seq: u64,
+    verdict: tokio::sync::oneshot::Receiver<StreamResponse>,
+}
+
+impl Ticket<'_> {
+    /// The verdict, or `None` if none arrives within `timeout` or the
+    /// processor went away without giving one.
+    async fn verdict_within(mut self, timeout: std::time::Duration) -> Option<StreamResponse> {
+        tokio::time::timeout(timeout, &mut self.verdict)
+            .await
+            .ok()?
+            .ok()
+    }
+}
+
+impl Drop for Ticket<'_> {
+    fn drop(&mut self) {
+        self.gate.disarm(self.seq);
+    }
 }
 
 #[allow(clippy::manual_async_fn)]
@@ -234,7 +294,11 @@ impl EventQueueWriter for InMemoryQueueWriter {
             // channels below. `Relaxed` is enough: this is the only writer of
             // the counter and the value travels with the event, so no other
             // memory is ordered against it.
-            let event = StreamEvent::at(self.seq.fetch_add(1, Ordering::Relaxed) + 1, event);
+            let mut event = StreamEvent::at(self.seq.fetch_add(1, Ordering::Relaxed) + 1, event);
+
+            // Armed before the hand-off, so the processor's verdict can never
+            // arrive ahead of the ticket it answers.
+            let mut ticket = self.ticket_for(&event);
 
             if let Some(ref persistence_tx) = self.persistence_tx {
                 match persistence_tx
@@ -243,6 +307,8 @@ impl EventQueueWriter for InMemoryQueueWriter {
                 {
                     Ok(()) => {}
                     Err(mpsc::error::SendTimeoutError::Closed(_)) => {
+                        // Nobody is left to rule on it.
+                        ticket = None;
                         trace_warn!("persistence channel closed, event not persisted");
                         // The one report that survives a default build. Until
                         // 0.12 the trace line above was the whole signal, and
@@ -269,6 +335,17 @@ impl EventQueueWriter for InMemoryQueueWriter {
                     }
                 }
             }
+            // A terminal event goes out as the store ruled on it: itself when it
+            // persisted, the stored terminal status when another writer had
+            // already finished the task. No verdict within the write timeout
+            // — or a processor that exited — broadcasts it unchanged, which is
+            // what every event did before the gate existed.
+            if let Some(ticket) = ticket
+                && let Some(verdict) = ticket.verdict_within(self.write_timeout).await
+            {
+                event.event = verdict;
+            }
+
             // Broadcast to live SSE subscribers. Zero receivers is NOT an
             // error when a persistence channel exists: the event was already
             // persisted above, and a client that dropped its stream can
@@ -370,7 +447,7 @@ pub type ReattachFn =
     Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Reattached> + Send>> + Send + Sync>;
 
 /// Whether a stream frame reports a terminal task state.
-const fn carries_terminal_state(event: &StreamResponse) -> bool {
+pub const fn carries_terminal_state(event: &StreamResponse) -> bool {
     match event {
         StreamResponse::Task(t) => t.status.state.is_terminal(),
         StreamResponse::StatusUpdate(u) => u.status.state.is_terminal(),

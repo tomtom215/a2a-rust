@@ -16,9 +16,10 @@
 
 mod in_memory;
 mod manager;
+pub(crate) mod terminal_gate;
 
 pub use in_memory::{InMemoryQueueReader, InMemoryQueueWriter};
-pub(crate) use in_memory::{ReattachFn, Reattached, is_lag_error};
+pub(crate) use in_memory::{ReattachFn, Reattached, carries_terminal_state, is_lag_error};
 pub use manager::EventQueueManager;
 pub(crate) use manager::QueueLease;
 

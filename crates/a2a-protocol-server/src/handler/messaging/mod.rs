@@ -83,6 +83,11 @@ struct Started {
     persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<crate::streaming::StreamEvent>>>,
     /// The spawned executor.
     executor_handle: JoinHandle<()>,
+    /// The executor's cancellation token, so the background processor can
+    /// stop it when the store says another writer already finished the task.
+    cancel: tokio_util::sync::CancellationToken,
+    /// The queue's terminal gate, answered by the background processor.
+    gate: Option<std::sync::Arc<crate::streaming::event_queue::terminal_gate::TerminalGate>>,
 }
 
 /// What committing a send produced.
@@ -335,12 +340,16 @@ impl RequestHandler {
             // find_task_by_context.
             drop(context_guard);
 
+            let cancel = ctx.cancellation_token.clone();
+            let gate = writer.terminal_gate();
             let executor_handle = self.spawn_executor(ctx, writer, tenant_slot);
             Ok(Started {
                 task,
                 reader,
                 persistence_rx,
                 executor_handle,
+                cancel,
+                gate,
             })
         })
         .await;

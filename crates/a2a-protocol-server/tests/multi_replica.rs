@@ -541,6 +541,13 @@ async fn admit_count(limiter: &RateLimitInterceptor, caller: &str) -> u64 {
 /// task are *turned away*, loudly, rather than racing. Across replicas they
 /// are not turned away at all.
 ///
+/// What bounds the damage is the store: the first terminal state either
+/// executor reaches is final: the other's later writes are refused unless
+/// they carry that same state, and the first refusal cancels its executor
+/// (`tests/cross_replica_cancel/` pins that for a cancel;
+/// `horizontal-scaling.md` states both). Until then the two executors'
+/// writes interleave, last writer wins.
+///
 /// This test asserts the current behaviour rather than the desired one. It is
 /// here so the limit is measured instead of inferred, and so that anything
 /// which later makes admission shared fails this test and has to say so.

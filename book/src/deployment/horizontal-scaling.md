@@ -20,9 +20,13 @@ test fails rather than this page quietly becoming wrong.
 | A subscription terminates when the task finishes elsewhere | **Yes** | The reattach hook polls the store |
 | A subscriber sees intermediate events from another replica | **No** | Event queues live in process memory |
 | Rate limiting enforces the configured limit | **Only with a shared counter** | Otherwise each replica counts alone |
+| A second send to a running task is refused | **No** — each replica admits one | Admission state is per-handler |
+| A task one replica finished stays finished | **Yes** | The store refuses to move a terminal task |
+| `CancelTask` stops an executor running on another replica | **At its next write** | The refused write is the only signal |
 
-Sharing a task store gets you most of the way. The two things it does not
-cover are streaming and rate limiting, and only one of them has a fix.
+Sharing a task store gets you most of the way. What it does not cover is
+streaming, rate limiting, and who may write to a running task — and only rate
+limiting has a complete fix.
 
 ## Share the store
 
@@ -155,6 +159,72 @@ Three ways to live with it, in the order most deployments should consider them:
    store is. A client that polls is unaffected by any of this.
 3. **Push notifications.** Configure a webhook; delivery is driven from the
    replica running the task and does not depend on where the client is.
+
+## Continuations and cancellation
+
+### Two replicas can both run the same task
+
+Within one replica, a second `SendMessage` naming a task whose executor is
+still running is refused: the handler checks its own map of in-flight
+executors under its own lock. Neither is in the store, so **across replicas
+the refusal does not apply**. A continuation sent to replica B while the
+task's executor runs on replica A is admitted, B spawns a second executor, and
+both write to the same row. `the_single_writer_refusal_does_not_cross_replicas`
+in `tests/multi_replica.rs` pins this: the same continuation is refused by A
+and accepted by B.
+
+What the store guarantees in that situation is narrower than "no harm":
+
+- **The first terminal state wins, and stays.** Every shipped store refuses a
+  write that would move a stored terminal task to a different state, and does
+  so atomically with the write — a condition on the `UPDATE` or upsert for
+  SQLite and PostgreSQL, the write lock for the in-memory stores. The other
+  executor's later writes are refused unless they carry that same state, and
+  the first refusal cancels it, as below.
+- **Everything before that is last-writer-wins.** Two executors emitting
+  artifacts, history or non-terminal statuses for one task interleave their
+  writes, and neither sees the other's.
+
+If your clients can send to a running task — multi-turn agents do — route by
+task or context ID (session affinity, as for streaming) so every turn of one
+task lands on one replica.
+
+### Cancelling a task that runs elsewhere
+
+`CancelTask` can arrive at any replica. On replica B, for a task whose
+executor runs on replica A:
+
+1. B finds no executor of its own to signal. It calls its own executor's
+   `cancel` (so an override that releases in-process resources releases B's,
+   not A's), writes `Canceled`, and answers the client `Canceled`.
+2. A's executor has not heard. The next time it emits anything, A's write is
+   refused by the store, because the task is terminal in another state.
+3. From that refusal A **cancels its executor's cancellation token**, adopts
+   the stored task, and stops writing, pushing and logging the executor's
+   events. A client streaming from A ends on `Canceled`, not on whatever A's
+   executor emitted; a blocking `SendMessage` waiting on A is answered with the
+   `Canceled` task; A delivers `Canceled` to the task's webhooks, which nothing
+   else would, because B has no processor for the task.
+
+The client B answered is therefore never contradicted: before this was
+enforced, all three stores let A overwrite `Canceled` with `Completed`, and
+`tests/cross_replica_cancel/` reproduced it on each.
+
+What this does **not** give you:
+
+- **Prompt cancellation.** A's executor learns at its next write. One that
+  works silently for an hour runs for an hour. There is no cross-replica
+  cancel signal; the refused write stands in for one.
+- **A clean stream on A.** Non-terminal frames A's executor emitted between
+  the cancel and its next write still reach a client streaming from A —
+  though never the store. The terminal frame is held until the store has
+  ruled on it, so the ending is right.
+- **An executor that honours the token.** Cancellation is cooperative. An
+  executor that ignores `RequestContext::cancellation_token` keeps running on A
+  until it returns, with its writes refused.
+
+Session affinity makes all three moot: the cancel then reaches the replica
+running the executor, which signals it directly.
 
 ## Under sustained load
 

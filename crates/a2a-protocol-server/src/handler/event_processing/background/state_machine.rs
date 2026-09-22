@@ -14,7 +14,7 @@ use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 use crate::handler::limits::HandlerLimits;
 use crate::metrics::persistence_operation;
 use crate::push::{PushConfigStore, PushSender};
-use crate::store::{ArtifactDelta, TaskStore};
+use crate::store::{ArtifactDelta, TaskStore, TerminalStateConflict};
 
 use super::push_delivery::deliver_push_bg;
 
@@ -44,23 +44,61 @@ pub(super) struct BackgroundDeps<'a> {
     pub metrics: &'a dyn crate::metrics::Metrics,
 }
 
+/// What processing one event did to the store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Outcome {
+    /// The event's effect is persisted.
+    Persisted,
+    /// Nothing was persisted: the event was dropped, or the store failed and
+    /// the failure was reported. The task is still this processor's to write.
+    NotPersisted,
+    /// The store refused the write because the task is already terminal in
+    /// another state — another writer finished it. Nothing this executor
+    /// emits from here on can change the task.
+    Refused(TerminalStateConflict),
+}
+
+/// The refusal inside `e`, if the store refused rather than failed.
+fn refusal(e: &a2a_protocol_types::error::A2aError) -> Option<Outcome> {
+    TerminalStateConflict::from_error(e).map(Outcome::Refused)
+}
+
 /// Processes a single streaming event: validates state transitions, updates the
 /// task store, and triggers push delivery.
 ///
 /// Used by [`super::spawn_background_event_processor`] which runs in a spawned
 /// task that can't hold a reference to the handler.
-/// Returns the number of consecutive store failures encountered.
 ///
 /// When a save fails, the in-memory `last_task` is reverted to its previous
 /// state so it stays consistent with what's actually persisted. This prevents
-/// a cascade of phantom state that was never written to the store.
-#[allow(clippy::too_many_lines)]
+/// a cascade of phantom state that was never written to the store. A save the
+/// store *refused* is not reverted: it is returned as [`Outcome::Refused`],
+/// and the caller replaces `last_task` with what the store holds.
+///
+/// Test-only: the processor itself calls [`process_event_with`], which also
+/// releases the terminal gate before push delivery.
+#[cfg(test)]
 pub(super) async fn process_event_bg(
     event: a2a_protocol_types::error::A2aResult<StreamResponse>,
     task_id: &TaskId,
     last_task: &mut Task,
     deps: BackgroundDeps<'_>,
-) {
+) -> Outcome {
+    process_event_with(event, task_id, last_task, deps, None).await
+}
+
+/// `process_event_bg`, calling `on_persisted` the moment a status update or
+/// task snapshot is persisted — before its push notifications go out, so a
+/// streaming client waiting on the terminal gate is not also waiting on
+/// webhooks.
+#[allow(clippy::too_many_lines)]
+pub(super) async fn process_event_with(
+    event: a2a_protocol_types::error::A2aResult<StreamResponse>,
+    task_id: &TaskId,
+    last_task: &mut Task,
+    deps: BackgroundDeps<'_>,
+    on_persisted: Option<&(dyn Fn() + Send + Sync)>,
+) -> Outcome {
     let BackgroundDeps {
         task_store,
         push_config_store,
@@ -72,6 +110,20 @@ pub(super) async fn process_event_bg(
         Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
             let current = last_task.status.state;
             let next = update.status.state;
+            // Already finished. Writing `Failed` over our own terminal state
+            // — what the invalid-transition branch below used to do — is a
+            // move out of a terminal state, which the store refuses; say so
+            // here too, so a custom store without the guard is not the only
+            // thing standing between a late event and a finished task. The
+            // same state again is a harmless repeat (an executor emitting
+            // `Canceled` after the handler's cancel already persisted it).
+            if current.is_terminal() {
+                return if current == next {
+                    Outcome::NotPersisted
+                } else {
+                    Outcome::Refused(TerminalStateConflict::new(task_id.clone(), current, next))
+                };
+            }
             if !current.can_transition_to(next) {
                 // FIX(#6): Match sync-mode behavior — invalid transitions are errors,
                 // not silent warnings. Mark the task as failed so the state is
@@ -84,6 +136,9 @@ pub(super) async fn process_event_bg(
                 );
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
                 if let Err(e) = task_store.save_status_delta(last_task).await {
+                    if let Some(refused) = refusal(&e) {
+                        return refused;
+                    }
                     trace_error!(
                         task_id = %task_id,
                         error = %e,
@@ -93,8 +148,9 @@ pub(super) async fn process_event_bg(
                         persistence_operation::FAILED_STATE,
                         e.metric_label(),
                     );
+                    return Outcome::NotPersisted;
                 }
-                return;
+                return Outcome::Persisted;
             }
             // Save previous state so we can revert on failure.
             let prev_status = last_task.status.clone();
@@ -104,6 +160,9 @@ pub(super) async fn process_event_bg(
                 timestamp: update.status.timestamp.clone(),
             };
             if let Err(e) = task_store.save_status_delta(last_task).await {
+                if let Some(refused) = refusal(&e) {
+                    return refused;
+                }
                 trace_error!(
                     task_id = %task_id,
                     error = %e,
@@ -113,7 +172,10 @@ pub(super) async fn process_event_bg(
                     .on_persistence_error(persistence_operation::STATUS_UPDATE, e.metric_label());
                 // Revert in-memory state to stay consistent with the store.
                 last_task.status = prev_status;
-                return;
+                return Outcome::NotPersisted;
+            }
+            if let Some(on_persisted) = on_persisted {
+                on_persisted();
             }
             deliver_push_bg(
                 task_id,
@@ -124,6 +186,7 @@ pub(super) async fn process_event_bg(
                 metrics,
             )
             .await;
+            Outcome::Persisted
         }
         Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
             // Validate artifact has at least one part per A2A spec (unless appending).
@@ -134,7 +197,7 @@ pub(super) async fn process_event_bg(
                     task_id = %task_id,
                     "dropping artifact with empty parts (spec violation)"
                 );
-                return;
+                return Outcome::NotPersisted;
             }
             let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
 
@@ -158,7 +221,7 @@ pub(super) async fn process_event_bg(
                         task_id = %task_id,
                         "dropping artifact append: would exceed max_parts_per_artifact"
                     );
-                    return;
+                    return Outcome::NotPersisted;
                 }
                 // Snapshot the artifact state before mutation so we can
                 // revert if the store save fails (data consistency).
@@ -190,6 +253,9 @@ pub(super) async fn process_event_bg(
                     )
                     .await
                 {
+                    if let Some(refused) = refusal(&e) {
+                        return refused;
+                    }
                     trace_error!(
                         task_id = %task_id,
                         error = %e,
@@ -208,7 +274,7 @@ pub(super) async fn process_event_bg(
                         existing.parts.truncate(prev_parts_len);
                         existing.metadata = prev_metadata;
                     }
-                    return;
+                    return Outcome::NotPersisted;
                 }
                 deliver_push_bg(
                     task_id,
@@ -219,7 +285,7 @@ pub(super) async fn process_event_bg(
                     metrics,
                 )
                 .await;
-                return;
+                return Outcome::Persisted;
             }
             // Artifact ID not found — fall through to push as new artifact.
 
@@ -229,7 +295,7 @@ pub(super) async fn process_event_bg(
                     max = limits.max_artifacts_per_task,
                     "artifact limit reached; dropping artifact update"
                 );
-                return;
+                return Outcome::NotPersisted;
             }
             artifacts.push(update.artifact.clone());
             let pushed_index = artifacts.len() - 1;
@@ -242,6 +308,9 @@ pub(super) async fn process_event_bg(
                 )
                 .await
             {
+                if let Some(refused) = refusal(&e) {
+                    return refused;
+                }
                 trace_error!(
                     task_id = %task_id,
                     error = %e,
@@ -253,7 +322,7 @@ pub(super) async fn process_event_bg(
                 if let Some(ref mut arts) = last_task.artifacts {
                     arts.pop();
                 }
-                return;
+                return Outcome::NotPersisted;
             }
             deliver_push_bg(
                 task_id,
@@ -264,11 +333,15 @@ pub(super) async fn process_event_bg(
                 metrics,
             )
             .await;
+            Outcome::Persisted
         }
         Ok(StreamResponse::Task(task)) => {
             let prev = last_task.clone();
             *last_task = task;
             if let Err(e) = task_store.save(last_task).await {
+                if let Some(refused) = refusal(&e) {
+                    return refused;
+                }
                 trace_error!(
                     task_id = %task_id,
                     error = %e,
@@ -277,7 +350,12 @@ pub(super) async fn process_event_bg(
                 metrics
                     .on_persistence_error(persistence_operation::TASK_SNAPSHOT, e.metric_label());
                 *last_task = prev;
+                return Outcome::NotPersisted;
             }
+            if let Some(on_persisted) = on_persisted {
+                on_persisted();
+            }
+            Outcome::Persisted
         }
         Ok(StreamResponse::Message(msg)) => {
             // Agent messages are part of the conversation record: append to
@@ -297,6 +375,9 @@ pub(super) async fn process_event_bg(
                 .saturating_sub(crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES);
             history.drain(..excess);
             if let Err(e) = task_store.save(last_task).await {
+                if let Some(refused) = refusal(&e) {
+                    return refused;
+                }
                 trace_error!(
                     task_id = %task_id,
                     error = %e,
@@ -323,13 +404,18 @@ pub(super) async fn process_event_bg(
                 {
                     history.pop();
                 }
+                return Outcome::NotPersisted;
             }
+            Outcome::Persisted
         }
-        Ok(_) => {}
+        Ok(_) => Outcome::NotPersisted,
         Err(_e) => {
             let prev_status = last_task.status.clone();
             last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
             if let Err(save_err) = task_store.save_status_delta(last_task).await {
+                if let Some(refused) = refusal(&save_err) {
+                    return refused;
+                }
                 trace_error!(
                     task_id = %task_id,
                     original_error = %_e,
@@ -341,7 +427,9 @@ pub(super) async fn process_event_bg(
                     save_err.metric_label(),
                 );
                 last_task.status = prev_status;
+                return Outcome::NotPersisted;
             }
+            Outcome::Persisted
         }
     }
 }
@@ -479,19 +567,21 @@ mod tests {
     #[tokio::test]
     async fn process_event_bg_status_update_invalid_transition_marks_failed() {
         // FIX(#6): Invalid transitions now mark the task as Failed for
-        // consistency with sync mode behavior.
+        // consistency with sync mode behavior. `Working -> Submitted` is
+        // invalid (nothing re-enters the entry state) from a state that is
+        // not terminal, so the task is still this processor's to fail.
         let task_store = InMemoryTaskStore::new();
         let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t1");
 
         task_store
-            .save(&make_task("t1", TaskState::Completed))
+            .save(&make_task("t1", TaskState::Working))
             .await
             .unwrap();
-        let mut last_task = make_task("t1", TaskState::Completed);
+        let mut last_task = make_task("t1", TaskState::Working);
 
-        let event: A2aResult<StreamResponse> = Ok(make_status_event("t1", TaskState::Working));
-        process_event_bg(
+        let event: A2aResult<StreamResponse> = Ok(make_status_event("t1", TaskState::Submitted));
+        let outcome = process_event_bg(
             event,
             &task_id,
             &mut last_task,
@@ -505,11 +595,242 @@ mod tests {
         )
         .await;
 
-        // The store keeps the terminal state it holds: `Failed` over
-        // `Completed` is a write out of a terminal state, which every shipped
-        // store refuses (`store::terminal`).
+        assert_eq!(outcome, Outcome::Persisted);
+        assert_eq!(last_task.status.state, TaskState::Failed);
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Failed);
+    }
+
+    fn deps<'a>(
+        task_store: &'a dyn TaskStore,
+        push: &'a InMemoryPushConfigStore,
+    ) -> BackgroundDeps<'a> {
+        static LIMITS: std::sync::LazyLock<HandlerLimits> =
+            std::sync::LazyLock::new(HandlerLimits::default);
+        BackgroundDeps {
+            task_store,
+            push_config_store: push,
+            push_sender: None,
+            limits: &LIMITS,
+            metrics: &crate::metrics::NoopMetrics,
+        }
+    }
+
+    /// A status update after the task is already terminal is refused without
+    /// a write. It used to mark the task `Failed` over its own `Completed`,
+    /// which is a move out of a terminal state.
+    #[tokio::test]
+    async fn a_status_update_after_a_terminal_state_is_refused_not_written() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-done");
+        task_store
+            .save(&make_task("t-done", TaskState::Completed))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-done", TaskState::Completed);
+
+        let outcome = process_event_bg(
+            Ok(make_status_event("t-done", TaskState::Working)),
+            &task_id,
+            &mut last_task,
+            deps(&task_store, &push_store),
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            Outcome::Refused(TerminalStateConflict::new(
+                task_id.clone(),
+                TaskState::Completed,
+                TaskState::Working
+            ))
+        );
+        assert_eq!(last_task.status.state, TaskState::Completed);
         let stored = task_store.get(&task_id).await.unwrap().unwrap();
         assert_eq!(stored.status.state, TaskState::Completed);
+    }
+
+    /// The same terminal state again is a harmless repeat, not a conflict: an
+    /// executor that emits `Canceled` on observing its token, after the
+    /// default `cancel` already emitted one, must not fail the task.
+    #[tokio::test]
+    async fn a_repeated_terminal_state_is_neither_written_nor_refused() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-again");
+        task_store
+            .save(&make_task("t-again", TaskState::Canceled))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-again", TaskState::Canceled);
+
+        let outcome = process_event_bg(
+            Ok(make_status_event("t-again", TaskState::Canceled)),
+            &task_id,
+            &mut last_task,
+            deps(&task_store, &push_store),
+        )
+        .await;
+
+        assert_eq!(outcome, Outcome::NotPersisted);
+        assert_eq!(last_task.status.state, TaskState::Canceled);
+    }
+
+    /// Another writer finished the task: the store refuses each kind of
+    /// write, and each is reported as the refusal rather than as a store
+    /// failure to revert and carry on from.
+    #[tokio::test]
+    #[allow(clippy::too_many_lines)]
+    async fn a_store_refusal_is_reported_for_every_kind_of_write() {
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-lost");
+        let refused = Outcome::Refused(TerminalStateConflict::new(
+            task_id.clone(),
+            TaskState::Canceled,
+            TaskState::Working,
+        ));
+        let message = a2a_protocol_types::message::Message {
+            id: a2a_protocol_types::message::MessageId::new("m"),
+            role: a2a_protocol_types::message::MessageRole::Agent,
+            parts: vec![Part::text("late")],
+            context_id: None,
+            task_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        };
+        let mut appended = make_artifact_event("t-lost");
+        if let StreamResponse::ArtifactUpdate(ref mut e) = appended {
+            e.append = Some(true);
+        }
+        let cases: Vec<(&str, A2aResult<StreamResponse>, Outcome)> = vec![
+            (
+                "status",
+                Ok(make_status_event("t-lost", TaskState::Completed)),
+                Outcome::Refused(TerminalStateConflict::new(
+                    task_id.clone(),
+                    TaskState::Canceled,
+                    TaskState::Completed,
+                )),
+            ),
+            (
+                "invalid transition",
+                Ok(make_status_event("t-lost", TaskState::Submitted)),
+                Outcome::Refused(TerminalStateConflict::new(
+                    task_id.clone(),
+                    TaskState::Canceled,
+                    TaskState::Failed,
+                )),
+            ),
+            (
+                "new artifact",
+                Ok(make_artifact_event("t-lost")),
+                refused.clone(),
+            ),
+            ("artifact append", Ok(appended), refused.clone()),
+            (
+                "task snapshot",
+                Ok(StreamResponse::Task(make_task(
+                    "t-lost",
+                    TaskState::Working,
+                ))),
+                refused.clone(),
+            ),
+            (
+                "agent message",
+                Ok(StreamResponse::Message(message)),
+                refused,
+            ),
+            (
+                "error",
+                Err(a2a_protocol_types::error::A2aError::internal("boom")),
+                Outcome::Refused(TerminalStateConflict::new(
+                    task_id.clone(),
+                    TaskState::Canceled,
+                    TaskState::Failed,
+                )),
+            ),
+        ];
+        for (what, event, expected) in cases {
+            let task_store = InMemoryTaskStore::new();
+            let mut stored = make_task("t-lost", TaskState::Canceled);
+            stored.artifacts = Some(vec![Artifact::new(
+                ArtifactId::new("art-1"),
+                vec![Part::text("before")],
+            )]);
+            task_store.save(&stored).await.unwrap();
+            // This processor still believes the task is running.
+            let mut last_task = stored.clone();
+            last_task.status = TaskStatus::new(TaskState::Working);
+
+            let outcome = process_event_bg(
+                event,
+                &task_id,
+                &mut last_task,
+                deps(&task_store, &push_store),
+            )
+            .await;
+            assert_eq!(outcome, expected, "{what}");
+            let after = task_store.get(&task_id).await.unwrap().unwrap();
+            assert_eq!(after.status.state, TaskState::Canceled, "{what}");
+        }
+    }
+
+    /// `on_persisted` runs for a persisted status update or snapshot — the
+    /// events that release the terminal gate — and for nothing else.
+    #[tokio::test]
+    async fn on_persisted_fires_for_persisted_status_and_snapshot_only() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-cb");
+        let cases: Vec<(&str, StreamResponse, TaskState, usize)> = vec![
+            (
+                "status",
+                make_status_event("t-cb", TaskState::Completed),
+                TaskState::Working,
+                1,
+            ),
+            (
+                "snapshot",
+                StreamResponse::Task(make_task("t-cb", TaskState::Completed)),
+                TaskState::Working,
+                1,
+            ),
+            (
+                "artifact",
+                make_artifact_event("t-cb"),
+                TaskState::Working,
+                0,
+            ),
+            (
+                "refused status",
+                make_status_event("t-cb", TaskState::Completed),
+                TaskState::Canceled,
+                0,
+            ),
+        ];
+        for (what, event, stored_state, expected) in cases {
+            let task_store = InMemoryTaskStore::new();
+            task_store
+                .save(&make_task("t-cb", stored_state))
+                .await
+                .unwrap();
+            let mut last_task = make_task("t-cb", TaskState::Working);
+            let calls = AtomicUsize::new(0);
+            let count = || {
+                calls.fetch_add(1, Ordering::SeqCst);
+            };
+            let _ = process_event_with(
+                Ok(event),
+                &task_id,
+                &mut last_task,
+                deps(&task_store, &push_store),
+                Some(&count),
+            )
+            .await;
+            assert_eq!(calls.load(Ordering::SeqCst), expected, "{what}");
+        }
     }
 
     #[tokio::test]
@@ -902,15 +1223,15 @@ mod tests {
 
         task_store
             .inner
-            .save(&make_task("t-inv-fail", TaskState::Completed))
+            .save(&make_task("t-inv-fail", TaskState::Working))
             .await
             .unwrap();
-        let mut last_task = make_task("t-inv-fail", TaskState::Completed);
+        let mut last_task = make_task("t-inv-fail", TaskState::Working);
 
-        // Completed -> Working is invalid; the handler marks Failed, but the
+        // Working -> Submitted is invalid; the handler marks Failed, but the
         // FailingSaveStore will make the save fail too.
         let event: A2aResult<StreamResponse> =
-            Ok(make_status_event("t-inv-fail", TaskState::Working));
+            Ok(make_status_event("t-inv-fail", TaskState::Submitted));
         process_event_bg(
             event,
             &task_id,
@@ -925,7 +1246,7 @@ mod tests {
         )
         .await;
 
-        // Even though save failed, in-memory state should be Failed (not reverted to Completed)
+        // Even though save failed, in-memory state should be Failed (not reverted to Working)
         // because the invalid transition logic sets Failed and returns early.
         assert_eq!(
             last_task.status.state,

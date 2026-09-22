@@ -157,7 +157,7 @@ The event queue uses `tokio::sync::broadcast` channels for fan-out to multiple s
 | Queue capacity | 256 events | Broadcast channel ring buffer size |
 | Max event size | 16 MiB | Rejects oversized events |
 
-With broadcast channels, writes never block — if a reader is too slow, it receives a `Lagged` notification and skips missed events. The task store is the source of truth; SSE is best-effort notification.
+With broadcast channels, writes never block on readers — if a reader is too slow, it receives a `Lagged` notification and skips missed events. The task store is the source of truth; SSE is best-effort notification. The one write that waits is the terminal one, on the store rather than on readers (see [The terminal frame is the stored one](#the-terminal-frame-is-the-stored-one)).
 
 > **High-volume streams:** For tasks producing >250 events, increase the queue
 > capacity to match expected peak volume. The default capacity of 256 is sufficient
@@ -308,6 +308,22 @@ Details worth knowing:
   existed — the header is ignored rather than refused.
 - **A malformed `Last-Event-ID` is ignored**, not rejected, so echoing back an
   id from an unrelated stream costs you a replay, not the connection.
+
+### The terminal frame is the stored one
+
+Every frame but the last is broadcast as soon as the agent emits it, without
+waiting for the store. The frame carrying a terminal state is held until the
+server has persisted it (bounded by the queue's write timeout, 5 s by
+default), and it goes out as the store ruled: the agent's own frame when it
+persisted, or the state the store already holds when another writer finished
+the task first — a `CancelTask` handled by another replica, typically. The
+log records the same frame at that position, so a resumed stream ends the way
+the live one did, and a `GetTask` made after reading the terminal frame
+agrees with it. If the store has not answered within the timeout, the frame
+goes out as the agent wrote it, which is how every frame behaved before.
+
+The trade is latency on that one frame: it now waits for the store write, and
+for the processing of any events queued ahead of it.
 
 ## Streaming vs Synchronous
 

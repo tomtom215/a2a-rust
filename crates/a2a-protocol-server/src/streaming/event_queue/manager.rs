@@ -300,7 +300,9 @@ impl EventQueueManager {
                 self.max_event_size,
                 self.write_timeout,
             );
-            let writer = Arc::new(self.observed(writer));
+            // Gated: the send path always hands `persistence_rx` to a
+            // background processor, which answers the terminal tickets.
+            let writer = Arc::new(self.observed(writer).with_terminal_gate());
             map.insert(task_id.clone(), Arc::clone(&writer));
             QueueLease::Created {
                 writer,
