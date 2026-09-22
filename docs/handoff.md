@@ -1449,12 +1449,17 @@ The fix program, in the order the evidence supports:
 
 Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
 
-1. Delete `release/v0.12.1`, whose contents are merged and tagged. **Verified
-   ready 2026-09-21, and deliberately left undone:** the branch is on origin at
-   `2e9262e`, `git branch -r --merged origin/main` lists it, and tag `v0.12.1`
-   resolves to `e057c8e`. Deleting the ref loses nothing — the commits stay
-   reachable from `main` — but it is the one irreversible outward-facing action
-   on this list, and the owner asked to do it themselves.
+1. ~~Delete `release/v0.12.1`, whose contents are merged and tagged.~~
+   **Done by the owner, 2026-09-22.** Verified after the fact:
+   `git ls-remote --heads origin 'release/*'` returns nothing, and tag
+   `v0.12.1` still resolves to `e057c8e`, so the release stays identifiable
+   and the merged commits stay reachable from `main`. Nothing was lost.
+
+   Kept as a record of how it was handled rather than deleted outright: this
+   was the one irreversible outward-facing action on the list, it was verified
+   ready here (branch at `2e9262e`, listed by
+   `git branch -r --merged origin/main`) and then left for the owner, who
+   asked to do it themselves.
 2. Submit the adk-rust work if it is still wanted: issue first, then the patch.
    **Blocked on repository access, not on the work.** The patch is prepared and
    intact on `claude/adk-rust-0.12-patch` at `6fbdd2f` (verified against origin
