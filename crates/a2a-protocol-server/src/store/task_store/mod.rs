@@ -91,9 +91,20 @@ pub use records::{ArtifactDelta, IdempotencyClaim, RecordedEvent};
 pub trait TaskStore: Send + Sync + 'static {
     /// Saves (creates or updates) a task.
     ///
+    /// # Terminal states are final
+    ///
+    /// Every store shipped in this crate refuses a write — through this method
+    /// or any of the delta methods below — that would move a stored terminal
+    /// task to a different state, and does so atomically with the write. The
+    /// refusal is an `UnsupportedOperation` error that
+    /// [`TerminalStateConflict::from_error`](crate::store::TerminalStateConflict::from_error)
+    /// recognises. See [`crate::store::terminal`] for why, and for what a
+    /// custom store has to do to give the same guarantee.
+    ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails,
+    /// including the terminal-state refusal described above.
     fn save<'a>(
         &'a self,
         task: &'a Task,

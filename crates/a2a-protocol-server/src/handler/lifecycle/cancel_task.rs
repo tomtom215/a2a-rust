@@ -113,7 +113,17 @@ impl RequestHandler {
 
             let mut updated = current;
             updated.status = TaskStatus::with_timestamp(TaskState::Canceled);
-            self.task_store.save(&updated).await?;
+            // The re-read above narrows the window; this closes it. The store
+            // refuses to move a terminal task (`store::terminal`), so a task
+            // that finished between the re-read and this write — on this
+            // replica or another — keeps its state, and the caller is told
+            // the truth: it was not cancelable.
+            if let Err(e) = self.task_store.save(&updated).await {
+                return Err(match crate::store::TerminalStateConflict::from_error(&e) {
+                    Some(_) => ServerError::TaskNotCancelable(task_id),
+                    None => e.into(),
+                });
+            }
             // Re-read to return the authoritative final state.
             let final_task = self
                 .task_store
@@ -316,5 +326,74 @@ mod tests {
             .await
             .expect("cancel of a WORKING task must succeed with the default executor");
         assert_eq!(result.status.state, TaskState::Canceled);
+    }
+
+    type Fut<'a, T> = std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<T>> + Send + 'a>,
+    >;
+
+    /// A store whose reads are stale: every `get` reports the task `Working`,
+    /// while the store underneath already holds it terminal. That is the
+    /// window between the handler's re-read and its write, held open.
+    struct StaleReads(crate::store::InMemoryTaskStore);
+
+    impl crate::store::TaskStore for StaleReads {
+        fn save<'a>(&'a self, t: &'a Task) -> Fut<'a, ()> {
+            self.0.save(t)
+        }
+        fn get<'a>(&'a self, id: &'a TaskId) -> Fut<'a, Option<Task>> {
+            Box::pin(async move {
+                let mut task = self.0.get(id).await?;
+                if let Some(t) = task.as_mut() {
+                    t.status = TaskStatus::new(TaskState::Working);
+                }
+                Ok(task)
+            })
+        }
+        fn list<'a>(
+            &'a self,
+            p: &'a a2a_protocol_types::params::ListTasksParams,
+        ) -> Fut<'a, a2a_protocol_types::responses::TaskListResponse> {
+            self.0.list(p)
+        }
+        fn insert_if_absent<'a>(&'a self, t: &'a Task) -> Fut<'a, bool> {
+            self.0.insert_if_absent(t)
+        }
+        fn delete<'a>(&'a self, id: &'a TaskId) -> Fut<'a, ()> {
+            self.0.delete(id)
+        }
+    }
+
+    /// A task that finished after the handler's last read must not be
+    /// overwritten with `Canceled`. The store refuses the write, and the caller
+    /// is answered `TaskNotCancelable` — the spec's error for a task that is
+    /// already terminal — rather than a store error or a false success.
+    #[tokio::test]
+    async fn a_task_that_finished_after_the_re_read_is_not_cancelable() {
+        use crate::store::TaskStore as _;
+        let inner = crate::store::InMemoryTaskStore::new();
+        inner
+            .save(&make_completed_task("t-late-finish"))
+            .await
+            .unwrap();
+        let handler = RequestHandlerBuilder::new(CancelableExecutor)
+            .with_task_store(StaleReads(inner))
+            .build()
+            .unwrap();
+
+        let result = handler
+            .on_cancel_task(
+                CancelTaskParams {
+                    tenant: None,
+                    id: "t-late-finish".to_owned(),
+                    metadata: None,
+                },
+                None,
+            )
+            .await;
+        assert!(
+            matches!(result, Err(ServerError::TaskNotCancelable(_))),
+            "expected TaskNotCancelable, got {result:?}"
+        );
     }
 }

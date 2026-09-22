@@ -8,6 +8,7 @@
 pub mod retention;
 pub mod task_store;
 pub mod tenant;
+pub mod terminal;
 
 /// Shared opaque pagination cursor for the SQL-backed stores.
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
@@ -51,6 +52,7 @@ pub use task_store::{
     IdempotencyClaim, InMemoryTaskStore, RecordedEvent, TaskStore, TaskStoreConfig,
 };
 pub use tenant::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
+pub use terminal::{TERMINAL_STATE_CONFLICT_MARKER, TerminalStateConflict, refuses_write};
 
 /// Normalizes a status timestamp to the `SQLite` `updated_at` column shape,
 /// or `None` when the value is missing/unparseable (the SQL then falls back

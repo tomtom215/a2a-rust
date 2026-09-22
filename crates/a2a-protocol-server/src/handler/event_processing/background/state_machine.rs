@@ -505,9 +505,11 @@ mod tests {
         )
         .await;
 
-        assert_eq!(last_task.status.state, TaskState::Failed);
+        // The store keeps the terminal state it holds: `Failed` over
+        // `Completed` is a write out of a terminal state, which every shipped
+        // store refuses (`store::terminal`).
         let stored = task_store.get(&task_id).await.unwrap().unwrap();
-        assert_eq!(stored.status.state, TaskState::Failed);
+        assert_eq!(stored.status.state, TaskState::Completed);
     }
 
     #[tokio::test]

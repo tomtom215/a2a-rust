@@ -35,6 +35,7 @@ use super::event_log_sql::{
 };
 use super::task_store::{ArtifactDelta, RecordedEvent, TaskStore};
 use crate::metrics::MetricsHandle;
+use crate::store::terminal::{refusal, sql_write_allowed};
 
 /// SQLite-backed [`TaskStore`].
 ///
@@ -210,9 +211,17 @@ impl SqliteTaskStore {
     /// other insert failure takes the same route, because writing the task
     /// whole is always a correct answer to "this append did not land" — and if
     /// the database is genuinely unwell, `save` reports it.
+    ///
+    /// The rows land only while the task may still be written by a writer
+    /// holding `task`'s state (see [`crate::store::terminal`]): the insert
+    /// selects from its `VALUES` under an `EXISTS` on the task row carrying
+    /// that guard, so the check and the insert are one statement. When nothing
+    /// is inserted — the guard refused, or every row was a replayed position —
+    /// `save` decides: it refuses with the conflict, or rewrites a record that
+    /// the replay already describes.
     async fn journal_append(&self, task: &Task, rows: Vec<journal::Row>) -> A2aResult<()> {
         let mut query_builder = sqlx::QueryBuilder::new(
-            "INSERT INTO task_artifact_appends (task_id, artifact, seq, part) ",
+            "INSERT INTO task_artifact_appends (task_id, artifact, seq, part) SELECT * FROM (",
         );
         query_builder.push_values(rows, |mut b, (artifact, seq, part)| {
             b.push_bind(task.id.0.clone())
@@ -220,15 +229,21 @@ impl SqliteTaskStore {
                 .push_bind(seq)
                 .push_bind(part);
         });
+        query_builder.push(") WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ");
+        query_builder.push_bind(task.id.0.clone());
+        query_builder.push(" AND ");
+        query_builder.push(crate::store::terminal::SQL_STATE_NOT_TERMINAL_OR_EQUALS);
+        query_builder.push_bind(task.status.state.to_string());
+        query_builder.push("))");
         // Replay of an already-journalled append is a no-op rather than a
         // duplicate-key failure, because `seq` is the part's position: the same
         // append twice names the same slot with the same bytes.
         query_builder.push(" ON CONFLICT(task_id, artifact, seq) DO NOTHING");
 
-        if query_builder.build().execute(&self.pool).await.is_err() {
-            return self.save(task).await;
+        match query_builder.build().execute(&self.pool).await {
+            Ok(done) if done.rows_affected() > 0 => Ok(()),
+            _ => self.save(task).await,
         }
-        Ok(())
     }
 
     /// Deletes terminal tasks that have outlived `policy`.
@@ -359,7 +374,7 @@ fn artifact_delta_sql(task: &Task, delta: ArtifactDelta) -> A2aResult<Option<Del
             Ok(Some(DeltaStatement {
                 sql: Cow::Owned(format!(
                     "UPDATE tasks SET data = json_set(data, {exprs}) \
-                     WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array'"
+                     WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array'{MULTI_PART_GUARD}"
                 )),
                 payload,
                 index: None,
@@ -402,17 +417,31 @@ struct DeltaStatement {
 /// rather than merely likely: a stored document with no artifacts array — a
 /// task saved before it produced any — does not match, the statement reports
 /// zero rows affected, and the caller rewrites the record whole.
-const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(
+///
+/// Every artifact statement also carries the terminal guard (see
+/// [`crate::store::terminal`]) on its last parameter, the writer's state: a
+/// delta from a writer that still believes the task is running is refused on
+/// a task stored terminal, and the zero rows send it to `save`, which reports
+/// the refusal.
+const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
     "UPDATE tasks SET data = json_set(data, '$.artifacts[' || ?3 || '].parts[#]', \
      json_extract(?1, '$[0]')) \
-     WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array'",
-);
+     WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' AND ",
+    "state",
+    "?4"
+));
 
 /// Append a whole artifact at the end of the array.
-const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(
+const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
     "UPDATE tasks SET data = json_set(data, '$.artifacts[#]', json_extract(?1, '$[0]')) \
-     WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array'",
-);
+     WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' AND ",
+    "state",
+    "?3"
+));
+
+/// The terminal guard for the several-parts append, whose statement text is
+/// assembled at run time and takes no index parameter.
+const MULTI_PART_GUARD: &str = sql_write_allowed!(" AND ", "state", "?3");
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for SqliteTaskStore {
@@ -520,15 +549,21 @@ impl TaskStore for SqliteTaskStore {
             // not relying on it.
             let mut tx = self.pool.begin().await.map_err(to_a2a_error)?;
 
-            sqlx::query(
+            // The upsert's `WHERE` is the terminal guard (see
+            // `crate::store::terminal`): a stored terminal row in another state
+            // is left alone and the statement changes nothing.
+            let written = sqlx::query(sql_write_allowed!(
                 "INSERT INTO tasks (id, context_id, state, data, updated_at)
                  VALUES (?1, ?2, ?3, ?4, COALESCE(?5, strftime('%Y-%m-%d %H:%M:%f','now')))
                  ON CONFLICT(id) DO UPDATE SET
                      context_id = excluded.context_id,
                      state = excluded.state,
                      data = excluded.data,
-                     updated_at = excluded.updated_at",
-            )
+                     updated_at = excluded.updated_at
+                 WHERE ",
+                "tasks.state",
+                "excluded.state"
+            ))
             .bind(id)
             .bind(context_id)
             .bind(&state)
@@ -536,7 +571,22 @@ impl TaskStore for SqliteTaskStore {
             .bind(&status_ts)
             .execute(&mut *tx)
             .await
-            .map_err(to_a2a_error)?;
+            .map_err(to_a2a_error)?
+            .rows_affected();
+
+            if written == 0 {
+                // Read inside the transaction that was refused, so the state
+                // reported is the one that refused it. Rolled back so the
+                // journal rows of the stored task are not deleted below.
+                let stored: Option<(String,)> =
+                    sqlx::query_as("SELECT state FROM tasks WHERE id = ?1")
+                        .bind(id)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .map_err(to_a2a_error)?;
+                tx.rollback().await.map_err(to_a2a_error)?;
+                return Err(refusal(task, stored.map(|(s,)| s).as_deref()));
+            }
 
             sqlx::query(journal::DELETE_FOR_TASK_SQL)
                 .bind(id)
@@ -608,6 +658,8 @@ impl TaskStore for SqliteTaskStore {
             if let Some(index) = stmt.index {
                 query = query.bind(i64::try_from(index).unwrap_or(i64::MAX));
             }
+            // The terminal guard's operand, always the last parameter.
+            query = query.bind(task.status.state.to_string());
 
             let affected = query
                 .execute(&self.pool)
@@ -615,8 +667,9 @@ impl TaskStore for SqliteTaskStore {
                 .map_err(to_a2a_error)?
                 .rows_affected();
 
-            // No row matched, so the task is not stored yet and the append had
-            // nothing to append to. `save` is what makes it exist.
+            // No row matched: the task is not stored yet and the append had
+            // nothing to append to, or the terminal guard refused it. `save`
+            // makes it exist, or reports the refusal.
             if affected == 0 {
                 return self.save(task).await;
             }
@@ -657,13 +710,18 @@ impl TaskStore for SqliteTaskStore {
             let state = task.status.state.to_string();
             let status_ts = super::status_timestamp_sqlite(task.status.timestamp.as_deref());
 
-            let affected = sqlx::query(
+            // Guarded on the state column (see `crate::store::terminal`). Zero
+            // rows means absent *or* refused; `save` tells the two apart,
+            // inserting the one and reporting the other.
+            let affected = sqlx::query(sql_write_allowed!(
                 "UPDATE tasks
                     SET data = json_set(data, '$.status', json(?1)),
                         state = ?2,
                         updated_at = COALESCE(?3, strftime('%Y-%m-%d %H:%M:%f','now'))
-                  WHERE id = ?4",
-            )
+                  WHERE id = ?4 AND ",
+                "state",
+                "?2"
+            ))
             .bind(&status)
             .bind(&state)
             .bind(&status_ts)
