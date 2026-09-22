@@ -256,10 +256,12 @@ async fn a_turn_that_emits_many_events_on_an_aged_channel() {
 /// a Postgres round trip is two orders of magnitude dearer than a `Vec` push,
 /// and the shape — does a channel get slower as it ages — is visible well
 /// before 1,400.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
 const SQL_AGEING_POSTS: u64 = 300;
 
 /// Prints the same buckets the in-memory arm prints, so the two are readable
 /// side by side.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
 fn report_ageing(label: &str, samples: &[(u128, usize)]) {
     println!(
         "\n{:>12}  {:>9}  {:>9}  {:>10}",
@@ -290,6 +292,7 @@ fn report_ageing(label: &str, samples: &[(u128, usize)]) {
     println!("{label}: service time at the end is {growth:.1}x the start ({first}us -> {last}us)");
 }
 
+#[cfg(feature = "sqlite")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "load experiment; run explicitly with --ignored (see the module docs)"]
 async fn a_sqlite_channel_gets_slower_as_it_ages() {
@@ -321,6 +324,7 @@ async fn a_sqlite_channel_gets_slower_as_it_ages() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[cfg(feature = "postgres")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "load experiment; needs A2A_TEST_POSTGRES_URL; run with --ignored"]
 async fn a_postgres_channel_gets_slower_as_it_ages() {

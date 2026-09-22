@@ -79,6 +79,7 @@
 //! which calls are refused and which posts a subscriber never sees — do not
 //! depend on any of that, and they are the point.
 
+#[cfg(any(feature = "websocket", feature = "grpc"))]
 mod bindings;
 mod cost;
 mod fan_in;
