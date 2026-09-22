@@ -355,6 +355,36 @@ pub trait TaskStore: Send + Sync + 'static {
     /// cannot apply the change — no such record — must fall back to
     /// `save(task)` rather than drop the transition.
     ///
+    /// # Implementing this
+    ///
+    /// The default replaces the whole record via `save`, which is always
+    /// correct. All three stores shipped here override it, and what each one
+    /// wins differs with its storage model. Measured on this box, 100 status
+    /// events on a channel holding 200 messages, medians of five runs:
+    ///
+    /// | Store | Approach | `save` | this method |
+    /// |---|---|---|---|
+    /// | [`InMemoryTaskStore`] | Edits the stored status, re-keys the indexes | 8,499µs | 639µs |
+    /// | `SqliteTaskStore` | `json_set` on `$.status`, plus `state`/`updated_at` | 122,071µs | 37,216µs |
+    /// | `PostgresTaskStore` | `jsonb_set` on `ARRAY['status']`, plus `state`/`updated_at` | 287,287µs | 120,104µs |
+    ///
+    /// The in-memory win is the largest because a full `save` there is a deep
+    /// clone and the delta is a field assignment. The SQL stores keep one JSON
+    /// document per row and still rewrite the row internally; what the delta
+    /// removes is the Rust-side serialization of the whole task — history
+    /// included — and its transfer as a bind parameter.
+    ///
+    /// Two columns are as much part of "what `save` would have left" as the
+    /// document is, and an override that misses either is wrong in a way no
+    /// round-trip test of `get` would show: the `state` column that `list`
+    /// filters on, and `updated_at`, which carries the §3.1.4 ordering key.
+    ///
+    /// `SqliteTaskStore` additionally must **not** delete its artifact journal
+    /// here, though its `save` does. `save` deletes those rows because it has
+    /// just rewritten the document with every part in it; a status delta has
+    /// not, so the rows are still the only record of the appended parts and
+    /// deleting them would lose data.
+    ///
     /// Callers must use this only when the status is genuinely the only field
     /// that moved; the background processor appends to `history` on an agent
     /// `Message` event and calls `save` for exactly that reason.

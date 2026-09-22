@@ -352,6 +352,42 @@ This is why the remaining work is structural rather than more delta methods:
 the unit passed through the send path is a `Task`, and a `Task` carries its
 history, so every stage that touches one pays for the conversation's length.
 
+### All three stores now override it, not just the in-memory one
+
+The figures above are in-memory, which is what every arm of this experiment
+drives. That left a gap worth naming, because for a while it was real: the
+delta was overridden **only** in `InMemoryTaskStore`, so a SQLite or Postgres
+deployment got nothing from it. No regression — the trait's default delegates
+to `save` — but no win either, and neither this report nor the trait docs said
+so. A reader running Postgres would reasonably have read the ratio above as
+applying to them.
+
+Both SQL stores now override it. Measured on this box, 100 status events on a
+channel holding 200 messages, medians of five runs:
+
+| store | `save` | `save_status_delta` | ratio |
+|---|---|---|---|
+| `InMemoryTaskStore` | 8,499µs | 639µs | 13.3x |
+| `SqliteTaskStore` | 122,071µs | 37,216µs | 3.3x |
+| `PostgresTaskStore` | 287,287µs | 120,104µs | 2.4x |
+
+The SQL ratios are smaller for the same reason the artifact delta's are: both
+keep one JSON document per row and still rewrite the row internally, so what
+the delta removes is the Rust-side serialization of the whole task — history
+included — and its transfer as a bind parameter, not the write itself.
+
+Two columns are as much part of "what `save` would have left" as the document
+is, and each has a test that fails when it is missed: the `state` column that
+`list` filters on, and `updated_at`, which carries the §3.1.4 ordering key. A
+delta that updates the document alone leaves the row correct and both
+unfilterable and mis-ordered.
+
+The SQLite override additionally must **not** delete its artifact journal,
+though its `save` does. `save` deletes those rows because it has just
+rewritten the document with every part in it; a status delta has not, so they
+are still the only record of the appended parts. Copying `save` there would
+have silently dropped them, which is why that divergence has a test of its own.
+
 ### Two things the delta broke, found by auditing it rather than by a test
 
 Both were caught by reading the change back against the code it touched, not

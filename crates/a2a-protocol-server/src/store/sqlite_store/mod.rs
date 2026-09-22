@@ -625,6 +625,62 @@ impl TaskStore for SqliteTaskStore {
         })
     }
 
+    /// Rewrites the stored document's `status` alone.
+    ///
+    /// `save` serializes the whole task — history included, up to 1,024
+    /// messages — and ships it as a bind parameter, so a status transition on
+    /// an aged channel costs what that channel has accumulated. This sends one
+    /// `TaskStatus`.
+    ///
+    /// Three columns are what `save` would have left behind and so are what
+    /// this has to leave behind: the document's `$.status`, the `state` column
+    /// that `list` filters on, and `updated_at`, which carries the status
+    /// timestamp that §3.1.4 orders by. Missing the last one would leave the
+    /// row correct and mis-ordered.
+    ///
+    /// It deliberately does **not** touch the journal, and that is the one
+    /// place it diverges from `save` on purpose. `save` deletes the journal
+    /// rows because it has just rewritten `data` with every part in it, so
+    /// they are superseded. This rewrites only the status, so the document
+    /// still lacks those parts and the rows are still the record of them.
+    /// Deleting them here would silently drop appended artifact parts.
+    ///
+    /// Falls back to `save` when no row matched, which means the task is not
+    /// stored yet and there is nothing to update in place.
+    fn save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let status = serde_json::to_string(&task.status)
+                .map_err(|e| A2aError::internal(format!("failed to serialize status: {e}")))?;
+            let state = task.status.state.to_string();
+            let status_ts = super::status_timestamp_sqlite(task.status.timestamp.as_deref());
+
+            let affected = sqlx::query(
+                "UPDATE tasks
+                    SET data = json_set(data, '$.status', json(?1)),
+                        state = ?2,
+                        updated_at = COALESCE(?3, strftime('%Y-%m-%d %H:%M:%f','now'))
+                  WHERE id = ?4",
+            )
+            .bind(&status)
+            .bind(&state)
+            .bind(&status_ts)
+            .bind(task.id.0.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(to_a2a_error)?
+            .rows_affected();
+
+            if affected == 0 {
+                return self.save(task).await;
+            }
+
+            Ok(())
+        })
+    }
+
     fn get<'a>(
         &'a self,
         id: &'a TaskId,

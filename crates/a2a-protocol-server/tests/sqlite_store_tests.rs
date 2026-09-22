@@ -211,3 +211,157 @@ async fn push_upsert() -> A2aResult<()> {
     assert_eq!(configs[0].url, "https://example.com/v2");
     Ok(())
 }
+
+// ── Incremental status persistence (`save_status_delta`) ─────────────────────
+//
+// The contract is that the store ends up holding exactly what `save` would
+// have left it holding, so these compare against a `save`-driven store rather
+// than against hand-written expectations, which could drift into agreeing with
+// a bug. The one deliberate divergence from `save` — leaving the journal alone
+// — has a test of its own below, because it is the difference that would
+// silently lose data if it were wrong.
+
+fn task_with_history(id: &str, context_id: &str, messages: usize) -> Task {
+    use a2a_protocol_types::message::Message;
+
+    let mut task = make_task(id, context_id);
+    task.status = TaskStatus::with_timestamp(TaskState::Working);
+    task.history = Some(
+        (0..messages)
+            .map(|i| Message::user_text(format!("m-{i}"), format!("turn-{i}")))
+            .collect(),
+    );
+    task
+}
+
+#[tokio::test]
+async fn a_status_delta_leaves_the_store_holding_what_a_save_would() -> A2aResult<()> {
+    let delta_store = new_task_store().await;
+    let save_store = new_task_store().await;
+
+    let initial = task_with_history("t-delta", "ctx", 12);
+    delta_store.save(&initial).await?;
+    save_store.save(&initial).await?;
+
+    let mut moved = initial.clone();
+    moved.status = TaskStatus::with_timestamp(TaskState::Completed);
+
+    delta_store.save_status_delta(&moved).await?;
+    save_store.save(&moved).await?;
+
+    let via_delta = delta_store.get(&TaskId::new("t-delta")).await?;
+    let via_save = save_store.get(&TaskId::new("t-delta")).await?;
+    assert_eq!(
+        via_delta, via_save,
+        "the delta path must leave the same record a full save would; history \
+         is the field a status-only rewrite is most likely to drop"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_status_delta_updates_the_state_column_list_filters_on() -> A2aResult<()> {
+    let store = new_task_store().await;
+    let task = task_with_history("t-state", "ctx", 3);
+    store.save(&task).await?;
+
+    let mut done = task.clone();
+    done.status = TaskStatus::with_timestamp(TaskState::Completed);
+    store.save_status_delta(&done).await?;
+
+    // `state` is a column, not just a field inside `data`. A delta that
+    // rewrote only the document would leave `list` filtering on the old value.
+    let completed = store
+        .list(&ListTasksParams {
+            status: Some(TaskState::Completed),
+            ..Default::default()
+        })
+        .await?;
+    assert_eq!(
+        completed.tasks.len(),
+        1,
+        "the state column still says Submitted/Working, so a filtered list \
+         cannot see the task the delta just completed"
+    );
+    assert_eq!(completed.tasks[0].id, TaskId::new("t-state"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_status_delta_moves_the_record_to_the_front_of_list_order() -> A2aResult<()> {
+    let store = new_task_store().await;
+    // Saved oldest-first, so `older` starts behind `newer` in §3.1.4 order.
+    let older = task_with_history("t-older", "ctx", 2);
+    store.save(&older).await?;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let newer = task_with_history("t-newer", "ctx", 2);
+    store.save(&newer).await?;
+
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let mut moved = older.clone();
+    moved.status = TaskStatus::with_timestamp(TaskState::Working);
+    store.save_status_delta(&moved).await?;
+
+    let listed = store.list(&ListTasksParams::default()).await?;
+    assert_eq!(
+        listed.tasks[0].id,
+        TaskId::new("t-older"),
+        "§3.1.4 orders by status timestamp, so a status change moves the \
+         record; a delta that skipped `updated_at` would leave it mis-ordered"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_status_delta_for_an_absent_task_falls_back_to_a_save() -> A2aResult<()> {
+    let store = new_task_store().await;
+    let task = task_with_history("t-absent", "ctx", 1);
+
+    store.save_status_delta(&task).await?;
+
+    let stored = store.get(&TaskId::new("t-absent")).await?.expect(
+        "the fallback must have inserted it; dropping a transition is \
+                 the one outcome worse than a slow one",
+    );
+    assert_eq!(stored.status.state, TaskState::Working);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_status_delta_keeps_the_journal_rows_a_save_would_supersede() -> A2aResult<()> {
+    use a2a_protocol_server::store::ArtifactDelta;
+    use a2a_protocol_types::artifact::Artifact;
+    use a2a_protocol_types::message::Part;
+
+    let store = new_task_store().await;
+    let mut task = task_with_history("t-journal", "ctx", 2);
+    task.artifacts = Some(vec![Artifact::new("a", vec![Part::text("p0")])]);
+    store.save(&task).await?;
+
+    // Appended through the journal rather than into `data`: this is the path
+    // `save_artifact_delta` takes for a one-part append.
+    let mut grown = task.clone();
+    grown.artifacts = Some(vec![Artifact::new(
+        "a",
+        vec![Part::text("p0"), Part::text("p1")],
+    )]);
+    store
+        .save_artifact_delta(&grown, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+        .await?;
+
+    // `save` deletes the journal because it has just written every part into
+    // `data`. A status delta has NOT, so deleting here would drop `p1`.
+    let mut moved = grown.clone();
+    moved.status = TaskStatus::with_timestamp(TaskState::Completed);
+    store.save_status_delta(&moved).await?;
+
+    let stored = store.get(&TaskId::new("t-journal")).await?.expect("stored");
+    assert_eq!(
+        stored.artifacts.as_ref().expect("artifacts")[0].parts.len(),
+        2,
+        "the status delta deleted journal rows it had not superseded, so the \
+         appended part is gone"
+    );
+    assert_eq!(stored.status.state, TaskState::Completed);
+    Ok(())
+}
