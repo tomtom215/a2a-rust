@@ -68,6 +68,7 @@ fn aip193_in_stream(data: &str, value: &serde_json::Value) -> A2aError {
 
 /// The JSON-RPC-standard error a `google.rpc.ErrorInfo` reason names, for
 /// the reasons the specification leaves undefined but a2a-go sends.
+/// `INTERNAL_ERROR` has no arm: it lands on `InternalError` as the fallback.
 fn standard_reason(error: &serde_json::Value) -> Option<ErrorCode> {
     let reason = error
         .get("details")?
@@ -79,7 +80,6 @@ fn standard_reason(error: &serde_json::Value) -> Option<ErrorCode> {
         "INVALID_REQUEST" => Some(ErrorCode::InvalidRequest),
         "METHOD_NOT_FOUND" => Some(ErrorCode::MethodNotFound),
         "INVALID_PARAMS" => Some(ErrorCode::InvalidParams),
-        "INTERNAL_ERROR" => Some(ErrorCode::InternalError),
         _ => None,
     }
 }

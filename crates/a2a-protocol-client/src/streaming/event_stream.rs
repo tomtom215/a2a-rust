@@ -1058,11 +1058,21 @@ mod tests {
         let stream = EventStream::new(rx);
         let debug = format!("{stream:?}");
         assert!(debug.contains("EventStream"), "should contain struct name");
-        assert!(debug.contains("done"), "should contain 'done' field");
+        assert!(debug.contains("done: false"), "a fresh stream is not done");
         assert!(
             debug.contains("pending_frames"),
             "should contain 'pending_frames' field"
         );
+    }
+
+    /// `done` in the debug output tracks the phase: true once finished.
+    #[tokio::test]
+    async fn debug_output_reports_a_finished_stream_as_done() {
+        let (tx, rx) = mpsc::channel::<BodyChunk>(8);
+        let mut stream = EventStream::new(rx);
+        drop(tx);
+        let _ = stream.next().await;
+        assert!(format!("{stream:?}").contains("done: true"));
     }
 
     #[test]
