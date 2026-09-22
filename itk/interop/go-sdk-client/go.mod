@@ -1,4 +1,4 @@
-module a2a-itk-go-sdk-agent
+module a2a-itk-go-sdk-client
 
 go 1.25.0
 
