@@ -180,11 +180,9 @@ impl RequestHandler {
             }
             Committed::Started(started) => {
                 if mode.use_background {
-                    Ok(self.respond_in_background(
-                        *started,
-                        streaming,
-                        mode.response_history_length,
-                    ))
+                    Ok(self
+                        .respond_in_background(*started, streaming, mode.response_history_length)
+                        .await)
                 } else {
                     self.respond_blocking(*started, mode.response_history_length)
                         .await
@@ -359,6 +357,26 @@ impl RequestHandler {
         }
     }
 
+    /// Fills `task.history` from the store when the caller asked for history.
+    ///
+    /// The send path's task carries only the message this turn added, so the
+    /// stored record is the only place the rest of the conversation exists.
+    /// This read is O(history) and is the reason it is guarded: `historyLength`
+    /// defaults to `None`, which omits history from the response entirely, so
+    /// the overwhelmingly common send pays nothing for it. A caller that does
+    /// ask is asking for the conversation, and the conversation has to be read.
+    async fn hydrate_response_history(&self, task: &mut Task, history_length: Option<u32>) {
+        if history_length.is_none() {
+            return;
+        }
+        // A miss or an error leaves what the send path built: this turn's
+        // message, which is a truthful prefix of the conversation rather than
+        // a wrong answer, and a failed read is not a reason to fail the send.
+        if let Ok(Some(stored)) = self.task_store.get(&task.id).await {
+            task.history = stored.history;
+        }
+    }
+
     /// Answers a send whose idempotency key was already held by this same
     /// message: a genuine retry, which must return the original task and
     /// execute nothing.
@@ -414,7 +432,7 @@ impl RequestHandler {
     /// forever (no completion, no push). The persistence channel is a
     /// dedicated mpsc channel that is not affected by SSE consumer
     /// backpressure, so the processor never misses a transition (H5).
-    fn respond_in_background(
+    async fn respond_in_background(
         &self,
         started: Started,
         streaming: bool,
@@ -434,6 +452,8 @@ impl RequestHandler {
         );
 
         let mut snapshot = task;
+        self.hydrate_response_history(&mut snapshot, response_history_length)
+            .await;
         shape_response_history(&mut snapshot, response_history_length);
         if streaming {
             // SPEC §3.1.2: The first event in a streaming response MUST be a
@@ -481,6 +501,8 @@ impl RequestHandler {
         }
 
         let mut final_task = collected.task;
+        self.hydrate_response_history(&mut final_task, response_history_length)
+            .await;
         shape_response_history(&mut final_task, response_history_length);
         Ok(SendMessageResult::Response(SendMessageResponse::Task(
             final_task,

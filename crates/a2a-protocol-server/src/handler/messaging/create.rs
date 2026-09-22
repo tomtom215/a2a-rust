@@ -54,18 +54,14 @@ pub(super) fn build_initial_task(
     // match; `resolve_task_id` returns the stored id for a continuation and a
     // fresh uuid otherwise, so this equality is exactly that decision.
     let continuation = stored_task.filter(|s| s.id == *task_id);
-    let mut history = continuation
-        .and_then(|s| s.history.clone())
-        .unwrap_or_default();
-    history.push(message.clone());
-    // Unguarded: at or under the cap `excess` is 0 and `drain(..0)` costs
-    // nothing — `Drain::drop` skips its memmove when the tail does not
-    // move, so this is O(1), not an O(n) shift of the whole history. The
-    // `if` it replaces guarded only that no-op, which is precisely what
-    // made weakening it to `>=` an equivalent mutant: both arms did
-    // nothing at `len == MAX`.
-    let excess = history.len().saturating_sub(MAX_TASK_HISTORY_MESSAGES);
-    history.drain(..excess);
+    // Only the message this turn adds. The stored conversation is NOT copied
+    // in: `persist_initial_task` hands this one message to
+    // `TaskStore::save_appending_history`, which appends it to whatever the
+    // store already holds. Copying it here was the second of the three
+    // O(history) stages a send used to pay, and on a first turn — where the
+    // store has nothing to append to and falls back to an insert — this one
+    // message is already the whole correct history.
+    let history = vec![message.clone()];
     Task {
         id: task_id.clone(),
         context_id: ContextId::new(context_id),
@@ -104,7 +100,15 @@ impl RequestHandler {
     ///
     /// The store's error, converted.
     pub(super) async fn persist_initial_task(&self, task: &Task) -> ServerResult<()> {
-        if let Err(e) = self.task_store.save(task).await {
+        // `task.history` holds only this turn's message (see
+        // `build_initial_task`), and that is what gets appended. The store
+        // keeps the conversation; the send path never holds it.
+        let appended = task.history.clone().unwrap_or_default();
+        if let Err(e) = self
+            .task_store
+            .save_appending_history(task, &appended, MAX_TASK_HISTORY_MESSAGES)
+            .await
+        {
             self.release_admission(&task.id).await;
             return Err(e.into());
         }

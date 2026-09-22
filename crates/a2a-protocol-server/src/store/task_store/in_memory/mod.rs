@@ -34,7 +34,7 @@ use std::time::Instant;
 
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::StreamResponse;
-use a2a_protocol_types::message::MessageId;
+use a2a_protocol_types::message::{Message, MessageId};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId, TaskStatus};
@@ -248,6 +248,41 @@ impl StoreData {
             entry.order_key = key;
             entry.last_updated = last_updated;
         }
+        true
+    }
+
+    /// Appends to the stored history in place and replaces the rest of the
+    /// snapshot, returning `false` when there is no such record.
+    ///
+    /// The append is the point: the caller hands over only the new messages,
+    /// so neither side copies the conversation. Everything else follows
+    /// `save`'s contract — the other fields of `task` replace what is stored,
+    /// including `artifacts` and `metadata`, so a caller that passes `None`
+    /// clears them exactly as a full save would.
+    pub(super) fn append_history(
+        &mut self,
+        task: &Task,
+        messages: &[Message],
+        max_history: usize,
+        last_updated: Instant,
+    ) -> bool {
+        // Re-keys the indexes for the new status timestamp, which §3.1.4
+        // orders by, and returns false for an absent record.
+        if !self.update_status(&task.id, task.status.clone(), last_updated) {
+            return false;
+        }
+        let Some(entry) = self.entries.get_mut(&task.id) else {
+            return false;
+        };
+        let mut history = entry.task.history.take().unwrap_or_default();
+        history.extend_from_slice(messages);
+        // `drain(..0)` skips its memmove, so this is O(1) under the cap.
+        let excess = history.len().saturating_sub(max_history);
+        history.drain(..excess);
+        entry.task.history = Some(history);
+        entry.task.context_id.clone_from(&task.context_id);
+        entry.task.artifacts.clone_from(&task.artifacts);
+        entry.task.metadata.clone_from(&task.metadata);
         true
     }
 
@@ -861,6 +896,44 @@ impl TaskStore for InMemoryTaskStore {
             // answer when a delta lands on a store that was over the bound
             // before this write. Matching `save` exactly is worth more than
             // eliding a comparison.
+            if passes.any() {
+                self.maybe_evict(passes).await;
+            }
+            Ok(())
+        })
+    }
+
+    /// Appends the new messages to the stored history in place.
+    ///
+    /// `save` here is a deep clone of the whole task, so a send on an aged
+    /// channel costs what that channel has accumulated. This extends a `Vec`
+    /// by the messages the turn actually added.
+    ///
+    /// Falls back to `save` when the record is absent, which is the one case
+    /// an in-place append cannot serve — and `task` carries the full initial
+    /// history in that case, because a first turn has nothing to append to.
+    fn save_appending_history<'a>(
+        &'a self,
+        task: &'a Task,
+        messages: &'a [Message],
+        max_history: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let outcome = {
+                let mut store = self.data.write().await;
+                let applied = store.append_history(task, messages, max_history, Instant::now());
+                let len = store.len();
+                drop(store);
+                applied.then(|| self.should_evict(len))
+            };
+
+            let Some(passes) = outcome else {
+                return self.save(task).await;
+            };
+            trace_debug!(task_id = %task.id, "appended history in place");
+            // Advances the write counter that paces the TTL sweep, for the
+            // same reason the status delta does: a write this store cannot
+            // see is a write that never ages anything out.
             if passes.any() {
                 self.maybe_evict(passes).await;
             }

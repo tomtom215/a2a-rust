@@ -2360,3 +2360,159 @@ async fn a_limit_above_the_floor_is_used_as_given() {
         "a limit set to the floor is the floor"
     );
 }
+
+// ── multi-turn history accumulation ──────────────────────────────────────
+//
+// Nothing covered this. The suite has tests that a single send records its
+// user message, and tests that the background processor appends an agent
+// message, but none that a *continuation* keeps what earlier turns wrote.
+// That gap is why `build_initial_task` could stop carrying the stored history
+// forward and 2037 tests stayed green while a second turn truncated the
+// conversation to the two messages it had itself produced.
+
+/// An executor that replies once, so each turn writes both a user and an
+/// agent message into the record.
+struct ReplyingExecutor;
+agent_executor!(ReplyingExecutor, |_ctx, queue| async {
+    use a2a_protocol_types::events::StreamResponse;
+    let _ = queue
+        .write(StreamResponse::Message(Message {
+            id: MessageId::new("agent-reply"),
+            role: MessageRole::Agent,
+            parts: vec![Part::text("ack")],
+            context_id: None,
+            task_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        }))
+        .await;
+    // A message alone makes the handler answer with the message rather than
+    // the task (the "direct message" path). A non-terminal status keeps the
+    // channel continuable, which is what a multi-turn conversation needs.
+    let _ = queue
+        .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
+            a2a_protocol_types::events::TaskStatusUpdateEvent {
+                task_id: _ctx.task_id.clone(),
+                context_id: ContextId::new(_ctx.context_id.clone()),
+                status: a2a_protocol_types::task::TaskStatus::with_timestamp(
+                    a2a_protocol_types::task::TaskState::InputRequired,
+                ),
+                metadata: None,
+            },
+        ))
+        .await;
+    Ok(())
+});
+
+/// Three turns on one channel keep every message all three wrote.
+#[tokio::test]
+async fn a_continuation_keeps_what_earlier_turns_wrote() {
+    let handler = RequestHandlerBuilder::new(ReplyingExecutor)
+        .build()
+        .expect("build handler");
+
+    let mut task_id: Option<TaskId> = None;
+    for turn in 0..3 {
+        let mut params = make_params(Some("ctx-multi"));
+        params.message.id = MessageId::new(format!("user-{turn}"));
+        params.message.task_id = task_id.clone();
+
+        let result = handler
+            .on_send_message(params, false, None)
+            .await
+            .unwrap_or_else(|e| panic!("turn {turn} failed: {e:?}"));
+        let task = match result {
+            SendMessageResult::Response(SendMessageResponse::Task(t)) => t,
+            other => panic!("turn {turn}: expected a task, got {other:?}"),
+        };
+        task_id = Some(task.id);
+
+        // The executor runs in the background; give it a turn to reply and
+        // for the reply to be persisted.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    let id = task_id.expect("a task id");
+    let stored = handler
+        .task_store
+        .get(&id)
+        .await
+        .expect("get")
+        .expect("the task must still be stored");
+    let history = stored.history.unwrap_or_default();
+    let user_messages: Vec<_> = history
+        .iter()
+        .filter(|m| m.role == MessageRole::User)
+        .map(|m| m.id.0.as_str())
+        .collect();
+
+    assert_eq!(
+        user_messages,
+        vec!["user-0", "user-1", "user-2"],
+        "every turn's user message must survive into the record; got a \
+         history of {} message(s) overall, which means a later turn replaced \
+         the conversation instead of extending it",
+        history.len()
+    );
+}
+
+/// A send that asks for history gets the conversation, not just its own turn.
+///
+/// `build_initial_task` stopped carrying the stored history forward, so the
+/// task the send path holds now contains only the message this turn added.
+/// The response is shaped from that task, which is why this needs its own
+/// test: `historyLength` is the one caller that reads history off the send
+/// response rather than off `GetTask`.
+#[tokio::test]
+async fn a_send_asking_for_history_gets_the_whole_conversation() {
+    use a2a_protocol_types::params::SendMessageConfiguration;
+
+    let handler = RequestHandlerBuilder::new(ReplyingExecutor)
+        .build()
+        .expect("build handler");
+
+    let mut first = make_params(Some("ctx-histlen"));
+    first.message.id = MessageId::new("user-0");
+    let result = handler
+        .on_send_message(first, false, None)
+        .await
+        .expect("first send");
+    let task_id = match result {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t.id,
+        other => panic!("expected a task, got {other:?}"),
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let mut second = make_params(Some("ctx-histlen"));
+    second.message.id = MessageId::new("user-1");
+    second.message.task_id = Some(task_id.clone());
+    second.configuration = Some(SendMessageConfiguration {
+        accepted_output_modes: vec![],
+        task_push_notification_config: None,
+        history_length: Some(10),
+        return_immediately: Some(true),
+    });
+
+    let result = handler
+        .on_send_message(second, false, None)
+        .await
+        .expect("second send");
+    let task = match result {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t,
+        other => panic!("expected a task, got {other:?}"),
+    };
+
+    let ids: Vec<_> = task
+        .history
+        .unwrap_or_default()
+        .iter()
+        .map(|m| m.id.0.clone())
+        .collect();
+    assert!(
+        ids.contains(&"user-0".to_string()),
+        "historyLength asked for 10 messages and the response carried {ids:?}; \
+         the earlier turns are missing, so the response was shaped from the \
+         send path's own one-message task instead of the stored conversation"
+    );
+}

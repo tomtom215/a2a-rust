@@ -17,7 +17,7 @@ use std::pin::Pin;
 
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::StreamResponse;
-use a2a_protocol_types::message::MessageId;
+use a2a_protocol_types::message::{Message, MessageId};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
@@ -397,6 +397,63 @@ pub trait TaskStore: Send + Sync + 'static {
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         self.save(task)
+    }
+
+    /// Persists a task whose history grew by `messages`, without the caller
+    /// shipping the history it has already stored.
+    ///
+    /// **`task.history` is ignored.** The appended messages come from
+    /// `messages` and nothing else. That is deliberate and is the whole point:
+    /// the caller does not have to hold, clone or transfer the conversation in
+    /// order to add one turn to it, so a send stops costing what the channel
+    /// has accumulated. Reusing `task.history` for the tail — the shape
+    /// [`TaskStore::save_artifact_delta`] uses — would have put the caller
+    /// back in possession of the whole thing.
+    ///
+    /// Every other field of `task` is the new snapshot and replaces what is
+    /// stored, exactly as `save` would.
+    ///
+    /// `max_history` is the cap the merged history is trimmed to, oldest
+    /// first. It is a parameter rather than a constant here because retention
+    /// is the handler's policy, not the store's; a store that invented its own
+    /// cap would silently disagree with the one the rest of the server
+    /// enforces.
+    ///
+    /// # Implementing this
+    ///
+    /// The default reads the record, appends, trims and writes the whole thing
+    /// back through `save`, which is always correct and is what the send path
+    /// did before this method existed — so a store that does not override it
+    /// is no worse off than it was. Overriding is worthwhile for any store
+    /// that can append without rewriting: the in-memory one extends a `Vec` in
+    /// place, and the SQL stores splice the tail into the stored document.
+    ///
+    /// An override **must** leave the store holding exactly what the default
+    /// would have left it holding, including the trim, and must fall back to
+    /// inserting `task` when no such record exists rather than dropping the
+    /// turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
+    fn save_appending_history<'a>(
+        &'a self,
+        task: &'a Task,
+        messages: &'a [Message],
+        max_history: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let stored = self.get(&task.id).await?;
+            let mut history = stored.and_then(|s| s.history).unwrap_or_default();
+            history.extend_from_slice(messages);
+            // `drain(..0)` is a no-op rather than a shift, so this is O(1)
+            // whenever the history is at or under the cap.
+            let excess = history.len().saturating_sub(max_history);
+            history.drain(..excess);
+            let mut merged = task.clone();
+            merged.history = Some(history);
+            self.save(&merged).await
+        })
     }
 
     // ── The event log ───────────────────────────────────────────────────

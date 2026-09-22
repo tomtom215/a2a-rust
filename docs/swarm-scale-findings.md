@@ -409,6 +409,54 @@ This is why the remaining work is structural rather than more delta methods:
 the unit passed through the send path is a `Task`, and a `Task` carries its
 history, so every stage that touches one pays for the conversation's length.
 
+### Fix 2 — the send path stops carrying the conversation
+
+`TaskStore::save_appending_history` takes the snapshot plus **only the
+messages this turn added**, and appends them store-side. `task.history` is
+ignored by it, deliberately: reusing that field for the tail — the shape
+`save_artifact_delta` uses — would have put the caller back in possession of
+the whole conversation, which is the thing being removed. `build_initial_task`
+now builds a one-message history instead of cloning the stored one forward,
+and the store appends it.
+
+Re-running the ageing probe back to back on one box, 1,400 sequential posts,
+concurrency one, in-memory store:
+
+| posts | before | after |
+|---|---|---|
+| 0–100 | 1,250µs | 1,288µs |
+| 1,300–1,400 | 3,962µs | 2,748µs |
+| growth across the run | 3.2x | 2.1x |
+
+31% off the per-send cost at the history cap, and nothing at the start — which
+is the honest shape of the change. A fresh channel has no accumulated history
+to avoid copying, so there is nothing there to win.
+
+**It does not make a send O(1), and the reason is worth recording.** Of the
+three O(history) stages, this removes one and a half: `build_initial_task`'s
+clone, and the full-record write that `persist_initial_task` used to do. The
+other two are still there. `find_task_by_context` still lists and clones up to
+ten whole tasks, history included, to pick one. And the background processor
+re-reads the task from the store on startup (`background/mod.rs:84`) rather
+than trusting the send path's snapshot — which is why the refactor did not
+corrupt anything, and also why an O(history) read survives it. That read is
+off the request's critical path, so it costs throughput rather than latency.
+
+Two regressions this could have shipped, both found by predicting the failure
+and writing the test rather than by the suite going green:
+
+* **A continuation truncating the conversation.** 2,037 tests passed with the
+  change in place, and *none of them* covered a second turn keeping what the
+  first wrote. `a_continuation_keeps_what_earlier_turns_wrote` covers it now.
+  The truncation turned out not to happen, for the `background/mod.rs:84`
+  reason above — but nothing in the suite knew that.
+* **`historyLength` returning one message.** This one was real. The send
+  response is shaped from the send path's task, which now holds only this
+  turn's message, so a client asking for ten got `["user-1"]`.
+  `hydrate_response_history` reads the stored conversation, and only when
+  history was actually asked for — `historyLength` defaults to omitting it, so
+  the common send pays nothing.
+
 ### All three stores now override it, not just the in-memory one
 
 The figures above are in-memory, which is what every arm of this experiment
