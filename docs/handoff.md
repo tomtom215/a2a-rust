@@ -14,7 +14,8 @@ the repository commits to, move it there and delete it here.
 Last updated 2026-09-20 — the 0.13.0 branch and two gate lessons (`4db4c87f`),
 then the branch table's three merges and the corrections under **Still open**,
 then the post-0.13.0 audit work on `claude/optimistic-bell-680i9p` (see its
-section below), which closed item 7 and changed the branch's own row.
+section below), which closed item 7 and changed the branch's own row, and then
+the swarm-scale experiment on `claude/busy-cerf-ta682r`.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -103,6 +104,7 @@ the *content* merge.
 | `claude/relaxed-planck-c4hsn0` | merged, still present | The 0.13.0 content branch *and* its release prep. **Merged as `707092f8` via [#137](https://github.com/tomtom215/a2a-rust/pull/137) on 2026-09-20.** Trace-context propagation, `CallContext` reachable from `RequestContext`, the executor conformance harness, the typed failure taxonomy, and the event log with SQL stores plus SSE `id:` / `Last-Event-ID` resumption. Safe to delete. |
 | `claude/wizardly-tesla-0f358t` | merged, still present | Three examples: tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP) and `examples/mcp-bridge` (an A2A agent exposed *as* MCP). **Merged as `19766afb` via [#135](https://github.com/tomtom215/a2a-rust/pull/135) on 2026-09-19.** The row previously said "open … No PR opened yet"; both halves were false, which is what `git merge-base --is-ancestor origin/claude/wizardly-tesla-0f358t HEAD` answers in one command. Safe to delete. |
 | `claude/prove-gates-needle` | merged, still present | The benchmark-prose prover fix — the gate matched its sentence by value rather than by shape, so it could not be made to fail — plus the panic-hook race it exposed. **Merged as `f732fe3b` via [#136](https://github.com/tomtom215/a2a-rust/pull/136) on 2026-09-19.** This branch had no row at all while its content was described further down the file. Safe to delete. |
+| `claude/busy-cerf-ta682r` | open | **Destined for `main`.** The swarm-scale experiment: `crates/a2a-protocol-server/tests/swarm_scale/` and `docs/swarm-scale-findings.md`. Test-only — it adds no crate code and changes none. See its section below. |
 | `claude/optimistic-bell-680i9p` | open — see note | **Destined for `main`.** The current branch. It began as documentation corrections on top of 0.13.0 and is now substantially code: six audit fixes and the regression tests three of them shipped without, W3C Trace Context conformance, event-log durability, `InboundTracePolicy`, and two new CI gates. See its section below. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
@@ -1140,6 +1142,61 @@ misreported as passing more than once in these sessions.
 4. **Then the two 0.13.0 release steps that were already outstanding:**
    `git tag -a v0.13.0`, and the `bindings/a2a-protocol-slimrpc` 0.5.0 publish
    (`RELEASING.md` step 4), which has never been run.
+
+### `claude/busy-cerf-ta682r` — what A2A does at a thousand agents
+
+A new `#[ignore]`d load experiment,
+`crates/a2a-protocol-server/tests/swarm_scale/`, and its write-up,
+`docs/swarm-scale-findings.md`. Test-only: no crate source is added or changed.
+Run it with
+
+```text
+A2A_SWARM_MAX=1000 cargo test -p a2a-protocol-server --release \
+  --test swarm_scale -- --ignored --nocapture --test-threads=1
+```
+
+The question was whether many agents sharing **one** object works, which
+nothing here had ever measured — `concurrent_agents.rs` stops at 64 and gives
+every agent its own task, and `soak.rs` runs eight workers each on their own
+task. Four findings, all reproducible from that command; the report has the
+tables:
+
+1. One task peaks at **four** concurrent writers and falls 18× by a thousand,
+   to a 1.31s median post. It queues rather than refuses: `commit_task` holds
+   the per-context lock across find-decide-save.
+2. **A context holds exactly one addressable task, and which one it is
+   changes.** `resolve_task_id` mints a fresh task whenever a message names
+   none — unconditionally — and `find_task_by_context` resolves a context to
+   its most-recently-updated non-terminal task. So one message without a
+   `taskId` permanently locks every other caller out of the task they were
+   using, with a 400 that says only `message task_id does not match task found
+   for context`.
+3. Sharding by **context** recovers it: 6.4× the throughput at a thousand
+   agents, refusals gone from K=4, and the knee at roughly 4–16 writers per
+   task.
+4. A `SubscribeToTask` tail is live only when a turn outlasts
+   `subscribe_reattach_interval` (250ms). Turns that park instantly deliver
+   nothing to any tail at any subscriber count; turns that outlast the poll
+   deliver everything to a thousand tails with zero gaps.
+
+Two things for the maintainer that are not about swarms:
+
+- The comment on the no-`taskId` branch of `resolve_task_id` says "If the found
+  stored task is terminal, a new task will be created on this context". That
+  path never reads `stored_task`. The comment names a condition the code does
+  not check, and finding 2 is the measured behaviour. Whether the spec wants a
+  context-only message to join the live task or fork a new one is an open
+  question this experiment does not answer.
+- `streaming::event_queue::in_memory`'s module docs say a lagging SSE consumer
+  "receives `Lagged(n)` and skips missed events". It does not skip and resume:
+  `read` returns `A2aError::stream_lagged`, `streaming::sse` writes it as an
+  `event: error` frame and closes the stream. Measured across the 85 lagged
+  tails of the burst arm (1 + 4 + 16 + 64), every one was cut off and every one
+  was told, with zero undetectable gaps — the behaviour is the better of the
+  two and the documentation describes the other one.
+
+Neither was changed here. Both are one-line fixes in crate source, which this
+branch deliberately does not touch.
 
 ### Still not started
 
