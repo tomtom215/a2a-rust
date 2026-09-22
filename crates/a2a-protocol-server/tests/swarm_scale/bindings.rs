@@ -18,11 +18,19 @@
 //! transport, not the work behind them. It is a comparison of two framings of
 //! the same call, not an independent measurement of the SDK.
 //!
-//! Each arm is gated on the feature that provides its binding. Without that,
+//! The arm is gated on the feature that provides its binding. Without that,
 //! a single-feature build of this crate's test targets fails to compile —
 //! `--features sqlite` has no `WebSocketDispatcher` and no `tokio_tungstenite`
 //! — which is exactly what broke eleven gates in `prove_gates_fail.sh` before
-//! these attributes existed.
+//! this attribute existed.
+//!
+//! **The gRPC arm is not here**, and cannot be: driving gRPC needs a gRPC
+//! *client*, this crate's `build.rs` sets `build_client(false)`, and taking
+//! `a2a-protocol-client` as a dev-dependency makes `cargo package` fail to
+//! verify this crate — the workspace publishes the server before the client,
+//! so the dev-dependency is unresolvable at verification time. It lives in
+//! `crates/a2a-protocol-sdk/tests/swarm_binding_grpc.rs`, where both crates
+//! are already ordinary dependencies.
 
 #[cfg(feature = "websocket")]
 mod websocket {
@@ -171,138 +179,6 @@ mod websocket {
                 ok_total > 0,
                 "no post over WebSocket succeeded at {agents} agents, so this row \
                  timed refusals rather than the binding"
-            );
-            #[expect(
-                clippy::cast_precision_loss,
-                reason = "counts here are far below the f64 integer range"
-            )]
-            let per_s = ok_total as f64 / wall;
-            println!(
-                "{agents:>8}  {ok_total:>8}  {per_s:>10.0}  {:>9}  {:>9}",
-                percentile(&mut samples, 0.50),
-                percentile(&mut samples, 0.95)
-            );
-        }
-    }
-}
-
-#[cfg(feature = "grpc")]
-mod grpc {
-    use std::sync::Arc;
-    use std::time::Instant;
-
-    use a2a_protocol_server::builder::RequestHandlerBuilder;
-
-    use crate::fixtures::swarm_card;
-    use crate::harness::percentile;
-
-    /// Posts per agent. Matches `independent.rs` so the two are comparable.
-    const POSTS_PER_AGENT: u64 = 20;
-
-    /// The same uncontended send, over the canonical gRPC binding.
-    ///
-    /// `GrpcDispatcher` serves `lf.a2a.v1.A2AService`; the client comes from
-    /// `a2a-protocol-client`, because this crate's own `build.rs` sets
-    /// `build_client(false)` — a server has no use for a client stub, and
-    /// generating one in the published crate to serve a test would be the wrong
-    /// trade. It is a dev-dependency, so consumers pay nothing for it.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    #[ignore = "load experiment; run explicitly with --ignored (see the module docs)"]
-    async fn the_uncontended_send_over_grpc() {
-        use a2a_protocol_client::ClientBuilder;
-        use a2a_protocol_client::transport::grpc::GrpcTransport;
-        use a2a_protocol_server::dispatch::{GrpcConfig, GrpcDispatcher};
-        use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
-        use a2a_protocol_types::params::MessageSendParams;
-        use a2a_protocol_types::responses::SendMessageResponse;
-        use a2a_protocol_types::task::{ContextId, TaskId};
-
-        let handler = Arc::new(
-            RequestHandlerBuilder::new(crate::harness::ChannelExec)
-                .with_agent_card(swarm_card())
-                .build()
-                .expect("handler builds"),
-        );
-        let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind");
-        let addr = dispatcher.serve_with_listener(listener).expect("serve");
-        let endpoint = format!("http://{addr}");
-
-        println!("\n── the uncontended send, over gRPC ────────────────────────");
-        println!("one client per agent, each posting to its own channel");
-        println!(
-            "\n{:>8}  {:>8}  {:>10}  {:>9}  {:>9}",
-            "agents", "ok", "posts per s", "p50(us)", "p95(us)"
-        );
-
-        for agents in [1_usize, 16, 64] {
-            let started = Instant::now();
-            let mut set = tokio::task::JoinSet::new();
-            for agent in 0..agents {
-                let endpoint = endpoint.clone();
-                set.spawn(async move {
-                    let transport = GrpcTransport::connect(&endpoint).await.expect("connect");
-                    let client = ClientBuilder::new(&endpoint)
-                        .with_custom_transport(transport)
-                        .build()
-                        .expect("client builds");
-                    let context = format!("grpc-ctx-{agent}");
-
-                    let params = |task: Option<TaskId>, seq: u64| MessageSendParams {
-                        tenant: None,
-                        message: Message {
-                            id: MessageId::new(format!("grpc-{agent}-{seq}")),
-                            role: MessageRole::User,
-                            parts: vec![Part::text("post")],
-                            context_id: Some(ContextId::new(context.clone())),
-                            task_id: task,
-                            reference_task_ids: None,
-                            extensions: None,
-                            metadata: None,
-                        },
-                        configuration: None,
-                        metadata: None,
-                    };
-
-                    // Open the channel first, same as the WebSocket arm, so the
-                    // posts below append rather than fork.
-                    let opened = client.send_message(params(None, 0)).await.expect("open");
-                    let task = match opened {
-                        SendMessageResponse::Task(t) => t.id,
-                        other => panic!("expected a task, got {other:?}"),
-                    };
-
-                    let mut ok = 0_u64;
-                    let mut samples = Vec::with_capacity(POSTS_PER_AGENT as usize);
-                    for seq in 0..POSTS_PER_AGENT {
-                        let t = Instant::now();
-                        if client
-                            .send_message(params(Some(task.clone()), seq + 1))
-                            .await
-                            .is_ok()
-                        {
-                            ok += 1;
-                        }
-                        samples.push(t.elapsed().as_micros());
-                    }
-                    (ok, samples)
-                });
-            }
-            let mut ok_total = 0_u64;
-            let mut samples = Vec::new();
-            while let Some(joined) = set.join_next().await {
-                let (ok, mut s) = joined.expect("agent task");
-                ok_total += ok;
-                samples.append(&mut s);
-            }
-            let wall = started.elapsed().as_secs_f64();
-
-            assert!(
-                ok_total > 0,
-                "no post over gRPC succeeded at {agents} agents, so this row timed \
-                 refusals rather than the binding"
             );
             #[expect(
                 clippy::cast_precision_loss,

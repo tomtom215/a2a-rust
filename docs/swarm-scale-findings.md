@@ -676,22 +676,33 @@ service time at concurrency one:
 |---|---|---|
 | REST | 206µs | 1x |
 | WebSocket | 481µs | 2.3x |
-| gRPC | 2,170µs | 10.5x |
+| gRPC | 1,817µs | 8.8x |
 
 **One caveat that has to travel with those numbers.** The three arms do not
 drive the server through equivalent client stacks, and cannot: REST is a raw
 `hyper` request, WebSocket is a raw JSON-RPC frame over `tokio-tungstenite`,
 and gRPC goes through `a2a-protocol-client`'s full `A2aClient`, because that
-is the only gRPC client there is — this crate's `build.rs` sets
+is the only gRPC client there is — the server crate's `build.rs` sets
 `build_client(false)`. So the gRPC figure includes client-side SDK work that
-the other two bypass, and 10.5x is an upper bound on what the binding itself
+the other two bypass, and 8.8x is an upper bound on what the binding itself
 costs rather than a measurement of it. The REST-to-WebSocket ratio is the
 clean one: both are raw frames, and the framing is the only difference.
 
-Throughput at higher agent counts (WebSocket 2,792/s at 64, gRPC 1,269/s at
+Throughput at higher agent counts (WebSocket 2,792/s at 64, gRPC 1,850/s at
 64) is reported in the arms but is the weaker figure, because each agent's
 connect and opening send are inside the wall clock and only 20 posts follow
 them. Read the p50 column.
+
+**Where the arms live, which is not arbitrary.** REST and WebSocket are in
+`crates/a2a-protocol-server/tests/swarm_scale/`. The gRPC arm is in
+`crates/a2a-protocol-sdk/tests/swarm_binding_grpc.rs`, because driving gRPC
+needs a gRPC client, the server crate deliberately generates none, and taking
+`a2a-protocol-client` as a dev-dependency there makes `cargo package` fail to
+*verify* the server crate — the workspace publishes the server before the
+client, so the dev-dependency cannot resolve at verification time. Measured
+rather than reasoned: with it, `cargo package -p a2a-protocol-server` stops at
+"failed to verify package tarball"; without it, the same command verifies. The
+SDK already depends on both crates, so the arm costs no release gate there.
 
 What this does **not** say is that REST is the right binding for a
 coordination channel. It says that if you are choosing on per-post cost, that

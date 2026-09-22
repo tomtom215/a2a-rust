@@ -142,12 +142,6 @@ rcgen = "0.14"
 # guard would be dead code in every in-crate test and its mutant would
 # survive, as the PR's incremental sweep reported on 2026-09-09.
 rustls = { version = ">=0.23, <0.24" }
-# The gRPC binding arm in `tests/swarm_scale/bindings.rs` needs a gRPC *client*
-# to drive the dispatcher with, and this crate's own build.rs sets
-# `build_client(false)` -- deliberately, since a server has no use for one.
-# Dev-dependencies are not part of the published package, so this costs
-# consumers nothing.
-a2a-protocol-client = { version = "0.13.0", path = "../a2a-protocol-client", features = ["grpc"] }
 tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
 
 [[bench]]
