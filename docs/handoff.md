@@ -1235,6 +1235,69 @@ read from source and consistent with the cap experiment; **no profiler ran**,
 so which clone dominates is unmeasured. `perf` is not available in this
 container.
 
+#### Everything the findings report listed as open, closed
+
+The report's "still unmeasured" list is empty and its two behavioural findings
+are fixed. What that produced, in the order it happened:
+
+* **`save_status_delta` reached the SQL stores.** It was overridden only
+  in-memory, so SQLite and Postgres deployments got nothing from it and
+  neither doc said so. Both override it now: 122,071µs → 37,216µs (SQLite)
+  and 287,287µs → 120,104µs (Postgres) over 100 status events on a
+  200-message channel. The SQLite override deliberately does **not** delete
+  the artifact journal that its `save` deletes, and that divergence has its
+  own test — copying `save` there would have silently dropped appended parts.
+* **The context lockout (finding 2) is fixed, and the spec moved the defect.**
+  §3.4.3 line 651 *permits* the fork; the bug was the 400 that followed it,
+  because the server rejected any task that was not the one
+  `find_task_by_context` returned while §3.4.3 mandates rejecting only a
+  *contextId* mismatch. Two existing tests changed expectations and the commit
+  says why at length: both named a task that did not exist and asserted
+  `InvalidParams` where §3.4.2 requires `TaskNotFound`.
+* **The send path stopped carrying the conversation (fix-program item 2).**
+  `Task::history` cannot move — wire type, published crate, semver gate — so
+  `TaskStore::save_appending_history` takes the snapshot plus only the turn's
+  new messages. 3,962µs → 2,748µs at the history cap, growth 3.2x → 2.1x.
+  **Not O(1)**, and the remaining stages are named below.
+* **The dominant clone is measured, not inferred.** `find_task_by_context`
+  511µs at the cap against `build_initial_task` 7µs and `persist_initial_task`
+  42µs. So the next win is worth ~500µs of a ~2,750µs send and is blocked on
+  one API decision, not on effort.
+* **Findings 7–10 are new**: the SQL stores under the ageing probe, the
+  single-writer refusal not crossing replicas, the three untouched surfaces,
+  and the three bindings.
+
+#### The one that is a correctness limit, not a number
+
+`the_single_writer_refusal_does_not_cross_replicas`: two replicas sharing one
+Postgres will **both** admit a continuation for the same task, both spawn an
+executor, and both write the same row. `reject_in_flight_send` reads
+`self.cancellation_tokens` and the send path serialises on `keyed_lock`, both
+per-handler. Sharding by context does not help, because the shard key is
+enforced by that same in-process lock. The test pins today's behaviour, so
+anything that later makes admission shared has to fail it and say so.
+
+#### Three near-misses worth carrying forward
+
+Each of these passed something before it was caught, which is the reason to
+write them down rather than the reason not to.
+
+1. **A green suite is not coverage.** 2,037 tests passed with the
+   history-append change in place and none of them covered a continuation
+   keeping what an earlier turn wrote. The truncation did not happen —
+   `background/mod.rs:84` re-reads the task — but nothing in the suite knew
+   that, and I had predicted the opposite. `historyLength` *was* broken by the
+   same change and also uncaught. Both have tests now.
+2. **An arm that measures nothing can look like an arm that measures well.**
+   The agent-card arm printed a full latency column beside `ok` of zero,
+   because the deployment served no card and every fetch was a 404. The
+   WebSocket arm posted with `contextId` alone, which forks, so it measured
+   task creation and called it a channel post. Both now assert what they
+   claim to measure.
+3. **`cargo update -p rustls --precise 0.23.45` is the rustls waiver's own
+   removal test.** Running it beats reasoning about it; it still fails, so the
+   entry stays, now date-stamped.
+
 #### Verification, once the tools existed
 
 Everything the last session said it had not run, run. Recorded because three
