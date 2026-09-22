@@ -1369,10 +1369,26 @@ The fix program, in the order the evidence supports:
 
 Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
 
-1. Delete `release/v0.12.1`, whose contents are merged and tagged.
+1. Delete `release/v0.12.1`, whose contents are merged and tagged. **Verified
+   ready 2026-09-21, and deliberately left undone:** the branch is on origin at
+   `2e9262e`, `git branch -r --merged origin/main` lists it, and tag `v0.12.1`
+   resolves to `e057c8e`. Deleting the ref loses nothing — the commits stay
+   reachable from `main` — but it is the one irreversible outward-facing action
+   on this list, and the owner asked to do it themselves.
 2. Submit the adk-rust work if it is still wanted: issue first, then the patch.
-3. The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
-   command that says when it can be deleted.
+   **Blocked on repository access, not on the work.** The patch is prepared and
+   intact on `claude/adk-rust-0.12-patch` at `6fbdd2f` (verified against origin
+   2026-09-21). This session's GitHub scope is `tomtom215/a2a-rust` alone, so
+   the issue and PR cannot be opened from here. To unblock: add the adk-rust
+   repository to a session, or open the issue by hand and apply the held patch.
+3. ~~The binding's `RUSTSEC-2026-0285` waiver — see its section above for the
+   command that says when it can be deleted.~~ **Re-checked 2026-09-21: it
+   stays.** `cargo update -p rustls --precise 0.23.45` in
+   `bindings/a2a-protocol-slimrpc` still fails with the documented conflict
+   against a freshly fetched index — `^1.18` offers 1.18.1/1.18.0,
+   mls-rs-crypto-awslc 0.23.0 still pins `=1.16.2`, and slim-auth 0.15.4 still
+   admits only that 0.23.x. Neither release condition has been met. The date
+   stamp in `deny.toml` records the re-check.
 4. ~~Stale install snippets.~~ Done — see "Prose versions are checked now"
    below. The figure recorded here first, six, was wrong: it counted only
    `crates/`, and the real number was 28.

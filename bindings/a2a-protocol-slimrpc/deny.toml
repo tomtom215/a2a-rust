@@ -139,6 +139,12 @@ yanked  = "deny"
 #   * mls-rs-crypto-awslc publishes a 0.23.x that relaxes `=1.16.2`.
 # Verify with `cargo update -p rustls --precise 0.23.45` from this directory:
 # when it succeeds, delete this entry and commit the lockfile instead.
+#
+# Re-checked 2026-09-21 by running exactly that command. It still fails, and
+# with the same conflict, against a freshly fetched index: `^1.18` resolves to
+# 1.18.1/1.18.0, mls-rs-crypto-awslc 0.23.0 still carries `=1.16.2`, and
+# slim-auth 0.15.4 still admits only that 0.23.x. Neither release condition
+# above has been met, so the entry stays.
 ignore  = [
     { id = "RUSTSEC-2026-0285", reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; slim-auth 0.15.4 -> mls-rs-crypto-awslc 0.23.0 pins aws-lc-rs =1.16.2. No upstream release resolves this yet (checked 2026-09-16). See the note above." },
 ]
