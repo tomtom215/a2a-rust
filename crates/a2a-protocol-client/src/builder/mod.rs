@@ -282,7 +282,7 @@ impl ClientBuilder {
 
     /// Sets how long an established stream may wait for its first data —
     /// an event or a keep-alive comment — before it fails with
-    /// [`ClientError::Timeout`](crate::ClientError::Timeout).
+    /// [`ClientError::Timeout`].
     ///
     /// Defaults to 5 minutes; see
     /// [`DEFAULT_STREAM_FIRST_EVENT_TIMEOUT`](crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT)
@@ -305,7 +305,7 @@ impl ClientBuilder {
 
     /// Sets how long an established stream may receive no data at all —
     /// events and keep-alive comments alike — before it fails with
-    /// [`ClientError::Timeout`](crate::ClientError::Timeout). `None` disables
+    /// [`ClientError::Timeout`]. `None` disables
     /// the bound.
     ///
     /// Defaults to 5 minutes; see

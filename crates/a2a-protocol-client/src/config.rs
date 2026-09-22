@@ -94,51 +94,9 @@ pub enum GrpcBareAddressScheme {
     Http,
 }
 
-// ── Stream liveness defaults ─────────────────────────────────────────────────
+mod stream_defaults;
 
-/// Default for [`ClientConfig::stream_idle_timeout`]: 5 minutes.
-///
-/// The bound exists because a stream whose server stops sending — a hung
-/// agent, a half-open connection behind a proxy — otherwise holds its
-/// consumer forever. The value is chosen against what a healthy peer does:
-///
-/// * **This repository's server** writes an SSE `: keep-alive` comment after
-///   30 seconds without an event (`DispatchConfig::sse_keep_alive_interval`),
-///   so a healthy stream from it is never quiet for 5 minutes; the bound
-///   sits ten heartbeats out, and a server whose interval was raised to a few
-///   minutes still clears it.
-/// * **a2a-go v2.5.0** sends keep-alives only when the server opts in
-///   (`a2asrv.WithTransportKeepAlive`; "If interval is 0 or negative,
-///   keep-alive is disabled (default behavior)"), so a Go agent is silent
-///   between events. Its own client gives a whole request, stream included,
-///   3 minutes by default (`a2aclient/transport.go`:
-///   `defaultRequestTimeout = 3 * time.Minute`), so a Go agent that is
-///   silent for longer than this is already outside what its own SDK's
-///   defaults tolerate.
-/// * Common reverse proxies and load balancers close a connection that is
-///   silent for about 60 seconds (nginx `proxy_read_timeout`, AWS ALB
-///   `idle_timeout`), so a stream that survives 5 silent minutes is one that
-///   crossed no such hop.
-///
-/// Expiry is recoverable — the task keeps running and
-/// [`A2aClient::subscribe_to_task`](crate::A2aClient::subscribe_to_task)
-/// picks it up — so the cost of a too-short bound is one resubscribe, while
-/// the cost of no bound is a consumer that never returns.
-pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-
-/// Default for [`ClientConfig::stream_first_event_timeout`]: 5 minutes.
-///
-/// The same value as [`DEFAULT_STREAM_IDLE_TIMEOUT`], for the same reasons:
-/// silence before the first event is no different, as evidence of a dead
-/// peer, from silence between events, and the peers that matter produce
-/// both. The specification asks a server to open a stream with its `Task`
-/// or `Message`, and this repository's server does so at once; but a2a-go
-/// v2.5.0 writes nothing until the agent emits its first event, so an agent
-/// that makes a slow model call first is silent for as long as the call
-/// takes. The 30 seconds this bound inherited from `stream_connect_timeout`
-/// cut such an agent off. Callers that know their agent answers at once can
-/// tighten it to fail fast.
-pub const DEFAULT_STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+pub use stream_defaults::{DEFAULT_STREAM_FIRST_EVENT_TIMEOUT, DEFAULT_STREAM_IDLE_TIMEOUT};
 
 // ── ClientConfig ──────────────────────────────────────────────────────────────
 
@@ -179,26 +137,21 @@ pub struct ClientConfig {
     pub request_timeout: Duration,
 
     /// Timeout for **establishing** a stream: until the response headers
-    /// arrive (for gRPC, until the call is accepted), and — when the answer is
-    /// an error rather than a stream — for reading that error body too.
+    /// arrive (gRPC: until the call is accepted), and for reading the error
+    /// body when the answer is not a stream. Defaults to 30 seconds.
     ///
-    /// It does not bound the wait for the first event; that is
+    /// It does not bound the first event; that is
     /// [`stream_first_event_timeout`](Self::stream_first_event_timeout).
-    /// Until that knob existed this one did both, so an agent that flushed
-    /// its headers and then thought for longer than 30 seconds before its
-    /// first event was cut off. If you shortened this to fail fast on a
-    /// silent agent, set `stream_first_event_timeout` to the same value.
-    ///
-    /// Defaults to 30 seconds.
+    /// Until that knob existed this one did both, and cut off an agent that
+    /// flushed its headers and then thought for longer than 30 seconds. If
+    /// you shortened this to fail fast on a silent agent, set that one too.
     pub stream_connect_timeout: Duration,
 
-    /// Longest an established stream may wait for its **first** data.
-    ///
-    /// Defaults to [`DEFAULT_STREAM_FIRST_EVENT_TIMEOUT`] (5 minutes). Any
-    /// bytes satisfy it, an SSE keep-alive comment included; after that,
+    /// Longest an established stream may wait for its **first** data;
+    /// defaults to [`DEFAULT_STREAM_FIRST_EVENT_TIMEOUT`] (5 minutes). Any
+    /// bytes satisfy it, a keep-alive comment included; after that,
     /// [`stream_idle_timeout`](Self::stream_idle_timeout) governs. Expiry
-    /// yields [`ClientError::Timeout`](crate::ClientError::Timeout) naming the
-    /// first-event timeout.
+    /// yields [`ClientError::Timeout`](crate::ClientError::Timeout).
     ///
     /// Applied by [`A2aClient`](crate::A2aClient) to every stream it opens,
     /// on every transport — for a WebSocket transport this replaces
@@ -212,27 +165,19 @@ pub struct ClientConfig {
     pub connection_timeout: Duration,
 
     /// Longest an established stream may go without receiving **any** data
-    /// once its first data has arrived. `None` disables the bound.
+    /// once its first data has arrived; `None` disables the bound. Defaults
+    /// to [`DEFAULT_STREAM_IDLE_TIMEOUT`] (5 minutes; see it for why).
     ///
-    /// Defaults to [`DEFAULT_STREAM_IDLE_TIMEOUT`] (5 minutes). See that
-    /// constant for why this value.
+    /// Any bytes reset it, SSE `: keep-alive` comments included, so a stream
+    /// from a server that heartbeats runs as long as the task does. Expiry
+    /// yields [`ClientError::Timeout`](crate::ClientError::Timeout) and ends
+    /// the stream; the task is not cancelled, so resubscribe to continue.
     ///
-    /// Any bytes reset it, including SSE keep-alive comments
-    /// (`: keep-alive`), which is what lets a quiet-but-healthy stream from a
-    /// server that sends heartbeats run for as long as the task does. When it
-    /// expires, [`EventStream::next`](crate::EventStream::next) yields
-    /// [`ClientError::Timeout`](crate::ClientError::Timeout) and the stream
-    /// ends; the task on the server is not cancelled, so resubscribe with
-    /// [`A2aClient::subscribe_to_task`](crate::A2aClient::subscribe_to_task)
-    /// to pick it up again.
-    ///
-    /// Applied by [`A2aClient`](crate::A2aClient) to every stream it opens, on
-    /// every transport — including one supplied through
-    /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport).
-    /// gRPC and WebSocket streams carry no heartbeat the stream can see, so
-    /// on those bindings this bounds the gap between *events*: a task that
-    /// emits nothing for longer is cut off, and resubscribing is the remedy.
-    /// Raise it, or set `None`, for agents known to think silently for longer.
+    /// Applied by [`A2aClient`](crate::A2aClient) to every stream it opens,
+    /// on every transport, a custom one included. gRPC and WebSocket streams
+    /// carry no heartbeat the stream can see, so there it bounds the gap
+    /// between *events*: raise it, or set `None`, for agents known to think
+    /// silently for longer.
     pub stream_idle_timeout: Option<Duration>,
 
     /// Maximum size in bytes of a buffered (non-streaming) response body.
