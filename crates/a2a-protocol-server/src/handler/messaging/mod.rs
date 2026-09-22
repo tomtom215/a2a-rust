@@ -254,9 +254,15 @@ impl RequestHandler {
         let context_guard = context_lock.lock().await;
 
         let stored_task = self.find_task_by_context(&context_id).await?;
-        let task_id = self
+        let resolution = self
             .resolve_task_id(&params.message, stored_task.as_ref())
             .await?;
+        let task_id = resolution.id;
+        // `continues` is `Some` only when the send names a live task in this
+        // context other than the canonical one, which is the case
+        // `find_task_by_context` cannot see. Everywhere else this is a no-op
+        // and `stored_task` stays exactly what it was.
+        let stored_task = resolution.continues.or(stored_task);
 
         // An idempotency key, if the send carries one, is claimed here: after
         // everything that can reject the request on its own terms, and before

@@ -125,6 +125,63 @@ for the swarm question:
   live task rather than fork a new one is a spec question this experiment does
   not answer. It only establishes what the implementation does.
 
+### Fixed — and the spec question turned out to be the wrong question
+
+Both observations above are now resolved, and the second one resolved in a way
+that moved the defect. The spec settles the fork, and permits it:
+
+> Clients **MAY** use `contextId` without `taskId` to start a new task within
+> an existing conversation context.
+>
+> — §3.4.3, `docs/implementation/v1.0.0-specification-complete.md:651`
+
+So the fork was never the bug. The bug was the *lockout that followed it*. The
+same section permits the continuation the server was refusing, and mandates
+exactly one rejection, which is not this one:
+
+> Clients **MAY** use `taskId` (with or without `contextId`) to continue or
+> refine a specific task
+>
+> Agents **MUST** reject messages containing mismatching `contextId` and
+> `taskId` (i.e., the provided `contextId` is different from that of the
+> referenced `Task`).
+>
+> — §3.4.3, lines 650 and 653
+
+When participant B posted with the original `taskId`, that task existed, was
+non-terminal, and its `contextId` *did* match the one supplied — so line 653's
+rule did not apply — yet `resolve_task_id` rejected it anyway, purely because
+`find_task_by_context` had handed it a different task from the same context.
+§3.4.1 says a `contextId` "logically groups multiple `Task` objects"; the
+implementation treated it as holding one.
+
+`resolve_task_id` now resolves against the task the message actually names: it
+accepts any live task in the same context, and refuses only a task from a
+different one. Re-running the same probe:
+
+| probe | before | after |
+|---|---|---|
+| post naming **no** task | Accepted, forked | Accepted, forked (§3.4.3 permits it) |
+| post naming the original task | **Refused** | **Accepted** |
+| post naming the task the untargeted post created | Accepted | Accepted |
+| post naming a task from another context | Refused | Refused (§3.4.3 requires it) |
+| post naming the original task again | **Refused, permanently** | **Accepted** |
+
+One existing unit test changed its expectation, which is worth stating plainly
+rather than burying. `task_id_mismatch_returns_invalid_params` named a task
+that *did not exist at all* and asserted `InvalidParams`. §3.4.2 requires
+`TaskNotFound` for that, and the handler already returned `TaskNotFound` for
+the identical input when the context happened to be empty — the only thing
+deciding between the two answers was whether some unrelated task existed
+nearby. It is now `task_id_naming_no_existing_task_returns_task_not_found`,
+and three tests were added beside it for the cases nothing covered: a
+cross-context `taskId` (still `InvalidParams`), a live sibling in the same
+context (now accepted), and a terminal sibling (still `UnsupportedOperation`,
+now judged on the task actually named rather than on the canonical one).
+
+The stale comment is gone too, replaced by what the code does and the spec
+line that permits it.
+
 ## Finding 3 — sharding by context recovers it, and the knee is early
 
 The same 1,000 agents, five posts each, spread round-robin over K channels in K

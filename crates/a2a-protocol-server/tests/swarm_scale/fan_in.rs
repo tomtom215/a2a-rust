@@ -18,13 +18,20 @@
 //!    is a second executor racing the first on store writes. The refusal is
 //!    correct; what it means for a channel is that concurrent posters do not
 //!    queue behind each other, they are *turned away*.
-//! 2. **One live task per context.** `helpers::find_task_by_context` resolves
-//!    a context to its first non-terminal task, and `resolve_task_id` refuses
-//!    any message naming a different one. So a context is not a folder that
-//!    holds many channels — it holds one.
+//! 2. **One *canonical* task per context, but no longer only one addressable
+//!    one.** `helpers::find_task_by_context` still resolves a context to a
+//!    single task — its most recently updated non-terminal one — and a message
+//!    naming no task still forks a new one, which §3.4.3 explicitly permits.
+//!    What has changed is what happens to everyone else: `resolve_task_id`
+//!    used to refuse any message naming a task other than that canonical one,
+//!    so a single untargeted post displaced the channel and locked every other
+//!    participant out of it permanently. It now accepts any live task in the
+//!    same context and refuses only a task from a *different* context, which
+//!    is the one mismatch §3.4.3 requires an agent to reject.
 //!
-//! Together those say the shard key can only be the context. This file
-//! measures the first and demonstrates the second.
+//! Obstacle 1 still says the shard key can only be the context: concurrent
+//! posters to one task are turned away whatever their taskId. This file
+//! measures the first and probes the second.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -240,6 +247,30 @@ async fn how_a_context_addresses_its_channels() {
         "a task from another context must not be addressable through this one; \
          if it is, the context is no longer the isolation boundary the shard \
          advice rests on"
+    );
+
+    // The lockout this probe was written to expose. An untargeted post forks
+    // the channel and the fork becomes what `find_task_by_context` returns;
+    // the original is still live and still in this context, so §3.4.3 permits
+    // continuing it and the server must not refuse. These used to be Refused,
+    // the second one permanently.
+    assert_eq!(
+        back.outcome,
+        Outcome::Accepted,
+        "a live task in this context stopped being addressable because another \
+         post displaced it as the context's most recently updated one"
+    );
+    assert_eq!(
+        back_again.outcome,
+        Outcome::Accepted,
+        "the original channel is unaddressable for good once a second one has \
+         been written to — a lockout, not a race"
+    );
+    assert_eq!(
+        untargeted.outcome,
+        Outcome::Accepted,
+        "§3.4.3: clients MAY use contextId without taskId to start a new task \
+         within an existing context"
     );
 }
 

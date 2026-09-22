@@ -904,32 +904,126 @@ async fn whitespace_only_task_id_returns_invalid_params() {
     );
 }
 
-#[tokio::test]
-async fn task_id_mismatch_returns_invalid_params() {
-    // Covers context/task mismatch when stored task exists with different task_id.
-    use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
+/// Saves `id` in `context`, non-terminal unless `state` says otherwise.
+async fn seed_task(handler: &RequestHandler, id: &str, context: &str, state: TaskState) {
+    use a2a_protocol_types::task::{Task, TaskStatus};
 
-    let handler = make_handler();
-
-    // Save a non-terminal task with context_id "ctx-existing".
     let task = Task {
-        id: TaskId::new("stored-task-id"),
-        context_id: ContextId::new("ctx-existing"),
-        status: TaskStatus::new(TaskState::InputRequired),
+        id: TaskId::new(id),
+        context_id: ContextId::new(context),
+        status: TaskStatus::with_timestamp(state),
         history: None,
         artifacts: None,
         metadata: None,
     };
     handler.task_store.save(&task).await.unwrap();
+}
 
-    // Send a message with the same context_id but a different task_id.
+/// A `taskId` naming no task at all is `TaskNotFound`, whether or not the
+/// context happens to hold one.
+///
+/// This test previously expected `InvalidParams`, and that expectation was
+/// wrong. §3.4.2: "When a client includes a taskId in a Message, it MUST
+/// reference an existing task" — and the handler already returned
+/// `TaskNotFound` for this very input when the context was empty, because
+/// that branch looks the task up. The only reason the same input produced
+/// `InvalidParams` here was that a *different* task existed in the context,
+/// which says nothing about whether the named one does. Same input, two
+/// answers, decided by something irrelevant to the question.
+#[tokio::test]
+async fn task_id_naming_no_existing_task_returns_task_not_found() {
+    let handler = make_handler();
+    seed_task(
+        &handler,
+        "stored-task-id",
+        "ctx-existing",
+        TaskState::InputRequired,
+    )
+    .await;
+
     let mut params = make_params(Some("ctx-existing"));
-    params.message.task_id = Some(TaskId::new("different-task-id"));
+    params.message.task_id = Some(TaskId::new("no-such-task"));
 
     let result = handler.on_send_message(params, false, None).await;
     assert!(
-        matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("does not match")),
-        "expected InvalidParams for task_id mismatch, got: {result:?}"
+        matches!(result, Err(ServerError::TaskNotFound(ref id)) if id.0 == "no-such-task"),
+        "expected TaskNotFound for a taskId that names nothing, got: {result:?}"
+    );
+}
+
+/// The one mismatch §3.4.3 requires an agent to reject: a `taskId` whose task
+/// exists, but under a different `contextId`.
+#[tokio::test]
+async fn task_id_from_another_context_returns_invalid_params() {
+    let handler = make_handler();
+    seed_task(&handler, "ours", "ctx-existing", TaskState::InputRequired).await;
+    seed_task(&handler, "theirs", "ctx-other", TaskState::InputRequired).await;
+
+    let mut params = make_params(Some("ctx-existing"));
+    params.message.task_id = Some(TaskId::new("theirs"));
+
+    let result = handler.on_send_message(params, false, None).await;
+    assert!(
+        matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("different context")),
+        "expected InvalidParams for a cross-context taskId, got: {result:?}"
+    );
+}
+
+/// A context holds more than one task, and every live one stays addressable.
+///
+/// Finding 2 of `docs/swarm-scale-findings.md`: `find_task_by_context` returns
+/// a single task, the most recently updated live one, and naming any other
+/// used to be rejected outright. So one participant posting without a `taskId`
+/// forked the channel and locked everyone else out of the original — which was
+/// still live, still in the same context, and by §3.4.1 still part of the group
+/// the context denotes. §3.4.3 permits continuing "a specific task"; the only
+/// rejection it mandates is a contextId that differs from the referenced
+/// task's, which is not this.
+#[tokio::test]
+async fn a_live_sibling_task_in_the_same_context_is_still_addressable() {
+    let handler = make_handler();
+    // `older` is the one a participant holds a reference to. `newer` is the
+    // fork that displaced it as what `find_task_by_context` returns.
+    seed_task(&handler, "older", "ctx-shared", TaskState::InputRequired).await;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    seed_task(&handler, "newer", "ctx-shared", TaskState::InputRequired).await;
+
+    let mut params = make_params(Some("ctx-shared"));
+    params.message.task_id = Some(TaskId::new("older"));
+
+    let result = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("a live task in this context must stay addressable after a fork displaced it");
+    match result {
+        SendMessageResult::Response(SendMessageResponse::Task(task)) => {
+            assert_eq!(
+                task.id,
+                TaskId::new("older"),
+                "the send must land on the task it named, not on the one the \
+                 context lookup happens to return"
+            );
+        }
+        other => panic!("expected a task response, got {other:?}"),
+    }
+}
+
+/// Terminality is judged on the task actually named, not on whichever one the
+/// context lookup returned.
+#[tokio::test]
+async fn a_terminal_sibling_task_is_still_rejected() {
+    let handler = make_handler();
+    seed_task(&handler, "done", "ctx-shared", TaskState::Completed).await;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    seed_task(&handler, "live", "ctx-shared", TaskState::InputRequired).await;
+
+    let mut params = make_params(Some("ctx-shared"));
+    params.message.task_id = Some(TaskId::new("done"));
+
+    let result = handler.on_send_message(params, false, None).await;
+    assert!(
+        matches!(result, Err(ServerError::UnsupportedOperation(ref msg)) if msg.contains("terminal")),
+        "CORE-SEND-002 still applies to the named task, got: {result:?}"
     );
 }
 
