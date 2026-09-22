@@ -89,6 +89,16 @@ match stream.next().await {
 }
 ```
 
+### Errors on an HTTP+JSON Stream
+
+A streaming request over HTTP+JSON reports errors as `ClientError::Protocol`
+with the exact A2A code, as unary calls do: an AIP-193 error body on a non-2xx
+answer (§11.6) decodes to, for example, `TaskNotFound` for `subscribe_to_task`
+on a missing task. So does an error the server sends *inside* an open stream,
+in either shape seen in practice — a2a-go's AIP-193 object as a data frame
+(`{"error":{"code":404,"status":"NOT_FOUND",...}}`), or this repository's
+`event: error` frame carrying an `A2aError`. The stream ends after it.
+
 ### Connection Errors
 
 ```rust,ignore

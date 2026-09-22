@@ -34,6 +34,7 @@
 //! | `DeleteTaskPushNotificationConfig` | DELETE | `/tasks/{id}/pushNotificationConfigs/{configId}` |
 //! | `GetExtendedAgentCard` | GET | `/extendedAgentCard` |
 
+pub(crate) mod error_frame;
 mod query;
 mod request;
 mod routing;

@@ -87,7 +87,13 @@ impl RestTransport {
         )
     }
 
-    /// Turns a non-success streaming response into `UnexpectedStatus`.
+    /// Turns a non-success streaming response into the error it carries.
+    ///
+    /// An AIP-193 body (§11.6) decodes to the exact A2A error, as on the
+    /// unary path — until 2026-09-22 this path skipped that, so
+    /// `subscribe_to_task` on a missing task gave `UnexpectedStatus(404)`
+    /// where `get_task` gave `TaskNotFound`. Anything else is
+    /// `UnexpectedStatus`.
     ///
     /// Captures `Retry-After` before the body is consumed (matching the unary
     /// path) so retries honor server-directed backoff, and enforces the
@@ -113,6 +119,9 @@ impl RestTransport {
             Ok(bytes) => bytes,
             Err(e) => return e,
         };
+        if let Some(a2a) = super::request::parse_aip193_error(&body_bytes) {
+            return ClientError::Protocol(a2a);
+        }
         let body_str = String::from_utf8_lossy(&body_bytes);
         ClientError::UnexpectedStatus {
             status: status.as_u16(),

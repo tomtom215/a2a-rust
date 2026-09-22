@@ -556,9 +556,23 @@ impl EventStream {
             }
         } else {
             // REST binding: each `data:` field is a bare StreamResponse
-            // (per A2A spec Section 11.7).
-            let event: StreamResponse =
-                serde_json::from_str(data).map_err(ClientError::Serialization)?;
+            // (per A2A spec Section 11.7) — or an error the server reports
+            // mid-stream, which is tried only once the frame has failed to
+            // parse as an event, so the common path pays nothing for it.
+            let event: StreamResponse = match serde_json::from_str(data) {
+                Ok(event) => event,
+                Err(e) => {
+                    return Err(
+                        match crate::transport::rest::error_frame::decode_stream_error_frame(data) {
+                            Some(a2a) => {
+                                self.phase = Phase::Finished;
+                                ClientError::Protocol(a2a)
+                            }
+                            None => ClientError::Serialization(e),
+                        },
+                    );
+                }
+            };
             self.record(&event);
             if is_terminal(&event) {
                 self.phase = Phase::Finished;
