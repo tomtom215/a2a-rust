@@ -172,6 +172,19 @@ impl Method {
     pub const fn requires_extended_card_capability(self) -> bool {
         matches!(self, Self::GetExtendedAgentCard)
     }
+
+    /// `true` for the methods whose proto result is `google.protobuf.Empty`,
+    /// so a successful answer carries no data.
+    ///
+    /// A client uses this to accept the empty forms peers really send for
+    /// such a method (a JSON-RPC response with no `result`, an HTTP `200`
+    /// with no body) without loosening the check for a method that has to
+    /// return something. Checked against the proto's `returns (...)`
+    /// clauses by this module's tests.
+    #[must_use]
+    pub const fn returns_empty(self) -> bool {
+        matches!(self, Self::DeleteTaskPushNotificationConfig)
+    }
 }
 
 impl fmt::Display for Method {
@@ -420,5 +433,27 @@ mod tests {
     #[test]
     fn display_is_the_wire_name() {
         assert_eq!(Method::CancelTask.to_string(), "CancelTask");
+    }
+
+    /// `returns_empty` is exactly the RPCs the ratified proto declares as
+    /// `returns (google.protobuf.Empty)`, read from the file rather than
+    /// restated.
+    #[test]
+    fn returns_empty_matches_the_ratified_proto() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/proto/a2a_v1/a2a.proto");
+        let src = std::fs::read_to_string(path).expect("ratified proto");
+        let from_proto: BTreeSet<&str> = src
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("rpc "))
+            .filter(|rest| rest.contains("returns (google.protobuf.Empty)"))
+            .map(|rest| rest.split('(').next().unwrap_or_default().trim())
+            .collect();
+        let from_enum: BTreeSet<&str> = Method::ALL
+            .iter()
+            .filter(|m| m.returns_empty())
+            .map(|m| m.wire_name())
+            .collect();
+        assert!(!from_proto.is_empty(), "parsed no Empty-returning rpc");
+        assert_eq!(from_enum, from_proto);
     }
 }

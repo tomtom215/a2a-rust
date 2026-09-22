@@ -266,6 +266,14 @@ impl JsonRpcTransport {
             });
         }
 
+        // An Empty-result method may come back with no `result` at all
+        // (a2a-go does this); see `empty_result`.
+        if let Some(result) =
+            super::empty_result::jsonrpc_empty_success(method, &body_bytes, &request_id)
+        {
+            return result;
+        }
+
         let envelope: JsonRpcResponse<serde_json::Value> = serde_json::from_slice(&body_bytes)
             .map_err(|e| {
                 // If the response isn't valid JSON-RPC, the server may use a

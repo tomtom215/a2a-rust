@@ -199,26 +199,36 @@ impl RestTransport {
             });
         }
 
-        // REST responses may or may not wrap in JSON-RPC; try JSON-RPC first.
-        if let Ok(envelope) =
-            serde_json::from_slice::<JsonRpcResponse<serde_json::Value>>(&body_bytes)
-        {
-            return match envelope {
-                JsonRpcResponse::Success(ok) => Ok(ok.result),
-                JsonRpcResponse::Error(err) => {
-                    let a2a = crate::transport::map_jsonrpc_error(
-                        err.error.code,
-                        err.error.message,
-                        err.error.data,
-                    );
-                    Err(ClientError::Protocol(a2a))
-                }
-            };
-        }
-
-        // Fall back to raw JSON value.
-        serde_json::from_slice(&body_bytes).map_err(ClientError::Serialization)
+        decode_success_body(method, &body_bytes)
     }
+}
+
+/// Reads a `2xx` body: `Empty` for an Empty-result method that sent none,
+/// a JSON-RPC envelope if the server wrapped one, otherwise the raw JSON.
+fn decode_success_body(method: &str, body_bytes: &[u8]) -> ClientResult<serde_json::Value> {
+    // An Empty-result method may come back with no body at all (a2a-go does
+    // this); see `empty_result`.
+    if crate::transport::empty_result::rest_empty_success(method, body_bytes) {
+        return Ok(serde_json::Value::Null);
+    }
+
+    // REST responses may or may not wrap in JSON-RPC; try JSON-RPC first.
+    if let Ok(envelope) = serde_json::from_slice::<JsonRpcResponse<serde_json::Value>>(body_bytes) {
+        return match envelope {
+            JsonRpcResponse::Success(ok) => Ok(ok.result),
+            JsonRpcResponse::Error(err) => {
+                let a2a = crate::transport::map_jsonrpc_error(
+                    err.error.code,
+                    err.error.message,
+                    err.error.data,
+                );
+                Err(ClientError::Protocol(a2a))
+            }
+        };
+    }
+
+    // Fall back to raw JSON value.
+    serde_json::from_slice(body_bytes).map_err(ClientError::Serialization)
 }
 
 /// Decodes an AIP-193 error body (`{"error": {"code", "status", "message",

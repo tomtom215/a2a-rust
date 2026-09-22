@@ -24,6 +24,7 @@
 //! [`RestTransport`]: rest::RestTransport
 
 pub(crate) mod connector;
+mod empty_result;
 #[cfg(feature = "grpc")]
 pub mod grpc;
 pub mod jsonrpc;

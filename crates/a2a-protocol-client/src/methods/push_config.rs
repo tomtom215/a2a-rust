@@ -125,6 +125,11 @@ impl A2aClient {
     ///
     /// Calls `DeleteTaskPushNotificationConfig`.
     ///
+    /// The result is `google.protobuf.Empty`, so besides the spec's `{}` a
+    /// success may also arrive as a JSON-RPC response with no `result`, a
+    /// `null` result, or an HTTP+JSON `2xx` with no body — the forms a2a-go
+    /// v2.5.0 sends. All of them are `Ok(())`.
+    ///
     /// # Errors
     ///
     /// Returns [`ClientError`] on transport or protocol errors.
