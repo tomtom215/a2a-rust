@@ -218,6 +218,31 @@ The SSE parser includes safety limits:
 - **First-event timeout** — A stream that is accepted but silent before its first event times out (lifted after the first frame), on every transport
 - **Partial line buffering** — Handles TCP frame boundaries correctly (CRLF, LF, and bare-CR line endings per the SSE spec)
 
+### Errors on the wire
+
+A streaming call can fail before its stream starts (unknown task, invalid
+params, streaming not advertised) or partway through (an executor failure, the
+`streamLagged` signal). Either way the server writes the error **inside** the
+SSE body as one `event: error` frame and then closes it, because a client may
+read a streaming response only as SSE — a2a-go's does, and a plain JSON body
+reached it as zero events and no error.
+
+| Binding | Error frame `data:` |
+|---|---|
+| JSON-RPC | the JSON-RPC error response, echoing the request id: `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,…}}` |
+| HTTP+JSON | the bare `A2aError`: `{"code":-32603,"message":…,"data":…}` |
+
+Over HTTP+JSON a refusal *before* the stream starts is an HTTP error status
+with a `google.rpc.Status` body.
+
+This client accepts every shape a peer sends: a JSON-RPC refusal as SSE, as a
+plain JSON body (the Python SDK's server, and this one through 0.13), or as an
+HTTP status all fail the call itself with `ClientError::Protocol`. The one
+exception is a peer that opens a live, chunked stream and then sends the error
+as its first frame (a2a-go's server): that cannot be told from a stream that
+has started, so the same `ClientError::Protocol` arrives as the first
+`next()`. Handle errors in both places.
+
 ## Re-subscribing
 
 If a stream disconnects, re-subscribe to an existing task:
@@ -238,7 +263,9 @@ other readers or the writer.
 
 > **Terminal tasks:** Subscribing to a task in a terminal state
 > (`Completed`, `Failed`, `Canceled`, `Rejected`) returns an
-> `UnsupportedOperation` error immediately, without opening an SSE stream.
+> `UnsupportedOperation` error immediately. No events are streamed; on
+> JSON-RPC the error is the response's single SSE frame (see
+> [Errors on the wire](#errors-on-the-wire)).
 
 ### Resuming from where you left off
 

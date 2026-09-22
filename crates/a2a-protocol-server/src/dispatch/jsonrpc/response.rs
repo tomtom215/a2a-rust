@@ -167,6 +167,41 @@ pub(super) fn error_response(
     }
 }
 
+/// The response for a streaming method (`SendStreamingMessage`,
+/// `SubscribeToTask`) that failed before its stream started: HTTP 200,
+/// `text/event-stream`, one `event: error` frame whose data is the JSON-RPC
+/// error response, then end of body.
+///
+/// §9.4.2 gives these methods an SSE response, and a client may read that
+/// response *only* as SSE. a2a-go v2.5.0 does: its JSON-RPC streaming
+/// transport hands the body to `sse.ParseDataStream`, which keeps nothing but
+/// `data:` lines, so a plain JSON error body reached a Go caller as zero
+/// events and no error. a2a-go's own server sends these errors this way
+/// (`a2asrv/jsonrpc.go`, `handleStreamingRequest`), the Python SDK's client
+/// reads both shapes, and this crate's client decodes the frame into the same
+/// `ClientError::Protocol` a JSON body produced.
+///
+/// The `event: error` line is the same framing the stream loop uses for a
+/// mid-stream error (`streaming::sse`); clients that key on `data:` alone
+/// ignore it.
+pub(super) fn stream_error_response(
+    id: JsonRpcId,
+    err: &ServerError,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    let body = error_response_bytes(id, err);
+    let frame = crate::streaming::sse::write_event("error", &String::from_utf8_lossy(&body));
+    hyper::Response::builder()
+        .status(200)
+        .header("content-type", "text/event-stream")
+        .header("cache-control", "no-cache")
+        .header(
+            a2a_protocol_types::A2A_VERSION_HEADER,
+            a2a_protocol_types::A2A_VERSION,
+        )
+        .body(Full::new(frame).boxed())
+        .unwrap_or_else(|_| json_response(200, body))
+}
+
 pub(super) fn parse_error_response(
     id: JsonRpcId,
     message: &str,
