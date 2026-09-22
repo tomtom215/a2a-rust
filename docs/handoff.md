@@ -1478,10 +1478,29 @@ Numbering was 1, 2, 4, 5 here — there was never a 3. Renumbered.
    below. The figure recorded here first, six, was wrong: it counted only
    `crates/`, and the real number was 28.
 5. ~~Re-run `prove_gates_fail.sh` for the three `--features {sqlite,postgres,
-   auth-jwt}` gates.~~ Done — 9 proven, 0 unproven, including three that were
-   PRE-BROKEN only for want of a local PostgreSQL. Still unrun on this branch:
-   the other 57 gates, and the two remaining PRE-BROKEN ones (SLIMRPC SPIFFE,
-   and `cargo hack clippy` with `cargo-hack` absent).
+   auth-jwt}` gates.~~ **All 70 run, 2026-09-22: 70 proven, 0 unproven.**
+   Nothing PRE-BROKEN, nothing INCONCLUSIVE. The two that had never been
+   provable here needed tools, not fixes — `cargo install cargo-hack --locked`
+   (0.6.45) and SPIRE 1.11.2 unpacked to `/tmp/spire-1.11.2/bin` with
+   `SPIRE_BIN_DIR` exported. Both now pass, the SPIFFE suites running 9 tests
+   against a real server.
+
+   **Run the whole set, not a subset, and run it last.** The first full sweep
+   reported 13 PRE-BROKEN, and 11 of those were breaks this branch had
+   introduced: `swarm_scale/bindings.rs` and `swarm_scale/cost.rs` used types
+   that only exist under `websocket`, `grpc`, `sqlite` or `postgres`, so every
+   single-feature build of the test targets failed to compile. A twelfth,
+   `cargo package`, was the `a2a-protocol-client` dev-dependency making the
+   server crate unverifiable. Every check while writing those arms had used
+   `--all-features`, where all of it compiles. A green `--all-features` build
+   says nothing about a single-feature one, which is what that gate is for.
+
+   Two mechanics worth keeping. The script injects defects into **tracked
+   source**, so nothing else may touch the repo while it runs and a clean
+   `git status` is a precondition — if it dies mid-gate, discard with
+   `git checkout -- <file>`, never commit. And its log prints each verdict
+   twice, once per gate and again in the summary, so grepping verdict words
+   doubles the count: read the summary block.
 6. ~~The two hand-rolled `uuid_like()` helpers.~~ Done — both examples take
    `uuid` now.
 7. ~~**`cargo doc -p a2a-protocol-client --no-deps` fails, and CI cannot see
