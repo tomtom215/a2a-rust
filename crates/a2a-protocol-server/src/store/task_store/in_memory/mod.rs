@@ -784,7 +784,7 @@ impl TaskStore for InMemoryTaskStore {
     /// has accumulated. This costs a `TaskStatus` and two index re-keys.
     ///
     /// Falls back to `save` when the record is absent, which is the one case
-    /// [`StoreData::update_status`] cannot apply — the same discipline
+    /// the in-place update cannot apply — the same discipline
     /// [`TaskStore::save_artifact_delta`] follows, and for the same reason: a
     /// dropped transition would be worse than a slow one.
     fn save_status_delta<'a>(

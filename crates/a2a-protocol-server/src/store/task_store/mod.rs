@@ -310,8 +310,9 @@ pub trait TaskStore: Send + Sync + 'static {
     ///
     /// The same argument as [`TaskStore::save_artifact_delta`], applied to the
     /// other per-event write on the hot path. A `Task` carries its `history`,
-    /// which the send path grows by one message per turn up to
-    /// [`MAX_TASK_HISTORY_MESSAGES`](crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES),
+    /// which the send path grows by one message per turn up to an internal cap
+    /// of 1,024 messages (`handler::messaging::MAX_TASK_HISTORY_MESSAGES`,
+    /// which is crate-private and so not linkable from here),
     /// so a turn emitting `n` status events through `save` on a channel
     /// holding `h` messages does `n * h` work. Measured back to back on one
     /// turn of 512 events, concurrency one, in-memory store, by
