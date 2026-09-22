@@ -108,6 +108,21 @@ mod flight;
 /// than either hammering the endpoint or holding a token forever).
 const NO_EXPIRY_CACHE_TTL: Duration = Duration::from_secs(60);
 
+/// How long a token with the given `expires_in` is served from cache.
+///
+/// The refresh leeway is taken off the lifetime, but never more than half
+/// of it: a token is always reused for at least half its life. Without that
+/// bound a lifetime at or under the leeway (30 s by default) cached for zero
+/// and every call went to the token endpoint (audit C15). Half is where the
+/// two rules meet at a lifetime of twice the leeway, so long-lived tokens
+/// keep the full leeway exactly as before.
+fn cache_ttl(expires_in: Option<u64>, leeway: Duration) -> Duration {
+    expires_in.map_or(NO_EXPIRY_CACHE_TTL, |secs| {
+        let lifetime = Duration::from_secs(secs);
+        lifetime.saturating_sub(leeway.min(lifetime / 2))
+    })
+}
+
 // ── TokenProvider ─────────────────────────────────────────────────────────────
 
 /// A source of bearer access tokens.
@@ -229,7 +244,8 @@ pub enum TokenEndpointAuthStyle {
 ///
 /// - Tokens are cached until shortly before expiry
 ///   ([`with_refresh_leeway`](Self::with_refresh_leeway), default 30 s before
-///   `expires_in` elapses) and refreshed on demand.
+///   `expires_in` elapses, but never less than half the lifetime, so a
+///   short-lived token is still reused) and refreshed on demand.
 /// - Concurrent callers needing a refresh collapse into a single token
 ///   request (single-flight), and all of them get that request's outcome —
 ///   its failure as well as its success, so a dead endpoint costs every
@@ -393,6 +409,9 @@ impl OAuth2ClientCredentials {
     }
 
     /// Sets how long before expiry a cached token is refreshed (default 30 s).
+    ///
+    /// Capped at half the token's lifetime: a token that lives 20 s is
+    /// cached for 10 s rather than not at all.
     #[must_use]
     pub const fn with_refresh_leeway(mut self, leeway: Duration) -> Self {
         self.refresh_leeway = leeway;
@@ -457,9 +476,7 @@ impl OAuth2ClientCredentials {
             )));
         }
 
-        let ttl = token_resp.expires_in.map_or(NO_EXPIRY_CACHE_TTL, |secs| {
-            Duration::from_secs(secs).saturating_sub(self.refresh_leeway)
-        });
+        let ttl = cache_ttl(token_resp.expires_in, self.refresh_leeway);
         Ok((token_resp.access_token, ttl))
     }
 
@@ -1039,9 +1056,9 @@ mod tests {
         let hits = Arc::new(AtomicUsize::new(0));
         let addr = spawn_token_server(
             vec![
-                // expires_in below the refresh leeway → refresh_after is now,
-                // so the next call must fetch again.
-                (200, token_body("tok-1", Some(1))),
+                // expires_in 0: already expired, so the next call must
+                // fetch again.
+                (200, token_body("tok-1", Some(0))),
                 (200, token_body("tok-2", Some(3600))),
             ],
             Arc::clone(&captured),
@@ -1053,6 +1070,51 @@ mod tests {
         assert_eq!(p.access_token().await.unwrap(), "tok-1");
         assert_eq!(p.access_token().await.unwrap(), "tok-2");
         assert_eq!(hits.load(Ordering::SeqCst), 2);
+    }
+
+    /// C15 (audit 2026-09-22): a lifetime at or under the 30 s leeway cached
+    /// for zero, so every call went to the token endpoint. A 20 s token must
+    /// be reused for a fraction of its life instead.
+    #[tokio::test]
+    async fn a_token_shorter_than_the_leeway_is_still_cached() {
+        let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let addr = spawn_token_server(
+            vec![(200, token_body("short", Some(20)))],
+            Arc::clone(&captured),
+            Arc::clone(&hits),
+        )
+        .await;
+
+        let p = OAuth2ClientCredentials::new(format!("http://{addr}/token"), "cid", "csec");
+        assert_eq!(p.access_token().await.unwrap(), "short");
+        assert_eq!(p.access_token().await.unwrap(), "short");
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "a 20 s token must not be refetched on the next call"
+        );
+    }
+
+    #[test]
+    fn cache_ttl_keeps_at_least_half_the_lifetime() {
+        let leeway = Duration::from_secs(30);
+        let secs = Duration::from_secs;
+        // Long-lived: the leeway applies in full, as before.
+        assert_eq!(cache_ttl(Some(3600), leeway), secs(3570));
+        assert_eq!(cache_ttl(Some(61), leeway), secs(31));
+        // At twice the leeway both rules agree.
+        assert_eq!(cache_ttl(Some(60), leeway), secs(30));
+        // Shorter: half the lifetime, where the leeway would leave less.
+        assert_eq!(cache_ttl(Some(40), leeway), secs(20));
+        assert_eq!(cache_ttl(Some(30), leeway), secs(15));
+        assert_eq!(cache_ttl(Some(20), leeway), secs(10));
+        assert_eq!(cache_ttl(Some(1), leeway), Duration::from_millis(500));
+        assert_eq!(cache_ttl(Some(0), leeway), Duration::ZERO);
+        // No leeway: the whole lifetime.
+        assert_eq!(cache_ttl(Some(100), Duration::ZERO), secs(100));
+        // No expires_in: the fixed re-check interval.
+        assert_eq!(cache_ttl(None, leeway), NO_EXPIRY_CACHE_TTL);
     }
 
     #[tokio::test]
