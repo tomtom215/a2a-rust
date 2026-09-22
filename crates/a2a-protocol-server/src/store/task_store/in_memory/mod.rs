@@ -37,7 +37,7 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::MessageId;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
-use a2a_protocol_types::task::{Task, TaskId};
+use a2a_protocol_types::task::{Task, TaskId, TaskStatus};
 use tokio::sync::RwLock;
 
 use super::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore, TaskStoreConfig};
@@ -195,6 +195,60 @@ impl StoreData {
                 log,
             },
         );
+    }
+
+    /// Replaces a stored task's status in place, re-keying the indexes.
+    ///
+    /// [`StoreData::insert`] is the general path and takes the whole task to
+    /// do it; a status change needs none of the rest. The order key is derived
+    /// from the status timestamp (§3.1.4), so the record still has to move
+    /// between keys — but its history, artifacts and log stay exactly where
+    /// they are rather than being rebuilt around a new clone.
+    ///
+    /// Returns `false` when there is no such task, which is the caller's
+    /// signal to fall back to a full save rather than drop the transition.
+    pub(super) fn update_status(
+        &mut self,
+        task_id: &TaskId,
+        status: TaskStatus,
+        last_updated: Instant,
+    ) -> bool {
+        let Some(entry) = self.entries.get(task_id) else {
+            return false;
+        };
+        let old_key = entry.order_key;
+        let ctx = entry.task.context_id.0.clone();
+
+        // Same key derivation as `insert`, including the sequence bump, so a
+        // delta and a save order identically against each other.
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        let millis = status
+            .timestamp
+            .as_deref()
+            .and_then(a2a_protocol_types::parse_iso8601_to_unix_millis)
+            .unwrap_or_else(now_unix_millis);
+        let key: OrderKey = (millis, seq);
+
+        self.order_index.remove(&old_key);
+        if let Some(map) = self.context_index.get_mut(&ctx) {
+            map.remove(&old_key);
+            if map.is_empty() {
+                self.context_index.remove(&ctx);
+            }
+        }
+        self.order_index.insert(key, task_id.clone());
+        self.context_index
+            .entry(ctx)
+            .or_default()
+            .insert(key, task_id.clone());
+
+        if let Some(entry) = self.entries.get_mut(task_id) {
+            entry.task.status = status;
+            entry.order_key = key;
+            entry.last_updated = last_updated;
+        }
+        true
     }
 
     /// Removes a task by ID, maintaining all indexes.
@@ -723,6 +777,37 @@ impl TaskStore for InMemoryTaskStore {
     /// artifact at that index, or fewer parts present than the delta claims
     /// were appended. Those are all "cannot apply safely", and a whole-record
     /// replace is always right — a wrong in-place edit would not be.
+    /// Edits the stored status in place rather than replacing the record.
+    ///
+    /// `save` here is a deep clone of the whole task, history included, so a
+    /// status transition on a long conversation costs what that conversation
+    /// has accumulated. This costs a `TaskStatus` and two index re-keys.
+    ///
+    /// Falls back to `save` when the record is absent, which is the one case
+    /// [`StoreData::update_status`] cannot apply — the same discipline
+    /// [`TaskStore::save_artifact_delta`] follows, and for the same reason: a
+    /// dropped transition would be worse than a slow one.
+    fn save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let applied = {
+                let mut store = self.data.write().await;
+                let applied = store.update_status(&task.id, task.status.clone(), Instant::now());
+                drop(store);
+                applied
+            };
+            if applied {
+                trace_debug!(task_id = %task.id, "applied status delta in place");
+                // No new entry, so the store cannot have grown past its bound
+                // and there is nothing for eviction to reconsider.
+                return Ok(());
+            }
+            self.save(task).await
+        })
+    }
+
     fn save_artifact_delta<'a>(
         &'a self,
         task: &'a Task,
@@ -944,6 +1029,170 @@ mod tests {
             artifacts: None,
             metadata: None,
         }
+    }
+
+    // ── save_status_delta ────────────────────────────────────────────────
+    //
+    // The contract in `TaskStore::save_status_delta` is that the store ends
+    // up holding exactly what `save` would have left it holding. Each of
+    // these names one way an in-place edit could fail to and does not.
+
+    /// The status moves and nothing else does.
+    ///
+    /// The whole reason the method exists is that history is expensive to
+    /// carry, so a delta that silently dropped it would be fast and wrong.
+    #[tokio::test]
+    async fn a_status_delta_moves_the_status_and_keeps_the_rest() {
+        let store = InMemoryTaskStore::new();
+        let mut task = make_task("t-delta", TaskState::Working);
+        task.history = Some(vec![
+            a2a_protocol_types::message::Message::user_text("m-1", "first"),
+            a2a_protocol_types::message::Message::user_text("m-2", "second"),
+        ]);
+        task.metadata = Some(serde_json::json!({"keep": true}));
+        store.save(&task).await.expect("seed");
+
+        let mut next = task.clone();
+        next.status = TaskStatus::with_timestamp(TaskState::Completed);
+        // Deliberately not carrying the rest: the delta must read it from
+        // what is stored, not from what the caller happened to pass.
+        next.history = None;
+        next.metadata = None;
+        store.save_status_delta(&next).await.expect("delta");
+
+        let stored = store
+            .get(&TaskId::new("t-delta"))
+            .await
+            .expect("get")
+            .expect("present");
+        assert_eq!(
+            stored.status.state,
+            TaskState::Completed,
+            "the status is the one field a status delta must move"
+        );
+        assert_eq!(
+            stored.history.as_ref().map(Vec::len),
+            Some(2),
+            "history is what `save` would have kept, so the delta must keep it"
+        );
+        assert_eq!(
+            stored.metadata,
+            Some(serde_json::json!({"keep": true})),
+            "metadata is not the caller's to drop by omitting it"
+        );
+    }
+
+    /// The record moves in the ordering, because §3.1.4 orders by status
+    /// timestamp and a status delta changes exactly that.
+    ///
+    /// An in-place edit that skipped the re-key would leave `list` — and so
+    /// `find_task_by_context`, which every send calls — answering with a
+    /// stale order.
+    #[tokio::test]
+    async fn a_status_delta_re_keys_the_ordering() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(&make_task_with_ctx(
+                "older",
+                "ctx-order",
+                TaskState::Working,
+            ))
+            .await
+            .expect("seed older");
+        store
+            .save(&make_task_with_ctx(
+                "newer",
+                "ctx-order",
+                TaskState::Working,
+            ))
+            .await
+            .expect("seed newer");
+
+        let params = ListTasksParams {
+            context_id: Some("ctx-order".to_owned()),
+            ..Default::default()
+        };
+        let before = store.list(&params).await.expect("list");
+        assert_eq!(
+            before.tasks.first().map(|t| t.id.0.as_str()),
+            Some("newer"),
+            "most recently updated first, before any delta"
+        );
+
+        let mut moved = make_task_with_ctx("older", "ctx-order", TaskState::Working);
+        moved.status = TaskStatus::with_timestamp(TaskState::Completed);
+        store.save_status_delta(&moved).await.expect("delta");
+
+        let after = store.list(&params).await.expect("list");
+        assert_eq!(
+            after.tasks.first().map(|t| t.id.0.as_str()),
+            Some("older"),
+            "a status delta changes the status timestamp, so the record has to \
+             move to the front exactly as a full save would have moved it"
+        );
+        assert_eq!(
+            after.tasks.len(),
+            2,
+            "re-keying must not lose or duplicate the record"
+        );
+    }
+
+    /// A delta for a task the store does not hold falls back to saving it.
+    ///
+    /// The alternative is dropping a transition, which is the one outcome
+    /// worse than a slow one.
+    #[tokio::test]
+    async fn a_status_delta_for_an_absent_task_falls_back_to_a_save() {
+        let store = InMemoryTaskStore::new();
+        let task = make_task("t-absent", TaskState::Completed);
+
+        store.save_status_delta(&task).await.expect("delta");
+
+        let stored = store
+            .get(&TaskId::new("t-absent"))
+            .await
+            .expect("get")
+            .expect("the fallback must have inserted it");
+        assert_eq!(stored.status.state, TaskState::Completed);
+    }
+
+    /// The task's event log survives a status delta.
+    ///
+    /// `StoreData::insert` carries the log across a replace on purpose; an
+    /// in-place edit that rebuilt the entry would be the one path that did
+    /// not, and the log is what a resuming subscriber reads.
+    #[tokio::test]
+    async fn a_status_delta_keeps_the_event_log() {
+        let store = InMemoryTaskStore::new();
+        let task = make_task("t-log", TaskState::Working);
+        store.save(&task).await.expect("seed");
+        let event = a2a_protocol_types::events::StreamResponse::StatusUpdate(
+            a2a_protocol_types::events::TaskStatusUpdateEvent {
+                task_id: task.id.clone(),
+                context_id: task.context_id.clone(),
+                status: TaskStatus::new(TaskState::Working),
+                metadata: None,
+            },
+        );
+        store
+            .append_event(&task.id, 1, &event)
+            .await
+            .expect("append");
+
+        let mut next = task.clone();
+        next.status = TaskStatus::with_timestamp(TaskState::Completed);
+        store.save_status_delta(&next).await.expect("delta");
+
+        let read = store
+            .read_events(&task.id, 0, 10)
+            .await
+            .expect("read events");
+        assert_eq!(
+            read.len(),
+            1,
+            "the log is the record of what the agent emitted; a status delta \
+             is not an event and must not clear it"
+        );
     }
 
     // ── CRUD basics ──────────────────────────────────────────────────────

@@ -16,7 +16,7 @@ then the branch table's three merges and the corrections under **Still open**,
 then the post-0.13.0 audit work on `claude/optimistic-bell-680i9p` (see its
 section below), which closed item 7 and changed the branch's own row, and then
 the swarm-scale experiment on `claude/busy-cerf-ta682r`, then its
-shared-nothing and cost arms and the fix program they imply.
+shared-nothing and cost arms, the fix program they imply, and the first fix.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -1239,11 +1239,27 @@ container.
 
 The fix program, in the order the evidence supports:
 
-1. **Stop the avoidable O(history) work on the send path.** Non-breaking and
-   needed under any larger plan: take the stored task by value into `create`
-   so its history moves rather than clones, and give the send path a way to
-   learn `(task id, is terminal)` from a context without materialising tasks.
-2. **Decide whether `Task::history` belongs inside the `Task` snapshot.** The
+1. ~~**Stop the avoidable O(history) work on the send path.**~~ **Started, and
+   the first piece landed.** `TaskStore::save_status_delta` is additive (its
+   default delegates to `save`), overridden in the in-memory store to edit the
+   status in place and re-key the indexes. One turn of 512 status events on a
+   channel holding 600 messages: 54,239µs with `save`, 1,839µs with the delta,
+   and the turn stops growing with the channel's age. It does **not**
+   measurably move a turn that emits one event, and the report says so.
+
+   What that bought, and what it did not, is now measured rather than guessed.
+   Timing the stages of `commit_task` in a temporary build (reverted) gives,
+   per send at the history cap: `find_task_by_context` ~280µs,
+   `build_initial_task` ~300µs, `persist_initial_task` ~440µs — together
+   roughly 40-50% of a 2,400µs request, and all three scale with history.
+
+   The rest of item 1 as originally written turns out not to be separable.
+   `build_initial_task` needs the stored history to carry it forward and
+   `build_request_context` needs the stored task for the executor's view of
+   the previous turn, so neither clone can simply become a move. That is item
+   2, not a cleanup.
+2. **Decide whether `Task::history` belongs inside the `Task` snapshot.**
+   Approved on 2026-09-21 as the next piece, after the local cleanup. The
    root cause is that it does, so every clone and every save is O(history).
    Moving it beside the snapshot — the shape the event log already has — makes
    save and get O(1) and assembles history only for `GetTask`. It touches the

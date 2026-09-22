@@ -83,7 +83,7 @@ pub(super) async fn process_event_bg(
                     "invalid state transition rejected (background); marking task as failed"
                 );
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                if let Err(e) = task_store.save(last_task).await {
+                if let Err(e) = task_store.save_status_delta(last_task).await {
                     trace_error!(
                         task_id = %task_id,
                         error = %e,
@@ -103,7 +103,7 @@ pub(super) async fn process_event_bg(
                 message: update.status.message.clone(),
                 timestamp: update.status.timestamp.clone(),
             };
-            if let Err(e) = task_store.save(last_task).await {
+            if let Err(e) = task_store.save_status_delta(last_task).await {
                 trace_error!(
                     task_id = %task_id,
                     error = %e,
@@ -308,7 +308,7 @@ pub(super) async fn process_event_bg(
         Err(_e) => {
             let prev_status = last_task.status.clone();
             last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-            if let Err(save_err) = task_store.save(last_task).await {
+            if let Err(save_err) = task_store.save_status_delta(last_task).await {
                 trace_error!(
                     task_id = %task_id,
                     original_error = %_e,

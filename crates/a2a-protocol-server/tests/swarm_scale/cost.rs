@@ -39,7 +39,9 @@
 
 use std::time::Instant;
 
-use super::harness::{Client, Deployment, Outcome, client, open_channel, percentile, post, settle};
+use super::harness::{
+    Client, Deployment, Outcome, client, open_channel, percentile, post, set_turn_shape, settle,
+};
 
 /// Posts made in the ageing probe. Past 1024 the history cap is in force, so
 /// the curve should turn over inside this range if history is the cost.
@@ -182,5 +184,61 @@ async fn store_size_does_not_change_one_channels_cost() {
         );
     }
 
+    deployment.stop().await;
+}
+
+/// How long one turn takes when it emits many status events on an aged
+/// channel.
+///
+/// The shape `TaskStore::save_status_delta` exists for. Each status event the
+/// executor emits is one store write on the collector's path; with a full
+/// `save` each of those copies the whole task, history included, so a turn
+/// that emits `n` events on a channel holding `h` messages does `n * h` work.
+/// The delta makes each write proportional to the status instead.
+///
+/// The ageing probe above cannot see this: its turns emit one event each, so
+/// they pay this cost once against four other O(history) copies that dominate.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "load experiment; run explicitly with --ignored (see the module docs)"]
+async fn a_turn_that_emits_many_events_on_an_aged_channel() {
+    let deployment = Deployment::start().await;
+    let addr = deployment.addr;
+    let c = client();
+
+    println!("\n── one turn of N events, on a channel of H messages ───────");
+    println!("{}", Deployment::describe());
+    println!(
+        "\n{:>10}  {:>10}  {:>11}  {:>12}",
+        "history", "events", "turn(us)", "us per event"
+    );
+
+    for history in [1_usize, 200, 600] {
+        set_turn_shape(0, 1);
+        let (task, context) = open_channel(&c, addr).await;
+        settle(&c, addr, &task, &context).await;
+        for n in 0..history {
+            let posted = post(&c, addr, Some(&task), Some(&context), n as u64).await;
+            assert_eq!(posted.outcome, Outcome::Accepted, "ageing post refused");
+        }
+
+        let events = 512_u64;
+        set_turn_shape(0, events);
+        let mut runs = Vec::new();
+        for n in 0..5_u64 {
+            let started = Instant::now();
+            let posted = post(&c, addr, Some(&task), Some(&context), n).await;
+            assert_eq!(posted.outcome, Outcome::Accepted, "burst turn refused");
+            runs.push(started.elapsed().as_micros());
+        }
+        let p50 = percentile(&mut runs, 0.50);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "microsecond medians are far below the f64 integer range"
+        )]
+        let per_event = p50 as f64 / f64::from(u32::try_from(events).unwrap_or(u32::MAX));
+        println!("{history:>10}  {events:>10}  {p50:>11}  {per_event:>12.1}");
+    }
+
+    set_turn_shape(0, 1);
     deployment.stop().await;
 }

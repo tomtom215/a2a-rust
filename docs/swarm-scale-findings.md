@@ -298,6 +298,54 @@ again on each status event. That attribution is **read from the source and
 consistent with the controlled result above, but not independently profiled** —
 no profiler is available in this container.
 
+## Fix 1 — `TaskStore::save_status_delta`, and what it did and did not do
+
+The first change made off the back of finding 6. `save` takes a whole `Task`,
+and a `Task` carries its history, so every status transition copied whatever
+the conversation had accumulated. `TaskStore::save_status_delta` is an
+additive trait method — default implementation delegates to `save`, so no
+existing store breaks — that the in-memory store overrides to edit the stored
+status in place and re-key its indexes, touching neither history nor the
+event log. It follows `save_artifact_delta`, which already exists for the same
+reason on the artifact path.
+
+**Where it pays.** A turn emitting `n` status events on a channel holding `h`
+messages was `n * h` work. One turn of 512 events, concurrency one:
+
+| history | turn with `save` | turn with `save_status_delta` |
+|---|---|---|
+| 1 | 1,853µs | 1,068µs |
+| 200 | 19,591µs | 1,276µs |
+| 600 | 54,239µs | 1,839µs |
+
+The ratio at 600 messages is 31x, but the shape matters more than the ratio:
+with `save` the turn grows with the channel's age and with the delta it does
+not.
+
+**Where it does not.** On the ageing probe — turns that emit one event each —
+it is within noise: the plateau moved from about 2,495µs to about 2,477µs.
+That is not a disappointment, it is the measurement working. A single-event
+turn pays this cost once, against four other O(history) copies that dominate
+it.
+
+Those four were then measured directly rather than guessed at, by timing the
+stages of `commit_task` in a temporary build (reverted; `git diff` over `src/`
+carries none of it). Per send, at the history cap:
+
+| stage | at history 1 | at history 1,024 |
+|---|---|---|
+| `find_task_by_context` | 3µs | ~280µs |
+| `build_initial_task` | 4µs | ~300µs |
+| `persist_initial_task` | 12µs | ~440µs |
+
+All three scale with history, and together they are roughly 40–50% of a
+2,400µs request. The rest is spread across the executor spawn, the event-log
+append, the snapshot read for the response, and HTTP.
+
+This is why the remaining work is structural rather than more delta methods:
+the unit passed through the send path is a `Task`, and a `Task` carries its
+history, so every stage that touches one pays for the conversation's length.
+
 ## What this means for building a coordination channel on A2A
 
 * **Shard by context, at roughly 4–16 writers per channel.** Not by task:

@@ -305,6 +305,44 @@ pub trait TaskStore: Send + Sync + 'static {
         self.save(task)
     }
 
+    /// Persists a task whose **status alone** changed, without rewriting the
+    /// rest of the record.
+    ///
+    /// The same argument as [`TaskStore::save_artifact_delta`], applied to the
+    /// other per-event write on the hot path. A `Task` carries its `history`,
+    /// which the send path grows by one message per turn up to
+    /// [`MAX_TASK_HISTORY_MESSAGES`](crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES),
+    /// so a turn emitting `n` status events through `save` on a channel
+    /// holding `h` messages does `n * h` work. Measured on one turn of 512
+    /// events against the in-memory store, 54,239µs at `h` = 600 became
+    /// 1,839µs, and the turn stopped growing with the channel's age. It does
+    /// not measurably change a turn that emits one event — four other
+    /// O(history) copies dominate that. `docs/swarm-scale-findings.md` has
+    /// both runs and the attribution.
+    ///
+    /// # What an override must preserve
+    ///
+    /// It **must** leave the store holding exactly what `save(task)` would
+    /// have, which for an ordered store includes the position: §3.1.4 orders
+    /// by status timestamp, so a status change moves the record and an
+    /// in-place edit still has to re-key its indexes. An implementation that
+    /// cannot apply the change — no such record — must fall back to
+    /// `save(task)` rather than drop the transition.
+    ///
+    /// Callers must use this only when the status is genuinely the only field
+    /// that moved; the background processor appends to `history` on an agent
+    /// `Message` event and calls `save` for exactly that reason.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
+    fn save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.save(task)
+    }
+
     // ── The event log ───────────────────────────────────────────────────
     //
     // A task's state is a *fold*: a stored snapshot folded together with
