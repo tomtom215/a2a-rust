@@ -25,7 +25,7 @@ use a2a_protocol_types::AgentCard;
 use crate::builder::ClientBuilder;
 use crate::config::ClientConfig;
 use crate::error::ClientResult;
-use crate::interceptor::InterceptorChain;
+use crate::interceptor::{ClientRequest, InterceptorChain};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
 
@@ -103,6 +103,48 @@ impl A2aClient {
             interceptors,
             config,
         }
+    }
+
+    /// Sends an intercepted request, and lets the interceptors see a
+    /// failure.
+    ///
+    /// `after` hooks run only on success, so without this an interceptor
+    /// never learns that the agent rejected what it attached — which is how
+    /// a bearer token the agent answered with `401` kept being sent until it
+    /// expired. The params move to the transport, so `req.params` reads as
+    /// `null` in the error hook.
+    pub(crate) async fn send_intercepted(
+        &self,
+        method: &str,
+        req: &mut ClientRequest,
+    ) -> ClientResult<serde_json::Value> {
+        let params = std::mem::take(&mut req.params);
+        let result = self
+            .transport
+            .send_request(method, params, &req.extra_headers)
+            .await;
+        if let Err(ref e) = result {
+            self.interceptors.run_on_error(req, e).await;
+        }
+        result
+    }
+
+    /// [`send_intercepted`](Self::send_intercepted) for a streaming method:
+    /// a stream the agent refuses to open is reported the same way.
+    pub(crate) async fn send_streaming_intercepted(
+        &self,
+        method: &str,
+        req: &mut ClientRequest,
+    ) -> ClientResult<EventStream> {
+        let params = std::mem::take(&mut req.params);
+        let result = self
+            .transport
+            .send_streaming_request(method, params, &req.extra_headers)
+            .await;
+        if let Err(ref e) = result {
+            self.interceptors.run_on_error(req, e).await;
+        }
+        result
     }
 }
 

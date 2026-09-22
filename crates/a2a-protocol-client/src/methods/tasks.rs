@@ -35,10 +35,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -67,10 +64,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -105,10 +99,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -202,10 +193,7 @@ impl A2aClient {
         }
         self.interceptors.run_before(&mut req).await?;
 
-        let stream = self
-            .transport
-            .send_streaming_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let stream = self.send_streaming_intercepted(METHOD, &mut req).await?;
         let stream = self.configure_stream(stream);
 
         // FIX(#6): Call run_after() for streaming requests so interceptors

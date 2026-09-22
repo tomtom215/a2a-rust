@@ -110,6 +110,13 @@ impl CallInterceptor for RequestIdInterceptor {
 }
 ```
 
+`after` runs only when the call succeeds. To see failures, override
+`on_error`, which has a no-op default: it gets the request as `before` left
+it (its params have gone to the transport, so they read as `null`) and the
+`ClientError`, runs in reverse registration order, and cannot change the
+error the caller receives. `BearerAuthInterceptor` uses it to drop a token
+the agent answered with `401`, so the next call fetches a new one.
+
 ### Adding Client Interceptors
 
 ```rust,ignore

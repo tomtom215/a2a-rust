@@ -171,6 +171,16 @@ impl TokenCache {
         }
     }
 
+    /// Forgets `token` if it is the one cached, so the next caller fetches
+    /// another. A different cached token (already refreshed by someone else)
+    /// is kept, and an attempt in flight is left to finish.
+    pub(super) fn invalidate(&self, token: &str) {
+        let mut state = self.lock();
+        if state.token.as_ref().is_some_and(|t| t.token == token) {
+            state.token = None;
+        }
+    }
+
     /// How many callers are waiting on the attempt in flight, for tests.
     #[cfg(test)]
     pub(super) fn waiters(&self) -> usize {

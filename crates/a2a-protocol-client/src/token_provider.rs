@@ -138,6 +138,24 @@ pub trait TokenProvider: Send + Sync + 'static {
     /// Returns a [`ClientError`] when a token cannot be produced (e.g. the
     /// token endpoint rejected the credentials or is unreachable).
     fn access_token(&self) -> Pin<Box<dyn Future<Output = ClientResult<String>> + Send + '_>>;
+
+    /// Tells the provider the agent rejected `token` (HTTP `401`), so it
+    /// should not hand that token out again.
+    ///
+    /// [`BearerAuthInterceptor`] calls this; the next
+    /// [`access_token`](Self::access_token) should then produce a different
+    /// token. Only `token` is meant: a provider that has already moved on to
+    /// a newer one keeps it.
+    ///
+    /// **Not overriding it** (the default does nothing) means a rejected
+    /// token — revoked, rotated signing key, wrong audience — keeps being
+    /// sent, and every call fails the same way, until the provider's own
+    /// expiry replaces it. [`OAuth2ClientCredentials`] overrides it;
+    /// [`StaticTokenProvider`] has nothing else to offer and keeps the
+    /// default.
+    fn invalidate(&self, token: &str) {
+        let _ = token;
+    }
 }
 
 /// A [`TokenProvider`] that always returns the same fixed token.
@@ -176,6 +194,13 @@ impl TokenProvider for StaticTokenProvider {
 
 /// A [`CallInterceptor`] that injects `Authorization: Bearer <token>` from a
 /// [`TokenProvider`] before every request.
+///
+/// When the agent answers `401`, it calls
+/// [`TokenProvider::invalidate`] with the token it sent, so a refused token
+/// is not sent again. That catches a `401` surfaced as
+/// [`ClientError::UnexpectedStatus`], which is how the JSON-RPC and REST
+/// bindings report it; gRPC reports `Unauthenticated` differently today and
+/// is not covered.
 ///
 /// Because the token is fetched per request, a provider that refreshes (like
 /// [`OAuth2ClientCredentials`]) keeps long-lived clients authenticated across
@@ -222,6 +247,26 @@ impl CallInterceptor for BearerAuthInterceptor {
         _resp: &'a ClientResponse,
     ) -> impl Future<Output = ClientResult<()>> + Send + 'a {
         async move { Ok(()) }
+    }
+
+    /// A `401` from the agent means the token this interceptor attached was
+    /// refused, so the provider is told to stop serving it. The failing call
+    /// still fails; the next one gets a fresh token. Other errors say
+    /// nothing about the token and leave it cached.
+    fn on_error<'a>(
+        &'a self,
+        req: &'a ClientRequest,
+        err: &'a ClientError,
+    ) -> impl Future<Output = ()> + Send + 'a {
+        if matches!(err, ClientError::UnexpectedStatus { status: 401, .. })
+            && let Some(token) = req
+                .extra_headers
+                .get("authorization")
+                .and_then(|v| v.strip_prefix("Bearer "))
+        {
+            self.provider.invalidate(token);
+        }
+        std::future::ready(())
     }
 }
 
@@ -540,6 +585,10 @@ impl TokenProvider for OAuth2ClientCredentials {
         // and for why this is cancellation-safe.
         Box::pin(self.tokens.get(self.failure_backoff, || self.refresh()))
     }
+
+    fn invalidate(&self, token: &str) {
+        self.tokens.invalidate(token);
+    }
 }
 
 /// RFC 6749 §5.1 successful token response (subset).
@@ -708,6 +757,9 @@ fn encode_form(pairs: &[(String, String)]) -> String {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod bearer_tests;
 
 #[cfg(test)]
 mod tests {

@@ -256,3 +256,35 @@ fn replicas_keep_their_variant_or_retry_class() {
         }
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn invalidating_the_cached_token_forces_a_refresh() {
+    let cache = TokenCache::default();
+    let script = Script::new(vec![ok("a", 60), ok("b", 60)]);
+    script.release(2);
+
+    assert_eq!(get(&cache, &script, Duration::ZERO).await.expect("a"), "a");
+    cache.invalidate("a");
+    assert_eq!(get(&cache, &script, Duration::ZERO).await.expect("b"), "b");
+    assert_eq!(script.calls(), 2);
+}
+
+/// A `401` for a token that has already been replaced must not throw away
+/// its replacement.
+#[tokio::test(start_paused = true)]
+async fn invalidating_a_stale_token_keeps_the_current_one() {
+    let cache = TokenCache::default();
+    let script = Script::new(vec![ok("new", 60)]);
+    script.release(1);
+
+    assert_eq!(
+        get(&cache, &script, Duration::ZERO).await.expect("new"),
+        "new"
+    );
+    cache.invalidate("old");
+    assert_eq!(
+        get(&cache, &script, Duration::ZERO).await.expect("new"),
+        "new"
+    );
+    assert_eq!(script.calls(), 1);
+}

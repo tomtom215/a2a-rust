@@ -40,10 +40,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -80,10 +77,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -114,10 +108,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -154,10 +145,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),

@@ -111,7 +111,12 @@ let client = ClientBuilder::new("https://agent.example.com")
 
 `BearerAuthInterceptor` asks its provider for a token before **every** request,
 so a provider that refreshes keeps a long-lived client authenticated across
-token rotations.
+token rotations. When the agent answers `401` (surfaced as
+`ClientError::UnexpectedStatus` over JSON-RPC and REST), the interceptor calls
+`TokenProvider::invalidate` with the token it sent. The call that got the `401`
+still fails, but the next one fetches a new token instead of resending the
+refused one until it expires. A custom `TokenProvider` gets this only if it
+overrides `invalidate`; the default does nothing.
 
 ### OAuth 2.0 client credentials
 
