@@ -58,6 +58,9 @@ a2a-protocol-types  = { path = "../crates/a2a-protocol-types" }
 # Crates the book's examples use alongside the SDK. A doctest that says
 # `#[tokio::main]` needs tokio to be a real dependency here, or the block fails
 # for a reason that has nothing to do with the SDK.
+# The push-notifications page's webhook example reads a `hyper::Request`'s
+# headers, which is the type a reader's hyper or axum receiver hands them.
+hyper      = { workspace = true }
 serde_json = { workspace = true }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
 uuid       = { workspace = true }

@@ -8,6 +8,7 @@
 pub mod config_store;
 pub mod sender;
 pub mod tenant_config_store;
+pub mod webhook;
 
 #[cfg(feature = "sqlite")]
 pub mod sqlite_config_store;

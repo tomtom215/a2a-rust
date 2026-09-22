@@ -153,6 +153,19 @@ async fn mock_server_with_headers(
     (addr, handle)
 }
 
+/// The values of every header line named `name` (case-insensitively) in a
+/// raw captured request. Substring checks cannot tell `a2a-notification-token`
+/// from the `x-a2a-notification-token` line that contains it.
+fn header_values<'a>(request: &'a str, name: &str) -> Vec<&'a str> {
+    request
+        .lines()
+        .take_while(|l| !l.is_empty())
+        .filter_map(|l| l.split_once(':'))
+        .filter(|(k, _)| k.trim().eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.trim())
+        .collect()
+}
+
 // ── Success tests ───────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -604,14 +617,20 @@ async fn notification_token_header_is_sent() {
     let reqs = captured.lock().unwrap();
     assert!(!reqs.is_empty());
     let req = &reqs[0];
-    assert!(
-        req.contains("x-a2a-notification-token: my-notification-token"),
-        "should contain the canonical X-A2A-Notification-Token header \
-         (what official-SDK webhook receivers read), got: {req}"
+    // Both spellings, because the two reference SDKs disagree and the spec
+    // names neither: a2a-sdk (Python) 1.1.5 sends `X-A2A-Notification-Token`
+    // (`base_push_notification_sender.py`); a2a-go v2.5.0 sends
+    // `A2A-Notification-Token` (`a2asrv/push/sender.go`). A webhook written
+    // against either must receive the token.
+    assert_eq!(
+        header_values(req, "x-a2a-notification-token"),
+        ["my-notification-token"],
+        "the X-A2A-Notification-Token spelling (a2a-sdk), got: {req}"
     );
-    assert!(
-        req.contains("a2a-notification-token: my-notification-token"),
-        "should still contain the legacy header until 0.8, got: {req}"
+    assert_eq!(
+        header_values(req, "a2a-notification-token"),
+        ["my-notification-token"],
+        "the A2A-Notification-Token spelling (a2a-go), got: {req}"
     );
     handle.abort();
 }
@@ -643,13 +662,15 @@ async fn both_auth_and_token_headers_are_sent() {
         req.contains("Bearer token-123") || req.contains("bearer token-123"),
         "should contain Bearer auth"
     );
-    assert!(
-        req.contains("x-a2a-notification-token: notif-456"),
-        "should contain the canonical notification token header"
+    assert_eq!(
+        header_values(req, "x-a2a-notification-token"),
+        ["notif-456"],
+        "{req}"
     );
-    assert!(
-        req.contains("a2a-notification-token: notif-456"),
-        "should still contain the legacy header until 0.8"
+    assert_eq!(
+        header_values(req, "a2a-notification-token"),
+        ["notif-456"],
+        "{req}"
     );
     handle.abort();
 }

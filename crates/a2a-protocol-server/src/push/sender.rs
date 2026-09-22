@@ -773,7 +773,11 @@ impl PushSender for HttpPushSender {
         config: &'a TaskPushNotificationConfig,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            trace_info!(url, "delivering push notification");
+            // Never the full URL: webhook URLs routinely carry the secret in
+            // their path or query, and this line is INFO (audit O16).
+            let target = super::webhook::origin_for_log(url);
+            let _ = &target;
+            trace_info!(target = %target, "delivering push notification");
 
             let is_https = url
                 .split_once("://")
@@ -893,17 +897,30 @@ impl PushSender for HttpPushSender {
                     }
                 }
 
-                // Set the notification token header if present.
+                // Set the notification token header if present — under both
+                // spellings, the same value in each.
                 //
-                // `X-A2A-Notification-Token` is the canonical name — it is what
-                // the spec's push example uses and what official-SDK webhook
-                // receivers look for. The bare `a2a-notification-token` name
-                // was this SDK's own pre-0.7 invention and was sent alongside
-                // it through 0.7 so existing receivers kept working; 0.8 stops
-                // sending it. A receiver that still reads only the bare name
-                // must be updated to the canonical one.
+                // The specification names no token header: §4.3.3's request
+                // example carries only `Authorization` and `Content-Type`. The
+                // reference SDKs disagree. a2a-sdk (Python) 1.1.5 sends
+                // `headers = {'X-A2A-Notification-Token': push_info.token}`
+                // (`base_push_notification_sender.py`); a2a-go v2.5.0 sends
+                // `http.CanonicalHeaderKey("A2A-Notification-Token")`
+                // (`a2asrv/push/sender.go`). This comment used to say the X-
+                // name is what "official-SDK webhook receivers look for",
+                // which is true of Python and false of Go: a Go webhook read
+                // no token from this sender. 0.8 had dropped the unprefixed
+                // name as this SDK's own invention; it is a2a-go's, so it is
+                // back. Sending both costs one header line, and a receiver
+                // reading either finds the token (`webhook::notification_token`
+                // reads both).
                 if let Some(ref token) = config.token {
-                    builder = builder.header("x-a2a-notification-token", token.as_str());
+                    builder = builder
+                        .header(super::webhook::NOTIFICATION_TOKEN_HEADER, token.as_str())
+                        .header(
+                            super::webhook::NOTIFICATION_TOKEN_HEADER_UNPREFIXED,
+                            token.as_str(),
+                        );
                 }
 
                 let req = builder
@@ -915,7 +932,7 @@ impl PushSender for HttpPushSender {
 
                 match request_result {
                     Ok(Ok(resp)) if resp.status().is_success() => {
-                        trace_debug!(url, "push notification delivered");
+                        trace_debug!(target = %target, "push notification delivered");
                         return Ok(());
                     }
                     Ok(Ok(resp)) => {
@@ -929,24 +946,24 @@ impl PushSender for HttpPushSender {
                             || status == hyper::StatusCode::REQUEST_TIMEOUT
                             || status == hyper::StatusCode::TOO_MANY_REQUESTS;
                         if !retryable {
-                            trace_warn!(url, attempt, status = %status, "push delivery rejected; not retrying");
+                            trace_warn!(target = %target, attempt, status = %status, "push delivery rejected; not retrying");
                             return Err(A2aError::internal(format!(
                                 "push notification got non-retryable HTTP {status}"
                             )));
                         }
                         last_err = format!("push notification got HTTP {status}");
-                        trace_warn!(url, attempt, status = %status, "push delivery failed");
+                        trace_warn!(target = %target, attempt, status = %status, "push delivery failed");
                     }
                     Ok(Err(e)) => {
                         last_err = format!("push notification failed: {e}");
-                        trace_warn!(url, attempt, error = %e, "push delivery error");
+                        trace_warn!(target = %target, attempt, error = %e, "push delivery error");
                     }
                     Err(_) => {
                         last_err = format!(
                             "push notification timed out after {}s",
                             self.request_timeout.as_secs()
                         );
-                        trace_warn!(url, attempt, "push delivery timed out");
+                        trace_warn!(target = %target, attempt, "push delivery timed out");
                     }
                 }
 

@@ -29,6 +29,7 @@ dependencies = [
  "a2a-protocol-sdk",
  "a2a-protocol-server",
  "a2a-protocol-types",
+ "hyper",
  "serde_json",
  "tokio",
  "uuid",

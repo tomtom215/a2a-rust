@@ -111,6 +111,37 @@ config.authentication = Some(AuthenticationInfo {
 
 The server includes these credentials in the `Authorization` header when POSTing to the webhook.
 
+## Receiving Push Notifications
+
+`HttpPushSender` POSTs the event as a `StreamResponse` JSON body with
+`Content-Type: application/a2a+json`, the media type §4.3.3 specifies. If the
+config has a `token`, it is sent twice, under both header names in use, with
+the same value:
+
+| Header | Who uses it |
+|---|---|
+| `X-A2A-Notification-Token` | a2a-sdk (Python) sends and reads it |
+| `A2A-Notification-Token` | a2a-go sends and reads it |
+
+The specification names no token header, and the two reference SDKs picked
+different ones, so a webhook written against either one works with this
+sender. Read the token in your own webhook the same lenient way:
+
+```rust
+use a2a_protocol_server::push::webhook::notification_token;
+
+fn token_of(req: &hyper::Request<()>) -> Option<&str> {
+    // Either spelling; `None` if two *different* tokens arrive.
+    notification_token(req.headers())
+}
+```
+
+Compare it with the token you registered using a constant-time comparison.
+Accept `application/json` as well as `application/a2a+json`, because a2a-go
+and a2a-sdk agents send the former. Log lines from the sender name the webhook
+by `scheme://host[:port]` only, because webhook URLs often carry a secret in
+their path or query.
+
 ## Custom PushSender
 
 Implement the `PushSender` trait for custom delivery:
