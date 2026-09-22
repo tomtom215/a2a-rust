@@ -44,8 +44,8 @@
 //! Without sleeps. The executor parks on a `Notify` after emitting `Working`;
 //! replica A's store is wrapped in [`Observed`], which publishes every
 //! status-bearing write the moment it returns, so the test waits for exactly
-//! the write it needs — A persisting `Working`, then A attempting the
-//! `Completed` it must not be allowed to land — rather than for a duration.
+//! the write it needs — A persisting `Working`, then A's first write after the
+//! cancel, which must be refused — rather than for a duration.
 
 mod observed;
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
@@ -164,24 +164,15 @@ fn pair(store_a: Arc<dyn TaskStore>, store_b: Arc<dyn TaskStore>) -> Pair {
     }
 }
 
-fn message(id: &str, return_immediately: bool) -> MessageSendParams {
-    let mut params: MessageSendParams = serde_json::from_value(serde_json::json!({
+fn message(id: &str) -> MessageSendParams {
+    serde_json::from_value(serde_json::json!({
         "message": {
             "messageId": id,
             "role": "ROLE_USER",
             "parts": [{"text": "hello"}]
         }
     }))
-    .expect("params parse");
-    if return_immediately {
-        params.configuration = Some(a2a_protocol_types::params::SendMessageConfiguration {
-            accepted_output_modes: vec![],
-            task_push_notification_config: None,
-            history_length: None,
-            return_immediately: Some(true),
-        });
-    }
-    params
+    .expect("params parse")
 }
 
 /// Waits until A's log holds a write satisfying `pred`.
@@ -198,6 +189,19 @@ async fn wait_for_write(
         "replica A never made the write the test waits for: {what}; writes so far: {:?}",
         *rx.borrow()
     );
+}
+
+/// A's executor's token, once it has started. Bounded, because a send that
+/// failed before spawning the executor would otherwise leave this waiting
+/// for ever — both replicas' executors hold the channel open.
+async fn executor_started(
+    tokens: &mut mpsc::UnboundedReceiver<CancellationToken>,
+) -> CancellationToken {
+    tokio::time::timeout(DEADLINE, tokens.recv())
+        .await
+        .ok()
+        .flatten()
+        .expect("A's executor never started; did the send fail?")
 }
 
 /// B cancels, and must be told `Canceled`.
@@ -273,7 +277,7 @@ fn assert_nothing_landed_after_the_cancel(writes: &[Write]) {
 async fn streaming_cancel_race(mut pair: Pair) {
     let started = pair
         .a
-        .on_send_message(message("m-stream", false), true, None)
+        .on_send_message(message("m-stream"), true, None)
         .await
         .expect("replica A accepts the streaming send");
     let SendMessageResult::Stream(mut stream) = started else {
@@ -291,7 +295,7 @@ async fn streaming_cancel_race(mut pair: Pair) {
         );
     };
     let task_id = snapshot.id.clone();
-    let a_token = pair.a_tokens.recv().await.expect("A's executor started");
+    let a_token = executor_started(&mut pair.a_tokens).await;
 
     wait_for_write(&mut pair.a_writes, "A persisting Working", |w| {
         w.ok && w.state == TaskState::Working
@@ -350,11 +354,9 @@ async fn streaming_cancel_race(mut pair: Pair) {
 /// request rather than in the background processor.
 async fn blocking_cancel_race(mut pair: Pair) {
     let a = Arc::clone(&pair.a);
-    let send = tokio::spawn(async move {
-        a.on_send_message(message("m-block", false), false, None)
-            .await
-    });
-    let a_token = pair.a_tokens.recv().await.expect("A's executor started");
+    let send =
+        tokio::spawn(async move { a.on_send_message(message("m-block"), false, None).await });
+    let a_token = executor_started(&mut pair.a_tokens).await;
 
     wait_for_write(&mut pair.a_writes, "A persisting Working", |w| {
         w.ok && w.state == TaskState::Working
