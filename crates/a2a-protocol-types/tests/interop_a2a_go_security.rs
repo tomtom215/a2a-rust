@@ -7,7 +7,7 @@
 //!
 //! The spec's JSON for `SecurityRequirement.schemes` is the ProtoJSON of
 //! `map<string, StringList>`, so each value is an object:
-//! `{"schemes":{"oauth":{"list":["read"]}}}` (spec §4.4 example; the official
+//! `{"schemes":{"oauth":{"list":["read"]}}}` (the spec's §8.5 sample card; the official
 //! Python SDK's `MessageToDict` emits the same). a2a-go v2.5.0 writes and
 //! requires a bare array instead, `{"schemes":{"oauth":["read"]}}`
 //! (`a2a/auth.go`, `securityRequirements.Schemes map[…]SecuritySchemeScopes`),
@@ -124,4 +124,17 @@ fn malformed_scope_shapes_are_still_rejected() {
             "{json} must be rejected"
         );
     }
+}
+
+/// The error names every shape that would have been accepted, so a peer's
+/// author can see what to send.
+#[test]
+fn a_rejection_says_what_is_accepted() {
+    let err = serde_json::from_str::<SecurityRequirement>(r#"{"schemes":{"o":"read"}}"#)
+        .expect_err("a bare string is not a scope list");
+    let msg = err.to_string();
+    assert!(
+        msg.contains(r#"a StringList object {"list": [...]}, an array of strings, or null"#),
+        "{msg}"
+    );
 }

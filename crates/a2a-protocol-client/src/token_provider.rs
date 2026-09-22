@@ -153,9 +153,7 @@ pub trait TokenProvider: Send + Sync + 'static {
     /// expiry replaces it. [`OAuth2ClientCredentials`] overrides it;
     /// [`StaticTokenProvider`] has nothing else to offer and keeps the
     /// default.
-    fn invalidate(&self, token: &str) {
-        let _ = token;
-    }
+    fn invalidate(&self, _token: &str) {}
 }
 
 /// A [`TokenProvider`] that always returns the same fixed token.
