@@ -29,6 +29,20 @@ stores (`tests/cross_replica_cancel/`).
 - **The first shutdown fix cancelled at once** (fixed, `8161455`): a short
   call in flight at a rolling deploy was answered `Canceled`. Shutdown now lets
   work finish for `completion_grace` first.
+- **Two replicas starting together against a fresh PostgreSQL database can
+  crash one of them.** Medium, pre-existing, not fixed: it bites only the
+  first start on an empty database, and a restart then succeeds because the
+  tables exist. `PostgresTaskStore::new` and `from_pool` run their
+  `CREATE TABLE IF NOT EXISTS` statements unlocked. So does
+  `PgMigrationRunner::run_pending` — behind `with_migrations`, the documented
+  production constructor — for `schema_versions` in `ensure_version_table`,
+  before it takes its `LOCK TABLE`. Two concurrent `CREATE TABLE IF NOT
+  EXISTS` on a fresh database failed 29 times in 40 with `duplicate key value
+  violates unique constraint "pg_type_typname_nsp_index"` (plain `psql`,
+  PostgreSQL 16.13). `examples/resilient-agent`'s act 3, which uses
+  `with_migrations`, failed with the same error when two of its tests ran
+  against one database. The fix is a `pg_advisory_lock` around all schema
+  work, in both constructors.
 - **`tests/swarm_scale` fails under PostgreSQL with `--include-ignored`**
   ("task … is already being processed"), identically at `d423b94`. Medium,
   pre-existing, not investigated.

@@ -105,18 +105,24 @@ ends anywhere else — the server went away, a proxy cut the connection — yiel
 `ClientError::IncompleteStream` first, carrying the last SSE `id:` so you can
 resume without losing events:
 
-```rust,ignore
-let mut stream = client.subscribe_to_task(&task_id).await?;
+```rust,no_run
+# use a2a_protocol_client::{A2aClient, ClientError};
+# use a2a_protocol_types::events::StreamResponse;
+# fn handle(_event: StreamResponse) {}
+# async fn follow(client: &A2aClient, task_id: &str) -> Result<(), ClientError> {
+let mut stream = client.subscribe_to_task(task_id).await?;
 loop {
     match stream.next().await {
         Some(Ok(event)) => handle(event),
         Some(Err(ClientError::IncompleteStream { last_event_id: Some(id), .. })) => {
-            stream = client.subscribe_to_task_from(&task_id, id).await?;
+            stream = client.subscribe_to_task_from(task_id, id).await?;
         }
-        Some(Err(e)) => return Err(e.into()),
+        Some(Err(e)) => return Err(e),
         None => break,
     }
 }
+# Ok(())
+# }
 ```
 
 `EventStream::last_event_id()` exposes the same id at any point. gRPC and

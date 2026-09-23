@@ -77,7 +77,10 @@ not finish writing is named in its message rather than dropped silently. The
 task is very likely still running; the error carries the last SSE `id:` to
 resume from:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_client::{A2aClient, ClientError, EventStream};
+# async fn step(client: &A2aClient, task_id: &str, mut stream: EventStream)
+#     -> Result<EventStream, ClientError> {
 match stream.next().await {
     Some(Err(ClientError::IncompleteStream { last_event_id: Some(id), .. })) => {
         stream = client.subscribe_to_task_from(task_id, id).await?;
@@ -85,8 +88,10 @@ match stream.next().await {
     Some(Err(ClientError::IncompleteStream { last_event_id: None, .. })) => {
         stream = client.subscribe_to_task(task_id).await?; // snapshot + live
     }
-    other => { /* ... */ }
+    _other => { /* ... */ }
 }
+# Ok(stream)
+# }
 ```
 
 ### Errors on an HTTP+JSON Stream
@@ -95,9 +100,12 @@ A streaming request over HTTP+JSON reports errors as `ClientError::Protocol`
 with the exact A2A code, as unary calls do: an AIP-193 error body on a non-2xx
 answer (§11.6) decodes to, for example, `TaskNotFound` for `subscribe_to_task`
 on a missing task. So does an error the server sends *inside* an open stream,
-in either shape seen in practice — a2a-go's AIP-193 object as a data frame
-(`{"error":{"code":404,"status":"NOT_FOUND",...}}`), or this repository's
-`event: error` frame carrying an `A2aError`. The stream ends after it.
+in the shapes seen in practice: a2a-go's AIP-193 object as a data frame
+(`{"error":{"code":404,"status":"NOT_FOUND",...}}`), this repository's
+`event: error` frame carrying the same object with the error's `data` as a
+`google.protobuf.Struct` detail — decoded back into `data`, so
+`is_stream_lagged()` still works — and, from releases up to 0.13.0, an
+`event: error` frame carrying a bare `A2aError`. The stream ends after it.
 
 ### Connection Errors
 
