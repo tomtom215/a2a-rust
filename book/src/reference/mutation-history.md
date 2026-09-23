@@ -406,7 +406,9 @@ deleting it would pay that sort on every write sitting exactly at capacity.
 That argument was correct, and the fix respects it: the guard is **kept**, and
 only its spelling changes.
 
-```rust,ignore
+```rust
+# let store: Vec<u8> = Vec::new();
+# let max = 10;
 let overflow = store.len().saturating_sub(max);
 if overflow != 0 { /* collect, sort, evict */ }
 ```

@@ -140,7 +140,13 @@ a2a-protocol-client = { version = "0.13", features = ["websocket"] }
 
 ### Server
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::agent_executor;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let my_executor = MyAgent;
 use a2a_protocol_server::{WebSocketDispatcher, RequestHandlerBuilder};
 use std::sync::Arc;
 
@@ -149,6 +155,8 @@ let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
 
 // Start accepting WebSocket connections
 dispatcher.serve("0.0.0.0:3002").await?;
+# Ok(())
+# }
 ```
 
 ### Protocol
@@ -163,7 +171,10 @@ dispatcher.serve("0.0.0.0:3002").await?;
 
 ### Client
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::client::ClientBuilder;
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use std::time::Duration;
 use a2a_protocol_client::{WebSocketTransport, WebSocketTransportConfig};
 
@@ -183,6 +194,8 @@ let transport = WebSocketTransport::connect_with_config(
 let client = ClientBuilder::new("wss://agent.example.com:3002")
     .with_custom_transport(transport)
     .build()?;
+# Ok(())
+# }
 ```
 
 Because the transport is built before the client and handed to
@@ -217,7 +230,13 @@ a2a-protocol-client = { version = "0.13", features = ["grpc"] }
 
 ### Server
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let my_executor = MyAgent;
 use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
 use std::sync::Arc;
 
@@ -226,6 +245,8 @@ let config = GrpcConfig::default()
     .with_max_message_size(8 * 1024 * 1024);
 let dispatcher = GrpcDispatcher::new(handler, config);
 dispatcher.serve("0.0.0.0:50051").await?;
+# Ok(())
+# }
 ```
 
 > **Tip:** Use `serve_with_listener()` when you need to know the server address before constructing the handler (e.g., for agent cards with correct URLs). Pre-bind a `TcpListener`, extract the address, build your handler, then pass the listener.
@@ -248,7 +269,9 @@ An address that already carries `http://` or `https://` is used as-is.
 without it the connect fails with a message naming the feature rather than
 attempting a plaintext handshake against a TLS port.
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::AgentCard;
+# async fn f(card: AgentCard, ca_pem: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_client::{ClientBuilder, GrpcBareAddressScheme};
 
 // From a card whose gRPC interface says "grpc.example.com:443": TLS,
@@ -273,6 +296,8 @@ let client = ClientBuilder::from_card(&card)?
     .with_grpc_tls_config(tls)
     .build_grpc()
     .await?;
+# Ok(())
+# }
 ```
 
 #### Serving TLS
@@ -351,7 +376,12 @@ JSON-RPC and REST use SSE for streaming. WebSocket uses native text frames. gRPC
 
 The server can serve both transports simultaneously on different ports:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::agent_executor;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+# let my_executor = MyAgent;
 use a2a_protocol_sdk::server::{JsonRpcDispatcher, RestDispatcher, RequestHandlerBuilder};
 use std::sync::Arc;
 
@@ -364,6 +394,7 @@ let jsonrpc = Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler)));
 
 // REST on port 3001
 let rest = Arc::new(RestDispatcher::new(handler));
+# }
 ```
 
 All dispatchers share the same `RequestHandler`, which means they share the same task store, push config store, and executor.

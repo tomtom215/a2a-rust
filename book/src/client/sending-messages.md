@@ -6,7 +6,8 @@ The most common operation: send a message to an agent and get a response.
 
 `send_message` sends a message and waits for the task to complete:
 
-```rust,ignore
+```rust,no_run
+# async fn f(client: a2a_protocol_sdk::client::A2aClient) -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_sdk::prelude::*;
 
 let params = MessageSendParams::new(Message::user_text(
@@ -15,13 +16,17 @@ let params = MessageSendParams::new(Message::user_text(
 ));
 
 let response = client.send_message(params).await?;
+# Ok(())
+# }
 ```
 
 ## Handling the Response
 
 `SendMessageResponse` is an enum with two variants:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# fn f(response: SendMessageResponse) {
 match response {
     SendMessageResponse::Task(task) => {
         println!("Task ID: {}", task.id);
@@ -46,14 +51,20 @@ match response {
         // Some agents respond with a direct message instead of a task
         println!("Direct message: {:?}", msg);
     }
+    // The enum is `#[non_exhaustive]`: a later protocol version may add a
+    // response kind, and this arm is where a client meets it.
+    other => println!("Unrecognised response: {other:?}"),
 }
+# }
 ```
 
 ## Configuration
 
 Customize the send with `SendMessageConfiguration`:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# fn make_message(text: &str) -> Message { Message::user_text("m1", text) }
 use a2a_protocol_sdk::types::params::SendMessageConfiguration;
 
 let params = MessageSendParams::new(make_message("Translate to French")).with_configuration(
@@ -70,7 +81,9 @@ let params = MessageSendParams::new(make_message("Translate to French")).with_co
 
 To continue a conversation, include the `context_id` from a previous task:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(client: A2aClient) -> Result<(), Box<dyn std::error::Error>> {
 // No context id on the message: this starts a new conversation.
 let first_response = client
     .send_message(MessageSendParams::new(Message::user_text(
@@ -98,6 +111,8 @@ message.context_id = context_id.clone();
 let follow_up = client
     .send_message(MessageSendParams::new(message))
     .await?;
+# Ok(())
+# }
 ```
 
 ## Error Conditions
@@ -115,7 +130,8 @@ let follow_up = client
 
 Send messages with multiple content types:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
 let message = Message::user(
     uuid::Uuid::new_v4().to_string(),
     vec![

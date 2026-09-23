@@ -176,6 +176,42 @@ stores (`tests/cross_replica_cancel/`).
   those bodies are still generated and graded. Spelling a return type as
   `Result` does not reach these: the alias sits inside `Output = …`. Not
   fixed.
+- **N15 — the book taught code that does not compile, and prose the code
+  contradicts** (Medium, docs; escape class 1). Found by compiling the 127
+  `ignore`d blocks. Five could not compile as shown; each was confirmed by
+  compiling the original with only its missing context added, under nightly
+  rustdoc with the error code pinned (a wrong-code control fails): E0382 (a
+  value sent twice, `client/builder.md`), E0004 (`match` on the
+  `#[non_exhaustive]` `SendMessageResponse`, `client/sending-messages.md`),
+  E0277 (`Arc<RateLimitInterceptor>` as a `ServerInterceptor`,
+  `building-agents/interceptors.md`), E0614 (`&*writer`,
+  `deployment/testing.md`), E0283 (`ClientBuilder::new("…".into())`).
+  Prose the code contradicts, each checked against the source: `cancel`'s
+  default refuses (it has cancelled since 0.7; `executor.rs:96`); the
+  builder picks the transport from the URL (it defaults to JSON-RPC;
+  `transport_factory.rs`); CORS is on by default (off until `with_cors`);
+  `sqlx::PgConnection` is not `Send + Sync` (a `compile_fail` block asserting
+  it compiled). Two examples taught weaker security than the SDK practises: a
+  body-size check on `size_hint()` alone, which the REST dispatcher's own
+  comment calls a memory-amplification DoS, and a token check by `HashSet`
+  lookup. VALIDATED as above. **[Fixed on this branch: every block but
+  `slimrpc`'s three compiles; `check_book_code.sh` holds the rest at zero.]**
+- **N16 — types a caller builds with no constructor, and a public field of a
+  type the SDK does not export** (Low, API; next to K2). `TaskQueryParams`,
+  which `get_task` takes, and `Task`, which a custom store or a test
+  builds, have no `new`; both need a full struct literal, so adding a field
+  breaks every caller (neither is `#[non_exhaustive]`, so that is also the
+  only way). `RequestContext::cancellation_token` is a
+  `tokio_util::sync::CancellationToken`, which no crate here re-exports, so an
+  executor that stores or creates one needs its own `tokio-util` dependency
+  at a compatible version. VALIDATED while converting the book: the pages
+  now build both with literals, and `book-tests` depends on `tokio-util` for
+  the third. Open.
+- **N17 — `deny.toml` allows a licence no dependency carries** (Low,
+  hygiene). `cargo deny check` on `main` passes with a warning that the
+  `Unicode-DFS-2016` allowance matches no crate. An allowance with nothing
+  behind it widens the policy for a future dependency without anyone
+  deciding to. VALIDATED (`cargo deny check`, exit 0 with the warning). Open.
 - **N18 — `WebSocketTransport` never reconnects** (Low, client; found
   while fixing N13). Once its socket drops, `closed` stays set and every
   later call fails at once with a non-retryable `Transport("WebSocket
@@ -616,7 +652,7 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 | S9 | Medium | **[Fixed: `3f6f7d3`]** README.md:60 says `shutdown()` reports a queue it had to force-destroy. The field is "always 0" (`handler/shutdown/mod.rs:30`), and every queue is destroyed unconditionally. | VALIDATED |
 | S10 | Medium | `EventEmitter::status(state)` can't carry a progress message. `RequestContext.task_id` is a `TaskId` but `context_id` is a `String`. | VALIDATED (compile) |
 | S11 | Medium | The README's one-line `serve()` is the unhardened path: no connection cap, no header or idle timeout, no shutdown. There is no top-level `max_concurrent_tasks` (per-tenant only). | CONJECTURED (code, but the crate's own docs agree) |
-| S12 | Medium | **[Feature tables fixed and gated by `check_feature_tables.py`; the executor-timeout default is open]** `book/src/reference/configuration.md:17` gives the executor-timeout default as None; the code sets 1 h. The server README's `signing` row says "verification", but the crate does no signing. The feature table omits grpc-tls, auth-jwt, tls-rustls and conformance. | VALIDATED |
+| S12 | Medium | **[Fixed on this branch: feature tables gated by `check_feature_tables.py`; every defaults table on the configuration page, the executor timeout included, gated by `tests/book_defaults.rs`, which reported five wrong or missing rows on the unfixed page]** `book/src/reference/configuration.md:17` gives the executor-timeout default as None; the code sets 1 h. The server README's `signing` row says "verification", but the crate does no signing. The feature table omits grpc-tls, auth-jwt, tls-rustls and conformance. | VALIDATED |
 | S13 | Low | The README says rate limiting is "per-caller". Without auth or `trusted_proxy_hops`, every caller shares the `"anonymous"` bucket (`rate_limit/identity.rs:45`). | VALIDATED |
 | S14 | Low | A missing or `0.3` `A2A-Version` header gets `-32009` with `"id":null` even though the request id was known. There is no v0.3 compatibility layer (a2a-go ships `a2acompat/a2av0`). | VALIDATED |
 | S15 | Low | Tasks in flight at a crash or shutdown stay non-terminal in the durable store, and there is no recovery path. | CONJECTURED |
@@ -686,10 +722,14 @@ Each of these gaps is tied to at least one defect that escaped:
    crates.io pages) are not compiled; 130 of the book's 206 Rust blocks are
    `ignore`; Cargo feature docs and defaults tables are unchecked. This let
    through O1, O3, O10, C5, T8, S9 and S12.
-   **[Partly gated: the four crate READMEs compile as doctests
-   (`check_readme_doctests.py` guards the include), and every feature table
-   is checked against its manifest (`check_feature_tables.py`). Open: the
-   book's 130 `ignore` blocks, and defaults tables.]**
+   **[Gated: the four crate READMEs compile as doctests
+   (`check_readme_doctests.py` guards the include); every feature table is
+   checked against its manifest (`check_feature_tables.py`); the
+   configuration page's defaults tables against the structs' `Default`
+   (`tests/book_defaults.rs`); and 127 of the book's 130 `ignore` blocks now
+   compile, which found N15 — the other 3 are `slimrpc`, outside the
+   workspace. Still unchecked: prose that makes a claim no code block
+   exercises.]**
 2. **The observability check only looks at one side.**
    `check_otel_metrics_coverage.py` confirms the exporter overrides every
    callback. Nothing confirms that a real server run produces each

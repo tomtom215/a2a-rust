@@ -18,7 +18,12 @@ OAuth-ecosystem dependencies (see [ADR 0010](../reference/adrs.md)).
 For a fixed set of accepted credentials, `ApiKeyAuthInterceptor` and
 `BearerTokenAuthInterceptor` compare in constant time and need no feature flag:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::agent_executor;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let my_executor = MyAgent;
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};
 
 let handler = RequestHandlerBuilder::new(my_executor)
@@ -27,6 +32,8 @@ let handler = RequestHandlerBuilder::new(my_executor)
         "service-token-2",
     ]))
     .build()?;
+# Ok(())
+# }
 ```
 
 `ApiKeyAuthInterceptor::new([...])` reads `x-api-key` by default; change the
@@ -45,7 +52,9 @@ a2a-protocol-server = { version = "0.13", features = ["auth-jwt"] }
 **Validate tokens from an OIDC issuer** (discovers the issuer's JWKS, caches it,
 and refetches on key rotation):
 
-```rust,ignore
+```rust,no_run
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_server::auth::jwt::{JwtAuthInterceptor, JwtValidator};
 
 let validator = JwtValidator::new()
@@ -54,12 +63,16 @@ let validator = JwtValidator::new()
 
 let interceptor =
     JwtAuthInterceptor::from_oidc_issuer("https://login.example.com", validator).await?;
+# Ok(())
+# }
 ```
 
 **Static keys** — supply a `Jwks` directly (from a JWKS JSON document or key by
 key), or a shared secret for HS256:
 
-```rust,ignore
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let jwks_bytes: &[u8] = br#"{"keys": []}"#;
 use a2a_protocol_server::auth::jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
 
 // RS256/ES256 from a JWKS document:
@@ -74,6 +87,8 @@ let interceptor = JwtAuthInterceptor::new(
     JwtValidator::new().with_hs256_secret(b"shared-secret".to_vec()),
     Jwks::new(),
 );
+# Ok(())
+# }
 ```
 
 ### Security properties
@@ -99,7 +114,8 @@ the agent; these interceptors are the self-contained, defense-in-depth option.
 
 ### A token you already have
 
-```rust,ignore
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
 use std::sync::Arc;
 use a2a_protocol_client::{BearerAuthInterceptor, ClientBuilder, StaticTokenProvider};
 
@@ -107,6 +123,8 @@ let provider = Arc::new(StaticTokenProvider::new("my-long-lived-token"));
 let client = ClientBuilder::new("https://agent.example.com")
     .with_interceptor(BearerAuthInterceptor::new(provider))
     .build()?;
+# Ok(())
+# }
 ```
 
 `BearerAuthInterceptor` asks its provider for a token before **every** request,
@@ -124,7 +142,8 @@ overrides `invalidate`; the default does nothing.
 refreshes it shortly before expiry, and collapses concurrent refreshes into a
 single request:
 
-```rust,ignore
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
 use std::sync::Arc;
 use a2a_protocol_client::{BearerAuthInterceptor, ClientBuilder, OAuth2ClientCredentials};
 
@@ -140,23 +159,34 @@ let provider = Arc::new(
 let client = ClientBuilder::new("https://agent.example.com")
     .with_interceptor(BearerAuthInterceptor::new(provider))
     .build()?;
+# Ok(())
+# }
 ```
 
 **From the agent card** — an agent that advertises an OAuth2 client-credentials
 scheme carries its token endpoint:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# fn f(card: AgentCard) -> Result<(), Box<dyn std::error::Error>> {
 let provider = OAuth2ClientCredentials::from_agent_card(
     &card, "my-oauth-scheme", "client-id", "client-secret",
 )?;
+# Ok(())
+# }
 ```
 
 **From an OIDC issuer** — discovers the `token_endpoint`:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
 let provider = OAuth2ClientCredentials::from_oidc_issuer(
     "https://login.example.com", "client-id", "client-secret",
 ).await?;
+# Ok(())
+# }
 ```
 
 When the token endpoint fails, every caller waiting on that refresh gets the

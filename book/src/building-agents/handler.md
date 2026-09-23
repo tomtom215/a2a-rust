@@ -6,7 +6,10 @@ The `RequestHandler` is the central orchestrator that connects your executor to 
 
 ### Minimal Setup
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
 
 let handler = RequestHandlerBuilder::new(MyExecutor)
@@ -24,7 +27,12 @@ This gives you sensible defaults:
 
 ### Full Configuration
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
+# use a2a_protocol_sdk::server::{HttpPushSender, TaskStoreConfig};
+# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")) }
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
 use std::time::Duration;
 
@@ -43,8 +51,8 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
     .with_push_sender(HttpPushSender::new())
 
     // Interceptors
-    .with_interceptor(AuthInterceptor::new())
-    .with_interceptor(LoggingInterceptor::new())
+    .with_interceptor(BearerTokenAuthInterceptor::new(["service-token"]))
+    .with_interceptor(RateLimitInterceptor::new(RateLimitConfig::default()).expect("rate limit"))
 
     // Executor limits
     .with_executor_timeout(Duration::from_secs(300))
@@ -192,7 +200,10 @@ the transport.
 
 The handler is wrapped in `Arc` for sharing between dispatchers:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
 use std::sync::Arc;
 
 let handler = Arc::new(
@@ -212,7 +223,11 @@ This means JSON-RPC and REST clients share the same task store, push configs, an
 
 The default `InMemoryTaskStore` supports TTL and capacity limits:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
+# fn f(executor: MyExecutor) -> ServerResult<RequestHandler> {
 use a2a_protocol_sdk::server::TaskStoreConfig;
 use std::time::Duration;
 
@@ -223,26 +238,40 @@ let config = TaskStoreConfig::default()
 RequestHandlerBuilder::new(executor)
     .with_task_store_config(config)
     .build()
+# }
 ```
 
-When capacity is exceeded, the oldest tasks are evicted. When TTL expires, tasks are cleaned up on the next access.
+When capacity is exceeded, the oldest terminal tasks are evicted first, then non-terminal ones if that is not enough. Terminal tasks older than the TTL are removed by a sweep that runs every `eviction_interval` writes (64 by default).
 
 ## Custom Task Stores
 
 For production use, implement the `TaskStore` trait for your database:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
+# use a2a_protocol_sdk::types::task::TaskId;
 use a2a_protocol_sdk::server::TaskStore;
 
-struct DynamoDbTaskStore { /* ... */ }
+struct MyTaskStore { /* ... */ }
 
-impl TaskStore for DynamoDbTaskStore {
+impl TaskStore for MyTaskStore {
     // Implement save, get, list, insert_if_absent, delete...
+#     fn save<'a>(&'a self, _: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { unimplemented!() }
+#     fn get<'a>(&'a self, _: &'a TaskId) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> { unimplemented!() }
+#     fn list<'a>(&'a self, _: &'a ListTasksParams) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> { unimplemented!() }
+#     fn insert_if_absent<'a>(&'a self, _: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> { unimplemented!() }
+#     fn delete<'a>(&'a self, _: &'a TaskId) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { unimplemented!() }
 }
 
+# fn f(executor: MyExecutor) -> ServerResult<RequestHandler> {
 RequestHandlerBuilder::new(executor)
-    .with_task_store(DynamoDbTaskStore::new(client))
+    .with_task_store(MyTaskStore { /* ... */ })
     .build()
+# }
 ```
 
 See [Task & Config Stores](./stores.md) for the full trait API.

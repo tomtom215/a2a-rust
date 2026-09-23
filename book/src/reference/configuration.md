@@ -14,7 +14,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `with_push_config_store` | `impl PushConfigStore` | `InMemoryPushConfigStore` | Custom push config storage |
 | `with_push_sender` | `impl PushSender` | None | Webhook delivery implementation |
 | `with_interceptor` | `impl ServerInterceptor` | Empty chain | Server middleware |
-| `with_executor_timeout` | `Duration` | None | Max time for executor completion |
+| `with_executor_timeout` | `Duration` | 1 hour | Max time for executor completion (`DEFAULT_EXECUTOR_TIMEOUT`); `without_executor_timeout()` removes the bound |
 | `with_event_queue_capacity` | `usize` | 256 | Bounded channel size per stream. Increased from 64 to push the per-event cost inflection from ~52 to ~252 events. Increase further for tasks producing >250 events. |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |
 | `with_max_concurrent_streams` | `usize` | 1,024 | Limit concurrent SSE connections (pass `usize::MAX` to disable) |
@@ -54,6 +54,8 @@ Complete reference of all configuration options across a2a-rust crates.
 | `task_ttl` | `Option<Duration>` | 1 hour | TTL for completed/failed tasks |
 | `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps |
 | `max_page_size` | `u32` | 1,000 | Maximum tasks per page in list queries |
+| `max_events_per_task` | `Option<usize>` | 512 | Events one task's log keeps for `Last-Event-ID` resumption; `None` removes the bound |
+| `idempotency_key_ttl` | `Option<Duration>` | 24 hours | How long an idempotency key is honoured, matching the SQL stores' one day; `None` keeps keys forever |
 
 ### InMemoryPushConfigStore
 
@@ -76,6 +78,7 @@ Shared configuration for JSON-RPC, REST, and Axum dispatchers. Pass to
 | `sse_keep_alive_interval` | `Duration` | 30s | Periodic keep-alive comment interval for SSE streams |
 | `sse_channel_capacity` | `usize` | 64 | SSE response body channel buffer size |
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
+| `require_version_header` | `bool` | true | Reject a data-plane request with no `A2A-Version` header as `VersionNotSupported` (spec §3.6.2: absent means 0.3) |
 
 ### GrpcConfig
 
@@ -86,6 +89,7 @@ Configuration for the gRPC dispatcher (requires `grpc` feature).
 | `max_message_size` | `usize` | 4 MiB | Maximum inbound/outbound message size |
 | `concurrency_limit` | `usize` | 256 | Max concurrent gRPC requests per connection |
 | `stream_channel_capacity` | `usize` | 64 | Bounded channel for streaming responses |
+| `require_version_header` | `bool` | true | Reject a call with no `a2a-version` metadata as `VersionNotSupported` |
 
 ### PushRetryPolicy
 

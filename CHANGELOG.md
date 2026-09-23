@@ -256,6 +256,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The book's Rust examples compile.** 127 of its 130 `ignore`d blocks now
+  compile (the other 3 are `slimrpc`, outside the workspace), and 79 of those
+  also run; the other 48 would call a network or a database. Most needed only
+  hidden `# ` lines supplying what the page established in prose. Five could not have compiled as shown — each confirmed by
+  compiling the original with only its missing context added: a client
+  moved into two calls (E0382), a `match` on the `#[non_exhaustive]`
+  `SendMessageResponse` with no wildcard arm (E0004), an
+  `Arc<RateLimitInterceptor>` passed where a `ServerInterceptor` is required
+  (E0277), `&*writer` on a queue writer with no `Deref` (E0614), and
+  `ClientBuilder::new("…".into())` (E0283). Others named what does not exist
+  (`send_streaming_message()`, `AuthInterceptor::new`, `RetryInterceptor`)
+  or needed a feature the page did not mention (`hyper-util`'s
+  `server-auto`, `tracing-subscriber`'s `json`). And compiling them contradicted the prose around them:
+  - `AgentExecutor::cancel`'s default was documented as refusing with
+    `TaskNotCancelable`; it has cancelled since 0.7.
+  - The builder was said to choose the transport from the URL; without
+    `with_protocol_binding` it is always JSON-RPC.
+  - CORS read as on by default; it is off until `with_cors`.
+  - "`sqlx::PgConnection` is not `Send + Sync`" — it is. A single connection
+    is still the wrong choice, because every call then waits on its lock.
+  - The body-size pitfall's fix checked only `size_hint()`, which a chunked
+    body leaves unbounded; the page now adds `http_body_util::Limited`, as
+    the REST dispatcher does.
+  - The custom authentication interceptor compared tokens with a `HashSet`
+    lookup and did not mark itself `authenticates()`; the page now points
+    fixed token lists at the constant-time built-ins, and its example
+    records the caller and sets the marker.
+  - The production page's health-check example could not type-check; the
+    REST dispatcher and `A2aRouter` already answer `/health` and `/ready`,
+    and the JSON-RPC dispatcher does not, which the page now says.
+
+  `.book-ignore-baseline` now holds only the three `slimrpc` blocks.
+  Documentation only; no crate changed.
+
+- **The configuration reference's defaults are the defaults.**
+  `book/src/reference/configuration.md` gave `with_executor_timeout` a
+  default of None; the builder sets one hour, so a task can be failed by a
+  bound the page said was not there (audit S12). It also had no row for
+  `TaskStoreConfig::max_events_per_task` (512) or `idempotency_key_ttl` (24
+  hours), or for `require_version_header` (on) in `DispatchConfig` and
+  `GrpcConfig`. `crates/a2a-protocol-sdk/tests/book_defaults.rs` now reads
+  each defaults table on the page and compares it with the struct's real
+  `Default`, in both directions: a documented value that differs, a row that
+  names no field, and a field with no row all fail. Against the page as it
+  was, it reports exactly those five. Documentation only.
+
 - **The four crate READMEs — each crate's crates.io page — compile.** Seven
   of their eight Rust blocks did not: the client's documented
   `resubscribe()`, `get_authenticated_extended_card()` and

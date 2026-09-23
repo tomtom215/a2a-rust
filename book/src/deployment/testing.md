@@ -94,7 +94,7 @@ is still what says your *server* conforms.
 
 Test your executor logic directly by creating a `RequestContext` and mock `EventQueueWriter`:
 
-```rust,ignore
+```rust,no_run
 use a2a_protocol_sdk::prelude::*;
 use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
 
@@ -115,7 +115,7 @@ async fn test_calculator_executor() {
     );
 
     // Run the executor
-    executor.execute(&ctx, &*writer).await.unwrap();
+    executor.execute(&ctx, &writer).await.unwrap();
 
     // Read events from the queue
     let events: Vec<_> = collect_events(&mut reader).await;
@@ -128,13 +128,26 @@ async fn test_calculator_executor() {
     assert!(matches!(&events[2],
         StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Completed));
 }
+# fn main() {}
+# async fn collect_events(reader: &mut a2a_protocol_server::streaming::event_queue::InMemoryQueueReader) -> Vec<StreamResponse> {
+#     use a2a_protocol_server::streaming::EventQueueReader;
+#     let mut out = Vec::new();
+#     while let Some(Ok(e)) = reader.read().await { out.push(e.event); }
+#     out
+# }
+# fn extract_text(a: &Artifact) -> String { a.text().unwrap_or_default().to_owned() }
+# struct CalcExecutor;
+# agent_executor!(CalcExecutor, |_ctx, _queue| async { Ok(()) });
 ```
 
 ## Integration Testing with HTTP
 
 Test the full stack by starting a real server and using a client:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct CalcExecutor;
+# agent_executor!(CalcExecutor, |_ctx, _queue| async { Ok(()) });
 use a2a_protocol_sdk::server::{RequestHandlerBuilder, JsonRpcDispatcher};
 use a2a_protocol_sdk::client::ClientBuilder;
 use std::sync::Arc;
@@ -196,13 +209,17 @@ async fn start_test_server(
 
     addr
 }
+# fn main() {}
 ```
 
 ## Testing Both Transports
 
 Run the same tests against both JSON-RPC and REST:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn start_jsonrpc_server() -> std::net::SocketAddr { unimplemented!() }
+# async fn start_rest_server() -> std::net::SocketAddr { unimplemented!() }
 #[tokio::test]
 async fn test_jsonrpc_transport() {
     let addr = start_jsonrpc_server().await;
@@ -222,6 +239,7 @@ async fn test_rest_transport() {
 async fn run_test_suite(client: &A2aClient) {
     // Test send_message, stream_message, get_task, etc.
 }
+# fn main() {}
 ```
 
 ## Testing Streaming

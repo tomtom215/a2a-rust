@@ -6,7 +6,11 @@ Interceptors let you hook into the request/response pipeline on both the client 
 
 Server interceptors run before and after the handler processes a request:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::server::CallContext;
 use a2a_protocol_sdk::server::ServerInterceptor;
 
 struct LoggingInterceptor;
@@ -36,44 +40,87 @@ impl ServerInterceptor for LoggingInterceptor {
 
 ### Adding Interceptors
 
-```rust,ignore
-RequestHandlerBuilder::new(my_executor)
-    .with_interceptor(AuthInterceptor::new(auth_config))
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::server::CallContext;
+# use a2a_protocol_sdk::server::ServerInterceptor;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# struct LoggingInterceptor;
+# impl ServerInterceptor for LoggingInterceptor {
+#     fn before<'a>(&'a self, _: &'a CallContext) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
+#     fn after<'a>(&'a self, _: &'a CallContext) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
+# }
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let my_executor = MyAgent;
+let handler = RequestHandlerBuilder::new(my_executor)
+    .with_interceptor(BearerTokenAuthInterceptor::new(["s3cret-token"]))
     .with_interceptor(LoggingInterceptor)
-    .with_interceptor(MetricsInterceptor::new())
-    .build()
+    .with_interceptor(RateLimitInterceptor::new(RateLimitConfig::default())?)
+    .build()?;
+# Ok(())
+# }
 ```
 
 Interceptors execute in the order they're added:
 
 ```text
-Request → Auth → Logging → Metrics → Handler → Metrics → Logging → Auth → Response
+Request → Auth → Logging → RateLimit → Handler → RateLimit → Logging → Auth → Response
 ```
 
 ### Example: Authentication
 
-```rust,ignore
-struct BearerAuthInterceptor {
-    valid_tokens: HashSet<String>,
-}
+For a fixed set of API keys or bearer tokens, use the built-in
+`ApiKeyAuthInterceptor` or `BearerTokenAuthInterceptor`: they compare
+credentials in constant time, which a `HashSet` lookup does not. A custom
+interceptor is for credentials you verify some other way — a session service,
+say. It rejects in `before`, records who the caller is, and says that it
+authenticates:
 
-impl ServerInterceptor for BearerAuthInterceptor {
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::server::CallContext;
+# use a2a_protocol_sdk::server::ServerInterceptor;
+# use a2a_protocol_sdk::types::error::ErrorCode;
+# fn verify_session(_token: &str) -> Option<String> { None }
+/// Accepts a request whose bearer token `verify_session` maps to a caller.
+struct SessionAuthInterceptor;
+
+impl ServerInterceptor for SessionAuthInterceptor {
     fn before<'a>(
         &'a self,
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            // Check Authorization header before passing to handler
-            // Return error if token is missing or invalid
+            let caller = ctx
+                .http_headers()
+                .get("authorization")
+                .and_then(|h| h.strip_prefix("Bearer "))
+                .and_then(verify_session)
+                .ok_or_else(|| {
+                    A2aError::new(ErrorCode::InvalidRequest, "authentication required")
+                })?;
+            // Rate limiting and executors (`ctx.caller_identity()`) key on this.
+            ctx.set_caller_identity(caller);
             Ok(())
         })
     }
 
     fn after<'a>(
         &'a self,
-        ctx: &'a CallContext,
+        _ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move { Ok(()) })
+    }
+
+    // The extended agent card may be served only behind an authenticating
+    // interceptor (spec §13.3); this is how the handler knows one is there.
+    fn authenticates(&self) -> bool {
+        true
     }
 }
 ```
@@ -82,7 +129,9 @@ impl ServerInterceptor for BearerAuthInterceptor {
 
 Client interceptors modify outgoing requests and incoming responses:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use a2a_protocol_sdk::client::{ClientRequest, ClientResponse, ClientResult};
 use a2a_protocol_sdk::client::CallInterceptor;
 
 struct RequestIdInterceptor;
@@ -94,6 +143,8 @@ impl CallInterceptor for RequestIdInterceptor {
     ) -> impl Future<Output = ClientResult<()>> + Send + 'a {
         async move {
             // Add X-Request-Id header to outgoing requests
+            req.extra_headers
+                .insert("x-request-id".into(), uuid::Uuid::new_v4().to_string());
             Ok(())
         }
     }
@@ -103,7 +154,8 @@ impl CallInterceptor for RequestIdInterceptor {
         resp: &'a ClientResponse,
     ) -> impl Future<Output = ClientResult<()>> + Send + 'a {
         async move {
-            // Log the response status
+            // Log the method that completed
+            println!("{} completed", resp.method);
             Ok(())
         }
     }
@@ -119,12 +171,21 @@ the agent answered with `401`, so the next call fetches a new one.
 
 ### Adding Client Interceptors
 
-```rust,ignore
-use a2a_protocol_sdk::client::ClientBuilder;
+Retries are a policy on the builder, not an interceptor:
 
-let client = ClientBuilder::new("http://agent.example.com".into())
+```rust
+# use std::future::Future;
+# use a2a_protocol_sdk::client::{CallInterceptor, ClientRequest, ClientResponse, ClientResult};
+# struct RequestIdInterceptor;
+# impl CallInterceptor for RequestIdInterceptor {
+#     fn before<'a>(&'a self, _: &'a mut ClientRequest) -> impl Future<Output = ClientResult<()>> + Send + 'a { async { Ok(()) } }
+#     fn after<'a>(&'a self, _: &'a ClientResponse) -> impl Future<Output = ClientResult<()>> + Send + 'a { async { Ok(()) } }
+# }
+use a2a_protocol_sdk::client::{ClientBuilder, RetryPolicy};
+
+let client = ClientBuilder::new("http://agent.example.com")
     .with_interceptor(RequestIdInterceptor)
-    .with_interceptor(RetryInterceptor::new(3))
+    .with_retry_policy(RetryPolicy::default().with_max_retries(3))
     .build()
     .unwrap();
 ```
@@ -145,35 +206,62 @@ struct LoggingInterceptor;
 
 Track request counts, latencies, error rates:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::server::CallContext;
+# use a2a_protocol_sdk::server::ServerInterceptor;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 struct MetricsInterceptor {
-    counter: Arc<AtomicU64>,
+    requests: Arc<AtomicU64>,
 }
-// Increment counter on each request
-// Record latency histogram
+
+impl ServerInterceptor for MetricsInterceptor {
+    fn before<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        // Increment counter on each request
+        self.requests.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+}
 ```
 
 ### Rate Limiting
 
 The built-in `RateLimitInterceptor` provides per-caller fixed-window rate limiting:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let my_executor = MyAgent;
 use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
-use std::sync::Arc;
 
-let limiter = Arc::new(
-    RateLimitInterceptor::new(
-        RateLimitConfig::default()
-            .with_requests_per_window(100)
-            .with_window_secs(60),
-    )
-    .expect("valid rate limit config"),
-);
+let limiter = RateLimitInterceptor::new(
+    RateLimitConfig::default()
+        .with_requests_per_window(100)
+        .with_window_secs(60),
+)?;
 
 // Add to handler builder:
-RequestHandlerBuilder::new(my_executor)
+let handler = RequestHandlerBuilder::new(my_executor)
     .with_interceptor(limiter)
-    .build()
+    .build()?;
+# Ok(())
+# }
 ```
 
 Caller keys are derived from `CallContext::caller_identity()` (set by auth
@@ -194,12 +282,21 @@ use cases (sliding windows, distributed counters), implement a custom
 
 Both client and server support ordered interceptor chains. The chain is built incrementally:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+# let builder = RequestHandlerBuilder::new(MyAgent);
+# let first = BearerTokenAuthInterceptor::new(["t"]);
+# let second = ApiKeyAuthInterceptor::new(["k"]);
+# let third = RateLimitInterceptor::new(RateLimitConfig::default()).unwrap();
 // Each .with_interceptor() call appends to the chain
-builder
+let builder = builder
     .with_interceptor(first)    // Runs first on request, last on response
     .with_interceptor(second)   // Runs second on request, second-to-last on response
-    .with_interceptor(third)    // Runs third on request, first on response
+    .with_interceptor(third);   // Runs third on request, first on response
+# }
 ```
 
 ## Next Steps

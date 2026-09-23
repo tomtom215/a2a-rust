@@ -66,12 +66,17 @@ Prevent hung tasks from consuming resources forever. There is deliberately no
 default (a fixed value would silently fail legitimately long-running agent
 tasks) — set one matched to your workload:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
 use std::time::Duration;
 
 RequestHandlerBuilder::new(executor)
     .with_executor_timeout(Duration::from_secs(300))
     .build()
+# }
 ```
 
 ### Concurrent Stream Limits
@@ -80,17 +85,27 @@ Concurrent streaming requests are capped at 1024 by default (each stream
 allocates channels and spawns background tasks). Tune the ceiling to your
 deployment; pass `usize::MAX` to effectively disable it:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
 RequestHandlerBuilder::new(executor)
     .with_max_concurrent_streams(1000)
     .build()
+# }
 ```
 
 ### Task Store Limits
 
 Prevent unbounded memory growth:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
+# use std::time::Duration;
 use a2a_protocol_sdk::server::TaskStoreConfig;
 
 RequestHandlerBuilder::new(executor)
@@ -102,6 +117,7 @@ RequestHandlerBuilder::new(executor)
             .with_max_page_size(1000),
     )
     .build()
+# }
 ```
 
 Use `TaskStore::count()` for monitoring capacity utilization.
@@ -178,20 +194,32 @@ deploy is answered rather than `Canceled` — and then does what
 
 Implement `on_shutdown` in your executor for cleanup:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent { db_pool: sqlx::PgPool, cancel_token: tokio_util::sync::CancellationToken }
+# impl AgentExecutor for MyAgent {
+# fn execute<'a>(&'a self, _: &'a RequestContext, _: &'a dyn EventQueueWriter)
+#     -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
 fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
     Box::pin(async move {
         self.db_pool.close().await;
         self.cancel_token.cancel();
     })
 }
+# }
 ```
 
 ### Rate Limiting
 
 Protect public-facing agents from abuse:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
 use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
 
 RequestHandlerBuilder::new(executor)
@@ -207,6 +235,7 @@ RequestHandlerBuilder::new(executor)
         .expect("valid rate limit config"),
     )
     .build()
+# }
 ```
 
 For advanced rate limiting (sliding windows, distributed counters), use a
@@ -216,7 +245,9 @@ reverse proxy or implement a custom `ServerInterceptor`.
 
 When calling remote agents, build clients once and reuse them. Connection reuse is critical for performance — creating a new client per request bypasses HTTP keep-alive and connection pooling, adding ~300-500us of overhead per call:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(params: MessageSendParams) {
 // Build once at startup
 let client = ClientBuilder::new("http://agent.example.com")
     .with_retry_policy(RetryPolicy::default())
@@ -225,6 +256,7 @@ let client = ClientBuilder::new("http://agent.example.com")
 
 // Reuse across all requests — client holds a connection pool
 let result = client.send_message(params).await;
+# }
 ```
 
 ## Observability
@@ -239,7 +271,7 @@ a2a-protocol-server = { version = "0.13", features = ["tracing"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ```
 
-```rust,ignore
+```rust
 use tracing_subscriber::EnvFilter;
 
 tracing_subscriber::fmt()
@@ -247,7 +279,8 @@ tracing_subscriber::fmt()
         EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| EnvFilter::new("info"))
     )
-    .json()  // JSON output for log aggregation
+    // For log aggregation, enable tracing-subscriber's `json` feature and
+    // add `.json()` here.
     .init();
 ```
 
@@ -255,13 +288,24 @@ Set `RUST_LOG=debug` for verbose output, `RUST_LOG=a2a_protocol_server=debug` fo
 
 ### Health Checks
 
-Add a health endpoint alongside your A2A dispatchers:
+The REST dispatcher and `A2aRouter` answer `GET /health` and `GET /ready`
+themselves. The JSON-RPC dispatcher does not; route the path yourself in front
+of it, answering with the dispatcher's own body type:
 
-```rust,ignore
-// Simple health check handler
-async fn health_check(req: hyper::Request<impl hyper::body::Body>) -> hyper::Response<Full<Bytes>> {
+```rust
+use std::convert::Infallible;
+use std::sync::Arc;
+
+use a2a_protocol_sdk::server::JsonRpcDispatcher;
+use http_body_util::{BodyExt, Full, combinators::BoxBody};
+use hyper::body::{Bytes, Incoming};
+
+async fn route(
+    dispatcher: Arc<JsonRpcDispatcher>,
+    req: hyper::Request<Incoming>,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     if req.uri().path() == "/health" {
-        hyper::Response::new(Full::new(Bytes::from("ok")))
+        hyper::Response::new(Full::new(Bytes::from("ok")).boxed())
     } else {
         dispatcher.dispatch(req).await
     }
@@ -282,7 +326,7 @@ The `InMemoryTaskStore` uses a pre-allocated `HashMap` with secondary indexes fo
 
 - **O(1) amortized save/get/delete** — constant-time operations regardless of store size
 - **No resize-induced latency spikes** — pre-allocation to the configured `max_capacity` eliminates the periodic full-rehash events that cause unpredictable 5-7× latency cliffs when the table outgrows its capacity
-- **O(log n + page\_size) list queries** — a `BTreeSet<TaskId>` sorted index provides O(log n) cursor positioning via `range()`, and a `HashMap<String, BTreeSet<TaskId>>` context index enables O(log m + page\_size) filtered queries where m = matching tasks. This replaces the previous O(n log n) per-call sort that caused 20-70× regressions at 10K+ tasks.
+- **O(log n + page\_size) list queries** — a `BTreeMap<u64, TaskId>` index keyed by a per-write sequence gives most-recently-updated-first order and O(log n) cursor positioning, and a `HashMap<String, BTreeMap<u64, TaskId>>` context index enables O(log m + page\_size) filtered queries where m = matching tasks. This replaces the previous O(n log n) per-call sort that caused 20-70× regressions at 10K+ tasks.
 
 ### No Web Framework Overhead
 
@@ -292,12 +336,19 @@ a2a-rust works directly with hyper — no middleware framework overhead. Cross-c
 
 Tune the event queue for your workload:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
+# let builder = RequestHandlerBuilder::new(executor);
 // High-throughput: larger queues for tasks producing >250 events/task
-.with_event_queue_capacity(512)
+let builder = builder.with_event_queue_capacity(512);
 
 // Memory-constrained: smaller queues
-.with_event_queue_capacity(64)
+let builder = builder.with_event_queue_capacity(64);
+# builder.build()
+# }
 ```
 
 > **Benchmark data:** Per-event cost inflects at the broadcast channel capacity

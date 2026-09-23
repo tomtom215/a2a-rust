@@ -463,44 +463,58 @@ The prelude includes the most commonly used types from all three crates — see 
 
 ## Constructors Cheatsheet
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let base64_string = "aGVsbG8=";
+# let card = AgentCard::new("a", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"));
 // Task status
-TaskStatus::new(TaskState::Working)
-TaskStatus::with_timestamp(TaskState::Completed)
+TaskStatus::new(TaskState::Working);
+TaskStatus::with_timestamp(TaskState::Completed);
 
 // Messages and parts (v1.0 wire format: flat oneof)
-Part::text("hello")                 // → {"text": "hello"}
-Part::raw(base64_string)            // → {"raw": "aGVsbG8="}
-Part::url("https://...")            // → {"url": "https://..."}
-Part::data(serde_json::json!({..})) // → {"data": {...}}
-Part::file_bytes(base64_string)     // backward-compat alias for raw()
-Part::file_uri("https://...")       // backward-compat alias for url()
+Part::text("hello");                   // → {"text": "hello"}
+Part::raw(base64_string);              // → {"raw": "aGVsbG8="}
+Part::url("https://...");              // → {"url": "https://..."}
+Part::data(serde_json::json!({"k": 1})); // → {"data": {"k": 1}}
+Part::file_bytes(base64_string);       // backward-compat alias for raw()
+Part::file_uri("https://...");         // backward-compat alias for url()
+# let wire = |p: Part| serde_json::to_value(p).unwrap();
+# assert_eq!(wire(Part::text("hello")), serde_json::json!({"text": "hello"}));
+# assert_eq!(wire(Part::raw(base64_string)), serde_json::json!({"raw": "aGVsbG8="}));
+# assert_eq!(wire(Part::url("https://...")), serde_json::json!({"url": "https://..."}));
+# assert_eq!(wire(Part::data(serde_json::json!({"k": 1}))), serde_json::json!({"data": {"k": 1}}));
+# assert_eq!(wire(Part::file_bytes(base64_string)), wire(Part::raw(base64_string)));
+# assert_eq!(wire(Part::file_uri("https://...")), wire(Part::url("https://...")));
 
 // Artifacts
-Artifact::new("artifact-id", vec![Part::text("content")])
+Artifact::new("artifact-id", vec![Part::text("content")]);
 
 // IDs
-TaskId::new("task-123")
-ContextId::new("ctx-456")
-MessageId::new("msg-789")
+TaskId::new("task-123");
+ContextId::new("ctx-456");
+MessageId::new("msg-789");
 
 // Capabilities (non_exhaustive — use builder)
 AgentCapabilities::none()
     .with_streaming(true)
-    .with_push_notifications(false)
+    .with_push_notifications(false);
 
 // Agent cards: the three fields `validate` requires, the rest by `with_*`
 AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
     .with_description("Does one thing well")
     .with_skill(AgentSkill::new("echo", "Echo", "Repeats").with_tags(["text"]))
     .with_interface(AgentInterface::grpc("http://localhost:50051"))
-    .with_streaming(true)               // one flag; with_capabilities(..) for the rest
+    .with_streaming(true);              // one flag; with_capabilities(..) for the rest
 
 // Client-side: which interface `from_card` picked
-ClientBuilder::from_card(&card)?.chosen_interface()   // Option<&AgentInterface>
+ClientBuilder::from_card(&card)?.chosen_interface();   // Option<&AgentInterface>
 
 // Push configs
-TaskPushNotificationConfig::new("task-id", "https://webhook.url")
+TaskPushNotificationConfig::new("task-id", "https://webhook.url");
+# Ok(())
+# }
 ```
 
 ## Next Steps
