@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -60,6 +61,18 @@ PATTERNS = {
 }
 CFG_TEST_ITEM = re.compile(r"#\[cfg\(test\)\]")
 CFG_TEST_MOD = re.compile(r"#\[cfg\(test\)\]\s*(?:pub\s+)?mod\s+(\w+)\s*;")
+# The same declaration with a `#[path = "..."]` attribute, in either order.
+# `#[cfg(test)] #[path = "processor_tests.rs"] mod tests;` keeps a test module
+# a child of the file it tests (so it sees that file's private items) while
+# naming the file something other than `processor/tests.rs`. CFG_TEST_MOD
+# alone cannot see it: the attribute sits between `#[cfg(test)]` and `mod`,
+# and the file is not where the module name says. The scan then counted the
+# whole test file as runtime code, and the self-check below reported it.
+CFG_TEST_PATH_MOD = re.compile(
+    r'(?:#\[cfg\(test\)\]\s*#\[path\s*=\s*"([^"]+)"\]'
+    r'|#\[path\s*=\s*"([^"]+)"\]\s*#\[cfg\(test\)\])'
+    r"\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*;"
+)
 
 
 def strip_noise(src: str) -> str:
@@ -140,6 +153,20 @@ def _module_file(parent: Path, name: str) -> Path | None:
     return None
 
 
+def _path_module_files(parent: Path, src: str) -> list[Path]:
+    """Files named by `#[cfg(test)]` + `#[path = "..."]` module declarations.
+
+    Rust resolves such a path relative to the directory holding the declaring
+    file, which is the rule applied here.
+    """
+    hits = []
+    for before, after in CFG_TEST_PATH_MOD.findall(src):
+        cand = parent.parent / (before or after)
+        if cand.exists():
+            hits.append(cand.resolve())
+    return hits
+
+
 def test_gated_files() -> set[Path]:
     """Files reachable only under `#[cfg(test)]`, following the tree transitively.
 
@@ -153,9 +180,12 @@ def test_gated_files() -> set[Path]:
     """
     roots: set[Path] = set()
     for f in ROOT.joinpath("crates").rglob("*.rs"):
-        for name in CFG_TEST_MOD.findall(f.read_text(encoding="utf-8", errors="replace")):
+        src = f.read_text(encoding="utf-8", errors="replace")
+        for name in CFG_TEST_MOD.findall(src):
             if (hit := _module_file(f, name)) is not None:
                 roots.add(hit)
+        for hit in _path_module_files(f, src):
+            roots.add(hit)
 
     gated: set[Path] = set()
     pending = list(roots)
@@ -243,7 +273,20 @@ def self_test() -> int:
         print(f"check_panic_paths --self-test: FAILED\n\n  counted {got}, expected {want}",
               file=sys.stderr)
         return 1
-    print("check_panic_paths --self-test: comments, literals and cfg(test) all excluded")
+    # `#[path]` on a cfg(test) module, in both attribute orders.
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        (d / "processor_tests.rs").write_text("fn t() { x.unwrap(); }\n")
+        (d / "other_tests.rs").write_text("fn t() { x.unwrap(); }\n")
+        decl = ('#[cfg(test)]\n#[path = "processor_tests.rs"]\nmod tests;\n'
+                '#[path = "other_tests.rs"]\n#[cfg(test)]\nmod more;\n')
+        found = {p.name for p in _path_module_files(d / "processor.rs", decl)}
+        if found != {"processor_tests.rs", "other_tests.rs"}:
+            print("check_panic_paths --self-test: FAILED\n\n  #[path] cfg(test) modules "
+                  f"resolved to {sorted(found)}, expected both", file=sys.stderr)
+            return 1
+    print("check_panic_paths --self-test: comments, literals, cfg(test) and "
+          "#[path] test modules all excluded")
     return 0
 
 

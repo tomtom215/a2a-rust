@@ -299,6 +299,11 @@ impl EventQueueWriter for InMemoryQueueWriter {
             // Armed before the hand-off, so the processor's verdict can never
             // arrive ahead of the ticket it answers.
             let mut ticket = self.ticket_for(&event);
+            // One deadline for the whole call: `write_timeout` is documented
+            // as the bound on a write, and the hand-off and the wait for the
+            // store's verdict are two phases of one write. Bounding each by
+            // the full timeout let a write take twice it.
+            let deadline = tokio::time::Instant::now() + self.write_timeout;
 
             if let Some(ref persistence_tx) = self.persistence_tx {
                 match persistence_tx
@@ -337,11 +342,13 @@ impl EventQueueWriter for InMemoryQueueWriter {
             }
             // A terminal event goes out as the store ruled on it: itself when it
             // persisted, the stored terminal status when another writer had
-            // already finished the task. No verdict within the write timeout
+            // already finished the task. No verdict by the write's deadline
             // — or a processor that exited — broadcasts it unchanged, which is
             // what every event did before the gate existed.
             if let Some(ticket) = ticket
-                && let Some(verdict) = ticket.verdict_within(self.write_timeout).await
+                && let Some(verdict) = ticket
+                    .verdict_within(deadline.saturating_duration_since(tokio::time::Instant::now()))
+                    .await
             {
                 event.event = verdict;
             }
