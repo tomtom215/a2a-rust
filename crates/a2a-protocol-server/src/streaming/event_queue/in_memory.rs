@@ -255,6 +255,28 @@ impl Drop for Ticket<'_> {
     }
 }
 
+impl InMemoryQueueWriter {
+    /// Refuses an event whose serialized size exceeds `max_event_size`, to
+    /// prevent OOM from oversized events.
+    ///
+    /// Uses a zero-allocation `CountingWriter` instead of `to_string()` to
+    /// avoid allocating a full String just for size measurement — the event
+    /// will be serialized again in the SSE layer.
+    fn check_event_size(&self, event: &StreamResponse) -> A2aResult<()> {
+        let mut counter = CountingWriter(0);
+        serde_json::to_writer(&mut counter, event)
+            .map_err(|e| A2aError::internal(format!("event serialization failed: {e}")))?;
+        let serialized_size = counter.0;
+        if serialized_size > self.max_event_size {
+            return Err(A2aError::internal(format!(
+                "event size {serialized_size} bytes exceeds maximum {} bytes",
+                self.max_event_size
+            )));
+        }
+        Ok(())
+    }
+}
+
 #[allow(clippy::manual_async_fn)]
 impl EventQueueWriter for InMemoryQueueWriter {
     fn write<'a>(
@@ -262,22 +284,7 @@ impl EventQueueWriter for InMemoryQueueWriter {
         event: StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            // Check serialized event size to prevent OOM from oversized events.
-            // Uses a zero-allocation CountingWriter instead of `to_string()` to
-            // avoid allocating a full String just for size measurement — the event
-            // will be serialized again in the SSE layer.
-            let serialized_size = {
-                let mut counter = CountingWriter(0);
-                serde_json::to_writer(&mut counter, &event)
-                    .map_err(|e| A2aError::internal(format!("event serialization failed: {e}")))?;
-                counter.0
-            };
-            if serialized_size > self.max_event_size {
-                return Err(A2aError::internal(format!(
-                    "event size {serialized_size} bytes exceeds maximum {} bytes",
-                    self.max_event_size
-                )));
-            }
+            self.check_event_size(&event)?;
             // Send to the persistence channel first (if configured) — this
             // channel is independent of SSE consumer backpressure.
             //
