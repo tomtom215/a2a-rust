@@ -786,9 +786,11 @@ impl ActivityClock {
 
 /// Processes a single JSON-RPC message received over WebSocket.
 ///
-/// Routes the same method surface as the JSON-RPC HTTP dispatcher — both the
-/// v1.0 `PascalCase` names and the v0.3 `method/verb` aliases — so a client
-/// can switch bindings without changing method names.
+/// Routes the v1.0 `PascalCase` method names the JSON-RPC HTTP dispatcher
+/// routes, so a client can switch bindings without changing method names.
+/// Of the v0.3 `method/verb` spellings only `message/stream` is accepted;
+/// the others are refused with `MethodNotFound`, as over HTTP
+/// (`ws_legacy_method_names_rejected`; audit N19).
 #[allow(clippy::too_many_lines)]
 async fn process_ws_message(
     handler: &RequestHandler,

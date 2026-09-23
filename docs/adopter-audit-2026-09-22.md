@@ -303,6 +303,15 @@ stores (`tests/cross_replica_cancel/`).
   `a_call_on_a_dropped_websocket_is_refused_as_final` pins the refusal as
   non-retryable, so a retry loop stops instead of spinning. Open; the
   CHANGELOG's N13 entry says so.
+- **N19 — the WebSocket dispatcher's documentation claims the v0.3 method
+  aliases** (Low, docs; found while adding spans to it). The
+  `process_ws_message` doc comment and `book/src/building-agents/dispatchers.md`
+  said it routes "the v0.3 `method/verb` aliases"; of those it routes only
+  `message/stream`, and `ws_legacy_method_names_rejected` asserts that
+  `message/send`, `tasks/list` and `tasks/get` are refused with `-32601`.
+  VALIDATED by reading the dispatch match and the test. **[Fixed on this
+  branch: both documents now say what the code does; the behaviour is
+  unchanged]**
 - **N20 — the two HTTP+JSON dispatchers answer the same error with different
   statuses** (Medium, server wire; found while mapping each binding's status
   for `error.type`). The axum adapter answered `ServerError::Overloaded` with

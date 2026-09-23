@@ -221,9 +221,11 @@ let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
 - Client sends JSON-RPC 2.0 requests as WebSocket text frames
 - Server responds with JSON-RPC 2.0 responses as text frames
 - Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) send one frame per event, followed by a final JSON-RPC success response
-- The full A2A method surface is routed — the same method names (and v0.3
-  `method/verb` aliases) as `JsonRpcDispatcher`, including the
-  push-notification-config methods and `GetExtendedAgentCard`
+- The full A2A method surface is routed — the same method names as
+  `JsonRpcDispatcher`, including the push-notification-config methods and
+  `GetExtendedAgentCard`. Of the v0.3 `method/verb` spellings only
+  `message/stream` is accepted; the others are refused with
+  `MethodNotFound` (`-32601`), as they are over HTTP
 
 ### Authentication and tenancy
 
