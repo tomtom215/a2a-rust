@@ -399,6 +399,8 @@ injection_for() {
         # succeeds; only the scaling check's count notices.
         "cargo run -p resilient-agent"*)
             echo "resilient_scaling" ;;
+        "./scripts/go_sdk_interop.sh"*)
+            echo "go_interop" ;;
         # Before the general incident-response arm: `-- harden` runs Act 5
         # alone, and its defect is a hardening one, not a matrix one.
         "cargo run -p incident-response"*"harden"*)
@@ -516,6 +518,7 @@ expected_marker() {
         example_surface)  echo "matrix cell(s) never ran" ;;
         example_hardening) echo "partitions leak" ;;
         resilient_scaling) echo "should admit" ;;
+        go_interop)       echo "push delivery token header" ;;
         postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
         ignored_suite)    echo "gate probe: injected failure in ${1##*:}" ;;
         spiffe_ignored)   echo "gate probe: injected failure in the SPIFFE suite" ;;
@@ -1099,6 +1102,28 @@ if s.count(needle) != 1:
 s = s.replace(needle, "Ok(resp) => { let _ = resp; }")
 open(p, "w").write(s)
 PY2
+            ;;
+        go_interop)
+            # Stop sending the push token under a2a-go's spelling. Every call
+            # still succeeds and this repository's own receiver still finds
+            # the token under the X- name; only a webhook written the way
+            # a2a-go reads tokens sees none. That is the defect only a real Go
+            # peer catches (audit S7), so the marker is the Go client's check
+            # name — a build error or a dead peer fails with other words.
+            note_touched "crates/a2a-protocol-server/src/push/webhook.rs"
+            python3 - <<'PY3'
+p = "crates/a2a-protocol-server/src/push/webhook.rs"
+s = open(p).read()
+needle = 'pub const NOTIFICATION_TOKEN_HEADER_UNPREFIXED: &str = "a2a-notification-token";'
+if s.count(needle) != 1:
+    raise SystemExit(
+        f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
+    )
+open(p, "w").write(s.replace(
+    needle,
+    'pub const NOTIFICATION_TOKEN_HEADER_UNPREFIXED: &str = "x-gate-probe-token";',
+))
+PY3
             ;;
         resilient_scaling)
             # Replica B keeps its own counter instead of the shared one: both
