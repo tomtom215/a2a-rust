@@ -15,6 +15,7 @@ test fails rather than this page quietly becoming wrong.
 
 | Behaviour | Across replicas | What makes it so |
 |---|---|---|
+| Replicas can start together against an empty database | **Yes** | Schema creation takes one advisory lock |
 | A task created on one replica is readable on another | **Yes** | The store holds it |
 | `GetTask` / `ListTasks` see every replica's tasks | **Yes** | Same |
 | A subscription terminates when the task finishes elsewhere | **Yes** | The reattach hook polls the store |
@@ -49,6 +50,16 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 
 With that in place, a client whose second request lands on a different replica
 still finds its task. This is the property everything else here depends on.
+
+Every PostgreSQL store creates its schema at construction, and replicas that
+start together against an empty database used to race: `CREATE TABLE IF NOT
+EXISTS` is not safe to run concurrently, and one replica could fail its first
+start with a duplicate key in `pg_type` or `pg_class`. Since 2026-09-23 every
+constructor — the task stores, both push-config stores, the shared rate-limit
+counter and `with_migrations` — does its DDL under one transaction-scoped
+advisory lock, so they serialize. The key is the bytes of `"a2a_schm"` read as
+a big-endian `i64`; an application taking advisory locks of its own on the
+same database should avoid it.
 
 ## Rate limiting needs a shared counter
 
