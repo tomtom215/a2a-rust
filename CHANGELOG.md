@@ -78,6 +78,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has read and is closed with a Close frame. The gRPC server's own error is
   returned rather than discarded.
 
+- **Release gates for what a tag publishes** (`scripts/check_release_tree.py`,
+  four steps in `release.yml`). A release now fails if the tagged tree has
+  entries under `[Unreleased]`, if any packaged file changed after the
+  release's own notes were last edited, if a patch release or a second
+  breaking minor in one calendar month carries `### Breaking Changes`, or if a
+  packaged `.crate` was built from another commit or a dirty tree. `v0.13.0`
+  would have failed three of them (audit N7, N10). The cost is ordering:
+  release notes must be the last edit before the tag, and the next breaking
+  release cannot be tagged before October 2026. Not a change to any crate.
+
 - **A Go SDK interop gate in CI** (`go-sdk-interop`, `scripts/go_sdk_interop.sh`).
   The official Go SDK's client against this server, and this client against an
   a2a-go server, over JSON-RPC, HTTP+JSON and gRPC. Before it, a2a-go ran in CI

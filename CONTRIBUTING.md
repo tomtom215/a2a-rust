@@ -760,8 +760,9 @@ scripts/prove_workflow_gates_fail.py --only tck # substring filter
 scripts/prove_workflow_gates_fail.py            # all of them (~7s)
 ```
 
-It runs in CI on every PR, in the `fmt` job. Current state: **17 proven, 11
-exempt with reasons, 0 unproven.** Drift is a hard error in both directions —
+It runs in CI on every PR, in the `fmt` job. Current state, measured
+2026-09-23: **25 proven, 18 exempt with reasons, 0 unproven** (this line said
+17 and 11 until then; it had not been re-run as probes were added). Drift is a hard error in both directions —
 a step that can fail with no registry entry, and a registry entry naming a
 step that no longer exists, both exit 2.
 

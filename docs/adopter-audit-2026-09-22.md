@@ -87,8 +87,8 @@ stores (`tests/cross_replica_cancel/`).
   (checked by searching the whole 54,863-character body). Found because
   `cargo semver-checks` reported nothing to do for a tree whose
   `[Unreleased]` claimed a breaking change. **[Corrected in CHANGELOG and
-  `STABILITY.md` §1; the process gap — nothing checks that a tag's tree has
-  an empty `[Unreleased]` — is open.]**
+  `STABILITY.md` §1. The process gap is closed by four `release.yml` checks
+  (N10), each proven able to fail by `prove_workflow_gates_fail.py`.]**
 - **N8 — the mutation gate scored uncompilable feature-gated mutants as
   caught** (Medium, gate). `mutants.yml` passed `--all-features` after `--`,
   so each mutant was built without features and, if it did not compile with
@@ -109,6 +109,24 @@ stores (`tests/cross_replica_cancel/`).
   `Result` (types are unchanged, so it is not an API change), which will
   surface mutants no run has ever graded; measure how many survive before
   deciding.
+
+- **N10 — no release was ever checked to be its own release preparation,
+  and eight of seventeen tags were not** (Medium, release
+  process; escape class 9). `scripts/check_release_tree.py` asks, for a tag,
+  whether any file packaged into the four crates changed after the release's
+  own CHANGELOG section was last edited. VALIDATED by its `history` mode on
+  2026-09-23: `prep` fails `v0.2.0`, `v0.6.0`, `v0.7.0`, `v0.8.0`, `v0.9.0`,
+  `v0.10.0`, `v0.12.0` and `v0.13.0`; `unreleased` fails `v0.3.0` and
+  `v0.13.0` (19 entries — N7's count, re-derived from the tagged file);
+  `cadence` fails `v0.13.0` (a second breaking minor in September 2026); its
+  `vcs` mode confirms from the crates.io downloads that all four 0.13.0
+  crates were built from `391f0df` (server SHA-256 `02f16ab4…42f389`, as N7
+  records). What the late changes were varies: `v0.10.0`'s is one lint fix
+  across twelve files, `v0.12.0`'s are mostly `#[cfg(test)]` additions with
+  some library lines — whether any of them changed behaviour was not
+  established, and it does not need to be for the gate to be right, since
+  the notes were not re-read against them. **[Gated: the four checks run in
+  `release.yml`; `RELEASING.md` says what they ask of the process.]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.
@@ -631,6 +649,7 @@ Each of these gaps is tied to at least one defect that escaped:
 9. **Release policy isn't checked by machine.** 0.12.0 (09-10) and 0.13.0
    (09-20) were both breaking, and `STABILITY.md` allows one breaking minor
    release per month. The `PurgeReport` rename skipped deprecation.
+   **[Gated at release time: N10. Deprecate-first is still unchecked.]**
 
 **Feature matrix: no defect.** Each feature of every crate compiles alone,
 and CI's `cargo hack --each-feature` already covers that.

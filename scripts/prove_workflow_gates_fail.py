@@ -1137,6 +1137,48 @@ def build_registry() -> dict[str, Probe | Exempt]:
             ),
         ],
     )
+    reg["release.yml::validate::Nothing is left under [Unreleased] in the tagged tree"] = Probe(
+        healthy=_next_release_fixture(),
+        defects=[
+            Defect(
+                "an entry left under [Unreleased] at the tag (0.13.0 shipped nineteen)",
+                _next_release_fixture("unreleased"),
+                "under ## [Unreleased]",
+            )
+        ],
+    )
+    reg["release.yml::validate::The tag is the release-preparation commit"] = Probe(
+        healthy=_next_release_fixture(),
+        defects=[
+            Defect(
+                "packaged source changed after the notes were written",
+                _next_release_fixture("late-change"),
+                "is not the release-preparation commit",
+            )
+        ],
+    )
+    reg["release.yml::validate::Breaking releases keep the STABILITY.md cadence"] = Probe(
+        healthy=_next_release_fixture(),
+        defects=[
+            Defect(
+                "a second breaking minor in one calendar month",
+                _next_release_fixture("same-month"),
+                "in the same calendar month",
+            ),
+            Defect(
+                "a breaking change in a patch release",
+                _next_release_fixture("breaking-patch"),
+                "is a patch release",
+            ),
+        ],
+    )
+    reg["release.yml::package::Packaged crates were built from the tagged commit"] = Probe(
+        healthy=_crate_fixture(),
+        defects=[
+            Defect("a crate built from another commit", _crate_fixture("other-commit"), "not the tagged commit"),
+            Defect("a crate built from a dirty tree", _crate_fixture("dirty"), "dirty working tree"),
+        ],
+    )
     for name, why in (
         ("Generate CycloneDX SBOMs", "needs cargo-cyclonedx and a full dependency resolve"),
         ("Extract CHANGELOG section for this version", "runs only after a real tag exists in the release job"),
@@ -1339,6 +1381,117 @@ def _release_fixture(
             "__cwd__": str(r),
             "__env__": {"GITHUB_REF_NAME": name},
         }
+
+    return setup
+
+
+def _next_release_fixture(defect: str | None = None) -> Setup:
+    """A repo in the state the *next* release would be tagged from.
+
+    The tree's own `[Unreleased]` entries are moved into a dated section for
+    the next minor, the crate versions are bumped to match, and the result is
+    tagged — release preparation done the way RELEASING.md describes it, on
+    whatever the tree holds today. `_release_fixture` tags the version the
+    crates already declare, which is the right control for the metadata
+    checks but not for these: that release was cut long ago, and 0.13.0 in
+    particular fails two of them for real (audit N7).
+
+    The date is far in the future so the healthy control can never share a
+    calendar month with a real release; the cadence defect picks one that
+    does, on purpose.
+    """
+
+    def setup(d: Path) -> dict[str, str]:
+        r = d / "r"
+        g = lambda *a: subprocess.run(  # noqa: E731
+            ["git", "-C", str(r), *a], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        current = repo_version()
+        major, minor, _ = (int(x) for x in current.split("-")[0].split("."))
+        nxt = f"{major}.{minor + 1}.0" if defect != "breaking-patch" else f"{major}.{minor}.1"
+        date = "2100-01-15"
+        if defect == "same-month":
+            # The month of the newest dated release that carries breaking
+            # changes, read from the file so it cannot go stale.
+            text = (REPO / "CHANGELOG.md").read_text()
+            heads = list(re.finditer(r"(?m)^## \[(\d[^\]]*)\] - (\d{4}-\d{2})-\d{2}", text))
+            for i, m in enumerate(heads):
+                end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+                if "\n### Breaking Changes" in text[m.start():end]:
+                    date = f"{m.group(2)}-28"
+                    break
+        for rel in (*RELEASE_FILES, "scripts/check_release_tree.py"):
+            dst = r / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO / rel, dst)
+        cl = r / "CHANGELOG.md"
+        text = cl.read_text()
+        m = re.search(r"(?ms)^## \[Unreleased\]\n(.*?)(?=^## \[)", text)
+        if not m:
+            raise SystemExit("error: CHANGELOG.md has no [Unreleased] section to prepare")
+        body = m.group(1).strip()
+        if not body or body == "Nothing yet.":
+            body = "### Fixed\n\n- A fixture entry."
+        if "### Breaking Changes" not in body:
+            # The cadence defects need a breaking release to be wrong about.
+            body = "### Breaking Changes\n\n- A fixture break.\n\n" + body
+        leftover = "- A change that missed the notes.\n" if defect == "unreleased" else "Nothing yet.\n"
+        cl.write_text(
+            text[: m.start()]
+            + f"## [Unreleased]\n\n{leftover}\n## [{nxt}] - {date}\n\n{body}\n\n"
+            + text[m.end():]
+        )
+        g("init", "-q", "-b", "main")
+        g("config", "user.email", "t@example.com")
+        g("config", "user.name", "T")
+        g("add", "-A")
+        g("commit", "-q", "-m", "release prep")
+        # Bumping the crate versions and their pins after the notes is the one
+        # edit to packaged files release preparation may make later (0.12.1
+        # was prepared in that order). The healthy control does it in a
+        # second commit, so the check is proven not to refuse it.
+        for rel in RELEASE_FILES:
+            if rel.endswith("Cargo.toml"):
+                p = r / rel
+                p.write_text(p.read_text().replace(f'"{current}"', f'"{nxt}"'))
+        g("commit", "-q", "-am", "bump the crate versions and pins")
+        if defect == "late-change":
+            late = r / "crates/a2a-protocol-server/src/late.rs"
+            late.parent.mkdir(parents=True, exist_ok=True)
+            late.write_text("// landed after the notes were written\n")
+            g("add", "-A")
+            g("commit", "-q", "-m", "a fix merged after release prep")
+        name = f"v{nxt}"
+        g("tag", "-a", name, "-m", f"Release {name}")
+        head = g("rev-parse", "HEAD")
+        return {"__cwd__": str(r), "__env__": {"GITHUB_REF_NAME": name, "GITHUB_SHA": head}}
+
+    return setup
+
+
+def _crate_fixture(defect: str | None = None) -> Setup:
+    """`target/package/*.crate` archives whose VCS record names a commit."""
+
+    def setup(d: Path) -> dict[str, str]:
+        import io
+        import tarfile
+
+        sha = "1" * 40
+        (d / "scripts").mkdir()
+        shutil.copyfile(REPO / "scripts/check_release_tree.py", d / "scripts/check_release_tree.py")
+        pkg = d / "target" / "package"
+        pkg.mkdir(parents=True)
+        for crate in ("a2a-protocol-types", "a2a-protocol-server"):
+            recorded = "2" * 40 if defect == "other-commit" and crate.endswith("server") else sha
+            info = {"git": {"sha1": recorded}, "path_in_vcs": f"crates/{crate}"}
+            if defect == "dirty":
+                info["git"]["dirty"] = True
+            data = json.dumps(info).encode()
+            with tarfile.open(pkg / f"{crate}-9.9.9.crate", "w:gz") as tar:
+                member = tarfile.TarInfo(f"{crate}-9.9.9/.cargo_vcs_info.json")
+                member.size = len(data)
+                tar.addfile(member, io.BytesIO(data))
+        return {"__env__": {"GITHUB_SHA": sha}}
 
     return setup
 
