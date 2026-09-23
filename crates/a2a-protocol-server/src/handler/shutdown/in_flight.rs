@@ -178,16 +178,16 @@ impl RequestHandler {
     /// are admitted as usual and cancelled with the rest when it closes.
     pub async fn finish_in_flight(&self, completion: Duration, grace: Duration) -> InFlightReport {
         let running = self.in_flight.executors().len();
-        if running > 0 && !completion.is_zero() {
-            trace_info!(
-                executors = running,
-                completion_ms = u64::try_from(completion.as_millis()).unwrap_or(u64::MAX),
-                "shutdown: letting in-flight tasks finish"
-            );
-            // Timing out is the expected way out of this wait when a task is
-            // long; it is not a failure, so the result is not inspected.
-            let _ = tokio::time::timeout(completion, self.in_flight.wait()).await;
-        }
+        trace_info!(
+            executors = running,
+            completion_ms = u64::try_from(completion.as_millis()).unwrap_or(u64::MAX),
+            "shutdown: letting in-flight tasks finish"
+        );
+        // Unconditional: a zero window polls once and returns, which is
+        // `cancel_in_flight`'s behaviour, and an empty handler returns at
+        // once. Timing out is the expected way out when a task is long; it is
+        // not a failure, so the result is not inspected.
+        let _ = tokio::time::timeout(completion, self.in_flight.wait()).await;
         let completed = running.saturating_sub(self.in_flight.executors().len());
         InFlightReport {
             completed,
