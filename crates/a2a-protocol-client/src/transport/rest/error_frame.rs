@@ -14,11 +14,16 @@
 //!   `handleError`: `errResp := rest.ToRESTError(err, ...)`, then
 //!   `sseWriter.WriteData`), i.e. `data: {"error":{"code":404,"status":
 //!   "NOT_FOUND","message":...,"details":[ErrorInfo]}}`.
-//! * **This repository's server** writes `event: error` with a serialized
-//!   `A2aError`, `{"code":-32001,"message":...,"data":...}`
-//!   (`a2a-protocol-server/src/streaming/sse.rs`, `stream_error_payload`).
+//! * **This repository's server** writes `event: error` with the same
+//!   AIP-193 object, the error's `data` as a flat `google.protobuf.Struct`
+//!   detail (`a2a-protocol-server/src/streaming/sse.rs`,
+//!   `rest_stream_error`) — so a2a-go's REST client can read it. That detail
+//!   is decoded back into `data`, which keeps
+//!   [`A2aError::is_stream_lagged`] true across the stream. Releases up to
+//!   and including 0.13.0 wrote a serialized `A2aError` instead,
+//!   `{"code":-32001,"message":...,"data":...}`.
 //!
-//! Both are accepted — lenient in what the client reads. Neither parses as a
+//! All three are accepted — lenient in what the client reads. None parses as a
 //! `StreamResponse`, which is why they used to reach the consumer as a
 //! `Serialization` error naming an "unknown variant".
 
@@ -63,7 +68,29 @@ fn aip193_in_stream(data: &str, value: &serde_json::Value) -> A2aError {
         || standard_reason(error).unwrap_or(ErrorCode::InternalError),
         |known| known.code,
     );
-    A2aError::with_data(code, message, value.clone())
+    A2aError::with_data(
+        code,
+        message,
+        struct_detail(error).unwrap_or_else(|| value.clone()),
+    )
+}
+
+/// The `@type` a `google.protobuf.Struct` detail carries.
+const STRUCT_DETAIL_TYPE: &str = "type.googleapis.com/google.protobuf.Struct";
+
+/// The error's own `data`, when the frame carries it as a flat
+/// `google.protobuf.Struct` detail — the shape this repository's server writes
+/// (`{"@type":…,"streamLagged":6}`). Returning it as `data` is what keeps
+/// [`A2aError::is_stream_lagged`] working across a REST stream. `None` when
+/// there is no such detail, so a peer's whole object is kept instead.
+fn struct_detail(error: &serde_json::Value) -> Option<serde_json::Value> {
+    let detail =
+        error.get("details")?.as_array()?.iter().find(|d| {
+            d.get("@type").and_then(serde_json::Value::as_str) == Some(STRUCT_DETAIL_TYPE)
+        })?;
+    let mut fields = detail.as_object()?.clone();
+    fields.remove("@type");
+    Some(serde_json::Value::Object(fields))
 }
 
 /// The JSON-RPC-standard error a `google.rpc.ErrorInfo` reason names, for
@@ -105,6 +132,33 @@ mod tests {
         let err = decode_stream_error_frame(r#"{"error":{"code":500}}"#).expect("an error");
         assert_eq!(err.code, ErrorCode::InternalError);
         assert_eq!(err.message, "error reported inside the event stream");
+    }
+
+    /// The frame this repository's own server writes for a lagged REST stream
+    /// (`rest_stream_error` in the server's `streaming/sse.rs`): the error's
+    /// `data` travels as a flat `google.protobuf.Struct` detail. Decoding it
+    /// must give back the same `data`, or `is_stream_lagged` — the client's
+    /// only signal to resubscribe — reads false.
+    #[test]
+    fn a_struct_detail_is_the_errors_data_so_stream_lag_survives() {
+        let frame = r#"{"error":{"code":500,"status":"INTERNAL","message":"event stream lagged",
+            "details":[{"@type":"type.googleapis.com/google.protobuf.Struct","streamLagged":6}]}}"#;
+        let err = decode_stream_error_frame(frame).expect("an error");
+        assert!(err.is_stream_lagged(), "{err:?}");
+        assert_eq!(err.dropped_event_count(), Some(6));
+        assert_eq!(err.data, Some(serde_json::json!({"streamLagged": 6})));
+    }
+
+    /// Without a `Struct` detail — a2a-go's frames — the whole object stays
+    /// as `data`, so nothing the peer sent is lost.
+    #[test]
+    fn without_a_struct_detail_the_whole_object_is_the_data() {
+        let frame = r#"{"error":{"code":404,"status":"NOT_FOUND","message":"gone","details":[
+            {"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"TASK_NOT_FOUND","domain":"a2a-protocol.org"}]}}"#;
+        let err = decode_stream_error_frame(frame).expect("an error");
+        assert_eq!(err.code, ErrorCode::TaskNotFound);
+        let whole: serde_json::Value = serde_json::from_str(frame).expect("json");
+        assert_eq!(err.data, Some(whole));
     }
 
     #[test]
