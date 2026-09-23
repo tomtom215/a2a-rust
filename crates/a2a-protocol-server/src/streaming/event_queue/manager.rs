@@ -558,7 +558,12 @@ mod tests {
             .expect("write should succeed");
         drop(writer);
 
-        let r = sub_reader.read().await;
+        // Bounded: a subscriber that waits for a sequence number the writer
+        // never produces must fail this test, not hang it (cargo-mutants
+        // could only report the `seq + 1` mutants as timeouts).
+        let r = tokio::time::timeout(std::time::Duration::from_secs(5), sub_reader.read())
+            .await
+            .expect("subscriber read must not hang");
         assert!(r.is_some(), "subscriber should receive the event");
     }
 
