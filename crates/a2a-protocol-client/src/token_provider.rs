@@ -496,7 +496,11 @@ impl OAuth2ClientCredentials {
         let resp = tokio::time::timeout_at(deadline, self.client.request(req))
             .await
             .map_err(|_| ClientError::Timeout("token endpoint request timed out".into()))?
-            .map_err(|e| ClientError::Transport(format!("token endpoint request failed: {e}")))?;
+            // `HttpClient`, as every transport maps this same error: a refused
+            // or dropped connection is transient. It was `Transport`, which
+            // is not retryable, so a task whose token fetch met a restarting
+            // identity provider was classed `Internal` rather than `Transient`.
+            .map_err(|e| ClientError::HttpClient(format!("token endpoint request failed: {e}")))?;
 
         let status = resp.status();
         let body = crate::transport::collect_response_limited(
@@ -652,7 +656,7 @@ pub(crate) async fn discover_token_endpoint_within(
     let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
         .map_err(|_| ClientError::Timeout("OIDC discovery request timed out".into()))?
-        .map_err(|e| ClientError::Transport(format!("OIDC discovery request failed: {e}")))?;
+        .map_err(|e| ClientError::HttpClient(format!("OIDC discovery request failed: {e}")))?;
 
     let status = resp.status();
     let body = crate::transport::collect_response_limited(

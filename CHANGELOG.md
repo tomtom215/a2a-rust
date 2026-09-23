@@ -282,6 +282,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An unreachable OAuth2 token endpoint is a transient failure.** A refused
+  or dropped connection to the token endpoint, or to the OIDC discovery
+  document, surfaced as `ClientError::Transport`, which is not retryable, so
+  through `From<ClientError> for A2aError` a task whose token fetch met a
+  restarting identity provider failed as `Internal` rather than `Transient`.
+  It is now `ClientError::HttpClient`, as the transports report the same
+  error. A token endpoint that answers 429 or 5xx is still `Transport`; that
+  is recorded as open (audit N2).
+
 - **Replicas starting together against an empty PostgreSQL database all come
   up.** `CREATE TABLE IF NOT EXISTS` races in PostgreSQL: two sessions that
   both find a table absent both create it, and the second fails with a
