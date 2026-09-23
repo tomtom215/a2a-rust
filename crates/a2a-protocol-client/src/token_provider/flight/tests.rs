@@ -254,6 +254,10 @@ fn replicas_keep_their_variant_or_retry_class() {
         ClientError::Timeout("to".into()),
         ClientError::TooManyPendingRequests { limit: 3 },
         ClientError::ProtocolBindingMismatch("m".into()),
+        ClientError::IncompleteStream {
+            last_event_id: Some("7".into()),
+            detail: "d".into(),
+        },
     ];
     for e in all {
         let copy = replicate(&e);
