@@ -211,6 +211,7 @@ are rustdoc's job.
 | `methods` | Per-method client helpers |
 | `retry` | Configurable retry policy for transient client errors |
 | `streaming` | SSE client-side streaming support |
+| `testing` | `ScriptedPeer`: a misbehaving agent on any binding (stall, cut-off, mis-frame, 401), for testing a client's failure handling (`testing` feature) |
 | `tls` | TLS connector via rustls (`tls-rustls` feature) |
 | `token_provider` | Token acquisition: `TokenProvider`, OAuth 2.0 client-credentials, and OIDC discovery |
 | `transport` | Transport abstraction for A2A client requests |

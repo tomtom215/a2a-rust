@@ -138,6 +138,31 @@ stores (`tests/cross_replica_cancel/`).
   unchanged code (`left: "9007199254740993"`, `right: "9007199254740992"`).
   A unit test, `canonicalize_integers_exact`, had pinned the deviation by
   asserting `u64::MAX`'s exact digits. **[Fixed with T2.]**
+- **N13 — a peer that goes away mid-call read differently on each binding**
+  (Medium, client; found by E6's scripted peer). The same cut — the stream or
+  connection ending before a final event — was a retryable `Http` error over
+  JSON-RPC and HTTP+JSON, a non-retryable `Transport` over WebSocket and a
+  non-retryable `Protocol(InternalError)` over gRPC. A WebSocket handshake
+  refused with 401 was `Transport` too, so `BearerAuthInterceptor` never
+  dropped the token (the gap OW5 closed for gRPC). VALIDATED:
+  `tests/scripted_peer_tests.rs` failed three of five tests, five wrong
+  outcomes, on the unfixed transports — e.g. `WebSocket: expected a
+  retryable error, got Some(Err(Transport("WebSocket connection closed")))`
+  and `Grpc: … Protocol(A2aError { code: InternalError, message: "protocol
+  error: missing grpc-status trailer, …" })`. **[Fixed on this branch; see
+  the CHANGELOG's first breaking entry.]**
+- **N14 — under parallel load a sequential post to a private channel was
+  refused as "already being processed"** (severity unknown; CONJECTURED).
+  `swarm_scale cost::a_channel_gets_slower_as_it_ages`, run by
+  `--run-ignored all` alongside the rest of the server suite on 4 cores,
+  failed with `task … is already being processed; wait for it to reach
+  input-required or a terminal state before sending again` on a post the
+  test makes only after the previous one returned. OW4 attributes these
+  experiments' parallel failures to contention; a refusal of a *sequential*
+  post is a different claim — that a blocking send can answer before the
+  task is released for the next — and is not established either way. CI
+  excludes `binary(swarm_scale)` from mutation runs, so nothing runs it under
+  load. Next step: reproduce with the test alone and a CPU hog.
 - **N11 — cargo-mutants makes no viable body replacement for a function
   returning `Pin<Box<dyn Future<…>>>`** (Medium, gate; wider than N9). It
   offers `Pin::new()`, `Pin::from_iter(…)`, `Pin::new(Box::new(Default::default()))`
@@ -151,6 +176,22 @@ stores (`tests/cross_replica_cancel/`).
   those bodies are still generated and graded. Spelling a return type as
   `Result` does not reach these: the alias sits inside `Output = …`. Not
   fixed.
+- **N18 — `WebSocketTransport` never reconnects** (Low, client; found
+  while fixing N13). Once its socket drops, `closed` stays set and every
+  later call fails at once with a non-retryable `Transport("WebSocket
+  connection closed")`. N13 made the drop itself retryable, as it is on every
+  other binding, but on this one only a new transport can act on that: a
+  caller retrying on the same client gets one futile attempt. VALIDATED with
+  a scripted peer that cuts the connection: the in-flight `send_message`
+  failed `HttpClient("WebSocket connection closed")` with one connection
+  made, and the next call on the same client failed `Transport(…)`. (The
+  retry policy did not re-send the first call, since `SendMessage` is not
+  idempotent unless the peer honours idempotency keys.) The fix is a lazy
+  reconnect from the stored URL and config, bounded like the first connect;
+  E3's circuit breaker would sit in front of it. Until then
+  `a_call_on_a_dropped_websocket_is_refused_as_final` pins the refusal as
+  non-retryable, so a retry loop stops instead of spinning. Open; the
+  CHANGELOG's N13 entry says so.
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.
@@ -668,6 +709,9 @@ Each of these gaps is tied to at least one defect that escaped:
    let through T1, S2, S7, C8 and C9.
 6. **Nothing tests hostile or stalled peers.** No stub server stalls, cuts
    off or mis-frames a stream. This let through C1, C2, C6 and C11.
+   **[Gated: E6's `ScriptedPeer` drives every binding through stall,
+   cut-off, mis-frame and 401 in `tests/scripted_peer_tests.rs`; its first
+   run found N13.]**
 7. **Signing has no external test vectors.** RFC 8785 Appendix B is not in
    the tests. This let through T2, T3 and T4.
    **[Gated: `crates/a2a-protocol-types/tests/rfc8785_vectors.rs` carries
@@ -810,6 +854,10 @@ operator, highest first.
   a worker that stalls, cuts a stream, sends a malformed frame or answers
   401. Escape class 6 (section 6) is this repository's own version of the
   same gap.
+- **[Built: `a2a_protocol_client::testing::ScriptedPeer`, feature
+  `testing`, on all four bindings; `tests/scripted_peer_tests.rs` runs every
+  script against every binding. The C1 stall tests were not ported onto it;
+  they still run as they were.]**
 - **Missing.** The raw-TCP stubs exist only inside individual test files
   (`crates/a2a-protocol-client/tests/stream_liveness_tests.rs`,
   `hostile_server_tests.rs`), one per test.

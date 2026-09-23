@@ -495,6 +495,13 @@ impl GrpcTransport {
     }
 
     fn status_to_error(status: &tonic::Status) -> ClientError {
+        if is_truncation(status) {
+            // The response ended with no `grpc-status`: the peer or something
+            // between went away mid-call. Retryable, like a dropped HTTP
+            // connection on the other bindings (`Http`); it was a
+            // non-retryable `Protocol(InternalError)`.
+            return ClientError::HttpClient(format!("gRPC {}", status.message()));
+        }
         match status.code() {
             // Retryable, matching how the REST and JSON-RPC bindings treat a
             // timeout.
@@ -848,6 +855,13 @@ async fn grpc_stream_reader_task<S>(
                     break;
                 }
             }
+            // Truncated before a final status: end the body, and let
+            // `EventStream` rule on it as it does for every binding — a
+            // completion after a final event, `IncompleteStream` (retryable,
+            // resumable) before one. It was a non-retryable
+            // `Protocol(InternalError)`, where the HTTP bindings report the
+            // same cut as a retryable error.
+            Some(Err(status)) if is_truncation(&status) => break,
             Some(Err(status)) => {
                 // Route through `status_to_error` (not the bare code map) so a
                 // mid-stream `Unavailable`/`DeadlineExceeded`/`ResourceExhausted`
@@ -862,6 +876,19 @@ async fn grpc_stream_reader_task<S>(
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Whether tonic is reporting a response that ended without a `grpc-status`
+/// trailer: `Unknown`, with the message tonic writes for exactly that case
+/// (`tonic::status::infer_grpc_status`, 0.14). Matched on the text because it
+/// is the only signal tonic keeps — hyper turns the stream reset that caused
+/// it into a clean end of body — and pinned by `tests/scripted_peer_tests.rs`,
+/// whose gRPC cut-off peer produces it, so a tonic that rewords it fails there.
+fn is_truncation(status: &tonic::Status) -> bool {
+    status.code() == tonic::Code::Unknown
+        && status
+            .message()
+            .starts_with("protocol error: missing grpc-status trailer")
+}
 
 /// Maps a protobuf conversion failure to a non-retryable transport error.
 #[allow(clippy::needless_pass_by_value)]
@@ -1171,6 +1198,32 @@ mod tests {
             err.is_retryable(),
             "gRPC ResourceExhausted must be retryable"
         );
+    }
+
+    // ── truncation ────────────────────────────────────────────────────────
+
+    /// Only tonic's missing-trailer status is a truncation: an `Unknown` a
+    /// peer sends on purpose, and the same words under another code, are not.
+    #[test]
+    fn only_the_missing_trailer_status_is_a_truncation() {
+        let truncated = tonic::Status::unknown(
+            "protocol error: missing grpc-status trailer, stream was terminated without a final status",
+        );
+        assert!(is_truncation(&truncated));
+        assert!(matches!(
+            GrpcTransport::status_to_error(&truncated),
+            ClientError::HttpClient(_)
+        ));
+        let peer_unknown = tonic::Status::unknown("the agent did not say why");
+        assert!(!is_truncation(&peer_unknown));
+        assert!(matches!(
+            GrpcTransport::status_to_error(&peer_unknown),
+            ClientError::Protocol(_)
+        ));
+        let same_words = tonic::Status::internal(
+            "protocol error: missing grpc-status trailer, stream was terminated without a final status",
+        );
+        assert!(!is_truncation(&same_words));
     }
 
     // ── status_to_error match arms ────────────────────────────────────────

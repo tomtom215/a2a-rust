@@ -12,6 +12,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **A peer that goes away mid-call reads the same on every binding.** Found
+  by driving each binding against a scripted peer that cuts streams off
+  (audit N13): the same event — the connection or stream ending before a
+  final event — was a retryable `Http` error on JSON-RPC and HTTP+JSON, a
+  non-retryable `Transport("WebSocket connection closed")` on WebSocket, and
+  a non-retryable `Protocol(InternalError)` on gRPC, so retry and resume
+  logic, and the failure class an executor reports, depended on the binding.
+  Now, over WebSocket, a stream in flight when the socket drops ends as
+  `IncompleteStream` (retryable, as `EventStream` rules on every other
+  binding), a unary call in flight fails with `HttpClient` (retryable), a
+  connection that cannot be made is `HttpClient`, and a handshake the peer
+  answers with an HTTP status is `UnexpectedStatus { status, .. }` — so a
+  401 reaches `BearerAuthInterceptor`, which drops the refused token, as it
+  already did over HTTP and gRPC. A frame over the size cap, or one that
+  breaks the protocol, stays a non-retryable `Transport` error. Over gRPC, a
+  response that ends with no `grpc-status` trailer — what tonic reports for a
+  truncated stream — ends a stream as `IncompleteStream` and fails a unary
+  call with `HttpClient`, both retryable. **Migration:** code matching
+  `Transport(_)` to detect a dropped WebSocket, or
+  `Protocol(e)` with `e.code == InternalError` to detect a truncated gRPC
+  stream, should match `IncompleteStream { .. }` / `HttpClient(_)`, or ask
+  `is_retryable()`. Not a wire change. `WebSocketTransport` does not
+  reconnect: after a drop, every later call on it fails with a
+  non-retryable `Transport("WebSocket connection closed")`, so the retry
+  a retryable drop invites has to go through a new transport (audit N18).
+
 - **gRPC status codes map to what the caller has to do about them.** Over the
   gRPC transport and the slimrpc binding, `UNAUTHENTICATED` is now
   `ClientError::UnexpectedStatus { status: 401, .. }` and `PERMISSION_DENIED`
@@ -62,6 +88,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through a shipped store now gets that error. See **Fixed** for why.
 
 ### Added
+
+- **`testing::ScriptedPeer`** (client feature `testing`): a loopback A2A
+  peer that stalls, cuts off, mis-frames or refuses every call on purpose,
+  over JSON-RPC, HTTP+JSON, WebSocket and gRPC, for testing code that calls
+  agents — a coordinator has to survive the worker it delegates to, and a
+  well-behaved test server never produces these failures. This crate's own
+  tests drive every binding against every script with it
+  (`tests/scripted_peer_tests.rs`), which is how N13 above was found. Adds no
+  dependency; not for production builds.
 
 - **`GrpcDispatcher::serve_with_shutdown` and
   `WebSocketDispatcher::serve_with_shutdown`**, with `with_completion_grace`,
@@ -132,7 +167,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`CallInterceptor::on_error`** and **`TokenProvider::invalidate`**, both
   no-op by default. `BearerAuthInterceptor` uses them so an OAuth2 token the
   agent answered with `401` is not sent again; the refused call still fails.
-  JSON-RPC and HTTP+JSON only — gRPC's `Unauthenticated` is not yet mapped.
+  On every binding: gRPC's `UNAUTHENTICATED` and a WebSocket handshake refused
+  with 401 reach it as `UnexpectedStatus { status: 401, .. }` since the two
+  entries under **Breaking Changes**.
 
 - **`OAuth2ClientCredentials::with_failure_backoff`** (1 s), **`Method::returns_empty`**,
   and **`push::webhook::notification_token`**, which reads the push token under

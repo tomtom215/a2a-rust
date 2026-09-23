@@ -169,8 +169,14 @@ What does work:
   cargo mutants --in-diff pr-src.diff --timeout 300 --jobs 2 \
     --test-tool=nextest --profile=mutants --all-features \
     -- --run-ignored all \
-       -E 'not (binary(soak) or binary(soak_multi_replica))'
+       -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'
   ```
+
+  *(Corrected 2026-09-23: this recipe omitted `binary(swarm_scale)`, which
+  `mutants.yml` excludes. Without it the server's unmutated baseline runs the
+  ignored swarm-scale load experiments in parallel and failed here on
+  `cost::a_channel_gets_slower_as_it_ages` — exit 4, "no mutants were
+  tested" — which reads as a broken tree. See audit N14.)*
 
   where `pr-src.diff` is
   `git diff -M origin/main...HEAD -- ':(glob)crates/*/src/**/*.rs'`.

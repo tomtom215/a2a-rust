@@ -135,6 +135,9 @@ pub mod token_provider;
 pub mod trace_propagation;
 pub mod transport;
 
+#[cfg(feature = "testing")]
+pub mod testing;
+
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 
 pub use auth::{AuthInterceptor, CredentialsStore, InMemoryCredentialsStore, SessionId};

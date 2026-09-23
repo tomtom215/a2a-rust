@@ -66,6 +66,7 @@ All 11 A2A v1.0 methods are methods of `A2aClient`:
 | `websocket` | No | WebSocket transport |
 | `grpc` | No | gRPC transport via tonic (plaintext) |
 | `grpc-tls` | No | gRPC over TLS (implies `grpc`; independent of `tls-rustls`); bundled roots or a pinned `ClientTlsConfig`, re-exported from `transport::grpc` |
+| `testing` | No | A scripted hostile peer (`testing::ScriptedPeer`) that stalls, cuts off, mis-frames or refuses on each binding, for testing code that calls agents |
 
 ## Agent Discovery
 
