@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_protocol_types::failure::{FailureClass, set_class};
+use a2a_protocol_types::failure::{FailureClass, error_class, set_class};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 use tokio::sync::OwnedSemaphorePermit;
@@ -25,6 +25,8 @@ use tokio::task::JoinHandle;
 use crate::executor::AgentExecutor;
 use crate::request_context::RequestContext;
 use crate::streaming::{EventQueueManager, EventQueueWriter, InMemoryQueueWriter};
+
+use super::terminal::TerminalTracking;
 
 use super::super::{CancellationEntry, RequestHandler};
 
@@ -102,45 +104,72 @@ impl RequestHandler {
         // processor and the sync collector already do exactly this; this
         // spawn was the one that did not.
         let tenant = crate::store::tenant::TenantContext::current();
+        let shutdown = self.in_flight.shutdown_token();
 
-        tokio::spawn(crate::store::tenant::TenantContext::scope(
-            tenant,
-            async move {
-                // Owned by this future, so the slot is returned when the executor
-                // finishes, fails, panics, or is aborted.
-                let _tenant_slot = tenant_slot;
-                trace_debug!(task_id = %ctx.task_id, "executor started");
+        // On the handler's tracker, so shutdown can wait for this future to
+        // end rather than exit underneath it.
+        self.in_flight
+            .executors()
+            .spawn(crate::store::tenant::TenantContext::scope(
+                tenant,
+                async move {
+                    // Owned by this future, so the slot is returned when the executor
+                    // finishes, fails, panics, or is aborted.
+                    let _tenant_slot = tenant_slot;
+                    trace_debug!(task_id = %ctx.task_id, "executor started");
 
-                // Armed before the executor runs; see the type's docs for when it
-                // fires. There is no `catch_unwind` here — the guard *is* the
-                // panic handling.
-                let mut cleanup_guard = CleanupGuard {
-                    task_id: Some(task_id.clone()),
-                    queue_mgr: event_queue_mgr.clone(),
-                    tokens: Arc::clone(&cancel_tokens),
-                };
+                    // Armed before the executor runs; see the type's docs for when it
+                    // fires. There is no `catch_unwind` here — the guard *is* the
+                    // panic handling.
+                    let mut cleanup_guard = CleanupGuard {
+                        task_id: Some(task_id.clone()),
+                        queue_mgr: event_queue_mgr.clone(),
+                        tokens: Arc::clone(&cancel_tokens),
+                    };
 
-                let result =
-                    run_executor(executor.as_ref(), &ctx, writer.as_ref(), executor_timeout).await;
-                if let Err((ref e, class)) = result {
-                    write_failure_event(writer.as_ref(), &ctx, e, class).await;
-                }
-                // Drop the writer so the channel closes and readers see EOF.
-                drop(writer);
-                // Explicit cleanup, then disarm the guard so it does not release
-                // a second time on normal exit.
-                event_queue_mgr.destroy(&task_id).await;
-                cancel_tokens.write().await.remove(&task_id);
-                cleanup_guard.task_id = None;
-            },
-        ))
+                    let writer = TerminalTracking::new(writer);
+                    let result =
+                        run_executor(executor.as_ref(), &ctx, &writer, executor_timeout).await;
+                    if let Err((ref e, class)) = result {
+                        write_failure_event(&writer, &ctx, e, class).await;
+                    } else if shutdown.is_cancelled() && !writer.terminal_written() {
+                        // Shut down, not cancelled by a caller: `CancelTask` runs
+                        // this hook itself, and cancels only the task's own child
+                        // token. The executor saw its token and returned without a
+                        // terminal state, so end the task the way `CancelTask`
+                        // would — the default hook writes `Canceled` — and every
+                        // stream still open on it gets a terminal event instead of
+                        // simply stopping. After `execute` returned, never beside
+                        // it: an executor that wrote its own terminal state while
+                        // the hook wrote another would have the second rejected as
+                        // an invalid transition and the task marked `Failed`.
+                        if let Err(_e) = executor.cancel(&ctx, &writer).await {
+                            trace_warn!(
+                                task_id = %ctx.task_id,
+                                error = %_e,
+                                "cancel hook failed during shutdown"
+                            );
+                        }
+                    }
+                    // Drop the writer so the channel closes and readers see EOF.
+                    drop(writer);
+                    // Explicit cleanup, then disarm the guard so it does not release
+                    // a second time on normal exit.
+                    event_queue_mgr.destroy(&task_id).await;
+                    cancel_tokens.write().await.remove(&task_id);
+                    cleanup_guard.task_id = None;
+                },
+            ))
     }
 }
 
 /// Runs the executor under the resolved timeout, if there is one.
 ///
 /// A timeout is reported as an internal error, so it takes the same failure
-/// path as an executor that returned `Err`.
+/// path as an executor that returned `Err`. An executor's own error is
+/// classified by [`error_class`]: a class the executor recorded on it with
+/// `set_error_class` (as the client's `From<ClientError>` does for a
+/// delegated call's timeout) wins over the one its code implies.
 async fn run_executor(
     executor: &dyn AgentExecutor,
     ctx: &RequestContext,
@@ -151,13 +180,13 @@ async fn run_executor(
         return executor
             .execute(ctx, writer)
             .await
-            .map_err(|e| (FailureClass::from(e.code), e))
+            .map_err(|e| (error_class(&e), e))
             .map_err(|(class, e)| (e, class));
     };
     match tokio::time::timeout(timeout, executor.execute(ctx, writer)).await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => {
-            let class = FailureClass::from(e.code);
+            let class = error_class(&e);
             Err((e, class))
         }
         // A deadline is a bound that was hit, not an agent that broke, and
@@ -180,7 +209,7 @@ async fn run_executor(
 /// `metadata.error` is where streaming callers have always read it, and it
 /// stays for them.
 async fn write_failure_event(
-    writer: &InMemoryQueueWriter,
+    writer: &dyn EventQueueWriter,
     ctx: &RequestContext,
     error: &A2aError,
     class: FailureClass,

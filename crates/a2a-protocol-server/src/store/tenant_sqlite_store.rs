@@ -328,15 +328,22 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             // tasks without one.
             let status_ts = super::status_timestamp_sqlite(task.status.timestamp.as_deref());
 
-            sqlx::query(
+            // The upsert's `WHERE` is the terminal guard (see
+            // `crate::store::terminal`). This store has no delta overrides, so
+            // every write path — the trait's default deltas included — comes
+            // through here.
+            let written = sqlx::query(crate::store::terminal::sql_write_allowed!(
                 "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, strftime('%Y-%m-%d %H:%M:%f','now')))
                  ON CONFLICT(tenant_id, id) DO UPDATE SET
                      context_id = excluded.context_id,
                      state = excluded.state,
                      data = excluded.data,
-                     updated_at = excluded.updated_at",
-            )
+                     updated_at = excluded.updated_at
+                 WHERE ",
+                "tenant_tasks.state",
+                "excluded.state"
+            ))
             .bind(&tenant)
             .bind(id)
             .bind(context_id)
@@ -345,7 +352,25 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             .bind(&status_ts)
             .execute(&self.pool)
             .await
-            .map_err(|e| to_a2a_error(&e))?;
+            .map_err(|e| to_a2a_error(&e))?
+            .rows_affected();
+
+            if written == 0 {
+                // A terminal state is never left once reached, so reading it
+                // back after the refusal reports the state that refused it.
+                let stored: Option<(String,)> = sqlx::query_as(
+                    "SELECT state FROM tenant_tasks WHERE tenant_id = ?1 AND id = ?2",
+                )
+                .bind(&tenant)
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+                return Err(crate::store::terminal::refusal(
+                    task,
+                    stored.map(|(s,)| s).as_deref(),
+                ));
+            }
 
             Ok(())
         })

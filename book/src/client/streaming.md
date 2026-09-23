@@ -97,19 +97,61 @@ while let Some(event) = stream.next().await {
 }
 ```
 
+## How a Stream Ends
+
+`next()` returns `None` only when the stream has finished: after a `Message`,
+or a task or status update in a terminal or interrupted state. A body that
+ends anywhere else — the server went away, a proxy cut the connection — yields
+`ClientError::IncompleteStream` first, carrying the last SSE `id:` so you can
+resume without losing events:
+
+```rust,no_run
+# use a2a_protocol_client::{A2aClient, ClientError};
+# use a2a_protocol_types::events::StreamResponse;
+# fn handle(_event: StreamResponse) {}
+# async fn follow(client: &A2aClient, task_id: &str) -> Result<(), ClientError> {
+let mut stream = client.subscribe_to_task(task_id).await?;
+loop {
+    match stream.next().await {
+        Some(Ok(event)) => handle(event),
+        Some(Err(ClientError::IncompleteStream { last_event_id: Some(id), .. })) => {
+            stream = client.subscribe_to_task_from(task_id, id).await?;
+        }
+        Some(Err(e)) => return Err(e),
+        None => break,
+    }
+}
+# Ok(())
+# }
+```
+
+`EventStream::last_event_id()` exposes the same id at any point. gRPC and
+WebSocket streams carry no ids, so there it is always `None` and a resubscribe
+starts from the `Task` snapshot.
+
 ## Stream Timeouts
 
-The client has separate timeouts for stream connections:
+A stream has three bounds, one per phase:
 
 ```rust,ignore
 use std::time::Duration;
 
 let client = ClientBuilder::new(url)
-    .with_stream_connect_timeout(Duration::from_secs(15))
+    .with_stream_connect_timeout(Duration::from_secs(15))        // headers
+    .with_stream_first_event_timeout(Duration::from_secs(120))   // first data
+    .with_stream_idle_timeout(Some(Duration::from_secs(300)))    // between data
     .build()?;
 ```
 
-The connect timeout applies to establishing the SSE connection. The same duration also bounds the wait for the *first* event (lifted once any data arrives — the spec requires streams to begin with a Task/Message event immediately, and SSE keep-alives count), so a server that accepts the stream and then goes silent fails fast instead of hanging the consumer. After the first frame the stream stays open until the server closes it or an error occurs.
+The **connect timeout** (default 30 seconds) bounds establishing the stream: until the response headers arrive (for gRPC, until the call is accepted), and reading the error body when the answer is not a stream.
+
+The **first-event timeout** (default 5 minutes) bounds the wait for the stream's first data once it is established; a keep-alive comment counts. The specification asks a server to open with its `Task` or `Message` at once, and this repository's server does, but a2a-go writes nothing until its agent emits an event, so an agent that makes a slow model call first is silent until the call returns.
+
+> **Migrating from 0.13 or earlier:** the connect timeout used to bound the first event too, so an agent that flushed its headers and thought for longer than 30 seconds was cut off. If you shortened `with_stream_connect_timeout` in order to fail fast on a silent agent, set `with_stream_first_event_timeout` to the same value to keep that behaviour. `GrpcTransport::with_stream_connect_timeout` likewise now bounds opening the call rather than the first event.
+
+After the first frame, the **idle timeout** (`with_stream_idle_timeout`, default 5 minutes) bounds the silence between chunks. Any bytes reset it, including the `: keep-alive` comments this repository's server writes every 30 seconds, so a healthy stream from it runs for as long as the task does. A stream that receives nothing for the whole bound ends with `ClientError::Timeout` ("stream idle timeout: …"); the task on the server is not cancelled, so resubscribe with `subscribe_to_task` to continue. Set `None` to disable it.
+
+The default is five minutes because a healthy peer is never that quiet on the wire: this repository's server heartbeats every 30 seconds; a2a-go v2.5.0 sends no keep-alives unless the server opts in, but its own client gives a whole request 3 minutes; and common proxies close a connection that is silent for about 60 seconds. gRPC and WebSocket streams carry no heartbeat the stream can see, so on those bindings the bound is on the gap between *events* — raise it for agents that think silently for longer.
 
 ## Safety Limits
 
@@ -117,8 +159,9 @@ The SSE parser protects against resource exhaustion:
 
 | Limit | Value | Purpose |
 |-------|-------|---------|
-| Buffer cap | 16 MiB | Prevents OOM from oversized events |
+| Event size | 16 MiB (`with_max_event_size`) | Refuses an oversized event with an error and skips it; a line with no end is refused once it outgrows the limit, so memory stays bounded |
 | Connect timeout | 30s (default) | Fails fast on unreachable servers |
+| Idle timeout | 5 min (default) | Ends a stream whose server stopped sending, keep-alives included |
 
 ## Next Steps
 

@@ -172,3 +172,42 @@ async fn a_policy_refusal_asks_for_a_person_rather_than_a_retry() {
     assert!(class.needs_human());
     assert!(!class.is_retryable());
 }
+
+/// An executor that returns `Err` can still state the class, by carrying it
+/// in `A2aError::data` under the failure key. This is what lets `?` on a
+/// delegated call's timeout land as `Transient` instead of `Internal`.
+#[tokio::test]
+async fn a_class_carried_on_the_error_wins_over_the_code() {
+    let handler = RequestHandlerBuilder::new(ErroringExecutor(|| {
+        A2aError::with_data(
+            a2a_protocol_types::error::ErrorCode::InternalError,
+            "downstream timed out",
+            serde_json::json!({ a2a_protocol_types::failure::FAILURE_METADATA_KEY: "transient" }),
+        )
+    }))
+    .build()
+    .expect("handler");
+
+    let task = failed_task(&handler).await;
+    assert_eq!(task.status.state, TaskState::Failed);
+    assert_eq!(task.failure_class(), Some(FailureClass::Transient));
+}
+
+/// Data that says nothing about the class leaves the code in charge.
+#[tokio::test]
+async fn unrelated_error_data_leaves_the_code_to_decide() {
+    let handler = RequestHandlerBuilder::new(ErroringExecutor(|| {
+        A2aError::with_data(
+            a2a_protocol_types::error::ErrorCode::InvalidParams,
+            "bad",
+            serde_json::json!([{ "reason": "whatever" }]),
+        )
+    }))
+    .build()
+    .expect("handler");
+
+    assert_eq!(
+        failed_task(&handler).await.failure_class(),
+        Some(FailureClass::InvalidRequest)
+    );
+}

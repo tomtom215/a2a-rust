@@ -40,10 +40,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -80,10 +77,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -114,10 +108,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -133,6 +124,11 @@ impl A2aClient {
     /// Deletes a push notification configuration.
     ///
     /// Calls `DeleteTaskPushNotificationConfig`.
+    ///
+    /// The result is `google.protobuf.Empty`, so besides the spec's `{}` a
+    /// success may also arrive as a JSON-RPC response with no `result`, a
+    /// `null` result, or an HTTP+JSON `2xx` with no body — the forms a2a-go
+    /// v2.5.0 sends. All of them are `Ok(())`.
     ///
     /// # Errors
     ///
@@ -154,10 +150,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),

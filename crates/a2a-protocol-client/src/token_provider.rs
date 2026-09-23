@@ -60,8 +60,8 @@
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -91,24 +91,37 @@ const DEFAULT_TOKEN_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Default margin before expiry at which a cached token is refreshed.
 const DEFAULT_REFRESH_LEEWAY: Duration = Duration::from_secs(30);
 
-/// Whether a cached token is still usable at `now`.
+/// Default time a failed refresh is remembered and returned to later callers
+/// without a new attempt.
 ///
-/// Fresh means *strictly* before the deadline: at exactly `refresh_after` the
-/// token is due for refresh, not still good.
-///
-/// Extracted from [`OAuth2ClientCredentials::cached`] rather than left inline
-/// so the boundary is reachable from a test. `Instant::now()` cannot be made
-/// to land exactly on a stored deadline, so an inline `now < refresh_after`
-/// leaves `<` and `<=` indistinguishable to any test and to mutation testing
-/// — both mutants of that comparison survived the 2026-08-13 sweep.
-fn is_fresh(now: Instant, refresh_after: Instant) -> bool {
-    now < refresh_after
-}
+/// One second: long enough that a tight caller loop against a dead token
+/// endpoint makes one attempt a second rather than one per call, short
+/// enough that recovery is noticed within a second and nobody mistakes the
+/// cached error for the endpoint's real recovery time. Callers already
+/// waiting on an attempt share its outcome regardless of this value.
+const DEFAULT_FAILURE_BACKOFF: Duration = Duration::from_secs(1);
+
+mod flight;
 
 /// Cache lifetime applied when the token response omits `expires_in`
 /// (RFC 6749 leaves expiry unspecified in that case — re-check soon rather
 /// than either hammering the endpoint or holding a token forever).
 const NO_EXPIRY_CACHE_TTL: Duration = Duration::from_secs(60);
+
+/// How long a token with the given `expires_in` is served from cache.
+///
+/// The refresh leeway is taken off the lifetime, but never more than half
+/// of it: a token is always reused for at least half its life. Without that
+/// bound a lifetime at or under the leeway (30 s by default) cached for zero
+/// and every call went to the token endpoint (audit C15). Half is where the
+/// two rules meet at a lifetime of twice the leeway, so long-lived tokens
+/// keep the full leeway exactly as before.
+fn cache_ttl(expires_in: Option<u64>, leeway: Duration) -> Duration {
+    expires_in.map_or(NO_EXPIRY_CACHE_TTL, |secs| {
+        let lifetime = Duration::from_secs(secs);
+        lifetime.saturating_sub(leeway.min(lifetime / 2))
+    })
+}
 
 // ── TokenProvider ─────────────────────────────────────────────────────────────
 
@@ -125,6 +138,22 @@ pub trait TokenProvider: Send + Sync + 'static {
     /// Returns a [`ClientError`] when a token cannot be produced (e.g. the
     /// token endpoint rejected the credentials or is unreachable).
     fn access_token(&self) -> Pin<Box<dyn Future<Output = ClientResult<String>> + Send + '_>>;
+
+    /// Tells the provider the agent rejected `token` (HTTP `401`), so it
+    /// should not hand that token out again.
+    ///
+    /// [`BearerAuthInterceptor`] calls this; the next
+    /// [`access_token`](Self::access_token) should then produce a different
+    /// token. Only `token` is meant: a provider that has already moved on to
+    /// a newer one keeps it.
+    ///
+    /// **Not overriding it** (the default does nothing) means a rejected
+    /// token — revoked, rotated signing key, wrong audience — keeps being
+    /// sent, and every call fails the same way, until the provider's own
+    /// expiry replaces it. [`OAuth2ClientCredentials`] overrides it;
+    /// [`StaticTokenProvider`] has nothing else to offer and keeps the
+    /// default.
+    fn invalidate(&self, _token: &str) {}
 }
 
 /// A [`TokenProvider`] that always returns the same fixed token.
@@ -163,6 +192,13 @@ impl TokenProvider for StaticTokenProvider {
 
 /// A [`CallInterceptor`] that injects `Authorization: Bearer <token>` from a
 /// [`TokenProvider`] before every request.
+///
+/// When the agent answers `401`, it calls
+/// [`TokenProvider::invalidate`] with the token it sent, so a refused token
+/// is not sent again. That catches a `401` surfaced as
+/// [`ClientError::UnexpectedStatus`], which is how the JSON-RPC and REST
+/// bindings report it; gRPC reports `Unauthenticated` differently today and
+/// is not covered.
 ///
 /// Because the token is fetched per request, a provider that refreshes (like
 /// [`OAuth2ClientCredentials`]) keeps long-lived clients authenticated across
@@ -210,6 +246,26 @@ impl CallInterceptor for BearerAuthInterceptor {
     ) -> impl Future<Output = ClientResult<()>> + Send + 'a {
         async move { Ok(()) }
     }
+
+    /// A `401` from the agent means the token this interceptor attached was
+    /// refused, so the provider is told to stop serving it. The failing call
+    /// still fails; the next one gets a fresh token. Other errors say
+    /// nothing about the token and leave it cached.
+    fn on_error<'a>(
+        &'a self,
+        req: &'a ClientRequest,
+        err: &'a ClientError,
+    ) -> impl Future<Output = ()> + Send + 'a {
+        if matches!(err, ClientError::UnexpectedStatus { status: 401, .. })
+            && let Some(token) = req
+                .extra_headers
+                .get("authorization")
+                .and_then(|v| v.strip_prefix("Bearer "))
+        {
+            self.provider.invalidate(token);
+        }
+        std::future::ready(())
+    }
 }
 
 // ── OAuth2ClientCredentials ───────────────────────────────────────────────────
@@ -231,9 +287,17 @@ pub enum TokenEndpointAuthStyle {
 ///
 /// - Tokens are cached until shortly before expiry
 ///   ([`with_refresh_leeway`](Self::with_refresh_leeway), default 30 s before
-///   `expires_in` elapses) and refreshed on demand.
+///   `expires_in` elapses, but never less than half the lifetime, so a
+///   short-lived token is still reused) and refreshed on demand.
 /// - Concurrent callers needing a refresh collapse into a single token
-///   request (single-flight).
+///   request (single-flight), and all of them get that request's outcome —
+///   its failure as well as its success, so a dead endpoint costs every
+///   waiting caller one timeout, not one each in turn.
+/// - A failed refresh is remembered for
+///   [`with_failure_backoff`](Self::with_failure_backoff) (default 1 s):
+///   callers in that window get the same error without a new request.
+/// - A caller that is cancelled mid-refresh does not strand the others: the
+///   attempt is marked abandoned and the next waiter starts a new one.
 /// - The client secret is never logged, never echoed in errors, and redacted
 ///   from `Debug` output.
 ///
@@ -251,15 +315,9 @@ pub struct OAuth2ClientCredentials {
     auth_style: TokenEndpointAuthStyle,
     refresh_leeway: Duration,
     request_timeout: Duration,
+    failure_backoff: Duration,
     client: TokenHttpClient,
-    cache: RwLock<Option<CachedToken>>,
-    refresh_lock: tokio::sync::Mutex<()>,
-}
-
-#[derive(Clone)]
-struct CachedToken {
-    token: String,
-    refresh_after: Instant,
+    tokens: flight::TokenCache,
 }
 
 impl fmt::Debug for OAuth2ClientCredentials {
@@ -293,9 +351,9 @@ impl OAuth2ClientCredentials {
             auth_style: TokenEndpointAuthStyle::Basic,
             refresh_leeway: DEFAULT_REFRESH_LEEWAY,
             request_timeout: DEFAULT_TOKEN_REQUEST_TIMEOUT,
+            failure_backoff: DEFAULT_FAILURE_BACKOFF,
             client: build_token_http_client(),
-            cache: RwLock::new(None),
-            refresh_lock: tokio::sync::Mutex::new(()),
+            tokens: flight::TokenCache::default(),
         }
     }
 
@@ -394,6 +452,9 @@ impl OAuth2ClientCredentials {
     }
 
     /// Sets how long before expiry a cached token is refreshed (default 30 s).
+    ///
+    /// Capped at half the token's lifetime: a token that lives 20 s is
+    /// cached for 10 s rather than not at all.
     #[must_use]
     pub const fn with_refresh_leeway(mut self, leeway: Duration) -> Self {
         self.refresh_leeway = leeway;
@@ -407,23 +468,21 @@ impl OAuth2ClientCredentials {
         self
     }
 
-    /// Returns the cached token when still fresh.
-    fn cached(&self) -> Option<String> {
-        let guard = self
-            .cache
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.as_ref().and_then(|c| {
-            if is_fresh(Instant::now(), c.refresh_after) {
-                Some(c.token.clone())
-            } else {
-                None
-            }
-        })
+    /// Sets how long a failed refresh is remembered (default 1 s).
+    ///
+    /// Callers arriving within this window after a failure get the same
+    /// error immediately instead of a new token request. `Duration::ZERO`
+    /// turns the negative cache off; callers already waiting on an attempt
+    /// share its outcome either way.
+    #[must_use]
+    pub const fn with_failure_backoff(mut self, backoff: Duration) -> Self {
+        self.failure_backoff = backoff;
+        self
     }
 
-    /// Fetches a fresh token from the endpoint and caches it.
-    async fn refresh(&self) -> ClientResult<String> {
+    /// Fetches a fresh token from the endpoint, returning it and how long it
+    /// may be served from cache.
+    async fn refresh(&self) -> ClientResult<(String, Duration)> {
         check_endpoint_reachable(&self.token_url, "token endpoint")?;
 
         let req = self.build_token_request()?;
@@ -460,18 +519,8 @@ impl OAuth2ClientCredentials {
             )));
         }
 
-        let ttl = token_resp.expires_in.map_or(NO_EXPIRY_CACHE_TTL, |secs| {
-            Duration::from_secs(secs).saturating_sub(self.refresh_leeway)
-        });
-        *self
-            .cache
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(CachedToken {
-            token: token_resp.access_token.clone(),
-            refresh_after: Instant::now() + ttl,
-        });
-
-        Ok(token_resp.access_token)
+        let ttl = cache_ttl(token_resp.expires_in, self.refresh_leeway);
+        Ok((token_resp.access_token, ttl))
     }
 
     /// Builds the token-endpoint POST (form body + optional Basic auth header).
@@ -530,17 +579,13 @@ fn token_error(status: hyper::StatusCode, body: &[u8]) -> ClientError {
 
 impl TokenProvider for OAuth2ClientCredentials {
     fn access_token(&self) -> Pin<Box<dyn Future<Output = ClientResult<String>> + Send + '_>> {
-        Box::pin(async move {
-            if let Some(token) = self.cached() {
-                return Ok(token);
-            }
-            // Single-flight: concurrent refreshes collapse into one request.
-            let _guard = self.refresh_lock.lock().await;
-            if let Some(token) = self.cached() {
-                return Ok(token); // Another caller refreshed while we waited.
-            }
-            self.refresh().await
-        })
+        // Single-flight with a shared outcome; see `flight` for the rules
+        // and for why this is cancellation-safe.
+        Box::pin(self.tokens.get(self.failure_backoff, || self.refresh()))
+    }
+
+    fn invalidate(&self, token: &str) {
+        self.tokens.invalidate(token);
     }
 }
 
@@ -712,10 +757,14 @@ fn encode_form(pairs: &[(String, String)]) -> String {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+mod bearer_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Instant;
 
     // -- form encoding --------------------------------------------------------
 
@@ -778,28 +827,6 @@ mod tests {
         assert!(
             dbg.contains("BearerAuthInterceptor"),
             "Debug must name the type, got: {dbg:?}"
-        );
-    }
-
-    /// Kills both mutants on the cached-token freshness comparison
-    /// (`<` → `<=`), which survived because `Instant::now()` can never be
-    /// made to land exactly on a stored deadline. Testing the extracted
-    /// predicate is what makes the boundary reachable.
-    #[test]
-    fn is_fresh_is_exclusive_at_the_deadline() {
-        let t = Instant::now();
-
-        assert!(
-            !is_fresh(t, t),
-            "at exactly the refresh deadline a token is due for refresh, not fresh"
-        );
-        assert!(
-            is_fresh(t, t + Duration::from_secs(1)),
-            "before the deadline the token is still usable"
-        );
-        assert!(
-            !is_fresh(t + Duration::from_secs(1), t),
-            "after the deadline the token is stale"
         );
     }
 
@@ -1079,9 +1106,9 @@ mod tests {
         let hits = Arc::new(AtomicUsize::new(0));
         let addr = spawn_token_server(
             vec![
-                // expires_in below the refresh leeway → refresh_after is now,
-                // so the next call must fetch again.
-                (200, token_body("tok-1", Some(1))),
+                // expires_in 0: already expired, so the next call must
+                // fetch again.
+                (200, token_body("tok-1", Some(0))),
                 (200, token_body("tok-2", Some(3600))),
             ],
             Arc::clone(&captured),
@@ -1093,6 +1120,51 @@ mod tests {
         assert_eq!(p.access_token().await.unwrap(), "tok-1");
         assert_eq!(p.access_token().await.unwrap(), "tok-2");
         assert_eq!(hits.load(Ordering::SeqCst), 2);
+    }
+
+    /// C15 (audit 2026-09-22): a lifetime at or under the 30 s leeway cached
+    /// for zero, so every call went to the token endpoint. A 20 s token must
+    /// be reused for a fraction of its life instead.
+    #[tokio::test]
+    async fn a_token_shorter_than_the_leeway_is_still_cached() {
+        let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let addr = spawn_token_server(
+            vec![(200, token_body("short", Some(20)))],
+            Arc::clone(&captured),
+            Arc::clone(&hits),
+        )
+        .await;
+
+        let p = OAuth2ClientCredentials::new(format!("http://{addr}/token"), "cid", "csec");
+        assert_eq!(p.access_token().await.unwrap(), "short");
+        assert_eq!(p.access_token().await.unwrap(), "short");
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "a 20 s token must not be refetched on the next call"
+        );
+    }
+
+    #[test]
+    fn cache_ttl_keeps_at_least_half_the_lifetime() {
+        let leeway = Duration::from_secs(30);
+        let secs = Duration::from_secs;
+        // Long-lived: the leeway applies in full, as before.
+        assert_eq!(cache_ttl(Some(3600), leeway), secs(3570));
+        assert_eq!(cache_ttl(Some(61), leeway), secs(31));
+        // At twice the leeway both rules agree.
+        assert_eq!(cache_ttl(Some(60), leeway), secs(30));
+        // Shorter: half the lifetime, where the leeway would leave less.
+        assert_eq!(cache_ttl(Some(40), leeway), secs(20));
+        assert_eq!(cache_ttl(Some(30), leeway), secs(15));
+        assert_eq!(cache_ttl(Some(20), leeway), secs(10));
+        assert_eq!(cache_ttl(Some(1), leeway), Duration::from_millis(500));
+        assert_eq!(cache_ttl(Some(0), leeway), Duration::ZERO);
+        // No leeway: the whole lifetime.
+        assert_eq!(cache_ttl(Some(100), Duration::ZERO), secs(100));
+        // No expires_in: the fixed re-check interval.
+        assert_eq!(cache_ttl(None, leeway), NO_EXPIRY_CACHE_TTL);
     }
 
     #[tokio::test]
@@ -1124,6 +1196,71 @@ mod tests {
             hits.load(Ordering::SeqCst),
             1,
             "8 concurrent callers must produce exactly one token request"
+        );
+    }
+
+    /// C3 (audit 2026-09-22): a failed refresh cached nothing, so every
+    /// caller queued on the refresh lock ran its own full attempt, one after
+    /// another. Concurrent callers must share the one attempt's failure.
+    #[tokio::test]
+    async fn concurrent_failures_share_one_attempt() {
+        let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let addr = spawn_token_server(
+            vec![(500, r#"{"error":"temporarily_unavailable"}"#.to_owned())],
+            Arc::clone(&captured),
+            Arc::clone(&hits),
+        )
+        .await;
+
+        let p = Arc::new(OAuth2ClientCredentials::new(
+            format!("http://{addr}/token"),
+            "cid",
+            "csec",
+        ));
+        let tasks: Vec<_> = (0..5)
+            .map(|_| {
+                let p = Arc::clone(&p);
+                tokio::spawn(async move { p.access_token().await })
+            })
+            .collect();
+        for t in tasks {
+            let err = t.await.unwrap().expect_err("the endpoint only fails");
+            assert!(err.to_string().contains("HTTP 500"), "{err}");
+        }
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "5 concurrent callers must share one failed token request"
+        );
+    }
+
+    /// The audit's measurement: with a 1 s timeout, 5 callers failed at 1,
+    /// 2, 3, 4 and 5 s. Sharing the attempt makes it one timeout for all.
+    #[tokio::test]
+    async fn concurrent_timeouts_cost_one_timeout_not_one_each() {
+        let timeout = Duration::from_millis(300);
+        let addr = spawn_stalling_server("HTTP/1.1 200 OK", Duration::ZERO).await;
+        let p = Arc::new(
+            OAuth2ClientCredentials::new(format!("http://{addr}/token"), "cid", "csec")
+                .with_request_timeout(timeout),
+        );
+
+        let started = Instant::now();
+        let tasks: Vec<_> = (0..5)
+            .map(|_| {
+                let p = Arc::clone(&p);
+                tokio::spawn(async move { p.access_token().await })
+            })
+            .collect();
+        for t in tasks {
+            let err = t.await.unwrap().expect_err("a stalled endpoint must fail");
+            assert!(matches!(err, ClientError::Timeout(_)), "{err:?}");
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < timeout * 2,
+            "5 callers must wait out one shared timeout, took {elapsed:?} against {timeout:?}"
         );
     }
 

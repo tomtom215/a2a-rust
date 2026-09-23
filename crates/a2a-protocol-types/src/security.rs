@@ -33,7 +33,27 @@ pub type NamedSecuritySchemes = HashMap<String, SecurityScheme>;
 /// A list of strings used within a [`SecurityRequirement`] map value.
 ///
 /// Proto equivalent: `StringList { repeated string list = 1; }`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// # Wire format
+///
+/// The spec's JSON is the ProtoJSON of that message, `{"list": ["read"]}`,
+/// and that is the only form emitted: `a2a.proto` is the normative
+/// definition of the data objects, the spec's own agent-card example writes
+/// `"schemes": {"google": {"list": ["openid", …]}}`, and the official Python
+/// SDK (`MessageToDict`) emits the same.
+///
+/// Three further forms are **accepted**, because real peers send them:
+///
+/// | Received | Read as | Who sends it |
+/// |---|---|---|
+/// | `{}` | empty | ProtoJSON printers omit an empty repeated field |
+/// | `["read"]` | `["read"]` | a2a-go v2.5.0 (`a2a/auth.go`: `Schemes map[…]SecuritySchemeScopes`) |
+/// | `null` | empty | a2a-go v2.5.0, for a nil scope slice |
+///
+/// Accepting the bare array is what lets this SDK read a Go agent's card at
+/// all. The other direction, a2a-go reading the spec form this SDK emits,
+/// needs a fix in a2a-go.
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StringList {
     /// The string values (e.g. OAuth scopes).
@@ -41,8 +61,55 @@ pub struct StringList {
     /// `ProtoJSON` printers omit empty repeated fields: an empty `StringList`
     /// arrives as `{}`, so absence means empty (a scheme requiring no scopes
     /// is common and valid).
-    #[serde(default)]
     pub list: Vec<String>,
+}
+
+impl<'de> Deserialize<'de> for StringList {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(StringListVisitor)
+    }
+}
+
+/// Reads the spec's `{"list": […]}`, a2a-go's bare `[…]`, or `null`.
+struct StringListVisitor;
+
+impl<'de> serde::de::Visitor<'de> for StringListVisitor {
+    type Value = StringList;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a StringList object {\"list\": [...]}, an array of strings, or null")
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> Result<StringList, E> {
+        Ok(StringList { list: Vec::new() })
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<StringList, A::Error> {
+        let mut list = Vec::new();
+        while let Some(s) = seq.next_element::<String>()? {
+            list.push(s);
+        }
+        Ok(StringList { list })
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<StringList, A::Error> {
+        let mut list: Option<Vec<String>> = None;
+        while let Some(key) = map.next_key::<String>()? {
+            if key == "list" {
+                if list.is_some() {
+                    return Err(serde::de::Error::duplicate_field("list"));
+                }
+                // ProtoJSON parsers read `null` for a repeated field as empty.
+                list = Some(map.next_value::<Option<Vec<String>>>()?.unwrap_or_default());
+            } else {
+                // Unknown members are ignored, as for every other type here.
+                map.next_value::<serde::de::IgnoredAny>()?;
+            }
+        }
+        Ok(StringList {
+            list: list.unwrap_or_default(),
+        })
+    }
 }
 
 /// A security requirement object mapping scheme names to their required scopes.

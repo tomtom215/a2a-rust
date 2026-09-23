@@ -75,18 +75,27 @@
 //!         .with_drain_timeout(Duration::from_secs(15)),
 //! );
 //!
+//! // On Ctrl-C: stop accepting, let in-flight tasks finish for up to
+//! // `completion_grace`, cancel the rest and give their executors
+//! // `task_grace` to end them, then drain the connections.
 //! let report = server
 //!     .serve_with_shutdown(JsonRpcDispatcher::new(Arc::clone(&handler)), async {
 //!         tokio::signal::ctrl_c().await.ok();
 //!     })
 //!     .await;
 //!
-//! // Drain the protocol layer only once the socket layer is quiet, so a task
-//! // still streaming to a live connection is not destroyed underneath it.
-//! let _handler_report = handler.shutdown().await;
+//! // Last: the executor's cleanup hook. By now the work has ended, so there
+//! // is nothing live left for it to cut.
+//! let handler_report = handler.shutdown().await;
 //!
+//! if let Some(tasks) = report.tasks.filter(|t| !t.finished) {
+//!     eprintln!("{} task(s) ignored cancellation", tasks.still_running);
+//! }
 //! if !report.drained {
 //!     eprintln!("{} connection(s) still open at the deadline", report.abandoned);
+//! }
+//! if !handler_report.is_graceful() {
+//!     eprintln!("handler shutdown was not graceful: {handler_report:?}");
 //! }
 //! # Ok(())
 //! # }
@@ -107,136 +116,11 @@ use super::{Dispatcher, pause_after_accept_error};
 mod idle;
 use idle::IdleTimeout;
 
-/// How long to wait for in-flight connections once shutdown is signalled.
-///
-/// Fifteen seconds is the same order as a Kubernetes
-/// `terminationGracePeriodSeconds` default of 30, leaving room for the
-/// protocol-layer [`RequestHandler::shutdown`](crate::RequestHandler::shutdown)
-/// that follows this one. A deployment that streams long responses should raise
-/// it; one behind a proxy that already drains should lower it.
-pub const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// How long a peer may take to send a complete set of request headers.
-///
-/// Thirty seconds is hyper's own default for this, kept rather than re-chosen.
-/// What changes here is that it now *applies*. Hyper honours the setting only
-/// when a [`Timer`](hyper::rt::Timer) is installed on the connection builder,
-/// and neither this server nor [`serve`](super::serve) installed one — so the
-/// default was inert. Hyper says so at warn level when it drops it, in a log
-/// line nobody was reading.
-pub const DEFAULT_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// How long a connection may sit with no bytes moving in either direction.
-///
-/// Seventy-five seconds matches nginx's `keepalive_timeout`, which is what most
-/// clients and proxies in front of this server are already tuned against.
-///
-/// It must stay comfortably above
-/// [`DispatchConfig::sse_keep_alive_interval`](crate::DispatchConfig::sse_keep_alive_interval)
-/// (30 seconds by default), because those keep-alive comments are what make a
-/// quiet SSE stream look busy to this timer. Lowering one without the other is
-/// how a streaming deployment starts dropping idle subscribers.
-pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
-
-/// Limits applied to a [`Server`].
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct ServeConfig {
-    /// Ceiling on connections being served at once. `None` is unbounded, which
-    /// is [`serve`](super::serve)'s behaviour and is kept as an explicit choice
-    /// rather than a default.
-    ///
-    /// The permit is taken before `accept()`, so the ceiling is on *accepted*
-    /// sockets. Load past it queues in the listen backlog and is refused by the
-    /// kernel when that fills — which is a far better failure than an
-    /// unbounded task spawn that turns a traffic spike into an OOM.
-    pub max_connections: Option<usize>,
-
-    /// How long to wait for watched connections to finish after shutdown is
-    /// signalled, before giving up and reporting them abandoned.
-    pub drain_timeout: Duration,
-
-    /// How long a peer may take to send complete request headers. `None`
-    /// disables the check.
-    ///
-    /// This is the slowloris defence: a connection dribbling headers a byte at
-    /// a time is refused instead of holding a task indefinitely.
-    pub header_read_timeout: Option<Duration>,
-
-    /// How long a connection may go with no traffic in either direction before
-    /// it is closed. `None` disables the check.
-    ///
-    /// Covers what the header timeout cannot: a peer that sent its headers
-    /// promptly and then stopped mid-body, or one that finished a request and
-    /// kept the connection open doing nothing.
-    pub idle_timeout: Option<Duration>,
-}
-
-impl Default for ServeConfig {
-    fn default() -> Self {
-        Self {
-            max_connections: None,
-            drain_timeout: DEFAULT_DRAIN_TIMEOUT,
-            header_read_timeout: Some(DEFAULT_HEADER_READ_TIMEOUT),
-            idle_timeout: Some(DEFAULT_IDLE_TIMEOUT),
-        }
-    }
-}
-
-impl ServeConfig {
-    /// The defaults: unbounded connections, [`DEFAULT_DRAIN_TIMEOUT`],
-    /// [`DEFAULT_HEADER_READ_TIMEOUT`] and [`DEFAULT_IDLE_TIMEOUT`].
-    ///
-    /// Both timeouts default to *on*. An unbounded connection is the kind of
-    /// default that only looks harmless until someone points a slowloris at it,
-    /// and this constructor is new enough to have no callers relying on the
-    /// permissive behaviour.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Caps the connections served at once.
-    ///
-    /// This type is `#[non_exhaustive]` — a header-read timeout and an idle
-    /// timeout are the obvious next fields — so it is built with setters rather
-    /// than a struct literal, and gaining one of those is not a breaking
-    /// change.
-    #[must_use]
-    pub const fn with_max_connections(mut self, max: usize) -> Self {
-        self.max_connections = Some(max);
-        self
-    }
-
-    /// Sets how long shutdown waits for in-flight connections.
-    #[must_use]
-    pub const fn with_drain_timeout(mut self, timeout: Duration) -> Self {
-        self.drain_timeout = timeout;
-        self
-    }
-
-    /// Sets how long a peer may take to send complete request headers.
-    ///
-    /// `None` disables it. Do that only behind a proxy that already enforces
-    /// one — this is the check that makes a slowloris cost the attacker
-    /// something.
-    #[must_use]
-    pub const fn with_header_read_timeout(mut self, timeout: Option<Duration>) -> Self {
-        self.header_read_timeout = timeout;
-        self
-    }
-
-    /// Sets how long a connection may go with no traffic before it is closed.
-    ///
-    /// `None` disables it. Raise it rather than disabling it if a deployment
-    /// streams responses with long quiet stretches, and keep it above the SSE
-    /// keep-alive interval — see [`DEFAULT_IDLE_TIMEOUT`].
-    #[must_use]
-    pub const fn with_idle_timeout(mut self, timeout: Option<Duration>) -> Self {
-        self.idle_timeout = timeout;
-        self
-    }
-}
+mod config;
+pub use config::{
+    DEFAULT_COMPLETION_GRACE, DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT,
+    DEFAULT_IDLE_TIMEOUT, DEFAULT_TASK_GRACE, ServeConfig,
+};
 
 /// What the socket layer did, and whether it finished.
 ///
@@ -253,6 +137,13 @@ pub struct ServeReport {
     /// Connections still open when `drain_timeout` expired. Zero when
     /// `drained` is true.
     pub abandoned: usize,
+    /// What ending the in-flight tasks did: how many finished on their own,
+    /// how many were cancelled, and whether they all ended within
+    /// [`ServeConfig::task_grace`]. `None`
+    /// when the dispatcher has no
+    /// [`request_handler`](super::Dispatcher::request_handler), and so no
+    /// tasks this server could end.
+    pub tasks: Option<crate::handler::InFlightReport>,
 }
 
 /// A bound listener that has not started accepting yet.
@@ -295,11 +186,34 @@ impl Server {
         self.listener.local_addr()
     }
 
-    /// Accepts until `shutdown` resolves, then drains.
+    /// Accepts until `shutdown` resolves, then ends the work in flight and
+    /// drains.
     ///
-    /// Returns once every connection has finished or `drain_timeout` expires,
-    /// whichever comes first — never before one of the two, which is the whole
-    /// point of it existing.
+    /// The order is what makes it graceful:
+    ///
+    /// 1. **Stop accepting.** The listener is dropped.
+    /// 2. **End in-flight tasks.** When the dispatcher has a
+    ///    [`request_handler`](super::Dispatcher::request_handler),
+    ///    [`RequestHandler::finish_in_flight`](crate::RequestHandler::finish_in_flight)
+    ///    first lets tasks finish on their own for up to
+    ///    [`ServeConfig::completion_grace`], then fires every remaining
+    ///    task's cancellation token and waits up to
+    ///    [`ServeConfig::task_grace`] for the executors to act on it: cancel
+    ///    what they delegated, and end their tasks with a terminal event that
+    ///    reaches every open stream.
+    /// 3. **Drain connections**, for up to [`ServeConfig::drain_timeout`].
+    ///    Streams whose tasks have ended close on their own, so this is
+    ///    usually quick.
+    ///
+    /// It used to drain first. An open SSE stream is a connection that does
+    /// not close until its task ends, so the drain waited out its whole
+    /// timeout on tasks nobody had cancelled, and a delegating executor's
+    /// downstream work outlived the process.
+    ///
+    /// Returns once both phases have finished or run out of time — never
+    /// before, which is the whole point of it existing. Call
+    /// [`RequestHandler::shutdown`](crate::RequestHandler::shutdown) after it
+    /// to run the executor's cleanup hook.
     pub async fn serve_with_shutdown(
         self,
         dispatcher: impl Dispatcher,
@@ -357,12 +271,26 @@ impl Server {
             );
         }
 
-        drain(
+        // Stop accepting before anything else: a peer that connects now would
+        // only be told to go away later.
+        drop(listener);
+        let tasks = match dispatcher.request_handler() {
+            Some(handler) => Some(
+                handler
+                    .finish_in_flight(config.completion_grace, config.task_grace)
+                    .await,
+            ),
+            None => None,
+        };
+
+        let mut report = drain(
             graceful,
             accepted.load(Ordering::Relaxed),
             config.drain_timeout,
         )
-        .await
+        .await;
+        report.tasks = tasks;
+        report
     }
 }
 
@@ -442,6 +370,7 @@ async fn drain(
             accepted,
             drained: true,
             abandoned: 0,
+            tasks: None,
         }
     } else {
         trace_warn!(
@@ -452,6 +381,7 @@ async fn drain(
             accepted,
             drained: false,
             abandoned: in_flight,
+            tasks: None,
         }
     }
 }

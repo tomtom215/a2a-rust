@@ -38,7 +38,9 @@ use std::time::Duration;
 let client = ClientBuilder::new(url)
     .with_timeout(Duration::from_secs(60))              // Per-request timeout (default: 30s)
     .with_connection_timeout(Duration::from_secs(5))     // TCP connect timeout (default: 10s)
-    .with_stream_connect_timeout(Duration::from_secs(15)) // SSE connect timeout (default: 30s)
+    .with_stream_connect_timeout(Duration::from_secs(15)) // stream headers (default: 30s)
+    .with_stream_first_event_timeout(Duration::from_secs(60)) // first event after that (default: 5 min)
+    .with_stream_idle_timeout(Some(Duration::from_secs(120))) // silence allowed mid-stream (default: 5 min)
     .build()
     .unwrap();
 ```
@@ -124,13 +126,16 @@ let client = ClientBuilder::new(url)
 | Method | Default | Description |
 |--------|---------|-------------|
 | `new(url)` | — | Base URL of the agent (required) |
-| `from_card(&AgentCard)` | — | Build from an agent card, preferring `ClientConfig`'s default binding order (`["JSONRPC"]`), falling back to the card's first interface |
+| `from_card(&AgentCard)` | — | Build from an agent card, preferring `ClientConfig`'s default binding order (`["JSONRPC"]`), falling back to the card's first compatible interface. Only interfaces whose `protocolVersion` has major 1 count (empty counts; `v1.0` counts), so a v0.3 endpoint listed first is skipped; a card with none is refused with what it offers. If the chosen interface cannot be built (gRPC under sync `build()`, an unknown binding, a bad URL), `build()` moves to the next one |
 | `from_card_preferring(&AgentCard, &[String])` | — | Same, with your own binding order. The first preference the card offers wins; matching is case-insensitive |
-| `with_protocol_binding(str)` | Auto-detect | Force transport: `"JSONRPC"`, `"REST"`, or `"GRPC"`. On a builder made from a card, moves the endpoint and tenant to that binding's interface too |
+| `with_protocol_binding(str)` | Auto-detect | Force transport: `"JSONRPC"`, `"HTTP+JSON"` (or `"REST"`), or `"GRPC"`, in any case. On a builder made from a card, moves the endpoint and tenant to that binding's interface too, and turns off `build()`'s fallback to other interfaces |
 | `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |
 | `with_timeout(Duration)` | 30s | Per-request timeout |
 | `with_connection_timeout(Duration)` | 10s | TCP connection timeout |
-| `with_stream_connect_timeout(Duration)` | 30s | SSE stream connect timeout |
+| `with_stream_connect_timeout(Duration)` | 30s | Establishing a stream (headers, or an error body) |
+| `with_stream_first_event_timeout(Duration)` | 5 min | Wait for a stream's first data once established |
+| `with_max_event_size(usize)` | 16 MiB | Largest single stream event accepted; larger ones are refused and skipped |
+| `with_stream_idle_timeout(Option<Duration>)` | 5 min | Silence allowed between chunks after a stream's first data; SSE keep-alives reset it; `None` disables |
 | `with_retry_policy(RetryPolicy)` | None | Retry on transient errors with jittered exponential backoff |
 | `with_accepted_output_modes(Vec<String>)` | `["text/plain", "application/json"]` | MIME types the client handles |
 | `with_history_length(u32)` | None | Messages to include in responses |

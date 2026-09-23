@@ -25,7 +25,8 @@ use a2a_protocol_types::AgentCard;
 use crate::builder::ClientBuilder;
 use crate::config::ClientConfig;
 use crate::error::ClientResult;
-use crate::interceptor::InterceptorChain;
+use crate::interceptor::{ClientRequest, InterceptorChain};
+use crate::streaming::EventStream;
 use crate::transport::Transport;
 
 // ── A2aClient ────────────────────────────────────────────────────────────────
@@ -73,6 +74,20 @@ impl A2aClient {
         &self.config
     }
 
+    /// Applies this client's stream bounds to a stream a transport returned.
+    ///
+    /// Done here rather than in each transport so that every stream the
+    /// client hands out obeys [`ClientConfig`] — including one from a
+    /// transport supplied through
+    /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport),
+    /// which never sees the config.
+    pub(crate) const fn configure_stream(&self, stream: EventStream) -> EventStream {
+        stream
+            .with_first_event_timeout(self.config.stream_first_event_timeout)
+            .with_idle_timeout(self.config.stream_idle_timeout)
+            .with_max_event_size(self.config.max_event_size)
+    }
+
     /// Creates a new [`A2aClient`] from its constituent parts.
     ///
     /// This is the low-level constructor used by [`ClientBuilder`]. Prefer
@@ -88,6 +103,48 @@ impl A2aClient {
             interceptors,
             config,
         }
+    }
+
+    /// Sends an intercepted request, and lets the interceptors see a
+    /// failure.
+    ///
+    /// `after` hooks run only on success, so without this an interceptor
+    /// never learns that the agent rejected what it attached — which is how
+    /// a bearer token the agent answered with `401` kept being sent until it
+    /// expired. The params move to the transport, so `req.params` reads as
+    /// `null` in the error hook.
+    pub(crate) async fn send_intercepted(
+        &self,
+        method: &str,
+        req: &mut ClientRequest,
+    ) -> ClientResult<serde_json::Value> {
+        let params = std::mem::take(&mut req.params);
+        let result = self
+            .transport
+            .send_request(method, params, &req.extra_headers)
+            .await;
+        if let Err(ref e) = result {
+            self.interceptors.run_on_error(req, e).await;
+        }
+        result
+    }
+
+    /// [`send_intercepted`](Self::send_intercepted) for a streaming method:
+    /// a stream the agent refuses to open is reported the same way.
+    pub(crate) async fn send_streaming_intercepted(
+        &self,
+        method: &str,
+        req: &mut ClientRequest,
+    ) -> ClientResult<EventStream> {
+        let params = std::mem::take(&mut req.params);
+        let result = self
+            .transport
+            .send_streaming_request(method, params, &req.extra_headers)
+            .await;
+        if let Err(ref e) = result {
+            self.interceptors.run_on_error(req, e).await;
+        }
+        result
     }
 }
 

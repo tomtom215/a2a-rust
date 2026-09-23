@@ -21,10 +21,14 @@ use super::types::{DEFAULT_MAX_EVENT_SIZE, SseFrame, SseParseError};
 ///
 /// # Memory limits
 ///
-/// The parser enforces a configurable maximum event size (default 4 MiB) to
+/// The parser enforces a configurable maximum event size (default 16 MiB) to
 /// prevent unbounded memory growth from malicious or malformed streams. When
 /// the limit is exceeded, the current event is discarded and an error is
-/// queued. Use [`SseParser::with_max_event_size`] to configure the limit.
+/// queued. A single line is refused the same way as soon as it grows past
+/// the longest line an in-limit event can hold (the limit plus `retry: `),
+/// so a peer that never sends a newline gets an error rather than silence,
+/// and the parser holds no more than that of it. Use
+/// [`SseParser::with_max_event_size`] to configure the limit.
 ///
 /// The internal frame queue is also bounded (default 4096 frames) to prevent
 /// OOM from streams that produce many oversized-event errors without the
@@ -51,15 +55,35 @@ pub struct SseParser {
     ready: VecDeque<Result<SseFrame, SseParseError>>,
     /// Whether the UTF-8 BOM has already been checked/stripped.
     bom_checked: bool,
-    /// When `true`, an oversized event was rejected and we are discarding the
-    /// remainder of that event's lines until the next event boundary (blank
-    /// line). Prevents the tail of an over-limit event from being re-parsed as
-    /// a fresh, seemingly-valid frame.
-    discarding: bool,
+    /// What is being skipped after an oversized event or line was refused;
+    /// see [`Discard`].
+    discard: Discard,
     /// Whether the previous byte (possibly at the end of the prior `feed`
     /// chunk) was a `\r` that already terminated a line — the `\n` of a CRLF
     /// pair split across chunks must not terminate a second, empty line.
     prev_byte_was_cr: bool,
+}
+
+/// Length of the longest known field prefix, `retry: `.
+///
+/// The longest line an in-limit event can contain is this plus
+/// `max_event_size` bytes of value; a line that grows past it cannot belong
+/// to an acceptable event, so it is refused there rather than buffered.
+const MAX_FIELD_PREFIX_LEN: usize = "retry: ".len();
+
+/// What the parser is skipping after refusing an oversized event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Discard {
+    /// Parsing normally.
+    Nothing,
+    /// An oversized event was refused: its remaining lines are swallowed up
+    /// to the next blank line, so its tail is not re-parsed as a fresh,
+    /// seemingly valid frame.
+    RestOfEvent,
+    /// A line outgrew every legal event and was refused mid-line: its
+    /// remaining bytes are dropped up to its terminator, then the rest of
+    /// its event as for [`Discard::RestOfEvent`].
+    RestOfLine,
 }
 
 /// Default maximum number of frames buffered before the oldest is dropped.
@@ -78,7 +102,7 @@ impl Default for SseParser {
             retry: None,
             ready: VecDeque::new(),
             bom_checked: false,
-            discarding: false,
+            discard: Discard::Nothing,
             prev_byte_was_cr: false,
         }
     }
@@ -100,6 +124,12 @@ impl SseParser {
             max_event_size,
             ..Self::default()
         }
+    }
+
+    /// Changes the maximum event size of a parser already in use. Takes
+    /// effect from the next byte fed.
+    pub(crate) const fn set_max_event_size(&mut self, max_event_size: usize) {
+        self.max_event_size = max_event_size;
     }
 
     /// Sets the maximum number of frames that can be buffered before the
@@ -137,32 +167,66 @@ impl SseParser {
         // so a CR-only server never produced a line at all — its bytes
         // accumulated until the line-length guard and the whole stream was
         // rejected as one oversized line.)
+        let max_line = self.max_event_size.saturating_add(MAX_FIELD_PREFIX_LEN);
         for &byte in bytes {
             if byte == b'\n' {
                 if self.prev_byte_was_cr {
                     self.prev_byte_was_cr = false;
                     continue;
                 }
-                self.process_line();
-                self.line_buf.clear();
+                self.end_line();
             } else if byte == b'\r' {
-                self.process_line();
-                self.line_buf.clear();
+                self.end_line();
                 self.prev_byte_was_cr = true;
             } else {
                 self.prev_byte_was_cr = false;
-                // Guard against unbounded line_buf growth from lines without
-                // newlines (e.g., a malicious server sending a single very long
-                // line). We use 2x max_event_size as the limit since a single
-                // line can never legitimately exceed the event size.
-                if self.line_buf.len() < self.max_event_size.saturating_mul(2) {
-                    self.line_buf.push(byte);
+                match self.discard {
+                    Discard::RestOfLine => continue,
+                    // Only whether a skipped line is blank matters, so one
+                    // byte of it is enough; a long line in a skipped event
+                    // is neither buffered nor refused a second time.
+                    Discard::RestOfEvent => {
+                        if self.line_buf.is_empty() {
+                            self.line_buf.push(byte);
+                        }
+                        continue;
+                    }
+                    Discard::Nothing => {}
                 }
-                // Bytes beyond the limit are silently dropped; the event will
-                // eventually be rejected by the max_event_size check when the
-                // line is processed.
+                // A line longer than the longest line of an in-limit event
+                // cannot be accepted, so refuse it now — with an error — and
+                // buffer none of the rest. (Until 2026-09-22 such bytes were
+                // dropped silently past twice the limit, and a line that
+                // never ended produced no error at all.)
+                if self.line_buf.len() >= max_line {
+                    self.refuse_line();
+                    continue;
+                }
+                self.line_buf.push(byte);
             }
         }
+    }
+
+    /// Bytes of an event that has started but not been dispatched: `data:`
+    /// lines still waiting for their blank line, plus an unterminated line
+    /// that is not a comment. `None` when there is none.
+    ///
+    /// What is left here when the byte stream ends is an event the server
+    /// did not finish writing. The SSE specification discards it at end of
+    /// stream, and so does the parser; this is how a caller finds out that
+    /// it did, instead of the loss passing unseen. An unterminated comment
+    /// (`: keep-alive` cut off before its newline) carries no event and is
+    /// not counted.
+    #[must_use]
+    pub fn incomplete_event_len(&self) -> Option<usize> {
+        let data: usize = self.data_lines.iter().map(String::len).sum();
+        let line = if self.line_buf.starts_with(b":") {
+            0
+        } else {
+            self.line_buf.len()
+        };
+        let pending = data + line;
+        (!self.data_lines.is_empty() || line > 0).then_some(pending)
     }
 
     /// Returns the next complete [`SseFrame`], or `None` if none are ready.
@@ -181,6 +245,30 @@ impl SseParser {
             self.ready.pop_front();
         }
         self.ready.push_back(item);
+    }
+
+    /// Handles a line terminator: processes the buffered line, or — when the
+    /// line was refused as overlong — ends the skip of its bytes and goes on
+    /// skipping the rest of its event.
+    fn end_line(&mut self) {
+        if self.discard == Discard::RestOfLine {
+            self.discard = Discard::RestOfEvent;
+        } else {
+            self.process_line();
+        }
+        self.line_buf.clear();
+    }
+
+    /// Refuses the line being buffered: it has outgrown every legal event.
+    fn refuse_line(&mut self) {
+        let error = SseParseError::EventTooLarge {
+            limit: self.max_event_size,
+            actual: self.current_event_size + self.line_buf.len() + 1,
+        };
+        self.line_buf.clear();
+        self.reset_event_state();
+        self.discard = Discard::RestOfLine;
+        self.enqueue(Err(error));
     }
 
     fn process_line(&mut self) {
@@ -206,9 +294,9 @@ impl SseParser {
         // event up to (and including) the next blank line, then resume. Without
         // this, the tail of a rejected oversized event is parsed as a new event
         // and surfaced as a spurious "valid" frame.
-        if self.discarding {
+        if self.discard == Discard::RestOfEvent {
             if line.is_empty() {
-                self.discarding = false;
+                self.discard = Discard::Nothing;
                 self.reset_event_state();
             }
             return;
@@ -246,7 +334,7 @@ impl SseParser {
                 actual: self.current_event_size,
             };
             self.reset_event_state();
-            self.discarding = true;
+            self.discard = Discard::RestOfEvent;
             self.enqueue(Err(error));
             return;
         }
@@ -320,6 +408,30 @@ impl SseParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only an unfinished *event* counts: data lines awaiting their blank
+    /// line, or a partial non-comment line. A dispatched frame, a comment,
+    /// and an empty parser leave nothing.
+    #[test]
+    fn incomplete_event_len_counts_only_an_unfinished_event() {
+        let fed = |bytes: &[u8]| {
+            let mut p = SseParser::new();
+            p.feed(bytes);
+            p.incomplete_event_len()
+        };
+        assert_eq!(fed(b""), None);
+        assert_eq!(fed(b"data: done\n\n"), None, "dispatched");
+        assert_eq!(fed(b": keep-al"), None, "a cut-off comment is no event");
+        assert_eq!(fed(b"id: 3\n"), None, "an id alone dispatches nothing");
+        assert_eq!(fed(b"data: abc\n"), Some(3), "data awaiting its blank line");
+        assert_eq!(fed(b"data: ab"), Some(8), "a partial line");
+        assert_eq!(fed(b"data: abc\ndata: de"), Some(11), "both, summed");
+        assert_eq!(
+            fed(b"data:\n"),
+            Some(0),
+            "an empty data line is still an event"
+        );
+    }
 
     fn parse_all(input: &str) -> Vec<SseFrame> {
         let mut p = SseParser::new();
@@ -866,34 +978,86 @@ mod tests {
         assert_eq!(p.pending_count(), 2, "queue should be bounded at 2");
     }
 
-    /// Kills mutant: `replace < with <= in SseParser::feed` (line 136).
-    ///
-    /// The `line_buf` growth guard is `line_buf.len() < max_event_size * 2`.
-    /// With `max_event_size=6`, the limit is 12 bytes.
-    ///
-    /// Feed "data: ABCDEF" (exactly 12 bytes) — all accepted (len 0..11, each < 12).
-    /// Then feed "X" — `line_buf.len()` == 12, and `12 < 12` is false → dropped.
-    /// Then "\n\n" to complete the event.
-    ///
-    /// With `<`: data = "ABCDEF" (6 bytes == max), accepted.
-    /// With `<=` (mutant): "X" is kept, data = "ABCDEFX" (7 > 6), rejected as too large.
+    // ── Overlong lines ───────────────────────────────────────────────────
+    //
+    // A line with no terminator used to be truncated in silence at twice the
+    // event limit: the probe fed 50 MiB with no newline and got 0 errors and
+    // 0 frames while the parser held 32 MiB. Now the line is refused as soon
+    // as it outgrows any event, with an error, and nothing more is buffered.
+
+    /// An endless line yields one `EventTooLarge` as soon as it passes the
+    /// longest line an in-limit event can have, and buffers no further.
     #[test]
-    fn line_buf_growth_guard_exact_boundary() {
+    fn an_endless_line_is_an_error_not_a_silent_truncation() {
+        let max = 64;
+        let mut p = SseParser::with_max_event_size(max);
+        p.feed(b"data: ");
+        for _ in 0..100 {
+            p.feed(&[b'x'; 64]);
+        }
+        match p.next_frame() {
+            Some(Err(SseParseError::EventTooLarge { limit, actual })) => {
+                assert_eq!(limit, max);
+                assert_eq!(actual, max + MAX_FIELD_PREFIX_LEN + 1);
+            }
+            other => panic!("expected EventTooLarge, got {other:?}"),
+        }
+        assert!(p.next_frame().is_none(), "reported once");
+        assert!(p.line_buf.is_empty(), "nothing is kept of the refused line");
+    }
+
+    /// The boundary: a line exactly as long as the longest legal one
+    /// (`retry: ` plus a full-size value) is buffered; one byte more is not.
+    #[test]
+    fn the_line_limit_is_the_longest_in_limit_line() {
         let max = 6;
-        let limit = max * 2; // 12
+        let mut p = SseParser::with_max_event_size(max);
+        p.feed(b"data: ABCDEF"); // max + 6: a full-size data line
+        p.feed(b"\n\n");
+        let frame = p.next_frame().expect("a frame").expect("fits");
+        assert_eq!(frame.data, "ABCDEF");
 
         let mut p = SseParser::with_max_event_size(max);
+        let longest = vec![b'r'; max + MAX_FIELD_PREFIX_LEN];
+        p.feed(&longest);
+        assert!(p.next_frame().is_none(), "at the limit: still buffered");
+        p.feed(b"r");
+        assert!(
+            matches!(
+                p.next_frame(),
+                Some(Err(SseParseError::EventTooLarge { .. }))
+            ),
+            "one byte past it: refused"
+        );
+    }
 
-        let line = "data: ABCDEF"; // exactly 12 bytes
-        assert_eq!(line.len(), limit);
-
-        p.feed(line.as_bytes()); // 12 bytes buffered
-        p.feed(b"X"); // 13th byte: len==12, 12 < 12 is false → dropped
-        p.feed(b"\n\n"); // complete the event
-
-        let frame = p.next_frame().expect("should have a frame");
-        let frame = frame.expect("event should be accepted (data fits in max)");
-        assert_eq!(frame.data, "ABCDEF", "extra byte 'X' must be dropped");
+    /// After a refused line the parser recovers at the next event: the rest
+    /// of the overlong line and the rest of its event are skipped, and the
+    /// following event parses. Both line terminators end the skip.
+    #[test]
+    fn the_parser_recovers_after_an_overlong_line() {
+        for terminator in [&b"\n"[..], b"\r", b"\r\n"] {
+            let mut p = SseParser::with_max_event_size(8);
+            p.feed(b"data: ");
+            p.feed(&[b'x'; 100]);
+            p.feed(terminator);
+            p.feed(b"data: tail of the bad event");
+            p.feed(terminator);
+            p.feed(terminator);
+            p.feed(b"data: ok");
+            p.feed(terminator);
+            p.feed(terminator);
+            assert!(
+                matches!(
+                    p.next_frame(),
+                    Some(Err(SseParseError::EventTooLarge { .. }))
+                ),
+                "{terminator:?}"
+            );
+            let frame = p.next_frame().expect("the next event").expect("parses");
+            assert_eq!(frame.data, "ok", "{terminator:?}");
+            assert!(p.next_frame().is_none(), "{terminator:?}");
+        }
     }
 
     // ── WHATWG line terminators: CRLF, LF, and bare CR ────────────────────

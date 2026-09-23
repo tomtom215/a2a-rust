@@ -35,10 +35,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -67,10 +64,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -105,10 +99,7 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self
-            .transport
-            .send_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let result = self.send_intercepted(METHOD, &mut req).await?;
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
@@ -125,7 +116,9 @@ impl A2aClient {
     /// Calls the `SubscribeToTask` method. Useful after an unexpected
     /// disconnection from a `SendStreamingMessage` call.
     ///
-    /// Events already delivered before the reconnect are **not** replayed.
+    /// Events emitted while disconnected are **not** replayed; use
+    /// [`subscribe_to_task_from`](Self::subscribe_to_task_from) with the
+    /// last event id to have them replayed.
     ///
     /// # Errors
     ///
@@ -133,21 +126,75 @@ impl A2aClient {
     /// [`a2a_protocol_types::ErrorCode::TaskNotFound`] if the task is not in a
     /// streaming-eligible state.
     pub async fn subscribe_to_task(&self, id: impl Into<String>) -> ClientResult<EventStream> {
+        self.subscribe(id.into(), None).await
+    }
+
+    /// Resubscribes to a task, asking the server to replay every event after
+    /// `last_event_id` before the live stream.
+    ///
+    /// `last_event_id` is what [`EventStream::last_event_id`] returned on the
+    /// stream that broke, or what
+    /// [`ClientError::IncompleteStream`] carries. It is sent as the
+    /// `Last-Event-ID` header; a server that keeps an event log (this
+    /// repository's does, over JSON-RPC and HTTP+JSON) replays from exactly
+    /// there, after the `Task` snapshot. The offset is exclusive, and a
+    /// server that cannot resume ignores the header and sends the snapshot
+    /// and the live stream, as [`subscribe_to_task`](Self::subscribe_to_task)
+    /// does.
+    ///
+    /// ```no_run
+    /// # use a2a_protocol_client::{A2aClient, ClientError};
+    /// # async fn demo(client: &A2aClient, task_id: &str) -> Result<(), ClientError> {
+    /// let mut stream = client.subscribe_to_task(task_id).await?;
+    /// loop {
+    ///     match stream.next().await {
+    ///         Some(Ok(_event)) => { /* handle */ }
+    ///         Some(Err(ClientError::IncompleteStream { last_event_id: Some(id), .. })) => {
+    ///             stream = client.subscribe_to_task_from(task_id, id).await?;
+    ///         }
+    ///         Some(Err(e)) => return Err(e),
+    ///         None => break,
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// As [`subscribe_to_task`](Self::subscribe_to_task).
+    pub async fn subscribe_to_task_from(
+        &self,
+        id: impl Into<String>,
+        last_event_id: impl Into<String>,
+    ) -> ClientResult<EventStream> {
+        self.subscribe(id.into(), Some(last_event_id.into())).await
+    }
+
+    async fn subscribe(
+        &self,
+        id: String,
+        last_event_id: Option<String>,
+    ) -> ClientResult<EventStream> {
         const METHOD: &str = "SubscribeToTask";
 
         let params = TaskIdParams {
             tenant: self.tenant_or_default(None),
-            id: id.into(),
+            id,
         };
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
 
         let mut req = ClientRequest::new(METHOD, params_value);
+        if let Some(last_event_id) = last_event_id {
+            // Before the interceptors, so one that logs or signs the request
+            // sees the header it will carry.
+            req.extra_headers
+                .insert("last-event-id".to_owned(), last_event_id);
+        }
         self.interceptors.run_before(&mut req).await?;
 
-        let stream = self
-            .transport
-            .send_streaming_request(METHOD, req.params, &req.extra_headers)
-            .await?;
+        let stream = self.send_streaming_intercepted(METHOD, &mut req).await?;
+        let stream = self.configure_stream(stream);
 
         // FIX(#6): Call run_after() for streaming requests so interceptors
         // get their cleanup/logging hook.

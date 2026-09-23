@@ -54,6 +54,7 @@
 //! assert!(!class_of(&status).expect("set above").is_retryable());
 //! ```
 
+use crate::error::A2aError;
 use crate::message::Message;
 
 /// The extension URI a card declares and a message names in `extensions`.
@@ -155,7 +156,8 @@ impl From<crate::error::ErrorCode> for FailureClass {
     /// [`PolicyRefusal`](FailureClass::PolicyRefusal), because no
     /// [`ErrorCode`](crate::error::ErrorCode) carries either meaning — an
     /// agent that knows it hit a rate limit, or refused on policy, has to say
-    /// so itself. Guessing `Transient` here would tell callers to retry
+    /// so itself, with [`set_error_class`] on the error it returns or by
+    /// emitting its own classified `Failed` status. Guessing `Transient` here would tell callers to retry
     /// things that will never succeed.
     fn from(code: crate::error::ErrorCode) -> Self {
         use crate::error::ErrorCode as E;
@@ -231,6 +233,61 @@ pub fn class_of(message: &Message) -> Option<FailureClass> {
         .get(FAILURE_METADATA_KEY)?
         .as_str()?;
     Some(FailureClass::from_wire(token))
+}
+
+/// Records a class on an error, for an executor that fails by returning
+/// `Err` rather than by emitting its own `Failed` status.
+///
+/// The class travels in [`A2aError::data`] under [`FAILURE_METADATA_KEY`],
+/// and [`error_class`] reads it back — which is what the server does with an
+/// executor's error. It is the only way an `Err` can say
+/// [`Transient`](FailureClass::Transient) or
+/// [`PolicyRefusal`](FailureClass::PolicyRefusal), since no
+/// [`ErrorCode`](crate::error::ErrorCode) means either.
+///
+/// `data` that is not an object is replaced wholesale, as [`set_class`]
+/// does for `metadata`: it cannot carry a key, and silently dropping the
+/// class would be the worse failure. The server never puts `data` on the
+/// wire as-is (it emits its own `ErrorInfo` details), so the key does not
+/// leak to callers.
+///
+/// ```rust
+/// use a2a_protocol_types::error::A2aError;
+/// use a2a_protocol_types::failure::{FailureClass, error_class, set_error_class};
+///
+/// let mut err = A2aError::internal("upstream model returned 429");
+/// assert_eq!(error_class(&err), FailureClass::Internal); // from the code
+/// set_error_class(&mut err, FailureClass::Transient);
+/// assert_eq!(error_class(&err), FailureClass::Transient);
+/// ```
+pub fn set_error_class(error: &mut A2aError, class: FailureClass) {
+    let data = error
+        .data
+        .get_or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    if !data.is_object() {
+        *data = serde_json::Value::Object(serde_json::Map::new());
+    }
+    if let Some(map) = data.as_object_mut() {
+        map.insert(
+            FAILURE_METADATA_KEY.to_owned(),
+            serde_json::Value::String(class.as_str().to_owned()),
+        );
+    }
+}
+
+/// The class a failed task gets when its executor returned `error`.
+///
+/// A class recorded with [`set_error_class`] wins; otherwise the class is
+/// inferred from the code (see the `From<ErrorCode>` impl). Never `None`:
+/// an executor that returned `Err` failed, and the caller is owed a class.
+#[must_use]
+pub fn error_class(error: &A2aError) -> FailureClass {
+    error
+        .data
+        .as_ref()
+        .and_then(|d| d.get(FAILURE_METADATA_KEY))
+        .and_then(serde_json::Value::as_str)
+        .map_or_else(|| FailureClass::from(error.code), FailureClass::from_wire)
 }
 
 /// Whether a message declares the failure extension in `extensions`.

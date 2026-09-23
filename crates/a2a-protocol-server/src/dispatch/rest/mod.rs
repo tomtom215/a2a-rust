@@ -639,6 +639,10 @@ impl crate::serve::Dispatcher for RestDispatcher {
     > {
         Box::pin(self.dispatch(req))
     }
+
+    fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
+        Some(&self.handler)
+    }
 }
 
 #[cfg(test)]

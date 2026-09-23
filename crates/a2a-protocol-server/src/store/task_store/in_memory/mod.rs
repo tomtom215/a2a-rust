@@ -42,6 +42,7 @@ use tokio::sync::RwLock;
 
 use super::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore, TaskStoreConfig};
 use crate::metrics::{self, MetricsHandle};
+use crate::store::terminal::{TerminalStateConflict, refuses_write};
 
 /// Sort key for the update-order indexes: `(status timestamp in Unix millis,
 /// monotonic write sequence)`.
@@ -128,6 +129,18 @@ impl StoreData {
             next_seq: 0,
             idempotency_index: HashMap::new(),
         }
+    }
+
+    /// The refusal a write of `task` would meet, if the stored copy is
+    /// terminal and `task` carries another state.
+    ///
+    /// Called under the same write lock as the write it guards, which is what
+    /// makes the check and the write one atomic step — see
+    /// [`crate::store::terminal`].
+    pub(super) fn refusal(&self, task: &Task) -> Option<TerminalStateConflict> {
+        let stored = self.entries.get(&task.id)?.task.status.state;
+        refuses_write(stored, task.status.state)
+            .then(|| TerminalStateConflict::new(task.id.clone(), stored, task.status.state))
     }
 
     /// Returns the number of entries in the store.
@@ -785,6 +798,10 @@ impl TaskStore for InMemoryTaskStore {
             // Insert under write lock, then release immediately.
             let passes = {
                 let mut store = self.data.write().await;
+                if let Some(conflict) = store.refusal(&task) {
+                    drop(store);
+                    return Err(conflict.into_error());
+                }
                 store.insert(task.id.clone(), task, Instant::now());
                 let len = store.len();
                 drop(store);
@@ -817,6 +834,10 @@ impl TaskStore for InMemoryTaskStore {
         Box::pin(async move {
             let outcome = {
                 let mut store = self.data.write().await;
+                if let Some(conflict) = store.refusal(task) {
+                    drop(store);
+                    return Err(conflict.into_error());
+                }
                 let applied = store.update_status(&task.id, task.status.clone(), Instant::now());
                 let len = store.len();
                 drop(store);
@@ -860,6 +881,10 @@ impl TaskStore for InMemoryTaskStore {
         Box::pin(async move {
             let outcome = {
                 let mut store = self.data.write().await;
+                if let Some(conflict) = store.refusal(task) {
+                    drop(store);
+                    return Err(conflict.into_error());
+                }
                 let applied = store
                     .entries
                     .get_mut(&task.id)
@@ -921,6 +946,10 @@ impl TaskStore for InMemoryTaskStore {
         Box::pin(async move {
             let outcome = {
                 let mut store = self.data.write().await;
+                if let Some(conflict) = store.refusal(task) {
+                    drop(store);
+                    return Err(conflict.into_error());
+                }
                 let applied = store.append_history(task, messages, max_history, Instant::now());
                 let len = store.len();
                 drop(store);

@@ -50,8 +50,8 @@ use hyper::body::Incoming;
 mod graceful;
 
 pub use graceful::{
-    DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT, DEFAULT_IDLE_TIMEOUT, ServeConfig,
-    ServeReport, Server,
+    DEFAULT_COMPLETION_GRACE, DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT,
+    DEFAULT_IDLE_TIMEOUT, DEFAULT_TASK_GRACE, ServeConfig, ServeReport, Server,
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -71,6 +71,27 @@ pub trait Dispatcher: Send + Sync + 'static {
         &self,
         req: hyper::Request<Incoming>,
     ) -> Pin<Box<dyn Future<Output = DispatchResponse> + Send + '_>>;
+
+    /// The handler whose tasks this dispatcher starts, if it has one.
+    ///
+    /// [`Server::serve_with_shutdown`] uses it to end in-flight work *before*
+    /// draining connections: it calls
+    /// [`RequestHandler::finish_in_flight`](crate::RequestHandler::finish_in_flight)
+    /// as soon as the listener closes, so executors can cancel what they
+    /// delegated and every open stream ends with a terminal event, and only
+    /// then waits for the sockets.
+    ///
+    /// **What the default costs.** It returns `None`, and a dispatcher that
+    /// keeps it gets the socket-only shutdown `serve_with_shutdown` had until
+    /// 2026-09-22: the drain waits on streams whose tasks nobody has cancelled, for
+    /// up to [`ServeConfig::drain_timeout`], and whatever those tasks
+    /// delegated is left running when the process exits. Override it in any
+    /// dispatcher that wraps a [`RequestHandler`](crate::RequestHandler);
+    /// [`JsonRpcDispatcher`](crate::JsonRpcDispatcher) and
+    /// [`RestDispatcher`](crate::RestDispatcher) do.
+    fn request_handler(&self) -> Option<&Arc<crate::RequestHandler>> {
+        None
+    }
 }
 
 // ── serve ────────────────────────────────────────────────────────────────────

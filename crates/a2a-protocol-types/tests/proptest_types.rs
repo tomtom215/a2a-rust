@@ -9,8 +9,12 @@
 //! - TaskState terminal/non-terminal classification
 //! - Part round-trip serialization fidelity
 //! - ID type uniqueness and Display consistency
+//! - `SecurityRequirement` round-trips, in the spec shape and a2a-go's
+
+use std::collections::BTreeMap;
 
 use a2a_protocol_types::message::{Part, PartContent};
+use a2a_protocol_types::security::{SecurityRequirement, StringList};
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState};
 use proptest::prelude::*;
 
@@ -134,5 +138,52 @@ proptest! {
         let id_a = TaskId::new(&a);
         let id_b = TaskId::new(&b);
         prop_assert_ne!(id_a, id_b);
+    }
+}
+
+// ── SecurityRequirement strategies ───────────────────────────────────────────
+
+type Scopes = BTreeMap<String, Vec<String>>;
+
+fn arb_scopes() -> impl Strategy<Value = Scopes> {
+    prop::collection::btree_map(".{0,12}", prop::collection::vec(".{0,12}", 0..4), 0..4)
+}
+
+fn to_requirement(scopes: &Scopes) -> SecurityRequirement {
+    SecurityRequirement {
+        schemes: scopes
+            .iter()
+            .map(|(k, v)| (k.clone(), StringList { list: v.clone() }))
+            .collect(),
+    }
+}
+
+fn from_requirement(req: &SecurityRequirement) -> Scopes {
+    req.schemes
+        .iter()
+        .map(|(k, v)| (k.clone(), v.list.clone()))
+        .collect()
+}
+
+proptest! {
+    /// A requirement round-trips through the spec shape this SDK emits, and
+    /// every emitted scope value is a `{"list": [...]}` object.
+    #[test]
+    fn security_requirement_roundtrip(scopes in arb_scopes()) {
+        let json = serde_json::to_value(to_requirement(&scopes)).unwrap();
+        for v in json["schemes"].as_object().unwrap().values() {
+            prop_assert!(v.get("list").is_some_and(serde_json::Value::is_array), "got {}", v);
+        }
+        let back: SecurityRequirement = serde_json::from_value(json).unwrap();
+        prop_assert_eq!(from_requirement(&back), scopes);
+    }
+
+    /// a2a-go's bare-array shape reads to the same requirement as the spec
+    /// shape (a2a-go v2.5.0 `a2a/auth.go`).
+    #[test]
+    fn security_requirement_reads_go_shape(scopes in arb_scopes()) {
+        let go = serde_json::json!({ "schemes": scopes });
+        let back: SecurityRequirement = serde_json::from_value(go).unwrap();
+        prop_assert_eq!(from_requirement(&back), scopes);
     }
 }

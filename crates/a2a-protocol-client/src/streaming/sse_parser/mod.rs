@@ -20,4 +20,4 @@ mod parser;
 mod types;
 
 pub use parser::SseParser;
-pub use types::{SseFrame, SseParseError};
+pub use types::{DEFAULT_MAX_EVENT_SIZE, SseFrame, SseParseError};

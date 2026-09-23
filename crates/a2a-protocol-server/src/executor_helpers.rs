@@ -236,9 +236,11 @@ impl<'a> EventEmitter<'a> {
     /// An executor that returns `Err` instead gets a class inferred from the
     /// error code, which can only ever be `InvalidRequest` or `Internal` —
     /// no [`ErrorCode`](a2a_protocol_types::error::ErrorCode) means
-    /// "transient" or "refused on policy". An agent that knows it was rate
-    /// limited upstream, or declined on a safety rule, is the only thing
-    /// that can say so, and this is how.
+    /// "transient" or "refused on policy" — unless it recorded one on the
+    /// error with [`set_error_class`](a2a_protocol_types::failure::set_error_class).
+    /// An agent that knows it was rate limited upstream, or declined on a
+    /// safety rule, is the only thing that can say so; this is one way, and
+    /// the one that lets it keep writing its own status text.
     ///
     /// ```rust,ignore
     /// // Retry me: the model was rate limited, not wrong.

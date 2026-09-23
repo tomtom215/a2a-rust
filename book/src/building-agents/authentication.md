@@ -111,7 +111,12 @@ let client = ClientBuilder::new("https://agent.example.com")
 
 `BearerAuthInterceptor` asks its provider for a token before **every** request,
 so a provider that refreshes keeps a long-lived client authenticated across
-token rotations.
+token rotations. When the agent answers `401` (surfaced as
+`ClientError::UnexpectedStatus` over JSON-RPC and REST), the interceptor calls
+`TokenProvider::invalidate` with the token it sent. The call that got the `401`
+still fails, but the next one fetches a new token instead of resending the
+refused one until it expires. A custom `TokenProvider` gets this only if it
+overrides `invalidate`; the default does nothing.
 
 ### OAuth 2.0 client credentials
 
@@ -153,6 +158,13 @@ let provider = OAuth2ClientCredentials::from_oidc_issuer(
     "https://login.example.com", "client-id", "client-secret",
 ).await?;
 ```
+
+When the token endpoint fails, every caller waiting on that refresh gets the
+same error from the one request: a dead endpoint costs them one
+`with_request_timeout` together, not one each in turn. The failure is then
+remembered for `with_failure_backoff` (default 1 s; `Duration::ZERO` turns it
+off), so a tight loop makes at most one attempt per backoff. A caller cancelled
+mid-refresh does not strand the others; the next one starts a new attempt.
 
 The client secret is never logged, never echoed in an error, and redacted from
 `Debug`. `Basic` client authentication is the default; switch to form-body

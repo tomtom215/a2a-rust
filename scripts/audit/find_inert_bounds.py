@@ -100,6 +100,14 @@ IMPL = re.compile(
 )
 TRAIT_DECL = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?trait\s+([A-Za-z_]\w*)", re.M)
 CFG_TEST_FILE_MOD = re.compile(r"#\[cfg\(test\)\]\s*(?:pub\s+)?mod\s+([A-Za-z_]\w*)\s*;")
+# The same declaration carrying `#[path = "..."]`, in either attribute order:
+# `#[cfg(test)] #[path = "processor_tests.rs"] mod tests;`. The file is not
+# where the module name says, so CFG_TEST_FILE_MOD alone never finds it.
+CFG_TEST_PATH_MOD = re.compile(
+    r'(?:#\[cfg\(test\)\]\s*#\[path\s*=\s*"([^"]+)"\]'
+    r'|#\[path\s*=\s*"([^"]+)"\]\s*#\[cfg\(test\)\])'
+    r"\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+[A-Za-z_]\w*\s*;"
+)
 
 # A knob is a *bound* if its name says so. "Some honour it, some do not" is a
 # defect for a bound — a cap half the implementations ignore is not a cap. For
@@ -176,14 +184,33 @@ def test_only_files(paths) -> set:
     counting as production reads, hiding `max_concurrent_tasks` and
     `rate_limit_rps` — two of the three findings this script had just made. The
     output for a clean tree and for a blinded one is the same line.
+
+    Two more shapes, both missed until 2026-09-23 and both counting a test
+    double as an implementation: a module declared from a file that is not
+    `mod.rs` lives under that file's stem (`token_provider.rs`'s
+    `mod bearer_tests;` is `token_provider/bearer_tests.rs`), and a
+    `#[path = "..."]` attribute names the file outright, relative to the
+    declaring file's directory.
     """
     out = set()
     for path in paths:
-        for m in CFG_TEST_FILE_MOD.finditer(path.read_text(encoding="utf-8")):
+        text = path.read_text(encoding="utf-8")
+        own_dir = path.parent if path.name in ("mod.rs", "lib.rs", "main.rs") else path.parent / path.stem
+        for m in CFG_TEST_FILE_MOD.finditer(text):
             name = m.group(1)
-            for candidate in (path.parent / f"{name}.rs", path.parent / name / "mod.rs"):
+            for candidate in (
+                own_dir / f"{name}.rs",
+                own_dir / name / "mod.rs",
+                path.parent / f"{name}.rs",
+                path.parent / name / "mod.rs",
+            ):
                 if candidate.exists():
                     out.add(candidate.resolve())
+                    break
+        for before, after in CFG_TEST_PATH_MOD.findall(text):
+            candidate = path.parent / (before or after)
+            if candidate.exists():
+                out.add(candidate.resolve())
     return out
 
 

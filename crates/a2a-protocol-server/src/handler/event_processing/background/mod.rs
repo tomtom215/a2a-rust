@@ -10,9 +10,11 @@
 //! | Module | Responsibility |
 //! |---|---|
 //! | (this file) | Event loop orchestration and executor lifecycle |
+//! | [`processor`] | One run over one task, including a task another writer finished |
 //! | [`state_machine`] | Event dispatch, state transitions, task store updates |
 //! | [`push_delivery`] | Push notification delivery to webhook endpoints |
 
+mod processor;
 mod push_delivery;
 pub use push_delivery::timeout_outcome;
 mod state_machine;
@@ -20,12 +22,14 @@ mod state_machine;
 use std::sync::Arc;
 
 use a2a_protocol_types::error::A2aResult;
-use a2a_protocol_types::task::{TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::task::TaskId;
 use tokio::sync::mpsc;
 
 use super::super::RequestHandler;
+use crate::streaming::event_queue::terminal_gate::CloseOnDrop;
 
-use state_machine::{BackgroundDeps, process_event_bg};
+use processor::Processor;
+use state_machine::BackgroundDeps;
 
 // ── Background event processor (streaming mode) ─────────────────────────────
 
@@ -36,6 +40,11 @@ impl RequestHandler {
     /// The `persistence_rx` is an mpsc receiver that is independent of the
     /// broadcast channel used for SSE delivery. This means slow SSE consumers
     /// cannot cause the background processor to miss events (H5 fix).
+    ///
+    /// `links` connects the processor to the send that spawned it: the
+    /// executor's cancellation token, cancelled if the store reports that
+    /// another writer finished the task, and the queue's terminal gate, whose
+    /// tickets the processor answers (see [`processor`]).
     #[allow(clippy::too_many_lines)]
     pub(crate) fn spawn_background_event_processor(
         &self,
@@ -43,6 +52,7 @@ impl RequestHandler {
         executor_handle: tokio::task::JoinHandle<()>,
         persistence_rx: Option<mpsc::Receiver<A2aResult<crate::streaming::StreamEvent>>>,
         initial_task: a2a_protocol_types::task::Task,
+        links: super::ProcessorLinks,
     ) {
         let task_store = Arc::clone(&self.task_store);
         let push_config_store = Arc::clone(&self.push_config_store);
@@ -59,133 +69,117 @@ impl RequestHandler {
         // across tokio::spawn).
         let tenant = crate::store::tenant::TenantContext::current();
 
-        tokio::spawn(crate::store::tenant::TenantContext::scope(
-            tenant,
-            async move {
-                // H5 FIX: Use the dedicated persistence mpsc channel instead
-                // of the broadcast channel. The mpsc channel is not affected
-                // by slow SSE consumers and will never lose events.
-                let Some(mut persistence_reader) = persistence_rx else {
-                    trace_warn!(
-                        task_id = %task_id,
-                        "background event processor: no persistence channel provided"
-                    );
-                    return;
-                };
+        // On the handler's tracker: this is what persists the executor's last
+        // events and delivers their push notifications, so shutdown waits for
+        // it as well as for the executor.
+        self.in_flight
+            .background()
+            .spawn(crate::store::tenant::TenantContext::scope(
+                tenant,
+                async move {
+                    let super::ProcessorLinks { cancel, gate } = links;
+                    // Closes the gate however this task ends — including by panic —
+                    // so no writer waits out its timeout on a processor that is gone.
+                    let _gate_guard = gate.clone().map(CloseOnDrop);
 
-                // Get the current task from the store. The send path saved it
-                // just before spawning this processor; a miss here means the
-                // row vanished in that tiny window (capacity eviction under
-                // extreme churn, or a store fault). Returning early would drop
-                // the persistence receiver and silently lose every subsequent
-                // state transition and push notification for the task while
-                // its stream kept delivering — so fall back to the send path's
-                // snapshot and (for a confirmed miss) re-assert the row.
-                let mut last_task = match task_store.get(&task_id).await {
-                    Ok(Some(task)) => task,
-                    Ok(None) => {
+                    // H5 FIX: Use the dedicated persistence mpsc channel instead
+                    // of the broadcast channel. The mpsc channel is not affected
+                    // by slow SSE consumers and will never lose events.
+                    let Some(mut persistence_reader) = persistence_rx else {
                         trace_warn!(
                             task_id = %task_id,
-                            "background processor: task missing at start; \
-                             re-asserting from the send-path snapshot"
+                            "background event processor: no persistence channel provided"
                         );
-                        if let Err(e) = task_store.save(&initial_task).await {
-                            trace_error!(
+                        return;
+                    };
+
+                    // Get the current task from the store. The send path saved it
+                    // just before spawning this processor; a miss here means the
+                    // row vanished in that tiny window (capacity eviction under
+                    // extreme churn, or a store fault). Returning early would drop
+                    // the persistence receiver and silently lose every subsequent
+                    // state transition and push notification for the task while
+                    // its stream kept delivering — so fall back to the send path's
+                    // snapshot and (for a confirmed miss) re-assert the row.
+                    let last_task = match task_store.get(&task_id).await {
+                        Ok(Some(task)) => task,
+                        Ok(None) => {
+                            trace_warn!(
                                 task_id = %task_id,
-                                error = %e,
-                                "background processor: failed to re-assert evicted task"
+                                "background processor: task missing at start; \
+                                 re-asserting from the send-path snapshot"
                             );
-                            metrics.on_persistence_error(
-                                crate::metrics::persistence_operation::TASK_SNAPSHOT,
-                                e.metric_label(),
-                            );
-                        }
-                        initial_task
-                    }
-                    Err(_e) => {
-                        trace_warn!(
-                            task_id = %task_id,
-                            "background processor: store read failed at start; \
-                             continuing from the send-path snapshot"
-                        );
-                        initial_task
-                    }
-                };
-
-                let mut executor_done = false;
-                let mut handle_fuse = executor_handle;
-
-                loop {
-                    if executor_done {
-                        // Executor finished — drain remaining events from the
-                        // persistence channel.
-                        match persistence_reader.recv().await {
-                            Some(event) => {
-                                record_event(&*task_store, &task_id, &event, &*metrics).await;
-                                process_event_bg(
-                                    event.map(|e| e.event),
-                                    &task_id,
-                                    &mut last_task,
-                                    BackgroundDeps {
-                                        task_store: &*task_store,
-                                        push_config_store: &*push_config_store,
-                                        push_sender: push_sender.as_deref(),
-                                        limits: &limits,
-                                        metrics: &*metrics,
-                                    },
-                                )
-                                .await;
+                            if let Err(e) = task_store.save(&initial_task).await {
+                                trace_error!(
+                                    task_id = %task_id,
+                                    error = %e,
+                                    "background processor: failed to re-assert evicted task"
+                                );
+                                metrics.on_persistence_error(
+                                    crate::metrics::persistence_operation::TASK_SNAPSHOT,
+                                    e.metric_label(),
+                                );
                             }
-                            None => break,
+                            initial_task
                         }
-                    } else {
-                        tokio::select! {
-                            biased;
-                            event = persistence_reader.recv() => {
-                                match event {
-                                    Some(event) => {
-                                        record_event(&*task_store, &task_id, &event, &*metrics)
-                                            .await;
-                                        process_event_bg(
-                                            event.map(|e| e.event),
-                                            &task_id,
-                                            &mut last_task,
-                                            BackgroundDeps {
-                                                task_store: &*task_store,
-                                                push_config_store: &*push_config_store,
-                                                push_sender: push_sender.as_deref(),
-                                                limits: &limits,
-                                                metrics: &*metrics,
-                                            },
-                                        )
-                                        .await;
+                        Err(_e) => {
+                            trace_warn!(
+                                task_id = %task_id,
+                                "background processor: store read failed at start; \
+                                 continuing from the send-path snapshot"
+                            );
+                            initial_task
+                        }
+                    };
+
+                    let mut run = Processor::new(
+                        &task_id,
+                        BackgroundDeps {
+                            task_store: &*task_store,
+                            push_config_store: &*push_config_store,
+                            push_sender: push_sender.as_deref(),
+                            limits: &limits,
+                            metrics: &*metrics,
+                        },
+                        last_task,
+                        cancel,
+                        gate.as_deref(),
+                    );
+                    let mut executor_done = false;
+                    let mut handle_fuse = executor_handle;
+
+                    loop {
+                        if executor_done {
+                            // Executor finished — drain remaining events from the
+                            // persistence channel.
+                            match persistence_reader.recv().await {
+                                Some(event) => run.handle(event).await,
+                                None => break,
+                            }
+                        } else {
+                            tokio::select! {
+                                biased;
+                                event = persistence_reader.recv() => {
+                                    match event {
+                                        Some(event) => run.handle(event).await,
+                                        None => break,
                                     }
-                                    None => break,
                                 }
-                            }
-                            result = &mut handle_fuse => {
-                                executor_done = true;
-                                if result.is_err() {
-                                    trace_error!(
-                                        task_id = %task_id,
-                                        "executor task panicked (background processor)"
-                                    );
-                                    if !last_task.status.state.is_terminal() {
-                                        last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                                        if let Err(_e) = task_store.save(&last_task).await {
-                                            trace_error!(
-                                                task_id = %task_id,
-                                                "background processor: task store save failed after executor panic"
-                                            );
-                                        }
+                                result = &mut handle_fuse => {
+                                    executor_done = true;
+                                    if result.is_err() {
+                                        trace_error!(
+                                            task_id = %task_id,
+                                            "executor task panicked (background processor)"
+                                        );
+                                        run.executor_panicked().await;
                                     }
                                 }
                             }
                         }
                     }
-                }
-            },
-        ));
+                },
+            ));
     }
 }
 

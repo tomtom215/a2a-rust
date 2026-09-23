@@ -155,27 +155,55 @@ async fn jsonrpc_stream_error_deserializes_as_a_jsonrpc_response() {
 
 // ── REST binding ────────────────────────────────────────────────────────────
 
+/// §11.6 represents a REST error as a `google.rpc.Status` (AIP-193) object,
+/// and the REST stream carries its error frame in that shape too. a2a-go
+/// v2.5.0's REST stream parser (`internal/rest/rest.go`,
+/// `ParseStreamResponse`) accepts a frame only when exactly one of
+/// `message`/`task`/`statusUpdate`/`artifactUpdate`/`error` is present, and
+/// reads `error` as `{code,status,message,details}`. The bare
+/// `{"code":…,"message":…}` this frame used to be has a string `message`,
+/// which a Go client tried to read as a `Message` event and failed with
+/// "cannot unmarshal string into Go struct field streamResponse.message".
+/// The Python SDK's REST server sends the same `{"error":{…}}` shape under
+/// `event: error`.
 #[tokio::test]
-async fn rest_stream_error_stays_a_bare_a2a_error() {
+async fn rest_stream_error_is_an_aip193_status() {
     let body = lagged_stream_body(false).await;
     let data = error_frame_data(&body)
         .unwrap_or_else(|| panic!("no `event: error` frame in body:\n{body}"));
 
-    // §11.7: the REST binding streams bare payloads with no envelope, so its
-    // error frame is the A2aError itself. Asserted so that fixing the
-    // JSON-RPC binding cannot silently change REST too.
     assert!(
         data.get("jsonrpc").is_none(),
         "REST frames carry no JSON-RPC envelope; body:\n{body}"
     );
-    assert!(
-        data.get("code").is_some() && data.get("message").is_some(),
-        "REST error frame should be a bare A2aError; body:\n{body}"
+    // a2a-go's discriminator: exactly one known top-level member.
+    let members: Vec<&str> = ["message", "task", "statusUpdate", "artifactUpdate", "error"]
+        .into_iter()
+        .filter(|k| data.get(*k).is_some())
+        .collect();
+    assert_eq!(members, ["error"], "body:\n{body}");
+
+    let status = &data["error"];
+    assert_eq!(
+        status["code"], 500,
+        "HTTP status of InternalError; body:\n{body}"
     );
+    assert_eq!(status["status"], "INTERNAL", "body:\n{body}");
     assert!(
-        data.get("data")
-            .and_then(|d| d.get("streamLagged"))
-            .is_some(),
-        "the streamLagged marker must be present; body:\n{body}"
+        status["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("lagged")),
+        "body:\n{body}"
+    );
+    // The streamLagged marker survives as a google.protobuf.Struct detail,
+    // flattened the way a2a-go writes and reads one (`errordetails.Typed`).
+    let details = status["details"].as_array().expect("details array");
+    let structured = details
+        .iter()
+        .find(|d| d["@type"] == "type.googleapis.com/google.protobuf.Struct")
+        .unwrap_or_else(|| panic!("no Struct detail; body:\n{body}"));
+    assert!(
+        structured["streamLagged"].as_u64().is_some_and(|n| n > 0),
+        "the streamLagged marker and its count must survive; body:\n{body}"
     );
 }

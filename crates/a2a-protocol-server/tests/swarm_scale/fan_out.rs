@@ -72,6 +72,14 @@ struct Seen {
     /// closes. Worth counting separately from a gap: a gap is loss the client
     /// has to notice, and this is loss the server announced.
     lagged: bool,
+    /// Why the subscribe never produced a stream, when it did not: a failed
+    /// connection, or a non-200 answer with its body.
+    ///
+    /// An empty `ids` used to be all a refusal left behind, so "the server
+    /// refused to stream" read as "the log replayed nothing", and a fixture
+    /// card that did not advertise streaming was reported as an event-log
+    /// regression.
+    refused: Option<String>,
 }
 
 impl Seen {
@@ -114,11 +122,27 @@ async fn tail(addr: SocketAddr, task: String, window: Duration, resume_from: Opt
     let request = builder
         .body(Full::new(Bytes::new()))
         .expect("request builds");
-    let Ok(response) = client.request(request).await else {
-        return Seen::default();
+    let response = match client.request(request).await {
+        Ok(response) => response,
+        Err(e) => {
+            return Seen {
+                refused: Some(format!("connection failed: {e}")),
+                ..Seen::default()
+            };
+        }
     };
     if response.status() != 200 {
-        return Seen::default();
+        let status = response.status();
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .map(|b| String::from_utf8_lossy(&b.to_bytes()).into_owned())
+            .unwrap_or_default();
+        return Seen {
+            refused: Some(format!("HTTP {status}: {body}")),
+            ..Seen::default()
+        };
     }
 
     let deadline = tokio::time::Instant::now() + window;
@@ -132,6 +156,7 @@ async fn tail(addr: SocketAddr, task: String, window: Duration, resume_from: Opt
     Seen {
         ids: positions(&text),
         lagged: text.contains(a2a_protocol_types::error::STREAM_LAGGED_MARKER),
+        refused: None,
     }
 }
 
@@ -288,6 +313,11 @@ async fn a_tail_can_recover_what_it_missed() {
         replayed.ids.first(),
         replayed.ids.last(),
         replayed.gaps()
+    );
+    assert!(
+        replayed.refused.is_none(),
+        "the resubscribe was refused, so this measured the refusal and not the log: {:?}",
+        replayed.refused
     );
     assert!(
         !replayed.lagged,

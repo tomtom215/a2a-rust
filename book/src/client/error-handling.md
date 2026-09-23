@@ -66,6 +66,47 @@ match client.send_message(params).await {
 }
 ```
 
+### A Stream That Ends Early
+
+A stream finishes cleanly on a `Message`, or on a task or status update in a
+terminal (`completed`, `failed`, `canceled`, `rejected`) or interrupted
+(`input-required`, `auth-required`) state. If the body ends — or the
+connection closes — anywhere else, `next()` yields
+`ClientError::IncompleteStream` instead of `None`, and a frame the server did
+not finish writing is named in its message rather than dropped silently. The
+task is very likely still running; the error carries the last SSE `id:` to
+resume from:
+
+```rust,no_run
+# use a2a_protocol_client::{A2aClient, ClientError, EventStream};
+# async fn step(client: &A2aClient, task_id: &str, mut stream: EventStream)
+#     -> Result<EventStream, ClientError> {
+match stream.next().await {
+    Some(Err(ClientError::IncompleteStream { last_event_id: Some(id), .. })) => {
+        stream = client.subscribe_to_task_from(task_id, id).await?;
+    }
+    Some(Err(ClientError::IncompleteStream { last_event_id: None, .. })) => {
+        stream = client.subscribe_to_task(task_id).await?; // snapshot + live
+    }
+    _other => { /* ... */ }
+}
+# Ok(stream)
+# }
+```
+
+### Errors on an HTTP+JSON Stream
+
+A streaming request over HTTP+JSON reports errors as `ClientError::Protocol`
+with the exact A2A code, as unary calls do: an AIP-193 error body on a non-2xx
+answer (§11.6) decodes to, for example, `TaskNotFound` for `subscribe_to_task`
+on a missing task. So does an error the server sends *inside* an open stream,
+in the shapes seen in practice: a2a-go's AIP-193 object as a data frame
+(`{"error":{"code":404,"status":"NOT_FOUND",...}}`), this repository's
+`event: error` frame carrying the same object with the error's `data` as a
+`google.protobuf.Struct` detail — decoded back into `data`, so
+`is_stream_lagged()` still works — and, from releases up to 0.13.0, an
+`event: error` frame carrying a bare `A2aError`. The stream ends after it.
+
 ### Connection Errors
 
 ```rust,ignore
@@ -97,7 +138,7 @@ match client.send_message(params).await {
 }
 ```
 
-Retryable errors include: `Http`, `HttpClient`, `Timeout`, and `UnexpectedStatus` with codes 429, 502, 503, or 504. gRPC `DeadlineExceeded` and `Cancelled` errors also map to `Timeout` (retryable), and `Unavailable` maps to `HttpClient` (retryable).
+Retryable errors include: `Http`, `HttpClient`, `Timeout`, `IncompleteStream`, and `UnexpectedStatus` with codes 429, 502, 503, or 504. gRPC `DeadlineExceeded` and `Cancelled` errors also map to `Timeout` (retryable), and `Unavailable` maps to `HttpClient` (retryable).
 
 Retry backoff uses full jitter (0.5–1.0× randomization) to prevent thundering-herd storms when multiple clients experience the same failure simultaneously.
 
@@ -166,6 +207,42 @@ Box::pin(async move {
     Ok(())
 })
 ```
+
+### Delegating to Another Agent with `?`
+
+An executor that calls another agent can use `?` on client calls:
+`ClientError` converts into `A2aError`, and the server turns the returned
+error into a `Failed` task whose failure class says whether a retry is worth
+it.
+
+```rust,no_run
+use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::message::Message;
+use a2a_protocol_types::params::MessageSendParams;
+use a2a_protocol_types::responses::SendMessageResponse;
+
+// The body of an `AgentExecutor::execute` that delegates.
+async fn delegate(downstream_url: &str) -> A2aResult<Option<String>> {
+    let client = ClientBuilder::new(downstream_url).build()?;
+    let params = MessageSendParams::new(Message::user_text("m1", "summarise this"));
+    let reply = client.send_message(params).await?; // ClientError -> A2aError
+    Ok(match reply {
+        SendMessageResponse::Task(task) => task.text().map(str::to_owned),
+        _ => None,
+    })
+}
+```
+
+| Client error | Task's failure class |
+|---|---|
+| `Protocol(e)` from the downstream agent | passed through unchanged (code, message, data), classified by its code |
+| timeouts, connection failures, HTTP `429`/`502`/`503`/`504`, `TooManyPendingRequests` | `Transient` (retry with backoff) |
+| anything else | `Internal` |
+
+`Transient` is given exactly when `ClientError::is_retryable()` is true, so the
+client's retry policy and the caller's agree. The failed task's status text is
+`downstream A2A call failed: ` followed by the client error and its causes.
 
 ### Stream Error Recovery
 

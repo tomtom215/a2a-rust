@@ -97,6 +97,10 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 a2a-protocol-types = { version = "0.13.0", path = "../a2a-protocol-types" }
 a2a-protocol-server = { version = "0.13.0", path = "../a2a-protocol-server", features = ["websocket"] }
 futures-util = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink"] }
+# Read socket options back in the connector test; both already in the tree
+# through hyper-util.
+socket2 = { version = ">=0.6, <0.7", features = ["all"] }
+tower-service = ">=0.3, <0.4"
 
 [[bench]]
 name = "sse_parse"

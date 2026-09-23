@@ -157,7 +157,7 @@ The event queue uses `tokio::sync::broadcast` channels for fan-out to multiple s
 | Queue capacity | 256 events | Broadcast channel ring buffer size |
 | Max event size | 16 MiB | Rejects oversized events |
 
-With broadcast channels, writes never block — if a reader is too slow, it receives a `Lagged` notification and skips missed events. The task store is the source of truth; SSE is best-effort notification.
+With broadcast channels, writes never block on readers — if a reader is too slow, it receives a `Lagged` notification and skips missed events. The task store is the source of truth; SSE is best-effort notification. The one write that waits is the terminal one, on the store rather than on readers (see [The terminal frame is the stored one](#the-terminal-frame-is-the-stored-one)).
 
 > **High-volume streams:** For tasks producing >250 events, increase the queue
 > capacity to match expected peak volume. The default capacity of 256 is sufficient
@@ -213,10 +213,45 @@ while let Some(event) = stream.next().await {
 
 The SSE parser includes safety limits:
 
-- **16 MiB buffer cap** — Prevents OOM from malicious servers
+- **16 MiB event cap** — An oversized event, or a line that never ends, is refused with an error rather than buffered (`with_max_event_size`)
 - **30-second connect timeout** — Fails fast on unreachable servers
-- **First-event timeout** — A stream that is accepted but silent before its first event times out (lifted after the first frame), on every transport
+- **First-event timeout** — A stream that is accepted but silent before its first data times out after 5 minutes by default (`with_stream_first_event_timeout`; separate from the 30-second connect timeout), on every transport
+- **Idle timeout** — After the first frame, a stream that receives nothing at all (keep-alive comments count) for 5 minutes by default ends with `ClientError::Timeout`; resubscribe to continue
 - **Partial line buffering** — Handles TCP frame boundaries correctly (CRLF, LF, and bare-CR line endings per the SSE spec)
+
+### Errors on the wire
+
+A streaming call can fail before its stream starts (unknown task, invalid
+params, streaming not advertised) or partway through (an executor failure, the
+`streamLagged` signal).
+
+**Before the stream starts**, the error is not SSE:
+
+- over JSON-RPC it is a plain `application/json` JSON-RPC error response,
+  HTTP 200;
+- over HTTP+JSON it is an HTTP error status with a `google.rpc.Status` body.
+
+The official conformance kit (a2aproject/a2a-tck) requires the JSON-RPC shape,
+because it reads any `text/event-stream` answer as a successful stream. One
+peer loses it: a2a-go v2.5.0's client reads a streaming answer only as SSE, so
+over JSON-RPC it sees an empty stream and no error. A Go client that needs
+typed errors from a stream that fails to open should use HTTP+JSON or gRPC.
+
+**Partway through**, the server writes the error inside the SSE body as one
+`event: error` frame, then closes it:
+
+| Binding | Error frame `data:` |
+|---|---|
+| JSON-RPC | the JSON-RPC error response, echoing the request id: `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,…}}` |
+| HTTP+JSON | a `google.rpc.Status` (§11.6): `{"error":{"code":404,"status":"NOT_FOUND","message":…,"details":[…]}}`; `A2aError::data` rides as a flattened `google.protobuf.Struct` detail |
+
+This client accepts every shape a peer sends: a JSON-RPC refusal as SSE, as a
+plain JSON body (this server, and the Python SDK's), or as an
+HTTP status all fail the call itself with `ClientError::Protocol`. The one
+exception is a peer that opens a live, chunked stream and then sends the error
+as its first frame (a2a-go's server): that cannot be told from a stream that
+has started, so the same `ClientError::Protocol` arrives as the first
+`next()`. Handle errors in both places.
 
 ## Re-subscribing
 
@@ -238,9 +273,18 @@ other readers or the writer.
 
 > **Terminal tasks:** Subscribing to a task in a terminal state
 > (`Completed`, `Failed`, `Canceled`, `Rejected`) returns an
-> `UnsupportedOperation` error immediately, without opening an SSE stream.
+> `UnsupportedOperation` error immediately. No events are streamed; on
+> JSON-RPC the error is the response's single SSE frame (see
+> [Errors on the wire](#errors-on-the-wire)).
 
 ### Resuming from where you left off
+
+With `a2a-protocol-client`, a broken stream tells you: `next()` yields
+`ClientError::IncompleteStream` when the body ends before the stream's final
+event, carrying the last `id:` received (also available as
+`EventStream::last_event_id()`). Pass it to
+`client.subscribe_to_task_from(task_id, id)`, which sends it as
+`Last-Event-ID` on JSON-RPC and HTTP+JSON. The wire contract underneath:
 
 A snapshot tells you where the task *is*, not what happened while you were
 disconnected. An agent that emitted three progress updates during the outage
@@ -281,6 +325,22 @@ Details worth knowing:
   existed — the header is ignored rather than refused.
 - **A malformed `Last-Event-ID` is ignored**, not rejected, so echoing back an
   id from an unrelated stream costs you a replay, not the connection.
+
+### The terminal frame is the stored one
+
+Every frame but the last is broadcast as soon as the agent emits it, without
+waiting for the store. The frame carrying a terminal state is held until the
+server has persisted it (bounded by the queue's write timeout, 5 s by
+default), and it goes out as the store ruled: the agent's own frame when it
+persisted, or the state the store already holds when another writer finished
+the task first — a `CancelTask` handled by another replica, typically. The
+log records the same frame at that position, so a resumed stream ends the way
+the live one did, and a `GetTask` made after reading the terminal frame
+agrees with it. If the store has not answered within the timeout, the frame
+goes out as the agent wrote it, which is how every frame behaved before.
+
+The trade is latency on that one frame: it now waits for the store write, and
+for the processing of any events queued ahead of it.
 
 ## Streaming vs Synchronous
 

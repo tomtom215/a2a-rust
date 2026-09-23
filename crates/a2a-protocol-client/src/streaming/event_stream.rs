@@ -8,10 +8,17 @@
 //! [`EventStream`] provides an async `next()` iterator over
 //! [`a2a_protocol_types::StreamResponse`] events received via Server-Sent Events.
 //!
-//! The stream terminates when:
-//! - The underlying HTTP body closes (normal end-of-stream).
-//! - A [`a2a_protocol_types::TaskStatusUpdateEvent`] with `final: true` is received.
-//! - A protocol or transport error occurs (returned as `Some(Err(...))`).
+//! The stream finishes (`None`) when:
+//! - A [`a2a_protocol_types::TaskStatusUpdateEvent`] with a terminal state is
+//!   received.
+//! - The body ends after an event a stream may end on: a `Message`, or a task
+//!   or status update in a terminal or interrupted state.
+//!
+//! It fails (`Some(Err(...))`, then `None`) when:
+//! - The body ends anywhere else — [`ClientError::IncompleteStream`], which
+//!   carries the last SSE `id:` to resume from.
+//! - A silence bound expires — [`ClientError::Timeout`].
+//! - A protocol or transport error occurs.
 //!
 //! # Example
 //!
@@ -66,8 +73,8 @@ pub struct EventStream {
     rx: mpsc::Receiver<BodyChunk>,
     /// SSE parser state machine.
     parser: SseParser,
-    /// Whether the stream has been signalled as terminated.
-    done: bool,
+    /// Where the stream is in its life; see [`Phase`].
+    phase: Phase,
     /// Handle to abort the background body-reader task on drop.
     abort_handle: Option<AbortHandle>,
     /// The HTTP status code from the response that established this stream.
@@ -91,8 +98,25 @@ pub struct EventStream {
     /// arrives the bound is lifted, so legitimately long-idle subscriptions are
     /// not cut off mid-stream.
     first_event_timeout: Option<std::time::Duration>,
-    /// Whether at least one chunk has been received (clears `first_event_timeout`).
+    /// Optional bound on the silence **between** chunks once the first has
+    /// arrived. Any bytes reset it, SSE keep-alive comments included.
+    idle_timeout: Option<std::time::Duration>,
+    /// When data last arrived — or, before any has, when the stream was
+    /// created. Both bounds are deadlines measured from here rather than
+    /// fresh timeouts per `next()` call, so a consumer that polls `next()`
+    /// inside a `select!` and keeps cancelling it cannot restart the clock.
+    last_activity: tokio::time::Instant,
+    /// Whether at least one chunk has been received (switches the bound in
+    /// force from `first_event_timeout` to `idle_timeout`).
     first_chunk_received: bool,
+    /// Whether the last event decoded is one a stream may end on — see
+    /// [`ends_stream`]. Decides whether the body's end is a completion or an
+    /// [`ClientError::IncompleteStream`].
+    at_final_event: bool,
+    /// Events decoded so far; only for the incomplete-stream message.
+    events_received: u64,
+    /// The last SSE `id:` seen; see [`EventStream::last_event_id`].
+    last_event_id: Option<String>,
     /// A resource whose lifetime is the stream's, released when the stream is
     /// dropped. Set by [`EventStream::holding`]; see that method for why.
     ///
@@ -122,12 +146,17 @@ impl EventStream {
         Self {
             rx,
             parser: SseParser::new(),
-            done: false,
+            phase: Phase::Open,
             abort_handle: None,
             status_code: 200,
             jsonrpc_envelope: true,
             first_event_timeout: None,
+            idle_timeout: Some(crate::config::DEFAULT_STREAM_IDLE_TIMEOUT),
+            last_activity: tokio::time::Instant::now(),
             first_chunk_received: false,
+            at_final_event: false,
+            events_received: 0,
+            last_event_id: None,
             held: None,
         }
     }
@@ -145,12 +174,17 @@ impl EventStream {
         Self {
             rx,
             parser: SseParser::new(),
-            done: false,
+            phase: Phase::Open,
             abort_handle: Some(abort_handle),
             status_code: 200,
             jsonrpc_envelope: true,
             first_event_timeout: None,
+            idle_timeout: Some(crate::config::DEFAULT_STREAM_IDLE_TIMEOUT),
+            last_activity: tokio::time::Instant::now(),
             first_chunk_received: false,
+            at_final_event: false,
+            events_received: 0,
+            last_event_id: None,
             held: None,
         }
     }
@@ -169,6 +203,11 @@ impl EventStream {
     /// consumer and is the right way to report a decode failure mid-stream —
     /// silently ending the stream would be indistinguishable, to the consumer,
     /// from the task finishing normally.
+    ///
+    /// Dropping the sender ends the stream. As on every binding, that is a
+    /// completion only after a final event (a `Message`, or a terminal or
+    /// interrupted task state); before one, the consumer receives
+    /// [`ClientError::IncompleteStream`].
     ///
     /// The returned stream aborts the bridging task when dropped, exactly as
     /// the built-in transports' streams do.
@@ -228,12 +267,17 @@ impl EventStream {
         Self {
             rx,
             parser: SseParser::new(),
-            done: false,
+            phase: Phase::Open,
             abort_handle: Some(abort_handle),
             status_code,
             jsonrpc_envelope: true,
             first_event_timeout: None,
+            idle_timeout: Some(crate::config::DEFAULT_STREAM_IDLE_TIMEOUT),
+            last_activity: tokio::time::Instant::now(),
             first_chunk_received: false,
+            at_final_event: false,
+            events_received: 0,
+            last_event_id: None,
             held: None,
         }
     }
@@ -250,17 +294,52 @@ impl EventStream {
 
     /// Bounds the wait for the first chunk of stream data.
     ///
-    /// If no data arrives within `timeout`, [`EventStream::next`] yields a
-    /// [`ClientError::Timeout`] instead of blocking forever. The bound applies
-    /// only to establishment — once any data is received, subsequent waits are
-    /// unbounded so long-idle subscriptions are not interrupted.
+    /// If no data arrives within `timeout` of the stream being created,
+    /// [`EventStream::next`] yields a [`ClientError::Timeout`] instead of
+    /// blocking forever. Once any data is received this bound is spent and
+    /// [`with_idle_timeout`](Self::with_idle_timeout) governs instead.
     ///
     /// Wired by every streaming transport (JSON-RPC, REST, gRPC, WebSocket):
     /// their connect timeouts only bound establishment, and a server that
     /// establishes a stream and then goes silent must not hang the consumer.
+    /// [`A2aClient`](crate::A2aClient) then replaces the transport's value
+    /// with
+    /// [`ClientConfig::stream_first_event_timeout`](crate::ClientConfig::stream_first_event_timeout)
+    /// on every stream it returns.
     #[must_use]
-    pub(crate) const fn with_first_event_timeout(mut self, timeout: std::time::Duration) -> Self {
+    pub const fn with_first_event_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.first_event_timeout = Some(timeout);
+        self
+    }
+
+    /// Bounds the silence between chunks once the first has arrived; `None`
+    /// removes the bound.
+    ///
+    /// Defaults to
+    /// [`DEFAULT_STREAM_IDLE_TIMEOUT`](crate::config::DEFAULT_STREAM_IDLE_TIMEOUT).
+    /// Any bytes reset it, so an SSE server that sends keep-alive comments
+    /// keeps a quiet stream open indefinitely. When it expires,
+    /// [`next`](Self::next) yields [`ClientError::Timeout`] once and the stream
+    /// ends; the background reader is aborted, which closes the connection.
+    ///
+    /// [`A2aClient`](crate::A2aClient) sets this from
+    /// [`ClientConfig::stream_idle_timeout`](crate::ClientConfig::stream_idle_timeout)
+    /// on every stream it returns. Call it yourself on a stream obtained from
+    /// a [`Transport`](crate::Transport) directly.
+    #[must_use]
+    pub const fn with_idle_timeout(mut self, timeout: Option<std::time::Duration>) -> Self {
+        self.idle_timeout = timeout;
+        self
+    }
+
+    /// Sets the largest single event this stream accepts, in bytes. An event
+    /// over it is refused with [`ClientError::Transport`] and skipped; see
+    /// [`ClientConfig::max_event_size`](crate::ClientConfig::max_event_size),
+    /// which [`A2aClient`](crate::A2aClient) applies to every stream it
+    /// returns.
+    #[must_use]
+    pub const fn with_max_event_size(mut self, max_bytes: usize) -> Self {
+        self.parser.set_max_event_size(max_bytes);
         self
     }
 
@@ -302,65 +381,81 @@ impl EventStream {
         self.status_code
     }
 
+    /// The SSE `id:` of the last event received, or `None` if none carried
+    /// one.
+    ///
+    /// Pass it to
+    /// [`A2aClient::subscribe_to_task_from`](crate::A2aClient::subscribe_to_task_from)
+    /// after a disconnect and a server that keeps an event log (this
+    /// repository's does) replays what was missed. It follows SSE's
+    /// `lastEventId` rules: an id persists across events that carry none, so
+    /// a server-synthesized frame without an id does not move it. Always
+    /// `None` on gRPC and WebSocket streams, whose frames carry no ids.
+    #[must_use]
+    pub fn last_event_id(&self) -> Option<&str> {
+        self.last_event_id.as_deref()
+    }
+
     /// Returns the next event from the stream.
     ///
-    /// Returns `None` when the stream ends normally (either the HTTP body
-    /// closed or a `final: true` event was received).
+    /// Returns `None` when the stream has finished: after a terminal status
+    /// update, or when the body ends after an event the stream may end on
+    /// (a `Message`, or a task or status update in a terminal or interrupted
+    /// state).
     ///
-    /// Returns `Some(Err(...))` on transport or protocol errors.
+    /// Returns `Some(Err(...))` on transport or protocol errors, including
+    /// [`ClientError::IncompleteStream`] when the body ends anywhere else,
+    /// and [`ClientError::Timeout`] when a silence bound expires. After an
+    /// error the stream is finished and the next call returns `None`.
     pub async fn next(&mut self) -> Option<ClientResult<StreamResponse>> {
         loop {
             // First, drain any frames the parser already has buffered.
             if let Some(result) = self.parser.next_frame() {
                 match result {
-                    Ok(frame) => return Some(self.decode_frame(&frame.data)),
+                    Ok(frame) => {
+                        self.last_event_id = frame.id;
+                        return Some(self.decode_frame(&frame.data));
+                    }
                     Err(e) => {
                         return Some(Err(ClientError::Transport(e.to_string())));
                     }
                 }
             }
 
-            if self.done {
-                return None;
+            match self.phase {
+                Phase::Finished => return None,
+                Phase::BodyEnded => {
+                    self.phase = Phase::Finished;
+                    return self.judge_end().map(Err);
+                }
+                Phase::Open => {}
             }
 
-            // Need more bytes — wait for the next chunk from the body reader.
-            // Until the first chunk arrives, bound the wait by
-            // `first_event_timeout` (if set) so a server that accepts the
-            // stream but never responds cannot hang the consumer forever.
-            let chunk = match self.first_event_timeout {
-                Some(timeout) if !self.first_chunk_received => {
-                    let Ok(chunk) = tokio::time::timeout(timeout, self.rx.recv()).await else {
-                        self.done = true;
-                        return Some(Err(ClientError::Timeout(
-                            "stream produced no data before the first-event timeout".into(),
-                        )));
+            // Need more bytes — wait for the next chunk from the body reader,
+            // no later than the deadline of whichever bound is in force.
+            let chunk = match self.silence_deadline() {
+                Some((deadline, bound)) => {
+                    let Ok(chunk) = tokio::time::timeout_at(deadline, self.rx.recv()).await else {
+                        return Some(Err(self.fail_silent(bound)));
                     };
                     chunk
                 }
-                _ => self.rx.recv().await,
+                None => self.rx.recv().await,
             };
             match chunk {
                 None => {
-                    // Channel closed — body reader task exited.
-                    self.done = true;
-                    // Drain any remaining parser frames.
-                    if let Some(result) = self.parser.next_frame() {
-                        match result {
-                            Ok(frame) => return Some(self.decode_frame(&frame.data)),
-                            Err(e) => {
-                                return Some(Err(ClientError::Transport(e.to_string())));
-                            }
-                        }
-                    }
-                    return None;
+                    // Channel closed — the body ended. Frames already parsed
+                    // are still delivered by the loop head; then `judge_end`
+                    // decides whether this was a completion.
+                    self.phase = Phase::BodyEnded;
                 }
                 Some(Err(e)) => {
-                    self.done = true;
+                    self.phase = Phase::Finished;
                     return Some(Err(e));
                 }
                 Some(Ok(bytes)) => {
                     self.first_chunk_received = true;
+                    self.last_activity = tokio::time::Instant::now();
                     self.parser.feed(&bytes);
                 }
             }
@@ -368,6 +463,83 @@ impl EventStream {
     }
 
     // ── internals ─────────────────────────────────────────────────────────────
+
+    /// The deadline for the next chunk and the bound it came from, or `None`
+    /// when no bound is in force.
+    ///
+    /// Before the first chunk the first-event bound applies; after it, the
+    /// idle bound. A bound too large to add to an `Instant` (`Duration::MAX`)
+    /// is treated as no bound rather than panicking on the overflow.
+    fn silence_deadline(&self) -> Option<(tokio::time::Instant, std::time::Duration)> {
+        let bound = if self.first_chunk_received {
+            self.idle_timeout
+        } else {
+            self.first_event_timeout
+        }?;
+        Some((self.last_activity.checked_add(bound)?, bound))
+    }
+
+    /// Ends the stream because a silence bound expired, and says which.
+    ///
+    /// Aborts the body reader so the connection is released now rather than
+    /// when the consumer eventually drops the stream.
+    fn fail_silent(&mut self, bound: std::time::Duration) -> ClientError {
+        self.phase = Phase::Finished;
+        if let Some(handle) = self.abort_handle.take() {
+            handle.abort();
+        }
+        if self.first_chunk_received {
+            ClientError::Timeout(format!(
+                "stream idle timeout: no data, not even a keep-alive comment, for {bound:?} \
+                 since the last data received; the task on the server is not cancelled, \
+                 so resubscribe to continue"
+            ))
+        } else {
+            ClientError::Timeout(format!(
+                "stream produced no data before the first-event timeout ({bound:?})"
+            ))
+        }
+    }
+
+    /// Decides what the end of the body means, once every parsed frame has
+    /// been delivered: `None` for a completion, the error otherwise.
+    fn judge_end(&self) -> Option<ClientError> {
+        let partial = self.parser.incomplete_event_len();
+        if self.at_final_event {
+            if let Some(bytes) = partial {
+                // The stream's final event arrived, so nothing the consumer
+                // needs was lost; say so in the log rather than fail it.
+                trace_warn!(
+                    bytes,
+                    "SSE body ended mid-frame after the stream's final event; \
+                     discarding the unterminated frame"
+                );
+                let _ = bytes;
+            }
+            return None;
+        }
+        let detail = match (partial, self.events_received) {
+            (Some(bytes), _) => format!(
+                "the connection closed mid-frame, discarding {bytes} bytes of an \
+                 unterminated event"
+            ),
+            (None, 0) => "the body ended before any event".to_owned(),
+            (None, n) => format!(
+                "the body ended after {n} event(s), none of them a final one \
+                 (a Message, or a terminal or interrupted task state)"
+            ),
+        };
+        Some(ClientError::IncompleteStream {
+            last_event_id: self.last_event_id.clone(),
+            detail,
+        })
+    }
+
+    /// Records a decoded event for [`judge_end`](Self::judge_end).
+    const fn record(&mut self, event: &StreamResponse) {
+        self.events_received += 1;
+        self.at_final_event = ends_stream(event);
+    }
 
     fn decode_frame(&mut self, data: &str) -> ClientResult<StreamResponse> {
         if self.jsonrpc_envelope {
@@ -377,13 +549,14 @@ impl EventStream {
 
             match envelope {
                 JsonRpcResponse::Success(ok) => {
+                    self.record(&ok.result);
                     if is_terminal(&ok.result) {
-                        self.done = true;
+                        self.phase = Phase::Finished;
                     }
                     Ok(ok.result)
                 }
                 JsonRpcResponse::Error(err) => {
-                    self.done = true;
+                    self.phase = Phase::Finished;
                     let a2a = crate::transport::map_jsonrpc_error(
                         err.error.code,
                         err.error.message,
@@ -394,11 +567,26 @@ impl EventStream {
             }
         } else {
             // REST binding: each `data:` field is a bare StreamResponse
-            // (per A2A spec Section 11.7).
-            let event: StreamResponse =
-                serde_json::from_str(data).map_err(ClientError::Serialization)?;
+            // (per A2A spec Section 11.7) — or an error the server reports
+            // mid-stream, which is tried only once the frame has failed to
+            // parse as an event, so the common path pays nothing for it.
+            let event: StreamResponse = match serde_json::from_str(data) {
+                Ok(event) => event,
+                Err(e) => {
+                    return Err(
+                        match crate::transport::rest::error_frame::decode_stream_error_frame(data) {
+                            Some(a2a) => {
+                                self.phase = Phase::Finished;
+                                ClientError::Protocol(a2a)
+                            }
+                            None => ClientError::Serialization(e),
+                        },
+                    );
+                }
+            };
+            self.record(&event);
             if is_terminal(&event) {
-                self.done = true;
+                self.phase = Phase::Finished;
             }
             Ok(event)
         }
@@ -425,10 +613,42 @@ impl std::fmt::Debug for EventStream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // `rx` and `parser` don't implement Debug in a useful way; show key state only.
         f.debug_struct("EventStream")
-            .field("done", &self.done)
+            .field("done", &(self.phase == Phase::Finished))
             .field("pending_frames", &self.parser.pending_count())
             .finish()
     }
+}
+
+/// Where an [`EventStream`] is in its life.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    /// Reading the body.
+    Open,
+    /// The body has ended; once the parser's frames are delivered, the end
+    /// is judged — exactly once — by [`EventStream::judge_end`].
+    BodyEnded,
+    /// Finished: every further `next()` returns `None`.
+    Finished,
+}
+
+/// Returns `true` if a stream may end cleanly after `event`.
+///
+/// The specification closes a stream on a `Message` ("the stream MUST contain
+/// exactly one `Message` object and then close immediately", §3.1.2) and on
+/// a terminal task state (§3.1.2, §3.1.6); §11.7 adds the interrupted states
+/// ("until the task reaches a terminal or interrupted state, at which point
+/// the stream closes"). All of them are accepted here — lenient in what a
+/// peer may close on — and a `Task` snapshot counts as well as a status
+/// update, since a server "MAY optionally resend a final `Task` snapshot
+/// before closing" (§11.7).
+const fn ends_stream(event: &StreamResponse) -> bool {
+    let state = match event {
+        StreamResponse::Message(_) => return true,
+        StreamResponse::Task(task) => task.status.state,
+        StreamResponse::StatusUpdate(update) => update.status.state,
+        _ => return false,
+    };
+    state.is_terminal() || state.is_interrupted()
 }
 
 /// Returns `true` if `event` is the terminal event for its stream.
@@ -556,8 +776,10 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// A body that closes before any event is incomplete, not complete —
+    /// once; after the error the stream is finished.
     #[tokio::test]
-    async fn stream_ends_when_channel_closed() {
+    async fn a_channel_closed_before_any_event_is_incomplete() {
         let (tx, rx) = mpsc::channel(8);
         let mut stream = EventStream::new(rx);
         drop(tx);
@@ -565,7 +787,131 @@ mod tests {
         let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
             .await
             .expect("timed out");
-        assert!(result.is_none());
+        match result {
+            Some(Err(ClientError::IncompleteStream {
+                last_event_id,
+                detail,
+            })) => {
+                assert_eq!(last_event_id, None);
+                assert_eq!(detail, "the body ended before any event");
+            }
+            other => panic!("expected IncompleteStream, got {other:?}"),
+        }
+        assert!(
+            stream.next().await.is_none(),
+            "reported once, then finished"
+        );
+    }
+
+    /// The body ending after a final event is a completion; after a
+    /// non-final one it is not, and the message counts what did arrive.
+    #[tokio::test]
+    async fn the_end_of_the_body_is_judged_by_the_last_event() {
+        for (states, clean) in [
+            (vec![TaskState::Working, TaskState::InputRequired], true),
+            (vec![TaskState::Working, TaskState::AuthRequired], true),
+            (vec![TaskState::InputRequired, TaskState::Working], false),
+            (vec![TaskState::Submitted, TaskState::Working], false),
+        ] {
+            let (tx, rx) = mpsc::channel(8);
+            let mut stream = EventStream::new(rx).with_jsonrpc_envelope(false);
+            for state in &states {
+                let ev = make_status_event(*state, false);
+                tx.send(Ok(Bytes::from(bare_sse_frame(&ev)))).await.unwrap();
+            }
+            drop(tx);
+            for _ in &states {
+                assert!(matches!(stream.next().await, Some(Ok(_))), "{states:?}");
+            }
+            let end = stream.next().await;
+            if clean {
+                assert!(end.is_none(), "{states:?}: a completion, got {end:?}");
+            } else {
+                match end {
+                    Some(Err(ClientError::IncompleteStream { detail, .. })) => {
+                        assert!(detail.contains("after 2 event(s)"), "{detail}");
+                    }
+                    other => panic!("{states:?}: expected IncompleteStream, got {other:?}"),
+                }
+            }
+            assert!(stream.next().await.is_none());
+        }
+    }
+
+    /// `ends_stream` is exactly: a `Message`, or a task / status update in a
+    /// terminal or interrupted state. Nothing else.
+    #[test]
+    fn ends_stream_covers_final_events_only() {
+        use a2a_protocol_types::{Message, MessageId, MessageRole, Part, Task};
+        for state in [
+            TaskState::Completed,
+            TaskState::Failed,
+            TaskState::Canceled,
+            TaskState::Rejected,
+            TaskState::InputRequired,
+            TaskState::AuthRequired,
+        ] {
+            assert!(ends_stream(&make_status_event(state, false)), "{state:?}");
+        }
+        for state in [TaskState::Submitted, TaskState::Working] {
+            assert!(!ends_stream(&make_status_event(state, false)), "{state:?}");
+        }
+        let task = |state| {
+            StreamResponse::Task(Task {
+                id: TaskId::new("t"),
+                context_id: a2a_protocol_types::ContextId::new("c"),
+                status: TaskStatus::new(state),
+                history: None,
+                artifacts: None,
+                metadata: None,
+            })
+        };
+        assert!(ends_stream(&task(TaskState::Completed)));
+        assert!(ends_stream(&task(TaskState::InputRequired)));
+        assert!(!ends_stream(&task(TaskState::Working)));
+        let message = StreamResponse::Message(Message {
+            id: MessageId::new("m"),
+            role: MessageRole::Agent,
+            parts: vec![Part::text("hi")],
+            task_id: None,
+            context_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        });
+        assert!(ends_stream(&message));
+    }
+
+    /// A frame cut off by the end of the body, after the final event, is
+    /// logged rather than failed — nothing the consumer needs was lost.
+    #[tokio::test]
+    async fn a_partial_frame_after_the_final_event_is_not_an_error() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx).with_jsonrpc_envelope(false);
+        let ev = make_status_event(TaskState::InputRequired, false);
+        tx.send(Ok(Bytes::from(bare_sse_frame(&ev)))).await.unwrap();
+        tx.send(Ok(Bytes::from_static(b"data: {\"trunc")))
+            .await
+            .unwrap();
+        drop(tx);
+        assert!(matches!(stream.next().await, Some(Ok(_))));
+        assert!(stream.next().await.is_none());
+    }
+
+    /// `last_event_id` follows SSE: set by `id:`, kept across frames that
+    /// carry none.
+    #[tokio::test]
+    async fn last_event_id_persists_across_frames_without_one() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx).with_jsonrpc_envelope(false);
+        let ev = bare_sse_frame(&make_status_event(TaskState::Working, false));
+        tx.send(Ok(Bytes::from(format!("id: 4\n{ev}{ev}"))))
+            .await
+            .unwrap();
+        assert!(matches!(stream.next().await, Some(Ok(_))));
+        assert_eq!(stream.last_event_id(), Some("4"));
+        assert!(matches!(stream.next().await, Some(Ok(_))));
+        assert_eq!(stream.last_event_id(), Some("4"), "persists");
     }
 
     // ── from_event_channel ───────────────────────────────────────────────
@@ -628,7 +974,8 @@ mod tests {
         );
     }
 
-    /// Closing the channel ends the stream.
+    /// Closing the channel ends the stream — as an incomplete one, when no
+    /// final event came first, exactly as on the HTTP bindings.
     #[tokio::test]
     async fn from_event_channel_ends_when_sender_drops() {
         let (tx, rx) = mpsc::channel::<ClientResult<StreamResponse>>(8);
@@ -639,7 +986,11 @@ mod tests {
             .await
             .expect("timed out");
 
-        assert!(result.is_none(), "a closed channel must end the stream");
+        assert!(
+            matches!(result, Some(Err(ClientError::IncompleteStream { .. }))),
+            "closing before a final event is incomplete: {result:?}"
+        );
+        assert!(stream.next().await.is_none(), "and then the stream ends");
     }
 
     /// A terminal event ends the stream, exactly as it does for the HTTP
@@ -707,11 +1058,21 @@ mod tests {
         let stream = EventStream::new(rx);
         let debug = format!("{stream:?}");
         assert!(debug.contains("EventStream"), "should contain struct name");
-        assert!(debug.contains("done"), "should contain 'done' field");
+        assert!(debug.contains("done: false"), "a fresh stream is not done");
         assert!(
             debug.contains("pending_frames"),
             "should contain 'pending_frames' field"
         );
+    }
+
+    /// `done` in the debug output tracks the phase: true once finished.
+    #[tokio::test]
+    async fn debug_output_reports_a_finished_stream_as_done() {
+        let (tx, rx) = mpsc::channel::<BodyChunk>(8);
+        let mut stream = EventStream::new(rx);
+        drop(tx);
+        let _ = stream.next().await;
+        assert!(format!("{stream:?}").contains("done: true"));
     }
 
     #[test]
@@ -856,7 +1217,7 @@ mod tests {
             .await
             .expect("first-event timeout must fire well within 2s");
         assert!(
-            matches!(result, Some(Err(ClientError::Timeout(_)))),
+            matches!(result, Some(Err(ClientError::Timeout(ref m))) if m.contains("first-event")),
             "expected first-event timeout, got {result:?}"
         );
         // After timing out the stream is done.
@@ -891,6 +1252,149 @@ mod tests {
             pending.is_err(),
             "stream must remain open (pending) after first chunk, got {pending:?}"
         );
+    }
+
+    // ── Idle bound ───────────────────────────────────────────────────────
+    //
+    // Paused time: the bounds are deadlines on tokio's clock, so these run
+    // instantly and measure exactly.
+
+    const IDLE: Duration = Duration::from_secs(10);
+
+    /// A stream with one event delivered and its sender held open.
+    async fn stream_after_one_event() -> (mpsc::Sender<BodyChunk>, EventStream) {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx)
+            .with_jsonrpc_envelope(false)
+            .with_idle_timeout(Some(IDLE));
+        let event = make_status_event(TaskState::Working, false);
+        tx.send(Ok(Bytes::from(bare_sse_frame(&event))))
+            .await
+            .unwrap();
+        assert!(matches!(stream.next().await, Some(Ok(_))));
+        (tx, stream)
+    }
+
+    /// Silence past the idle bound after the first event ends the stream with
+    /// a `Timeout` that says it was the idle bound, at the bound and not
+    /// before.
+    #[tokio::test(start_paused = true)]
+    async fn idle_timeout_fires_after_the_first_event() {
+        let (_tx, mut stream) = stream_after_one_event().await;
+        let start = tokio::time::Instant::now();
+        let result = stream.next().await;
+        assert_eq!(start.elapsed(), IDLE, "fires exactly at the bound");
+        match result {
+            Some(Err(ClientError::Timeout(msg))) => {
+                assert!(msg.contains("idle timeout"), "{msg}");
+                assert!(msg.contains("10s"), "names the bound: {msg}");
+            }
+            other => panic!("expected idle Timeout, got {other:?}"),
+        }
+        assert!(stream.next().await.is_none(), "the stream has ended");
+    }
+
+    /// The deadline survives a `next()` that is cancelled — the shape of a
+    /// consumer polling inside `select!` with a shorter tick. A per-call
+    /// timeout would restart on every poll and never fire.
+    #[tokio::test(start_paused = true)]
+    async fn cancelled_polls_do_not_restart_the_idle_clock() {
+        let (_tx, mut stream) = stream_after_one_event().await;
+        for _ in 0..3 {
+            let poll = tokio::time::timeout(IDLE / 4, stream.next()).await;
+            assert!(poll.is_err(), "still inside the bound: {poll:?}");
+        }
+        // 0.75 × IDLE has passed: the next poll fails a quarter-bound later,
+        // where a restarted clock would wait a whole one.
+        let start = tokio::time::Instant::now();
+        let result = tokio::time::timeout(IDLE, stream.next())
+            .await
+            .expect("the original deadline falls inside this poll");
+        assert_eq!(start.elapsed(), IDLE / 4);
+        assert!(matches!(result, Some(Err(ClientError::Timeout(_)))));
+    }
+
+    /// Any bytes are liveness: a keep-alive comment restarts the idle clock
+    /// even though it produces no event.
+    #[tokio::test(start_paused = true)]
+    async fn a_keep_alive_comment_restarts_the_idle_clock() {
+        let (tx, mut stream) = stream_after_one_event().await;
+        let quiet = IDLE * 3 / 4;
+        tokio::time::advance(quiet).await;
+        tx.send(Ok(Bytes::from_static(b": keep-alive\n\n")))
+            .await
+            .unwrap();
+        // Well past the original deadline, but inside the renewed one.
+        let poll = tokio::time::timeout(quiet, stream.next()).await;
+        assert!(poll.is_err(), "the comment renewed the bound: {poll:?}");
+        // And the renewed one still fires.
+        let result = stream.next().await;
+        assert!(matches!(result, Some(Err(ClientError::Timeout(_)))));
+    }
+
+    /// `None` is no bound; `Duration::MAX` is too large to add to an instant
+    /// and must mean the same rather than panic on the overflow.
+    #[tokio::test(start_paused = true)]
+    async fn an_absent_or_unrepresentable_idle_bound_never_fires() {
+        for bound in [None, Some(Duration::MAX)] {
+            let (tx, rx) = mpsc::channel(8);
+            let mut stream = EventStream::new(rx)
+                .with_jsonrpc_envelope(false)
+                .with_idle_timeout(bound);
+            let event = make_status_event(TaskState::Working, false);
+            tx.send(Ok(Bytes::from(bare_sse_frame(&event))))
+                .await
+                .unwrap();
+            assert!(matches!(stream.next().await, Some(Ok(_))));
+            let poll = tokio::time::timeout(IDLE * 1000, stream.next()).await;
+            assert!(poll.is_err(), "{bound:?} must not fire: {poll:?}");
+        }
+    }
+
+    /// The default applies without any setter: a bare stream is bounded.
+    #[tokio::test(start_paused = true)]
+    async fn streams_carry_the_default_idle_bound() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx).with_jsonrpc_envelope(false);
+        let event = make_status_event(TaskState::Working, false);
+        tx.send(Ok(Bytes::from(bare_sse_frame(&event))))
+            .await
+            .unwrap();
+        assert!(matches!(stream.next().await, Some(Ok(_))));
+        let start = tokio::time::Instant::now();
+        let result = stream.next().await;
+        assert_eq!(
+            start.elapsed(),
+            crate::config::DEFAULT_STREAM_IDLE_TIMEOUT,
+            "the default bound applies"
+        );
+        assert!(matches!(result, Some(Err(ClientError::Timeout(_)))));
+    }
+
+    /// Expiry releases the connection: the body-reader task is aborted then,
+    /// not when the consumer gets round to dropping the stream.
+    #[tokio::test(start_paused = true)]
+    async fn idle_expiry_aborts_the_body_reader() {
+        let (tx, rx) = mpsc::channel::<BodyChunk>(8);
+        let reader = tokio::spawn(async move {
+            let event = make_status_event(TaskState::Working, false);
+            let _ = tx.send(Ok(Bytes::from(bare_sse_frame(&event)))).await;
+            std::future::pending::<()>().await;
+        });
+        let mut stream = EventStream::with_abort_handle(rx, reader.abort_handle())
+            .with_jsonrpc_envelope(false)
+            .with_idle_timeout(Some(IDLE));
+        assert!(matches!(stream.next().await, Some(Ok(_))));
+        assert!(matches!(
+            stream.next().await,
+            Some(Err(ClientError::Timeout(_)))
+        ));
+        let joined = reader.await;
+        assert!(
+            joined.is_err_and(|e| e.is_cancelled()),
+            "the reader must be aborted at expiry while the stream is still alive"
+        );
+        drop(stream);
     }
 
     /// Test transport error propagation (covers lines 148-149, 165-168).

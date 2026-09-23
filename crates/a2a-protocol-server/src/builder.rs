@@ -577,6 +577,7 @@ impl RequestHandlerBuilder {
             )),
             context_locks: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             tenant_slots: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+            in_flight: crate::handler::InFlight::default(),
         })
     }
 }

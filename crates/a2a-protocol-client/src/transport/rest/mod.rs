@@ -34,6 +34,7 @@
 //! | `DeleteTaskPushNotificationConfig` | DELETE | `/tasks/{id}/pushNotificationConfigs/{configId}` |
 //! | `GetExtendedAgentCard` | GET | `/extendedAgentCard` |
 
+pub(crate) mod error_frame;
 mod query;
 mod request;
 mod routing;
@@ -155,9 +156,7 @@ impl RestTransport {
 
         #[cfg(not(feature = "tls-rustls"))]
         let client = {
-            let mut connector = HttpConnector::new();
-            connector.set_connect_timeout(Some(connection_timeout));
-            connector.set_nodelay(true);
+            let connector = crate::transport::connector::http_connector(connection_timeout);
             Client::builder(TokioExecutor::new())
                 .pool_idle_timeout(Duration::from_secs(90))
                 .build(connector)

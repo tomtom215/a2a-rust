@@ -56,4 +56,4 @@ impl std::fmt::Display for SseParseError {
 impl std::error::Error for SseParseError {}
 
 /// Default maximum event size: 16 MiB (aligned with server default).
-pub(super) const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;
+pub const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;

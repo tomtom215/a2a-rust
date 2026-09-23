@@ -78,17 +78,25 @@ impl PostgresTaskStore {
         // than merely likely: if the stored document has no such parts array,
         // no row matches, zero rows are reported, and the caller rewrites the
         // record whole.
-        let rows = sqlx::query(
+        //
+        // The last condition is the terminal guard (see
+        // `crate::store::terminal`), on the writer's state: zero rows sends
+        // the caller to `save`, which reports a refusal.
+        let rows = sqlx::query(crate::store::terminal::sql_write_allowed!(
             "UPDATE tasks SET data = jsonb_set(\
                  data, ARRAY['artifacts', $3::text, 'parts'], \
                  (data->'artifacts'->($3::int)->'parts') || $1::jsonb) \
              WHERE id = $2 \
                AND jsonb_typeof(data->'artifacts') = 'array' \
-               AND jsonb_typeof(data->'artifacts'->($3::int)->'parts') = 'array'",
-        )
+               AND jsonb_typeof(data->'artifacts'->($3::int)->'parts') = 'array' \
+               AND ",
+            "state",
+            "$4"
+        ))
         .bind(&payload)
         .bind(task.id.0.as_str())
         .bind(idx)
+        .bind(task.status.state.to_string())
         .execute(&self.pool)
         .await
         .map_err(to_a2a_error)?
@@ -115,13 +123,16 @@ impl PostgresTaskStore {
         let payload = serde_json::to_value(std::slice::from_ref(artifact))
             .map_err(|e| A2aError::internal(format!("failed to serialize artifact: {e}")))?;
 
-        let rows = sqlx::query(
+        let rows = sqlx::query(crate::store::terminal::sql_write_allowed!(
             "UPDATE tasks SET data = jsonb_set(\
                  data, ARRAY['artifacts'], (data->'artifacts') || $1::jsonb) \
-             WHERE id = $2 AND jsonb_typeof(data->'artifacts') = 'array'",
-        )
+             WHERE id = $2 AND jsonb_typeof(data->'artifacts') = 'array' AND ",
+            "state",
+            "$3"
+        ))
         .bind(&payload)
         .bind(task.id.0.as_str())
+        .bind(task.status.state.to_string())
         .execute(&self.pool)
         .await
         .map_err(to_a2a_error)?

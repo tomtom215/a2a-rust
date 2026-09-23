@@ -184,21 +184,27 @@ fn tck_security_requirement_wire_format() {
     );
 }
 
-/// Validates that a flat scope list (OpenAPI-style) is NOT accepted.
-/// The A2A proto requires the `StringList` wrapper.
+/// A flat scope list (OpenAPI style) is accepted but never emitted.
+///
+/// The A2A proto requires the `StringList` wrapper, and that is what is
+/// written. a2a-go v2.5.0 writes the flat form (`a2a/auth.go`), and
+/// rejecting it made every secured Go agent card unreadable, so the reader
+/// is lenient while the writer stays strict.
 #[test]
-fn tck_security_requirement_rejects_flat_scopes() {
-    // This is what OpenAPI uses — but A2A requires {"list": [...]}
+fn tck_security_requirement_accepts_flat_scopes_emits_wrapped() {
     let openapi_style = json!({
         "schemes": {
             "oauth2": ["read", "write"]
         }
     });
 
-    let result = serde_json::from_value::<SecurityRequirement>(openapi_style);
-    assert!(
-        result.is_err(),
-        "flat scope arrays (OpenAPI style) must be rejected — A2A requires StringList wrapper"
+    let req = serde_json::from_value::<SecurityRequirement>(openapi_style)
+        .expect("flat scope arrays (a2a-go, OpenAPI style) must be accepted");
+    assert_eq!(req.schemes["oauth2"].list, vec!["read", "write"]);
+    assert_eq!(
+        serde_json::to_value(&req).unwrap(),
+        json!({"schemes": {"oauth2": {"list": ["read", "write"]}}}),
+        "only the spec's StringList wrapper is emitted"
     );
 }
 

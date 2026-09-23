@@ -58,6 +58,10 @@ struct CollectState {
     /// their own blocking `SendMessage` by up to the 30s delivery budget.
     /// Streaming already delivers off-path; this makes the sync path match.
     push_events: Vec<StreamResponse>,
+    /// The executor's cancellation token, taken while it is still registered,
+    /// so a task superseded by another writer can stop its executor even if
+    /// the handler's map has already let go of it.
+    cancel: Option<tokio_util::sync::CancellationToken>,
 }
 
 /// Restores an artifact to its pre-append state after a failed save.
@@ -120,6 +124,7 @@ impl RequestHandler {
             first_message: None,
             saw_task_shaped_event: false,
             push_events: Vec::new(),
+            cancel: self.executor_token(&task_id).await,
         };
 
         // Pin the executor handle so we can poll it alongside the reader.
@@ -138,7 +143,7 @@ impl RequestHandler {
                 // never ran) used to hold the blocking response open forever.
                 match tokio::time::timeout(self.limits.executor_drain_timeout, reader.read()).await
                 {
-                    Ok(Some(event)) => self.process_event(event, &task_id, &mut state).await?,
+                    Ok(Some(event)) => self.fold(event, &task_id, &mut state).await?,
                     Ok(None) => break,
                     Err(_elapsed) => {
                         self.on_drain_timeout(&task_id);
@@ -150,15 +155,14 @@ impl RequestHandler {
                     biased;
                     event = reader.read() => {
                         match event {
-                            Some(event) => {
-                                self.process_event(event, &task_id, &mut state).await?;
-                            }
+                            Some(event) => self.fold(event, &task_id, &mut state).await?,
                             None => break,
                         }
                     }
                     result = &mut handle_fuse => {
                         executor_done = true;
-                        self.on_executor_finished(&result, &task_id, &mut state).await?;
+                        let folded = self.on_executor_finished(&result, &task_id, &mut state).await;
+                        self.unless_superseded(folded, &task_id, &mut state).await?;
                     }
                 }
             }
@@ -188,6 +192,68 @@ impl RequestHandler {
             task: state.task,
             direct_message,
         })
+    }
+
+    /// The running executor's cancellation token, if it is still registered.
+    async fn executor_token(
+        &self,
+        task_id: &TaskId,
+    ) -> Option<tokio_util::sync::CancellationToken> {
+        self.cancellation_tokens
+            .read()
+            .await
+            .get(task_id)
+            .map(|entry| entry.token.clone())
+    }
+
+    /// [`process_event`](Self::process_event), with a store refusal handled
+    /// as [`unless_superseded`](Self::unless_superseded) describes.
+    async fn fold(
+        &self,
+        event: a2a_protocol_types::error::A2aResult<crate::streaming::StreamEvent>,
+        task_id: &TaskId,
+        state: &mut CollectState,
+    ) -> ServerResult<()> {
+        let folded = self.process_event(event, task_id, state).await;
+        self.unless_superseded(folded, task_id, state).await
+    }
+
+    /// Passes `folded` through, except a store refusal: the task was already
+    /// finished by another writer — `CancelTask` on another replica,
+    /// typically (see [`crate::store::terminal`]).
+    ///
+    /// That is not this request's failure. The executor is told through its
+    /// cancellation token, the only signal that reaches it, and the collected
+    /// task becomes the stored one, so the blocking caller is answered with
+    /// the state the task is actually in and collection stops on it.
+    async fn unless_superseded(
+        &self,
+        folded: ServerResult<()>,
+        task_id: &TaskId,
+        state: &mut CollectState,
+    ) -> ServerResult<()> {
+        let conflict = match &folded {
+            Err(ServerError::Protocol(e)) => crate::store::TerminalStateConflict::from_error(e),
+            _ => None,
+        };
+        let Some(conflict) = conflict else {
+            return folded;
+        };
+        trace_warn!(
+            task_id = %task_id,
+            stored = %conflict.stored,
+            "sync collector: the task was finished by another writer; \
+             cancelling the local executor and answering with the stored state"
+        );
+        if let Some(cancel) = &state.cancel {
+            cancel.cancel();
+        }
+        match self.task_store.get(task_id).await {
+            Ok(Some(stored)) if stored.status.state == conflict.stored => state.task = stored,
+            _ => state.task.status = TaskStatus::new(conflict.stored),
+        }
+        state.saw_task_shaped_event = true;
+        Ok(())
     }
 
     /// Handles the executor's `JoinHandle` resolving mid-collection.
@@ -436,10 +502,13 @@ impl RequestHandler {
         // `task_local` tenant context does not cross `tokio::spawn`, so capture
         // it explicitly, exactly as the streaming background processor does.
         let tenant = crate::store::tenant::TenantContext::current();
-        tokio::spawn(crate::store::tenant::TenantContext::scope(
-            tenant,
-            job.run(),
-        ));
+        // Tracked, so a shutdown waits for the delivery it would otherwise cut.
+        self.in_flight
+            .background()
+            .spawn(crate::store::tenant::TenantContext::scope(
+                tenant,
+                job.run(),
+            ));
     }
 }
 
@@ -1925,5 +1994,72 @@ mod tests {
             TaskState::Completed,
             "collect_events should return the task in its final state"
         );
+    }
+
+    /// Another writer finished the task, and the store's reads lag its
+    /// writes. The collector must answer with the state the refusal named —
+    /// the one the write path saw — not with the stale read that says the
+    /// task is still running, and it must stop collecting there.
+    #[tokio::test]
+    async fn a_refusal_is_trusted_over_a_stale_read() {
+        let inner = InMemoryTaskStore::new();
+        inner
+            .save(&make_task("t-stale", TaskState::Canceled))
+            .await
+            .unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store(super::super::stale_reads::StaleReads::always(inner))
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        writer
+            .write(make_status_event("t-stale", TaskState::Completed))
+            .await
+            .unwrap();
+        writer
+            .write(make_status_event("t-stale", TaskState::Completed))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let collected = handler
+            .collect_events(reader, TaskId::new("t-stale"), tokio::spawn(async {}))
+            .await
+            .expect("a refusal is not the request's failure");
+        assert_eq!(collected.task.status.state, TaskState::Canceled);
+        assert!(
+            collected.direct_message.is_none(),
+            "a superseded task is still a task-shaped answer"
+        );
+    }
+
+    /// The collector read the task while it ran; another writer finished it
+    /// after. Once the refusal arrives and the store reads fresh, the answer
+    /// is the stored task itself — its status timestamp included — not a
+    /// status rebuilt from the refusal.
+    #[tokio::test]
+    async fn a_refusal_adopts_the_stored_task_when_the_read_is_fresh() {
+        let inner = InMemoryTaskStore::new();
+        let mut stored = make_task("t-fresh", TaskState::Canceled);
+        stored.status = TaskStatus::with_timestamp(TaskState::Canceled);
+        inner.save(&stored).await.unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store(super::super::stale_reads::StaleReads::first(inner, 1))
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        writer
+            .write(make_status_event("t-fresh", TaskState::Completed))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let collected = handler
+            .collect_events(reader, TaskId::new("t-fresh"), tokio::spawn(async {}))
+            .await
+            .expect("a refusal is not the request's failure");
+        assert_eq!(collected.task.status, stored.status);
     }
 }

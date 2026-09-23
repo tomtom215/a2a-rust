@@ -127,15 +127,24 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             let status_ts =
                 crate::store::status_timestamp_rfc3339(task.status.timestamp.as_deref());
 
-            sqlx::query(
+            // The upsert's `WHERE` is the terminal guard (see
+            // `crate::store::terminal`). Postgres re-evaluates it against the
+            // latest committed row version when another transaction has
+            // updated the row concurrently, so a racing cancel cannot slip
+            // between the check and the write. This store has no delta
+            // overrides, so every write path comes through here.
+            let written = sqlx::query(crate::store::terminal::sql_write_allowed!(
                 "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at)
                  VALUES ($1, $2, $3, $4, $5, COALESCE(($6)::timestamptz, now()))
                  ON CONFLICT(tenant_id, id) DO UPDATE SET
                      context_id = EXCLUDED.context_id,
                      state = EXCLUDED.state,
                      data = EXCLUDED.data,
-                     updated_at = EXCLUDED.updated_at",
-            )
+                     updated_at = EXCLUDED.updated_at
+                 WHERE ",
+                "tenant_tasks.state",
+                "EXCLUDED.state"
+            ))
             .bind(&tenant)
             .bind(id)
             .bind(context_id)
@@ -144,7 +153,26 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             .bind(&status_ts)
             .execute(&self.pool)
             .await
-            .map_err(|e| to_a2a_error(&e))?;
+            .map_err(|e| to_a2a_error(&e))?
+            .rows_affected();
+
+            if written == 0 {
+                // A separate statement, so a fresh snapshot: the refusing
+                // guard saw the latest row version, which the upsert's own
+                // snapshot may predate.
+                let stored: Option<(String,)> = sqlx::query_as(
+                    "SELECT state FROM tenant_tasks WHERE tenant_id = $1 AND id = $2",
+                )
+                .bind(&tenant)
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+                return Err(crate::store::terminal::refusal(
+                    task,
+                    stored.map(|(s,)| s).as_deref(),
+                ));
+            }
 
             Ok(())
         })

@@ -28,6 +28,7 @@ use a2a_protocol_types::message::MessageId;
 use sqlx::Row as _;
 
 use super::{event_log, idempotency};
+use crate::store::terminal::{refusal, sql_write_allowed};
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for PostgresTaskStore {
@@ -120,15 +121,23 @@ impl TaskStore for PostgresTaskStore {
             let status_ts =
                 crate::store::status_timestamp_rfc3339(task.status.timestamp.as_deref());
 
-            sqlx::query(
+            // The upsert's `WHERE` is the terminal guard (see
+            // `crate::store::terminal`). Postgres re-evaluates it against the
+            // latest committed row version when another transaction has
+            // updated the row concurrently, so a racing cancel cannot slip
+            // between the check and the write.
+            let written = sqlx::query(sql_write_allowed!(
                 "INSERT INTO tasks (id, context_id, state, data, updated_at)
                  VALUES ($1, $2, $3, $4, COALESCE(($5)::timestamptz, now()))
                  ON CONFLICT(id) DO UPDATE SET
                      context_id = EXCLUDED.context_id,
                      state = EXCLUDED.state,
                      data = EXCLUDED.data,
-                     updated_at = EXCLUDED.updated_at",
-            )
+                     updated_at = EXCLUDED.updated_at
+                 WHERE ",
+                "tasks.state",
+                "EXCLUDED.state"
+            ))
             .bind(id)
             .bind(context_id)
             .bind(&state)
@@ -136,7 +145,21 @@ impl TaskStore for PostgresTaskStore {
             .bind(&status_ts)
             .execute(&self.pool)
             .await
-            .map_err(to_a2a_error)?;
+            .map_err(to_a2a_error)?
+            .rows_affected();
+
+            if written == 0 {
+                // A separate statement, so a fresh snapshot: the refusing
+                // guard saw the latest row version, which the upsert's own
+                // snapshot may predate.
+                let stored: Option<(String,)> =
+                    sqlx::query_as("SELECT state FROM tasks WHERE id = $1")
+                        .bind(id)
+                        .fetch_optional(&self.pool)
+                        .await
+                        .map_err(to_a2a_error)?;
+                return Err(refusal(task, stored.map(|(s,)| s).as_deref()));
+            }
 
             Ok(())
         })
@@ -238,13 +261,18 @@ impl TaskStore for PostgresTaskStore {
             let status_ts =
                 crate::store::status_timestamp_rfc3339(task.status.timestamp.as_deref());
 
-            let affected = sqlx::query(
+            // Guarded on the state column (see `crate::store::terminal`). Zero
+            // rows means absent *or* refused; `save` tells the two apart,
+            // inserting the one and reporting the other.
+            let affected = sqlx::query(sql_write_allowed!(
                 "UPDATE tasks
                     SET data = jsonb_set(data, ARRAY['status'], $1),
                         state = $2,
                         updated_at = COALESCE(($3)::timestamptz, now())
-                  WHERE id = $4",
-            )
+                  WHERE id = $4 AND ",
+                "state",
+                "$2"
+            ))
             .bind(&status)
             .bind(&state)
             .bind(&status_ts)

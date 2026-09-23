@@ -12,6 +12,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **`ClientBuilder::from_card` refuses a card with no interface for A2A
+  protocol major 1.** Such a card used to be accepted with a warning and then
+  fail at the first call with whatever the wire produced — a v0.3 endpoint
+  answers `-32601 method not found`. The error now lists what the card offers.
+  Versions are read leniently: empty, `v1.0` and `1-preview` all count as
+  major 1.
+
+- **Graceful shutdown ends in-flight tasks before it drains connections.**
+  `Server::serve_with_shutdown` used to drain first, and an open SSE stream is
+  a connection that does not close until its task ends: the drain waited out
+  its 15 s, `RequestHandler::shutdown` then cancelled tokens without waiting
+  for any executor, and a delegating executor's downstream tasks outlived the
+  process. Reproduced with a coordinator delegating to two a2a-go workers:
+  exit after 16 s, `abandoned: 1`, no terminal event upstream, no `CancelTask`
+  downstream. The order is now: stop accepting; let tasks finish on their own
+  for up to `ServeConfig::completion_grace` (5 s); cancel the rest and give
+  their executors `task_grace` (10 s) to cancel what they delegated and write a
+  terminal event; then drain. With the completion window at zero, the same run
+  exits in 0.02 s with both Go workers cancelled and the upstream stream
+  ending `TASK_STATE_CANCELED`; with the default window it first waits up to
+  5 s for the delegation to finish on its own (not re-measured). An
+  executor that returns without a terminal state after shutdown has its
+  `cancel` hook run, as `CancelTask` would. **The trade:** a task that outlives
+  the completion window is now cancelled where it used to get the whole drain
+  window; the three phases are bounded by 30 s together, a Kubernetes
+  `terminationGracePeriodSeconds` default.
+
+- **Every shipped `TaskStore` refuses to move a terminal task to a different
+  state**, atomically with the write, answering `UnsupportedOperation` with a
+  `TerminalStateConflict` in its data. Code that "reopens" a finished task
+  through a shipped store now gets that error. See **Fixed** for why.
+
 - **`RetentionPolicy` and `PurgeReport` are `#[non_exhaustive]`.** Construct a
   policy with `RetentionPolicy::new` and the `with_*` setters, and read a
   report's fields rather than destructuring it exhaustively. `STABILITY.md` §4
@@ -21,6 +53,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what makes the two additions below — and the next one — non-breaking.
 
 ### Added
+
+- **A Go SDK interop gate in CI** (`go-sdk-interop`, `scripts/go_sdk_interop.sh`).
+  The official Go SDK's client against this server, and this client against an
+  a2a-go server, over JSON-RPC, HTTP+JSON and gRPC. Before it, a2a-go ran in CI
+  only as a server driven by the in-repo TCK, which does not use
+  `a2a-protocol-client`. Against the unfixed tree it was red for five of the
+  defects fixed below (S2, S7, T1, C8 and C9 in the 2026-09-22 audit's
+  numbering); its C10 check could not run there, because the T1 failure
+  stopped card resolution first. `scripts/prove_gates_fail.sh` proves it fails when
+  the push token stops reaching a Go webhook.
+
+- **`RequestHandler::finish_in_flight` and `RequestHandler::cancel_in_flight`**,
+  returning `InFlightReport`; `ServeConfig::completion_grace` and `task_grace`
+  (`DEFAULT_COMPLETION_GRACE`, `DEFAULT_TASK_GRACE`); `ServeReport::tasks`; and
+  `Dispatcher::request_handler`, defaulted to `None` and overridden by the
+  JSON-RPC and REST dispatchers. Call `finish_in_flight` yourself when
+  something else owns the sockets — `examples/deploy-agent` does, behind Axum.
+
+- **`impl From<ClientError> for A2aError`**, so an executor that delegates can
+  use `?`. A downstream `Protocol` error passes through unchanged; exactly the
+  errors `is_retryable()` accepts fail the task as `Transient`, everything
+  else as `Internal`, with the client's text and source chain kept. The server
+  now honours a class recorded with the new **`failure::set_error_class`** /
+  **`failure::error_class`**, because no error code can express `Transient`.
+
+- **Client stream liveness bounds:** `ClientConfig::stream_idle_timeout` and
+  `stream_first_event_timeout` (both 5 minutes by default, with builder
+  setters), applied by `A2aClient` to every stream on every binding, and TCP
+  keepalive (60 s idle, 15 s interval, 4 probes) on every client connection. A
+  stream whose server sent one event and then went silent while holding the
+  connection open used to hang `next()` forever. Any bytes reset the idle
+  bound, SSE keep-alive comments included; on gRPC and WebSocket, which carry
+  no heartbeat the client can see, it bounds the gap between events.
+
+- **Resuming a broken stream:** `ClientError::IncompleteStream { last_event_id,
+  detail }`, `EventStream::last_event_id()` and
+  `A2aClient::subscribe_to_task_from(id, last_event_id)`, which sends
+  `Last-Event-ID`. Verified against this repository's JSON-RPC and REST
+  dispatchers. gRPC and WebSocket streams carry no ids.
+
+- **`ClientConfig::max_event_size`** (16 MiB) and `EventStream::with_max_event_size`.
+
+- **`CallInterceptor::on_error`** and **`TokenProvider::invalidate`**, both
+  no-op by default. `BearerAuthInterceptor` uses them so an OAuth2 token the
+  agent answered with `401` is not sent again; the refused call still fails.
+  JSON-RPC and HTTP+JSON only — gRPC's `Unauthenticated` is not yet mapped.
+
+- **`OAuth2ClientCredentials::with_failure_backoff`** (1 s), **`Method::returns_empty`**,
+  and **`push::webhook::notification_token`**, which reads the push token under
+  either header name.
 
 - **`RetentionPolicy::idempotency_key_max_age`** (default 24 hours) and
   **`TaskStoreConfig::idempotency_key_ttl`** (default 24 hours), with
@@ -124,6 +206,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A client stream that ends before its final event yields
+  `ClientError::IncompleteStream` before `None`.** A final event is a
+  `Message`, or a task in a terminal or interrupted state (§3.1.2, §11.7).
+  Before, a stream cut off mid-task was indistinguishable from one that
+  finished, and a half-written last frame was dropped silently.
+
+- **`stream_connect_timeout` bounds only establishing a stream**; the first
+  event has its own 5-minute bound. The 30 s connect timeout used to bound the
+  first event too, which cut off agents — a2a-go among them — that send headers
+  and then think. If you shortened the connect timeout to fail fast, also set
+  `with_stream_first_event_timeout`.
+
+- **The JSON-RPC client reads a streaming call's pre-stream error in either
+  shape**: the plain JSON-RPC error body this server sends, or one SSE frame
+  carrying it, which is what a2a-go's server sends. Both become the same
+  `ClientError::Protocol`. The server's own shape is unchanged: a plain JSON
+  200, which the official a2a-tck requires (STREAM-SUB-003/004). a2a-go
+  v2.5.0's client reads streaming answers only as SSE, so it still loses
+  these errors. That is a2a-go's to fix, and `go-sdk-interop` pins it.
+
+- **Wire: an HTTP+JSON stream's error frame is a `google.rpc.Status`**
+  (`{"error":{code,status,message,details}}`), the error's `data` a flat
+  `google.protobuf.Struct` detail. a2a-go's REST client could not decode the
+  old bare `{code,message}` frame. This client decodes all three shapes.
+
+- **Push notifications carry the token under both `X-A2A-Notification-Token`
+  (Python SDK) and `A2A-Notification-Token` (a2a-go)**, the same value in each.
+  A Go webhook read no token before. This reverses 0.8's removal of the
+  unprefixed name, which is a2a-go's rather than this SDK's invention. Push
+  logs now show only `scheme://host[:port]`: webhook URLs often embed secrets.
+
+- **`StringList` reads a2a-go's bare-array scopes and `null`** as well as the
+  spec's `{"list":[...]}`, which is still the only form written.
+
+- **A streaming client's terminal frame waits for the store's ruling** (at most
+  the queue's write timeout, 5 s) and carries the stored state. See **Fixed**.
+
 - **`save_status_delta` is now overridden by `SqliteTaskStore` and
   `PostgresTaskStore`**, not only by `InMemoryTaskStore`. Until now a SQL
   deployment got nothing from it — no regression, since the trait's default
@@ -145,6 +264,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   those rows are still the only record of appended parts.
 
 ### Fixed
+
+- **A task another replica canceled no longer ends `Completed`.**
+  `CancelTask` on replica B wrote and answered `Canceled`, and replica A's
+  executor, which never heard of it, then wrote `Completed` over it: every
+  store applied status writes unconditionally. `tests/cross_replica_cancel/`
+  reproduced it on the in-memory, SQLite and PostgreSQL stores. The refused
+  write is now how A learns: it cancels its executor's token, stops persisting
+  and pushing its events, answers a blocking caller with the stored task, and
+  pushes the stored terminal status once. **The trade:** A learns at its
+  executor's next write, not immediately, and non-terminal frames emitted in
+  between still reach a client streaming from A. Custom `TaskStore`s are not
+  covered unless they apply `store::refuses_write` inside their writes.
+
+- **Agent cards from a2a-go with `securityRequirements` parse.** The reverse
+  direction is a2a-go's to fix: v2.5.0 rejects the spec's shape. The interop
+  gate pins that rejection and fails when it stops holding.
+
+- **Deleting a push config on an a2a-go agent reports success.** a2a-go answers
+  JSON-RPC with no `result` and HTTP+JSON with an empty 200; both are now
+  accepted, for Empty-result methods only.
+
+- **Interface selection skips other protocol majors**, so an a2a-go agent's
+  v0.3 endpoint listed first is no longer chosen; binding names match
+  case-insensitively in `build()` as in selection; and `build()` falls back to
+  the card's next interface when the chosen one cannot be built.
+
+- **HTTP+JSON streaming errors decode to the A2A error they carry**, from a
+  non-2xx answer and from inside a 200 stream, where both used to surface as
+  `UnexpectedStatus` or `Serialization("unknown variant …")`. The stream-lag
+  signal survives the new server frame: `A2aError::is_stream_lagged` is true
+  across a REST stream from this server.
+
+- **OAuth2 refresh failures are shared, not serialised.** Every caller waiting
+  on a refresh gets its outcome, failure included, from one request. Five
+  callers with 1 s timeouts used to fail at 1, 2, 3, 4 and 5 s. A caller
+  cancelled mid-refresh hands the attempt to the next waiter.
+
+- **Short-lived OAuth2 tokens are cached for at least half their lifetime.** A
+  token living 30 s or less was refetched on every call.
+
+- **The SSE parser refuses a line that outgrows `max_event_size`** with
+  `EventTooLarge` instead of silently truncating it past twice the limit.
+
+- **`RequestHandler::shutdown` counts the live queues it destroys.**
+  `ShutdownReport::queues_force_destroyed` was a hard-coded 0, so a shutdown
+  that cut live streams reported itself graceful.
 
 - **A message naming a live task in its own context is no longer refused.**
   `resolve_task_id` accepted only the single task `find_task_by_context`

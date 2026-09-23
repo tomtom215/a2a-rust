@@ -317,6 +317,9 @@ async fn server_only(bind_addr: &str) {
             "GRPC" => grpc_addr.is_some(),
             _ => true,
         });
+    if std::env::var("A2A_INTEROP_CARD").as_deref() == Ok("1") {
+        advertise_security(&mut card);
+    }
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
@@ -349,4 +352,41 @@ async fn server_only(bind_addr: &str) {
     }
 
     std::future::pending::<()>().await;
+}
+
+/// Publishes card- and skill-level `securityRequirements`, for
+/// `scripts/go_sdk_interop.sh`.
+///
+/// Advertised, not enforced: the question the interop gate asks is whether a
+/// peer SDK can *read* a card that carries them — a2a-go 2.5.0 could not read
+/// this SDK's — and enforcing them would need credentials on every call the
+/// gate makes. Opt-in, so the TCK's view of this agent is unchanged.
+fn advertise_security(card: &mut a2a_protocol_types::agent_card::AgentCard) {
+    use a2a_protocol_types::security::{
+        ApiKeyLocation, ApiKeySecurityScheme, SecurityRequirement, SecurityScheme, StringList,
+    };
+    let requirement = |scopes: &[&str]| SecurityRequirement {
+        schemes: std::iter::once((
+            "apiKey".to_owned(),
+            StringList {
+                list: scopes.iter().map(|s| (*s).to_owned()).collect(),
+            },
+        ))
+        .collect(),
+    };
+    card.security_schemes = Some(
+        std::iter::once((
+            "apiKey".to_owned(),
+            SecurityScheme::ApiKey(ApiKeySecurityScheme {
+                location: ApiKeyLocation::Header,
+                name: "X-API-Key".to_owned(),
+                description: None,
+            }),
+        ))
+        .collect(),
+    );
+    card.security_requirements = Some(vec![requirement(&["read", "write"])]);
+    for skill in &mut card.skills {
+        skill.security_requirements = Some(vec![requirement(&["read"])]);
+    }
 }

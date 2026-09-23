@@ -22,7 +22,7 @@
 #
 # Every job in ci.yml must be in exactly one of these two. `require_known_jobs`
 # refuses to run if one is in neither.
-GATE_JOBS='^(static-checks|clippy|features|test|test-postgres|doc|package|dogfood|example-surface|slimrpc-binding)$'
+GATE_JOBS='^(static-checks|clippy|features|test|test-postgres|doc|package|dogfood|example-surface|slimrpc-binding|go-sdk-interop)$'
 
 # Why each of these three is not a gate job, because an exemption with no
 # recorded reason is the same shape as an oversight:
@@ -53,14 +53,15 @@ NON_GATE_JOBS='^(nightly|deny|semver)$'
 SKIP_STEPS='^(Install SPIRE|Install cargo-hack)$'
 
 # Actions that prepare a runner and render no verdict about this repository:
-# checking out, installing a toolchain, restoring a cache, installing Python.
+# checking out, installing a toolchain, restoring a cache, installing Python
+# or Go.
 # None of them can go red *about the code*, so none of them is a gate. Every
 # other `uses:` in ci.yml must be registered in ACTION_EXEMPTIONS with a reason.
 #
 # Each alternative must still match a real `uses:`, for the reason
 # `require_known_skips` gives about SKIP_STEPS: a classification that covers
 # nothing reads as a decision and is an oversight.
-SETUP_ACTIONS='^(actions/checkout|actions/setup-python|dtolnay/rust-toolchain|Swatinem/rust-cache)$'
+SETUP_ACTIONS='^(actions/checkout|actions/setup-python|actions/setup-go|dtolnay/rust-toolchain|Swatinem/rust-cache)$'
 
 # Resolved from this file's own location rather than from CI_YML, so it is
 # right whichever script sourced it and from whatever working directory.

@@ -108,6 +108,69 @@ Use `TaskStore::count()` for monitoring capacity utilization.
 
 ### Graceful Shutdown
 
+A graceful shutdown has to end in-flight work before it waits for sockets.
+An open SSE stream is a connection that does not close until its task ends,
+so a drain that runs first just waits out its timeout on tasks nobody has
+cancelled — and whatever an executor delegated to other agents is still
+running when the process exits. `Server::serve_with_shutdown` does it in the
+order that works:
+
+1. stop accepting;
+2. cancel every in-flight task and wait up to `task_grace` (default 10 s) for
+   the executors to act on it — cancel what they delegated, return — after
+   which the executor's `cancel` hook writes the terminal `Canceled` for any
+   that did not write one, so every open stream ends with a terminal event;
+3. drain connections, for up to `drain_timeout` (default 15 s).
+
+```rust,no_run
+use std::sync::Arc;
+use std::time::Duration;
+use a2a_protocol_server::dispatch::JsonRpcDispatcher;
+use a2a_protocol_server::serve::{ServeConfig, Server};
+use a2a_protocol_server::RequestHandler;
+
+async fn run(handler: Arc<RequestHandler>) -> std::io::Result<()> {
+    let server = Server::bind("0.0.0.0:3000").await?.with_config(
+        ServeConfig::new()
+            .with_task_grace(Duration::from_secs(10))
+            .with_drain_timeout(Duration::from_secs(15)),
+    );
+    let report = server
+        .serve_with_shutdown(JsonRpcDispatcher::new(Arc::clone(&handler)), async {
+            tokio::signal::ctrl_c().await.ok();
+        })
+        .await;
+    // Last, the executor's cleanup hook.
+    let handler_report = handler.shutdown().await;
+
+    if let Some(tasks) = report.tasks.filter(|t| !t.finished) {
+        eprintln!("{} task(s) ignored cancellation", tasks.still_running);
+    }
+    if !report.drained || !handler_report.is_graceful() {
+        eprintln!("unclean shutdown: {report:?} {handler_report:?}");
+    }
+    Ok(())
+}
+```
+
+Your executor has to take part: `execute` must watch
+`ctx.cancellation_token` and, when it fires, cancel whatever it started
+elsewhere and return. One that never looks at its token cannot be stopped
+early; `ServeReport::tasks` counts it in `still_running`.
+
+With Axum (or anything else that owns the sockets), call
+`handler.finish_in_flight(completion, grace)` at the end of the future you pass to
+`with_graceful_shutdown`, so it runs before Axum starts draining —
+`examples/deploy-agent` does exactly that — and `handler.shutdown()` after
+`serve` returns. The gRPC and WebSocket dispatchers' `serve` methods take no
+shutdown signal: serve `GrpcDispatcher::into_service()` with tonic's
+`serve_with_incoming_shutdown` and end its signal future the same way, and
+race `WebSocketDispatcher::serve` against your signal and call
+`finish_in_flight` after it. `finish_in_flight` first lets tasks finish on
+their own for up to `completion` — so a short call in flight during a rolling
+deploy is answered rather than `Canceled` — and then does what
+`cancel_in_flight(grace)` does alone: cancels the rest and waits for them.
+
 Implement `on_shutdown` in your executor for cleanup:
 
 ```rust,ignore

@@ -94,6 +94,10 @@ pub enum GrpcBareAddressScheme {
     Http,
 }
 
+mod stream_defaults;
+
+pub use stream_defaults::{DEFAULT_STREAM_FIRST_EVENT_TIMEOUT, DEFAULT_STREAM_IDLE_TIMEOUT};
+
 // ── ClientConfig ──────────────────────────────────────────────────────────────
 
 /// Configuration for an [`crate::A2aClient`] instance.
@@ -132,17 +136,49 @@ pub struct ClientConfig {
     /// Defaults to 30 seconds.
     pub request_timeout: Duration,
 
-    /// Per-request timeout for establishing the SSE stream.
+    /// Timeout for **establishing** a stream: until the response headers
+    /// arrive (gRPC: until the call is accepted), and for reading the error
+    /// body when the answer is not a stream. Defaults to 30 seconds.
     ///
-    /// Once the stream is established this timeout no longer applies.
-    /// Defaults to 30 seconds.
+    /// It does not bound the first event; that is
+    /// [`stream_first_event_timeout`](Self::stream_first_event_timeout).
+    /// Until that knob existed this one did both, and cut off an agent that
+    /// flushed its headers and then thought for longer than 30 seconds. If
+    /// you shortened this to fail fast on a silent agent, set that one too.
     pub stream_connect_timeout: Duration,
+
+    /// Longest an established stream may wait for its **first** data;
+    /// defaults to [`DEFAULT_STREAM_FIRST_EVENT_TIMEOUT`] (5 minutes). Any
+    /// bytes satisfy it, a keep-alive comment included; after that,
+    /// [`stream_idle_timeout`](Self::stream_idle_timeout) governs. Expiry
+    /// yields [`ClientError::Timeout`](crate::ClientError::Timeout).
+    ///
+    /// Applied by [`A2aClient`](crate::A2aClient) to every stream it opens,
+    /// on every transport — for a WebSocket transport this replaces
+    /// `WebSocketTransportConfig::request_timeout` as the first-frame bound.
+    pub stream_first_event_timeout: Duration,
 
     /// TCP connection timeout (DNS + handshake).
     ///
     /// Prevents the client from hanging for the OS default (~2 minutes)
     /// when the server is unreachable. Defaults to 10 seconds.
     pub connection_timeout: Duration,
+
+    /// Longest an established stream may go without receiving **any** data
+    /// once its first data has arrived; `None` disables the bound. Defaults
+    /// to [`DEFAULT_STREAM_IDLE_TIMEOUT`] (5 minutes; see it for why).
+    ///
+    /// Any bytes reset it, SSE `: keep-alive` comments included, so a stream
+    /// from a server that heartbeats runs as long as the task does. Expiry
+    /// yields [`ClientError::Timeout`](crate::ClientError::Timeout) and ends
+    /// the stream; the task is not cancelled, so resubscribe to continue.
+    ///
+    /// Applied by [`A2aClient`](crate::A2aClient) to every stream it opens,
+    /// on every transport, a custom one included. gRPC and WebSocket streams
+    /// carry no heartbeat the stream can see, so there it bounds the gap
+    /// between *events*: raise it, or set `None`, for agents known to think
+    /// silently for longer.
+    pub stream_idle_timeout: Option<Duration>,
 
     /// Maximum size in bytes of a buffered (non-streaming) response body.
     ///
@@ -173,6 +209,20 @@ pub struct ClientConfig {
     ///   settable at all.
     pub max_response_size: usize,
 
+    /// Largest single stream event accepted, in bytes: the `data:` of one SSE
+    /// event, or one gRPC or WebSocket stream message (those are bridged
+    /// through the same parser). Defaults to 16 MiB, the server's own default.
+    ///
+    /// An event over the limit is refused with
+    /// [`ClientError::Transport`](crate::ClientError::Transport) naming the
+    /// sizes and skipped, and the stream carries on with the next event. A
+    /// line that outgrows every legal event — a peer sending bytes with no
+    /// newline — is refused as soon as it does, so the parser never holds
+    /// more than about this many bytes of one line.
+    ///
+    /// Applied by [`A2aClient`](crate::A2aClient) to every stream it opens.
+    pub max_event_size: usize,
+
     /// TLS configuration.
     pub tls: TlsConfig,
 
@@ -196,8 +246,11 @@ impl ClientConfig {
             return_immediately: false,
             request_timeout: Duration::from_secs(30),
             stream_connect_timeout: Duration::from_secs(30),
+            stream_first_event_timeout: DEFAULT_STREAM_FIRST_EVENT_TIMEOUT,
             connection_timeout: Duration::from_secs(10),
+            stream_idle_timeout: Some(DEFAULT_STREAM_IDLE_TIMEOUT),
             max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
+            max_event_size: crate::streaming::DEFAULT_MAX_EVENT_SIZE,
             tls: TlsConfig::Disabled,
             tenant: None,
         }
@@ -213,8 +266,11 @@ impl Default for ClientConfig {
             return_immediately: false,
             request_timeout: Duration::from_secs(30),
             stream_connect_timeout: Duration::from_secs(30),
+            stream_first_event_timeout: DEFAULT_STREAM_FIRST_EVENT_TIMEOUT,
             connection_timeout: Duration::from_secs(10),
+            stream_idle_timeout: Some(DEFAULT_STREAM_IDLE_TIMEOUT),
             max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
+            max_event_size: crate::streaming::DEFAULT_MAX_EVENT_SIZE,
             tls: TlsConfig::default(),
             tenant: None,
         }
@@ -257,10 +313,19 @@ impl ClientConfig {
         self
     }
 
-    /// Sets the timeout for establishing the SSE stream.
+    /// Sets the timeout for establishing a stream (headers, or an error
+    /// body). See [`stream_connect_timeout`](Self::stream_connect_timeout).
     #[must_use]
     pub const fn with_stream_connect_timeout(mut self, timeout: Duration) -> Self {
         self.stream_connect_timeout = timeout;
+        self
+    }
+
+    /// Sets how long an established stream may wait for its first data. See
+    /// [`stream_first_event_timeout`](Self::stream_first_event_timeout).
+    #[must_use]
+    pub const fn with_stream_first_event_timeout(mut self, timeout: Duration) -> Self {
+        self.stream_first_event_timeout = timeout;
         self
     }
 
@@ -271,12 +336,29 @@ impl ClientConfig {
         self
     }
 
+    /// Sets how long an established stream may receive nothing before it is
+    /// failed with a timeout; `None` disables the bound. See
+    /// [`stream_idle_timeout`](Self::stream_idle_timeout).
+    #[must_use]
+    pub const fn with_stream_idle_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.stream_idle_timeout = timeout;
+        self
+    }
+
     /// Sets the buffered response body cap. See
     /// [`max_response_size`](Self::max_response_size) for which transports
     /// it reaches.
     #[must_use]
     pub const fn with_max_response_size(mut self, max_bytes: usize) -> Self {
         self.max_response_size = max_bytes;
+        self
+    }
+
+    /// Sets the largest single stream event accepted. See
+    /// [`max_event_size`](Self::max_event_size).
+    #[must_use]
+    pub const fn with_max_event_size(mut self, max_bytes: usize) -> Self {
+        self.max_event_size = max_bytes;
         self
     }
 
@@ -347,6 +429,26 @@ mod tests {
         assert_eq!(cfg.request_timeout, Duration::from_secs(30));
         assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(30));
         assert_eq!(cfg.connection_timeout, Duration::from_secs(10));
+        assert_eq!(cfg.stream_idle_timeout, Some(DEFAULT_STREAM_IDLE_TIMEOUT));
+        assert_eq!(
+            ClientConfig::default_http().stream_idle_timeout,
+            Some(DEFAULT_STREAM_IDLE_TIMEOUT)
+        );
+        assert_eq!(DEFAULT_STREAM_IDLE_TIMEOUT, Duration::from_secs(300));
+        assert_eq!(
+            cfg.stream_first_event_timeout,
+            DEFAULT_STREAM_FIRST_EVENT_TIMEOUT
+        );
+        assert_eq!(
+            ClientConfig::default_http().stream_first_event_timeout,
+            DEFAULT_STREAM_FIRST_EVENT_TIMEOUT
+        );
+        assert_eq!(DEFAULT_STREAM_FIRST_EVENT_TIMEOUT, Duration::from_secs(300));
+        assert_eq!(cfg.max_event_size, 16 * 1024 * 1024);
+        assert_eq!(
+            ClientConfig::default_http().max_event_size,
+            16 * 1024 * 1024
+        );
     }
 
     #[test]
@@ -371,8 +473,11 @@ mod tests {
             .with_return_immediately(true)
             .with_request_timeout(Duration::from_secs(1))
             .with_stream_connect_timeout(Duration::from_secs(2))
+            .with_stream_first_event_timeout(Duration::from_secs(6))
             .with_connection_timeout(Duration::from_secs(3))
+            .with_stream_idle_timeout(Some(Duration::from_secs(5)))
             .with_max_response_size(4)
+            .with_max_event_size(9)
             .with_tls(TlsConfig::Disabled)
             .with_tenant(Some("acme".to_owned()));
         assert_eq!(cfg.preferred_bindings, vec!["GRPC".to_owned()]);
@@ -381,8 +486,11 @@ mod tests {
         assert!(cfg.return_immediately);
         assert_eq!(cfg.request_timeout, Duration::from_secs(1));
         assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(2));
+        assert_eq!(cfg.stream_first_event_timeout, Duration::from_secs(6));
         assert_eq!(cfg.connection_timeout, Duration::from_secs(3));
+        assert_eq!(cfg.stream_idle_timeout, Some(Duration::from_secs(5)));
         assert_eq!(cfg.max_response_size, 4);
+        assert_eq!(cfg.max_event_size, 9);
         assert!(matches!(cfg.tls, TlsConfig::Disabled));
         assert_eq!(cfg.tenant.as_deref(), Some("acme"));
     }

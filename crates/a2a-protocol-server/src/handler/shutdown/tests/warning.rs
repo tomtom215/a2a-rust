@@ -343,3 +343,108 @@ fn hung_cleanup_is_warned_about() {
         "a hung executor cleanup must be warned about; got {warnings:?}"
     );
 }
+
+/// An executor that never returns and never looks at its token.
+struct IgnoresCancellation;
+
+impl AgentExecutor for IgnoresCancellation {
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a RequestContext,
+        _queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { std::future::pending::<A2aResult<()>>().await })
+    }
+}
+
+fn streaming_send() -> a2a_protocol_types::params::MessageSendParams {
+    use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+    a2a_protocol_types::params::MessageSendParams {
+        tenant: None,
+        message: Message {
+            id: MessageId::new("warning-test-message"),
+            role: MessageRole::User,
+            parts: vec![Part::text("go")],
+            task_id: None,
+            context_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        },
+        configuration: None,
+        metadata: None,
+    }
+}
+
+/// `shutdown()` warns when it cuts a live stream, and only then.
+#[test]
+fn shutdown_warns_only_when_it_destroys_a_live_queue() {
+    let rt = || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("runtime")
+    };
+    let cuts = |w: &[String]| w.iter().any(|m| m.contains("destroyed live event queues"));
+
+    let idle = warnings_during(|| {
+        rt().block_on(async {
+            let _ = make_handler().shutdown().await;
+        });
+    });
+    assert!(!cuts(&idle), "nothing live was destroyed; got {idle:?}");
+
+    let live = warnings_during(|| {
+        rt().block_on(async {
+            let handler = make_handler();
+            let (_writer, _reader) = handler
+                .event_queue_manager
+                .get_or_create(&a2a_protocol_types::task::TaskId::new("t-live"))
+                .await;
+            let report = handler.shutdown().await;
+            assert_eq!(report.queues_force_destroyed, 1);
+        });
+    });
+    assert!(cuts(&live), "a live queue was destroyed; got {live:?}");
+}
+
+/// `cancel_in_flight` warns when work outlives the grace period, and only
+/// then.
+#[test]
+fn cancel_in_flight_warns_only_when_work_outlives_the_grace_period() {
+    let rt = || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("runtime")
+    };
+    let outlived = |w: &[String]| w.iter().any(|m| m.contains("grace period ended"));
+
+    let clean = warnings_during(|| {
+        rt().block_on(async {
+            let report = make_handler()
+                .cancel_in_flight(Duration::from_millis(10))
+                .await;
+            assert!(report.finished);
+        });
+    });
+    assert!(!outlived(&clean), "nothing was running; got {clean:?}");
+
+    let stuck = warnings_during(|| {
+        rt().block_on(async {
+            let handler = RequestHandlerBuilder::new(IgnoresCancellation)
+                .build()
+                .expect("builder should succeed");
+            let _stream = handler
+                .on_send_message(streaming_send(), true, None)
+                .await
+                .expect("streaming send");
+            let report = handler.cancel_in_flight(Duration::from_millis(10)).await;
+            assert!(!report.finished);
+        });
+    });
+    assert!(
+        outlived(&stuck),
+        "an executor outlived the grace; got {stuck:?}"
+    );
+}

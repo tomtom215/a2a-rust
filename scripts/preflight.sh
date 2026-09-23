@@ -34,6 +34,10 @@
 #                              refuses below 8.
 #   PostgreSQL on :5432        4 gates set A2A_TEST_POSTGRES_URL, per ci.yml
 #   SPIRE binaries             1 gate runs the binding's SPIFFE suites
+#   Go toolchain               1 gate (scripts/go_sdk_interop.sh) builds and
+#                              runs a2a-go's client and server; not in the
+#                              precheck below, so a missing `go` fails that
+#                              gate with "go: command not found"
 #
 # The two services are *not* optional in the sense of being skipped: those
 # gates fail without them, exactly as they should — `tests/common/spire.rs`

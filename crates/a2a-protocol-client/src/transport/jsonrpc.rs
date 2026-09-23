@@ -130,9 +130,7 @@ impl JsonRpcTransport {
 
         #[cfg(not(feature = "tls-rustls"))]
         let client = {
-            let mut connector = HttpConnector::new();
-            connector.set_connect_timeout(Some(connection_timeout));
-            connector.set_nodelay(true);
+            let connector = super::connector::http_connector(connection_timeout);
             Client::builder(TokioExecutor::new())
                 .pool_idle_timeout(Duration::from_secs(90))
                 .build(connector)
@@ -268,6 +266,14 @@ impl JsonRpcTransport {
             });
         }
 
+        // An Empty-result method may come back with no `result` at all
+        // (a2a-go does this); see `empty_result`.
+        if let Some(result) =
+            super::empty_result::jsonrpc_empty_success(method, &body_bytes, &request_id)
+        {
+            return result;
+        }
+
         let envelope: JsonRpcResponse<serde_json::Value> = serde_json::from_slice(&body_bytes)
             .map_err(|e| {
                 // If the response isn't valid JSON-RPC, the server may use a
@@ -384,22 +390,55 @@ impl JsonRpcTransport {
 
         let actual_status = status.as_u16();
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(64);
-        let body = resp.into_body();
+        let task_handle = self.forward_stream_body(resp, deadline, tx).await?;
 
-        // Spawn a background task that reads body chunks and forwards them.
-        let task_handle = tokio::spawn(async move {
-            body_reader_task(body, tx).await;
-        });
-
-        // `stream_connect_timeout` above only bounds header arrival. Bound
-        // the wait for the first SSE event too (the spec requires streams to
-        // begin with a Task/Message event immediately), so a server that
-        // sends headers and then goes silent cannot hang the consumer
-        // forever. The bound lifts after the first frame.
+        // `stream_connect_timeout` above only bounds header arrival. The
+        // first event gets its own, longer bound: an agent may answer the
+        // request at once and think before its first event, and reusing the
+        // connect timeout here cut such an agent off at 30 seconds.
+        // `A2aClient` replaces this with `ClientConfig`'s value.
         Ok(
             EventStream::with_status(rx, task_handle.abort_handle(), actual_status)
-                .with_first_event_timeout(self.inner.stream_connect_timeout),
+                .with_first_event_timeout(crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT),
         )
+    }
+}
+
+impl JsonRpcTransport {
+    /// Starts forwarding an SSE response body to `tx`, or fails with the
+    /// refusal a finished body carries.
+    ///
+    /// A server refusing a streaming call before its stream starts sends the
+    /// refusal as SSE too (a client like a2a-go reads nothing else), as a body
+    /// it has already finished — so it carries a `Content-Length`, which a
+    /// live stream cannot. That body is read now: a leading error frame fails
+    /// the call here, exactly as the plain-JSON refusal and REST's HTTP-status
+    /// refusals do, and anything else is replayed to the stream unchanged.
+    async fn forward_stream_body(
+        &self,
+        resp: hyper::Response<hyper::body::Incoming>,
+        deadline: tokio::time::Instant,
+        tx: mpsc::Sender<crate::streaming::event_stream::BodyChunk>,
+    ) -> ClientResult<tokio::task::JoinHandle<()>> {
+        if !resp.headers().contains_key(header::CONTENT_LENGTH) {
+            let body = resp.into_body();
+            // Spawn a background task that reads body chunks and forwards them.
+            return Ok(tokio::spawn(async move {
+                body_reader_task(body, tx).await;
+            }));
+        }
+        let bytes = super::collect_response_limited(
+            resp,
+            self.inner.max_response_size,
+            deadline.saturating_duration_since(tokio::time::Instant::now()),
+        )
+        .await?;
+        if let Some(err) = leading_stream_error(&bytes) {
+            return Err(err);
+        }
+        Ok(tokio::spawn(async move {
+            let _ = tx.send(Ok(bytes)).await;
+        }))
     }
 }
 
@@ -497,6 +536,23 @@ pub(crate) fn non_sse_stream_response_error(content_type: &str, body_bytes: &[u8
         "expected text/event-stream response, got '{content_type}': {}",
         super::truncate_body(&body_str)
     ))
+}
+
+/// The refusal carried by a finished SSE body whose first event is a JSON-RPC
+/// error response; `None` when the first event is anything else, which means
+/// the stream started and its frames belong to the caller.
+fn leading_stream_error(body: &[u8]) -> Option<ClientError> {
+    let mut parser = crate::streaming::SseParser::new();
+    parser.feed(body);
+    let frame = parser.next_frame()?.ok()?;
+    match serde_json::from_str::<JsonRpcResponse<serde_json::Value>>(&frame.data).ok()? {
+        JsonRpcResponse::Error(err) => Some(ClientError::Protocol(super::map_jsonrpc_error(
+            err.error.code,
+            err.error.message,
+            err.error.data,
+        ))),
+        JsonRpcResponse::Success(_) => None,
+    }
 }
 
 fn validate_url(url: &str) -> ClientResult<()> {

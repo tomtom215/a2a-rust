@@ -217,6 +217,12 @@ impl WebSocketDispatcher {
     /// (per-connection aborts, fd-table exhaustion) — it logs, backs off when
     /// the fd table is full, and keeps accepting.
     ///
+    /// It takes no shutdown signal. To stop gracefully, race it against your
+    /// signal and then call
+    /// [`RequestHandler::finish_in_flight`](crate::RequestHandler::finish_in_flight)
+    /// before exiting, so every stream on an open socket ends with a terminal
+    /// event and executors can cancel what they delegated.
+    ///
     /// # Errors
     ///
     /// Returns [`std::io::Error`] if the TCP listener fails to bind.

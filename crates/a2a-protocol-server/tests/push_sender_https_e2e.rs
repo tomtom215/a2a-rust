@@ -232,19 +232,17 @@ async fn https_push_delivered_over_real_tls() {
             .get("x-a2a-notification-token")
             .map(String::as_str),
         Some("notif-token-xyz"),
-        "canonical token header (official-SDK receiver convention)"
+        "X-A2A-Notification-Token spelling (a2a-sdk's receiver convention)"
     );
-    // Asserted absent rather than simply unasserted: 0.8 stopped sending the
-    // bare pre-0.7 spelling, and a removal that no test pins is one a later
-    // refactor can quietly undo.
+    // And a2a-go v2.5.0's spelling, which its sender writes and a Go webhook
+    // reads (`a2asrv/push/sender.go`: `A2A-Notification-Token`).
     assert_eq!(
         captured
             .headers
             .get("a2a-notification-token")
             .map(String::as_str),
-        None,
-        "the legacy bare token header was removed in 0.8; only the canonical \
-         x-a2a-notification-token is sent"
+        Some("notif-token-xyz"),
+        "A2A-Notification-Token spelling (a2a-go's receiver convention)"
     );
     // The body is the serialized StreamResponse (externally-tagged status update).
     assert!(

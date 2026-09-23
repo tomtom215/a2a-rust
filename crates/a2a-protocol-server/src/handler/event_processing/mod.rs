@@ -10,7 +10,20 @@
 //! streaming mode, which cannot hold a reference to `RequestHandler`).
 
 mod background;
+#[cfg(test)]
+mod stale_reads;
 mod sync_collector;
+
+/// What a background processor needs from the send that spawned it, beyond
+/// the task and its channel.
+pub struct ProcessorLinks {
+    /// The executor's cancellation token. Cancelled when the store reports
+    /// that another writer — `CancelTask` on another replica, typically —
+    /// already finished the task, since nothing else can tell this executor.
+    pub cancel: tokio_util::sync::CancellationToken,
+    /// The queue's terminal gate, whose tickets the processor answers.
+    pub gate: Option<std::sync::Arc<crate::streaming::event_queue::terminal_gate::TerminalGate>>,
+}
 
 /// Returns `true` if appending `new_parts` more parts to an artifact that
 /// already holds `existing_parts` would push it past `max` — the per-artifact

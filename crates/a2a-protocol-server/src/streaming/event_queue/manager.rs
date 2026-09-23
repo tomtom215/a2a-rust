@@ -300,7 +300,9 @@ impl EventQueueManager {
                 self.max_event_size,
                 self.write_timeout,
             );
-            let writer = Arc::new(self.observed(writer));
+            // Gated: the send path always hands `persistence_rx` to a
+            // background processor, which answers the terminal tickets.
+            let writer = Arc::new(self.observed(writer).with_terminal_gate());
             map.insert(task_id.clone(), Arc::clone(&writer));
             QueueLease::Created {
                 writer,
@@ -556,7 +558,12 @@ mod tests {
             .expect("write should succeed");
         drop(writer);
 
-        let r = sub_reader.read().await;
+        // Bounded: a subscriber that waits for a sequence number the writer
+        // never produces must fail this test, not hang it (cargo-mutants
+        // could only report the `seq + 1` mutants as timeouts).
+        let r = tokio::time::timeout(std::time::Duration::from_secs(5), sub_reader.read())
+            .await
+            .expect("subscriber read must not hang");
         assert!(r.is_some(), "subscriber should receive the event");
     }
 

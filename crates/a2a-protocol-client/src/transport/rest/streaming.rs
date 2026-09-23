@@ -79,16 +79,21 @@ impl RestTransport {
             body_reader_task(body, tx).await;
         });
         // `stream_connect_timeout` above only bounds header arrival; the
-        // first-event bound (lifted after the first frame) keeps a server
-        // that sends headers then goes silent from hanging the consumer.
+        // first event has its own bound — see the JSON-RPC transport.
         Ok(
             EventStream::with_status(rx, task_handle.abort_handle(), actual_status)
                 .with_jsonrpc_envelope(false)
-                .with_first_event_timeout(self.inner.stream_connect_timeout),
+                .with_first_event_timeout(crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT),
         )
     }
 
-    /// Turns a non-success streaming response into `UnexpectedStatus`.
+    /// Turns a non-success streaming response into the error it carries.
+    ///
+    /// An AIP-193 body (§11.6) decodes to the exact A2A error, as on the
+    /// unary path — until 2026-09-22 this path skipped that, so
+    /// `subscribe_to_task` on a missing task gave `UnexpectedStatus(404)`
+    /// where `get_task` gave `TaskNotFound`. Anything else is
+    /// `UnexpectedStatus`.
     ///
     /// Captures `Retry-After` before the body is consumed (matching the unary
     /// path) so retries honor server-directed backoff, and enforces the
@@ -114,6 +119,9 @@ impl RestTransport {
             Ok(bytes) => bytes,
             Err(e) => return e,
         };
+        if let Some(a2a) = super::request::parse_aip193_error(&body_bytes) {
+            return ClientError::Protocol(a2a);
+        }
         let body_str = String::from_utf8_lossy(&body_bytes);
         ClientError::UnexpectedStatus {
             status: status.as_u16(),

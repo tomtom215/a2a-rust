@@ -237,15 +237,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.port, config.public_url
     );
 
+    // In-flight agent work lives in the handler, not in axum, and it has to
+    // end *before* axum drains: an open SSE stream is a connection that stays
+    // open until its task ends, so a drain that runs first waits forever on
+    // tasks nobody has cancelled. So the signal future itself ends them: five
+    // seconds for short work to finish on its own, then cancellation and ten
+    // seconds for the executors to act on it — cancel what they delegated,
+    // write a terminal event — and only then does axum drain.
+    let tasks = Arc::clone(&handler);
     axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            let report = tasks
+                .finish_in_flight(Duration::from_secs(5), Duration::from_secs(10))
+                .await;
+            if !report.finished {
+                eprintln!(
+                    "{} of {} task(s) did not end within the grace period",
+                    report.still_running, report.cancelled
+                );
+            }
+        })
         .await?;
 
-    // Draining HTTP is only half of it: in-flight agent work lives in the
-    // handler, not in axum. Shut it down explicitly and *report* the outcome —
-    // a shutdown that force-destroyed live queues, or abandoned the executor's
-    // cleanup, otherwise looks exactly like a clean one from outside.
-    let report = handler.shutdown_with_timeout(Duration::from_secs(15)).await;
+    // Then the executor's cleanup hook. Report the outcome: a shutdown that
+    // cut live streams, or abandoned the cleanup, otherwise looks exactly like
+    // a clean one from outside.
+    let report = handler.shutdown_with_timeout(Duration::from_secs(5)).await;
     if report.is_graceful() {
         println!("drained cleanly, exiting");
     } else {

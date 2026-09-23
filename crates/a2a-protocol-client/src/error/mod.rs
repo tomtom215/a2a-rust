@@ -67,6 +67,29 @@ pub enum ClientError {
         limit: usize,
     },
 
+    /// A stream ended before the event that finishes it.
+    ///
+    /// A stream finishes cleanly on a `Message`, or on a `Task` or status
+    /// update whose state is terminal (`completed`, `failed`, `canceled`,
+    /// `rejected`) or interrupted (`input-required`, `auth-required`) — the
+    /// states at which the specification says the server closes it (§3.1.2,
+    /// §11.7). A body that ends, or a connection that closes, anywhere else
+    /// is this error rather than a quiet `None`: the task is very likely still
+    /// running, and the consumer is missing the rest of it.
+    ///
+    /// Retryable in the sense that matters for a stream: resubscribe with
+    /// [`A2aClient::subscribe_to_task_from`](crate::A2aClient::subscribe_to_task_from),
+    /// passing `last_event_id`, and a server that keeps an event log replays
+    /// what was missed.
+    IncompleteStream {
+        /// The last SSE `id:` received before the stream ended — the value to
+        /// resume from. `None` when the server sent none: gRPC and WebSocket
+        /// streams carry no ids, and neither does a server without resumption.
+        last_event_id: Option<String>,
+        /// What was missing, for the message.
+        detail: String,
+    },
+
     /// The server appears to use a different protocol binding than the client.
     ///
     /// For example, a JSON-RPC client connected to a REST-only server (or
@@ -96,6 +119,9 @@ impl fmt::Display for ClientError {
                     f,
                     "too many pending requests on this connection (limit {limit})"
                 )
+            }
+            Self::IncompleteStream { detail, .. } => {
+                write!(f, "stream ended before its final event: {detail}")
             }
             Self::ProtocolBindingMismatch(msg) => {
                 write!(
@@ -187,6 +213,81 @@ impl From<A2aError> for ClientError {
     }
 }
 
+/// Lets an executor that delegates to another agent use `?` on client calls.
+///
+/// An `AgentExecutor` returns `A2aResult`, so without this every delegated
+/// call had to be flattened to a string, losing whether it was worth
+/// retrying. The conversion keeps what the server needs to classify the
+/// failed task (see `a2a_protocol_types::failure::error_class`):
+///
+/// | `ClientError` | `A2aError` code | Failure class |
+/// |---|---|---|
+/// | `Protocol(e)` | `e.code`, with `e.message` and `e.data` unchanged | from the code |
+/// | anything [`is_retryable`](ClientError::is_retryable) — timeouts, connection failures, `429`/`502`/`503`/`504`, `TooManyPendingRequests` | `InternalError` | `Transient` |
+/// | `Serialization` (the peer sent something unreadable) | `InvalidAgentResponse` | `Internal` |
+/// | everything else (bad endpoint, binding mismatch, other statuses, auth required) | `InternalError` | `Internal` |
+///
+/// "Transient exactly when the client would retry" is deliberate: the
+/// client's retry policy and the caller's are then the same judgement.
+/// The class rides in `data` under the failure key; the server never sends
+/// `data` to its caller as-is, so it does not leak. The message is
+/// `downstream A2A call failed: ` followed by this error's text and its
+/// source chain, so nothing the client knew is lost.
+///
+/// ```no_run
+/// use a2a_protocol_client::ClientBuilder;
+/// use a2a_protocol_types::error::A2aResult;
+/// use a2a_protocol_types::params::TaskQueryParams;
+///
+/// // The shape of an `AgentExecutor::execute` body that delegates.
+/// async fn delegate(downstream: &str, task_id: &str) -> A2aResult<String> {
+///     let client = ClientBuilder::new(downstream).build()?;
+///     let task = client
+///         .get_task(TaskQueryParams {
+///             tenant: None,
+///             id: task_id.to_owned(),
+///             history_length: None,
+///         })
+///         .await?; // a timeout here fails the task as `Transient`
+///     Ok(task.text().unwrap_or_default().to_owned())
+/// }
+/// ```
+impl From<ClientError> for A2aError {
+    fn from(e: ClientError) -> Self {
+        use a2a_protocol_types::error::ErrorCode;
+        use a2a_protocol_types::failure::{FailureClass, set_error_class};
+
+        let class = if e.is_retryable() {
+            FailureClass::Transient
+        } else {
+            FailureClass::Internal
+        };
+        let code = match e {
+            ClientError::Protocol(inner) => return inner,
+            ClientError::Serialization(_) => ErrorCode::InvalidAgentResponse,
+            _ => ErrorCode::InternalError,
+        };
+        let mut out = Self::new(code, format!("downstream A2A call failed: {}", chain(&e)));
+        set_error_class(&mut out, class);
+        out
+    }
+}
+
+/// An error's text followed by each cause the text does not already contain.
+fn chain(e: &dyn std::error::Error) -> String {
+    let mut text = e.to_string();
+    let mut cause = e.source();
+    while let Some(c) = cause {
+        let s = c.to_string();
+        if !text.contains(&s) {
+            text.push_str(": ");
+            text.push_str(&s);
+        }
+        cause = c.source();
+    }
+    text
+}
+
 impl From<hyper::Error> for ClientError {
     fn from(e: hyper::Error) -> Self {
         Self::Http(e)
@@ -206,5 +307,7 @@ pub type ClientResult<T> = Result<T, ClientError>;
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+#[cfg(test)]
+mod chain_tests;
 #[cfg(test)]
 mod tests;

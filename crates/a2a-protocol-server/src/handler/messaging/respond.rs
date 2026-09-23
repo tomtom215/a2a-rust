@@ -111,12 +111,15 @@ impl RequestHandler {
             reader,
             persistence_rx,
             executor_handle,
+            cancel,
+            gate,
         } = started;
         self.spawn_background_event_processor(
             task.id.clone(),
             executor_handle,
             persistence_rx,
             task.clone(),
+            super::super::event_processing::ProcessorLinks { cancel, gate },
         );
 
         let mut snapshot = task;

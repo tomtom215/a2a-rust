@@ -39,7 +39,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::error::ClientResult;
+use crate::error::{ClientError, ClientResult};
 
 // ── ClientRequest ─────────────────────────────────────────────────────────────
 
@@ -117,10 +117,36 @@ pub trait CallInterceptor: Send + Sync + 'static {
     ) -> impl Future<Output = ClientResult<()>> + Send + 'a;
 
     /// Called after a successful response is received.
+    ///
+    /// Not called when the request fails; see [`on_error`](Self::on_error).
     fn after<'a>(
         &'a self,
         resp: &'a ClientResponse,
     ) -> impl Future<Output = ClientResult<()>> + Send + 'a;
+
+    /// Called when the transport returns an error for a request this chain's
+    /// `before` hooks saw, in reverse registration order like `after`.
+    ///
+    /// It observes; it cannot change the error the caller receives. By then
+    /// the params have moved to the transport, so `req.params` is `null`;
+    /// `req.method` and `req.extra_headers` are as `before` left them. It is
+    /// not called when a `before` hook itself fails, nor for errors that
+    /// arrive later inside an open stream.
+    ///
+    /// **Not overriding it** (the default does nothing) means the
+    /// interceptor never learns that the agent rejected what it attached. For
+    /// an interceptor that attaches credentials that is a real cost:
+    /// [`BearerAuthInterceptor`](crate::BearerAuthInterceptor) overrides it
+    /// so a token the agent answered with `401` is dropped from its
+    /// provider's cache rather than sent again until it expires.
+    fn on_error<'a>(
+        &'a self,
+        req: &'a ClientRequest,
+        err: &'a ClientError,
+    ) -> impl Future<Output = ()> + Send + 'a {
+        let _ = (req, err);
+        async {}
+    }
 }
 
 // ── Internal boxed trait for object-safe storage ──────────────────────────────
@@ -138,6 +164,12 @@ pub(crate) trait CallInterceptorBoxed: Send + Sync + 'static {
         &'a self,
         resp: &'a ClientResponse,
     ) -> Pin<Box<dyn Future<Output = ClientResult<()>> + Send + 'a>>;
+
+    fn on_error_boxed<'a>(
+        &'a self,
+        req: &'a ClientRequest,
+        err: &'a ClientError,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 }
 
 impl<T: CallInterceptor> CallInterceptorBoxed for T {
@@ -154,6 +186,14 @@ impl<T: CallInterceptor> CallInterceptorBoxed for T {
     ) -> Pin<Box<dyn Future<Output = ClientResult<()>> + Send + 'a>> {
         Box::pin(self.after(resp))
     }
+
+    fn on_error_boxed<'a>(
+        &'a self,
+        req: &'a ClientRequest,
+        err: &'a ClientError,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(self.on_error(req, err))
+    }
 }
 
 impl CallInterceptorBoxed for Box<dyn CallInterceptorBoxed> {
@@ -169,6 +209,14 @@ impl CallInterceptorBoxed for Box<dyn CallInterceptorBoxed> {
         resp: &'a ClientResponse,
     ) -> Pin<Box<dyn Future<Output = ClientResult<()>> + Send + 'a>> {
         (**self).after_boxed(resp)
+    }
+
+    fn on_error_boxed<'a>(
+        &'a self,
+        req: &'a ClientRequest,
+        err: &'a ClientError,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        (**self).on_error_boxed(req, err)
     }
 }
 
@@ -223,6 +271,13 @@ impl InterceptorChain {
             interceptor.after_boxed(resp).await?;
         }
         Ok(())
+    }
+
+    /// Runs all `on_error` hooks in reverse registration order.
+    pub async fn run_on_error(&self, req: &ClientRequest, err: &ClientError) {
+        for interceptor in self.interceptors.iter().rev() {
+            interceptor.on_error_boxed(req, err).await;
+        }
     }
 }
 
@@ -353,5 +408,70 @@ mod tests {
             22,
             "double-boxed after should delegate"
         );
+    }
+
+    /// Records its id when told about an error.
+    struct ErrorRecorder(u8, Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl CallInterceptor for ErrorRecorder {
+        #[allow(clippy::manual_async_fn)]
+        fn before<'a>(
+            &'a self,
+            _req: &'a mut ClientRequest,
+        ) -> impl std::future::Future<Output = ClientResult<()>> + Send + 'a {
+            async move { Ok(()) }
+        }
+        #[allow(clippy::manual_async_fn)]
+        fn after<'a>(
+            &'a self,
+            _resp: &'a ClientResponse,
+        ) -> impl std::future::Future<Output = ClientResult<()>> + Send + 'a {
+            async move { Ok(()) }
+        }
+        #[allow(clippy::manual_async_fn)]
+        fn on_error<'a>(
+            &'a self,
+            _req: &'a ClientRequest,
+            _err: &'a ClientError,
+        ) -> impl std::future::Future<Output = ()> + Send + 'a {
+            async move { self.1.lock().expect("log").push(self.0) }
+        }
+    }
+
+    #[tokio::test]
+    async fn chain_runs_on_error_in_reverse_order_and_default_is_a_no_op() {
+        let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let counter = Arc::new(AtomicUsize::new(0));
+        let mut chain = InterceptorChain::new();
+        chain.push(ErrorRecorder(1, Arc::clone(&log)));
+        chain.push(CountingInterceptor(Arc::clone(&counter)));
+        chain.push(ErrorRecorder(2, Arc::clone(&log)));
+
+        let req = ClientRequest::new("GetTask", serde_json::Value::Null);
+        chain
+            .run_on_error(&req, &ClientError::Timeout("t".into()))
+            .await;
+        assert_eq!(
+            *log.lock().expect("log"),
+            [2, 1],
+            "reverse order, like after"
+        );
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            0,
+            "the default does nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn boxed_interceptor_delegates_on_error() {
+        let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let boxed: Box<dyn CallInterceptorBoxed> = Box::new(ErrorRecorder(7, Arc::clone(&log)));
+        let double_boxed: Box<dyn CallInterceptorBoxed> = Box::new(boxed);
+        let req = ClientRequest::new("GetTask", serde_json::Value::Null);
+        double_boxed
+            .on_error_boxed(&req, &ClientError::Timeout("t".into()))
+            .await;
+        assert_eq!(*log.lock().expect("log"), [7]);
     }
 }

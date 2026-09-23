@@ -1050,3 +1050,28 @@ jobs:
         env:
           A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
           RESILIENT_REQUIRE_ALL: "1"
+
+  # The official Go SDK (a2a-go, pinned in itk/agents/go-sdk/go.mod and
+  # itk/interop/go-sdk-client/go.mod) against this SDK in both directions,
+  # over JSON-RPC, HTTP+JSON and gRPC. tck.yml runs a2a-go as a server only,
+  # driven by the in-repo TCK, which does not use a2a-protocol-client; so the
+  # client a Rust coordinator calls Go agents with, the server a Go client
+  # calls, and every gRPC path between them had never met in CI. The
+  # 2026-09-22 audit found six defects each side's own tests passed.
+  # `scripts/go_sdk_interop.sh` holds the plumbing and says what each leg
+  # asserts; `scripts/prove_gates_fail.sh` proves this step can go red.
+  go-sdk-interop:
+    name: Go SDK interop (both directions, three bindings)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.25'
+      - name: a2a-go client against this server, and this client against an a2a-go server
+        run: ./scripts/go_sdk_interop.sh

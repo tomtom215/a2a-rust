@@ -13,4 +13,4 @@ pub mod event_stream;
 pub mod sse_parser;
 
 pub use event_stream::EventStream;
-pub use sse_parser::{SseFrame, SseParseError, SseParser};
+pub use sse_parser::{DEFAULT_MAX_EVENT_SIZE, SseFrame, SseParseError, SseParser};

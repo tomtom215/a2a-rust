@@ -257,21 +257,28 @@ Clients should send `If-None-Match` or `If-Modified-Since` headers. If the card 
 
 ## Security
 
-Agent cards can declare security requirements using OpenAPI-style schemes:
+Agent cards declare security schemes and the requirements that reference
+them. This is the v1.0 wire form, which is what this SDK emits:
 
 ```json
 {
   "securitySchemes": {
-    "bearer": {
-      "type": "http",
-      "scheme": "bearer"
-    }
+    "bearer": { "httpAuthSecurityScheme": { "scheme": "bearer" } },
+    "oauth": { "oauth2SecurityScheme": { "flows": { "clientCredentials": {
+      "tokenUrl": "https://auth.example.com/token", "scopes": { "read": "Read" } } } } }
   },
   "securityRequirements": [
-    { "bearer": [] }
+    { "schemes": { "bearer": { "list": [] } } },
+    { "schemes": { "oauth": { "list": ["read"] } } }
   ]
 }
 ```
+
+Each scope list is a `StringList` object (`{"list": [...]}`), because the spec
+defines the JSON as the ProtoJSON of `map<string, StringList>`. When reading a
+card, a bare array (`"oauth": ["read"]`, as a2a-go v2.5.0 writes it) and `null`
+are accepted too, so a Go agent's card parses; only the `{"list": [...]}` form
+is ever written.
 
 Individual skills can also declare their own security requirements, overriding the global ones.
 

@@ -311,6 +311,25 @@ struct MyStore { pool: sqlx::PgPool }
 struct MyStore { conn: sqlx::PgConnection }
 ```
 
+### Terminal states are final
+
+Every store shipped here refuses a write — `save` or any of the delta
+methods — that would move a stored `Completed`, `Failed`, `Canceled` or
+`Rejected` task to a different state, and applies the check inside the write
+itself: a `WHERE` condition on the SQL `UPDATE` or upsert, the write lock for
+the in-memory stores. Re-writing the same terminal state is allowed. The
+refusal is an `UnsupportedOperation` error carrying a `TerminalStateConflict`,
+and the server reacts to it: `CancelTask` answers `TaskNotCancelable`, and the
+event processors adopt the stored state and cancel the local executor.
+
+This is what makes a `CancelTask` on one replica stick against an executor
+still running on another (see
+[Running More Than One Replica](../deployment/horizontal-scaling.md)). A custom
+store does not get it for free. To give the same guarantee, apply
+`store::refuses_write(stored, written)` atomically with each write, and report
+a refusal with `TerminalStateConflict::into_error`. A read followed by a write
+is not enough — that is the race the rule exists to close.
+
 ## Next Steps
 
 - **[Production Hardening](../deployment/production.md)** — Deployment checklist

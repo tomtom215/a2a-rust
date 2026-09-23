@@ -89,6 +89,13 @@ impl JsonRpcDispatcher {
     /// SSE (`text/event-stream`). All other methods return JSON.
     ///
     /// JSON-RPC errors are always returned as HTTP 200 with an error body.
+    /// For the two streaming methods that includes an error raised before
+    /// the stream starts: it is a plain `application/json` JSON-RPC error
+    /// response, not SSE. The official conformance kit (a2aproject/a2a-tck)
+    /// requires this shape — it treats any `text/event-stream` answer as a
+    /// successful stream (STREAM-SUB-003/004). a2a-go v2.5.0's client reads
+    /// streaming answers only as SSE and so loses these errors; that is
+    /// a2a-go's divergence, pinned by `scripts/go_sdk_interop.sh`.
     pub async fn dispatch(
         &self,
         req: hyper::Request<Incoming>,
@@ -508,5 +515,9 @@ impl Dispatcher for JsonRpcDispatcher {
         Box<dyn std::future::Future<Output = crate::serve::DispatchResponse> + Send + '_>,
     > {
         Box::pin(self.dispatch(req))
+    }
+
+    fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
+        Some(&self.handler)
     }
 }
