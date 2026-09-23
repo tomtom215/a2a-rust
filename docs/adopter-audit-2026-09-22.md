@@ -128,6 +128,30 @@ stores (`tests/cross_replica_cancel/`).
   the notes were not re-read against them. **[Gated: the four checks run in
   `release.yml`; `RELEASING.md` says what they ask of the process.]**
 
+- **N12 — signing canonicalized integers beyond 2^53 with all their digits**
+  (Medium, signing interop; not in the tables). RFC 8785 §3.2.2.3 makes
+  every JSON number an IEEE 754 double, so `9007199254740993` canonicalizes
+  as `9007199254740992`, as V8's `JSON.stringify(JSON.parse(…))` renders it;
+  `canonicalize` wrote the literal, so the canonical bytes of any card whose
+  metadata carried such an integer disagreed with every conforming
+  implementation. VALIDATED by `rfc8785_integers_are_doubles` failing on
+  unchanged code (`left: "9007199254740993"`, `right: "9007199254740992"`).
+  A unit test, `canonicalize_integers_exact`, had pinned the deviation by
+  asserting `u64::MAX`'s exact digits. **[Fixed with T2.]**
+- **N11 — cargo-mutants makes no viable body replacement for a function
+  returning `Pin<Box<dyn Future<…>>>`** (Medium, gate; wider than N9). It
+  offers `Pin::new()`, `Pin::from_iter(…)`, `Pin::new(Box::new(Default::default()))`
+  and `Pin::from(Box::new(Default::default()))`, none of which compiles, so
+  "replace the body" has never been graded for 162 functions: 144 in the
+  server (every `TaskStore`, `PushConfigStore`, `ServerInterceptor` and
+  event-queue implementation) and 18 in the client. VALIDATED with
+  `cargo mutants --list --all-features` on `main` (648 such mutants); the
+  cause is `type_replacements` in cargo-mutants 27.1.0's `src/fnvalue.rs`,
+  which has no case for `Pin` or `dyn Future`. Statement-level mutants inside
+  those bodies are still generated and graded. Spelling a return type as
+  `Result` does not reach these: the alias sits inside `Output = …`. Not
+  fixed.
+
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.
 
@@ -592,9 +616,9 @@ non-idempotent sends is correctly limited; body size limits are enforced.
 | # | Sev | Finding | Evidence |
 |---|---|---|---|
 | T1 | High | **[Read side fixed: `8e218a4`; write side is open work OW1]** **Agent cards with security requirements can't be exchanged with a2a-go in either direction.** Rust writes `{"o":{"list":["s"]}}` (proto/spec shape); Go writes `{"o":["s"]}`, and each side fails to parse the other. Rust matches the spec, but in practice the reader must accept both shapes. | VALIDATED (both directions) |
-| T2 | High | **Signing: serde_json lacks `float_roundtrip`**, so floats in a card are off by one ULP before canonicalization. The RFC 8785 §3.2.4 example gives `333333333.33333325`, 5 of 24 Appendix-B vectors fail after parsing, and 29.7% of random exponent-form doubles parse wrong. | VALIDATED [re-checked: the feature is absent from every manifest] |
+| T2 | High | **[Fixed: `signing` enables `float_roundtrip`; RFC 8785 vectors gate it]** **Signing: serde_json lacks `float_roundtrip`**, so floats in a card are off by one ULP before canonicalization. The RFC 8785 §3.2.4 example gives `333333333.33333325`, 5 of 24 Appendix-B vectors fail after parsing, and 29.7% of random exponent-form doubles parse wrong. | VALIDATED [re-checked: the feature is absent from every manifest] |
 | T3 | High | **Signing: verification canonicalizes the re-serialized struct, not the received JSON** (`signing.rs:70-71`). Any unknown field, the legacy `url`, a missing `skills`, `null` capabilities, snake_case aliases or the v0.3 scheme form makes a valid peer signature fail. Empty defaults (`"skills":[]`) are added to the canonical bytes. There is no cross-SDK signing test. | VALIDATED [re-checked the code path] |
-| T4 | Medium | The ES number formatter gets exact ties wrong (`1424953923781206.3` vs `.2`). `crit` headers go unchecked (RFC 7515 §4.1.11). A bad signature surfaces as `-32603 Internal`. | VALIDATED |
+| T4 | Medium | **[Ties fixed with T2; `crit` and the `-32603` mapping are open]** The ES number formatter gets exact ties wrong (`1424953923781206.3` vs `.2`). `crit` headers go unchecked (RFC 7515 §4.1.11). A bad signature surfaces as `-32603 Internal`. | VALIDATED |
 | T5 | Medium | One unknown enum value fails the whole payload: `TASK_STATE_PAUSED` fails the `Task`, `ROLE_SYSTEM` the `Message`, and an unknown or extra key in `StreamResponse` fails the event. A newer peer can break stream consumers. | VALIDATED |
 | T6 | Medium | Values accepted over JSON can't be converted to proto (non-base64 `raw`, integers above 2^53, non-RFC3339 timestamps), so GetTask over gRPC or slimrpc returns INTERNAL. `has_valid_timestamp` accepts `"garbage T garbage garbage"`. | VALIDATED |
 | T7 | Medium | JSON requires `contextId` on `Task`; proto doesn't. Large numbers in metadata are silently rounded, and `1e400` rejects the whole message. | VALIDATED |
@@ -642,6 +666,10 @@ Each of these gaps is tied to at least one defect that escaped:
    off or mis-frames a stream. This let through C1, C2, C6 and C11.
 7. **Signing has no external test vectors.** RFC 8785 Appendix B is not in
    the tests. This let through T2, T3 and T4.
+   **[Gated: `crates/a2a-protocol-types/tests/rfc8785_vectors.rs` carries
+   Appendix B, the §3.2.3 sort sample and the §3.2.4 bytes, plus V8-sourced
+   tie-rule edges; they found T2, the T4 tie and N12. T3 needs cross-SDK
+   signed cards, not vectors, and is open.]**
 8. **New parsers of peer input aren't required to have fuzz targets.**
    `check_fuzz_matrix.py` only checks that existing targets run. The
    traceparent panic shipped in 0.13.0 this way; JWT, REST query and

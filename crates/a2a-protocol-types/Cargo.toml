@@ -19,7 +19,11 @@ categories             = ["api-bindings"]
 
 [features]
 ## Enable agent card signing (JWS, RFC 8785 canonicalization).
-signing = ["dep:base64", "dep:ring"]
+# `float_roundtrip` makes serde_json parse every float to the nearest double.
+# Without it a peer's card can parse one ULP off, so its canonical bytes — and
+# the signature over them — disagree with the signer's (RFC 8785 Appendix B;
+# audit T2).
+signing = ["dep:base64", "dep:ring", "serde_json/float_roundtrip"]
 ## Enable the canonical A2A protobuf message types (`lf.a2a.v1`, prost-generated)
 ## and lossless conversions to/from the serde domain types. Wire-compatible with
 ## the official Go/Python/Java A2A SDKs. Pure data — still no I/O; the gRPC

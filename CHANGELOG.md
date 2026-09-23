@@ -219,6 +219,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Agent-card signing canonicalizes numbers the way RFC 8785 says.** Three
+  deviations, each found by the RFC's own vectors, now in
+  `crates/a2a-protocol-types/tests/rfc8785_vectors.rs`: a double exactly
+  halfway between two shortest renderings took the upper one, not the even
+  one (`1424953923781206.2`, Appendix B note 4); a card parsed from text
+  could read a float one ULP off, because serde_json's default parser is not
+  correctly rounded (5 of Appendix B's 24 values); and an integer beyond
+  2^53 was written with all its digits rather than as the double JCS
+  defines every number to be (`9007199254740993` is `9007199254740992`).
+  Against V8's `JSON.stringify` over the same 1,000,077 random doubles, the
+  canonicalizer disagreed 1,474 times from the bits and 237,518 times from
+  the text; it now disagrees 0 times on either, and 0 times over 8,552,446
+  structured ones (every `m × 2^e` with odd `m` below 4096), which is where
+  the fix's own first version was caught wrong at 2^-24. **What it trades:** a
+  signature made by 0.13.0 or earlier over a card holding an affected number
+  does not verify here, and the reverse — though neither verified against
+  any other conforming implementation, which is the correction (a
+  specification fix, `STABILITY.md` §2). The `signing` feature now enables
+  serde_json's `float_roundtrip`, which makes float parsing correctly
+  rounded, and slower, in every crate of a build that enables `signing`.
+
 - **`Server::serve_with_shutdown` sees its signal at the connection
   ceiling.** It waited for a connection permit before it looked at the
   signal, so with `ServeConfig::max_connections` set and every slot held by a
