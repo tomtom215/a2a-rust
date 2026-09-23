@@ -196,9 +196,10 @@ impl TokenProvider for StaticTokenProvider {
 /// When the agent answers `401`, it calls
 /// [`TokenProvider::invalidate`] with the token it sent, so a refused token
 /// is not sent again. That catches a `401` surfaced as
-/// [`ClientError::UnexpectedStatus`], which is how the JSON-RPC and REST
-/// bindings report it; gRPC reports `Unauthenticated` differently today and
-/// is not covered.
+/// [`ClientError::UnexpectedStatus`], which is how every binding reports it:
+/// the gRPC transport maps `UNAUTHENTICATED` to a `401` for this reason. A
+/// `403` (gRPC `PERMISSION_DENIED`) leaves the token cached, since a caller
+/// who is known and not allowed gains nothing from a new one.
 ///
 /// Because the token is fetched per request, a provider that refreshes (like
 /// [`OAuth2ClientCredentials`]) keeps long-lived clients authenticated across
@@ -495,7 +496,11 @@ impl OAuth2ClientCredentials {
         let resp = tokio::time::timeout_at(deadline, self.client.request(req))
             .await
             .map_err(|_| ClientError::Timeout("token endpoint request timed out".into()))?
-            .map_err(|e| ClientError::Transport(format!("token endpoint request failed: {e}")))?;
+            // `HttpClient`, as every transport maps this same error: a refused
+            // or dropped connection is transient. It was `Transport`, which
+            // is not retryable, so a task whose token fetch met a restarting
+            // identity provider was classed `Internal` rather than `Transient`.
+            .map_err(|e| ClientError::HttpClient(format!("token endpoint request failed: {e}")))?;
 
         let status = resp.status();
         let body = crate::transport::collect_response_limited(
@@ -651,7 +656,7 @@ pub(crate) async fn discover_token_endpoint_within(
     let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
         .map_err(|_| ClientError::Timeout("OIDC discovery request timed out".into()))?
-        .map_err(|e| ClientError::Transport(format!("OIDC discovery request failed: {e}")))?;
+        .map_err(|e| ClientError::HttpClient(format!("OIDC discovery request failed: {e}")))?;
 
     let status = resp.status();
     let body = crate::transport::collect_response_limited(

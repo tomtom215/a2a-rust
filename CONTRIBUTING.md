@@ -322,7 +322,7 @@ prevent.
 | TCK conformance | `crates/a2a-protocol-types/tests/tck_wire_format.rs` | `cargo test -p a2a-protocol-types --test tck_wire_format` |
 | Property-based tests | `crates/a2a-protocol-types/tests/proptest_types.rs` | `cargo test -p a2a-protocol-types --test proptest_types` |
 | Corpus-based JSON tests | `crates/a2a-protocol-types/tests/corpus_json.rs` | `cargo test -p a2a-protocol-types --test corpus_json` |
-| Mutation tests | `.github/workflows/mutants.yml` + `.config/nextest.toml` (the root `mutants.toml` is **not** read — see below) | `cargo mutants -p <crate> --test-tool=nextest -- --all-features` |
+| Mutation tests | `.github/workflows/mutants.yml` + `.config/nextest.toml` (the root `mutants.toml` is **not** read — see below) | `cargo mutants -p <crate> --test-tool=nextest --all-features` |
 | End-to-end examples | `examples/echo-agent`, `examples/agent-team`, `examples/multi-lang-team`, `examples/rig-agent`, `examples/genai-agent`, `examples/incident-response` | `cargo run -p echo-agent` |
 | Benchmarks | `crates/*/benches/` | `cargo bench` |
 
@@ -370,15 +370,21 @@ export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgre
 # What CI runs, per crate. Match it before drawing conclusions —
 # a narrower invocation measures a smaller feature set.
 cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants \
-  -- --all-features --run-ignored all
+  --all-features -- --run-ignored all
 
 # Run on a specific file
 cargo mutants --file crates/a2a-protocol-types/src/task.rs \
-  --test-tool=nextest -- --all-features
+  --test-tool=nextest --all-features
 
 # List mutants without running (dry-run)
 cargo mutants --list --workspace
 ```
+
+`--all-features` belongs to `cargo mutants`, before any `--`. After the `--`
+it reaches only the test command, so each mutant is *built* without the
+features; a mutant in feature-gated code that does not compile then fails in
+the test step, and cargo-mutants scores that as caught. Measured 2026-09-23:
+8 of one diff's 14 "caught" mutants were compile failures (audit N8).
 
 `--test-tool=nextest` is not optional. It is what makes `.config/nextest.toml`
 apply, and that file kills any single test at 45 seconds — without it a mutant
@@ -572,7 +578,7 @@ Deliberately not part of `preflight.sh`: a workspace sweep takes hours. For the
 files a change touches:
 
 ```bash
-cargo mutants -p <crate> --file <path> -- --all-features --run-ignored all
+cargo mutants -p <crate> --file <path> --all-features -- --run-ignored all
 ```
 
 Read the **exit code**, not only the counts — `0` all caught, `2` surviving

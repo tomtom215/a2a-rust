@@ -52,6 +52,7 @@ mod config;
 mod dispatcher;
 mod helpers;
 mod native;
+mod shutdown;
 
 /// Generated tonic glue for the canonical `lf.a2a.v1.A2AService`.
 ///

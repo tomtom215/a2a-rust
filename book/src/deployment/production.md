@@ -162,11 +162,16 @@ With Axum (or anything else that owns the sockets), call
 `handler.finish_in_flight(completion, grace)` at the end of the future you pass to
 `with_graceful_shutdown`, so it runs before Axum starts draining —
 `examples/deploy-agent` does exactly that — and `handler.shutdown()` after
-`serve` returns. The gRPC and WebSocket dispatchers' `serve` methods take no
-shutdown signal: serve `GrpcDispatcher::into_service()` with tonic's
-`serve_with_incoming_shutdown` and end its signal future the same way, and
-race `WebSocketDispatcher::serve` against your signal and call
-`finish_in_flight` after it. `finish_in_flight` first lets tasks finish on
+`serve` returns. The gRPC and WebSocket dispatchers have their own
+`serve_with_shutdown(listener, signal)`, which runs the same three steps and
+returns the same `ServeReport`; set the three durations with
+`with_completion_grace`, `with_task_grace` and `with_drain_timeout` on the
+dispatcher. Two differences follow from the transports. gRPC connections are
+sent `GOAWAY` when accepting stops, so they take no new calls during the
+completion window, where HTTP and WebSocket connections still do. And a
+WebSocket carries many requests on one connection, so once the tasks have
+ended each connection finishes the requests it has already read and is closed
+with a Close frame. `finish_in_flight` first lets tasks finish on
 their own for up to `completion` — so a short call in flight during a rolling
 deploy is answered rather than `Canceled` — and then does what
 `cancel_in_flight(grace)` does alone: cancels the rest and waits for them.

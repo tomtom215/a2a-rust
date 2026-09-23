@@ -18,6 +18,26 @@ changed* or *what the trend looks like*. Nothing before this page captured
 that — a real gap this project should not let recur, in the same spirit as
 `docs/official-tck-findings.md`'s conformance history.
 
+## Every score before 2026-09-23 counts some uncompilable mutants as caught
+
+Until 2026-09-23 `mutants.yml` passed `--all-features` after `--`, which
+hands it to the test command only. Each mutant was therefore *built* without
+the crate's features, so a mutant inside feature-gated code (`postgres`,
+`sqlite`, `grpc`, `websocket`, `otel`, …) compiled trivially — the mutated
+code was not compiled at all — and was then compiled with every feature in
+the test step. A mutant that does not compile failed there, and cargo-mutants
+scores a failing test step as **caught**. Measured on one diff that day: 14
+mutants reported 14 caught; with the flag given to `cargo mutants` itself the
+same 14 were 6 caught and 8 unviable.
+
+What this does and does not change in the rows below. **Missed counts are
+unaffected**: a mutant that compiles is built and tested with every feature
+either way. **Caught counts, and so the percentages, are overstated** by the
+number of feature-gated unviable mutants in each sweep, which the old
+artifacts cannot recover. The unviable column is correspondingly understated.
+Read the rows' missed figures as measurements and their scores as upper
+bounds. Recorded as audit N8 in `docs/adopter-audit-2026-09-22.md`.
+
 ## How to add an entry
 
 After a full sweep completes (`mutants-summary` job in `mutants.yml`), copy

@@ -371,7 +371,7 @@ are rustdoc's job.
 | `serve_with_addr(addr, dispatcher) -> io::Result<SocketAddr>` | `async` — binds, spawns the accept loop, returns the bound `SocketAddr` (useful for port-0 in tests) |
 | `Server` | A bound listener that has not started accepting yet; binding is separated from serving so the caller can learn the address |
 | `ServeConfig` | Limits applied to a `Server` |
-| `ServeReport` | What the server's shutdown did: connections accepted, drained or abandoned, and (with a handler-backed dispatcher) the `InFlightReport` for its tasks |
+| `ServeReport` | What a shutdown did — `Server::serve_with_shutdown`, or the gRPC and WebSocket dispatchers' `serve_with_shutdown`: connections accepted, drained or abandoned, and (with a handler-backed dispatcher) the `InFlightReport` for its tasks |
 | `DispatchConfig` | Configuration for dispatch-layer limits shared by both JSON-RPC and REST dispatchers |
 | `GrpcConfig` | Configuration for the gRPC dispatcher (`grpc` feature) |
 | `validate_version_metadata(metadata, required)` | Validates the A2A version carried in a binding's request metadata |

@@ -145,13 +145,28 @@ pub fn server_error_to_rpc_error(err: &ServerError) -> RpcError {
 pub fn rpc_error_to_client_error(err: &RpcError) -> ClientError {
     let message = err.message();
 
-    // Transport-shaped conditions are not A2A errors and must stay retryable.
+    // Transport-shaped conditions are not A2A errors: timeouts and an
+    // unavailable fabric stay retryable, auth refusals become HTTP statuses.
     match err.code() {
         RpcCode::DeadlineExceeded => {
             return ClientError::Timeout(format!("SLIMRPC deadline exceeded: {message}"));
         }
-        RpcCode::Cancelled => {
-            return ClientError::Timeout(format!("SLIMRPC call cancelled: {message}"));
+        // The HTTP-equivalent statuses the client crate's gRPC transport
+        // reports for the same codes, so `BearerAuthInterceptor` drops a
+        // refused token here too. Both fell through to `InternalError`.
+        RpcCode::Unauthenticated => {
+            return ClientError::UnexpectedStatus {
+                status: 401,
+                body: message.to_string(),
+                retry_after: None,
+            };
+        }
+        RpcCode::PermissionDenied => {
+            return ClientError::UnexpectedStatus {
+                status: 403,
+                body: message.to_string(),
+                retry_after: None,
+            };
         }
         RpcCode::Unavailable => {
             return ClientError::HttpClient(format!("SLIM fabric unavailable: {message}"));
@@ -169,7 +184,14 @@ pub fn rpc_error_to_client_error(err: &RpcError) -> ClientError {
     let (code, detail) = parse_error_type_name(message)
         .unwrap_or_else(|| (rpc_code_to_error_code(err.code()), message));
 
-    ClientError::Protocol(A2aError::new(code, detail.to_string()))
+    // `Cancelled` lands here, as a non-retryable `Protocol` error. It was a
+    // retryable `Timeout`, so a call the peer had abandoned was sent again.
+    let detail = if err.code() == RpcCode::Cancelled {
+        format!("SLIMRPC call cancelled by the peer: {detail}")
+    } else {
+        detail.to_string()
+    };
+    ClientError::Protocol(A2aError::new(code, detail))
 }
 
 /// The lossy inverse mapping, used only when a peer sent no type-name prefix.
@@ -285,5 +307,50 @@ mod tests {
             matches!(down, ClientError::HttpClient(_)),
             "an unavailable fabric must be retryable, got {down:?}"
         );
+    }
+
+    /// A refused credential is a 401, which `BearerAuthInterceptor` acts on;
+    /// a known caller without permission is a 403, which it does not.
+    #[test]
+    fn auth_codes_become_the_http_statuses_the_401_hook_reads() {
+        match rpc_error_to_client_error(&RpcError::unauthenticated("bad token")) {
+            ClientError::UnexpectedStatus {
+                status,
+                body,
+                retry_after,
+            } => {
+                assert_eq!(
+                    (status, body.as_str(), retry_after),
+                    (401, "bad token", None)
+                );
+            }
+            other => panic!("expected a 401, got {other:?}"),
+        }
+        match rpc_error_to_client_error(&RpcError::permission_denied("no")) {
+            ClientError::UnexpectedStatus { status, body, .. } => {
+                assert_eq!((status, body.as_str()), (403, "no"));
+            }
+            other => panic!("expected a 403, got {other:?}"),
+        }
+    }
+
+    /// A call the peer cancelled is not a timeout and must not be retried.
+    #[test]
+    fn a_cancelled_call_is_not_retryable() {
+        let err = rpc_error_to_client_error(&RpcError::cancelled("gone"));
+        match &err {
+            ClientError::Protocol(a2a) => {
+                assert_eq!(a2a.code, ErrorCode::InternalError);
+                assert_eq!(a2a.message, "SLIMRPC call cancelled by the peer: gone");
+            }
+            other => panic!("expected a protocol error, got {other:?}"),
+        }
+        assert!(!err.is_retryable());
+        let prefixed =
+            rpc_error_to_client_error(&RpcError::cancelled("TaskNotFoundError: t-1 is gone"));
+        match prefixed {
+            ClientError::Protocol(a2a) => assert_eq!(a2a.code, ErrorCode::TaskNotFound),
+            other => panic!("expected a protocol error, got {other:?}"),
+        }
     }
 }

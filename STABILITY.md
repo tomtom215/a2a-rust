@@ -19,8 +19,8 @@ the A2A `v1.0` wire contract, the tenant model and the four bindings were
 being brought to conformance; it is not appropriate for a dependency someone
 has to keep compiling. The policy below is the commitment that replaces it.
 
-`0.13.0` carries eight breaking changes, batched and labelled as §2 and §3
-require. It is worth saying plainly what that costs: §7 cuts `1.0` after
+`0.13.0` carries nine breaking changes, batched as §2 and §3 require —
+though only eight were labelled when it shipped; see below. It is worth saying plainly what that costs: §7 cuts `1.0` after
 **two consecutive** minor releases with no break, and `0.12.0` was the last
 one to break, so that count restarts at zero here rather than reaching one.
 
@@ -36,6 +36,13 @@ Each has a migration in the changelog.
 The last five were found by an audit after the first three were written down,
 which is the honest account of why this section said "three" until 0.13.0
 shipped. Nothing in `ROADMAP.md` is pending that requires another.
+
+The ninth is the `#[non_exhaustive]` marking of `RetentionPolicy` and
+`PurgeReport`. It reached 0.13.0 because the release was tagged on a later
+merge than the preparation commit, and the changelog listed it — with
+eighteen other entries that shipped — under `[Unreleased]` until 2026-09-23.
+The published crates say which commit they were built from
+(`.cargo_vcs_info.json`: `391f0df`), and that commit carries the marking.
 
 ## 2. Semantic versioning, and what "breaking" means here
 

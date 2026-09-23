@@ -56,6 +56,8 @@ use crate::error::ServerError;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::EventQueueReader;
 
+mod shutdown;
+
 /// Maximum size of an incoming WebSocket message (and frame), in bytes.
 ///
 /// Enforced at the protocol level via [`WebSocketConfig`] so oversized
@@ -73,6 +75,10 @@ const MAX_WS_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
 /// the HTTP upgrade request pins a file descriptor and a task for the life of
 /// the process (slowloris) — `accept_async` has no timeout of its own.
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Requests one connection may have in progress at once (audit M9). A
+/// shutdown waits for all of them by taking every permit back.
+const MAX_REQUESTS_PER_CONNECTION: u32 = 64;
 
 /// A reasonable idle bound for [`WebSocketDispatcher::with_idle_timeout`]:
 /// how long an established connection may carry no traffic in either direction
@@ -112,6 +118,21 @@ pub struct WebSocketDispatcher {
     require_version_header: bool,
     max_connections: Option<usize>,
     idle_timeout: Option<Duration>,
+    completion_grace: Duration,
+    task_grace: Duration,
+    drain_timeout: Duration,
+}
+
+/// What the accept loop shares with the connections it spawns, so a shutdown
+/// can close them and wait for them.
+#[derive(Default)]
+struct Connections {
+    /// Fired once the tasks in flight have ended: every connection stops
+    /// reading, lets its requests finish, and sends a Close frame.
+    closing: tokio_util::sync::CancellationToken,
+    /// Every connection task.
+    tracker: tokio_util::task::TaskTracker,
+    accepted: std::sync::atomic::AtomicU64,
 }
 
 impl WebSocketDispatcher {
@@ -124,6 +145,9 @@ impl WebSocketDispatcher {
             require_version_header: true,
             max_connections: None,
             idle_timeout: None,
+            completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
+            task_grace: crate::serve::DEFAULT_TASK_GRACE,
+            drain_timeout: crate::serve::DEFAULT_DRAIN_TIMEOUT,
         }
     }
 
@@ -211,17 +235,46 @@ impl WebSocketDispatcher {
         self
     }
 
+    /// How long in-flight tasks get to finish on their own once
+    /// [`serve_with_shutdown`](Self::serve_with_shutdown)'s signal fires,
+    /// before they are cancelled. Default
+    /// [`DEFAULT_COMPLETION_GRACE`](crate::serve::DEFAULT_COMPLETION_GRACE);
+    /// the HTTP server's
+    /// [`ServeConfig::with_completion_grace`](crate::serve::ServeConfig::with_completion_grace)
+    /// is the same setting.
+    #[must_use]
+    pub const fn with_completion_grace(mut self, grace: Duration) -> Self {
+        self.completion_grace = grace;
+        self
+    }
+
+    /// How long cancelled tasks get to act on their cancellation before the
+    /// connections are closed. Default
+    /// [`DEFAULT_TASK_GRACE`](crate::serve::DEFAULT_TASK_GRACE).
+    #[must_use]
+    pub const fn with_task_grace(mut self, grace: Duration) -> Self {
+        self.task_grace = grace;
+        self
+    }
+
+    /// How long [`serve_with_shutdown`](Self::serve_with_shutdown) waits for
+    /// connections to close once they have been told to. Default
+    /// [`DEFAULT_DRAIN_TIMEOUT`](crate::serve::DEFAULT_DRAIN_TIMEOUT).
+    #[must_use]
+    pub const fn with_drain_timeout(mut self, timeout: Duration) -> Self {
+        self.drain_timeout = timeout;
+        self
+    }
+
     /// Starts a WebSocket server on the given address.
     ///
     /// The accept loop never terminates on transient `accept()` errors
     /// (per-connection aborts, fd-table exhaustion) — it logs, backs off when
     /// the fd table is full, and keeps accepting.
     ///
-    /// It takes no shutdown signal. To stop gracefully, race it against your
-    /// signal and then call
-    /// [`RequestHandler::finish_in_flight`](crate::RequestHandler::finish_in_flight)
-    /// before exiting, so every stream on an open socket ends with a terminal
-    /// event and executors can cancel what they delegated.
+    /// It takes no shutdown signal; use
+    /// [`serve_with_shutdown`](Self::serve_with_shutdown) for a graceful
+    /// stop.
     ///
     /// # Errors
     ///
@@ -237,7 +290,8 @@ impl WebSocketDispatcher {
             "A2A WebSocket server listening"
         );
 
-        self.accept_loop(listener).await;
+        self.accept_loop(listener, std::future::pending(), &Connections::default())
+            .await;
         Ok(())
     }
 
@@ -258,14 +312,22 @@ impl WebSocketDispatcher {
         trace_info!(%local_addr, "A2A WebSocket server listening");
 
         tokio::spawn(async move {
-            self.accept_loop(listener).await;
+            self.accept_loop(listener, std::future::pending(), &Connections::default())
+                .await;
         });
 
         Ok(local_addr)
     }
 
-    /// Accepts connections forever, surviving transient `accept()` errors.
-    async fn accept_loop(self: Arc<Self>, listener: TcpListener) {
+    /// Accepts connections until `stop` resolves, surviving transient
+    /// `accept()` errors. Returns with the listener dropped.
+    async fn accept_loop(
+        self: Arc<Self>,
+        listener: TcpListener,
+        stop: impl std::future::Future<Output = ()>,
+        conns: &Connections,
+    ) {
+        let mut stop = std::pin::pin!(stop);
         // Taken before `accept()`, so excess load waits in the kernel's listen
         // backlog rather than as unbounded spawned tasks. `MAX_PERMITS` when no
         // ceiling was asked for keeps one code path instead of two.
@@ -274,13 +336,26 @@ impl WebSocketDispatcher {
                 .unwrap_or(tokio::sync::Semaphore::MAX_PERMITS),
         ));
         loop {
-            let Ok(permit) = Arc::clone(&limiter).acquire_owned().await else {
+            // `stop` is watched while waiting for a permit too: at the ceiling
+            // with every connection streaming, no permit comes back until
+            // shutdown ends those streams, so waiting here first would never
+            // see the signal.
+            let Ok(permit) = (tokio::select! {
+                biased;
+                () = &mut stop => return,
+                acquired = Arc::clone(&limiter).acquire_owned() => acquired,
+            }) else {
                 // The semaphore is never closed; this is unreachable and is a
                 // `return` rather than an `expect` because a panic in the
                 // accept loop takes the listener with it.
                 return;
             };
-            let (stream, _peer) = match listener.accept().await {
+            let accept = tokio::select! {
+                biased;
+                () = &mut stop => return,
+                accept = listener.accept() => accept,
+            };
+            let (stream, _peer) = match accept {
                 Ok(pair) => pair,
                 Err(e) => {
                     // A transient accept() error (per-connection abort, or
@@ -295,10 +370,14 @@ impl WebSocketDispatcher {
                     continue;
                 }
             };
+            conns
+                .accepted
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let dispatcher = Arc::clone(&self);
-            tokio::spawn(async move {
+            let closing = conns.closing.clone();
+            conns.tracker.spawn(async move {
                 trace_debug!("WebSocket connection accepted");
-                if let Err(_e) = dispatcher.handle_connection(stream).await {
+                if let Err(_e) = dispatcher.handle_connection(stream, &closing).await {
                     trace_warn!(error = %_e, "WebSocket connection error");
                 }
                 // Held for the whole connection, not just the handshake: the
@@ -313,7 +392,11 @@ impl WebSocketDispatcher {
     // The handshake callback's Err type (an HTTP response) is dictated by
     // tungstenite's `Callback` trait — it cannot be boxed or shrunk here.
     #[allow(clippy::result_large_err)]
-    async fn handle_connection(&self, stream: TcpStream) -> Result<(), WsError> {
+    async fn handle_connection(
+        &self,
+        stream: TcpStream,
+        closing: &tokio_util::sync::CancellationToken,
+    ) -> Result<(), WsError> {
         // Match the HTTP serve path: avoid ~40ms delayed-ACK latency on the
         // small text frames JSON-RPC produces.
         let _ = stream.set_nodelay(true);
@@ -353,7 +436,7 @@ impl WebSocketDispatcher {
             activity: ActivityClock::new(),
         });
 
-        self.read_loop(reader, &writer, &headers).await;
+        self.read_loop(reader, &writer, &headers, closing).await;
 
         // Best-effort close handshake: sends any pending close reply so the
         // peer sees a clean WebSocket close rather than a bare TCP teardown.
@@ -370,15 +453,32 @@ impl WebSocketDispatcher {
         mut reader: futures_util::stream::SplitStream<WebSocketStream<TcpStream>>,
         writer: &WsSink,
         headers: &Arc<HashMap<String, String>>,
+        closing: &tokio_util::sync::CancellationToken,
     ) {
         // FIX(M9): Limit concurrent tasks per connection to prevent unbounded spawning.
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(64));
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(
+            MAX_REQUESTS_PER_CONNECTION as usize,
+        ));
 
         // Every arriving frame is traffic — including the Pong answering the
         // keepalive Ping below, which is what lets a quiet-but-live
         // subscription outlive the idle bound.
         writer.activity.touch();
-        while let Some(msg) = Self::next_frame(&mut reader, writer, self.idle_timeout).await {
+        loop {
+            // A shutdown stops the reading, not the requests already read:
+            // those finish below, before the caller sends the Close frame.
+            let next = tokio::select! {
+                biased;
+                () = closing.cancelled() => {
+                    // Every permit back means every request task has ended.
+                    // `acquire_many` fails only on a closed semaphore, and
+                    // this one is never closed.
+                    let _ = semaphore.acquire_many(MAX_REQUESTS_PER_CONNECTION).await;
+                    return;
+                }
+                next = Self::next_frame(&mut reader, writer, self.idle_timeout) => next,
+            };
+            let Some(msg) = next else { break };
             writer.activity.touch();
             match msg {
                 Ok(WsMessage::Text(text)) => {

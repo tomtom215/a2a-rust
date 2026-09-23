@@ -240,14 +240,21 @@ impl Server {
             // Hold the permit before accepting, so an over-limit burst waits in
             // the kernel backlog instead of becoming tasks. `close()` is never
             // called on the semaphore, so `acquire_owned` cannot fail.
-            let Ok(permit) = Arc::clone(&permits).acquire_owned().await else {
-                break;
-            };
-
-            let accept = tokio::select! {
+            //
+            // The signal is watched while waiting for the permit as well as
+            // for the peer. At the ceiling with every connection streaming, no
+            // permit comes back until shutdown ends those streams, so a wait
+            // that ignored the signal never ended. Both awaits are
+            // cancel-safe.
+            let (Ok(permit), accept) = (tokio::select! {
                 biased;
                 () = &mut shutdown => break,
-                accept = listener.accept() => accept,
+                next = async {
+                    let permit = Arc::clone(&permits).acquire_owned().await;
+                    (permit, listener.accept().await)
+                } => next,
+            }) else {
+                break;
             };
 
             let (stream, _peer) = match accept {

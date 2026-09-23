@@ -50,9 +50,12 @@ because the client has a versioned dev-dependency on the server, which
 ## v0.13.0 (2026-09-20)
 
 A minor release that makes the event log the record, and spends it on stream
-resumption. Carries three deliberate breaking changes, batched and labelled as
+resumption. Carries nine deliberate breaking changes, batched as
 [STABILITY.md](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md)
-requires. Full detail in
+requires. This page said three until 2026-09-23; eight were labelled in the
+changelog at release, and the ninth, the `#[non_exhaustive]` marking of
+`RetentionPolicy` and `PurgeReport`, shipped under `[Unreleased]` — see the
+correction at the top of CHANGELOG.md's 0.13.0 section. Full detail in
 [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
 
 - **An append-only event log, beside the snapshot.** A task's state is a fold,

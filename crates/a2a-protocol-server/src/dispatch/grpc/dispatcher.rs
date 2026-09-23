@@ -24,11 +24,14 @@ use crate::handler::RequestHandler;
 /// Create via [`GrpcDispatcher::new`] and serve with [`GrpcDispatcher::serve`]
 /// or build a tonic service with [`GrpcDispatcher::into_service`].
 pub struct GrpcDispatcher {
-    handler: Arc<RequestHandler>,
+    pub(super) handler: Arc<RequestHandler>,
     config: GrpcConfig,
     keepalive: Option<(Duration, Duration)>,
     max_connection_age: Option<Duration>,
-    max_connections: Option<usize>,
+    pub(super) max_connections: Option<usize>,
+    pub(super) completion_grace: Duration,
+    pub(super) task_grace: Duration,
+    pub(super) drain_timeout: Duration,
     #[cfg(feature = "grpc-tls")]
     tls: Option<tonic::transport::ServerTlsConfig>,
 }
@@ -43,6 +46,9 @@ impl GrpcDispatcher {
             keepalive: None,
             max_connection_age: None,
             max_connections: None,
+            completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
+            task_grace: crate::serve::DEFAULT_TASK_GRACE,
+            drain_timeout: crate::serve::DEFAULT_DRAIN_TIMEOUT,
             #[cfg(feature = "grpc-tls")]
             tls: None,
         }
@@ -152,18 +158,43 @@ impl GrpcDispatcher {
         self
     }
 
+    /// How long in-flight tasks get to finish on their own once
+    /// [`serve_with_shutdown`](Self::serve_with_shutdown)'s signal fires,
+    /// before they are cancelled. Default
+    /// [`DEFAULT_COMPLETION_GRACE`](crate::serve::DEFAULT_COMPLETION_GRACE);
+    /// the HTTP server's [`ServeConfig::with_completion_grace`](crate::serve::ServeConfig::with_completion_grace)
+    /// is the same setting.
+    #[must_use]
+    pub const fn with_completion_grace(mut self, grace: Duration) -> Self {
+        self.completion_grace = grace;
+        self
+    }
+
+    /// How long cancelled tasks get to act on their cancellation before the
+    /// drain starts. Default [`DEFAULT_TASK_GRACE`](crate::serve::DEFAULT_TASK_GRACE).
+    #[must_use]
+    pub const fn with_task_grace(mut self, grace: Duration) -> Self {
+        self.task_grace = grace;
+        self
+    }
+
+    /// How long [`serve_with_shutdown`](Self::serve_with_shutdown) waits for
+    /// connections to close after the tasks have ended. Default
+    /// [`DEFAULT_DRAIN_TIMEOUT`](crate::serve::DEFAULT_DRAIN_TIMEOUT).
+    #[must_use]
+    pub const fn with_drain_timeout(mut self, timeout: Duration) -> Self {
+        self.drain_timeout = timeout;
+        self
+    }
+
     /// Starts a gRPC server on the given address.
     ///
     /// Blocks until the server shuts down. Uses the configured message
     /// size limits and concurrency settings.
     ///
-    /// It takes no shutdown signal. For a graceful stop, serve
-    /// [`into_service`](Self::into_service) with tonic's own
-    /// `serve_with_incoming_shutdown`, and end the signal future with
-    /// [`RequestHandler::finish_in_flight`](crate::RequestHandler::finish_in_flight):
-    /// tonic waits for in-flight RPCs once the signal completes, and a
-    /// server-streaming RPC finishes only when its task does, so the tasks
-    /// must be cancelled first or that wait never ends.
+    /// It takes no shutdown signal; use
+    /// [`serve_with_shutdown`](Self::serve_with_shutdown) for a graceful
+    /// stop.
     ///
     /// # Errors
     ///
@@ -259,7 +290,7 @@ impl GrpcDispatcher {
     /// there is nothing to reject; the signature stays fallible so the
     /// `serve*` callers are the same in both builds.
     #[cfg_attr(not(feature = "grpc-tls"), allow(clippy::unnecessary_wraps))]
-    fn build_router(&self) -> std::io::Result<tonic::transport::server::Router> {
+    pub(super) fn build_router(&self) -> std::io::Result<tonic::transport::server::Router> {
         let mut server = tonic::transport::Server::builder()
             .concurrency_limit_per_connection(self.config.concurrency_limit);
         if let Some((interval, timeout)) = self.keepalive {
@@ -306,7 +337,10 @@ impl std::fmt::Debug for GrpcDispatcher {
             .field("config", &self.config)
             .field("keepalive", &self.keepalive)
             .field("max_connection_age", &self.max_connection_age)
-            .field("max_connections", &self.max_connections);
+            .field("max_connections", &self.max_connections)
+            .field("completion_grace", &self.completion_grace)
+            .field("task_grace", &self.task_grace)
+            .field("drain_timeout", &self.drain_timeout);
         #[cfg(feature = "grpc-tls")]
         s.field("tls", &self.tls.is_some());
         s.finish()
