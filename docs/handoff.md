@@ -398,13 +398,27 @@ minimal 66 graded, no regressions; extension profile CORE-CAP-004 passes.
 published 0.13.0 with all features: 196 checks pass per crate, no update
 required — which is what exposed N7.
 
-**Landed so far (each fix reproduced first, then mutation-tested):** OW3
+**Landed (each fix reproduced first, then mutation-tested):** OW3
 (`f7956d10`), OW5 with the slimrpc half (`2b1bb80a`), OW7 (`af60cece`), the
 mutation gate's feature flag (N8, `587418fa`), the PostgreSQL health check
-(N5, `d73cf871`), the 0.13.0 CHANGELOG correction (N7, `ff945d2f`) and the
-audit update (`f81b2ed4`). In the working tree, not yet committed: OW6
-(`serve_with_shutdown` for gRPC and WebSocket) and N1 (the HTTP server's
-shutdown at the connection ceiling), waiting on their mutation run.
+(N5, `d73cf871`), the 0.13.0 CHANGELOG correction (N7, `ff945d2f`), N1 — the
+HTTP server's shutdown at the connection ceiling (`50753ef1`) — and OW6,
+`serve_with_shutdown` for gRPC and WebSocket (`e5ee1518`). Audit updates:
+`f81b2ed4` and the commit after `e5ee1518`.
+
+**Verification of record, at `e5ee1518`:** `scripts/preflight.sh --full`
+ran 71 of 71 CI gate commands, all PASS (exit 0). `cargo +nightly clippy
+--workspace --all-targets --all-features` exits 0; `cargo deny check`
+passes. The official a2a-tck at `263b9cf` (upstream `main`, unchanged since
+2026-09-01; the newest tag, `1.0.0.alpha2`, is 14 commits behind it): full
+88 graded, 4 failing = baseline; minimal 66 graded; extension CORE-CAP-004
+passes — identical to `main`. cargo-mutants over the whole branch diff
+(`git diff fa2e901...HEAD`, `--all-features` given to cargo-mutants, live
+PostgreSQL): server 44 mutants, 16 caught, 28 unviable, 0 missed; client 22,
+6 caught, 16 unviable, 0 missed; the slimrpc binding's 5, run separately, 4
+caught, 1 unviable. Most of the unviable are N9's alias replacements and
+`Default::default()` for types with no `Default` — read the OW6 entry in the
+audit before taking "0 missed" as full coverage.
 
 **Lessons from this session, each of which cost something:**
 
@@ -427,10 +441,13 @@ shutdown at the connection ceiling), waiting on their mutation run.
   `--release`, so `target/debug` (12 GB at that point) can be deleted
   mid-run.
 
-**What the next session should do first:** check `git status` — if OW6 and
-N1 are still uncommitted, their tests and CHANGELOG entries are in the tree
-and `/tmp/claude-0/mut-ow6` holds (or held) their mutation run. Then phase 2,
-gate first, as ADR 0013 describes.
+**What the next session should do first:** phase 2, gate first, as
+[ADR 0013](adr/0013-observability.md) describes: an end-to-end test with an
+in-memory span exporter and a manual metric reader that fails on this tree,
+then the work that turns it green. N9 (1,000 `*Result`-alias mutants that
+never compile) is the most consequential open gate gap; measure how many
+survivors spelling those return types as `Result` would surface before
+deciding.
 
 ## In flight outside this repository
 

@@ -37,7 +37,7 @@ stores (`tests/cross_replica_cancel/`).
   that only shutdown could end, shutdown never began. VALIDATED:
   `shutdown_is_seen_at_the_connection_ceiling` in
   `tests/graceful_shutdown_tasks.rs` timed out after 20 s on the unfixed
-  server with the only slot held.
+  server with the only slot held. **[Fixed: `50753ef1`]**
 - **N2 — an OAuth2 token endpoint's 429 or 5xx is classed permanent**
   (Low). `token_error` (`token_provider.rs`) returns `ClientError::Transport`
   for every non-2xx answer, so a busy identity provider fails a task as
@@ -305,6 +305,18 @@ reasons are consulted for `CANCELLED` too; carrying `ErrorInfo` metadata as
 
 ### OW6 — the gRPC and WebSocket dispatchers take no shutdown signal (S8)
 
+**[Fixed: `e5ee1518`]** `serve_with_shutdown(listener, signal)` on both,
+returning `ServeReport`; the book's manual recipe is gone. Mutation testing
+grades less of it than the count suggests: of 30 mutants over the change, 20
+are unviable because cargo-mutants' only mutants for the two
+`serve_with_shutdown` bodies replace the whole function with
+`Default::default()` for types that have none. Those bodies are covered by
+behaviour, not by mutants — cancellation before return, `Canceled` on the
+wire, drained and abandoned counts with one and two stubborn clients, the
+gRPC port refusing peers once accepting stops. One survivor
+(`OpenConnections::count -> 1`) was killed by making the stubborn case two
+clients, checked by applying the mutant by hand.
+
 - **Severity:** Medium.
 - **Evidence:** VALIDATED by reading the code.
   - `dispatch/grpc/dispatcher.rs:171`: `serve(addr)` has no signal
@@ -517,7 +529,7 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 | S5 | High | **There are no delegation helpers.** Forwarding a downstream stream into the upstream queue, rewriting ids, passing cancellation downstream and merging fan-out streams all have to be hand-written: 110 of the 230 lines in the auditor's coordinator. The executor's `queue` is borrowed for `'a`, so spawned fan-out tasks can't write to it, which forces an mpsc relay. No book chapter covers delegation. | VALIDATED |
 | S6 | Medium | **[Fixed: `32ae44b`]** Over REST, a mid-stream error is sent as `event: error` with a bare `{code,message}`. a2a-go's REST stream parser doesn't recognize it, so a Go client gets "unknown stream response type". | CONJECTURED (both sources) |
 | S7 | Medium | **[Fixed: `9ee3cc3`]** The push token header and content type differ from a2a-go. Rust sends `x-a2a-notification-token` / `application/a2a+json`; Go uses `A2A-Notification-Token` / `application/json`. Each side's webhook rejects the other's pushes. The comment at `push/sender.rs:898-903` says official receivers use the X- name, which is not true of a2a-go 2.5.0. | VALIDATED (same webhook) |
-| S8 | Medium | **[Documented only: `1c0af5d` — open work OW6]** Graceful shutdown covers only JSON-RPC and REST. `GrpcDispatcher::serve` and `WebSocketDispatcher::serve` take no shutdown signal, and the gRPC background serve discards its error with `let _ =`. | VALIDATED (code) |
+| S8 | Medium | **[Fixed: `e5ee1518` — was open work OW6]** Graceful shutdown covers only JSON-RPC and REST. `GrpcDispatcher::serve` and `WebSocketDispatcher::serve` take no shutdown signal, and the gRPC background serve discards its error with `let _ =`. | VALIDATED (code) |
 | S9 | Medium | **[Fixed: `3f6f7d3`]** README.md:60 says `shutdown()` reports a queue it had to force-destroy. The field is "always 0" (`handler/shutdown/mod.rs:30`), and every queue is destroyed unconditionally. | VALIDATED |
 | S10 | Medium | `EventEmitter::status(state)` can't carry a progress message. `RequestContext.task_id` is a `TaskId` but `context_id` is a `String`. | VALIDATED (compile) |
 | S11 | Medium | The README's one-line `serve()` is the unhardened path: no connection cap, no header or idle timeout, no shutdown. There is no top-level `max_concurrent_tasks` (per-tenant only). | CONJECTURED (code, but the crate's own docs agree) |
