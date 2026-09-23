@@ -174,13 +174,6 @@ async fn call(addr: std::net::SocketAddr, method: &str) -> serde_json::Value {
     });
     let resp = sender.send_request(req).await.expect("send");
     let bytes = resp.into_body().collect().await.expect("body").to_bytes();
-    // A streaming method answers even its errors as one SSE event; the
-    // JSON-RPC response is that event's `data:`.
-    let text = String::from_utf8_lossy(&bytes);
-    if let Some(data) = text.lines().find_map(|l| l.strip_prefix("data: ")) {
-        return serde_json::from_str(data)
-            .unwrap_or_else(|e| panic!("SSE data was not JSON ({e}): {text}"));
-    }
     serde_json::from_slice(&bytes).unwrap_or_else(|e| {
         panic!(
             "response was not JSON ({e}): {}",

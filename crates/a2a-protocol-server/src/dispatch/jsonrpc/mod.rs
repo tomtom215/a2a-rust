@@ -33,8 +33,7 @@ use crate::streaming::build_sse_response;
 
 use response::{
     error_response, error_response_bytes, extract_headers, json_response, parse_error_response,
-    parse_params, read_body_limited, stream_error_response, success_response,
-    success_response_bytes,
+    parse_params, read_body_limited, success_response, success_response_bytes,
 };
 
 /// JSON-RPC 2.0 request dispatcher.
@@ -90,10 +89,13 @@ impl JsonRpcDispatcher {
     /// SSE (`text/event-stream`). All other methods return JSON.
     ///
     /// JSON-RPC errors are always returned as HTTP 200 with an error body.
-    /// For the two streaming methods that body is itself SSE — one
-    /// `event: error` frame carrying the JSON-RPC error response — even when
-    /// the call fails before its stream starts, because a client reads a
-    /// streaming method's response only as SSE (a2a-go's does).
+    /// For the two streaming methods that includes an error raised before
+    /// the stream starts: it is a plain `application/json` JSON-RPC error
+    /// response, not SSE. The official conformance kit (a2aproject/a2a-tck)
+    /// requires this shape — it treats any `text/event-stream` answer as a
+    /// successful stream (STREAM-SUB-003/004). a2a-go v2.5.0's client reads
+    /// streaming answers only as SSE and so loses these errors; that is
+    /// a2a-go's divergence, pinned by `scripts/go_sdk_interop.sh`.
     pub async fn dispatch(
         &self,
         req: hyper::Request<Incoming>,
@@ -295,9 +297,9 @@ impl JsonRpcDispatcher {
                             // per Section 9.4.2.
                             Some(id.clone()),
                         ),
-                        Err(e) => stream_error_response(id, &e),
+                        Err(e) => error_response(id, &e),
                     },
-                    Err(e) => stream_error_response(id, &e),
+                    Err(e) => error_response(id, &e),
                 };
             }
             _ => {}
@@ -477,7 +479,7 @@ impl JsonRpcDispatcher {
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = match parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req) {
             Ok(p) => p,
-            Err(e) => return stream_error_response(id, &e),
+            Err(e) => return error_response(id, &e),
         };
         match self
             .handler
@@ -492,7 +494,7 @@ impl JsonRpcDispatcher {
                 // JSON-RPC envelope echoing the request id per Section 9.4.2.
                 Some(id.clone()),
             ),
-            Err(e) => stream_error_response(id, &e),
+            Err(e) => error_response(id, &e),
         }
     }
 }

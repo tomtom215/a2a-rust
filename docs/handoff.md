@@ -351,6 +351,23 @@ documented run is 13 of 13 again. Mutation testing over this branch's own
 follow-up commits: 29 mutants, 11 caught, 16 unviable, 2 missed before
 `09b2403`, 0 after.
 
+**What CI found on the PR that local runs did not** (fixed in the commit
+after `c533e5e`):
+
+- **Clippy 1.98 and nightly lints.** CI's stable is 1.98; this environment
+  had 1.94, whose clippy lacks `while_let_loop`. Nightly adds
+  `assert_is_empty` and deprecates `fetch_update`, whose replacement
+  `try_update` is beyond the 1.88 MSRV, so the test store uses a
+  compare-exchange loop instead. Run `rustup update stable` before trusting
+  a local clippy, and `cargo +nightly clippy` too, since the nightly job
+  stops at the first failing crate and hides the rest.
+- **The official a2a-tck rejected the S2 fix.** STREAM-SUB-003 and
+  STREAM-SUB-004 regressed on JSON-RPC, because the TCK reads any
+  `text/event-stream` answer as success. The server's pre-stream error is
+  plain JSON again, and a2a-go's loss of it is pinned. See the audit's OW13.
+  The Go gate alone had graded the S2 fix as correct: a fix aimed at one
+  peer has to pass every conformance suite, not just that peer's.
+
 **What the next session should do first:** watch this branch's pull request
 until `go-sdk-interop`, the mutation gate and the rest of CI are green, and
 fix what goes red. Then work from **Open work** in

@@ -9,9 +9,11 @@
 // server's own tests pass while a Go client — the most common peer a Rust
 // coordinator serves — sees something different:
 //
-//   - a streaming call to an unknown task over JSON-RPC used to come back as a
-//     plain JSON 200 that a2a-go's SSE reader skips, so the Go caller saw an
-//     empty stream and a nil error (audit finding S2);
+//   - a streaming call to an unknown task over JSON-RPC comes back as a
+//     plain JSON 200 that a2a-go's SSE reader skips, so the Go caller sees an
+//     empty stream and a nil error (audit finding S2). That shape is the one
+//     the official a2a-tck requires, so it stays; the JSON-RPC check pins
+//     a2a-go's loss and goes red when a2a-go reads the error;
 //   - push deliveries carried a token header a2a-go does not read (S7);
 //   - an agent card with securityRequirements was unparseable by a2a-go (T1).
 //     This SDK now reads a2a-go's bare-array scopes and writes the spec's
@@ -156,7 +158,7 @@ func main() {
 			s.fail("create client", "%v", err)
 			continue
 		}
-		run(ctx, s, client, hook)
+		run(ctx, s, client, binding, hook)
 		_ = client.Destroy()
 	}
 	finish(s)
@@ -185,7 +187,7 @@ func checkCardSecurity(s *suite, card *a2a.AgentCard) {
 	s.ok("card securityRequirements", fmt.Sprint(card.SecurityRequirements))
 }
 
-func run(ctx context.Context, s *suite, c *a2aclient.Client, hook *webhook) {
+func run(ctx context.Context, s *suite, c *a2aclient.Client, binding a2a.TransportProtocol, hook *webhook) {
 	// ── Unary lifecycle ───────────────────────────────────────────────────
 	res, err := c.SendMessage(ctx, text("hello"))
 	task, isTask := res.(*a2a.Task)
@@ -251,14 +253,24 @@ func run(ctx context.Context, s *suite, c *a2aclient.Client, hook *webhook) {
 	s.expect("CancelTask(missing) -> TaskNotFound", err, a2a.ErrTaskNotFound)
 
 	// S2: the streaming methods' pre-stream errors. Draining to the end and
-	// taking the first error is what a caller does; an empty stream with a
-	// nil error is the failure this pair exists to catch.
+	// taking the first error is what a caller does.
 	orphan := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("continue"))
 	orphan.TaskID = "does-not-exist"
-	s.expect("SendStreamingMessage(missing task) -> TaskNotFound",
-		firstErr(c.SendStreamingMessage(ctx, &a2a.SendMessageRequest{Message: orphan})), a2a.ErrTaskNotFound)
-	s.expect("SubscribeToTask(missing) -> TaskNotFound",
-		firstErr(c.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: "does-not-exist"})), a2a.ErrTaskNotFound)
+	streamErr := firstErrOrEmpty(c.SendStreamingMessage(ctx, &a2a.SendMessageRequest{Message: orphan}))
+	subscribeErr := firstErrOrEmpty(c.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: "does-not-exist"}))
+	if binding == a2a.TransportProtocolJSONRPC {
+		// Over JSON-RPC this server answers a pre-stream error as a plain
+		// JSON-RPC error body, the shape the official a2a-tck requires
+		// (STREAM-SUB-003/004). a2a-go v2.5.0's client reads a streaming
+		// answer only as SSE, so it sees an empty stream and no error. That is
+		// a2a-go's to fix; pinned here so the day it is fixed this goes red
+		// and the strict expectation is restored.
+		s.expectLostByGo("SendStreamingMessage(missing task) [a2a-go drops it]", streamErr)
+		s.expectLostByGo("SubscribeToTask(missing) [a2a-go drops it]", subscribeErr)
+	} else {
+		s.expect("SendStreamingMessage(missing task) -> TaskNotFound", streamErr.err, a2a.ErrTaskNotFound)
+		s.expect("SubscribeToTask(missing) -> TaskNotFound", subscribeErr.err, a2a.ErrTaskNotFound)
+	}
 
 	// ── Streaming ─────────────────────────────────────────────────────────
 	events, last, err := drain(c.SendStreamingMessage(ctx, text("stream me")))
@@ -352,13 +364,37 @@ func startSlow(ctx context.Context, c *a2aclient.Client, prompt string) (a2a.Tas
 	return "", errors.New("stream ended before naming a task")
 }
 
-func firstErr(seq func(func(a2a.Event, error) bool)) error {
+// streamOutcome is what draining a stream to its first error saw.
+type streamOutcome struct {
+	events int
+	err    error
+}
+
+func firstErrOrEmpty(seq func(func(a2a.Event, error) bool)) streamOutcome {
+	var out streamOutcome
 	for _, err := range seq {
 		if err != nil {
-			return err
+			out.err = err
+			return out
 		}
+		out.events++
 	}
-	return nil
+	return out
+}
+
+// expectLostByGo passes only on a2a-go's known behaviour for a JSON-RPC
+// pre-stream error: no events and no error. A TaskNotFound means a2a-go now
+// reads the error, which is the fix this pin waits for; anything else is a
+// real failure.
+func (s *suite) expectLostByGo(name string, got streamOutcome) {
+	switch {
+	case got.events == 0 && got.err == nil:
+		s.ok(name, "empty stream, nil error (known a2a-go divergence)")
+	case errors.Is(got.err, a2a.ErrTaskNotFound):
+		s.fail(name, "a2a-go now reports TaskNotFound: restore the strict expectation for JSON-RPC")
+	default:
+		s.fail(name, "events=%d err=%v", got.events, got.err)
+	}
 }
 
 func drain(seq func(func(a2a.Event, error) bool)) (int, a2a.Event, error) {

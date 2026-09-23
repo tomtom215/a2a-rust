@@ -223,21 +223,30 @@ The SSE parser includes safety limits:
 
 A streaming call can fail before its stream starts (unknown task, invalid
 params, streaming not advertised) or partway through (an executor failure, the
-`streamLagged` signal). Either way the server writes the error **inside** the
-SSE body as one `event: error` frame and then closes it, because a client may
-read a streaming response only as SSE — a2a-go's does, and a plain JSON body
-reached it as zero events and no error.
+`streamLagged` signal).
+
+**Before the stream starts**, the error is not SSE:
+
+- over JSON-RPC it is a plain `application/json` JSON-RPC error response,
+  HTTP 200;
+- over HTTP+JSON it is an HTTP error status with a `google.rpc.Status` body.
+
+The official conformance kit (a2aproject/a2a-tck) requires the JSON-RPC shape,
+because it reads any `text/event-stream` answer as a successful stream. One
+peer loses it: a2a-go v2.5.0's client reads a streaming answer only as SSE, so
+over JSON-RPC it sees an empty stream and no error. A Go client that needs
+typed errors from a stream that fails to open should use HTTP+JSON or gRPC.
+
+**Partway through**, the server writes the error inside the SSE body as one
+`event: error` frame, then closes it:
 
 | Binding | Error frame `data:` |
 |---|---|
 | JSON-RPC | the JSON-RPC error response, echoing the request id: `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,…}}` |
 | HTTP+JSON | a `google.rpc.Status` (§11.6): `{"error":{"code":404,"status":"NOT_FOUND","message":…,"details":[…]}}`; `A2aError::data` rides as a flattened `google.protobuf.Struct` detail |
 
-Over HTTP+JSON a refusal *before* the stream starts is still an HTTP error
-status with the same `google.rpc.Status` body.
-
 This client accepts every shape a peer sends: a JSON-RPC refusal as SSE, as a
-plain JSON body (the Python SDK's server, and this one through 0.13), or as an
+plain JSON body (this server, and the Python SDK's), or as an
 HTTP status all fail the call itself with `ClientError::Protocol`. The one
 exception is a peer that opens a live, chunked stream and then sends the error
 as its first frame (a2a-go's server): that cannot be told from a stream that

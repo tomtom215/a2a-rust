@@ -7,11 +7,12 @@
 //! error, whichever of the three wire shapes carried it.
 //!
 //! - **Plain JSON** (`application/json` 200): what this repository's server
-//!   sent before it moved these errors into the event stream, and what the
-//!   Python SDK's server still sends.
+//!   and the Python SDK's server send, and the shape the official a2a-tck
+//!   requires (it reads any `text/event-stream` answer as success).
 //! - **Bounded SSE** (`text/event-stream` with a `Content-Length`, one
-//!   `event: error` frame): what this repository's server sends now, so that
-//!   a client reading the body only as SSE — a2a-go's — sees the error.
+//!   `event: error` frame): what this repository's server briefly sent
+//!   (`0a076e1`, reverted after the official TCK rejected it), kept as a
+//!   shape any server may send.
 //! - **Open SSE** (chunked, `data:` only): what a2a-go's server sends. It
 //!   cannot be told apart from a stream that has started without waiting for
 //!   an event, so the error arrives as the stream's first item.

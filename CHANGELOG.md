@@ -218,11 +218,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and then think. If you shortened the connect timeout to fail fast, also set
   `with_stream_first_event_timeout`.
 
-- **Wire: a JSON-RPC streaming call refused before its stream starts is
-  answered as `text/event-stream` with one `event: error` frame**, not a plain
-  JSON 200. a2a-go's client reads only SSE frames from a streaming call and
-  reported "task not found" as an empty stream with no error. This client
-  accepts both forms.
+- **The JSON-RPC client reads a streaming call's pre-stream error in either
+  shape**: the plain JSON-RPC error body this server sends, or one SSE frame
+  carrying it, which is what a2a-go's server sends. Both become the same
+  `ClientError::Protocol`. The server's own shape is unchanged: a plain JSON
+  200, which the official a2a-tck requires (STREAM-SUB-003/004). a2a-go
+  v2.5.0's client reads streaming answers only as SSE, so it still loses
+  these errors. That is a2a-go's to fix, and `go-sdk-interop` pins it.
 
 - **Wire: an HTTP+JSON stream's error frame is a `google.rpc.Status`**
   (`{"error":{code,status,message,details}}`), the error's `data` a flat

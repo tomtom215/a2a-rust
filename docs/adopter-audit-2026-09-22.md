@@ -12,7 +12,7 @@ reported; the status section says what has happened to them since.
 ## Status
 
 **Phase 1 — fixed on `claude/pensive-allen-socw7b`**, each with a test that
-failed before its fix: T1 (read side), S2, S6, S7, O16 (push URL logging), S1,
+failed before its fix: T1 (read side), S6, S7, O16 (push URL logging), S1,
 S9, S3, C1, C2, C3, C4, C6, C8, C9, C10, C11, C15. The CHANGELOG's
 `[Unreleased]` section describes each, and what it trades.
 
@@ -310,13 +310,48 @@ Section 7 gives the order. Every row below the Status section that has no
 | 3 — coordinator developer experience | S4, S5, S10, S11, C7, C18, K2, and OW11. C4 (`From<ClientError>`), listed in section 7's phase 3, was done in phase 1 |
 | 4 — signing and types | T2–T7, K1 |
 | 5 — docs checked against code | C5, T8, S12, S13, K3, K4, and C19's README overstatement |
-| Open work above | T1 → OW1, S8 → OW6, C16 → OW5, C20 → OW9 |
+| Open work above | T1 → OW1, S2 → OW13, S8 → OW6, C16 → OW5, C20 → OW9 |
 | Unscheduled | S14, S15, S16, C12, C13, C14, C17, C19 (retry behaviour), C21, T9, T10, T11, T12 |
 
 The unscheduled rows are real and mostly Low. C12 (agent-card URLs used
 unchecked — SSRF, and bearer tokens sent over a downgraded scheme) and C14
 (one slow WebSocket consumer blocks the socket) are the two Medium ones worth
 scheduling first.
+
+### OW13 — a2a-go's client loses JSON-RPC streaming pre-stream errors (S2)
+
+- **Severity:** Medium for a Go client calling this server over JSON-RPC.
+  REST and gRPC are unaffected: a Go client gets a typed `TaskNotFound` on
+  both, and the interop gate checks that.
+- **What happened:** phase 1 first "fixed" S2 in `0a076e1` by sending the
+  error as one SSE `event: error` frame, which a2a-go reads. The official
+  conformance kit then failed on PR #141 with a REGRESSION on STREAM-SUB-003
+  and STREAM-SUB-004 over JSON-RPC.
+  - The TCK's JSON-RPC client (`tck/transport/jsonrpc_client.py`,
+    `_call_streaming`) reads any `text/event-stream` answer as a successful
+    stream.
+  - a2a-go's client (`a2aclient/jsonrpc.go`, `sendStreamingRequest` and
+    `parseSSEStream`) reads only SSE `data:` lines. Given a non-200 status, it
+    returns an untyped "unexpected HTTP status" error and discards the body.
+  - So no single response satisfies both, and a non-200 status would also
+    break this crate's own client, released versions included, which turn a
+    non-2xx streaming answer into `UnexpectedStatus`.
+  - This repository treats the official suite as authoritative where the two
+    overlap (`docs/official-tck-findings.md`), so the server sends the plain
+    JSON 200 again. With that, the official TCK run locally reports "failures
+    exactly match the baseline; no regressions".
+- **What stays from phase 1:** this crate's client reads both shapes
+  (`crates/a2a-protocol-client/tests/jsonrpc_stream_refusal_tests.rs`), so it
+  works against a2a-go's server as well as this one.
+- **Pinned:** `itk/interop/go-sdk-client`'s `expectLostByGo` passes only
+  while a2a-go shows an empty stream with a nil error over JSON-RPC. It goes
+  red, saying to restore the strict check, once a2a-go reports
+  `TaskNotFound`.
+- **Next step:** report upstream, asking a2a-go's JSON-RPC client to parse a
+  non-SSE `application/json` body as a JSON-RPC response, as the TCK's client
+  and the Python SDK's do.
+- **For an adopter today:** a Go client calling a Rust coordinator should use
+  HTTP+JSON or gRPC if it needs typed errors from a stream that fails to open.
 
 ## How the evidence was produced
 
@@ -383,7 +418,7 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 | # | Sev | Finding | Evidence |
 |---|---|---|---|
 | S1 | High | **[Fixed: `3f6f7d3`, `8161455`, `09b2403`]** **The documented graceful shutdown leaves downstream work running.** SIGINT during a streamed delegation followed the documented order. The 15 s socket drain (`serve/graceful/mod.rs:117`) ran before any task was cancelled. `handler.shutdown()` then cancels tokens but doesn't wait for executors. Result: exit after 16 s with `abandoned: 1`, no terminal event upstream, and no cancel sent to either Go task. | VALIDATED (live, a2a-go workers) [re-checked the constant] |
-| S2 | High | **[Fixed: `0a076e1`]** **Over JSON-RPC, a streaming call's pre-stream error is sent as plain `application/json` 200.** a2a-go's client only reads `data:` lines, so it sees `events=0 err=<nil>`. Go clients silently lose "task not found" on `SendStreamingMessage` and `SubscribeToTask`. REST and gRPC are fine. | VALIDATED (Go client) |
+| S2 | High | **[Reverted on the server — a2a-go's to fix: OW13]** **Over JSON-RPC, a streaming call's pre-stream error is sent as plain `application/json` 200.** a2a-go's client only reads `data:` lines, so it sees `events=0 err=<nil>`. Go clients silently lose "task not found" on `SendStreamingMessage` and `SubscribeToTask`. REST and gRPC are fine. | VALIDATED (Go client) |
 | S3 | High | **[Fixed: `c597a56`, `4874074` — residual gaps are open work OW2]** **Possible cross-replica cancel race.** CancelTask on replica B writes Canceled. Replica A's background processor still holds its in-memory `last_task`, and Postgres `save_status_delta` runs an unconditional `UPDATE … WHERE id = $4` (`store/postgres_store/store_impl.rs:241-246`). The client is told Canceled and the task ends Completed. Separately, `tests/multi_replica.rs:530-548` shows two replicas both accepting a continuation of the same task, which `horizontal-scaling.md` does not mention. | Unconditional UPDATE VALIDATED [re-checked]; race CONJECTURED |
 | S4 | High | **`agent_executor!` can't be used by an executor that has state** (it hides `self`, `E0424`). Every coordinator has to write out the full `Pin<Box<dyn Future…>>` signature. | VALIDATED (compile) |
 | S5 | High | **There are no delegation helpers.** Forwarding a downstream stream into the upstream queue, rewriting ids, passing cancellation downstream and merging fan-out streams all have to be hand-written: 110 of the 230 lines in the auditor's coordinator. The executor's `queue` is borrowed for `'a`, so spawned fan-out tasks can't write to it, which forces an mpsc relay. No book chapter covers delegation. | VALIDATED |
