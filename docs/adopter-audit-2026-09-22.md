@@ -211,7 +211,15 @@ stores (`tests/cross_replica_cancel/`).
   hygiene). `cargo deny check` on `main` passes with a warning that the
   `Unicode-DFS-2016` allowance matches no crate. An allowance with nothing
   behind it widens the policy for a future dependency without anyone
-  deciding to. VALIDATED (`cargo deny check`, exit 0 with the warning). Open.
+  deciding to. VALIDATED (`cargo deny check`, exit 0 with the warning). The
+  slimrpc binding's own policy had the same shape: `CDLA-Permissive-2.0`,
+  which the root tree needs for `webpki-roots`, matched nothing there.
+  **[Fixed on this branch: both allowances removed, and both policies set
+  `unused-allowed-license = "deny"`. Probed: re-adding `Unicode-DFS-2016` to
+  the root policy fails `cargo deny check licenses` with
+  `license-not-encountered`, exit 4. The deny jobs are marketplace actions
+  `prove_gates_fail.sh` cannot inject into (`ci_gate_audit.sh` says why), so
+  the probe is the evidence.]**
 - **N18 — `WebSocketTransport` never reconnects** (Low, client; found
   while fixing N13). Once its socket drops, `closed` stays set and every
   later call fails at once with a non-retryable `Transport("WebSocket

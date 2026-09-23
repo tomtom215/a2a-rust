@@ -61,10 +61,15 @@ all-features        = false
 no-default-features = false
 
 # ---------------------------------------------------------------------------
-# License policy — the root allowlist, plus one
+# License policy — the root allowlist, plus one, less one
 # ---------------------------------------------------------------------------
 [licenses]
 confidence-threshold = 0.8
+# As in the root policy: an allowance nothing in this tree uses fails the
+# check. `CDLA-Permissive-2.0`, which the root tree needs for
+# `webpki-roots` and `webpki-root-certs`, matched nothing here and is left
+# out (audit N17).
+unused-allowed-license = "deny"
 
 allow = [
     "Apache-2.0",
@@ -80,7 +85,6 @@ allow = [
     "Unicode-3.0",
     "Zlib",
     "CC0-1.0",
-    "CDLA-Permissive-2.0",
 ]
 
 # ---------------------------------------------------------------------------
