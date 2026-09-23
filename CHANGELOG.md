@@ -61,14 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TerminalStateConflict` in its data. Code that "reopens" a finished task
   through a shipped store now gets that error. See **Fixed** for why.
 
-- **`RetentionPolicy` and `PurgeReport` are `#[non_exhaustive]`.** Construct a
-  policy with `RetentionPolicy::new` and the `with_*` setters, and read a
-  report's fields rather than destructuring it exhaustively. `STABILITY.md` §4
-  lists the configuration structs that carry this marking so a new option is
-  additive; `RetentionPolicy` was missed by the 0.12.0 conversion that
-  introduced the rule, and the list said otherwise until now. Marking both is
-  what makes the two additions below — and the next one — non-breaking.
-
 ### Added
 
 - **A Go SDK interop gate in CI** (`go-sdk-interop`, `scripts/go_sdk_interop.sh`).
@@ -121,79 +113,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and **`push::webhook::notification_token`**, which reads the push token under
   either header name.
 
-- **`RetentionPolicy::idempotency_key_max_age`** (default 24 hours) and
-  **`TaskStoreConfig::idempotency_key_ttl`** (default 24 hours), with
-  `DEFAULT_IDEMPOTENCY_KEY_MAX_AGE` and `DEFAULT_IDEMPOTENCY_KEY_TTL`.
-  `PurgeReport::idempotency_keys_deleted` reports what a sweep removed.
-
-  **Behaviour change, and it is a trade rather than a pure fix.** Nothing ever
-  removed an idempotency key. A key is released when the send holding it
-  fails, and otherwise kept deliberately — it has to outlive the task it names
-  or a late retry would execute the send a second time — so neither the
-  retention sweep, which deletes tasks, nor the in-memory store's `task_ttl`
-  and `max_capacity`, which bound tasks, touched the key index. A busy
-  deployment accumulated one row per keyed send for the life of the database
-  or the process.
-
-  What expiring a key costs is exactly what the key was preventing: a retry
-  arriving *after* the key expires re-executes the send. That is inherent to
-  any expiring idempotency key, and it is why the default is a full day rather
-  than something tidier — it has to exceed the longest window in which a client
-  might still retry, and this SDK's own `RetryPolicy` is bounded in the low
-  tens of seconds.
-
-  The sweep will not delete a key younger than `terminal_max_age`
-  (`effective_idempotency_key_max_age` clamps it). A key expiring while the
-  task it names is still retained does not produce a replay and does not
-  produce a clear "that task is gone" — it produces a *second* task alongside
-  the first, and the caller ends up with two ids for one logical send. The
-  invariant holds by construction rather than by the operator having read the
-  documentation.
-
-  Set either to `None` to keep the previous behaviour. The four SQL tables
-  already carried a `created_at` column, defaulted and never read, so no
-  migration is needed.
-
-
-- **`RequestHandlerBuilder::with_inbound_trace_policy`** and
-  `InboundTracePolicy` (`Continue` — the default and the previous behaviour —
-  `Restart`, `Drop`). The inbound `traceparent` is joined while the
-  `CallContext` is built, which is *before* the interceptor chain, which is
-  where authentication happens: so on a public endpoint the peer choosing the
-  `trace-id` and the sampling bit is, at that moment, anonymous. W3C Trace
-  Context §7.2 names the consequences — forged `trace-id` collisions, and an
-  attacker deciding what the operator's tracing vendor is billed for — and
-  §3.4 names the remedy. Per handler rather than per process, so one process
-  serving both a public front gate and an internal endpoint can hold a
-  different policy on each.
-
-- **`TaskStore::earliest_event_seq` and `TaskStore::event_log_covers`**, both
-  defaulted, so an out-of-tree store compiles unchanged (`STABILITY.md` §4).
-  `event_log_covers` is provided rather than implemented per store, so the
-  comparison and its off-by-one live in one place. A resubscribe naming a
-  position the log has dropped is now served the snapshot rather than a replay
-  that silently begins later than asked.
-
-- **`TaskStoreConfig::max_events_per_task`** (default `Some(512)`) and
-  `DEFAULT_MAX_EVENTS_PER_TASK`. **Behaviour change:** the in-memory event log
-  was unbounded and is now bounded.
-
-- **`metrics::event_append_error`** with `position_conflict` and
-  `task_absent`, both reported under `persistence_operation::EVENT_APPEND`
-  alongside a warning. A collision whose stored payload matches what was
-  offered is a replay rather than a loss and is deliberately not counted.
-
-- **`metrics::MetricsHandle`**, and `with_metrics` on the five directly
-  constructed stores, including `TenantAwareInMemoryTaskStore`, which hands it
-  to every partition it creates.
-
-- **`InMemoryTaskStore::is_prunable` and `idempotency_key_count`.**
-
-- **`CHECK (seq > 0)`** on `task_events` and `tenant_task_events`. Postgres
-  migration 6 adds it to existing databases. SQLite cannot — `ALTER TABLE` has
-  no `ADD CONSTRAINT`, so an existing SQLite database keeps the unconstrained
-  table; a database the runner builds from scratch gets it.
-
 - **`TaskStore::save_appending_history`**, which persists a task whose history
   grew by the messages a turn added, without the caller shipping the history
   it has already stored. Additive: the default reads the record, appends,
@@ -213,13 +132,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3.2x → 2.1x. It does **not** make a send O(1);
   `docs/swarm-scale-findings.md` has the per-stage attribution showing what
   still dominates.
-
-- **A `trace_context` fuzz target**, and `scripts/check_fuzz_matrix.py`, which
-  fails when a fuzz target exists but no runner executes it. A target reaches
-  CI through three files and only the workflow matrix has no build error
-  behind it; `trace_context` itself shipped registered in `fuzz/Cargo.toml`
-  and absent from the matrix, which is the drift the gate caught on its first
-  run.
 
 ### Changed
 
@@ -388,6 +300,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only; no code changed.
 
 
+## [0.13.0] - 2026-09-20
+
+### Correction, 2026-09-23: nineteen entries that shipped in 0.13.0
+
+The `v0.13.0` tag is on `391f0df`, the merge of #138, not on the release
+preparation that wrote this section. The crates published as 0.13.0 were
+built from that tag (their `.cargo_vcs_info.json` says so), so they carry
+#138's changes — but at that commit this file still listed them under
+`[Unreleased]`, and until today it went on doing so. Moved here verbatim; the
+GitHub release notes for 0.13.0, extracted from this section at the time, do
+not include them. Found by `cargo semver-checks` reporting nothing to do for
+a tree whose `[Unreleased]` claimed a breaking change (audit N7).
+
+#### Breaking Changes
+
+- **`RetentionPolicy` and `PurgeReport` are `#[non_exhaustive]`.** Construct a
+  policy with `RetentionPolicy::new` and the `with_*` setters, and read a
+  report's fields rather than destructuring it exhaustively. `STABILITY.md` §4
+  lists the configuration structs that carry this marking so a new option is
+  additive; `RetentionPolicy` was missed by the 0.12.0 conversion that
+  introduced the rule, and the list said otherwise until now. Marking both is
+  what makes the two additions below — and the next one — non-breaking.
+
+#### Added
+
+- **`RetentionPolicy::idempotency_key_max_age`** (default 24 hours) and
+  **`TaskStoreConfig::idempotency_key_ttl`** (default 24 hours), with
+  `DEFAULT_IDEMPOTENCY_KEY_MAX_AGE` and `DEFAULT_IDEMPOTENCY_KEY_TTL`.
+  `PurgeReport::idempotency_keys_deleted` reports what a sweep removed.
+
+  **Behaviour change, and it is a trade rather than a pure fix.** Nothing ever
+  removed an idempotency key. A key is released when the send holding it
+  fails, and otherwise kept deliberately — it has to outlive the task it names
+  or a late retry would execute the send a second time — so neither the
+  retention sweep, which deletes tasks, nor the in-memory store's `task_ttl`
+  and `max_capacity`, which bound tasks, touched the key index. A busy
+  deployment accumulated one row per keyed send for the life of the database
+  or the process.
+
+  What expiring a key costs is exactly what the key was preventing: a retry
+  arriving *after* the key expires re-executes the send. That is inherent to
+  any expiring idempotency key, and it is why the default is a full day rather
+  than something tidier — it has to exceed the longest window in which a client
+  might still retry, and this SDK's own `RetryPolicy` is bounded in the low
+  tens of seconds.
+
+  The sweep will not delete a key younger than `terminal_max_age`
+  (`effective_idempotency_key_max_age` clamps it). A key expiring while the
+  task it names is still retained does not produce a replay and does not
+  produce a clear "that task is gone" — it produces a *second* task alongside
+  the first, and the caller ends up with two ids for one logical send. The
+  invariant holds by construction rather than by the operator having read the
+  documentation.
+
+  Set either to `None` to keep the previous behaviour. The four SQL tables
+  already carried a `created_at` column, defaulted and never read, so no
+  migration is needed.
+
+- **`RequestHandlerBuilder::with_inbound_trace_policy`** and
+  `InboundTracePolicy` (`Continue` — the default and the previous behaviour —
+  `Restart`, `Drop`). The inbound `traceparent` is joined while the
+  `CallContext` is built, which is *before* the interceptor chain, which is
+  where authentication happens: so on a public endpoint the peer choosing the
+  `trace-id` and the sampling bit is, at that moment, anonymous. W3C Trace
+  Context §7.2 names the consequences — forged `trace-id` collisions, and an
+  attacker deciding what the operator's tracing vendor is billed for — and
+  §3.4 names the remedy. Per handler rather than per process, so one process
+  serving both a public front gate and an internal endpoint can hold a
+  different policy on each.
+
+- **`TaskStore::earliest_event_seq` and `TaskStore::event_log_covers`**, both
+  defaulted, so an out-of-tree store compiles unchanged (`STABILITY.md` §4).
+  `event_log_covers` is provided rather than implemented per store, so the
+  comparison and its off-by-one live in one place. A resubscribe naming a
+  position the log has dropped is now served the snapshot rather than a replay
+  that silently begins later than asked.
+
+- **`TaskStoreConfig::max_events_per_task`** (default `Some(512)`) and
+  `DEFAULT_MAX_EVENTS_PER_TASK`. **Behaviour change:** the in-memory event log
+  was unbounded and is now bounded.
+
+- **`metrics::event_append_error`** with `position_conflict` and
+  `task_absent`, both reported under `persistence_operation::EVENT_APPEND`
+  alongside a warning. A collision whose stored payload matches what was
+  offered is a replay rather than a loss and is deliberately not counted.
+
+- **`metrics::MetricsHandle`**, and `with_metrics` on the five directly
+  constructed stores, including `TenantAwareInMemoryTaskStore`, which hands it
+  to every partition it creates.
+
+- **`InMemoryTaskStore::is_prunable` and `idempotency_key_count`.**
+
+- **`CHECK (seq > 0)`** on `task_events` and `tenant_task_events`. Postgres
+  migration 6 adds it to existing databases. SQLite cannot — `ALTER TABLE` has
+  no `ADD CONSTRAINT`, so an existing SQLite database keeps the unconstrained
+  table; a database the runner builds from scratch gets it.
+
+- **A `trace_context` fuzz target**, and `scripts/check_fuzz_matrix.py`, which
+  fails when a fuzz target exists but no runner executes it. A target reaches
+  CI through three files and only the workflow matrix has no build error
+  behind it; `trace_context` itself shipped registered in `fuzz/Cargo.toml`
+  and absent from the matrix, which is the drift the gate caught on its first
+  run.
+
+#### Fixed
+
 - **`TraceContext::parse` could abort the process.** A `traceparent` whose
   55th byte falls inside a multi-byte character panicked, and the root
   manifest sets `panic = "abort"`, so a peer-supplied header on the public
@@ -431,9 +449,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   live index, and pruning it discarded that index — so the next retry carrying
   one of those keys found no claim and executed the send a second time, which
   is the one outcome a key exists to prevent.
-
-
-## [0.13.0] - 2026-09-20
 
 ### Breaking Changes
 
