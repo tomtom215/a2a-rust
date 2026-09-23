@@ -63,6 +63,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`GrpcDispatcher::serve_with_shutdown` and
+  `WebSocketDispatcher::serve_with_shutdown`**, with `with_completion_grace`,
+  `with_task_grace` and `with_drain_timeout` on both dispatchers (defaults
+  `DEFAULT_COMPLETION_GRACE`, `DEFAULT_TASK_GRACE`, `DEFAULT_DRAIN_TIMEOUT`).
+  Both take a bound listener and a signal and return the same `ServeReport` as
+  `Server::serve_with_shutdown`, in the same order: stop accepting, end the
+  tasks in flight, then drain. Until now neither dispatcher took a signal, so
+  a gRPC or WebSocket deployment had to assemble the sequence by hand or
+  orphan its delegations on shutdown (audit S8). Two differences follow from
+  the transports: gRPC connections are sent `GOAWAY` as soon as accepting
+  stops, so they take no new calls during the completion window; and each
+  WebSocket connection, once the tasks have ended, finishes the requests it
+  has read and is closed with a Close frame. The gRPC server's own error is
+  returned rather than discarded.
+
 - **A Go SDK interop gate in CI** (`go-sdk-interop`, `scripts/go_sdk_interop.sh`).
   The official Go SDK's client against this server, and this client against an
   a2a-go server, over JSON-RPC, HTTP+JSON and gRPC. Before it, a2a-go ran in CI

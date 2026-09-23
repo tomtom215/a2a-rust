@@ -39,14 +39,45 @@ impl BoundedIncoming {
     /// `None` is unbounded — `Semaphore::MAX_PERMITS`, the same spelling of
     /// "no ceiling" the WebSocket dispatcher uses.
     pub(super) fn new(listener: TcpListener, max_connections: Option<usize>) -> Self {
-        Self {
+        Self::counted(listener, max_connections).0
+    }
+
+    /// [`new`](Self::new), and a counter of the connections still being
+    /// served, for a shutdown report.
+    ///
+    /// Every served connection holds one permit until tonic drops its socket,
+    /// so the count is the permits out. Exact once this stream has been
+    /// dropped; while it lives, the one it holds for its next accept is
+    /// counted too.
+    pub(super) fn counted(
+        listener: TcpListener,
+        max_connections: Option<usize>,
+    ) -> (Self, OpenConnections) {
+        let capacity = max_connections.unwrap_or(Semaphore::MAX_PERMITS);
+        let limiter = Arc::new(Semaphore::new(capacity));
+        let open = OpenConnections {
+            limiter: Arc::clone(&limiter),
+            capacity,
+        };
+        let this = Self {
             listener,
-            limiter: Arc::new(Semaphore::new(
-                max_connections.unwrap_or(Semaphore::MAX_PERMITS),
-            )),
+            limiter,
             permit: None,
             acquiring: None,
-        }
+        };
+        (this, open)
+    }
+}
+
+/// See [`BoundedIncoming::counted`].
+pub(super) struct OpenConnections {
+    limiter: Arc<Semaphore>,
+    capacity: usize,
+}
+
+impl OpenConnections {
+    pub(super) fn count(&self) -> usize {
+        self.capacity - self.limiter.available_permits()
     }
 }
 
