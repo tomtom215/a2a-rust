@@ -182,9 +182,10 @@ async fn a_refused_write_supersedes_the_run() {
     assert_eq!(f.pushed(), vec![TaskState::Canceled], "pushed once");
     assert_eq!(run.last_task.status.state, TaskState::Canceled, "adopted");
 
-    let ticket = f.gate.arm(2).expect("gate open");
+    let mut ticket = f.gate.arm(2).expect("gate open");
     run.handle(Ok(status(2, TaskState::Completed))).await;
-    let verdict = ticket.await.expect("answered");
+
+    let verdict = ticket.try_recv().expect("answered");
     assert_eq!(state_of(&verdict), Some(TaskState::Canceled));
 
     run.handle(Ok(artifact(3))).await;
@@ -208,10 +209,10 @@ async fn a_refused_terminal_event_is_answered_and_logged_as_the_stored_state() {
     let id = TaskId::new("t");
     let mut run = f.processor(&id);
 
-    let ticket = f.gate.arm(4).expect("gate open");
+    let mut ticket = f.gate.arm(4).expect("gate open");
     run.handle(Ok(status(4, TaskState::Completed))).await;
     assert_eq!(
-        state_of(&ticket.await.expect("answered")),
+        state_of(&ticket.try_recv().expect("answered")),
         Some(TaskState::Canceled)
     );
     assert_eq!(f.logged().await, vec![(4, Some(TaskState::Canceled))]);
@@ -228,10 +229,10 @@ async fn a_persisted_terminal_event_is_answered_with_itself() {
     let id = TaskId::new("t");
     let mut run = f.processor(&id);
 
-    let ticket = f.gate.arm(1).expect("gate open");
+    let mut ticket = f.gate.arm(1).expect("gate open");
     run.handle(Ok(status(1, TaskState::Completed))).await;
     assert_eq!(
-        state_of(&ticket.await.expect("answered")),
+        state_of(&ticket.try_recv().expect("answered")),
         Some(TaskState::Completed)
     );
     assert_eq!(f.logged().await, vec![(1, Some(TaskState::Completed))]);
@@ -260,15 +261,44 @@ async fn a_terminal_event_that_was_not_persisted_is_still_answered() {
     let mut run = f.processor(&id);
     run.last_task.status = TaskStatus::new(TaskState::Canceled);
 
-    let ticket = f.gate.arm(1).expect("gate open");
+    let mut ticket = f.gate.arm(1).expect("gate open");
     run.handle(Ok(status(1, TaskState::Canceled))).await;
     assert_eq!(
-        state_of(&ticket.await.expect("answered")),
+        state_of(&ticket.try_recv().expect("answered")),
         Some(TaskState::Canceled)
     );
     assert!(!f.cancel.is_cancelled(), "a repeat is not a conflict");
     assert!(f.pushed().is_empty());
     assert_eq!(f.logged().await, vec![(1, Some(TaskState::Canceled))]);
+
+    // Nothing was pushed for it, so a later refusal still owes webhooks the
+    // terminal state.
+    run.handle(Ok(status(2, TaskState::Working))).await;
+    assert_eq!(f.pushed(), vec![TaskState::Canceled]);
+}
+
+/// Only a *terminal* status this processor pushed stands in for the
+/// superseding one: an ordinary persisted update before the refusal does not.
+#[tokio::test]
+async fn a_persisted_running_update_does_not_count_as_the_terminal_push() {
+    let f = Fixture::new(TaskState::Working).await;
+    let id = TaskId::new("t");
+    let mut run = f.processor(&id);
+
+    run.handle(Ok(status(1, TaskState::Working))).await;
+    assert_eq!(f.pushed(), vec![TaskState::Working]);
+
+    // Another replica cancels.
+    f.store
+        .save(&task(TaskState::Canceled))
+        .await
+        .expect("cancel elsewhere");
+    run.handle(Ok(artifact(2))).await;
+    assert_eq!(
+        f.pushed(),
+        vec![TaskState::Working, TaskState::Canceled],
+        "webhooks hear how the task ended"
+    );
 }
 
 /// An executor that panics on a task another writer already finished
@@ -326,10 +356,10 @@ async fn a_refusal_is_trusted_over_a_stale_read() {
         Some(&f.gate),
     );
 
-    let ticket = f.gate.arm(1).expect("gate open");
+    let mut ticket = f.gate.arm(1).expect("gate open");
     run.handle(Ok(status(1, TaskState::Completed))).await;
     assert_eq!(
-        state_of(&ticket.await.expect("answered")),
+        state_of(&ticket.try_recv().expect("answered")),
         Some(TaskState::Canceled)
     );
     assert_eq!(run.last_task.status.state, TaskState::Canceled);

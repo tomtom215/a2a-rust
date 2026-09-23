@@ -138,16 +138,16 @@ mod tests {
     #[tokio::test]
     async fn a_verdict_reaches_the_ticket_armed_for_its_seq() {
         let gate = TerminalGate::default();
-        let first = gate.arm(1).expect("open gate arms");
-        let second = gate.arm(2).expect("open gate arms");
+        let mut first = gate.arm(1).expect("open gate arms");
+        let mut second = gate.arm(2).expect("open gate arms");
         gate.resolve(2, status(TaskState::Canceled));
         gate.resolve(1, status(TaskState::Completed));
         assert_eq!(
-            state_of(&first.await.expect("resolved")),
+            state_of(&first.try_recv().expect("resolved")),
             Some(TaskState::Completed)
         );
         assert_eq!(
-            state_of(&second.await.expect("resolved")),
+            state_of(&second.try_recv().expect("resolved")),
             Some(TaskState::Canceled)
         );
     }
@@ -155,10 +155,13 @@ mod tests {
     #[tokio::test]
     async fn a_disarmed_or_unknown_ticket_is_ignored() {
         let gate = TerminalGate::default();
-        let rx = gate.arm(7).expect("arms");
+        let mut rx = gate.arm(7).expect("arms");
         gate.disarm(7);
         gate.resolve(7, status(TaskState::Completed));
-        assert!(rx.await.is_err(), "a disarmed ticket receives nothing");
+        assert!(
+            matches!(rx.try_recv(), Err(oneshot::error::TryRecvError::Closed)),
+            "a disarmed ticket is dropped, and receives nothing"
+        );
         // Resolving something never armed does not panic or leak.
         gate.resolve(8, status(TaskState::Completed));
         assert!(gate.lock().waiting.is_empty());
@@ -167,9 +170,12 @@ mod tests {
     #[tokio::test]
     async fn closing_releases_waiters_and_stops_arming() {
         let gate = std::sync::Arc::new(TerminalGate::default());
-        let rx = gate.arm(1).expect("arms");
+        let mut rx = gate.arm(1).expect("arms");
         drop(CloseOnDrop(std::sync::Arc::clone(&gate)));
-        assert!(rx.await.is_err(), "a waiter is released by the close");
+        assert!(
+            matches!(rx.try_recv(), Err(oneshot::error::TryRecvError::Closed)),
+            "a waiter is released by the close"
+        );
         assert!(gate.arm(2).is_none(), "a closed gate arms nothing");
     }
 
