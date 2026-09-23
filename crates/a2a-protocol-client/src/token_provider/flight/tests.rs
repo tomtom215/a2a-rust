@@ -23,6 +23,7 @@ type Answer = ClientResult<(String, Duration)>;
 /// scripted answer.
 struct Script {
     calls: AtomicUsize,
+    planned: usize,
     gate: Semaphore,
     answers: Mutex<VecDeque<Answer>>,
 }
@@ -31,6 +32,7 @@ impl Script {
     fn new(answers: Vec<Answer>) -> Arc<Self> {
         Arc::new(Self {
             calls: AtomicUsize::new(0),
+            planned: answers.len(),
             gate: Semaphore::new(0),
             answers: Mutex::new(answers.into()),
         })
@@ -45,8 +47,12 @@ impl Script {
         self.calls.load(Ordering::SeqCst)
     }
 
+    /// A refresh the script did not plan for panics at once rather than
+    /// parking on the gate: a regression that refreshes too often then
+    /// fails in milliseconds instead of hanging the test binary.
     async fn refresh(&self) -> Answer {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+        let n = self.calls.fetch_add(1, Ordering::SeqCst);
+        assert!(n < self.planned, "unplanned refresh #{}", n + 1);
         self.gate.acquire().await.expect("gate open").forget();
         self.answers
             .lock()
@@ -201,7 +207,9 @@ async fn a_token_is_served_until_its_ttl_then_refreshed() {
 #[tokio::test(start_paused = true)]
 async fn a_cancelled_leader_hands_over_to_a_waiter() {
     let cache = Arc::new(TokenCache::default());
-    let script = Script::new(vec![ok("from-the-waiter", 60)]);
+    // Two refreshes are planned: the abandoned one never takes an answer,
+    // so the waiter's attempt receives the first.
+    let script = Script::new(vec![ok("from-the-waiter", 60), ok("unused", 60)]);
     let backoff = Duration::from_secs(60);
 
     let leader = spawn_get(&cache, &script, backoff);
