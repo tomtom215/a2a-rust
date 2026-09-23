@@ -14,8 +14,13 @@
 //     empty stream and a nil error (audit finding S2);
 //   - push deliveries carried a token header a2a-go does not read (S7);
 //   - an agent card with securityRequirements was unparseable by a2a-go (T1).
+//     This SDK now reads a2a-go's bare-array scopes and writes the spec's
+//     {"list":[...]} (a2a.proto's StringList, the spec's §8.5 sample, the
+//     Python SDK's output). a2a-go v2.5.0 still rejects that, which only
+//     a2a-go can fix, so -expect-card-rejected pins the rejection: when a
+//     new a2a-go reads the spec shape, this check fails and says to drop it.
 //
-// Usage: go-sdk-client <agent-base-url> [binding,...]
+// Usage: go-sdk-client [-expect-card-rejected] [-expect-security] <agent-base-url> [binding,...]
 //
 // Exits 0 only when every check passed on every binding the card lists; a
 // binding that the caller names but the card omits is a failure, not a skip,
@@ -27,6 +32,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -78,16 +84,26 @@ func text(t string) *a2a.SendMessageRequest {
 	return &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart(t))}
 }
 
+// The a2a-go error that rejecting the spec's StringList shape produces
+// (a2a/auth.go, SecurityRequirementsOptions.UnmarshalJSON into
+// SecuritySchemeScopes []string).
+const upstreamCardRejection = "a2a.SecuritySchemeScopes"
+
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: go-sdk-client <agent-base-url> [binding,...]")
+	expectRejected := flag.Bool("expect-card-rejected", false,
+		"assert a2a-go still rejects the agent's spec-shaped securityRequirements, and stop")
+	expectSecurity := flag.Bool("expect-security", false,
+		"require the card to publish apiKey [read write] securityRequirements")
+	flag.Parse()
+	if flag.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "usage: go-sdk-client [-expect-card-rejected] [-expect-security] <agent-base-url> [binding,...]")
 		os.Exit(2)
 	}
-	base := os.Args[1]
+	base := flag.Arg(0)
 	want := []a2a.TransportProtocol{a2a.TransportProtocolJSONRPC, a2a.TransportProtocolHTTPJSON, a2a.TransportProtocolGRPC}
-	if len(os.Args) > 2 {
+	if flag.NArg() > 1 {
 		want = nil
-		for _, b := range strings.Split(os.Args[2], ",") {
+		for _, b := range strings.Split(flag.Arg(1), ",") {
 			want = append(want, a2a.TransportProtocol(b))
 		}
 	}
@@ -98,12 +114,26 @@ func main() {
 
 	fmt.Printf("=== agent card (%s) ===\n", base)
 	card, err := agentcard.DefaultResolver.Resolve(ctx, base)
+	if *expectRejected {
+		switch {
+		case err == nil:
+			s.fail("a2a-go rejects spec-shaped scopes (known divergence)",
+				"a2a-go now reads {\"list\":[...]}: drop -expect-card-rejected and run the full battery with -expect-security")
+		case !strings.Contains(err.Error(), upstreamCardRejection):
+			s.fail("a2a-go rejects spec-shaped scopes (known divergence)", "rejected for another reason: %v", err)
+		default:
+			s.ok("a2a-go rejects spec-shaped scopes (known divergence)", err.Error())
+		}
+		finish(s)
+	}
 	if err != nil {
 		s.fail("resolve agent card", "%v", err)
 		finish(s)
 	}
 	s.ok("resolve agent card", card.Name)
-	checkCardSecurity(s, card)
+	if *expectSecurity {
+		checkCardSecurity(s, card)
+	}
 
 	hook := startWebhook()
 	defer hook.close()
@@ -140,8 +170,8 @@ func finish(s *suite) {
 	os.Exit(0)
 }
 
-// checkCardSecurity is only meaningful when the agent publishes security
-// requirements; the interop script starts the Rust agent with them.
+// checkCardSecurity runs under -expect-security, once a2a-go can read the
+// spec's shape.
 func checkCardSecurity(s *suite, card *a2a.AgentCard) {
 	if len(card.SecurityRequirements) == 0 {
 		s.fail("card securityRequirements", "none published; start the agent with A2A_INTEROP_CARD=1")

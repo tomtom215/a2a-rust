@@ -6,7 +6,9 @@
 # files below) in BOTH directions, over JSON-RPC, HTTP+JSON and gRPC:
 #
 #   1. a2a-go CLIENT  -> this repo's SERVER  (itk/interop/go-sdk-client
-#                                              against examples/echo-agent)
+#                                              against examples/echo-agent;
+#                                              1b pins a2a-go's known
+#                                              securityRequirements gap)
 #   2. this repo's CLIENT -> a2a-go SERVER   (the harness's go_sdk_interop
 #                                              against itk/agents/go-sdk)
 #
@@ -14,7 +16,7 @@
 # in-repo TCK, which deliberately does not use a2a-protocol-client. The
 # client a Rust coordinator calls Go agents with, the server a Go client
 # calls, and every gRPC path between the two had never met in CI. The
-# 2026-09-22 audit then found five defects that each side's own tests passed
+# 2026-09-22 audit then found six defects that each side's own tests passed
 # (T1, S2, S7, C8, C9, C10 in its numbering) — the class of defect only a
 # real peer finds.
 #
@@ -43,6 +45,7 @@ RUST_HTTP=127.0.0.1:19310
 RUST_GRPC=127.0.0.1:19311
 GO_HTTP_PORT=19312
 GO_GRPC_PORT=19313
+RUST_SECURED_HTTP=127.0.0.1:19314
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/a2a-go-interop.XXXXXX")
 PIDS=()
@@ -78,12 +81,26 @@ cargo build $CARGO_PROFILE_FLAG -p echo-agent -p a2a-example-harness --bin echo-
 verdict=0
 
 echo "── 1. a2a-go client -> Rust server ─────────────────────────────────────"
-A2A_BIND_ADDR=$RUST_HTTP A2A_GRPC_BIND_ADDR=$RUST_GRPC A2A_INTEROP_CARD=1 \
+A2A_BIND_ADDR=$RUST_HTTP A2A_GRPC_BIND_ADDR=$RUST_GRPC \
     "$BIN/echo-agent" >"$WORK/rust-server.log" 2>&1 &
 PIDS+=($!)
 await_card "http://$RUST_HTTP" "echo-agent" "$WORK/rust-server.log"
 if ! "$WORK/go-sdk-client" "http://$RUST_HTTP" "JSONRPC,HTTP+JSON,GRPC"; then
     echo "::error::a2a-go client against the Rust server failed" >&2
+    verdict=1
+fi
+
+# A card with securityRequirements, which this SDK writes in the spec's
+# {"list":[...]} shape and a2a-go v2.5.0 cannot read. That is a2a-go's to
+# fix, so this run asserts the rejection instead of the battery — and fails,
+# naming what to change here, on the first a2a-go that reads the card.
+echo "── 1b. a2a-go client -> Rust server, card with securityRequirements ─────"
+A2A_BIND_ADDR=$RUST_SECURED_HTTP A2A_INTEROP_CARD=1 \
+    "$BIN/echo-agent" >"$WORK/rust-secured.log" 2>&1 &
+PIDS+=($!)
+await_card "http://$RUST_SECURED_HTTP" "echo-agent (secured card)" "$WORK/rust-secured.log"
+if ! "$WORK/go-sdk-client" -expect-card-rejected "http://$RUST_SECURED_HTTP"; then
+    echo "::error::the a2a-go securityRequirements expectation no longer holds" >&2
     verdict=1
 fi
 
@@ -100,6 +117,7 @@ fi
 if [ "$verdict" -ne 0 ]; then
     echo "── server logs ─────────────────────────────────────────────────────────"
     echo "--- echo-agent ---"; tail -n 50 "$WORK/rust-server.log"
+    echo "--- echo-agent (secured card) ---"; tail -n 20 "$WORK/rust-secured.log"
     echo "--- go-sdk agent ---"; tail -n 50 "$WORK/go-server.log"
     echo "Go SDK interop: FAILED"
 else
