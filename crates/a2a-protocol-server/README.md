@@ -16,9 +16,16 @@ Server framework for the A2A protocol v1.0 -- build, serve, and scale AI agents.
 
 ## Quick Start
 
-```rust
+Every Rust block in this README is compiled as a doctest of the crate; the
+two that open a listener are compiled but not run.
+
+```rust,no_run
 use std::sync::Arc;
-use a2a_protocol_server::prelude::*; // via a2a-protocol-sdk
+
+use a2a_protocol_server::{
+    EventEmitter, JsonRpcDispatcher, RequestHandlerBuilder, agent_executor, serve,
+};
+use a2a_protocol_types::{AgentCard, AgentInterface, Part, TaskState};
 
 struct MyAgent;
 
@@ -30,17 +37,50 @@ agent_executor!(MyAgent, |ctx, queue| async {
     Ok(())
 });
 
-let handler = Arc::new(
-    RequestHandlerBuilder::new(MyAgent)
-        .with_agent_card(card)
-        .build()?,
-);
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"));
+let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);
 serve("0.0.0.0:3000", JsonRpcDispatcher::new(handler)).await?;
+# Ok(())
+# }
+```
+
+`serve` is the shortest path, not the production one: it serves every
+connection with hyper's defaults, with no connection cap, no idle timeout,
+and no way to stop short of dropping its future. For a deployment, bind a `Server`, give it a `ServeConfig`, and hand it the signal
+that ends it; in-flight work finishes (or is cancelled after
+`completion_grace`) before the connections drain:
+
+```rust,no_run
+# use std::sync::Arc;
+# use a2a_protocol_server::{EventEmitter, JsonRpcDispatcher, RequestHandlerBuilder, agent_executor};
+# use a2a_protocol_types::{AgentCard, AgentInterface, TaskState};
+# struct MyAgent;
+# agent_executor!(MyAgent, |ctx, queue| async {
+#     EventEmitter::new(ctx, queue).status(TaskState::Completed).await
+# });
+use a2a_protocol_server::{ServeConfig, Server};
+
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"));
+# let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);
+let report = Server::bind("0.0.0.0:3000")
+    .await?
+    .with_config(ServeConfig::default())
+    .serve_with_shutdown(JsonRpcDispatcher::new(handler), async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+    .await;
+println!("{report:?}");
+# Ok(())
+# }
 ```
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │                  Dispatchers                      │
 │  JsonRpcDispatcher · RestDispatcher · A2aRouter   │
@@ -77,16 +117,22 @@ serve("0.0.0.0:3000", JsonRpcDispatcher::new(handler)).await?;
 
 ## Features
 
-| Feature | Purpose |
-|---------|---------|
-| `signing` | Agent card signing verification |
-| `tracing` | Structured logging via tracing crate |
-| `sqlite` | SQLite-backed task and push config stores |
-| `postgres` | PostgreSQL-backed stores |
-| `websocket` | WebSocket transport |
-| `grpc` | gRPC transport via tonic |
-| `otel` | OpenTelemetry OTLP metrics export |
-| `axum` | Axum framework integration |
+No feature is on by default.
+
+| Feature | Default | Purpose |
+|---------|---------|---------|
+| `signing` | No | Forwards `a2a-protocol-types/signing`; this crate itself neither signs nor verifies the card it serves |
+| `tracing` | No | Structured logging via the `tracing` crate |
+| `tls-rustls` | No | HTTPS delivery for the bundled push-notification sender |
+| `sqlite` | No | SQLite-backed task and push-config stores |
+| `postgres` | No | PostgreSQL-backed task and push-config stores |
+| `websocket` | No | WebSocket transport |
+| `grpc` | No | gRPC transport via tonic (`lf.a2a.v1.A2AService`) |
+| `grpc-tls` | No | TLS on the gRPC listener; implies `grpc` |
+| `otel` | No | OpenTelemetry OTLP export of the metrics catalogue (metrics only; no traces) |
+| `conformance` | No | A harness that grades an `AgentExecutor` against the protocol's invariants |
+| `axum` | No | Axum integration (`A2aRouter`) |
+| `auth-jwt` | No | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS) |
 
 ## Agent Cards
 

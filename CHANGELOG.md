@@ -219,6 +219,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The four crate READMEs — each crate's crates.io page — compile.** Seven
+  of their eight Rust blocks did not: the client's documented
+  `resubscribe()`, `get_authenticated_extended_card()` and
+  `ClientBuilder::with_transport()`, none of which exist; a `Message` literal
+  and `match`es that the types' `#[non_exhaustive]` rejects; a server prelude
+  that is the SDK's. Each README is now a doctest of its crate
+  (`#[cfg(doctest)] #[doc = include_str!("../README.md")]`), and its feature
+  table — like the two in the book and the one in `crates/README.md` — is
+  checked against the manifest by `scripts/check_feature_tables.py`, which
+  found 17 missing or wrong rows. The book and root README no longer say
+  `default-features = false` removes rustls from the SDK; it does not yet
+  (audit K1).
+
 - **Agent-card signing canonicalizes numbers the way RFC 8785 says.** Three
   deviations, each found by the RFC's own vectors, now in
   `crates/a2a-protocol-types/tests/rfc8785_vectors.rs`: a double exactly

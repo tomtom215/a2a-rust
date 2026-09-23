@@ -575,7 +575,7 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 | S9 | Medium | **[Fixed: `3f6f7d3`]** README.md:60 says `shutdown()` reports a queue it had to force-destroy. The field is "always 0" (`handler/shutdown/mod.rs:30`), and every queue is destroyed unconditionally. | VALIDATED |
 | S10 | Medium | `EventEmitter::status(state)` can't carry a progress message. `RequestContext.task_id` is a `TaskId` but `context_id` is a `String`. | VALIDATED (compile) |
 | S11 | Medium | The README's one-line `serve()` is the unhardened path: no connection cap, no header or idle timeout, no shutdown. There is no top-level `max_concurrent_tasks` (per-tenant only). | CONJECTURED (code, but the crate's own docs agree) |
-| S12 | Medium | `book/src/reference/configuration.md:17` gives the executor-timeout default as None; the code sets 1 h. The server README's `signing` row says "verification", but the crate does no signing. The feature table omits grpc-tls, auth-jwt, tls-rustls and conformance. | VALIDATED |
+| S12 | Medium | **[Feature tables fixed and gated by `check_feature_tables.py`; the executor-timeout default is open]** `book/src/reference/configuration.md:17` gives the executor-timeout default as None; the code sets 1 h. The server README's `signing` row says "verification", but the crate does no signing. The feature table omits grpc-tls, auth-jwt, tls-rustls and conformance. | VALIDATED |
 | S13 | Low | The README says rate limiting is "per-caller". Without auth or `trusted_proxy_hops`, every caller shares the `"anonymous"` bucket (`rate_limit/identity.rs:45`). | VALIDATED |
 | S14 | Low | A missing or `0.3` `A2A-Version` header gets `-32009` with `"id":null` even though the request id was known. There is no v0.3 compatibility layer (a2a-go ships `a2acompat/a2av0`). | VALIDATED |
 | S15 | Low | Tasks in flight at a crash or shutdown stay non-terminal in the durable store, and there is no recovery path. | CONJECTURED |
@@ -589,7 +589,7 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 | C2 | High | **[Fixed: `efd6be0`]** **A stream ending with no terminal event returns `None` like normal completion.** A partial final frame is silently dropped. There is no resume: the client parses `id:` but drops it, and `subscribe_to_task` can't send `Last-Event-ID`, although the server supports resumption. | VALIDATED |
 | C3 | High | **[Fixed: `4377528`]** **OAuth2 refresh failures run one after another under one lock.** A failed refresh caches nothing, so each queued caller runs its own full-timeout refresh (`token_provider.rs:538`). With 1 s timeouts, 5 callers failed at 1, 2, 3, 4 and 5 s; at the 30 s default with 100 callers, that is about 50 minutes. | VALIDATED |
 | C4 | High | **[Fixed: `5ac7e9a`]** **`ClientError` doesn't convert to `A2aError`**, so `?` in an executor fails (`E0277`). Only the reverse conversion exists (`error/mod.rs:184`). Every call site has to convert to a string, which loses whether it was a timeout, a transient failure or a protocol error. | VALIDATED [re-checked] |
-| C5 | High | **The client README (its crates.io page) documents APIs that don't exist**: `resubscribe()`, `get_authenticated_extended_card()`, `ClientBuilder::with_transport()`. It says "10 variants" (there are 11), has a non-exhaustive `match` that won't compile, and gives the wrong description for the `signing` row. | VALIDATED [re-checked] |
+| C5 | High | **[Fixed: the README is a doctest now]** **The client README (its crates.io page) documents APIs that don't exist**: `resubscribe()`, `get_authenticated_extended_card()`, `ClientBuilder::with_transport()`. It says "10 variants" (there are 11), has a non-exhaustive `match` that won't compile, and gives the wrong description for the `signing` row. | VALIDATED [re-checked] |
 | C6 | Medium | **[Fixed: `46791be`]** The first-event timeout reuses `stream_connect_timeout` (30 s). A Go agent that flushes headers and then thinks longer than 30 s is cut off (`jsonrpc.rs:401`, `rest/streaming.rs:87`). gRPC has the same problem. | VALIDATED (stub) |
 | C7 | Medium | The blocking `send_message` has a 30 s `request_timeout`, too short for delegation, and retry is off by default. Both shipped coordinators wrap calls in their own timeouts. | CONJECTURED (code) |
 | C8 | Medium | **[Fixed: `85c5a6c`, `adce975`]** REST streaming errors aren't decoded, although REST unary errors are. `subscribe_to_task` 404 gives `UnexpectedStatus` where `get_task` gives `TaskNotFound`. Go's in-stream AIP-193 `{"error":…}` frames become `Serialization("unknown variant error")`. | VALIDATED (stub and Go server) |
@@ -622,7 +622,7 @@ non-idempotent sends is correctly limited; body size limits are enforced.
 | T5 | Medium | One unknown enum value fails the whole payload: `TASK_STATE_PAUSED` fails the `Task`, `ROLE_SYSTEM` the `Message`, and an unknown or extra key in `StreamResponse` fails the event. A newer peer can break stream consumers. | VALIDATED |
 | T6 | Medium | Values accepted over JSON can't be converted to proto (non-base64 `raw`, integers above 2^53, non-RFC3339 timestamps), so GetTask over gRPC or slimrpc returns INTERNAL. `has_valid_timestamp` accepts `"garbage T garbage garbage"`. | VALIDATED |
 | T7 | Medium | JSON requires `contextId` on `Task`; proto doesn't. Large numbers in metadata are silently rounded, and `1e400` rejects the whole message. | VALIDATED |
-| T8 | Medium | The types README says `A2A_VERSION = "1.0.0"`; the code has `"1.0"`. Its `Message` literal won't compile, its `match` is non-exhaustive, and `proto` is undocumented. `first-agent.md` and `concepts/agent-cards.md` teach `protocol_version: "1.0.0"` with a 16-field literal instead of the existing builders. | VALIDATED [re-checked README] |
+| T8 | Medium | **[README half fixed: it is a doctest now; the book pages' `protocol_version: "1.0.0"` literals are open]** The types README says `A2A_VERSION = "1.0.0"`; the code has `"1.0"`. Its `Message` literal won't compile, its `match` is non-exhaustive, and `proto` is undocumented. `first-agent.md` and `concepts/agent-cards.md` teach `protocol_version: "1.0.0"` with a 16-field literal instead of the existing builders. | VALIDATED [re-checked README] |
 | T9 | Low | `parse_iso8601_to_unix_millis` rolls invalid dates over (`2026-02-31` becomes Mar 3) and accepts non-ISO forms. It feeds ListTasks `statusTimestampAfter`. | VALIDATED |
 | T10 | Low | Lossy round-trips through proto and JSON. These matter because signing re-serializes. | VALIDATED |
 | T11 | Low | Semver: core structs have all-public fields and aren't `#[non_exhaustive]`, which is inconsistent with `AgentCapabilities`. `TaskState::ALL: [Self; 9]` exposes the variant count. | VALIDATED |
@@ -634,7 +634,7 @@ non-idempotent sends is correctly limited; body size limits are enforced.
 |---|---|---|---|
 | K1 | Medium | `default-features = false` on the sdk does not remove TLS. The sdk's client and server dependencies don't set it, so rustls still comes in, and the manifest comment says otherwise. | VALIDATED (`cargo tree`) [re-checked manifest] |
 | K2 | Medium | The prelude lacks what a server or coordinator needs: `Server`/`ServeConfig`, `FailureClass`, `CurrentTrace`, `TracePropagationInterceptor`, the caching resolver and `ErrorCode`. The shipped coordinator examples depend on 7 crates, not the sdk alone. | VALIDATED (compile) |
-| K3 | Low | The sdk README feature table omits `auth-jwt` and misattributes `tls-rustls`/`grpc-tls`. `conformance` and a bare `proto` are not forwarded. The crate root has no server+client example, and the macro docs use `a2a_protocol_server::` paths. | VALIDATED |
+| K3 | Low | **[Feature table fixed and gated; the forwarding of `conformance` and `proto` is open]** The sdk README feature table omits `auth-jwt` and misattributes `tls-rustls`/`grpc-tls`. `conformance` and a bare `proto` are not forwarded. The crate root has no server+client example, and the macro docs use `a2a_protocol_server::` paths. | VALIDATED |
 | K4 | Low | slimrpc: the docs say "no change to any of those crates" was needed, which the README contradicts. It names a nonexistent `A2aClientBuilder`. It inherits T6 (INTERNAL on unconvertible tasks). It builds, and 57 tests pass. | VALIDATED |
 
 ## 6. Why these got past review and tests
@@ -645,6 +645,10 @@ Each of these gaps is tied to at least one defect that escaped:
    crates.io pages) are not compiled; 130 of the book's 206 Rust blocks are
    `ignore`; Cargo feature docs and defaults tables are unchecked. This let
    through O1, O3, O10, C5, T8, S9 and S12.
+   **[Partly gated: the four crate READMEs compile as doctests
+   (`check_readme_doctests.py` guards the include), and every feature table
+   is checked against its manifest (`check_feature_tables.py`). Open: the
+   book's 130 `ignore` blocks, and defaults tables.]**
 2. **The observability check only looks at one side.**
    `check_otel_metrics_coverage.py` confirms the exporter overrides every
    callback. Nothing confirms that a real server run produces each

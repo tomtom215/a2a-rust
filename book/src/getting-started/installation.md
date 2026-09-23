@@ -43,15 +43,18 @@ This is useful when:
 Features are off by default to minimize compile times and dependency trees, with
 one exception: **`tls-rustls` is on by default** for `a2a-protocol-client` and
 `a2a-protocol-sdk`, because the A2A spec serves agents over HTTPS and the client
-(and the bundled push sender) must reach them out of the box. Opt out with
-`default-features = false` for a plaintext-HTTP-only build with no rustls
-dependency.
+(and the bundled push sender) must reach them out of the box. On
+`a2a-protocol-client`, `default-features = false` gives a plaintext-HTTP-only
+build with no rustls dependency. On `a2a-protocol-sdk` it does not yet: the
+SDK depends on the client with the client's defaults on, so rustls stays in
+the build (audit K1, open).
 
 ### `a2a-protocol-types`
 
 | Feature | Description |
 |---------|-------------|
 | `signing` | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
+| `proto` | Canonical protobuf message types and the JSON⇄proto conversions (turned on by `grpc`) |
 
 ### `a2a-protocol-client`
 
@@ -68,14 +71,18 @@ dependency.
 
 | Feature | Description |
 |---------|-------------|
-| `signing` | Agent card signing |
+| `signing` | Forwards `a2a-protocol-types/signing`; the server itself neither signs nor verifies the card it serves |
 | `tracing` | Structured logging via the `tracing` crate |
+| `tls-rustls` | HTTPS delivery for the bundled push-notification sender |
 | `sqlite` | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` |
+| `grpc-tls` | TLS on the gRPC listener (`GrpcDispatcher::with_tls`); implies `grpc` |
 | `otel` | OpenTelemetry metrics via `opentelemetry-otlp` |
+| `conformance` | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Axum framework integration (`A2aRouter`) |
+| `auth-jwt` | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 
 ### `a2a-protocol-sdk` (umbrella)
 
@@ -85,12 +92,13 @@ dependency.
 | `tracing` | Enables tracing across client and server |
 | `tls-rustls` | Enables HTTPS in the client and TLS push delivery in the server |
 | `grpc` | Enables gRPC across client and server |
-| `grpc-tls` | Enables gRPC over TLS in the client |
+| `grpc-tls` | Enables gRPC over TLS in the client and on the server's gRPC listener |
 | `websocket` | Enables WebSocket across client and server |
 | `sqlite` | Enables SQLite stores in the server |
 | `postgres` | Enables PostgreSQL stores in the server |
 | `otel` | Enables OpenTelemetry metrics in the server |
 | `axum` | Enables Axum integration in the server |
+| `auth-jwt` | Enables JWT bearer-token authentication in the server |
 
 Enable features in your `Cargo.toml`:
 

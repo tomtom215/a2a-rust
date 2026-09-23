@@ -361,6 +361,10 @@ injection_for() {
             echo "doc_escapes" ;;
         *"check_doc_versions.py"*)
             echo "doc_versions" ;;
+        *"check_feature_tables.py"*)
+            echo "feature_tables" ;;
+        *"check_readme_doctests.py"*)
+            echo "readme_doctests" ;;
         *"check_panic_paths.py"*)
             echo "panic_path:$TYPES_LIB" ;;
         *"check_gate_reachability.py"*)
@@ -498,6 +502,8 @@ expected_marker() {
         # Independent of both the injected version and the current release
         # line, so the marker does not need editing at every minor bump.
         doc_versions)     echo "prose names a version" ;;
+        feature_tables)   echo "\`auth-jwt\` is a feature of a2a-protocol-server and is missing from the table" ;;
+        readme_doctests)  echo "crates/a2a-protocol-client/src/lib.rs: README.md is not included" ;;
         gate_reachability) echo "unreachable:ci.yml" ;;
         # The probe step's own name, so a run that failed on some *other*
         # inventory drift — a job somebody added in the same branch, say — is
@@ -701,6 +707,19 @@ if hits != 1:
 
 README.write_text(text, encoding="utf-8")
 PY
+            ;;
+        feature_tables)
+            # Drop one feature from the server's README table — the state it
+            # was in for four features until 2026-09-23 (audit S12).
+            note_touched "crates/a2a-protocol-server/README.md"
+            sed -i '/^| `auth-jwt` |/d' crates/a2a-protocol-server/README.md
+            ;;
+        readme_doctests)
+            # Delete the include, which leaves every README block unchecked
+            # while every test still passes.
+            note_touched "crates/a2a-protocol-client/src/lib.rs"
+            sed -i 's|#\[doc = include_str!("../README.md")\]|// include removed by gate probe|' \
+                crates/a2a-protocol-client/src/lib.rs
             ;;
         book_code)
             # Append an `ignore`d block: the exact move that would defeat the

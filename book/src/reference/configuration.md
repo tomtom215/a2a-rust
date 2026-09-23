@@ -182,15 +182,18 @@ and the `with_*` setters.
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `signing` | Off | Agent card signing |
+| `signing` | Off | Forwards `a2a-protocol-types/signing`; the server itself neither signs nor verifies the card it serves |
 | `tracing` | Off | Structured logging via `tracing` crate |
+| `tls-rustls` | Off | HTTPS delivery for the bundled push-notification sender |
 | `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | Off | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` (plaintext listener) |
 | `grpc-tls` | Off | TLS on the gRPC listener itself: `GrpcDispatcher::with_tls(ServerTlsConfig)` with a server identity and, optionally, a client CA for mutual TLS; implies `grpc`; the TLS types are re-exported from `dispatch::grpc` |
 | `otel` | Off | OpenTelemetry metrics via `opentelemetry-otlp` |
+| `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
+| `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 
 ### `a2a-protocol-client`
 
@@ -208,6 +211,7 @@ and the `with_*` setters.
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
+| `proto` | Off | Canonical protobuf message types and the JSON⇄proto conversions (turned on by `grpc`) |
 
 ### `a2a-protocol-sdk` (umbrella)
 
@@ -223,6 +227,7 @@ and the `with_*` setters.
 | `postgres` | Off | Enables `postgres` in the server |
 | `otel` | Off | Enables `otel` in the server |
 | `axum` | Off | Enables `axum` in the server |
+| `auth-jwt` | Off | Enables `auth-jwt` in the server |
 
 ## Environment Variables
 

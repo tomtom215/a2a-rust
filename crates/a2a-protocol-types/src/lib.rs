@@ -32,6 +32,13 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 
+// The README is this crate's crates.io page. Compiling its examples as
+// doctests keeps it true to the API: until 2026-09-23 nothing did, and it
+// documented methods that did not exist (audit C5, T8; escape class 1).
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 // ── Protocol constants ────────────────────────────────────────────────────────
 
 /// A2A protocol version string, in the `Major.Minor` wire form.
