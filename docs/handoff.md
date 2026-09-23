@@ -147,6 +147,12 @@ shard contained zero occurrences of "mutant", "MISSED" or any `##[group]`
 marker. Three attempts on three different shards all came back as nothing but
 `FATAL: role "root" does not exist` and checkpoint lines.
 
+*(Explained 2026-09-23: that FATAL line was the service's own health check.
+`--health-cmd pg_isready` ran as the container's `root` with no `-U`, and
+each probe logged one FATAL line every 5 s while still passing. Every
+workflow now probes as `postgres` (audit N5), which removes the flood; whether
+the API window then reaches the mutation output has not been re-measured.)*
+
 What does work:
 
 * The `Mutation Testing (incremental)` aggregator job prints
