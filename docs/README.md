@@ -21,6 +21,7 @@ Architecture Decision Records (ADRs) and implementation planning documents for t
 | [0010](adr/0010-auth-integration.md) | First-party authentication helpers | Which auth schemes ship in-tree, and where they sit |
 | [0011](adr/0011-task-retention.md) | Task Retention | Explicit, opt-in purging; the store schedules nothing |
 | [0012](adr/0012-event-log-and-resumption.md) | Event Log and Resumption | An append-only log beside the snapshot; SSE `id:` and `Last-Event-ID` |
+| [0013](adr/0013-observability.md) | Observability (proposed) | `tracing` spans exported through `tracing-opentelemetry`; one RPC span shape on every binding; semconv metrics beside the deprecated catalogue; `init_telemetry()` |
 
 ## Implementation Documents
 

@@ -384,11 +384,53 @@ what the next session should do first.
 
 Started 2026-09-23 from `fa2e901`. The plan is
 [`adopter-audit-2026-09-22.md`](adopter-audit-2026-09-22.md): its **Open
-work** entries first (OW3, OW5, OW7, OW6), then phase 2 (observability), then
-OW11 and phase 3. Audit rows are marked **[Fixed: …]** as commits land.
+work** entries, then phase 2 (observability; design in
+[ADR 0013](adr/0013-observability.md), status Proposed), then OW11 and
+phase 3. Audit rows are marked **[Fixed: …]** as commits land.
 
-**What the next session should do first:** read this section's progress
-notes below, then continue from the first entry not marked done.
+**Baseline on `main` (`fa2e901`), before any change here:**
+`scripts/preflight.sh --full` ran 71 of 71 CI gate commands, all PASS
+(exit 0). The official a2a-tck (`263b9cf`, run as `official-tck.yml` runs
+it): full profile 88 MUST graded with 4 failing, exactly the baseline;
+minimal 66 graded, no regressions; extension profile CORE-CAP-004 passes.
+`cargo +nightly clippy` (1.100, 2026-09-22) exits 0 with manifest warnings
+(audit N6). `cargo deny check` passes. `cargo semver-checks` against the
+published 0.13.0 with all features: 196 checks pass per crate, no update
+required — which is what exposed N7.
+
+**Landed so far (each fix reproduced first, then mutation-tested):** OW3
+(`f7956d10`), OW5 with the slimrpc half (`2b1bb80a`), OW7 (`af60cece`), the
+mutation gate's feature flag (N8, `587418fa`), the PostgreSQL health check
+(N5, `d73cf871`), the 0.13.0 CHANGELOG correction (N7, `ff945d2f`) and the
+audit update (`f81b2ed4`). In the working tree, not yet committed: OW6
+(`serve_with_shutdown` for gRPC and WebSocket) and N1 (the HTTP server's
+shutdown at the connection ceiling), waiting on their mutation run.
+
+**Lessons from this session, each of which cost something:**
+
+- **Read a mutation result's logs, not only its counts.** Every "caught"
+  in feature-gated code was suspect until N8 was fixed: 8 of one diff's 14
+  were mutants that did not compile. With `--all-features` given to
+  `cargo mutants` itself, CI and a local run grade the same thing. And a run
+  where every mutant is unviable is not a pass: cargo-mutants generates only
+  uncompilable replacements for functions returning `ClientResult` or
+  `A2aResult` (N9), so such code's coverage is its tests alone.
+- **Check a published artifact from its own registry directory.** The first
+  look at "the published 0.13.0" read `~/.cargo/registry/src/-69e9…`, the
+  local registry `cargo package` builds during preflight — its
+  `.cargo_vcs_info.json` named today's `main`. The crates.io copy is under
+  `index.crates.io-…`.
+- **`cmd | tail` reports tail's status.** It happened again here and was
+  caught before it was reported; capture the exit code first.
+- **Disk.** A full `--full` run peaks near the allowance with the slimrpc
+  binding. Once the binding gates start, every remaining gate builds
+  `--release`, so `target/debug` (12 GB at that point) can be deleted
+  mid-run.
+
+**What the next session should do first:** check `git status` — if OW6 and
+N1 are still uncommitted, their tests and CHANGELOG entries are in the tree
+and `/tmp/claude-0/mut-ow6` holds (or held) their mutation run. Then phase 2,
+gate first, as ADR 0013 describes.
 
 ## In flight outside this repository
 
