@@ -495,15 +495,29 @@ impl GrpcTransport {
     }
 
     fn status_to_error(status: &tonic::Status) -> ClientError {
-        // FIX(#2): Map deadline/cancellation codes to ClientError::Timeout so
-        // they are retryable, matching REST/JSON-RPC timeout behavior.
         match status.code() {
+            // Retryable, matching how the REST and JSON-RPC bindings treat a
+            // timeout.
             tonic::Code::DeadlineExceeded => {
                 ClientError::Timeout(format!("gRPC deadline exceeded: {}", status.message()))
             }
-            tonic::Code::Cancelled => {
-                ClientError::Timeout(format!("gRPC request cancelled: {}", status.message()))
-            }
+            // The gRPC analogs of HTTP 401 and 403, reported as those so the
+            // caller — and `BearerAuthInterceptor`, which drops a token the
+            // agent refused on a 401 — sees one shape whatever the binding.
+            // These were `Protocol(InvalidParams)`, which told a caller with
+            // a revoked token to fix its request, and never reached the hook.
+            // No ErrorInfo lookup: A2A defines no authentication reason, and
+            // a refused credential is the transport's verdict, not the task's.
+            tonic::Code::Unauthenticated => ClientError::UnexpectedStatus {
+                status: 401,
+                body: status.message().to_owned(),
+                retry_after: None,
+            },
+            tonic::Code::PermissionDenied => ClientError::UnexpectedStatus {
+                status: 403,
+                body: status.message().to_owned(),
+                retry_after: None,
+            },
             tonic::Code::Unavailable => {
                 ClientError::HttpClient(format!("gRPC unavailable: {}", status.message()))
             }
@@ -516,6 +530,11 @@ impl GrpcTransport {
                 body: status.message().to_owned(),
                 retry_after: None,
             },
+            // `Cancelled` lands here too, as a non-retryable `Protocol` error.
+            // It used to be a retryable `Timeout`, so a call the peer had
+            // abandoned was sent again. A cancellation the caller makes
+            // itself never reaches this function: dropping the call's future
+            // drops its result with it.
             _ => {
                 // §10.6: an A2A server attaches google.rpc.ErrorInfo to
                 // status.details with the exact A2A reason. Prefer that over
@@ -527,8 +546,12 @@ impl GrpcTransport {
                     .get_details_error_info()
                     .and_then(|info| a2a_protocol_types::ErrorCode::from_a2a_reason(&info.reason))
                     .unwrap_or_else(|| grpc_code_to_error_code(status.code()));
-                let a2a = a2a_protocol_types::A2aError::new(code, status.message().to_owned());
-                ClientError::Protocol(a2a)
+                let message = if status.code() == tonic::Code::Cancelled {
+                    format!("gRPC call cancelled by the peer: {}", status.message())
+                } else {
+                    status.message().to_owned()
+                };
+                ClientError::Protocol(a2a_protocol_types::A2aError::new(code, message))
             }
         }
     }
@@ -852,10 +875,10 @@ const fn grpc_code_to_error_code(code: tonic::Code) -> a2a_protocol_types::Error
     // wildcard — cargo-mutants flags redundant arms as "equivalent mutants".
     match code {
         tonic::Code::NotFound => a2a_protocol_types::ErrorCode::TaskNotFound,
-        tonic::Code::InvalidArgument
-        | tonic::Code::Unauthenticated
-        | tonic::Code::PermissionDenied
-        | tonic::Code::ResourceExhausted => a2a_protocol_types::ErrorCode::InvalidParams,
+        // Unauthenticated, PermissionDenied and ResourceExhausted never reach
+        // this map: `status_to_error` reports them as HTTP-equivalent
+        // statuses first.
+        tonic::Code::InvalidArgument => a2a_protocol_types::ErrorCode::InvalidParams,
         tonic::Code::Unimplemented => a2a_protocol_types::ErrorCode::MethodNotFound,
         tonic::Code::FailedPrecondition => a2a_protocol_types::ErrorCode::TaskNotCancelable,
         _ => a2a_protocol_types::ErrorCode::InternalError,
@@ -1053,30 +1076,6 @@ mod tests {
     }
 
     #[test]
-    fn grpc_code_unauthenticated_maps_to_invalid_params() {
-        assert_eq!(
-            grpc_code_to_error_code(tonic::Code::Unauthenticated),
-            a2a_protocol_types::ErrorCode::InvalidParams,
-        );
-    }
-
-    #[test]
-    fn grpc_code_permission_denied_maps_to_invalid_params() {
-        assert_eq!(
-            grpc_code_to_error_code(tonic::Code::PermissionDenied),
-            a2a_protocol_types::ErrorCode::InvalidParams,
-        );
-    }
-
-    #[test]
-    fn grpc_code_resource_exhausted_maps_to_invalid_params() {
-        assert_eq!(
-            grpc_code_to_error_code(tonic::Code::ResourceExhausted),
-            a2a_protocol_types::ErrorCode::InvalidParams,
-        );
-    }
-
-    #[test]
     fn grpc_code_unimplemented_maps_to_method_not_found() {
         assert_eq!(
             grpc_code_to_error_code(tonic::Code::Unimplemented),
@@ -1187,13 +1186,67 @@ mod tests {
     }
 
     #[test]
-    fn status_to_error_cancelled_is_timeout() {
+    fn status_to_error_cancelled_is_a_non_retryable_protocol_error() {
         let status = tonic::Status::cancelled("test cancel");
         let err = GrpcTransport::status_to_error(&status);
-        assert!(
-            matches!(err, ClientError::Timeout(_)),
-            "Cancelled should map to Timeout, got: {err:?}"
+        match &err {
+            ClientError::Protocol(e) => {
+                assert_eq!(e.code, a2a_protocol_types::ErrorCode::InternalError);
+                assert!(e.message.contains("cancelled by the peer"), "{e:?}");
+                assert!(e.message.contains("test cancel"), "{e:?}");
+            }
+            other => panic!("Cancelled should map to Protocol, got: {other:?}"),
+        }
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn status_to_error_cancelled_keeps_an_error_info_reason() {
+        use tonic_types::StatusExt as _;
+        let mut details = tonic_types::ErrorDetails::new();
+        details.set_error_info(
+            "TASK_NOT_FOUND",
+            a2a_protocol_types::error::A2A_ERROR_DOMAIN,
+            std::collections::HashMap::<String, String>::new(),
         );
+        let status = tonic::Status::with_error_details(tonic::Code::Cancelled, "gone", details);
+        match GrpcTransport::status_to_error(&status) {
+            ClientError::Protocol(e) => {
+                assert_eq!(e.code, a2a_protocol_types::ErrorCode::TaskNotFound);
+            }
+            other => panic!("expected Protocol, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn status_to_error_unauthenticated_is_401() {
+        let err = GrpcTransport::status_to_error(&tonic::Status::unauthenticated("bad token"));
+        match &err {
+            ClientError::UnexpectedStatus {
+                status,
+                body,
+                retry_after,
+            } => {
+                assert_eq!(*status, 401);
+                assert_eq!(body, "bad token");
+                assert!(retry_after.is_none());
+            }
+            other => panic!("expected a 401, got: {other:?}"),
+        }
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn status_to_error_permission_denied_is_403() {
+        let err = GrpcTransport::status_to_error(&tonic::Status::permission_denied("no"));
+        match &err {
+            ClientError::UnexpectedStatus { status, body, .. } => {
+                assert_eq!(*status, 403);
+                assert_eq!(body, "no");
+            }
+            other => panic!("expected a 403, got: {other:?}"),
+        }
+        assert!(!err.is_retryable());
     }
 
     #[test]

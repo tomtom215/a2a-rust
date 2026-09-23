@@ -12,6 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **gRPC status codes map to what the caller has to do about them.** Over the
+  gRPC transport and the slimrpc binding, `UNAUTHENTICATED` is now
+  `ClientError::UnexpectedStatus { status: 401, .. }` and `PERMISSION_DENIED`
+  is `UnexpectedStatus { status: 403, .. }`, the shapes the JSON-RPC and REST
+  bindings already report. They were `Protocol(InvalidParams)` on gRPC and
+  `Protocol(InternalError)` on slimrpc, which told a caller with a revoked
+  token to fix its request, and meant `BearerAuthInterceptor` never dropped a
+  token a gRPC agent had refused: the next call sent it again. A peer's
+  `CANCELLED` is now a non-retryable `Protocol` error (`InternalError`, or
+  the A2A code its `ErrorInfo` names) instead of a retryable `Timeout`, so a
+  call the peer abandoned is no longer re-sent. **Migration:** code matching
+  `Protocol(e)` with `e.code == InvalidParams` to detect an authentication
+  failure over gRPC should match `UnexpectedStatus { status: 401 | 403, .. }`.
+  A peer's cancellation now reports `is_retryable() == false`, so a retry
+  policy stops re-sending it with no change to the caller's code. Neither is
+  a wire change; both change the client's reading of one.
+
 - **`ClientBuilder::from_card` refuses a card with no interface for A2A
   protocol major 1.** Such a card used to be accepted with a warning and then
   fail at the first call with whatever the wire produced — a v0.3 endpoint

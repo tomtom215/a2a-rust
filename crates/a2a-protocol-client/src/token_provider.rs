@@ -196,9 +196,10 @@ impl TokenProvider for StaticTokenProvider {
 /// When the agent answers `401`, it calls
 /// [`TokenProvider::invalidate`] with the token it sent, so a refused token
 /// is not sent again. That catches a `401` surfaced as
-/// [`ClientError::UnexpectedStatus`], which is how the JSON-RPC and REST
-/// bindings report it; gRPC reports `Unauthenticated` differently today and
-/// is not covered.
+/// [`ClientError::UnexpectedStatus`], which is how every binding reports it:
+/// the gRPC transport maps `UNAUTHENTICATED` to a `401` for this reason. A
+/// `403` (gRPC `PERMISSION_DENIED`) leaves the token cached, since a caller
+/// who is known and not allowed gains nothing from a new one.
 ///
 /// Because the token is fetched per request, a provider that refreshes (like
 /// [`OAuth2ClientCredentials`]) keeps long-lived clients authenticated across
