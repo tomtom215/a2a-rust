@@ -1231,6 +1231,45 @@ async fn artifact_delta_preserves_list_position() -> A2aResult<()> {
     Ok(())
 }
 
+/// The same for a pushed artifact. Until 2026-09-23 only the appended-parts
+/// delta was checked here, so a `push_artifact` that always fell back to
+/// `save` — the same bytes, a reordered list — survived mutation testing
+/// (audit N9's measurement: `Ok(None)` and `Ok(Some(0))` at
+/// `postgres_store/artifact_delta.rs`).
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn artifact_push_preserves_list_position() -> A2aResult<()> {
+    let db = TestDb::create("push_order").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+    let older = task_with_artifacts("older", Some(vec![artifact("a", 1)]));
+    store.save(&older).await?;
+    let newer = task_with_artifacts("newer", None);
+    store.save(&newer).await?;
+
+    let ids = |r: a2a_protocol_types::responses::TaskListResponse| {
+        r.tasks.iter().map(|t| t.id.clone()).collect::<Vec<_>>()
+    };
+    let before = ids(store.list(&ListTasksParams::default()).await?);
+
+    let mut grown = older.clone();
+    grown.artifacts.as_mut().unwrap().push(artifact("b", 1));
+    store
+        .save_artifact_delta(&grown, ArtifactDelta::Pushed { index: 1 })
+        .await?;
+
+    let after = ids(store.list(&ListTasksParams::default()).await?);
+    assert_eq!(before, after, "pushing an artifact reordered the list");
+    assert_eq!(
+        store.get(&TaskId::new("older")).await?,
+        Some(grown),
+        "the pushed artifact is stored"
+    );
+
+    db.drop_db().await;
+    Ok(())
+}
+
 // ── Retention ────────────────────────────────────────────────────────────────
 //
 // Age is written directly rather than waited for: the policy is measured in

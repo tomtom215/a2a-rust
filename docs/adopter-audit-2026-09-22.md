@@ -109,6 +109,34 @@ stores (`tests/cross_replica_cancel/`).
   `Result` (types are unchanged, so it is not an API change), which will
   surface mutants no run has ever graded; measure how many survive before
   deciding.
+  **Measured 2026-09-23** on `main` with the return types rewritten to an
+  alias named `Result` (a scratch tree, not committed), `--all-features`
+  given to cargo-mutants, CI's test filter and live PostgreSQL: 274 mutants
+  over the 184 functions. types 11 (9 caught, 2 unviable, 0 missed); client
+  144 (34 caught, 107 unviable, 3 missed); server 119 (84 caught, 33
+  unviable, 2 missed); 0 timeouts. The five survivors, each now resolved on
+  this branch and each checked by applying it by hand:
+  - client `GrpcTransport::to_json` → `Ok(null)`: no client-crate test made a
+    successful gRPC call (the success path was covered from the server and
+    SDK crates, whose tests a client mutant never runs). Killed by
+    `tests/grpc_unary_success_tests.rs`.
+  - client `WebSocketTransport::check_open` → `Ok(())`: killed by
+    `a_call_on_a_dropped_websocket_is_refused_as_final` (see N18).
+  - client `check_endpoint_reachable` → `Ok(())`: equivalent under
+    `--all-features`, where the function's body *is* `Ok(())`; its no-TLS
+    branch had no test and now has one, which the CI
+    `--no-default-features` job runs.
+  - server `PostgresTaskStore::push_artifact` → `Ok(None)` and `Ok(Some(0))`:
+    both make `save_artifact_delta` fall back to `save`, which stores the
+    same bytes and moves the task to the front of `list`. Only the
+    appended-parts delta was checked for list order; killed by
+    `artifact_push_preserves_list_position`.
+
+  What stays unmeasured is the 142 unviable, mostly `Ok(Default::default())`
+  for a type with no `Default`: those functions are as untested by
+  "replace the body" as before. Adopting the alias would make the rest of
+  these mutants part of every run; that, N11's version of the same gap, and
+  the tooling choice between them are the maintainer's decision.
 
 - **N10 — no release was ever checked to be its own release preparation,
   and eight of seventeen tags were not** (Medium, release

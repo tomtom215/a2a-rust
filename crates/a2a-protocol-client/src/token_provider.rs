@@ -796,6 +796,27 @@ mod tests {
         );
     }
 
+    // -- builds without TLS ----------------------------------------------------
+
+    /// Without `tls-rustls` an `https://` token endpoint cannot be reached, and
+    /// the provider says why before dialling rather than failing inside the
+    /// connector with a scheme error. Only a build without the feature
+    /// compiles this; with it, `check_endpoint_reachable` is `Ok(())` (so its
+    /// "replace with `Ok(())`" mutant is equivalent under `--all-features`).
+    #[cfg(not(feature = "tls-rustls"))]
+    #[test]
+    fn https_endpoints_are_refused_by_a_build_without_tls() {
+        let err = check_endpoint_reachable("HTTPS://auth.example.com/token", "token endpoint")
+            .expect_err("no TLS in this build");
+        assert!(
+            matches!(&err, ClientError::Transport(m) if m.contains("tls-rustls")),
+            "{err:?}"
+        );
+        assert!(
+            check_endpoint_reachable("http://auth.example.com/token", "token endpoint").is_ok()
+        );
+    }
+
     // -- redaction ------------------------------------------------------------
 
     #[test]
