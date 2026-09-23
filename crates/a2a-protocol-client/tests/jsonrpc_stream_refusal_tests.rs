@@ -141,10 +141,8 @@ async fn subscribe_refusal_from_this_server_is_an_immediate_protocol_error() {
     let result = tokio::time::timeout(TEST_TIMEOUT, client.subscribe_to_task("no-such-task"))
         .await
         .expect("timed out");
-    let err = result.expect_err(
-        "a refusal before the stream starts must fail the call, as it did when \
-         the server sent it as plain JSON — not open a stream",
-    );
+    let err = result
+        .expect_err("a refusal before the stream starts must fail the call, not open a stream");
     expect_code(&err, ErrorCode::TaskNotFound);
 }
 
@@ -163,7 +161,7 @@ async fn send_streaming_refusal_from_this_server_is_an_immediate_protocol_error(
 }
 
 #[tokio::test]
-async fn legacy_plain_json_refusal_is_the_same_protocol_error() {
+async fn plain_json_refusal_is_the_same_protocol_error() {
     let url = start_stub(
         "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {len}\r\n\r\n",
         TASK_NOT_FOUND,
@@ -174,6 +172,31 @@ async fn legacy_plain_json_refusal_is_the_same_protocol_error() {
         .subscribe_to_task("no-such-task")
         .await
         .expect_err("plain-JSON refusal must fail the call");
+    expect_code(&err, ErrorCode::TaskNotFound);
+}
+
+/// A finished (`Content-Length`) SSE body whose first frame is a JSON-RPC
+/// error fails the call itself, like the plain-JSON refusal. This server sent
+/// exactly this shape in `0a076e1` and now sends plain JSON, so the shape is
+/// pinned against a stub rather than through the real server: without this
+/// test nothing exercises the bounded-refusal path, and cargo-mutants found
+/// `leading_stream_error -> None` surviving.
+#[tokio::test]
+async fn bounded_sse_refusal_is_an_immediate_protocol_error() {
+    const BODY: &str = concat!(
+        "event: error\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"x\",\"error\":",
+        "{\"code\":-32001,\"message\":\"Task not found: no-such-task\"}}\n\n",
+    );
+    let url = start_stub(
+        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {len}\r\n\r\n",
+        BODY,
+    )
+    .await;
+    let client = ClientBuilder::new(url).build().unwrap();
+    let result = tokio::time::timeout(TEST_TIMEOUT, client.subscribe_to_task("no-such-task"))
+        .await
+        .expect("timed out");
+    let err = result.expect_err("a bounded SSE refusal must fail the call, not open a stream");
     expect_code(&err, ErrorCode::TaskNotFound);
 }
 
