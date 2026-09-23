@@ -34,7 +34,9 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::{DEFAULT_TASK_GRACE, ServeConfig, ServeReport, Server};
+use a2a_protocol_server::serve::{
+    DEFAULT_COMPLETION_GRACE, DEFAULT_TASK_GRACE, ServeConfig, ServeReport, Server,
+};
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
@@ -44,6 +46,8 @@ use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 /// short enough that the unfixed code fails in seconds rather than minutes.
 const DRAIN: Duration = Duration::from_secs(2);
 const GUARD: Duration = Duration::from_secs(20);
+/// A completion window short enough not to slow the suite down.
+const WINDOW: Duration = Duration::from_millis(200);
 
 struct Delegator {
     downstream_cancelled: Arc<AtomicBool>,
@@ -179,7 +183,11 @@ async fn the_documented_shutdown_ends_the_delegation(binding: Binding) {
     let (addr, stop, serving) = serve(
         &handler,
         binding,
-        ServeConfig::new().with_drain_timeout(DRAIN),
+        // A window the delegation will not finish in: it ends only when
+        // cancelled, which is the case the window must not get in the way of.
+        ServeConfig::new()
+            .with_completion_grace(WINDOW)
+            .with_drain_timeout(DRAIN),
     )
     .await;
 
@@ -224,8 +232,13 @@ async fn the_documented_shutdown_ends_the_delegation(binding: Binding) {
         .tasks
         .expect("the dispatcher handed over its handler");
     assert_eq!(
-        (tasks.cancelled, tasks.still_running, tasks.finished),
-        (1, 0, true),
+        (
+            tasks.completed,
+            tasks.cancelled,
+            tasks.still_running,
+            tasks.finished
+        ),
+        (0, 1, 0, true),
         "{tasks:?}"
     );
     assert!(handler_report.is_graceful(), "{handler_report:?}");
@@ -273,6 +286,7 @@ async fn work_that_ignores_cancellation_is_reported_after_the_grace_period() {
         &handler,
         Binding::JsonRpc,
         ServeConfig::new()
+            .with_completion_grace(WINDOW)
             .with_task_grace(grace)
             .with_drain_timeout(Duration::from_millis(100)),
     )
@@ -298,6 +312,112 @@ async fn work_that_ignores_cancellation_is_reported_after_the_grace_period() {
         handler_report.queues_force_destroyed, 1,
         "{handler_report:?}"
     );
+}
+
+/// Finishes on its own once released, writing its own terminal state.
+struct Quick {
+    release: Arc<tokio::sync::Notify>,
+}
+
+impl AgentExecutor for Quick {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let status = |state| {
+                StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::new(state),
+                    metadata: None,
+                })
+            };
+            queue.write(status(TaskState::Working)).await?;
+            tokio::select! {
+                () = self.release.notified() => {}
+                () = ctx.cancellation_token.cancelled() => return Ok(()),
+            }
+            queue.write(status(TaskState::Completed)).await
+        })
+    }
+}
+
+/// Runs a `Quick` task through a shutdown and returns what reached the wire
+/// with the server's report. The task is released right after the signal
+/// when `release_during_shutdown`, otherwise only once the server has
+/// returned — by which point only cancellation can have ended it.
+async fn quick_task_through_shutdown(
+    completion: Duration,
+    release_during_shutdown: bool,
+) -> (String, ServeReport) {
+    let release = Arc::new(tokio::sync::Notify::new());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Quick {
+            release: Arc::clone(&release),
+        })
+        .build()
+        .unwrap(),
+    );
+    let (addr, stop, serving) = serve(
+        &handler,
+        Binding::JsonRpc,
+        ServeConfig::new()
+            .with_completion_grace(completion)
+            .with_drain_timeout(DRAIN),
+    )
+    .await;
+    let (body, seen) = open_stream(addr, Binding::JsonRpc).await;
+    let reader = tokio::spawn(read_to_end(body, seen));
+
+    stop.send(()).unwrap();
+    // `notify_one` stores a permit, so the release is not lost if the
+    // executor has not reached `notified()` yet.
+    if release_during_shutdown {
+        release.notify_one();
+    }
+    let report = tokio::time::timeout(GUARD, serving).await.unwrap().unwrap();
+    release.notify_one();
+    let wire = tokio::time::timeout(GUARD, reader).await.unwrap().unwrap();
+    (wire, report)
+}
+
+/// A short task in flight at the signal finishes, rather than being answered
+/// `Canceled` — which on every rolling deploy is a failed call its client
+/// may retry.
+#[tokio::test]
+async fn a_task_that_finishes_inside_the_completion_window_is_not_cancelled() {
+    let (wire, report) = quick_task_through_shutdown(GUARD, true).await;
+    assert!(wire.contains("TASK_STATE_COMPLETED"), "{wire}");
+    assert!(!wire.contains("TASK_STATE_CANCELED"), "{wire}");
+    let tasks = report.tasks.expect("a handler was attached");
+    assert_eq!(
+        (tasks.completed, tasks.cancelled, tasks.finished),
+        (1, 0, true),
+        "{tasks:?}"
+    );
+    assert!(report.drained, "{report:?}");
+}
+
+/// With no window the same task is cancelled: `cancel_in_flight`'s order.
+#[tokio::test]
+async fn a_zero_completion_window_cancels_at_once() {
+    let (wire, report) = quick_task_through_shutdown(Duration::ZERO, false).await;
+    assert!(wire.contains("TASK_STATE_CANCELED"), "{wire}");
+    let tasks = report.tasks.expect("a handler was attached");
+    assert_eq!((tasks.completed, tasks.cancelled), (0, 1), "{tasks:?}");
+}
+
+#[test]
+fn completion_grace_defaults_and_is_settable() {
+    assert_eq!(
+        ServeConfig::new().completion_grace,
+        DEFAULT_COMPLETION_GRACE
+    );
+    assert_eq!(DEFAULT_COMPLETION_GRACE, Duration::from_secs(5));
+    let config = ServeConfig::new().with_completion_grace(Duration::ZERO);
+    assert_eq!(config.completion_grace, Duration::ZERO);
 }
 
 #[test]

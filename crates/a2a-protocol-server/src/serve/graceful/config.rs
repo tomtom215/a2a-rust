@@ -43,17 +43,31 @@ pub const DEFAULT_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
 /// how a streaming deployment starts dropping idle subscribers.
 pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 
-/// How long in-flight tasks get, once shutdown is signalled, to act on their
+/// How long in-flight tasks get, once shutdown is signalled, to finish on
+/// their own before they are cancelled.
+///
+/// Five seconds covers the blocking sends and short streams that make up most
+/// traffic, so a rolling deploy does not turn them into `Canceled` answers
+/// their callers may retry. It is deliberately short: work that is still
+/// running after it is usually a long delegation, which no window short of
+/// the platform's kill deadline would see finish, and which needs the time
+/// that follows — [`DEFAULT_TASK_GRACE`] — to cancel what it delegated.
+/// Zero cancels at once.
+pub const DEFAULT_COMPLETION_GRACE: Duration = Duration::from_secs(5);
+
+/// How long in-flight tasks get, once cancelled at shutdown, to act on their
 /// cancellation before the connection drain starts.
 ///
 /// Ten seconds is enough for an executor to send `CancelTask` to the agents
 /// it delegated to — one round trip each, in parallel or not — and for its
-/// terminal event to be persisted and flushed to open streams. With
-/// [`DEFAULT_DRAIN_TIMEOUT`] the two phases total 25 seconds, inside a
-/// Kubernetes `terminationGracePeriodSeconds` default of 30 with room for
-/// [`RequestHandler::shutdown`](crate::RequestHandler::shutdown)'s cleanup
-/// hook. The drain is normally much shorter than its bound by then: a stream
-/// whose task has ended is a connection that closes.
+/// terminal event to be persisted and flushed to open streams.
+///
+/// With [`DEFAULT_COMPLETION_GRACE`] and [`DEFAULT_DRAIN_TIMEOUT`] the three
+/// phases are bounded by 30 seconds together, which is exactly a Kubernetes
+/// `terminationGracePeriodSeconds` default, so set that higher if the bound
+/// can be reached. It rarely is: each phase ends as soon as its work does,
+/// and by the time the drain starts a stream whose task has ended is a
+/// connection that closes.
 pub const DEFAULT_TASK_GRACE: Duration = Duration::from_secs(10);
 
 /// Limits applied to a [`Server`](crate::serve::Server).
@@ -73,9 +87,15 @@ pub struct ServeConfig {
     /// How long to wait for watched connections to finish after shutdown is
     /// signalled, before giving up and reporting them abandoned.
     ///
-    /// Starts after [`task_grace`](Self::task_grace) when the dispatcher has a
-    /// handler, so the two are consecutive, not overlapping.
+    /// Starts after [`completion_grace`](Self::completion_grace) and
+    /// [`task_grace`](Self::task_grace) when the dispatcher has a handler, so
+    /// the phases are consecutive, not overlapping.
     pub drain_timeout: Duration,
+
+    /// How long in-flight tasks get to finish on their own before they are
+    /// cancelled. Applies only to a dispatcher with a
+    /// [`request_handler`](crate::serve::Dispatcher::request_handler).
+    pub completion_grace: Duration,
 
     /// How long in-flight tasks get to act on their cancellation — cancel
     /// what they delegated, write a terminal event — before the connection
@@ -104,6 +124,7 @@ impl Default for ServeConfig {
         Self {
             max_connections: None,
             drain_timeout: DEFAULT_DRAIN_TIMEOUT,
+            completion_grace: DEFAULT_COMPLETION_GRACE,
             task_grace: DEFAULT_TASK_GRACE,
             header_read_timeout: Some(DEFAULT_HEADER_READ_TIMEOUT),
             idle_timeout: Some(DEFAULT_IDLE_TIMEOUT),
@@ -112,7 +133,8 @@ impl Default for ServeConfig {
 }
 
 impl ServeConfig {
-    /// The defaults: unbounded connections, [`DEFAULT_DRAIN_TIMEOUT`],
+    /// The defaults: unbounded connections, [`DEFAULT_COMPLETION_GRACE`],
+    /// [`DEFAULT_TASK_GRACE`], [`DEFAULT_DRAIN_TIMEOUT`],
     /// [`DEFAULT_HEADER_READ_TIMEOUT`] and [`DEFAULT_IDLE_TIMEOUT`].
     ///
     /// Both timeouts default to *on*. An unbounded connection is the kind of
@@ -140,6 +162,14 @@ impl ServeConfig {
     #[must_use]
     pub const fn with_drain_timeout(mut self, timeout: Duration) -> Self {
         self.drain_timeout = timeout;
+        self
+    }
+
+    /// Sets how long in-flight tasks get to finish on their own before they
+    /// are cancelled. See [`DEFAULT_COMPLETION_GRACE`]; zero cancels at once.
+    #[must_use]
+    pub const fn with_completion_grace(mut self, grace: Duration) -> Self {
+        self.completion_grace = grace;
         self
     }
 

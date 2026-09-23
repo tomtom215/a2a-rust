@@ -75,8 +75,9 @@
 //!         .with_drain_timeout(Duration::from_secs(15)),
 //! );
 //!
-//! // On Ctrl-C: stop accepting, cancel in-flight tasks and give their
-//! // executors `task_grace` to end them, then drain the connections.
+//! // On Ctrl-C: stop accepting, let in-flight tasks finish for up to
+//! // `completion_grace`, cancel the rest and give their executors
+//! // `task_grace` to end them, then drain the connections.
 //! let report = server
 //!     .serve_with_shutdown(JsonRpcDispatcher::new(Arc::clone(&handler)), async {
 //!         tokio::signal::ctrl_c().await.ok();
@@ -117,8 +118,8 @@ use idle::IdleTimeout;
 
 mod config;
 pub use config::{
-    DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT, DEFAULT_IDLE_TIMEOUT, DEFAULT_TASK_GRACE,
-    ServeConfig,
+    DEFAULT_COMPLETION_GRACE, DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT,
+    DEFAULT_IDLE_TIMEOUT, DEFAULT_TASK_GRACE, ServeConfig,
 };
 
 /// What the socket layer did, and whether it finished.
@@ -136,8 +137,9 @@ pub struct ServeReport {
     /// Connections still open when `drain_timeout` expired. Zero when
     /// `drained` is true.
     pub abandoned: usize,
-    /// What ending the in-flight tasks did: how many were running, and
-    /// whether they all finished within [`ServeConfig::task_grace`]. `None`
+    /// What ending the in-flight tasks did: how many finished on their own,
+    /// how many were cancelled, and whether they all ended within
+    /// [`ServeConfig::task_grace`]. `None`
     /// when the dispatcher has no
     /// [`request_handler`](super::Dispatcher::request_handler), and so no
     /// tasks this server could end.
@@ -192,8 +194,10 @@ impl Server {
     /// 1. **Stop accepting.** The listener is dropped.
     /// 2. **End in-flight tasks.** When the dispatcher has a
     ///    [`request_handler`](super::Dispatcher::request_handler),
-    ///    [`RequestHandler::cancel_in_flight`](crate::RequestHandler::cancel_in_flight)
-    ///    fires every task's cancellation token and waits up to
+    ///    [`RequestHandler::finish_in_flight`](crate::RequestHandler::finish_in_flight)
+    ///    first lets tasks finish on their own for up to
+    ///    [`ServeConfig::completion_grace`], then fires every remaining
+    ///    task's cancellation token and waits up to
     ///    [`ServeConfig::task_grace`] for the executors to act on it: cancel
     ///    what they delegated, and end their tasks with a terminal event that
     ///    reaches every open stream.
@@ -271,7 +275,11 @@ impl Server {
         // only be told to go away later.
         drop(listener);
         let tasks = match dispatcher.request_handler() {
-            Some(handler) => Some(handler.cancel_in_flight(config.task_grace).await),
+            Some(handler) => Some(
+                handler
+                    .finish_in_flight(config.completion_grace, config.task_grace)
+                    .await,
+            ),
             None => None,
         };
 

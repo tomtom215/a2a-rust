@@ -240,14 +240,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // In-flight agent work lives in the handler, not in axum, and it has to
     // end *before* axum drains: an open SSE stream is a connection that stays
     // open until its task ends, so a drain that runs first waits forever on
-    // tasks nobody has cancelled. So the signal future itself cancels them and
-    // gives the executors ten seconds to act on it — cancel what they
-    // delegated, write a terminal event — and only then lets axum drain.
+    // tasks nobody has cancelled. So the signal future itself ends them: five
+    // seconds for short work to finish on its own, then cancellation and ten
+    // seconds for the executors to act on it — cancel what they delegated,
+    // write a terminal event — and only then does axum drain.
     let tasks = Arc::clone(&handler);
     axum::serve(listener, router)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
-            let report = tasks.cancel_in_flight(Duration::from_secs(10)).await;
+            let report = tasks
+                .finish_in_flight(Duration::from_secs(5), Duration::from_secs(10))
+                .await;
             if !report.finished {
                 eprintln!(
                     "{} of {} task(s) did not end within the grace period",

@@ -87,6 +87,12 @@ impl InFlight {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct InFlightReport {
+    /// Executors that finished on their own during the completion window of
+    /// [`RequestHandler::finish_in_flight`], before anything was cancelled —
+    /// net of any admitted during the window, so a busy window can read low.
+    /// Always zero from [`RequestHandler::cancel_in_flight`], which has no
+    /// such window.
+    pub completed: usize,
     /// Executors running when cancellation was signalled.
     pub cancelled: usize,
     /// Executors still running when the grace period ran out — work that may
@@ -148,9 +154,44 @@ impl RequestHandler {
             );
         }
         InFlightReport {
+            completed: 0,
             cancelled,
             still_running,
             finished,
+        }
+    }
+
+    /// Lets in-flight tasks finish on their own for up to `completion`, then
+    /// cancels whatever is still running and waits up to `grace` for it —
+    /// [`cancel_in_flight`](Self::cancel_in_flight) with a window in front.
+    ///
+    /// This is the order
+    /// [`Server::serve_with_shutdown`](crate::serve::Server::serve_with_shutdown)
+    /// uses. Cancelling at once ends a two-second blocking send that would
+    /// have succeeded as `Canceled`, on every rolling deploy, and its caller
+    /// may then retry work that was nearly done. Waiting without ever
+    /// cancelling orphans a delegation that will not finish in any window
+    /// the platform allows. The window serves the first kind and the cancel
+    /// serves the second; a `completion` of zero is `cancel_in_flight`.
+    ///
+    /// Requests that arrive during the window, on connections still open,
+    /// are admitted as usual and cancelled with the rest when it closes.
+    pub async fn finish_in_flight(&self, completion: Duration, grace: Duration) -> InFlightReport {
+        let running = self.in_flight.executors().len();
+        if running > 0 && !completion.is_zero() {
+            trace_info!(
+                executors = running,
+                completion_ms = u64::try_from(completion.as_millis()).unwrap_or(u64::MAX),
+                "shutdown: letting in-flight tasks finish"
+            );
+            // Timing out is the expected way out of this wait when a task is
+            // long; it is not a failure, so the result is not inspected.
+            let _ = tokio::time::timeout(completion, self.in_flight.wait()).await;
+        }
+        let completed = running.saturating_sub(self.in_flight.executors().len());
+        InFlightReport {
+            completed,
+            ..self.cancel_in_flight(grace).await
         }
     }
 }

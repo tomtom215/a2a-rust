@@ -50,8 +50,8 @@ use hyper::body::Incoming;
 mod graceful;
 
 pub use graceful::{
-    DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT, DEFAULT_IDLE_TIMEOUT, DEFAULT_TASK_GRACE,
-    ServeConfig, ServeReport, Server,
+    DEFAULT_COMPLETION_GRACE, DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT,
+    DEFAULT_IDLE_TIMEOUT, DEFAULT_TASK_GRACE, ServeConfig, ServeReport, Server,
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ pub trait Dispatcher: Send + Sync + 'static {
     ///
     /// [`Server::serve_with_shutdown`] uses it to end in-flight work *before*
     /// draining connections: it calls
-    /// [`RequestHandler::cancel_in_flight`](crate::RequestHandler::cancel_in_flight)
+    /// [`RequestHandler::finish_in_flight`](crate::RequestHandler::finish_in_flight)
     /// as soon as the listener closes, so executors can cancel what they
     /// delegated and every open stream ends with a terminal event, and only
     /// then waits for the sockets.

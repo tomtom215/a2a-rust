@@ -159,14 +159,17 @@ elsewhere and return. One that never looks at its token cannot be stopped
 early; `ServeReport::tasks` counts it in `still_running`.
 
 With Axum (or anything else that owns the sockets), call
-`handler.cancel_in_flight(grace)` at the end of the future you pass to
+`handler.finish_in_flight(completion, grace)` at the end of the future you pass to
 `with_graceful_shutdown`, so it runs before Axum starts draining —
 `examples/deploy-agent` does exactly that — and `handler.shutdown()` after
 `serve` returns. The gRPC and WebSocket dispatchers' `serve` methods take no
 shutdown signal: serve `GrpcDispatcher::into_service()` with tonic's
 `serve_with_incoming_shutdown` and end its signal future the same way, and
 race `WebSocketDispatcher::serve` against your signal and call
-`cancel_in_flight` after it.
+`finish_in_flight` after it. `finish_in_flight` first lets tasks finish on
+their own for up to `completion` — so a short call in flight during a rolling
+deploy is answered rather than `Canceled` — and then does what
+`cancel_in_flight(grace)` does alone: cancels the rest and waits for them.
 
 Implement `on_shutdown` in your executor for cleanup:
 

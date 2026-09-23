@@ -219,7 +219,7 @@ impl WebSocketDispatcher {
     ///
     /// It takes no shutdown signal. To stop gracefully, race it against your
     /// signal and then call
-    /// [`RequestHandler::cancel_in_flight`](crate::RequestHandler::cancel_in_flight)
+    /// [`RequestHandler::finish_in_flight`](crate::RequestHandler::finish_in_flight)
     /// before exiting, so every stream on an open socket ends with a terminal
     /// event and executors can cancel what they delegated.
     ///

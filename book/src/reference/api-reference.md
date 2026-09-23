@@ -335,7 +335,7 @@ are rustdoc's job.
 | `MIN_MESSAGE_ID_LENGTH` | The floor `message.id`'s length bound is never taken below: 36, a hyphenated UUID |
 | `SendMessageResult` | Result of `RequestHandler::on_send_message`: a synchronous response or a streaming reader |
 | `ShutdownReport` | What a shutdown actually managed to do (live queues it had to destroy, whether executor cleanup completed) |
-| `InFlightReport` | What `RequestHandler::cancel_in_flight` did: tasks cancelled, still running at the end of the grace period, whether everything finished |
+| `InFlightReport` | What `RequestHandler::finish_in_flight` / `cancel_in_flight` did: tasks that completed on their own, tasks cancelled, still running at the end of the grace period, whether everything finished |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 
 ### Traits
