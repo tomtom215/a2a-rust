@@ -430,7 +430,7 @@ fn encode_order_key((millis, seq): OrderKey) -> String {
 }
 
 /// Decodes a `millis:seq` page token; `None` for malformed tokens.
-pub(crate) fn decode_order_key(token: &str) -> Option<OrderKey> {
+pub fn decode_order_key(token: &str) -> Option<OrderKey> {
     let (millis, seq) = token.split_once(':')?;
     Some((millis.parse().ok()?, seq.parse().ok()?))
 }

@@ -31,7 +31,7 @@ fn is_route_head(segment: &str) -> bool {
 ///   send when configured with a tenant). The first segment is treated as a
 ///   tenant only when it is not itself a route head **and** the remainder
 ///   starts with one, mirroring transcoding's literal-beats-variable rule.
-pub(crate) fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
+pub fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
     if let Some(rest) = path.strip_prefix("/tenants/")
         && let Some(slash_pos) = rest.find('/')
     {
@@ -166,7 +166,7 @@ pub(super) fn parse_query_param_bool(query: &str, key: &str) -> Option<bool> {
 }
 
 /// Parses `ListTasksParams` from URL query parameters.
-pub(crate) fn parse_list_tasks_query(
+pub fn parse_list_tasks_query(
     query: &str,
     tenant: Option<&str>,
 ) -> a2a_protocol_types::params::ListTasksParams {

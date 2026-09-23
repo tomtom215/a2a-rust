@@ -223,7 +223,7 @@ fn parse_trace_context(
 ///
 /// Splits on commas, trims whitespace, and drops empty segments. Returns an
 /// empty vec when the header is absent.
-pub(crate) fn parse_extensions_header(headers: &HashMap<String, String>) -> Vec<String> {
+pub fn parse_extensions_header(headers: &HashMap<String, String>) -> Vec<String> {
     headers
         .get("a2a-extensions")
         .map(|v| {

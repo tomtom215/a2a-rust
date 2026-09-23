@@ -19,7 +19,7 @@ use crate::call_context::CallContext;
 ///
 /// See the module docs ("Caller identity") for the derivation order and
 /// the `x-forwarded-for` trust model.
-pub(crate) fn caller_key(ctx: &CallContext, trusted_proxy_hops: usize) -> String {
+pub fn caller_key(ctx: &CallContext, trusted_proxy_hops: usize) -> String {
     if let Some(identity) = ctx.caller_identity() {
         return identity.to_owned();
     }
