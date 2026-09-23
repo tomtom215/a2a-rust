@@ -155,66 +155,41 @@ numbers are at `09b2403`.
 - **Done when:** that test passes in 20 consecutive runs, and the same holds
   for the push and rate-limit stores.
 
-### OW4 — `swarm_scale`'s replay from `Last-Event-ID: 0` returns nothing
+### OW4 — resolved: `swarm_scale`'s replay test was broken by its own fixture
 
-- **Severity:** High, as a regression. `docs/swarm-scale-findings.md:239–241`
-  records this replay returning "42 positions, contiguous from 1 to 42 with
-  zero gaps"; it now returns none, so that published sentence is false today.
-  The phase-1 resume tests (`crates/a2a-protocol-client/tests/resume_e2e_tests.rs`)
-  pass against the real dispatchers, so the break is specific to what this
-  workload does.
-- **Evidence:** VALIDATED, identical at `d423b94` (the branch base) and at
-  `09b2403`, run exactly as `docs/swarm-scale-findings.md` says:
+Kept here because what it took to settle is the useful part.
 
-  ```bash
-  A2A_SWARM_MAX=1000 cargo test -p a2a-protocol-server --release \
-    --test swarm_scale -- --ignored --nocapture --test-threads=1
-  ```
-
-  12 passed, 1 failed: `fan_out::a_tail_can_recover_what_it_missed`
-  (`tests/swarm_scale/fan_out.rs:299`) prints "40 posts landed; replay
-  returned 0 positions spanning 1, first None last None" and fails with "a
-  Last-Event-ID of 0 replayed nothing".
-- **Not a bug — how the tests are run:** run in parallel with
-  `--all-features` (no `--test-threads=1`), three `cost::` tests also fail
-  ("task … is already being processed"). They fail the same way at
-  `d423b94`, and they pass when run as documented. They are load experiments
-  contending on 4 cores. The earlier note that `swarm_scale` "fails under
-  PostgreSQL" described that parallel run.
-- **Ruled out:**
-  - Header parsing: `handler/lifecycle/subscribe.rs:33` parses `"0"` to
-    `Some(0)`, documented as "from the beginning".
-  - The coverage check: `store/task_store/mod.rs:636` computes
-    `earliest <= after_seq + 1`, which is true for position 0 with a log
-    starting at 1.
-  - A store without a log: the harness uses `InMemoryTaskStore` with the
-    default config (`tests/swarm_scale/harness.rs:133`), which keeps an event
-    log bounded at 512 events per task; 42 is well inside that.
-- **Regression range:** the test was added in `e0b9964`, where it passed per
-  the findings doc. From there to `d423b94` is 25 commits, 8 of which touch
-  `crates/a2a-protocol-server/src`:
-  - `e2cd61f`, `ffe1b23`, `308bdeb`: the status delta.
-  - `e64fced`: the send path's history append.
-  - `1f9159a`: the context lockout.
-  - `a5eea55`, `4c2cabf`, `c4ccfce`.
-
-  Four of them change how a turn's writes reach the store.
-- **Next step:** bisect with the one test:
-
-  ```bash
-  git bisect start d423b94 e0b9964
-  git bisect run sh -c 'cargo test -p a2a-protocol-server --release --test swarm_scale \
-    -- --ignored --test-threads=1 --exact fan_out::a_tail_can_recover_what_it_missed'
-  ```
-
-  Then confirm `e0b9964` itself passes, since bisect trusts the good end.
-- **Failing-first test:** the existing test is one, but it is `#[ignore]`d and
-  never runs in CI, which is how the regression reached `main`. The fix
-  should add a small, non-ignored version of the same replay to
-  `tests/sse_resumption_e2e.rs`, driven the way this workload drives it:
-  serial continuations of one task.
-- **Done when:** both tests pass, and the findings doc's sentence is true
-  again.
+- **Symptom:** `fan_out::a_tail_can_recover_what_it_missed` failed at
+  `d423b94` and at `09b2403`, run exactly as `docs/swarm-scale-findings.md`
+  says. It printed "40 posts landed; replay returned 0 positions", against the
+  doc's recorded 42.
+- **Not a library regression.**
+  - A bisect over `e0b9964..d423b94` landed on `ce0d782`. Its parent
+    `140828f` replays 42 positions; `ce0d782` replays 0. Both were re-run with
+    `--all-features` because they do not compile with default features.
+  - `ce0d782` touches no library code. It gave the harness an agent card that
+    does not advertise `streaming` (`tests/swarm_scale/fixtures.rs`), so the
+    capability check (`handler/capability.rs:41`) refused the tail's
+    `SubscribeToTask`.
+  - The test's `tail()` turned that refusal into an empty result, so it read
+    as a log that replayed nothing.
+- **Fixed in `3c1112f`:**
+  - The card advertises streaming.
+  - `tail()` records a refusal, and the test asserts there was none before it
+    looks at the log. With streaming removed again, it now fails with "the
+    resubscribe was refused … HTTP 400 … UNSUPPORTED_OPERATION".
+  - Documented run: 13 passed, replay "42 positions spanning 42, first
+    Some(1) last Some(42), gaps 0". With `--all-features`: 16 passed.
+- **What had been read wrongly first:**
+  - Three `cost::` tests fail when the suite runs in parallel. That is
+    contention between load experiments on 4 cores: they fail the same way at
+    `d423b94` and pass when run as documented.
+  - A worker had reported the whole suite as "failing under PostgreSQL" from
+    that parallel run.
+- **Open follow-up** (Low, gap in the gates): these load experiments are
+  `#[ignore]`d and run in no workflow, which is how a fixture change broke one
+  for weeks unnoticed. One option is a nightly job running the documented
+  command.
 
 ### OW5 — gRPC status codes lose what the caller needs (C16)
 
