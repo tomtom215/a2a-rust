@@ -45,7 +45,9 @@ pub fn swarm_card() -> a2a_protocol_types::agent_card::AgentCard {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: AgentCapabilities::none().with_push_notifications(true),
+        capabilities: AgentCapabilities::none()
+            .with_streaming(true)
+            .with_push_notifications(true),
         provider: None,
         icon_url: None,
         documentation_url: None,
