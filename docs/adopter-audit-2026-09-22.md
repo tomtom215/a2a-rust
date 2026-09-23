@@ -29,48 +29,319 @@ stores (`tests/cross_replica_cancel/`).
 - **The first shutdown fix cancelled at once** (fixed, `8161455`): a short
   call in flight at a rolling deploy was answered `Canceled`. Shutdown now lets
   work finish for `completion_grace` first.
-- **Two replicas starting together against a fresh PostgreSQL database can
-  crash one of them.** Medium, pre-existing, not fixed: it bites only the
-  first start on an empty database, and a restart then succeeds because the
-  tables exist. `PostgresTaskStore::new` and `from_pool` run their
-  `CREATE TABLE IF NOT EXISTS` statements unlocked. So does
-  `PgMigrationRunner::run_pending` — behind `with_migrations`, the documented
-  production constructor — for `schema_versions` in `ensure_version_table`,
-  before it takes its `LOCK TABLE`. Two concurrent `CREATE TABLE IF NOT
-  EXISTS` on a fresh database failed 29 times in 40 with `duplicate key value
-  violates unique constraint "pg_type_typname_nsp_index"` (plain `psql`,
-  PostgreSQL 16.13). `examples/resilient-agent`'s act 3, which uses
-  `with_migrations`, failed with the same error when two of its tests ran
-  against one database. The fix is a `pg_advisory_lock` around all schema
-  work, in both constructors.
-- **`tests/swarm_scale` fails under PostgreSQL with `--include-ignored`**
-  ("task … is already being processed"), identically at `d423b94`. Medium,
-  pre-existing, not investigated.
+Rows in the tables below carry a **[Fixed: …]** marker naming the commits
+that fixed them. A row with no marker is open.
 
-**Still open from phase 1's own scope:**
+## Open work — ready to pick up
 
-- **T1, write side, is a2a-go's to fix.** This SDK writes the spec's
-  `{"list":[...]}`; a2a-go v2.5.0 rejects it. The interop gate pins the
-  rejection and goes red when it stops holding.
-- **S3: a replica learns of another's cancel only at its executor's next
-  write**, and B's `cancel()` hook releases B's resources, not A's. A push
-  mechanism (PostgreSQL `LISTEN/NOTIFY`, or a periodic check) is warranted;
-  session affinity avoids the problem.
-- **S8 is documented, not fixed:** the gRPC and WebSocket dispatchers' `serve`
-  still takes no shutdown signal.
-- **gRPC `Unauthenticated` still maps to `InvalidParams`** (C16), so a gRPC
-  401 does not invalidate a cached token.
+Each item gives the evidence behind it, where the code is, how to reproduce
+it, the fix proposed, the test that has to fail before the fix, and when it is
+done. VALIDATED means reproduced or read in this session, with what was run;
+REPORTED means a phase-1 worker reported it and it was not re-checked. Line
+numbers are at `09b2403`.
 
-**Phases 2–5 — not started.** The proposed order is in section 7: real
-observability (spans, propagation, semconv metrics, one `init_telemetry`),
-coordinator developer experience, signing and types hardening, then docs
-checked against the code.
+### OW1 — a2a-go cannot read this SDK's `securityRequirements` (T1, write side)
 
----
+- **Severity:** Medium. A Go client cannot resolve the card of any agent built
+  on this SDK that advertises security requirements.
+- **Evidence:** VALIDATED. Leg 1b of `scripts/go_sdk_interop.sh` asserts the
+  rejection on every run: `json: cannot unmarshal object into Go struct field
+  AgentSkill.skills.securityRequirements.schemes of type
+  a2a.SecuritySchemeScopes`. Upstream is unfixed even on `main`: a shallow
+  clone at `522f856` (2026-09-18) still declares `type SecuritySchemeScopes
+  []string` (`a2a/auth.go:80`) with no `{"list":[...]}` handling, and
+  `git ls-remote --tags` lists v2.5.0 as the newest tag. A worker reported the
+  upstream issue as a2aproject/a2a-go#430; it has **not** been checked, because
+  this session had no API access to that repository.
+- **Nothing to fix here.** This SDK already writes the normative shape: the
+  proto's `map<string, StringList>`, the spec's §8.5 sample, and the Python SDK
+  (a2a-sdk 1.1.5, `MessageToDict`) all agree. It reads both shapes
+  (`8e218a4`).
+- **When a2a-go ships a fix:**
+  1. Bump the pin in `itk/agents/go-sdk/go.mod` and
+     `itk/interop/go-sdk-client/go.mod`.
+  2. Leg 1b of the gate goes red with "a2a-go now reads {"list":[...]}".
+  3. In `scripts/go_sdk_interop.sh`, replace leg 1b's `-expect-card-rejected`
+     run with the full battery plus `-expect-security` against the secured
+     echo-agent.
+- **Done when:** that leg passes with `-expect-security`.
 
-Audit date 2026-09-22, against branch `claude/pensive-allen-socw7b` at `d423b94`.
-The audit itself changed no repository file; the status section below records
-what the fixes that followed did.
+### OW2 — cross-replica cancel is enforced only at the store (S3 residue)
+
+- **Severity:** Medium, for multi-replica deployments without session
+  affinity.
+- **Evidence:** REPORTED by the stores worker, except (d), which a test pins.
+  - (a) Replica A learns that B cancelled only at its executor's next write,
+    so a silent executor keeps running, and one that ignores its token runs
+    until it returns.
+  - (b) A client streaming from A can still receive non-terminal frames that
+    A's executor emits between B's cancel and that write; they never reach the
+    store.
+  - (c) B's `CancelTask` runs B's executor's `cancel()` hook
+    (`handler/lifecycle/cancel_task.rs:94`), so it releases B's in-process
+    resources, not A's.
+  - (d) Admission is per replica: two replicas both accept a continuation of
+    the same task and run two executors
+    (`tests/multi_replica.rs:556`, `the_single_writer_refusal_does_not_cross_replicas`).
+    Only the terminal state is protected; earlier writes are last-writer-wins.
+- **Where:**
+  - `handler/lifecycle/cancel_task.rs`: :57–61 cancels the local token only;
+    :121–123 is the store write and its `TerminalStateConflict` mapping.
+  - `handler/event_processing/background/state_machine.rs:58–63, :124`: the
+    `Refused` outcome.
+  - The processor's module doc, `background/processor.rs`: what A does on a
+    refusal.
+- **Fix options:**
+  1. A running processor polls the stored state on an interval and cancels its
+     executor on a foreign terminal state. This works with every store; the
+     interval is the detection latency.
+  2. PostgreSQL `LISTEN/NOTIFY` on cancel. Immediate, but PostgreSQL-only.
+  3. For (d), a lease row with an expiry, taken at admission.
+  4. Session affinity, which is a deployment choice.
+
+  The proposal is option 1 first, and option 3 when (d) matters.
+- **Failing-first test:** in `tests/cross_replica_cancel/`, give replica A an
+  executor that writes nothing after `Working` and waits on its token. Cancel
+  through B, then assert that A's token fires within a bound. It fails today,
+  because nothing ever tells A.
+- **Done when:** that test passes on the in-memory, SQLite and PostgreSQL
+  stores, and `book/src/deployment/horizontal-scaling.md` states the new
+  latency bound.
+
+### OW3 — two replicas starting against a fresh PostgreSQL database can crash one
+
+- **Severity:** Medium. It is pre-existing and bites only the first start on
+  an empty database; a restart then succeeds, because the tables exist.
+- **Evidence:** VALIDATED.
+  - Two concurrent `CREATE TABLE IF NOT EXISTS` statements on a fresh
+    database failed 29 times in 40 with `duplicate key value violates unique
+    constraint "pg_type_typname_nsp_index"` (PostgreSQL 16.13).
+  - `examples/resilient-agent`'s act 3 test, which uses `with_migrations`,
+    failed with the same error when two of its tests shared one database.
+- **Where** — every schema statement runs unlocked, in
+  `crates/a2a-protocol-server/src/`:
+  - `store/postgres_store/mod.rs:131`, `from_pool`, which `new` (:99) calls.
+  - `store/pg_migration.rs:158`, `ensure_version_table` (:160). It is called
+    by `run_pending` — so by `with_migrations` (`postgres_store/mod.rs:113`),
+    the documented production constructor — before `run_pending` takes its
+    `LOCK TABLE schema_versions`.
+  - `store/tenant_postgres_store/mod.rs:103`, `from_pool`.
+  - `push/postgres_config_store.rs:63` and
+    `push/tenant_postgres_config_store.rs:66`, both `from_pool`.
+  - `rate_limit/shared.rs:228`, `from_pool`.
+  - The statements they run: `store/postgres_store/event_log.rs:28`,
+    `store/postgres_store/idempotency.rs:20`, `store/tenant_event_log.rs:53`,
+    `store/tenant_idempotency.rs:41`.
+- **Reproduce** (needs only `psql`):
+
+  ```bash
+  export PGPASSWORD=postgres; H="-h localhost -U postgres"; hit=0
+  for i in $(seq 40); do
+    psql $H -qc "DROP DATABASE IF EXISTS race_probe" -c "CREATE DATABASE race_probe"
+    for s in 1 2; do psql $H -d race_probe -qc \
+      "CREATE TABLE IF NOT EXISTS t (id TEXT PRIMARY KEY)" 2>>race.err & done; wait
+  done; grep -c "duplicate key" race.err
+  ```
+- **Fix:** run each constructor's schema statements in one transaction that
+  first takes `SELECT pg_advisory_xact_lock($KEY)`, with a single crate-wide
+  constant key so that task, push and rate-limit stores serialize against each
+  other. PostgreSQL DDL is transactional, so the lock, the DDL and the
+  version-table creation commit together.
+- **Failing-first test:** an `#[ignore]`d PostgreSQL test that creates a fresh
+  database, as `TestDb::create` does in `tests/multi_replica.rs`, and builds
+  eight `PostgresTaskStore::with_migrations`, and eight `from_pool`, against
+  it concurrently. It asserts every one is `Ok`. It fails today with the
+  `pg_type` error.
+- **Done when:** that test passes in 20 consecutive runs, and the same holds
+  for the push and rate-limit stores.
+
+### OW4 — `swarm_scale`'s replay from `Last-Event-ID: 0` returns nothing
+
+- **Severity:** High, as a regression. `docs/swarm-scale-findings.md:239–241`
+  records this replay returning "42 positions, contiguous from 1 to 42 with
+  zero gaps"; it now returns none, so that published sentence is false today.
+  The phase-1 resume tests (`crates/a2a-protocol-client/tests/resume_e2e_tests.rs`)
+  pass against the real dispatchers, so the break is specific to what this
+  workload does.
+- **Evidence:** VALIDATED, identical at `d423b94` (the branch base) and at
+  `09b2403`, run exactly as `docs/swarm-scale-findings.md` says:
+
+  ```bash
+  A2A_SWARM_MAX=1000 cargo test -p a2a-protocol-server --release \
+    --test swarm_scale -- --ignored --nocapture --test-threads=1
+  ```
+
+  12 passed, 1 failed: `fan_out::a_tail_can_recover_what_it_missed`
+  (`tests/swarm_scale/fan_out.rs:299`) prints "40 posts landed; replay
+  returned 0 positions spanning 1, first None last None" and fails with "a
+  Last-Event-ID of 0 replayed nothing".
+- **Not a bug — how the tests are run:** run in parallel with
+  `--all-features` (no `--test-threads=1`), three `cost::` tests also fail
+  ("task … is already being processed"). They fail the same way at
+  `d423b94`, and they pass when run as documented. They are load experiments
+  contending on 4 cores. The earlier note that `swarm_scale` "fails under
+  PostgreSQL" described that parallel run.
+- **Ruled out:**
+  - Header parsing: `handler/lifecycle/subscribe.rs:33` parses `"0"` to
+    `Some(0)`, documented as "from the beginning".
+  - The coverage check: `store/task_store/mod.rs:636` computes
+    `earliest <= after_seq + 1`, which is true for position 0 with a log
+    starting at 1.
+  - A store without a log: the harness uses `InMemoryTaskStore` with the
+    default config (`tests/swarm_scale/harness.rs:133`), which keeps an event
+    log bounded at 512 events per task; 42 is well inside that.
+- **Regression range:** the test was added in `e0b9964`, where it passed per
+  the findings doc. From there to `d423b94` is 25 commits, 8 of which touch
+  `crates/a2a-protocol-server/src`:
+  - `e2cd61f`, `ffe1b23`, `308bdeb`: the status delta.
+  - `e64fced`: the send path's history append.
+  - `1f9159a`: the context lockout.
+  - `a5eea55`, `4c2cabf`, `c4ccfce`.
+
+  Four of them change how a turn's writes reach the store.
+- **Next step:** bisect with the one test:
+
+  ```bash
+  git bisect start d423b94 e0b9964
+  git bisect run sh -c 'cargo test -p a2a-protocol-server --release --test swarm_scale \
+    -- --ignored --test-threads=1 --exact fan_out::a_tail_can_recover_what_it_missed'
+  ```
+
+  Then confirm `e0b9964` itself passes, since bisect trusts the good end.
+- **Failing-first test:** the existing test is one, but it is `#[ignore]`d and
+  never runs in CI, which is how the regression reached `main`. The fix
+  should add a small, non-ignored version of the same replay to
+  `tests/sse_resumption_e2e.rs`, driven the way this workload drives it:
+  serial continuations of one task.
+- **Done when:** both tests pass, and the findings doc's sentence is true
+  again.
+
+### OW5 — gRPC status codes lose what the caller needs (C16)
+
+- **Severity:** Medium.
+- **Evidence:** VALIDATED by reading the code.
+  - `crates/a2a-protocol-client/src/transport/grpc.rs:848–861`
+    (`grpc_code_to_error_code`) maps `Unauthenticated` and `PermissionDenied`
+    to `InvalidParams`.
+  - `grpc.rs:504` maps a `Cancelled` status to `ClientError::Timeout`, which
+    is retryable, so a caller's own cancel can be retried.
+  - The binding does the same at `bindings/a2a-protocol-slimrpc/src/error.rs:153`.
+  - Consequence: the phase-1 401 hook, `BearerAuthInterceptor::on_error`
+    (`token_provider.rs:259`), matches only `UnexpectedStatus { status: 401 }`,
+    so a gRPC `Unauthenticated` never invalidates a cached token.
+- **Fix:** give auth failures their own mapping that the 401 hook also
+  matches, either a new `ClientError` variant or `UnexpectedStatus` with 401 or
+  403. Map `Cancelled` to a non-retryable error, and keep `ErrorInfo` details.
+- **Failing-first test:** extend `tests/bearer_token_invalidation.rs` with a
+  gRPC stub that answers `Unauthenticated`, and assert that the next call
+  carries a new token. It fails today.
+- **Done when:** that test passes, and the same mapping is applied in the
+  slimrpc binding.
+
+### OW6 — the gRPC and WebSocket dispatchers take no shutdown signal (S8)
+
+- **Severity:** Medium.
+- **Evidence:** VALIDATED by reading the code.
+  - `dispatch/grpc/dispatcher.rs:171`: `serve(addr)` has no signal
+    parameter.
+  - `dispatch/websocket.rs:229`: `serve` has none either, and at :230 it
+    discards the server's error with `let _ =`.
+  - `1c0af5d` documented how to stop them by hand, with `finish_in_flight`.
+- **Fix:** add `serve_with_shutdown(addr, signal)` to both, running the same
+  sequence as `Server::serve_with_shutdown`: stop accepting, call
+  `finish_in_flight`, then drain. Return the server's error instead of
+  dropping it.
+- **Failing-first test:** port `tests/graceful_shutdown_tasks.rs`'s delegation
+  test to both dispatchers. It cannot compile today, because there is no signal
+  to pass.
+- **Done when:** both dispatchers pass it, and the book's production chapter
+  drops the manual recipe.
+
+### OW7 — OAuth2 token-endpoint connection failures are classed as permanent
+
+- **Severity:** Low.
+- **Evidence:** VALIDATED by reading the code.
+  - `crates/a2a-protocol-client/src/token_provider.rs:498` maps a failed
+    request to the token endpoint, a refused connection included, to
+    `ClientError::Transport`, which is not retryable.
+  - Through `From<ClientError> for A2aError`, a task that fails on it is
+    therefore classed `Internal`, not `Transient`.
+- **Fix:** map connection errors and timeouts at :498 the way the transports
+  do: `HttpClient` for a connection error, `Timeout` for a timeout.
+- **Failing-first test:** point `OAuth2ClientCredentials` at a closed port and
+  assert `err.is_retryable()`.
+
+### OW8 — terminal-state gate follow-ups (phase-1 `c597a56`, `4874074`)
+
+- **Severity:** Low. Everything here is REPORTED by the stores worker and not
+  reproduced.
+  - A streaming client's final frame can wait up to the queue's write timeout
+    (5 s) behind push deliveries of earlier events in the background
+    processor.
+  - The final frame is appended to the event log only after the store has
+    ruled on it (`handler/event_processing/background/mod.rs:224`), so a crash
+    between the two leaves the log without the final event.
+  - Custom `TaskStore`s get no terminal protection unless they call
+    `store::refuses_write` (`store/terminal.rs:80`) inside their own writes.
+    That is documented, and nothing enforces it.
+- **Next step:** reproduce the first two, each with a test, before choosing a
+  fix.
+
+### OW9 — client stream follow-ups (phase-1 `9ed2bcb`, `f9f907c`, `848466a`)
+
+- **Severity:** Low.
+  - The gRPC keepalive settings (`transport/grpc.rs:311–313`) are
+    CONJECTURED: no test reads them back. `tests/` has a socket2 read-back for
+    the HTTP connector that can be copied.
+  - gRPC and WebSocket events pass through the SSE parser's
+    `max_event_size` (16 MiB by default) while gRPC's own cap,
+    `max_decoding_message_size` (`grpc.rs:440`), is 32 MiB. REPORTED.
+  - C20 is unchanged: the frame queue drops its oldest frames beyond 4,096
+    (`streaming/sse_parser/parser.rs:90`), and an `id:` containing NUL clears
+    the stored id.
+
+### OW10 — `docs/adr/0007-axum-integration-and-tck.md:35` is now wrong
+
+It says the `StringList` format "rejects OpenAPI-style flat scopes"; since
+`8e218a4` they are accepted. ADRs are records, so add a dated amendment to the
+ADR rather than rewriting the line.
+
+### OW11 — the coordinator end-to-end test phase 1 promised and did not build
+
+- **Severity:** Medium, as a gap in the gates.
+- **Where it was promised:** section 7, phase 1: "a coordinator end-to-end
+  test against a2a-go". What phase 1 built instead is
+  `scripts/go_sdk_interop.sh`, which drives each direction on its own: an
+  a2a-go client against this server, and this client against an a2a-go server.
+  Nothing runs the application's actual shape, a Go client calling a Rust
+  coordinator that delegates to a Go worker, so trace, cancel and
+  stream-forwarding across both hops are unexercised.
+- **Proposal:** build it with phase 3's delegation helper, which the
+  coordinator would exercise, and add it as a third leg of the same script.
+  Pass criteria:
+  - The Go client's stream ends `completed`, with the Go worker's artifact
+    forwarded.
+  - A cancel through the coordinator reaches the worker, which logs it.
+  - The worker sees the Go client's trace-id.
+
+### OW12 — every other open finding, by phase
+
+Section 7 gives the order. Every row below the Status section that has no
+**[Fixed …]** marker belongs to exactly one of these:
+
+| Phase | Findings |
+|---|---|
+| 2 — observability | O1–O15; O16 apart from the push URL; O17 |
+| 3 — coordinator developer experience | S4, S5, S10, S11, C7, C18, K2, and OW11. C4 (`From<ClientError>`), listed in section 7's phase 3, was done in phase 1 |
+| 4 — signing and types | T2–T7, K1 |
+| 5 — docs checked against code | C5, T8, S12, S13, K3, K4, and C19's README overstatement |
+| Open work above | T1 → OW1, S8 → OW6, C16 → OW5, C20 → OW9 |
+| Unscheduled | S14, S15, S16, C12, C13, C14, C17, C19 (retry behaviour), C21, T9, T10, T11, T12 |
+
+The unscheduled rows are real and mostly Low. C12 (agent-card URLs used
+unchecked — SSRF, and bearer tokens sent over a downgraded scheme) and C14
+(one slow WebSocket consumer blocks the socket) are the two Medium ones worth
+scheduling first.
 
 ## How the evidence was produced
 
@@ -124,7 +395,7 @@ first, and `scripts/go_sdk_interop.sh` is the interop harness made permanent.
 | O13 | Medium | Many failure paths report only through `trace_*!`, which compiles to nothing without the non-default `tracing` feature. Examples: the WebSocket traceparent drop, which the book says "warns once per connection", and skipped webhooks. | VALIDATED |
 | O14 | Medium | Health endpoints are inconsistent. axum `/ready` checks the store. REST `/ready` is a constant. JSON-RPC has `/health` and `/ready` (per the devx audit's live run). gRPC has no `grpc.health.v1`. | Mixed; the two audits disagreed on JSON-RPC, and the live run was taken as authoritative |
 | O15 | Medium | Push webhooks carry no `traceparent` (`push/sender.rs:851-906`). WebSocket drops it by design. Only JSON-RPC propagation is tested end to end. | CONJECTURED except JSON-RPC |
-| O16 | Low | Two INFO lines per request. The untrusted JSON-RPC method name is logged at INFO, a log-forging risk with the plain `fmt` format. The full webhook URL is logged at INFO (`push/sender.rs:776`), and those URLs often carry secrets. Endpoint URLs are logged at INFO on every client call. | VALIDATED except the push URL |
+| O16 | Low | **[Push URL logging fixed: `9ee3cc3`; the rest is open]** Two INFO lines per request. The untrusted JSON-RPC method name is logged at INFO, a log-forging risk with the plain `fmt` format. The full webhook URL is logged at INFO (`push/sender.rs:776`), and those URLs often carry secrets. Endpoint URLs are logged at INFO on every client call. | VALIDATED except the push URL |
 | O17 | Low | `ClientRequest` derives `Debug` over `extra_headers` (`client/src/interceptor.rs:50`), so `{req:?}` prints `authorization: Bearer …`. Server `CallContext` and token providers redact correctly. | VALIDATED (code) |
 
 **What went well:** metric cardinality is bounded (`metric_label()`), and the
@@ -136,15 +407,15 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 
 | # | Sev | Finding | Evidence |
 |---|---|---|---|
-| S1 | High | **The documented graceful shutdown leaves downstream work running.** SIGINT during a streamed delegation followed the documented order. The 15 s socket drain (`serve/graceful/mod.rs:117`) ran before any task was cancelled. `handler.shutdown()` then cancels tokens but doesn't wait for executors. Result: exit after 16 s with `abandoned: 1`, no terminal event upstream, and no cancel sent to either Go task. | VALIDATED (live, a2a-go workers) [re-checked the constant] |
-| S2 | High | **Over JSON-RPC, a streaming call's pre-stream error is sent as plain `application/json` 200.** a2a-go's client only reads `data:` lines, so it sees `events=0 err=<nil>`. Go clients silently lose "task not found" on `SendStreamingMessage` and `SubscribeToTask`. REST and gRPC are fine. | VALIDATED (Go client) |
-| S3 | High | **Possible cross-replica cancel race.** CancelTask on replica B writes Canceled. Replica A's background processor still holds its in-memory `last_task`, and Postgres `save_status_delta` runs an unconditional `UPDATE … WHERE id = $4` (`store/postgres_store/store_impl.rs:241-246`). The client is told Canceled and the task ends Completed. Separately, `tests/multi_replica.rs:530-548` shows two replicas both accepting a continuation of the same task, which `horizontal-scaling.md` does not mention. | Unconditional UPDATE VALIDATED [re-checked]; race CONJECTURED |
+| S1 | High | **[Fixed: `3f6f7d3`, `8161455`, `09b2403`]** **The documented graceful shutdown leaves downstream work running.** SIGINT during a streamed delegation followed the documented order. The 15 s socket drain (`serve/graceful/mod.rs:117`) ran before any task was cancelled. `handler.shutdown()` then cancels tokens but doesn't wait for executors. Result: exit after 16 s with `abandoned: 1`, no terminal event upstream, and no cancel sent to either Go task. | VALIDATED (live, a2a-go workers) [re-checked the constant] |
+| S2 | High | **[Fixed: `0a076e1`]** **Over JSON-RPC, a streaming call's pre-stream error is sent as plain `application/json` 200.** a2a-go's client only reads `data:` lines, so it sees `events=0 err=<nil>`. Go clients silently lose "task not found" on `SendStreamingMessage` and `SubscribeToTask`. REST and gRPC are fine. | VALIDATED (Go client) |
+| S3 | High | **[Fixed: `c597a56`, `4874074` — residual gaps are open work OW2]** **Possible cross-replica cancel race.** CancelTask on replica B writes Canceled. Replica A's background processor still holds its in-memory `last_task`, and Postgres `save_status_delta` runs an unconditional `UPDATE … WHERE id = $4` (`store/postgres_store/store_impl.rs:241-246`). The client is told Canceled and the task ends Completed. Separately, `tests/multi_replica.rs:530-548` shows two replicas both accepting a continuation of the same task, which `horizontal-scaling.md` does not mention. | Unconditional UPDATE VALIDATED [re-checked]; race CONJECTURED |
 | S4 | High | **`agent_executor!` can't be used by an executor that has state** (it hides `self`, `E0424`). Every coordinator has to write out the full `Pin<Box<dyn Future…>>` signature. | VALIDATED (compile) |
 | S5 | High | **There are no delegation helpers.** Forwarding a downstream stream into the upstream queue, rewriting ids, passing cancellation downstream and merging fan-out streams all have to be hand-written: 110 of the 230 lines in the auditor's coordinator. The executor's `queue` is borrowed for `'a`, so spawned fan-out tasks can't write to it, which forces an mpsc relay. No book chapter covers delegation. | VALIDATED |
-| S6 | Medium | Over REST, a mid-stream error is sent as `event: error` with a bare `{code,message}`. a2a-go's REST stream parser doesn't recognize it, so a Go client gets "unknown stream response type". | CONJECTURED (both sources) |
-| S7 | Medium | The push token header and content type differ from a2a-go. Rust sends `x-a2a-notification-token` / `application/a2a+json`; Go uses `A2A-Notification-Token` / `application/json`. Each side's webhook rejects the other's pushes. The comment at `push/sender.rs:898-903` says official receivers use the X- name, which is not true of a2a-go 2.5.0. | VALIDATED (same webhook) |
-| S8 | Medium | Graceful shutdown covers only JSON-RPC and REST. `GrpcDispatcher::serve` and `WebSocketDispatcher::serve` take no shutdown signal, and the gRPC background serve discards its error with `let _ =`. | VALIDATED (code) |
-| S9 | Medium | README.md:60 says `shutdown()` reports a queue it had to force-destroy. The field is "always 0" (`handler/shutdown/mod.rs:30`), and every queue is destroyed unconditionally. | VALIDATED |
+| S6 | Medium | **[Fixed: `32ae44b`]** Over REST, a mid-stream error is sent as `event: error` with a bare `{code,message}`. a2a-go's REST stream parser doesn't recognize it, so a Go client gets "unknown stream response type". | CONJECTURED (both sources) |
+| S7 | Medium | **[Fixed: `9ee3cc3`]** The push token header and content type differ from a2a-go. Rust sends `x-a2a-notification-token` / `application/a2a+json`; Go uses `A2A-Notification-Token` / `application/json`. Each side's webhook rejects the other's pushes. The comment at `push/sender.rs:898-903` says official receivers use the X- name, which is not true of a2a-go 2.5.0. | VALIDATED (same webhook) |
+| S8 | Medium | **[Documented only: `1c0af5d` — open work OW6]** Graceful shutdown covers only JSON-RPC and REST. `GrpcDispatcher::serve` and `WebSocketDispatcher::serve` take no shutdown signal, and the gRPC background serve discards its error with `let _ =`. | VALIDATED (code) |
+| S9 | Medium | **[Fixed: `3f6f7d3`]** README.md:60 says `shutdown()` reports a queue it had to force-destroy. The field is "always 0" (`handler/shutdown/mod.rs:30`), and every queue is destroyed unconditionally. | VALIDATED |
 | S10 | Medium | `EventEmitter::status(state)` can't carry a progress message. `RequestContext.task_id` is a `TaskId` but `context_id` is a `String`. | VALIDATED (compile) |
 | S11 | Medium | The README's one-line `serve()` is the unhardened path: no connection cap, no header or idle timeout, no shutdown. There is no top-level `max_concurrent_tasks` (per-tenant only). | CONJECTURED (code, but the crate's own docs agree) |
 | S12 | Medium | `book/src/reference/configuration.md:17` gives the executor-timeout default as None; the code sets 1 h. The server README's `signing` row says "verification", but the crate does no signing. The feature table omits grpc-tls, auth-jwt, tls-rustls and conformance. | VALIDATED |
@@ -157,22 +428,22 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 
 | # | Sev | Finding | Evidence |
 |---|---|---|---|
-| C1 | High | **A stream that goes silent after its first event hangs forever.** There is no idle or per-event timeout, no TCP keepalive and no HTTP/2 ping (`streaming/event_stream.rs:332-341`, `tls.rs:126-138`). | VALIDATED (stub: still pending at 8 s with 1 s timeouts) |
-| C2 | High | **A stream ending with no terminal event returns `None` like normal completion.** A partial final frame is silently dropped. There is no resume: the client parses `id:` but drops it, and `subscribe_to_task` can't send `Last-Event-ID`, although the server supports resumption. | VALIDATED |
-| C3 | High | **OAuth2 refresh failures run one after another under one lock.** A failed refresh caches nothing, so each queued caller runs its own full-timeout refresh (`token_provider.rs:538`). With 1 s timeouts, 5 callers failed at 1, 2, 3, 4 and 5 s; at the 30 s default with 100 callers, that is about 50 minutes. | VALIDATED |
-| C4 | High | **`ClientError` doesn't convert to `A2aError`**, so `?` in an executor fails (`E0277`). Only the reverse conversion exists (`error/mod.rs:184`). Every call site has to convert to a string, which loses whether it was a timeout, a transient failure or a protocol error. | VALIDATED [re-checked] |
+| C1 | High | **[Fixed: `9ed2bcb`, `f9f907c`]** **A stream that goes silent after its first event hangs forever.** There is no idle or per-event timeout, no TCP keepalive and no HTTP/2 ping (`streaming/event_stream.rs:332-341`, `tls.rs:126-138`). | VALIDATED (stub: still pending at 8 s with 1 s timeouts) |
+| C2 | High | **[Fixed: `efd6be0`]** **A stream ending with no terminal event returns `None` like normal completion.** A partial final frame is silently dropped. There is no resume: the client parses `id:` but drops it, and `subscribe_to_task` can't send `Last-Event-ID`, although the server supports resumption. | VALIDATED |
+| C3 | High | **[Fixed: `4377528`]** **OAuth2 refresh failures run one after another under one lock.** A failed refresh caches nothing, so each queued caller runs its own full-timeout refresh (`token_provider.rs:538`). With 1 s timeouts, 5 callers failed at 1, 2, 3, 4 and 5 s; at the 30 s default with 100 callers, that is about 50 minutes. | VALIDATED |
+| C4 | High | **[Fixed: `5ac7e9a`]** **`ClientError` doesn't convert to `A2aError`**, so `?` in an executor fails (`E0277`). Only the reverse conversion exists (`error/mod.rs:184`). Every call site has to convert to a string, which loses whether it was a timeout, a transient failure or a protocol error. | VALIDATED [re-checked] |
 | C5 | High | **The client README (its crates.io page) documents APIs that don't exist**: `resubscribe()`, `get_authenticated_extended_card()`, `ClientBuilder::with_transport()`. It says "10 variants" (there are 11), has a non-exhaustive `match` that won't compile, and gives the wrong description for the `signing` row. | VALIDATED [re-checked] |
-| C6 | Medium | The first-event timeout reuses `stream_connect_timeout` (30 s). A Go agent that flushes headers and then thinks longer than 30 s is cut off (`jsonrpc.rs:401`, `rest/streaming.rs:87`). gRPC has the same problem. | VALIDATED (stub) |
+| C6 | Medium | **[Fixed: `46791be`]** The first-event timeout reuses `stream_connect_timeout` (30 s). A Go agent that flushes headers and then thinks longer than 30 s is cut off (`jsonrpc.rs:401`, `rest/streaming.rs:87`). gRPC has the same problem. | VALIDATED (stub) |
 | C7 | Medium | The blocking `send_message` has a 30 s `request_timeout`, too short for delegation, and retry is off by default. Both shipped coordinators wrap calls in their own timeouts. | CONJECTURED (code) |
-| C8 | Medium | REST streaming errors aren't decoded, although REST unary errors are. `subscribe_to_task` 404 gives `UnexpectedStatus` where `get_task` gives `TaskNotFound`. Go's in-stream AIP-193 `{"error":…}` frames become `Serialization("unknown variant error")`. | VALIDATED (stub and Go server) |
-| C9 | Medium | Deleting a push config on a Go server reports failure though it succeeded: over JSON-RPC Go returns no `result`, over REST it returns an empty 200. gRPC works. Go is the non-compliant side, but the Rust client should tolerate it. | VALIDATED (Go server) |
-| C10 | Medium | Interface selection ignores `protocolVersion`, so it chose a Go agent's `/v03` endpoint over `/v1.0`. A lowercase `"jsonrpc"` binding makes `build()` fail (the selector ignores case, the factory doesn't). `from_card` falls back to `.first()` and errors instead of trying the next interface. | VALIDATED |
-| C11 | Medium | The SSE parser truncates an endless line silently and never errors: 50 MiB with no newline gave 0 errors and 0 frames, holding up to 32 MiB. `max_event_size` can't be set from `ClientConfig`. | VALIDATED |
+| C8 | Medium | **[Fixed: `85c5a6c`, `adce975`]** REST streaming errors aren't decoded, although REST unary errors are. `subscribe_to_task` 404 gives `UnexpectedStatus` where `get_task` gives `TaskNotFound`. Go's in-stream AIP-193 `{"error":…}` frames become `Serialization("unknown variant error")`. | VALIDATED (stub and Go server) |
+| C9 | Medium | **[Fixed: `b22ae03`]** Deleting a push config on a Go server reports failure though it succeeded: over JSON-RPC Go returns no `result`, over REST it returns an empty 200. gRPC works. Go is the non-compliant side, but the Rust client should tolerate it. | VALIDATED (Go server) |
+| C10 | Medium | **[Fixed: `38f24c7`]** Interface selection ignores `protocolVersion`, so it chose a Go agent's `/v03` endpoint over `/v1.0`. A lowercase `"jsonrpc"` binding makes `build()` fail (the selector ignores case, the factory doesn't). `from_card` falls back to `.first()` and errors instead of trying the next interface. | VALIDATED |
+| C11 | Medium | **[Fixed: `848466a`]** The SSE parser truncates an endless line silently and never errors: 50 MiB with no newline gave 0 errors and 0 frames, holding up to 32 MiB. `max_event_size` can't be set from `ClientConfig`. | VALIDATED |
 | C12 | Medium | Agent-card interface URLs are used as given: no same-origin check and no https→http downgrade guard, so an SSRF risk and a bearer-token leak risk. | CONJECTURED (code) |
 | C13 | Medium | `HTTPS_PROXY`/`NO_PROXY` are ignored, and only the bundled webpki roots are trusted (no system roots). | VALIDATED (grep) |
 | C14 | Medium | WebSocket: one slow stream consumer blocks routing for every request on the socket (conjectured). Pretty-printed JSON frames are corrupted by `data:` wrapping (validated). | Mixed |
-| C15 | Medium | Token cache: `expires_in ≤ 30` means every call hits the token endpoint. A downstream 401 never invalidates the cached token. | VALIDATED |
-| C16 | Medium | gRPC `Unauthenticated`/`PermissionDenied` map to `InvalidParams`. `ErrorInfo` details are dropped. A mid-stream `Cancelled` becomes a retryable `Timeout`. slimrpc does the same at `error.rs:153`. | VALIDATED (code and tests) |
+| C15 | Medium | **[Fixed: `e03d8d7`, `739a304`]** Token cache: `expires_in ≤ 30` means every call hits the token endpoint. A downstream 401 never invalidates the cached token. | VALIDATED |
+| C16 | Medium | **[Open work OW5]** gRPC `Unauthenticated`/`PermissionDenied` map to `InvalidParams`. `ErrorInfo` details are dropped. A mid-stream `Cancelled` becomes a retryable `Timeout`. slimrpc does the same at `error.rs:153`. | VALIDATED (code and tests) |
 | C17 | Medium | `CachingCardResolver`: a network call on every `resolve()`, no TTL, a stampede under concurrency, no stale-on-error, a new HTTPS client per fetch, no redirect following, a timeout reported as a non-retryable `Transport` error, and an error body up to 2 MiB kept untruncated. | VALIDATED |
 | C18 | Medium | `A2aClient` isn't `Clone`, `EventStream` has no `futures::Stream` implementation, `cancel_task` won't accept a `TaskId`, and there is no per-call header API. | VALIDATED (compile) |
 | C19 | Low | `Retry-After` is capped by `max_backoff`, HTTP-date values are ignored, and there is no overall deadline across attempts. The README overstates which sends are retried: without an idempotency key, only 429 and 503. | VALIDATED |
@@ -187,7 +458,7 @@ non-idempotent sends is correctly limited; body size limits are enforced.
 
 | # | Sev | Finding | Evidence |
 |---|---|---|---|
-| T1 | High | **Agent cards with security requirements can't be exchanged with a2a-go in either direction.** Rust writes `{"o":{"list":["s"]}}` (proto/spec shape); Go writes `{"o":["s"]}`, and each side fails to parse the other. Rust matches the spec, but in practice the reader must accept both shapes. | VALIDATED (both directions) |
+| T1 | High | **[Read side fixed: `8e218a4`; write side is open work OW1]** **Agent cards with security requirements can't be exchanged with a2a-go in either direction.** Rust writes `{"o":{"list":["s"]}}` (proto/spec shape); Go writes `{"o":["s"]}`, and each side fails to parse the other. Rust matches the spec, but in practice the reader must accept both shapes. | VALIDATED (both directions) |
 | T2 | High | **Signing: serde_json lacks `float_roundtrip`**, so floats in a card are off by one ULP before canonicalization. The RFC 8785 §3.2.4 example gives `333333333.33333325`, 5 of 24 Appendix-B vectors fail after parsing, and 29.7% of random exponent-form doubles parse wrong. | VALIDATED [re-checked: the feature is absent from every manifest] |
 | T3 | High | **Signing: verification canonicalizes the re-serialized struct, not the received JSON** (`signing.rs:70-71`). Any unknown field, the legacy `url`, a missing `skills`, `null` capabilities, snake_case aliases or the v0.3 scheme form makes a valid peer signature fail. Empty defaults (`"skills":[]`) are added to the canonical bytes. There is no cross-SDK signing test. | VALIDATED [re-checked the code path] |
 | T4 | Medium | The ES number formatter gets exact ties wrong (`1424953923781206.3` vs `.2`). `crit` headers go unchecked (RFC 7515 §4.1.11). A bad signature surfaces as `-32603 Internal`. | VALIDATED |
