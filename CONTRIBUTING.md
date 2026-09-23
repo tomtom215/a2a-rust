@@ -523,9 +523,12 @@ scripts/preflight.sh --list   # the gate inventory, and what each tier covers
 `--full` means it: it includes the gates with external prerequisites, and those
 fail without them rather than being quietly skipped. A live PostgreSQL at
 `A2A_TEST_POSTGRES_URL` for the two postgres suites, and `spire-server` /
-`spire-agent` on `PATH` with `SPIRE_BIN_DIR` set for the SPIFFE suites — the
-same thing CI stands up as a service and an install step. The default tier
-needs neither.
+`spire-agent` on `PATH` with `SPIRE_BIN_DIR` set for the SPIFFE suites, and a
+Go toolchain (the version `itk/agents/go-sdk/go.mod` names, or
+`GOTOOLCHAIN=auto`) for `scripts/go_sdk_interop.sh`, which builds a2a-go's
+client and server and runs them against this SDK — the same things CI stands
+up as a service, an install step and `actions/setup-go`. The default tier
+needs none of them.
 
 One step is deliberately not run locally: `Install SPIRE` hands its download
 path to the next step through `$GITHUB_ENV`, which is inter-step state only

@@ -90,3 +90,14 @@ the existing `RequestHandler`. Design principles:
 
 - The `Dispatcher` trait and raw hyper `serve()` remain the primary API
 - Axum integration does not replace JSON-RPC or REST dispatchers — it is an alternative
+
+## Amendment, 2026-09-23 — flat security scopes are now accepted
+
+The Decision's TCK list says the `StringList` format "rejects OpenAPI-style
+flat scopes". That was the behaviour when this ADR was written and is no
+longer: since `8e218a4`, `StringList` also reads the bare-array shape a2a-go
+v2.5.0 writes (`{"schemes":{"o":["s"]}}`) and `null`, while still writing only
+the spec's `{"list":[...]}`. Being lenient in what it reads is what let this
+SDK's client resolve a2a-go cards with `securityRequirements`; the spec shape
+remains the only one it emits. See `docs/adopter-audit-2026-09-22.md`, T1
+and OW1.

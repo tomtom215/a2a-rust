@@ -341,10 +341,26 @@ counts the two harness-locked agent worktrees under `.claude/worktrees/`, and
 reports 0 findings in a clean clone of the same commit. `go_sdk_interop.sh`
 passed inside that run.
 
-**What the next session should do first:** open the pull request for this
-branch, watch `go-sdk-interop` and the mutation gate go green, and then start
-phase 2 (observability) from section 7 of the audit. The observability review
-above ("There is no tracing at all") is the same finding from the other side.
+After `4a38f21` the branch gained two code changes, each verified on its own
+rather than by another full preflight: `09b2403` removed a redundant guard in
+`finish_in_flight` that left two mutants alive (re-run: 0 missed; clippy and
+both shutdown suites clean), and `3c1112f` fixed the `swarm_scale` fixture
+card, which had not advertised streaming since `ce0d782` and so made the
+replay test fail as if the event log were broken. Found by bisect; the
+documented run is 13 of 13 again. Mutation testing over this branch's own
+follow-up commits: 29 mutants, 11 caught, 16 unviable, 2 missed before
+`09b2403`, 0 after.
+
+**What the next session should do first:** watch this branch's pull request
+until `go-sdk-interop`, the mutation gate and the rest of CI are green, and
+fix what goes red. Then work from **Open work** in
+[`adopter-audit-2026-09-22.md`](adopter-audit-2026-09-22.md): each item there
+has evidence, file:line, a reproduction, a proposed fix and the test that
+must fail first. OW3 (the PostgreSQL startup race) and OW5 (gRPC auth codes)
+are the smallest self-contained ones; phase 2 (observability, OW12) is the
+largest and the one the adopter who prompted the audit hit first — the
+observability review above ("There is no tracing at all") is the same finding
+from the other side.
 
 ## In flight outside this repository
 

@@ -275,11 +275,11 @@ Kept here because what it took to settle is the useful part.
     (`streaming/sse_parser/parser.rs:90`), and an `id:` containing NUL clears
     the stored id.
 
-### OW10 — `docs/adr/0007-axum-integration-and-tck.md:35` is now wrong
+### OW10 — resolved: ADR 0007 said flat security scopes are rejected
 
-It says the `StringList` format "rejects OpenAPI-style flat scopes"; since
-`8e218a4` they are accepted. ADRs are records, so add a dated amendment to the
-ADR rather than rewriting the line.
+`docs/adr/0007-axum-integration-and-tck.md:35` described the pre-`8e218a4`
+behaviour. The ADR now carries a dated amendment at its end rather than an
+edited line, since ADRs are records.
 
 ### OW11 — the coordinator end-to-end test phase 1 promised and did not build
 
