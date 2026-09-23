@@ -322,6 +322,24 @@ Three lessons, each of which cost something here:
   as indicative.
 * **A mutant that hangs the suite is not caught.** Two tests hung rather than
   failed under mutation; both are now bounded (`9ee0ce6`, `f82983a`).
+* **Per-change verification is not the gate set.** Every worker ran its
+  crate's tests, clippy and mutants, and the merged branch still failed five
+  of the repository's own gates under `scripts/preflight.sh --full`:
+  timeout nesting, panic paths, inert bounds, book code and gate
+  reachability. Fixing the first then pushed `write()` over clippy's line
+  limit, because only the tests were re-run (`600e3f3`, fixed in `4a38f21`).
+  Run `preflight.sh --full` on the merged tree, not a hand-picked subset.
+  Its first 25 GB of target filled this environment's ~37 GB allowance
+  twice. Clearing `target/debug/incremental` mid-run, which held 16 GB,
+  is what let it finish.
+
+**Verification of record, at `4a38f21`:** `scripts/preflight.sh --full` ran
+71 of 71 CI gate commands; 69 passed. The two failures are this machine's,
+not the branch's. The binding's SPIFFE suites stop at "spire-server and
+spire-agent were not found" (CI installs SPIRE). `check_gate_reachability.py`
+counts the two harness-locked agent worktrees under `.claude/worktrees/`, and
+reports 0 findings in a clean clone of the same commit. `go_sdk_interop.sh`
+passed inside that run.
 
 **What the next session should do first:** open the pull request for this
 branch, watch `go-sdk-interop` and the mutation gate go green, and then start
