@@ -973,6 +973,70 @@ mod tests {
         assert_eq!(fetched.name, "path-resolve-test");
     }
 
+    /// `resolve_agent_card` fetches the card from the well-known path under
+    /// the base URL and returns it. The server here answers only that path —
+    /// every other one is a 404 — so both the path and the parsed card are
+    /// checked. Until 2026-09-23 this function's only tests expected errors.
+    #[tokio::test]
+    async fn resolve_agent_card_fetches_the_well_known_card() {
+        use a2a_protocol_types::{AgentCard, AgentInterface};
+
+        let card = AgentCard::new(
+            "well-known-test",
+            "1.0.0",
+            AgentInterface::jsonrpc("http://localhost:9090"),
+        );
+        let card_json = serde_json::to_string(&card).unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let body = card_json.clone();
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(
+                        move |req: hyper::Request<hyper::body::Incoming>| {
+                            let (status, body) =
+                                if req.uri().path() == "/.well-known/agent-card.json" {
+                                    (200, body.clone())
+                                } else {
+                                    (404, String::new())
+                                };
+                            async move {
+                                Ok::<_, hyper::Error>(
+                                    hyper::Response::builder()
+                                        .status(status)
+                                        .body(http_body_util::Full::new(hyper::body::Bytes::from(
+                                            body,
+                                        )))
+                                        .unwrap(),
+                                )
+                            }
+                        },
+                    );
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+
+        let fetched = resolve_agent_card(&format!("http://127.0.0.1:{}", addr.port()))
+            .await
+            .expect("the well-known card");
+        assert_eq!(
+            (fetched.name.as_str(), fetched.version.as_str()),
+            ("well-known-test", "1.0.0")
+        );
+        assert_eq!(
+            fetched.supported_interfaces[0].url,
+            card.supported_interfaces[0].url
+        );
+    }
+
     /// Test card body size limit via Content-Length (covers lines 264-266).
     #[tokio::test]
     async fn fetch_card_rejects_oversized_content_length() {

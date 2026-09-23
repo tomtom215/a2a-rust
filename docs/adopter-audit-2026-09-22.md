@@ -132,11 +132,24 @@ stores (`tests/cross_replica_cancel/`).
     appended-parts delta was checked for list order; killed by
     `artifact_push_preserves_list_position`.
 
-  What stays unmeasured is the 142 unviable, mostly `Ok(Default::default())`
-  for a type with no `Default`: those functions are as untested by
-  "replace the body" as before. Adopting the alias would make the rest of
-  these mutants part of every run; that, N11's version of the same gap, and
-  the tooling choice between them are the maintainer's decision.
+  The 142 unviable are mostly `Ok(Default::default())` for a type with no
+  `Default`, which no tool can build; 85 functions had no other body
+  replacement. Each was reviewed by reading (2026-09-23): for 79 a test in
+  the function's own crate asserts something a trivial body would break —
+  the crate matters, because cargo-mutants runs only the mutated crate's
+  tests. The other 6 now have one: `A2aClient::from_card` (its test asserted
+  only a timeout a default client also has), `OAuth2ClientCredentials::
+  from_oidc_issuer` (untested anywhere), `GrpcTransport::connect` and
+  `GrpcTransport::parse_params` (covered only from the SDK crate; the client
+  crate's gRPC stub now answers only the id it is asked for), and the timeout
+  arguments of `RestTransport::with_timeout` and
+  `WebSocketTransport::connect_with_timeout` (no test bounded the elapsed
+  time, so a dropped value fell back to the 30 s default unnoticed; the REST
+  test was run against exactly that and failed at 30.0 s). The review also
+  noted that `connection_timeout` in the JSON-RPC and REST transports is still
+  checked by no test that measures it. **[Resolved on this branch; the
+  maintainer chose a patched cargo-mutants in CI, which makes these
+  mutants part of every run.]**
 
 - **N10 — no release was ever checked to be its own release preparation,
   and eight of seventeen tags were not** (Medium, release

@@ -1356,6 +1356,31 @@ mod tests {
         assert_eq!(url, "http://i/oauth/token");
     }
 
+    /// `from_oidc_issuer` builds a provider aimed at the endpoint the issuer's
+    /// discovery document names — not at the issuer, and not at a default.
+    /// Until 2026-09-23 only `discover_token_endpoint` beneath it was tested.
+    #[tokio::test]
+    async fn from_oidc_issuer_targets_the_discovered_token_endpoint() {
+        let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let addr = spawn_token_server(
+            vec![(
+                200,
+                r#"{"issuer":"http://i","token_endpoint":"http://i/oauth/token"}"#.to_owned(),
+            )],
+            Arc::clone(&captured),
+            Arc::clone(&hits),
+        )
+        .await;
+
+        let provider =
+            OAuth2ClientCredentials::from_oidc_issuer(&format!("http://{addr}"), "cid", "csec")
+                .await
+                .expect("discovery succeeds");
+        assert_eq!(provider.token_url, "http://i/oauth/token");
+        assert_eq!(hits.load(Ordering::SeqCst), 1, "one discovery request");
+    }
+
     #[tokio::test]
     async fn oidc_discovery_without_token_endpoint_errors() {
         let captured = Arc::new(std::sync::Mutex::new(Vec::new()));

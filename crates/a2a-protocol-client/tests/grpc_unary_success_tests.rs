@@ -32,8 +32,10 @@ fn stored_task() -> Task {
     }
 }
 
-/// Answers every call with `stored_task()`, as one length-prefixed frame
-/// followed by an OK status trailer.
+/// Answers `GetTask` for `stored_task()`'s id with that task, as one
+/// length-prefixed frame followed by an OK status trailer, and any other id
+/// with `NOT_FOUND` — so the request the client sends has to carry the id it
+/// was given, not just reach the server.
 async fn grpc_server() -> std::net::SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -43,22 +45,36 @@ async fn grpc_server() -> std::net::SocketAddr {
         while let Ok((stream, _)) = listener.accept().await {
             tokio::spawn(async move {
                 let svc = hyper::service::service_fn(
-                    |_req: hyper::Request<hyper::body::Incoming>| async {
-                        let payload = pb::Task::try_from(stored_task())
-                            .expect("task converts")
-                            .encode_to_vec();
-                        let mut frame = vec![0_u8];
-                        frame.extend_from_slice(
-                            &u32::try_from(payload.len()).expect("len").to_be_bytes(),
-                        );
-                        frame.extend_from_slice(&payload);
+                    |req: hyper::Request<hyper::body::Incoming>| async {
+                        use http_body_util::BodyExt;
+                        let body = req.into_body().collect().await.expect("body").to_bytes();
+                        // Skip the 5-byte gRPC message prefix.
+                        let asked = pb::GetTaskRequest::decode(body.get(5..).unwrap_or_default())
+                            .map(|r| r.id)
+                            .unwrap_or_default();
                         let mut trailers = hyper::HeaderMap::new();
-                        trailers
-                            .insert("grpc-status", hyper::header::HeaderValue::from_static("0"));
-                        let frames: Vec<Result<Frame<Bytes>, Infallible>> = vec![
-                            Ok(Frame::data(Bytes::from(frame))),
-                            Ok(Frame::trailers(trailers)),
-                        ];
+                        let mut frames: Vec<Result<Frame<Bytes>, Infallible>> = Vec::new();
+                        if asked == stored_task().id.0 {
+                            let payload = pb::Task::try_from(stored_task())
+                                .expect("task converts")
+                                .encode_to_vec();
+                            let mut frame = vec![0_u8];
+                            frame.extend_from_slice(
+                                &u32::try_from(payload.len()).expect("len").to_be_bytes(),
+                            );
+                            frame.extend_from_slice(&payload);
+                            frames.push(Ok(Frame::data(Bytes::from(frame))));
+                            trailers.insert(
+                                "grpc-status",
+                                hyper::header::HeaderValue::from_static("0"),
+                            );
+                        } else {
+                            trailers.insert(
+                                "grpc-status",
+                                hyper::header::HeaderValue::from_static("5"),
+                            );
+                        }
+                        frames.push(Ok(Frame::trailers(trailers)));
                         let body = http_body_util::StreamBody::new(tokio_stream::iter(frames));
                         let mut resp = hyper::Response::new(body);
                         resp.headers_mut().insert(
@@ -78,6 +94,14 @@ async fn grpc_server() -> std::net::SocketAddr {
     addr
 }
 
+fn query(id: &str) -> TaskQueryParams {
+    TaskQueryParams {
+        tenant: None,
+        id: id.into(),
+        history_length: None,
+    }
+}
+
 #[tokio::test]
 async fn a_unary_grpc_call_returns_what_the_server_sent() {
     let addr = grpc_server().await;
@@ -87,12 +111,42 @@ async fn a_unary_grpc_call_returns_what_the_server_sent() {
         .await
         .expect("client");
     let task = client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: "task-42".into(),
-            history_length: None,
-        })
+        .get_task(query("task-42"))
         .await
         .expect("the server's task");
     assert_eq!(task, stored_task());
+
+    // The id reaches the wire: the server knows no other.
+    assert!(client.get_task(query("task-7")).await.is_err());
+}
+
+/// The same through `GrpcTransport::connect` and a custom transport, the
+/// route the book documents for a caller who configures the transport itself.
+#[tokio::test]
+async fn a_transport_from_connect_carries_the_call() {
+    use a2a_protocol_client::GrpcTransport;
+
+    let addr = grpc_server().await;
+    let url = format!("http://{addr}");
+    let transport = GrpcTransport::connect(url.clone()).await.expect("connect");
+    let client = ClientBuilder::new(url)
+        .with_custom_transport(transport)
+        .build()
+        .expect("client");
+    assert_eq!(
+        client.get_task(query("task-42")).await.expect("task"),
+        stored_task()
+    );
+}
+
+/// `connect` refuses an address it cannot dial, naming it.
+#[tokio::test]
+async fn connect_refuses_an_unusable_address() {
+    use a2a_protocol_client::{ClientError, GrpcTransport};
+
+    match GrpcTransport::connect("grpc://agent:1").await {
+        Err(ClientError::InvalidEndpoint(msg)) => assert!(msg.contains("grpc://agent:1"), "{msg}"),
+        Err(other) => panic!("expected InvalidEndpoint, got {other:?}"),
+        Ok(_) => panic!("expected InvalidEndpoint, got a transport"),
+    }
 }

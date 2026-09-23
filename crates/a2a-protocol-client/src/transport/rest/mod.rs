@@ -309,6 +309,47 @@ mod tests {
         );
     }
 
+    /// `with_timeout` sets one bound for a whole request and for establishing
+    /// a stream alike. Against a server whose headers come late and whose body
+    /// never does, both give up at that bound — not at the 30 s default a
+    /// constructor that dropped the value would leave in place.
+    #[tokio::test]
+    async fn with_timeout_bounds_requests_and_streams_alike() {
+        let bound = Duration::from_millis(600);
+        let addr =
+            crate::transport::test_support::spawn_stalling_server("HTTP/1.1 200 OK", bound * 2 / 3)
+                .await;
+        let transport =
+            RestTransport::with_timeout(format!("http://127.0.0.1:{}", addr.port()), bound)
+                .unwrap();
+
+        let started = std::time::Instant::now();
+        let unary = transport
+            .execute_request("GetTask", serde_json::json!({"id": "t1"}), &HashMap::new())
+            .await;
+        let unary_took = started.elapsed();
+        assert!(matches!(unary, Err(ClientError::Timeout(_))), "{unary:?}");
+        assert!(
+            unary_took < bound * 3 / 2,
+            "unary took {unary_took:?} against {bound:?}"
+        );
+
+        let started = std::time::Instant::now();
+        let stream = transport
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
+            .await;
+        let stream_took = started.elapsed();
+        assert!(matches!(stream, Err(ClientError::Timeout(_))), "{stream:?}");
+        assert!(
+            stream_took < bound * 3 / 2,
+            "stream took {stream_took:?} against {bound:?}"
+        );
+    }
+
     /// Test `send_streaming_request` via Transport trait delegation (covers lines 195-202).
     #[tokio::test]
     async fn send_streaming_request_via_trait_delegation() {

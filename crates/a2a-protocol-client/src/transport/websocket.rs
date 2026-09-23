@@ -1441,10 +1441,18 @@ mod tests {
         .await
         .expect("connect");
 
+        let started = std::time::Instant::now();
         let err = transport
             .send_request("GetTask", serde_json::json!({"id": "t1"}), &HashMap::new())
             .await
             .expect_err("request must time out");
+        // At the 100 ms `connect_with_timeout` was given, not the 30 s
+        // default a dropped value would leave.
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "took {:?}",
+            started.elapsed()
+        );
         assert!(
             matches!(err, ClientError::Timeout(_)),
             "expected timeout, got: {err:?}"
