@@ -77,12 +77,14 @@ async fn nothing_else_invalidates() {
 /// no bearer token to drop.
 #[tokio::test]
 async fn a_non_bearer_or_missing_header_names_no_token() {
-    assert!(
-        invalidated_after(Some("Basic abc"), &status(401))
-            .await
-            .is_empty()
+    assert_eq!(
+        invalidated_after(Some("Basic abc"), &status(401)).await,
+        Vec::<String>::new()
     );
-    assert!(invalidated_after(None, &status(401)).await.is_empty());
+    assert_eq!(
+        invalidated_after(None, &status(401)).await,
+        Vec::<String>::new()
+    );
 }
 
 /// The default `invalidate` is a no-op, which is all a static token can do.

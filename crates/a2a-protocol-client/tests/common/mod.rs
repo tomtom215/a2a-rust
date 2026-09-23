@@ -52,10 +52,7 @@ pub fn rest_status_frame(state: &str) -> String {
 pub async fn read_request(stream: &mut TcpStream) -> String {
     let mut buf = [0u8; 8192];
     let mut acc = Vec::new();
-    loop {
-        let Ok(n) = stream.read(&mut buf).await else {
-            break;
-        };
+    while let Ok(n) = stream.read(&mut buf).await {
         if n == 0 {
             break;
         }

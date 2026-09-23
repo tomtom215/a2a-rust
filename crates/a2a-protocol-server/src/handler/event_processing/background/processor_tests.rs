@@ -198,7 +198,11 @@ async fn a_refused_write_supersedes_the_run() {
     );
     let stored = f.store.get(&id).await.expect("get").expect("stored");
     assert_eq!(stored.status.state, TaskState::Canceled);
-    assert!(stored.artifacts.unwrap_or_default().is_empty());
+    assert_eq!(
+        stored.artifacts.unwrap_or_default().len(),
+        0,
+        "no artifact survives"
+    );
 }
 
 /// A terminal event that is itself the refused write: its ticket gets
@@ -268,7 +272,7 @@ async fn a_terminal_event_that_was_not_persisted_is_still_answered() {
         Some(TaskState::Canceled)
     );
     assert!(!f.cancel.is_cancelled(), "a repeat is not a conflict");
-    assert!(f.pushed().is_empty());
+    assert_eq!(f.pushed(), Vec::<TaskState>::new());
     assert_eq!(f.logged().await, vec![(1, Some(TaskState::Canceled))]);
 
     // Nothing was pushed for it, so a later refusal still owes webhooks the

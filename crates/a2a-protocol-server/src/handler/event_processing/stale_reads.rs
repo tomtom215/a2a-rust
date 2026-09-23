@@ -66,14 +66,24 @@ impl TaskStore for StaleReads {
     fn get<'a>(&'a self, id: &'a TaskId) -> Fut<'a, Option<Task>> {
         Box::pin(async move {
             let mut task = self.inner.get(id).await?;
-            let stale = self
-                .stale
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| match n {
-                    0 => None,
-                    usize::MAX => Some(usize::MAX),
-                    n => Some(n - 1),
-                })
-                .is_ok();
+            // A compare-exchange loop rather than `fetch_update`, which is
+            // deprecated on nightly in favour of `try_update` — a name the
+            // crate's MSRV (1.88) does not have.
+            let mut n = self.stale.load(Ordering::SeqCst);
+            let stale = loop {
+                let next = match n {
+                    0 => break false,
+                    usize::MAX => usize::MAX,
+                    n => n - 1,
+                };
+                match self
+                    .stale
+                    .compare_exchange_weak(n, next, Ordering::SeqCst, Ordering::SeqCst)
+                {
+                    Ok(_) => break true,
+                    Err(current) => n = current,
+                }
+            };
             if stale && let Some(t) = task.as_mut() {
                 t.status = TaskStatus::new(TaskState::Working);
             }
