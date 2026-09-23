@@ -11,12 +11,9 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-20 — the 0.13.0 branch and two gate lessons (`4db4c87f`),
-then the branch table's three merges and the corrections under **Still open**,
-then the post-0.13.0 audit work on `claude/optimistic-bell-680i9p` (see its
-section below), which closed item 7 and changed the branch's own row, and then
-the swarm-scale experiment on `claude/busy-cerf-ta682r`, then its
-shared-nothing and cost arms, the fix program they imply, and the first fix.
+Last updated 2026-09-23 — the adopter audit and phase 1 of its fixes on
+`claude/pensive-allen-socw7b` (see its section below), and the branch table's
+two merged rows.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -105,8 +102,9 @@ the *content* merge.
 | `claude/relaxed-planck-c4hsn0` | merged, still present | The 0.13.0 content branch *and* its release prep. **Merged as `707092f8` via [#137](https://github.com/tomtom215/a2a-rust/pull/137) on 2026-09-20.** Trace-context propagation, `CallContext` reachable from `RequestContext`, the executor conformance harness, the typed failure taxonomy, and the event log with SQL stores plus SSE `id:` / `Last-Event-ID` resumption. Safe to delete. |
 | `claude/wizardly-tesla-0f358t` | merged, still present | Three examples: tool calling in `examples/rig-agent`, then `examples/mcp-agent` (tools over MCP) and `examples/mcp-bridge` (an A2A agent exposed *as* MCP). **Merged as `19766afb` via [#135](https://github.com/tomtom215/a2a-rust/pull/135) on 2026-09-19.** The row previously said "open … No PR opened yet"; both halves were false, which is what `git merge-base --is-ancestor origin/claude/wizardly-tesla-0f358t HEAD` answers in one command. Safe to delete. |
 | `claude/prove-gates-needle` | merged, still present | The benchmark-prose prover fix — the gate matched its sentence by value rather than by shape, so it could not be made to fail — plus the panic-hook race it exposed. **Merged as `f732fe3b` via [#136](https://github.com/tomtom215/a2a-rust/pull/136) on 2026-09-19.** This branch had no row at all while its content was described further down the file. Safe to delete. |
-| `claude/busy-cerf-ta682r` | open | **Destined for `main`.** The swarm-scale experiment: `crates/a2a-protocol-server/tests/swarm_scale/` and `docs/swarm-scale-findings.md`. Test-only — it adds no crate code and changes none. See its section below. |
-| `claude/optimistic-bell-680i9p` | open — see note | **Destined for `main`.** The current branch. It began as documentation corrections on top of 0.13.0 and is now substantially code: six audit fixes and the regression tests three of them shipped without, W3C Trace Context conformance, event-log durability, `InboundTracePolicy`, and two new CI gates. See its section below. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
+| `claude/busy-cerf-ta682r` | merged, still present | **Merged as `7759fea` via [#140](https://github.com/tomtom215/a2a-rust/pull/140).** The swarm-scale experiment: `crates/a2a-protocol-server/tests/swarm_scale/` and `docs/swarm-scale-findings.md`. Test-only — it adds no crate code and changes none. See its section below. |
+| `claude/optimistic-bell-680i9p` | merged, still present | **Merged as `391f0df` via [#138](https://github.com/tomtom215/a2a-rust/pull/138).** It began as documentation corrections on top of 0.13.0 and is now substantially code: six audit fixes and the regression tests three of them shipped without, W3C Trace Context conformance, event-log durability, `InboundTracePolicy`, and two new CI gates. See its section below. |
+| `claude/pensive-allen-socw7b` | open — see note | **Destined for `main`.** The adopter audit and phase 1 of its fixes; see its section below. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -292,6 +290,43 @@ Held rather than shipped because publishing buys one thing — an entry in
 `rig-core`'s reverse-dependency list — and costs a release per `rig-core` minor,
 of which there were 12 in 195 days (one every 16.2 days). The name stays free;
 publishing later costs nothing, maintaining now costs immediately.
+
+## `claude/pensive-allen-socw7b` — the adopter audit, and phase 1
+
+Using the server crate as the coordinator of a Go agentic application turned
+up observability that was not there and defects that got past every gate. The
+audit and its current status are in
+[`adopter-audit-2026-09-22.md`](adopter-audit-2026-09-22.md). Phase 1 fixed
+what that application could hit today: Go interop, client stream liveness,
+graceful shutdown, cross-replica cancel, OAuth2 refresh. It is on this branch
+with a CHANGELOG entry per change, and CI gained `go-sdk-interop`, which runs
+a2a-go's client against this server and this client against an a2a-go server.
+
+Three lessons, each of which cost something here:
+
+* **Merging two correct fixes is a new change.** The server's new REST error
+  frame and the client's new decoder each passed their own tests and together
+  broke the stream-lag signal (`adce975`). The OAuth single-flight's exhaustive
+  error match and the new `IncompleteStream` variant did not compile together
+  (`a49a0ed`). After merging parallel work, run clippy and the tests across
+  the whole workspace with all features before believing any per-branch
+  result.
+* **Disk is the binding constraint for parallel work here.** Four worktrees,
+  each with its own target and a cargo-mutants scratch copy of about 4 GB,
+  filled the allowance twice. One rustc run died with
+  `IO failure on output stream: No space left on device`, which surfaces as
+  exit 101 with no compile error. Build with `CARGO_INCREMENTAL=0
+  CARGO_PROFILE_DEV_DEBUG=0` (CI's own setting). The target was 25 GB before;
+  rebuilt that way it held 3.4 GB after a different set of builds (workspace
+  clippy, the client and SDK suites, the interop binaries), so treat the ratio
+  as indicative.
+* **A mutant that hangs the suite is not caught.** Two tests hung rather than
+  failed under mutation; both are now bounded (`9ee0ce6`, `f82983a`).
+
+**What the next session should do first:** open the pull request for this
+branch, watch `go-sdk-interop` and the mutation gate go green, and then start
+phase 2 (observability) from section 7 of the audit. The observability review
+above ("There is no tracing at all") is the same finding from the other side.
 
 ## In flight outside this repository
 

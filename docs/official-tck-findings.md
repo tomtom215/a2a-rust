@@ -9,10 +9,19 @@ SDK, rather than only the in-repo TCK.
 
 **Why:** conformance graded by the project that owns the specification is
 worth more than conformance graded by the implementation being tested. The
-in-repo TCK still earns its keep — it drives this SDK's *client* against
-agents built on the official Python, JS, Go, and Java SDKs, which the official
-TCK does not do — but where the two overlap, the official suite is
-authoritative.
+in-repo TCK still earns its keep — it grades agents built on the official
+Python, JS, Go, and Java SDKs from the wire format up, which the official TCK
+does not do — but where the two overlap, the official suite is authoritative.
+
+**Correction, 2026-09-22.** This paragraph used to say the in-repo TCK drives
+this SDK's *client* against those agents. It does not, and never did:
+`tck/Cargo.toml` deliberately takes no dependency on `a2a-protocol-client`, so
+a conformance kit cannot share the implementation's misreadings. The client
+first met an official-SDK agent in CI with `scripts/go_sdk_interop.sh`
+(ci.yml job `go-sdk-interop`), which runs it against a2a-go. Its first run
+failed on three things the client's own tests passed: a Go card's
+`securityRequirements`, a push-config delete a2a-go answers with no body, and
+a2a-go's in-stream REST errors.
 
 **Harness:** `.github/workflows/official-tck.yml`
 **System Under Test:** `tck/sut`
