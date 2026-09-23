@@ -372,7 +372,7 @@ impl JwtValidator {
     ///
     /// Returns the generic [`auth_rejected`] error on any failure, so nothing
     /// about *why* a token was rejected leaks to the caller.
-    fn validate(
+    pub(crate) fn validate(
         &self,
         token: &str,
         jwks: &Jwks,
@@ -488,7 +488,7 @@ impl JwtValidator {
 
 /// The outcome of a validation attempt that the interceptor can act on.
 #[cfg_attr(test, derive(Debug))]
-enum ValidateOutcome {
+pub(crate) enum ValidateOutcome {
     /// Reject the request outright.
     Rejected,
     /// The signing key wasn't found — a remote JWKS may have rotated; the

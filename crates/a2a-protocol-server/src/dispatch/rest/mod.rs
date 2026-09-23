@@ -9,7 +9,7 @@
 //! appropriate [`RequestHandler`] method, following the REST transport
 //! convention defined in the A2A protocol.
 
-mod query;
+pub(crate) mod query;
 mod response;
 
 use std::collections::HashMap;

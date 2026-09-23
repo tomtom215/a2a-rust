@@ -674,6 +674,13 @@ Each of these gaps is tied to at least one defect that escaped:
    `check_fuzz_matrix.py` only checks that existing targets run. The
    traceparent panic shipped in 0.13.0 this way; JWT, REST query and
    X-Forwarded-For are still unfuzzed.
+   **[Targets added: `jwt_token`, `rest_route`, `forwarded_for`, and for
+   parsers the audit did not name, `webhook_url` and `page_token`; each ran
+   its 60-second smoke clean. `fuzz/README.md` now keeps the inventory of
+   every peer-input parser and its target, which is the requirement in
+   written form; nothing yet fails when a new parser is added without a
+   row. The client's REST error bodies and `Retry-After` are listed there as
+   not yet covered.]**
 9. **Release policy isn't checked by machine.** 0.12.0 (09-10) and 0.13.0
    (09-20) were both breaking, and `STABILITY.md` allows one breaking minor
    release per month. The `PurgeReport` rename skipped deprecation.

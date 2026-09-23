@@ -136,6 +136,11 @@ pub mod conformance;
 #[cfg(feature = "otel")]
 pub mod otel;
 
+// Reached only by the fuzz targets in `fuzz/`; see the module docs.
+#[cfg(any(fuzzing, test))]
+#[doc(hidden)]
+pub mod fuzzing;
+
 // ── Macro support ─────────────────────────────────────────────────────────────
 
 /// Re-export of `a2a-protocol-types` for use by exported macros.

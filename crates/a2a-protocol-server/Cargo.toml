@@ -147,3 +147,7 @@ tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features =
 [[bench]]
 name = "handler_bench"
 harness = false
+
+# `cargo fuzz` builds with `--cfg fuzzing`, which gates `src/fuzzing.rs`.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }

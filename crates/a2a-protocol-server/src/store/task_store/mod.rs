@@ -10,7 +10,7 @@
 //! pre-allocated `HashMap`-based implementation suitable for testing and
 //! single-process deployments.
 
-mod in_memory;
+pub(crate) mod in_memory;
 
 use std::future::Future;
 use std::pin::Pin;

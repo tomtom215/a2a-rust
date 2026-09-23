@@ -101,7 +101,7 @@ use crate::error::{ServerError, ServerResult};
 use crate::interceptor::ServerInterceptor;
 
 mod config;
-mod identity;
+pub(crate) mod identity;
 mod shared;
 mod unwind_safety;
 mod window;
