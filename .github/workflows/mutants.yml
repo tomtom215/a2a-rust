@@ -312,9 +312,12 @@ jobs:
 
       # protoc is bundled via the `protoc-bin-vendored` crate.
 
+      # The pinned, patched cargo-mutants and a pinned cargo-nextest (audit
+      # N4, N9, N11). The script says why a patched build, and fails unless
+      # the installed binary makes the replacements the patch adds.
       - name: Install cargo-mutants and nextest
         if: steps.check.outputs.skip == 'false'
-        run: cargo install cargo-mutants cargo-nextest --locked
+        run: scripts/install_cargo_mutants.sh
 
       # ── Run mutants for this crate ───────────────────────────────────────
       - name: "Run mutation tests: ${{ matrix.name }}"
@@ -868,7 +871,7 @@ jobs:
               echo "## How to Fix"
               echo ""
               echo '```bash'
-              echo "cargo install cargo-mutants cargo-nextest --locked"
+              echo "scripts/install_cargo_mutants.sh   # the pinned, patched build CI runs"
               echo "# A live database. Without one the baseline itself fails, and"
               echo "# cargo-mutants stops before testing a single mutant."
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
@@ -961,8 +964,9 @@ jobs:
 
       # protoc is bundled via the `protoc-bin-vendored` crate.
 
+      # Pinned and patched; see the full sweep's install step.
       - name: Install cargo-mutants and nextest
-        run: cargo install cargo-mutants cargo-nextest --locked
+        run: scripts/install_cargo_mutants.sh
 
       - name: Build PR source diff (rename-aware)
         id: diff
@@ -1199,7 +1203,7 @@ jobs:
               echo "## How to Reproduce Locally"
               echo ""
               echo '```bash'
-              echo "cargo install cargo-mutants cargo-nextest --locked"
+              echo "scripts/install_cargo_mutants.sh   # the pinned, patched build CI runs"
               echo "# A live database. Without one the baseline itself fails, and"
               echo "# cargo-mutants stops before testing a single mutant."
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"

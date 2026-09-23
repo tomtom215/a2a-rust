@@ -55,6 +55,9 @@ stores (`tests/cross_replica_cancel/`).
   cargo-mutants cargo-nextest --locked` with no version, so the "27.1.0" the
   documents cite is whatever was newest when they were written. It is also
   the newest today (`cargo search`, 2026-09-23), so nothing has drifted yet.
+  **[Fixed on this branch: `scripts/install_cargo_mutants.sh` pins
+  cargo-mutants 27.1.0 by the crates.io checksum and cargo-nextest 0.9.146,
+  and both `mutants.yml` jobs install through it]**
 - **N5 — the `FATAL: role "root" does not exist` lines in every PostgreSQL
   job are the service health check**, not the tests. `--health-cmd
   pg_isready` runs as the container's `root` with no `-U`, and each probe
@@ -215,8 +218,31 @@ stores (`tests/cross_replica_cancel/`).
   cause is `type_replacements` in cargo-mutants 27.1.0's `src/fnvalue.rs`,
   which has no case for `Pin` or `dyn Future`. Statement-level mutants inside
   those bodies are still generated and graded. Spelling a return type as
-  `Result` does not reach these: the alias sits inside `Output = …`. Not
-  fixed.
+  `Result` does not reach these: the alias sits inside `Output = …`.
+  **[Fixed on this branch: `scripts/install_cargo_mutants.sh` builds
+  cargo-mutants 27.1.0 from its checksum-pinned crate with
+  `scripts/cargo-mutants/27.1.0-result-aliases-and-boxed-futures.patch`, which
+  replaces a boxed future's body with one yielding each replacement of its
+  output and skips a replacement equal to the body; `mutants.yml` runs it.
+  Measured with the patch on `main`'s tree plus this branch's earlier commits
+  (`--re 'Box::pin\(async move'`, `--all-features`, CI's test filter, live
+  PostgreSQL): client 23 mutants, 18 caught, 5 unviable, 0 missed; server 229,
+  142 caught, 50 unviable, 37 missed. Of the 37, 10 are equivalent: four
+  interceptors' `after` and `on_shutdown`, whose bodies already are the
+  replacement; two `close`s whose effect is nothing; and three trait defaults.
+  The patched build no longer generates 8 of them. Two remain, and each is
+  expected to survive: `CancelOnFirstWrite::close`, which forwards to a no-op,
+  and `TaskStore::earliest_event_seq`'s `Ok(None)`, whose body opens with `let
+  _ = task_id;`. 8 were the push-config `count`s, which this branch's
+  `PushConfigStore` count tests, committed while the measurement ran, already
+  kill. The other 19 were untested: `TaskStore`'s defaults for `append_event`,
+  `release_idempotency_key` and `earliest_event_seq`, and
+  `release_idempotency_key` or `earliest_event_seq` on the in-memory, SQLite
+  and PostgreSQL tenant stores and the PostgreSQL store. Each now has a test.
+  Re-run with the patched build over the 41 mutants of those functions
+  (`swarm_scale` left out of the filter: it failed the unmutated baseline on
+  this host, on `main` too): 40 caught, 1 missed — the equivalent
+  `Ok(None)`.]**
 - **N15 — the book taught code that does not compile, and prose the code
   contradicts** (Medium, docs; escape class 1). Found by compiling the 127
   `ignore`d blocks. Five could not compile as shown; each was confirmed by

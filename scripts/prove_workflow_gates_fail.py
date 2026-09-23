@@ -817,6 +817,21 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "the duplicate ownership this harness's header rules out"
     )
 
+    # Installation, not a verdict about this repository. The script fails on
+    # exactly three things — a download that does not match the pinned
+    # SHA-256, a patch that no longer applies with zero fuzz, and an installed
+    # binary whose `--list` lacks the patched replacements — and each was made
+    # to fail by hand when it was written (2026-09-23: exit 1 on each, exit 0
+    # on a clean install into a scratch root). A probe here would download
+    # and compile cargo-mutants and cargo-nextest on every run of this
+    # harness, and the healthy path is exercised by every mutation run.
+    for job in ("mutants-crate", "mutants-incremental-shard"):
+        reg[f"mutants.yml::{job}::Install cargo-mutants and nextest"] = Exempt(
+            "installs pinned tools; its three failure modes (checksum, "
+            "patch drift, unpatched binary) were each shown to fail by hand, "
+            "and a probe would compile both tools from source on every run"
+        )
+
     # The same script dco.yml runs, over the commit the job just made; the
     # dco.yml probe above proves it can fail (including the bot commit that
     # reaches outside the generated pages), and one script gets one proof.

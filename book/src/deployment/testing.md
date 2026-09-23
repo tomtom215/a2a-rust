@@ -387,8 +387,10 @@ straightforward: add a test that asserts the specific behavior.
 ### Running Mutation Tests
 
 ```bash
-# Install cargo-mutants and cargo-nextest (one-time setup)
-cargo install cargo-mutants cargo-nextest --locked
+# Install the pinned, patched cargo-mutants and cargo-nextest CI runs
+# (one-time setup). Stock cargo-mutants grades fewer mutants: it makes no
+# viable body replacement for `*Result` aliases or boxed futures.
+scripts/install_cargo_mutants.sh
 
 # A live database. Without one the run does not produce weak results, it
 # produces none: two `rate_limit::shared::postgres` tests fail in the

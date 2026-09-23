@@ -147,6 +147,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release notes must be the last edit before the tag, and the next breaking
   release cannot be tagged before October 2026. Not a change to any crate.
 
+- **The mutation gate grades function bodies it never could.**
+  `scripts/install_cargo_mutants.sh` installs a pinned cargo-mutants 27.1.0,
+  patched so that a function returning a `Result` alias (`A2aResult<T>`,
+  `ClientResult<T>`) or a boxed future (`Pin<Box<dyn Future<Output = T>>>`,
+  every object-safe async trait method here) gets a "replace the body" mutant
+  that compiles. Stock 27.1.0 generated none that did for 346 functions, so
+  whether their effects were tested at all had never been graded (audit N4,
+  N9, N11). The survivors the patched build found are killed by tests on
+  this branch. The install verifies the crate's checksum, applies the patch
+  exactly, and refuses a binary without it.
+
 - **A Go SDK interop gate in CI** (`go-sdk-interop`, `scripts/go_sdk_interop.sh`).
   The official Go SDK's client against this server, and this client against an
   a2a-go server, over JSON-RPC, HTTP+JSON and gRPC. Before it, a2a-go ran in CI

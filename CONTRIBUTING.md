@@ -361,8 +361,9 @@ flipping a boolean, returning a default value). If a mutant compiles and all
 tests still pass, the test suite has a gap.
 
 ```bash
-# Install cargo-mutants and cargo-nextest
-cargo install cargo-mutants cargo-nextest --locked
+# Install the pinned, patched cargo-mutants and cargo-nextest CI runs; the
+# script says why a patched build
+scripts/install_cargo_mutants.sh
 
 # A live database, or every Postgres mutant survives for want of one
 export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres
@@ -370,7 +371,8 @@ export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgre
 # What CI runs, per crate. Match it before drawing conclusions —
 # a narrower invocation measures a smaller feature set.
 cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants \
-  --all-features -- --run-ignored all
+  --all-features -- --run-ignored all \
+     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'
 
 # Run on a specific file
 cargo mutants --file crates/a2a-protocol-types/src/task.rs \
@@ -761,8 +763,9 @@ scripts/prove_workflow_gates_fail.py            # all of them (~7s)
 ```
 
 It runs in CI on every PR, in the `fmt` job. Current state, measured
-2026-09-23: **25 proven, 18 exempt with reasons, 0 unproven** (this line said
-17 and 11 until then; it had not been re-run as probes were added). Drift is a hard error in both directions —
+2026-09-23: **25 proven, 20 exempt with reasons, 0 unproven** (this line said
+17 and 11 until then; it had not been re-run as probes were added; the two
+newest exemptions are the mutation jobs' tool installs). Drift is a hard error in both directions —
 a step that can fail with no registry entry, and a registry entry naming a
 step that no longer exists, both exit 2.
 
