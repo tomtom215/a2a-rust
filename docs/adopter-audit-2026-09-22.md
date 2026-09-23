@@ -303,6 +303,19 @@ stores (`tests/cross_replica_cancel/`).
   `a_call_on_a_dropped_websocket_is_refused_as_final` pins the refusal as
   non-retryable, so a retry loop stops instead of spinning. Open; the
   CHANGELOG's N13 entry says so.
+- **N20 — the two HTTP+JSON dispatchers answer the same error with different
+  statuses** (Medium, server wire; found while mapping each binding's status
+  for `error.type`). The axum adapter answered `ServerError::Overloaded` with
+  `503` and `PayloadTooLarge` with `413`; `RestDispatcher` sent both through
+  `to_a2a_error()` and answered `500` and `400` — though its own body-limit
+  check answers `413`. A client whose retry policy keys on `503` retried an
+  overloaded axum server and gave up on an overloaded `RestDispatcher`.
+  VALIDATED by reading both mappings; the existing test
+  `server_error_payload_too_large_maps_to_400` pinned the `400`. **[Fixed on
+  this branch: one `ServerError::http_status` serves both, the pinned test
+  now expects `413`, and `server_error_overloaded_maps_to_503` is new. The
+  body's `status` field still says `INTERNAL` for an overload, from the A2A
+  code; an AIP-193 `UNAVAILABLE` there is left for a wire change of its own]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.

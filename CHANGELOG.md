@@ -291,6 +291,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Wire: `RestDispatcher` answers an overload with `503` and an oversized
+  body with `413`**, as the axum adapter always has, instead of `500` and
+  `400`. The two HTTP+JSON dispatchers had separate mappings, so the same
+  overload told a client of one to retry and a client of the other not to
+  (audit N20). One mapping now serves both.
 - **The book's Rust examples compile.** 127 of its 130 `ignore`d blocks now
   compile (the other 3 are `slimrpc`, outside the workspace), and 79 of those
   also run; the other 48 would call a network or a database. Most needed only

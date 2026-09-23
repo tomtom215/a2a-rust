@@ -251,28 +251,20 @@ fn a2a_error_to_response(err: &dyn std::fmt::Display, status: u16) -> axum::resp
         .into_response()
 }
 
-/// The HTTP status this adapter answers with, per §5.4.
+/// The HTTP status this adapter answers with: [`ServerError::http_status`],
+/// the one mapping both HTTP+JSON dispatchers use.
 ///
 /// This was a second, hand-written copy of §5.4's table, and it had drifted
 /// from the one in [`ErrorCode::http_status`] in three places:
 /// `TaskNotCancelable` and `InvalidStateTransition` answered `409`, and
 /// `PushNotSupported` answered `501`, where the table says `400` for all
-/// three. Two copies of a conformance table is how a specification update
-/// reaches one dispatcher and not the other, so there is now one copy and
-/// this defers to it.
+/// three. It then held the only copy of the `413`/`503` arms, so the REST
+/// dispatcher answered differently for the same errors (audit N20); both now
+/// live on `ServerError`.
 ///
-/// The two arms that remain are the ones §5.4 cannot answer for, because A2A
-/// has no error code for either: a body over the size limit, and a transient
-/// resource-limit rejection. Both are transport-level facts about this server
-/// rather than protocol errors, and `413`/`503` say so precisely.
+/// [`ServerError::http_status`]: crate::error::ServerError::http_status
 fn server_error_status(err: &crate::error::ServerError) -> u16 {
-    use crate::error::ServerError;
-
-    match err {
-        ServerError::PayloadTooLarge(_) => 413,
-        ServerError::Overloaded(_) => 503,
-        other => other.to_a2a_error().code.http_status(),
-    }
+    err.http_status()
 }
 
 fn handler_error_to_response(err: &crate::error::ServerError) -> axum::response::Response {
