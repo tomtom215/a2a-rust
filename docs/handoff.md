@@ -11,9 +11,9 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-23 — the adopter audit and phase 1 of its fixes on
-`claude/pensive-allen-socw7b` (see its section below), and the branch table's
-two merged rows.
+Last updated 2026-09-23 — `claude/pensive-allen-socw7b` merged as `fa2e901`
+(#141); the adopter audit's open work continues on
+`claude/determined-galileo-rywiyj`.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -104,7 +104,8 @@ the *content* merge.
 | `claude/prove-gates-needle` | merged, still present | The benchmark-prose prover fix — the gate matched its sentence by value rather than by shape, so it could not be made to fail — plus the panic-hook race it exposed. **Merged as `f732fe3b` via [#136](https://github.com/tomtom215/a2a-rust/pull/136) on 2026-09-19.** This branch had no row at all while its content was described further down the file. Safe to delete. |
 | `claude/busy-cerf-ta682r` | merged, still present | **Merged as `7759fea` via [#140](https://github.com/tomtom215/a2a-rust/pull/140).** The swarm-scale experiment: `crates/a2a-protocol-server/tests/swarm_scale/` and `docs/swarm-scale-findings.md`. Test-only — it adds no crate code and changes none. See its section below. |
 | `claude/optimistic-bell-680i9p` | merged, still present | **Merged as `391f0df` via [#138](https://github.com/tomtom215/a2a-rust/pull/138).** It began as documentation corrections on top of 0.13.0 and is now substantially code: six audit fixes and the regression tests three of them shipped without, W3C Trace Context conformance, event-log durability, `InboundTracePolicy`, and two new CI gates. See its section below. |
-| `claude/pensive-allen-socw7b` | open — see note | **Destined for `main`.** The adopter audit and phase 1 of its fixes; see its section below. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
+| `claude/pensive-allen-socw7b` | merged, still present | **Merged as `fa2e901` via [#141](https://github.com/tomtom215/a2a-rust/pull/141) on 2026-09-23.** The adopter audit and phase 1 of its fixes; see its section below. Safe to delete. |
+| `claude/determined-galileo-rywiyj` | open — see note | **Destined for `main`.** The adopter audit's open work after phase 1. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -368,16 +369,20 @@ after `c533e5e`):
   The Go gate alone had graded the S2 fix as correct: a fix aimed at one
   peer has to pass every conformance suite, not just that peer's.
 
-**What the next session should do first:** watch this branch's pull request
-until `go-sdk-interop`, the mutation gate and the rest of CI are green, and
-fix what goes red. Then work from **Open work** in
-[`adopter-audit-2026-09-22.md`](adopter-audit-2026-09-22.md): each item there
-has evidence, file:line, a reproduction, a proposed fix and the test that
-must fail first. OW3 (the PostgreSQL startup race) and OW5 (gRPC auth codes)
-are the smallest self-contained ones; phase 2 (observability, OW12) is the
-largest and the one the adopter who prompted the audit hit first — the
-observability review above ("There is no tracing at all") is the same finding
-from the other side.
+**Merged 2026-09-23 as `fa2e901` (#141).** `git log --oneline fa2e901^1..fa2e901^2`
+lists its 49 commits. The watch-the-PR step that stood here is done; the work
+that follows it is on `claude/determined-galileo-rywiyj`, whose section says
+what the next session should do first.
+
+## `claude/determined-galileo-rywiyj` — the audit's open work after phase 1
+
+Started 2026-09-23 from `fa2e901`. The plan is
+[`adopter-audit-2026-09-22.md`](adopter-audit-2026-09-22.md): its **Open
+work** entries first (OW3, OW5, OW7, OW6), then phase 2 (observability), then
+OW11 and phase 3. Audit rows are marked **[Fixed: …]** as commits land.
+
+**What the next session should do first:** read this section's progress
+notes below, then continue from the first entry not marked done.
 
 ## In flight outside this repository
 
