@@ -359,6 +359,15 @@ jobs:
           # cargo-mutants 27.1.0 silently ignores that config key, exactly as it
           # ignores `test_tool` and `profile`.
           #
+          # `--all-features` is cargo-mutants' own flag, not the test
+          # command's. Passed after `--` it reached only the test step, so each
+          # mutant was built without the features and a mutant in
+          # feature-gated code that does not compile failed in the test step
+          # instead, which cargo-mutants scores as caught. Measured 2026-09-23
+          # on one diff: 8 of 14 "caught" were compile failures, all 8
+          # unviable once the flag moved here (audit N8). Missed counts were
+          # not affected; the caught count and the score were.
+          #
           # `--test-tool=nextest` means `.config/nextest.toml` applies, and it
           # is load-bearing here rather than incidental: it kills any single
           # test that runs past 45s. Without that, a mutant that makes a test
@@ -373,7 +382,8 @@ jobs:
             --jobs 4 \
             --test-tool=nextest \
             --profile=mutants \
-            -- --all-features --run-ignored all \
+            --all-features \
+            -- --run-ignored all \
                -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
@@ -863,7 +873,7 @@ jobs:
               echo "# cargo-mutants stops before testing a single mutant."
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
               echo "cargo mutants -p <crate-name> --test-tool=nextest --profile=mutants \\"
-              echo "  -- --all-features --run-ignored all \\"
+              echo "  --all-features -- --run-ignored all \\"
               echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'"
               echo '```'
             } >> /tmp/final-summary.md
@@ -1030,7 +1040,8 @@ jobs:
             --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
             --test-tool=nextest \
             --profile=mutants \
-            -- --all-features --run-ignored all \
+            --all-features \
+            -- --run-ignored all \
                -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
@@ -1193,7 +1204,7 @@ jobs:
               echo "# cargo-mutants stops before testing a single mutant."
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
               echo "cargo mutants --file <path-to-file> --test-tool=nextest --profile=mutants \\"
-              echo "  -- --all-features --run-ignored all \\"
+              echo "  --all-features -- --run-ignored all \\"
               echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'"
               echo '```'
               echo ""

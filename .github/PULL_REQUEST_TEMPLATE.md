@@ -20,7 +20,7 @@
 - [ ] `cargo doc --workspace --no-deps` passes without warnings
 - [ ] New public types/functions have doc comments
 - [ ] New code has tests
-- [ ] `cargo mutants --test-tool=nextest -- --all-features` shows zero surviving
+- [ ] `cargo mutants --test-tool=nextest --all-features` shows zero surviving
       mutants for changed files (`--test-tool=nextest` is required — see
       CONTRIBUTING.md)
 - [ ] `CHANGELOG.md` updated if the change is user-visible

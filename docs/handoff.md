@@ -161,8 +161,8 @@ What does work:
   ```bash
   A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres \
   cargo mutants --in-diff pr-src.diff --timeout 300 --jobs 2 \
-    --test-tool=nextest --profile=mutants \
-    -- --all-features --run-ignored all \
+    --test-tool=nextest --profile=mutants --all-features \
+    -- --run-ignored all \
        -E 'not (binary(soak) or binary(soak_multi_replica))'
   ```
 
