@@ -48,7 +48,8 @@ a2a-protocol-server = { version = "0.13", features = ["tracing", "otel", "sqlite
 **Two independent switches, and both must be on.**
 
 1. The `tracing` feature must be enabled, or every logging call in the crate
-   compiles to nothing.
+   compiles to nothing. It is on by default in the client, the server and
+   the SDK; a build with `default-features = false` has to turn it back on.
 2. Your binary must install a subscriber. The library emits events; it does not
    decide where they go.
 

@@ -18,6 +18,10 @@ keywords               = ["a2a", "agent2agent", "agent", "protocol", "server"]
 categories             = ["network-programming", "web-programming"]
 
 [features]
+## `tracing` is on by default: a default build logs through, and records
+## spans with, whatever `tracing` subscriber the application installs, and
+## costs a level check when none is. Opt out with `default-features = false`.
+default = ["tracing"]
 ## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
 ##
 ## A forwarding feature: this crate contains no `#[cfg(feature = "signing")]`
@@ -25,7 +29,8 @@ categories             = ["network-programming", "web-programming"]
 ## `sign_agent_card` before handing it to `RequestHandlerBuilder`, as
 ## `examples/incident-response` does.
 signing = ["a2a-protocol-types/signing"]
-## Enable structured logging via the `tracing` crate (zero cost when disabled).
+## Structured logging via the `tracing` crate (on by default; compiled out
+## when disabled).
 tracing = ["dep:tracing"]
 ## Enable HTTPS delivery for the bundled push-notification sender via rustls
 ## (no OpenSSL system dependency). Without this feature the bundled

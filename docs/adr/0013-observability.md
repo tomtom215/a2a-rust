@@ -132,7 +132,12 @@ existing `init_otlp_pipeline*` functions stay, deprecated.
 
 ## Open questions
 
-- Whether `tracing` becomes a default feature of the server and SDK crates.
-  Today it is off by default, so a default build records no spans and logs
-  nothing. Turning it on changes the dependency graph of every adopter; it is
-  a maintainer decision, not one this ADR takes.
+- ~~Whether `tracing` becomes a default feature of the server and SDK
+  crates.~~ **Decided 2026-09-23 by the maintainer: yes, with `tracing`'s own
+  default features.** Measured before deciding: `tracing` was already in every
+  default build's dependency graph through the HTTP stack, so the feature adds
+  `tracing-attributes` and `syn`. The client takes it by default too: its
+  failure paths report through `tracing` like the server's, and a default
+  client build that dropped them was O13's other half. The SDK now takes the
+  client and server without their own defaults (audit K1), so
+  `default-features = false` on any of the three removes it again.

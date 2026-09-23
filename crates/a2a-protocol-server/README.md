@@ -117,12 +117,12 @@ println!("{report:?}");
 
 ## Features
 
-No feature is on by default.
+`tracing` is the only feature on by default.
 
 | Feature | Default | Purpose |
 |---------|---------|---------|
 | `signing` | No | Forwards `a2a-protocol-types/signing`; this crate itself neither signs nor verifies the card it serves |
-| `tracing` | No | Structured logging via the `tracing` crate |
+| `tracing` | Yes | Structured logging via the `tracing` crate; `default-features = false` compiles it out |
 | `tls-rustls` | No | HTTPS delivery for the bundled push-notification sender |
 | `sqlite` | No | SQLite-backed task and push-config stores |
 | `postgres` | No | PostgreSQL-backed task and push-config stores |

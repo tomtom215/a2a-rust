@@ -12,6 +12,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **`tracing` is a default feature of `a2a-protocol-client`,
+  `a2a-protocol-server` and `a2a-protocol-sdk`.** A default build used to
+  compile every log call and failure report in the crates to nothing, so an
+  agent logged nothing however its subscriber was set up, and paths that
+  report only through `tracing` — a trace header the WebSocket binding
+  cannot carry, a skipped webhook — were silent (audit O13). The maintainer
+  chose default-on (ADR 0013). `tracing` was already in every default build's
+  dependency graph through the HTTP stack; the feature adds
+  `tracing-attributes` and `syn`. With no subscriber installed the cost is a
+  level check per call site. **Migration:** none for most builds. To keep the old behaviour,
+  depend with `default-features = false` (and re-add `tls-rustls` on the SDK
+  if you want HTTPS).
+
+- **`default-features = false` on `a2a-protocol-sdk` now removes what the
+  SDK's defaults enable.** The SDK took the client with the client's own
+  defaults, so rustls stayed in an SDK built without default features,
+  contrary to its manifest (audit K1). The SDK now takes the client and
+  server without their defaults and forwards its own: a default build
+  enables exactly what it did (plus `tracing`, above), and
+  `cargo tree -p a2a-protocol-sdk --no-default-features` has no rustls,
+  hyper-rustls or webpki-roots. **Migration:** a build that used
+  `default-features = false` and still reached `https://` agents was relying
+  on the defect; add `features = ["tls-rustls"]`.
+
 - **A peer that goes away mid-call reads the same on every binding.** Found
   by driving each binding against a scripted peer that cuts streams off
   (audit N13): the same event — the connection or stream ending before a

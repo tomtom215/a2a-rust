@@ -187,7 +187,7 @@ and the `with_*` setters.
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | Forwards `a2a-protocol-types/signing`; the server itself neither signs nor verifies the card it serves |
-| `tracing` | Off | Structured logging via `tracing` crate |
+| `tracing` | **On** | Structured logging via `tracing` crate; `default-features = false` compiles it out |
 | `tls-rustls` | Off | HTTPS delivery for the bundled push-notification sender |
 | `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | Off | PostgreSQL-backed task and push config stores via `sqlx` |
@@ -204,7 +204,7 @@ and the `with_*` setters.
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | Agent card signing verification |
-| `tracing` | Off | Structured logging via `tracing` crate |
+| `tracing` | **On** | Structured logging via `tracing` crate; `default-features = false` compiles it out |
 | `tls-rustls` | **On** | HTTPS via rustls (no OpenSSL dependency); `default-features = false` for a plaintext-only build |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` (plaintext; `https://` is refused with a message naming `grpc-tls`) |
@@ -223,7 +223,7 @@ and the `with_*` setters.
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | Enables `signing` in all sub-crates |
-| `tracing` | Off | Enables `tracing` in client and server |
+| `tracing` | **On** | Enables `tracing` in client and server |
 | `tls-rustls` | **On** | Enables `tls-rustls` in client and server |
 | `grpc` | Off | Enables `grpc` in client and server |
 | `grpc-tls` | Off | Enables `grpc-tls` in the client and the server: `https://` dialling on one side, `GrpcDispatcher::with_tls` on the other |
@@ -238,7 +238,7 @@ and the `with_*` setters.
 
 | Variable | Description |
 |----------|-------------|
-| `RUST_LOG` | Log level filter (when `tracing` feature is enabled) |
+| `RUST_LOG` | Log level filter (when the `tracing` feature is enabled — every crate's default — and a subscriber reads it) |
 
 Examples:
 ```bash

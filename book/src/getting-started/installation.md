@@ -41,13 +41,14 @@ This is useful when:
 ## Feature Flags
 
 Features are off by default to minimize compile times and dependency trees, with
-one exception: **`tls-rustls` is on by default** for `a2a-protocol-client` and
+two exceptions. **`tls-rustls` is on by default** for `a2a-protocol-client` and
 `a2a-protocol-sdk`, because the A2A spec serves agents over HTTPS and the client
-(and the bundled push sender) must reach them out of the box. On
-`a2a-protocol-client`, `default-features = false` gives a plaintext-HTTP-only
-build with no rustls dependency. On `a2a-protocol-sdk` it does not yet: the
-SDK depends on the client with the client's defaults on, so rustls stays in
-the build (audit K1, open).
+(and the bundled push sender) must reach them out of the box. **`tracing` is on
+by default** for all three, so a default build logs through whatever `tracing`
+subscriber the application installs.
+`default-features = false` removes a crate's defaults — on the SDK too, which
+takes the client and server without theirs: an SDK built that way has no rustls
+and no logging.
 
 ### `a2a-protocol-types`
 

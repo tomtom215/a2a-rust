@@ -52,14 +52,15 @@ let _client = ClientBuilder::new("http://localhost:3000").build()?;
 
 ## Features
 
-Each feature forwards to the constituent crates named; `tls-rustls` is the
-only default.
+Each feature forwards to the constituent crates named; `tls-rustls` and
+`tracing` are the defaults. The SDK takes those crates without their own
+defaults, so `default-features = false` here removes both.
 
 | Feature | Default | Forwards to |
 |---------|---------|-------------|
 | `tls-rustls` | Yes | `a2a-protocol-client`, `a2a-protocol-server` |
 | `signing` | No | `a2a-protocol-types`, `a2a-protocol-client`, `a2a-protocol-server` |
-| `tracing` | No | `a2a-protocol-client`, `a2a-protocol-server` |
+| `tracing` | Yes | `a2a-protocol-client`, `a2a-protocol-server` |
 | `grpc` | No | `a2a-protocol-client`, `a2a-protocol-server` |
 | `grpc-tls` | No | `a2a-protocol-client`, `a2a-protocol-server` (and turns on `grpc`, `tls-rustls`) |
 | `otel` | No | `a2a-protocol-server` |

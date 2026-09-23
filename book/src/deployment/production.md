@@ -263,11 +263,12 @@ let result = client.send_message(params).await;
 
 ### Structured Logging
 
-Enable the `tracing` feature for structured logs:
+The client, the server and the SDK log through `tracing` by default (the
+`tracing` feature). Install a subscriber to see the output:
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.13", features = ["tracing"] }
+a2a-protocol-server = "0.13"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ```
 
