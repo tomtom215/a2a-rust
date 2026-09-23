@@ -199,6 +199,14 @@ mod tests {
         (std::sync::Arc::new(writer.with_terminal_gate()), reader, rx)
     }
 
+    /// `fut`, or a failure after ten seconds: a broken writer must fail these
+    /// tests, not hang them.
+    async fn within<F: std::future::Future>(fut: F) -> F::Output {
+        tokio::time::timeout(std::time::Duration::from_secs(10), fut)
+            .await
+            .expect("did not finish in time")
+    }
+
     async fn next_state(
         reader: &mut crate::streaming::event_queue::InMemoryQueueReader,
     ) -> Option<TaskState> {
@@ -215,12 +223,15 @@ mod tests {
         let w = std::sync::Arc::clone(&writer);
         let write = tokio::spawn(async move { w.write(status(TaskState::Completed)).await });
 
-        let handed = rx.recv().await.expect("handed over").expect("ok");
+        let handed = within(rx.recv()).await.expect("handed over").expect("ok");
         assert!(!write.is_finished(), "held until the verdict");
         gate.resolve(handed.seq.expect("positioned"), status(TaskState::Canceled));
-        write.await.expect("joins").expect("write succeeds");
+        within(write).await.expect("joins").expect("write succeeds");
 
-        assert_eq!(next_state(&mut reader).await, Some(TaskState::Canceled));
+        assert_eq!(
+            within(next_state(&mut reader)).await,
+            Some(TaskState::Canceled)
+        );
     }
 
     /// No verdict within the write timeout: the event goes out unchanged,
@@ -230,9 +241,12 @@ mod tests {
         let (writer, mut reader, mut rx) = gated();
         let w = std::sync::Arc::clone(&writer);
         let write = tokio::spawn(async move { w.write(status(TaskState::Completed)).await });
-        let _handed = rx.recv().await.expect("handed over");
-        write.await.expect("joins").expect("write succeeds");
-        assert_eq!(next_state(&mut reader).await, Some(TaskState::Completed));
+        let _handed = within(rx.recv()).await.expect("handed over");
+        within(write).await.expect("joins").expect("write succeeds");
+        assert_eq!(
+            within(next_state(&mut reader)).await,
+            Some(TaskState::Completed)
+        );
         let gate = writer.terminal_gate().expect("gated");
         assert!(gate.lock().waiting.is_empty(), "the ticket was withdrawn");
     }
@@ -246,8 +260,11 @@ mod tests {
             .write(status(TaskState::Working))
             .await
             .expect("not held");
-        assert!(rx.recv().await.is_some());
-        assert_eq!(next_state(&mut reader).await, Some(TaskState::Working));
+        assert!(within(rx.recv()).await.is_some());
+        assert_eq!(
+            within(next_state(&mut reader)).await,
+            Some(TaskState::Working)
+        );
 
         drop(rx);
         tokio::time::timeout(
@@ -257,7 +274,10 @@ mod tests {
         .await
         .expect("a closed channel does not wait out the timeout")
         .expect("write succeeds");
-        assert_eq!(next_state(&mut reader).await, Some(TaskState::Completed));
+        assert_eq!(
+            within(next_state(&mut reader)).await,
+            Some(TaskState::Completed)
+        );
         let gate = writer.terminal_gate().expect("gated");
         assert!(gate.lock().waiting.is_empty(), "the ticket was withdrawn");
     }
