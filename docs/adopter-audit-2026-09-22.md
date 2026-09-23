@@ -29,6 +29,87 @@ stores (`tests/cross_replica_cancel/`).
 - **The first shutdown fix cancelled at once** (fixed, `8161455`): a short
   call in flight at a rolling deploy was answered `Canceled`. Shutdown now lets
   work finish for `completion_grace` first.
+**Found after phase 1, on `claude/determined-galileo-rywiyj`:**
+
+- **N1 — `Server::serve_with_shutdown` ignored its signal at the connection
+  ceiling** (Medium). It waited for a connection permit before it looked at
+  the signal, so with `max_connections` set and every slot held by a stream
+  that only shutdown could end, shutdown never began. VALIDATED:
+  `shutdown_is_seen_at_the_connection_ceiling` in
+  `tests/graceful_shutdown_tasks.rs` timed out after 20 s on the unfixed
+  server with the only slot held.
+- **N2 — an OAuth2 token endpoint's 429 or 5xx is classed permanent**
+  (Low). `token_error` (`token_provider.rs`) returns `ClientError::Transport`
+  for every non-2xx answer, so a busy identity provider fails a task as
+  `Internal`, the same defect OW7 fixed for a refused connection. Not fixed:
+  `UnexpectedStatus` would make a token-endpoint 401 read as the agent's, so
+  the variant needs a decision. VALIDATED by reading the code.
+- **N3 — the slimrpc binding maps `UNAUTHENTICATED` and `PERMISSION_DENIED`
+  to `InternalError`**, not to `InvalidParams` as C16 says for it
+  (`bindings/a2a-protocol-slimrpc/src/error.rs`, `rpc_code_to_error_code`'s
+  wildcard). The consequence is the same: the 401 hook never fires.
+  VALIDATED by the binding's unit test before its fix: `expected a 401, got
+  Protocol(A2aError { code: InternalError, … })`. **[Fixed with OW5:
+  `2b1bb80a`]**
+- **N4 — CI does not pin cargo-mutants.** `mutants.yml` runs `cargo install
+  cargo-mutants cargo-nextest --locked` with no version, so the "27.1.0" the
+  documents cite is whatever was newest when they were written. It is also
+  the newest today (`cargo search`, 2026-09-23), so nothing has drifted yet.
+- **N5 — the `FATAL: role "root" does not exist` lines in every PostgreSQL
+  job are the service health check**, not the tests. `--health-cmd
+  pg_isready` runs as the container's `root` with no `-U`, and each probe
+  logs one FATAL line and still exits 0 ("accepting connections") —
+  VALIDATED: three bare runs against PostgreSQL 16.13 added three lines,
+  a run with `-U postgres` added none. Harmless to correctness, but at one
+  line every 5 s it is what fills the job-log window the GitHub API returns,
+  which is why the mutation shards' logs could not be read that way.
+  **[Fixed: `d73cf871`]**
+- **N6 — nightly cargo reports dead manifest entries** (Low, hygiene).
+  `cargo +nightly clippy` (1.100, 2026-09-22) warns: workspace dependency
+  `tonic-build` unused; `workspace.package` fields `documentation`,
+  `keywords`, `categories` inherited by no crate (each crate sets its own,
+  and crates.io shows them — checked for `a2a-protocol-types` and
+  `a2a-protocol-server` 0.13.0); `criterion` a normal dependency of
+  `a2a-benchmarks`; `a2a-protocol-sdk` unused by `a2a-book-tests` (likely a
+  false positive: that crate compiles markdown). Warnings, not errors; the
+  nightly job passes.
+- **N7 — 0.13.0 shipped nineteen changes its notes do not mention**
+  (Medium, release process; escape class 9 in action). The `v0.13.0` tag is
+  on `391f0df`, the merge of #138, not on the release preparation
+  (`707092f8`) that wrote the 0.13.0 section. Both published crates say they
+  were built from `391f0df` (`.cargo_vcs_info.json`; the server `.crate` is
+  SHA-256 `02f16ab4…42f389`), and they contain #138's work — for example
+  `with_inbound_trace_policy`, `idempotency_key_max_age` and the
+  `#[non_exhaustive]` marking of `RetentionPolicy` and `PurgeReport`, a
+  breaking change. At that commit the CHANGELOG listed all nineteen of #138's
+  entries (1 breaking, 9 added, 9 fixed) under `[Unreleased]`, and the GitHub
+  release notes, extracted from the 0.13.0 section, contain none of them
+  (checked by searching the whole 54,863-character body). Found because
+  `cargo semver-checks` reported nothing to do for a tree whose
+  `[Unreleased]` claimed a breaking change. **[Corrected in CHANGELOG and
+  `STABILITY.md` §1; the process gap — nothing checks that a tag's tree has
+  an empty `[Unreleased]` — is open.]**
+- **N8 — the mutation gate scored uncompilable feature-gated mutants as
+  caught** (Medium, gate). `mutants.yml` passed `--all-features` after `--`,
+  so each mutant was built without features and, if it did not compile with
+  them, failed in the test step — which cargo-mutants counts as caught.
+  VALIDATED: one diff's 14 "caught" were 6 caught and 8 unviable once the flag
+  moved to `cargo mutants` itself. Missed counts were never affected; caught
+  counts and scores were. **[Fixed: `587418fa`]**
+- **N9 — cargo-mutants never generates `Ok(...)` for a `*Result` alias**
+  (Medium, gate). It recognises a `Result` only when the type's last path
+  segment is spelled `Result` (cargo-mutants 27.1.0, `src/fnvalue.rs:77`), so
+  for `-> ClientResult<T>` and `-> A2aResult<T>` it emits `ClientResult::new()`
+  and similar, which never compile. VALIDATED with `cargo mutants --list`:
+  1,000 such mutants over 184 functions (types 40 over 7, client 505 over 82,
+  server 455 over 95), none of them viable — so "replace this function's body
+  with `Ok(default)`", the mutation that shows a function's effects are
+  tested at all, has never been run against those 184 functions. Not fixed:
+  the in-repo fix is spelling those return types through an alias named
+  `Result` (types are unchanged, so it is not an API change), which will
+  surface mutants no run has ever graded; measure how many survive before
+  deciding.
+
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.
 
@@ -109,6 +190,11 @@ numbers are at `09b2403`.
   latency bound.
 
 ### OW3 — two replicas starting against a fresh PostgreSQL database can crash one
+
+**[Fixed: `f7956d10`]** Reproduced first: 48 constructors against a fresh
+database, 2 failed on round 0 (`pg_class_relname_nsp_index` — the `pg_class`
+variant of the same race; a raw `psql` probe also produced it once in 40
+alongside 28 `pg_type` failures); 20 consecutive passing runs after.
 
 - **Severity:** Medium. It is pre-existing and bites only the first start on
   an empty database; a restart then succeeds, because the tables exist.
@@ -193,6 +279,10 @@ Kept here because what it took to settle is the useful part.
 
 ### OW5 — gRPC status codes lose what the caller needs (C16)
 
+**[Fixed: `2b1bb80a`, gRPC transport and slimrpc binding]** `ErrorInfo`
+reasons are consulted for `CANCELLED` too; carrying `ErrorInfo` metadata as
+`data` is not done on any binding and stays out of scope.
+
 - **Severity:** Medium.
 - **Evidence:** VALIDATED by reading the code.
   - `crates/a2a-protocol-client/src/transport/grpc.rs:848–861`
@@ -233,6 +323,9 @@ Kept here because what it took to settle is the useful part.
   drops the manual recipe.
 
 ### OW7 — OAuth2 token-endpoint connection failures are classed as permanent
+
+**[Fixed: `af60cece`]** For OIDC discovery too. A 429 or 5xx answer from the
+token endpoint is still permanent: N2.
 
 - **Severity:** Low.
 - **Evidence:** VALIDATED by reading the code.
@@ -453,7 +546,7 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 | C13 | Medium | `HTTPS_PROXY`/`NO_PROXY` are ignored, and only the bundled webpki roots are trusted (no system roots). | VALIDATED (grep) |
 | C14 | Medium | WebSocket: one slow stream consumer blocks routing for every request on the socket (conjectured). Pretty-printed JSON frames are corrupted by `data:` wrapping (validated). | Mixed |
 | C15 | Medium | **[Fixed: `e03d8d7`, `739a304`]** Token cache: `expires_in ≤ 30` means every call hits the token endpoint. A downstream 401 never invalidates the cached token. | VALIDATED |
-| C16 | Medium | **[Open work OW5]** gRPC `Unauthenticated`/`PermissionDenied` map to `InvalidParams`. `ErrorInfo` details are dropped. A mid-stream `Cancelled` becomes a retryable `Timeout`. slimrpc does the same at `error.rs:153`. | VALIDATED (code and tests) |
+| C16 | Medium | **[Fixed: `2b1bb80a` — was open work OW5]** gRPC `Unauthenticated`/`PermissionDenied` map to `InvalidParams`. `ErrorInfo` details are dropped. A mid-stream `Cancelled` becomes a retryable `Timeout`. slimrpc does the same at `error.rs:153`. | VALIDATED (code and tests) |
 | C17 | Medium | `CachingCardResolver`: a network call on every `resolve()`, no TTL, a stampede under concurrency, no stale-on-error, a new HTTPS client per fetch, no redirect following, a timeout reported as a non-retryable `Transport` error, and an error body up to 2 MiB kept untruncated. | VALIDATED |
 | C18 | Medium | `A2aClient` isn't `Clone`, `EventStream` has no `futures::Stream` implementation, `cancel_task` won't accept a `TaskId`, and there is no per-call header API. | VALIDATED (compile) |
 | C19 | Low | `Retry-After` is capped by `max_backoff`, HTTP-date values are ignored, and there is no overall deadline across attempts. The README overstates which sends are retried: without an idempotency key, only 429 and 503. | VALIDATED |
@@ -564,3 +657,107 @@ ships with a regression test.
 Phases 1 and 2 include breaking changes (the `ClientError` conversion is
 additive; the metric renames, span-id semantics and the client timeout
 split are not).
+
+## 8. Bar-raiser candidates (proposed 2026-09-23; none started)
+
+Needs from running agents, swarms and coordinators in production that no
+finding above covers. Each gives the need, the evidence that it is missing
+today (the command or file read, at `fa2e901`), a proposed shape, and the test
+that must fail first. They are candidates, not commitments: `ROADMAP.md`
+takes an item only when work on it starts. Ranked by what they change for an
+operator, highest first.
+
+### E1 — readiness that turns false when shutdown begins
+
+- **Need.** In a rolling deploy the load balancer must stop routing to a
+  replica before it starts cancelling work, or new requests land on a
+  replica that is about to refuse or cancel them.
+- **Missing.** REST answers `/ready` with a constant
+  (`dispatch/rest/mod.rs:116`, `health_response()`); no dispatcher consults
+  the handler's shutdown state. Overlaps O14.
+- **Shape.** A readiness answer derived from the handler: 503 once
+  shutdown has started or the store stops answering; `/health` (liveness)
+  unchanged. The same on every dispatcher, and `grpc.health.v1` for gRPC.
+- **Failing first.** Start `serve_with_shutdown`, fire the signal with a
+  task held open, and assert `/ready` is 503 while `/health` is 200.
+
+### E2 — deadline propagation across delegation hops
+
+- **Need.** A coordinator with 30 s left should not delegate work that will
+  run for five minutes, and a worker should stop when its caller's budget is
+  spent. Budgets are how swarms stay bounded.
+- **Missing.** `grep -rn -i 'grpc-timeout\|a2a-deadline'` over `crates/`
+  returns nothing: no binding reads an inbound deadline, the executor cannot
+  see one, and the client sends none.
+- **Shape.** `RequestContext::deadline()` from `grpc-timeout` on gRPC (the
+  standard header, which tonic already parses); for HTTP bindings a declared
+  A2A extension header, since the specification defines none. The client
+  derives the outbound deadline from the remaining budget. Needs a spec
+  check before the HTTP half is built.
+- **Failing first.** A worker behind a gRPC call with a 200 ms deadline
+  observes `ctx.deadline()` as `Some` within that bound.
+
+### E3 — per-peer circuit breaking in the client
+
+- **Need.** In a swarm one dead worker should cost its callers one fast
+  failure each, not a full retry schedule each: retries against a peer that
+  is down multiply load exactly when it can least take it.
+- **Missing.** No circuit-breaker state in `crates/a2a-protocol-client`
+  (`grep -rn -i circuit` finds only a test message about short-circuiting a
+  backoff).
+- **Shape.** An opt-in `CallInterceptor`/transport wrapper keyed by
+  endpoint: open after N consecutive retryable failures, half-open after a
+  cool-down, with its state visible to metrics.
+- **Failing first.** Against a closed port, the (N+1)th call fails without a
+  connection attempt, measured by counting accepts on a listener.
+
+### E4 — a retry budget with an overall deadline (C19)
+
+- **Need.** "At most 10 s for this call, retries included" is what a caller
+  can reason about; a per-attempt timeout times an attempt count is not.
+- **Missing.** No overall bound in `retry.rs` (`grep -n -i
+  'max_elapsed\|total_timeout\|overall'` returns nothing).
+- **Failing first.** A policy with a 1 s overall budget against a server
+  that answers 503 slowly returns within 1 s plus one attempt's timeout.
+
+### E5 — stuck-task and outcome signals
+
+- **Need.** The questions an on-call engineer asks of an agent fleet are
+  "how many tasks are stuck, and how old is the oldest?" and "what fraction
+  of tasks failed, by class?". Neither is answerable from today's catalogue.
+- **Missing.** The eleven instruments in `otel/mod.rs` count requests,
+  responses, errors, latency, queues, pool and push; none records task
+  outcome or task age. Overlaps O11.
+- **Shape.** `a2a.server.task.outcome` counter by terminal state and failure
+  class; `a2a.server.task.oldest_non_terminal_age` gauge from a periodic
+  store query (opt-in, since it is a query).
+- **Failing first.** A `ManualReader` sees no outcome instrument after a
+  task completes.
+
+### E6 — a scripted hostile peer, published for adopters
+
+- **Need.** Every adopter who writes a coordinator needs to test it against
+  a worker that stalls, cuts a stream, sends a malformed frame or answers
+  401. Escape class 6 (section 6) is this repository's own version of the
+  same gap.
+- **Missing.** The raw-TCP stubs exist only inside individual test files
+  (`crates/a2a-protocol-client/tests/stream_liveness_tests.rs`,
+  `hostile_server_tests.rs`), one per test.
+- **Shape.** A `testing` feature exposing a scripted peer
+  (`ScriptedPeer::new().stall_after(1).on(Binding::Rest)`), used by this
+  repository's own tests first so it is exercised before it is published.
+- **Failing first.** The existing stall and cut-off tests, ported to it,
+  still fail on the pre-C1 client.
+
+### E7 — `a2a doctor`: one command that says what is wrong with an agent
+
+- **Need.** The first thing anyone does with a misbehaving agent is check
+  its card, reach each advertised interface, confirm the protocol version,
+  and try one call on each binding. Today that is a manual sequence.
+- **Missing.** `tools/a2a-cli` has `card`, `send`, `stream` and `task`
+  (`src/cli.rs:132-154`); nothing checks a card against its own interfaces.
+- **Shape.** `a2a doctor URL`: fetch and validate the card; for each
+  interface, connect, send one message, report latency and the error class of
+  any failure; exit non-zero on any finding, so it can gate a deploy.
+- **Failing first.** Against an agent whose card advertises a gRPC
+  interface on a closed port, `doctor` exits non-zero naming that interface.
