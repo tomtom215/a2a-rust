@@ -2681,3 +2681,111 @@ async fn status_delta_for_an_absent_task_falls_back_to_a_save() -> A2aResult<()>
     db.drop_db().await;
     Ok(())
 }
+
+// ── Concurrent first start ───────────────────────────────────────────────────
+
+type StartResult = (&'static str, Result<(), String>);
+
+/// Every schema-creating constructor, `per_kind` times each, all at once.
+async fn start_everything_at_once(url: &str, per_kind: usize) -> Vec<StartResult> {
+    let mut set = tokio::task::JoinSet::new();
+    for _ in 0..per_kind {
+        let u = url.to_owned();
+        set.spawn(async move {
+            let r = PostgresTaskStore::with_migrations(&u).await;
+            (
+                "PostgresTaskStore::with_migrations",
+                r.map(drop).map_err(|e| e.to_string()),
+            )
+        });
+        let u = url.to_owned();
+        set.spawn(async move {
+            let r = PostgresTaskStore::new(&u).await;
+            (
+                "PostgresTaskStore::new",
+                r.map(drop).map_err(|e| e.to_string()),
+            )
+        });
+        let u = url.to_owned();
+        set.spawn(async move {
+            let r = TenantAwarePostgresTaskStore::new(&u).await;
+            (
+                "TenantAwarePostgresTaskStore::new",
+                r.map(drop).map_err(|e| e.to_string()),
+            )
+        });
+        let u = url.to_owned();
+        set.spawn(async move {
+            let r = PostgresPushConfigStore::new(&u).await;
+            (
+                "PostgresPushConfigStore::new",
+                r.map(drop).map_err(|e| e.to_string()),
+            )
+        });
+        let u = url.to_owned();
+        set.spawn(async move {
+            let r = TenantAwarePostgresPushConfigStore::new(&u).await;
+            (
+                "TenantAwarePostgresPushConfigStore::new",
+                r.map(drop).map_err(|e| e.to_string()),
+            )
+        });
+        let u = url.to_owned();
+        set.spawn(async move {
+            let r = a2a_protocol_server::rate_limit::PostgresRateLimitCounter::new(&u).await;
+            (
+                "PostgresRateLimitCounter::new",
+                r.map(drop).map_err(|e| e.to_string()),
+            )
+        });
+    }
+    let mut results = Vec::new();
+    while let Some(joined) = set.join_next().await {
+        results.push(joined.expect("a constructor task panicked"));
+    }
+    results
+}
+
+/// Replicas starting together against an empty database must all come up.
+///
+/// `CREATE TABLE IF NOT EXISTS` races in PostgreSQL: two sessions that both
+/// find a table absent both create it, and one fails with a duplicate key in
+/// `pg_type` (measured: 28 of 40 paired attempts on 16.13). Before the schema
+/// lock, every constructor below ran its DDL unlocked — `with_migrations`
+/// included, because it creates `schema_versions` before it can lock it — so
+/// the first start of a multi-replica deployment crashed a replica.
+///
+/// Five fresh databases, eight of each of the six constructors per database,
+/// so a regression cannot pass by luck: before the fix this failed on the
+/// first round.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn replicas_starting_together_on_an_empty_database_all_come_up() {
+    for round in 0..5 {
+        let db = TestDb::create("startup_race").await;
+        let results = tokio::time::timeout(
+            Duration::from_secs(30),
+            start_everything_at_once(&db.url, 8),
+        )
+        .await
+        .expect("constructors did not finish within 30s — is the schema lock deadlocking?");
+        db.drop_db().await;
+
+        let failures: Vec<String> = results
+            .iter()
+            .filter_map(|(who, r)| r.as_ref().err().map(|e| format!("{who}: {e}")))
+            .collect();
+        assert_eq!(
+            results.len(),
+            48,
+            "round {round}: every constructor reports"
+        );
+        assert!(
+            failures.is_empty(),
+            "round {round}: {} of {} constructors failed against a fresh database:\n{}",
+            failures.len(),
+            results.len(),
+            failures.join("\n")
+        );
+    }
+}

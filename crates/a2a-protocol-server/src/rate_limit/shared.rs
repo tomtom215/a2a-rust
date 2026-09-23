@@ -226,8 +226,9 @@ mod postgres {
         ///
         /// [`A2aError::internal`] if the table cannot be created.
         pub async fn from_pool(pool: sqlx::PgPool) -> A2aResult<Self> {
-            sqlx::query(CREATE_TABLE_SQL)
-                .execute(&pool)
+            // Under the crate's schema lock, so replicas starting against an
+            // empty database do not race. See `store::pg_schema`.
+            crate::store::pg_schema::apply(&pool, &[CREATE_TABLE_SQL])
                 .await
                 .map_err(|e| A2aError::internal(format!("rate-limit counter migrate: {e}")))?;
             Ok(Self {

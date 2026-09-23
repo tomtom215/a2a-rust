@@ -130,8 +130,12 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)",
 ///
 /// # Concurrency safety
 ///
-/// Uses `LOCK TABLE schema_versions IN EXCLUSIVE MODE` within transactions to
-/// prevent concurrent migration runners from applying the same migration twice.
+/// Every transaction first takes the crate-wide schema advisory lock (see
+/// `store::pg_schema`), which serializes it against other runners and against
+/// the stores' `from_pool` DDL, including the creation of `schema_versions`
+/// itself. Each migration then takes `LOCK TABLE schema_versions IN EXCLUSIVE
+/// MODE` and re-reads the applied version, so a migration another runner has
+/// already applied is skipped rather than run twice.
 #[derive(Debug, Clone)]
 pub struct PgMigrationRunner {
     pool: PgPool,
@@ -155,17 +159,20 @@ impl PgMigrationRunner {
     }
 
     /// Ensures the `schema_versions` tracking table exists.
+    ///
+    /// Under the crate's schema lock: this runs before `run_pending` can take
+    /// its table lock — there is no table to lock yet — so two runners
+    /// starting against an empty database raced here and one failed.
     async fn ensure_version_table(&self) -> Result<(), sqlx::Error> {
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS schema_versions (
+        super::pg_schema::apply(
+            &self.pool,
+            &["CREATE TABLE IF NOT EXISTS schema_versions (
                 version     INTEGER PRIMARY KEY,
                 description TEXT        NOT NULL,
                 applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-            )",
+            )"],
         )
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        .await
     }
 
     /// Returns the highest migration version that has been applied, or `0` if
@@ -221,6 +228,12 @@ impl PgMigrationRunner {
             }
 
             let mut tx = self.pool.begin().await?;
+
+            // The crate-wide schema lock first, so a migration cannot run
+            // alongside another store's `from_pool` DDL on the same tables.
+            // Always taken before the table lock below, and nothing takes
+            // that one without this, so the two cannot deadlock.
+            super::pg_schema::lock(&mut tx).await?;
 
             // Lock the version table to prevent concurrent migration application.
             sqlx::query("LOCK TABLE schema_versions IN EXCLUSIVE MODE")

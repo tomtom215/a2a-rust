@@ -129,8 +129,13 @@ impl PostgresTaskStore {
     ///
     /// Returns an error if the schema migration fails.
     pub async fn from_pool(pool: PgPool) -> Result<Self, sqlx::Error> {
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS tasks (
+        // One transaction under the crate's schema lock: two replicas running
+        // this against an empty database at once otherwise race on
+        // `CREATE TABLE IF NOT EXISTS` and one of them fails. See `pg_schema`.
+        super::pg_schema::apply(
+            &pool,
+            &[
+                "CREATE TABLE IF NOT EXISTS tasks (
                 id         TEXT PRIMARY KEY,
                 context_id TEXT NOT NULL,
                 state      TEXT NOT NULL,
@@ -138,42 +143,20 @@ impl PostgresTaskStore {
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )",
+                // The other half of pg migration 4. It must exist here too, or a
+                // store built by `from_pool` refuses every keyed send.
+                idempotency::CREATE_TABLE_SQL,
+                // The other half of pg migration 5. After `tasks`, because it
+                // carries a foreign key to it.
+                event_log::CREATE_TABLE_SQL,
+                "CREATE INDEX IF NOT EXISTS idx_tasks_context_id ON tasks(context_id)",
+                "CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)",
+                "CREATE INDEX IF NOT EXISTS idx_tasks_context_id_state ON tasks(context_id, state)",
+                // Supports the most-recently-updated-first ordering and composite
+                // (updated_at, id) cursor used by list().
+                "CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC, id DESC)",
+            ],
         )
-        .execute(&pool)
-        .await?;
-
-        // The other half of pg migration 4. It must exist here too, or a
-        // store built by `from_pool` refuses every keyed send.
-        sqlx::query(idempotency::CREATE_TABLE_SQL)
-            .execute(&pool)
-            .await?;
-
-        // The other half of pg migration 5. After `tasks`, because it carries
-        // a foreign key to it.
-        sqlx::query(event_log::CREATE_TABLE_SQL)
-            .execute(&pool)
-            .await?;
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_context_id ON tasks(context_id)")
-            .execute(&pool)
-            .await?;
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)")
-            .execute(&pool)
-            .await?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_tasks_context_id_state ON tasks(context_id, state)",
-        )
-        .execute(&pool)
-        .await?;
-
-        // Supports the most-recently-updated-first ordering and composite
-        // (updated_at, id) cursor used by list().
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC, id DESC)",
-        )
-        .execute(&pool)
         .await?;
 
         Ok(Self {

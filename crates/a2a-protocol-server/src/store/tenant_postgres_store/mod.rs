@@ -101,8 +101,12 @@ impl TenantAwarePostgresTaskStore {
     ///
     /// Returns an error if the schema migration fails.
     pub async fn from_pool(pool: PgPool) -> Result<Self, sqlx::Error> {
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS tenant_tasks (
+        // One transaction under the crate's schema lock, so replicas starting
+        // against an empty database do not race. See `store::pg_schema`.
+        crate::store::pg_schema::apply(
+            &pool,
+            &[
+                "CREATE TABLE IF NOT EXISTS tenant_tasks (
                 tenant_id  TEXT NOT NULL DEFAULT '',
                 id         TEXT NOT NULL,
                 context_id TEXT NOT NULL,
@@ -112,44 +116,29 @@ impl TenantAwarePostgresTaskStore {
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 PRIMARY KEY (tenant_id, id)
             )",
+                // Keyed `(tenant_id, key)` like `tenant_tasks` is keyed
+                // `(tenant_id, id)`. Without the tenant in the primary key, one
+                // tenant's key would collide with another's and the second
+                // tenant's send would replay to the first tenant's task — a
+                // cross-tenant read.
+                //
+                // No foreign key to `tenant_tasks`: a cascade would free the key
+                // when a sweep removed its task, letting that send run a second
+                // time.
+                idem::PG_CREATE_TABLE,
+                // Keyed `(tenant_id, task_id, seq)` for the same reason, and with
+                // a sharper consequence: an unscoped log would hand one tenant's
+                // resuming subscriber another tenant's messages. Unlike the key
+                // table this one *does* cascade — see `tenant_event_log` for why
+                // the safe direction is the opposite one here.
+                evlog::PG_CREATE_TABLE,
+                "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_ctx ON tenant_tasks(tenant_id, context_id)",
+                "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_state ON tenant_tasks(tenant_id, state)",
+                // Supports per-tenant most-recently-updated-first ordering and
+                // the composite (updated_at, id) cursor used by list().
+                "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_updated_at ON tenant_tasks(tenant_id, updated_at DESC, id DESC)",
+            ],
         )
-        .execute(&pool)
-        .await?;
-
-        // Keyed `(tenant_id, key)` like `tenant_tasks` is keyed
-        // `(tenant_id, id)`. Without the tenant in the primary key, one
-        // tenant's key would collide with another's and the second tenant's
-        // send would replay to the first tenant's task — a cross-tenant read.
-        //
-        // No foreign key to `tenant_tasks`: a cascade would free the key when
-        // a sweep removed its task, letting that send run a second time.
-        sqlx::query(idem::PG_CREATE_TABLE).execute(&pool).await?;
-
-        // Keyed `(tenant_id, task_id, seq)` for the same reason, and with a
-        // sharper consequence: an unscoped log would hand one tenant's
-        // resuming subscriber another tenant's messages. Unlike the key table
-        // this one *does* cascade — see `tenant_event_log` for why the safe
-        // direction is the opposite one here.
-        sqlx::query(evlog::PG_CREATE_TABLE).execute(&pool).await?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_ctx ON tenant_tasks(tenant_id, context_id)",
-        )
-        .execute(&pool)
-        .await?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_state ON tenant_tasks(tenant_id, state)",
-        )
-        .execute(&pool)
-        .await?;
-
-        // Supports per-tenant most-recently-updated-first ordering and the
-        // composite (updated_at, id) cursor used by list().
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_updated_at ON tenant_tasks(tenant_id, updated_at DESC, id DESC)",
-        )
-        .execute(&pool)
         .await?;
 
         Ok(Self {

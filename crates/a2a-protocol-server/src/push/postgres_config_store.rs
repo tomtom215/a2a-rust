@@ -61,15 +61,17 @@ impl PostgresPushConfigStore {
     ///
     /// Returns an error if the schema migration fails.
     pub async fn from_pool(pool: PgPool) -> Result<Self, sqlx::Error> {
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS push_configs (
+        // Under the crate's schema lock, so replicas starting against an
+        // empty database do not race. See `store::pg_schema`.
+        crate::store::pg_schema::apply(
+            &pool,
+            &["CREATE TABLE IF NOT EXISTS push_configs (
                 task_id TEXT NOT NULL,
                 id      TEXT NOT NULL,
                 data    JSONB NOT NULL,
                 PRIMARY KEY (task_id, id)
-            )",
+            )"],
         )
-        .execute(&pool)
         .await?;
 
         Ok(Self { pool })

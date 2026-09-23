@@ -265,6 +265,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Replicas starting together against an empty PostgreSQL database all come
+  up.** `CREATE TABLE IF NOT EXISTS` races in PostgreSQL: two sessions that
+  both find a table absent both create it, and the second fails with a
+  duplicate key in `pg_type` or `pg_class`. Every schema-creating constructor
+  — `PostgresTaskStore::{new, from_pool, with_migrations}`, the tenant-aware
+  task store, both push-config stores and `PostgresRateLimitCounter` — ran its
+  DDL unlocked (`with_migrations` included, because it creates
+  `schema_versions` before it can lock it), so a multi-replica deployment's
+  first start could crash a replica. Measured on 16.13 with 48 constructors
+  against a fresh database: 2 failed on the first attempt; 0 of 48 in each of
+  20 consecutive runs after. Each constructor's DDL now runs in one transaction
+  holding a transaction-scoped advisory lock, the same key for every store, so
+  they serialize against each other and against the migration runner. **The
+  trade:** schema creation is serialized across the whole database — a
+  cold start of N replicas does its DDL one replica at a time — and the key,
+  the bytes of `"a2a_schm"`, is one an application's own advisory locks on
+  the same database should avoid.
+
 - **A task another replica canceled no longer ends `Completed`.**
   `CancelTask` on replica B wrote and answered `Canceled`, and replica A's
   executor, which never heard of it, then wrote `Completed` over it: every
