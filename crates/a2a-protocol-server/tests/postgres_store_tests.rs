@@ -571,6 +571,48 @@ async fn push_set_get_list_delete() -> A2aResult<()> {
     Ok(())
 }
 
+/// `count` is what the handler holds against its global push-config
+/// ceiling; `None`, or a constant, would switch that ceiling off. Until
+/// 2026-09-23 no test called it on either PostgreSQL push store.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn push_count_spans_tasks() -> A2aResult<()> {
+    let db = TestDb::create("push_count").await;
+    let store = PostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("open postgres push store");
+    assert_eq!(store.count().await?, Some(0));
+    store.set(make_push_config("t1")).await?;
+    store.set(make_push_config("t1")).await?;
+    store.set(make_push_config("t2")).await?;
+    assert_eq!(store.count().await?, Some(3));
+    db.drop_db().await;
+    Ok(())
+}
+
+/// The tenant-aware store counts per tenant, so the ceiling is per tenant.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_push_count_is_per_tenant() -> A2aResult<()> {
+    let db = TestDb::create("tenant_push_count").await;
+    let store = TenantAwarePostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("open tenant postgres push store");
+    TenantContext::scope("acme", async {
+        store.set(make_push_config("t1")).await?;
+        store.set(make_push_config("t2")).await?;
+        A2aResult::Ok(())
+    })
+    .await?;
+    TenantContext::scope("globex", store.set(make_push_config("t1"))).await?;
+    let acme = TenantContext::scope("acme", store.count()).await?;
+    let globex = TenantContext::scope("globex", store.count()).await?;
+    let unseen = TenantContext::scope("initech", store.count()).await?;
+    assert_eq!((acme, globex, unseen), (Some(2), Some(1), Some(0)));
+    db.drop_db().await;
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn push_upsert() -> A2aResult<()> {

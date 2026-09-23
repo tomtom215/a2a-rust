@@ -266,6 +266,48 @@ mod tests {
         .await;
     }
 
+    /// `count` is what the handler holds against its global push-config
+    /// ceiling, and for this store it is per tenant: a tenant's own configs,
+    /// not every tenant's, and zero — without allocating a partition — for a
+    /// tenant never seen. `None` would switch the ceiling off for every
+    /// tenant, which no test noticed until mutation testing graded this body.
+    #[tokio::test]
+    async fn count_is_per_tenant_and_zero_for_an_unseen_one() {
+        let store = TenantAwareInMemoryPushConfigStore::new();
+        TenantContext::scope("tenant-a", async {
+            for task in ["t1", "t2"] {
+                store
+                    .set(make_config(task, None, "https://a.com"))
+                    .await
+                    .unwrap();
+            }
+        })
+        .await;
+        TenantContext::scope("tenant-b", async {
+            store
+                .set(make_config("t1", None, "https://b.com"))
+                .await
+                .unwrap();
+        })
+        .await;
+
+        let a = TenantContext::scope("tenant-a", store.count())
+            .await
+            .unwrap();
+        let b = TenantContext::scope("tenant-b", store.count())
+            .await
+            .unwrap();
+        let unseen = TenantContext::scope("tenant-c", store.count())
+            .await
+            .unwrap();
+        assert_eq!((a, b, unseen), (Some(2), Some(1), Some(0)));
+        assert_eq!(
+            store.tenant_count().await,
+            2,
+            "counting allocated no partition"
+        );
+    }
+
     #[tokio::test]
     async fn tenant_count_tracks_distinct_tenants() {
         let store = TenantAwareInMemoryPushConfigStore::new();
