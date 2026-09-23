@@ -194,6 +194,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Server::serve_with_shutdown` sees its signal at the connection
+  ceiling.** It waited for a connection permit before it looked at the
+  signal, so with `ServeConfig::max_connections` set and every slot held by a
+  stream that only shutdown could end, shutdown never began: the test that
+  pins it timed out after 20 s with the only slot held. The signal is now
+  watched while waiting for the permit as well as for the peer. The new gRPC
+  and WebSocket shutdown paths are built the same way and tested for it.
+
 - **An unreachable OAuth2 token endpoint is a transient failure.** A refused
   or dropped connection to the token endpoint, or to the OIDC discovery
   document, surfaced as `ClientError::Transport`, which is not retryable, so

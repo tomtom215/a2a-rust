@@ -427,3 +427,41 @@ fn task_grace_defaults_and_is_settable() {
     let config = ServeConfig::new().with_task_grace(Duration::from_secs(3));
     assert_eq!(config.task_grace, Duration::from_secs(3));
 }
+
+/// At the connection ceiling every slot is held by a stream that only
+/// shutdown can end, so a server that waits for a free slot before it looks
+/// at the signal never sees it: it sat in `acquire_owned` until a client
+/// hung up, and the delegations it should have cancelled ran on.
+#[tokio::test]
+async fn shutdown_is_seen_at_the_connection_ceiling() {
+    let downstream_cancelled = Arc::new(AtomicBool::new(false));
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Delegator {
+            downstream_cancelled: Arc::clone(&downstream_cancelled),
+        })
+        .build()
+        .unwrap(),
+    );
+    let (addr, stop, serving) = serve(
+        &handler,
+        Binding::JsonRpc,
+        ServeConfig::new()
+            .with_max_connections(1)
+            .with_completion_grace(WINDOW)
+            .with_drain_timeout(DRAIN),
+    )
+    .await;
+    // The only slot, held by a stream that ends only when its task does.
+    let (body, seen) = open_stream(addr, Binding::JsonRpc).await;
+    let reader = tokio::spawn(read_to_end(body, seen));
+
+    stop.send(()).unwrap();
+    let report = tokio::time::timeout(GUARD, serving)
+        .await
+        .expect("serve_with_shutdown must return while every slot is held")
+        .unwrap();
+    assert!(downstream_cancelled.load(Ordering::SeqCst), "{report:?}");
+    let wire = tokio::time::timeout(GUARD, reader).await.unwrap().unwrap();
+    assert!(wire.contains("TASK_STATE_CANCELED"), "{wire}");
+    assert!(report.drained, "{report:?}");
+}
