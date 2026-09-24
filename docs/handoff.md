@@ -11,9 +11,9 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-23 — `claude/pensive-allen-socw7b` merged as `fa2e901`
-(#141); the adopter audit's open work continues on
-`claude/determined-galileo-rywiyj`.
+Last updated 2026-09-24 — `claude/determined-galileo-rywiyj` merged as
+`8a54d7e9` (#142); the gate gaps and phase 2 are on
+`claude/keen-noether-q73ekn`.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -105,7 +105,8 @@ the *content* merge.
 | `claude/busy-cerf-ta682r` | merged, still present | **Merged as `7759fea` via [#140](https://github.com/tomtom215/a2a-rust/pull/140).** The swarm-scale experiment: `crates/a2a-protocol-server/tests/swarm_scale/` and `docs/swarm-scale-findings.md`. Test-only — it adds no crate code and changes none. See its section below. |
 | `claude/optimistic-bell-680i9p` | merged, still present | **Merged as `391f0df` via [#138](https://github.com/tomtom215/a2a-rust/pull/138).** It began as documentation corrections on top of 0.13.0 and is now substantially code: six audit fixes and the regression tests three of them shipped without, W3C Trace Context conformance, event-log durability, `InboundTracePolicy`, and two new CI gates. See its section below. |
 | `claude/pensive-allen-socw7b` | merged, still present | **Merged as `fa2e901` via [#141](https://github.com/tomtom215/a2a-rust/pull/141) on 2026-09-23.** The adopter audit and phase 1 of its fixes; see its section below. Safe to delete. |
-| `claude/determined-galileo-rywiyj` | open — see note | **Destined for `main`.** The adopter audit's open work after phase 1. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
+| `claude/determined-galileo-rywiyj` | merged, still present | **Merged as `8a54d7e9` via [#142](https://github.com/tomtom215/a2a-rust/pull/142) on 2026-09-23.** The adopter audit's open work after phase 1; see its section below. Safe to delete. |
+| `claude/keen-noether-q73ekn` | open — see note | **Destined for `main`.** The audit's gate gaps (escape classes 1, 6, 7, 8, 9), then phase 2 of observability. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -454,6 +455,135 @@ then the work that turns it green. N9 (1,000 `*Result`-alias mutants that
 never compile) is the most consequential open gate gap; measure how many
 survivors spelling those return types as `Result` would surface before
 deciding.
+
+**Merged 2026-09-23 as `8a54d7e9` (#142).** `git log --oneline 8a54d7e9^1..8a54d7e9^2`
+lists its 13 commits. Both steps above were taken on
+`claude/keen-noether-q73ekn`, whose section follows.
+
+## `claude/keen-noether-q73ekn` — the gate gaps, then phase 2
+
+Started 2026-09-23 from `8a54d7e9` (#142 merged), rebased 2026-09-24 onto
+`638ff9a0`. The work order was the audit's escape classes first, each new
+gate proven able to fail, then phase 2. No head SHA, for the reason the
+sections above give.
+
+**Baseline on `main` (`8a54d7e9`), before any change here:**
+`scripts/preflight.sh --full` 71 of 71 PASS (exit 0); `cargo deny check`
+exit 0 with one warning (N17); a2a-tck `263b9cf` full 88 graded, 4 failing =
+baseline, minimal 66, CORE-CAP-004 passes; nightly clippy exit 0 (N6
+warnings); `cargo semver-checks` "no semver update required" ×4, and an
+injected rename exits 100.
+
+**Landed, oldest first:** release gates (class 9, N10; `e2a2b7ed`); RFC 8785
+vectors and the signing fixes (class 7, T2, T4 tie, N12; `1a8c4739`); fuzz
+targets for every server parser of peer input (class 8; `fe0ba1d3`,
+`0aacbe9a`); crate READMEs as doctests and feature tables checked (class 1;
+`499cfb2b`); `ScriptedPeer` and N13 (class 6, E6; `a7a34ff4`); the book's
+examples compiled and its defaults checked (class 1, N15, S12; `1e5ba59b`);
+N17 (`b1f9041b`); N9's survivors (`02fc596d`); `tracing` on by default, and
+the SDK's defaults its own (O13, K1; `3df532d9`, breaking); tests for every
+body cargo-mutants can replace, stock and patched (`d7afef3a`, `d6259ff3`,
+`ac13aca6`); the pinned, patched cargo-mutants in CI (N4, N9, N11;
+`b0ebedc9`); N20 (`6e68d76a`); N19 (`d1faeed3`); phase 2 — spans on every
+binding, `rpc.server.call.duration`, connection statistics (O1, O2, O4, O5,
+O10, most of O11; `4426d3d2`); N21 recorded (`390f8f6b`); N22, a WebSocket
+stream that went silent when its client was dropped (`cb5d81d3`).
+
+**Phase 2's gate** is `crates/a2a-protocol-sdk/tests/observability_e2e/`.
+It failed on `main` and passes here 10 of 10. During development each of
+its assertions was probed by injecting the defect it names (removing `error.type` from the
+metric or the span, the connection tracker, the executor's task id, the
+JSON-RPC code mapping, or building the SSE response outside the call's
+span): each fails it with the matching gap. It found two defects in this
+work before commit — a root span per SSE stream, and `Drop` still recording
+child spans. The semantic conventions were re-read upstream; ADR 0013
+records the three rules its list lacked.
+
+**Phase 2's cost** is measured in ADR 0013's Consequences. With no
+subscriber, JSON-RPC is within noise and HTTP+JSON +8 to +10%; with a
+`tracing-opentelemetry` layer, about 100 µs a call, the bridge recording two
+spans. The first cut was +36% and +46% with no subscriber, from two causes
+the measurement found — a body wrapper that turned every fixed-size response
+chunked, and a boxed future per call — both fixed before commit.
+
+**Verification of record, at `cb5d81d3`:** `scripts/preflight.sh --full`
+ran 73 of 73 CI gate commands, all PASS (exit 0), with `SPIRE_BIN_DIR` set
+for the SPIFFE suites. `scripts/prove_gates_fail.sh` proved all 73 gates
+able to fail: 70 in one run at `390f8f6b`, and at `cb5d81d3` the three it
+graded PRE-BROKEN there — the SPIFFE suites (no `SPIRE_BIN_DIR` in that
+shell), the binding's clippy (its target deleted mid-run; see the lessons),
+and `cargo test --workspace --all-features` (N22, fixed in between).
+`cargo +nightly clippy --workspace --all-targets --all-features -- -D
+warnings` (1.100.0-nightly, 2026-09-22) exits 0 with N6's manifest warnings
+and no others; `cargo +nightly test --workspace --all-features` exits 0,
+4,063 passed across 148 test binaries. `cargo deny check` exits 0 for the
+workspace and the binding, N17's warning gone; `cargo semver-checks` "no
+semver update required" ×4. The official a2a-tck at `263b9cf`: full 88
+graded, 4 failing = baseline; minimal 66; CORE-CAP-004 passes — identical to
+`main`. cargo-mutants (the pinned, patched build, `--in-diff` over this
+branch's source diff, `--all-features`, live PostgreSQL) for the client: 75
+mutants, 60 caught, 15 unviable, 0 missed; the 15 are all
+`Default::default()` for types with no `Default`. The server's 344 and the
+types' 23 in-diff mutants were not run at this head locally; the pull
+request's `mutants.yml` shards run them and are the record for those
+crates.
+
+**Open, from this branch:** N21, a continuation refused as in flight — a
+design choice for the maintainer, and the reason `swarm_scale` can fail the
+mutation baseline on a busy host; N16, N18; the HTTP+JSON residual above,
+unattributed below the bench's noise; `connection_timeout`, still measured
+by no test; the cargo-mutants patch, meant for upstream.
+
+**Lessons, each of which cost something:**
+
+- **An example that does not compile is usually also wrong about
+  something else.** Converting the book's 127 blocks found five compile
+  errors and, around them, seven prose claims the code contradicts,
+  including a default (`cancel`) that changed in 0.7. The compiler is only
+  the first reader.
+- **`compile_fail` needs a control.** A block marked `compile_fail` passes
+  for any error, including one in the hidden preamble. Pin the error code
+  and run it under nightly rustdoc (stable does not enforce codes), with a
+  deliberately wrong code as the control that must fail.
+- **Count before writing a number.** A CHANGELOG draft said "36 of them
+  run"; the diff says 79. Numbers in records come from a command.
+- **A mutant a crate's own tests cannot reach is a coverage fact about that
+  crate.** cargo-mutants runs only the mutated crate's tests: the client's
+  gRPC success path was covered from the server and SDK crates and
+  therefore, for mutation purposes, not at all.
+- **Measure the cost before calling observability done.** The spans were
+  green and correct, and a default build had become 36–46% slower per call.
+  Clippy's `large_futures` had pointed at one of the two causes; the bench
+  found the other, which no test or lint would have.
+- **A gate that reads the exporter can wait for the wrong thing.** `tracing`
+  holds a parent span open until its children close, so a call's span is
+  exported late. Waiting a fixed time for spans is a flake; waiting, with a
+  deadline, for every span's parent to arrive is not.
+- **`pgrep -f` / `pkill -f` match the shell running them.** A pattern
+  quoted in the command line kills that command. Start helpers from a script
+  and stop them by PID.
+- **PRE-BROKEN on a timing-sensitive test is a finding until shown
+  otherwise.** `prove_gates_fail.sh` graded the workspace tests PRE-BROKEN
+  on one WebSocket assertion that failed about 1 run in 80 under load. It
+  read like a flake; timestamps on the reader's polls showed a real client
+  bug present on `main` (N22). The bound the test raced was incidental; the
+  silence it caught was not.
+- **`prove_gates_fail.sh` shares one target directory.** It exports
+  `CARGO_TARGET_DIR=<repo>/target`, so the binding gates build there too:
+  deleting `target/debug` mid-run, which is safe during preflight's
+  release-only tail, broke a binding gate here, and the prover rightly
+  graded it PRE-BROKEN. Free space before the run, not during it.
+- **A mutation baseline is a load test.** It runs `swarm_scale`, which
+  depends on scheduling (N21). A failed baseline on a busy host is a fact
+  about the host and that race, not about the change; re-run idle or
+  compare against `main` on the same host before believing either.
+
+**What the next session should do first:** if a pull request is asked for,
+open it and watch the mutation job for N21. Then the rest of phase 2 —
+ADR 0013's option 5 (`init_telemetry`, OTLP traces; O3, O12), stream
+duration and active streams (O6), the task-outcome metric (E5, with O11's
+remainder), the client side (O8, O9), connection statistics for the gRPC
+and WebSocket listeners (O10) — then OW11 and phase 3.
 
 ## In flight outside this repository
 
