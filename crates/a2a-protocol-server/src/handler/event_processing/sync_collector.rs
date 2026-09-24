@@ -113,7 +113,7 @@ pub const EXECUTOR_DRAIN_TIMEOUT: &str = "executor_drain_timeout";
 /// call — dropped it, the executor finished into nothing, and the task stayed
 /// `working` in the store for good, with no push notification either (N27).
 /// The fields keep the handler's names so the methods below read as they did.
-pub(crate) struct SyncCollector {
+pub struct SyncCollector {
     task_store: Arc<dyn crate::store::TaskStore>,
     push_config_store: Arc<dyn crate::push::PushConfigStore>,
     push_sender: Option<Arc<dyn crate::push::PushSender>>,

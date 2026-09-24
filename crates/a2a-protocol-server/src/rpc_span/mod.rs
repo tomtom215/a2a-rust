@@ -440,7 +440,7 @@ pub fn in_child_span<F: Future>(name: &'static str, fut: F) -> impl Future<Outpu
 /// in the call's span, carrying whether the call is untraced across the
 /// `tokio::spawn`. For work that must outlive the request future when its
 /// client goes away (N27) without adding a span to the call's trace.
-pub(crate) fn in_current_span<F: Future>(fut: F) -> impl Future<Output = F::Output> {
+pub fn in_current_span<F: Future>(fut: F) -> impl Future<Output = F::Output> {
     #[cfg(feature = "tracing")]
     {
         let untraced = untraced();

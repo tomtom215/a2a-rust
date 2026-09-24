@@ -85,7 +85,7 @@ async fn shutdown_clears_cancellation_tokens() {
         tokens.insert(
             a2a_protocol_types::task::TaskId::new("t-1"),
             super::super::CancellationEntry {
-                turn: Default::default(),
+                turn: std::sync::Arc::default(),
                 token: tokio_util::sync::CancellationToken::new(),
                 created_at: Instant::now(),
             },
@@ -127,7 +127,7 @@ async fn shutdown_with_timeout_clears_cancellation_tokens() {
         tokens.insert(
             a2a_protocol_types::task::TaskId::new("t-2"),
             super::super::CancellationEntry {
-                turn: Default::default(),
+                turn: std::sync::Arc::default(),
                 token: tokio_util::sync::CancellationToken::new(),
                 created_at: Instant::now(),
             },
@@ -155,7 +155,7 @@ async fn shutdown_with_timeout_cancels_tokens() {
         tokens.insert(
             a2a_protocol_types::task::TaskId::new("t-3"),
             super::super::CancellationEntry {
-                turn: Default::default(),
+                turn: std::sync::Arc::default(),
                 token: token_clone,
                 created_at: Instant::now(),
             },

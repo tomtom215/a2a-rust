@@ -179,7 +179,7 @@ async fn seed_cancelled_tokens(handler: &RequestHandler, n: usize) -> Vec<TaskId
         tokens.insert(
             id.clone(),
             CancellationEntry {
-                turn: Default::default(),
+                turn: std::sync::Arc::default(),
                 token,
                 created_at: Instant::now(),
             },
@@ -1940,7 +1940,7 @@ async fn a_live_token_alone_refuses_a_resend() {
     handler.cancellation_tokens.write().await.insert(
         task_id.clone(),
         CancellationEntry {
-            turn: Default::default(),
+            turn: std::sync::Arc::default(),
             token: tokio_util::sync::CancellationToken::new(),
             created_at: Instant::now(),
         },
@@ -2044,7 +2044,7 @@ async fn seed_aged_token(handler: &RequestHandler, id: &str) -> TaskId {
     handler.cancellation_tokens.write().await.insert(
         id.clone(),
         CancellationEntry {
-            turn: Default::default(),
+            turn: std::sync::Arc::default(),
             token: tokio_util::sync::CancellationToken::new(),
             created_at: Instant::now()
                 .checked_sub(std::time::Duration::from_secs(2))
@@ -2115,7 +2115,7 @@ async fn the_sweep_keeps_an_aged_token_whose_queue_is_live() {
 #[test]
 fn second_send_blocked_iff_token_live() {
     let live = CancellationEntry {
-        turn: Default::default(),
+        turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: Instant::now(),
     };
@@ -2127,7 +2127,7 @@ fn second_send_blocked_iff_token_live() {
     let token = tokio_util::sync::CancellationToken::new();
     token.cancel();
     let cancelled = CancellationEntry {
-        turn: Default::default(),
+        turn: std::sync::Arc::default(),
         token,
         created_at: Instant::now(),
     };
@@ -2176,7 +2176,7 @@ fn token_still_evictable_spares_fresh_live_token() {
 
     // A fresh, live token (the concurrent-resend replacement): spared.
     let fresh = CancellationEntry {
-        turn: Default::default(),
+        turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
     };
@@ -2187,7 +2187,7 @@ fn token_still_evictable_spares_fresh_live_token() {
 
     // A cancelled token: still evictable.
     let cancelled = CancellationEntry {
-        turn: Default::default(),
+        turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
     };
@@ -2201,7 +2201,7 @@ fn token_still_evictable_spares_fresh_live_token() {
     // monotonic-clock epoch is younger than `max_age` (e.g. a freshly
     // booted Windows CI runner), which would spuriously fail the test.
     let aged = CancellationEntry {
-        turn: Default::default(),
+        turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
     };
@@ -2859,17 +2859,7 @@ impl crate::store::TaskStore for GatedStore {
 /// the same task is admitted.
 #[tokio::test]
 async fn a_send_dropped_mid_commit_releases_what_it_took() {
-    let store = std::sync::Arc::new(GatedStore {
-        inner: crate::store::InMemoryTaskStore::new(),
-        armed: std::sync::atomic::AtomicBool::new(false),
-        entered: tokio::sync::Notify::new(),
-    });
-    let handler = std::sync::Arc::new(
-        RequestHandlerBuilder::new(DummyExecutor)
-            .with_task_store_arc(store.clone())
-            .build()
-            .expect("build handler"),
-    );
+    let (store, handler) = gated_handler(std::time::Duration::ZERO);
     let id = TaskId::new("t-dropped");
     crate::store::TaskStore::save(
         &store.inner,
