@@ -487,7 +487,11 @@ body cargo-mutants can replace, stock and patched (`d7afef3a`, `d6259ff3`,
 `b0ebedc9`); N20 (`6e68d76a`); N19 (`d1faeed3`); phase 2 — spans on every
 binding, `rpc.server.call.duration`, connection statistics (O1, O2, O4, O5,
 O10, most of O11; `4426d3d2`); N21 recorded (`390f8f6b`); N22, a WebSocket
-stream that went silent when its client was dropped (`cb5d81d3`).
+stream that went silent when its client was dropped (`cb5d81d3`). Then three
+fixes the pull request's first CI run found: the mutants install self-test
+under forced colour (`384b4142`), `book_defaults` on a CRLF checkout
+(`1b49410d`), and N23, a card poll watcher blind to a change made as it
+started (`4c312e7a`).
 
 **Phase 2's gate** is `crates/a2a-protocol-sdk/tests/observability_e2e/`.
 It failed on `main` and passes here 10 of 10. During development each of
@@ -526,7 +530,9 @@ mutants, 60 caught, 15 unviable, 0 missed; the 15 are all
 `Default::default()` for types with no `Default`. The server's 344 and the
 types' 23 in-diff mutants were not run at this head locally; the pull
 request's `mutants.yml` shards run them and are the record for those
-crates.
+crates. The three fixes after `cb5d81d3` were checked by the targeted runs
+their commit messages describe, not by a second full preflight; the pull
+request's CI is the record for them.
 
 **Open, from this branch:** N21, a continuation refused as in flight — a
 design choice for the maintainer, and the reason `swarm_scale` can fail the
@@ -568,6 +574,12 @@ by no test; the cargo-mutants patch, meant for upstream.
   read like a flake; timestamps on the reader's polls showed a real client
   bug present on `main` (N22). The bound the test raced was incidental; the
   silence it caught was not.
+- **Local is not CI.** Three failures reached the first CI run that no
+  local gate could show: a self-test grepping output that CI colours
+  (`CARGO_TERM_COLOR=always`), a test that finds headings by `\n` on a
+  Windows checkout's CRLF, and a macOS runner slow enough to expose N23.
+  Run text-matching checks with colour forced, and a file-reading test
+  against a CRLF copy, before calling them portable.
 - **`prove_gates_fail.sh` shares one target directory.** It exports
   `CARGO_TARGET_DIR=<repo>/target`, so the binding gates build there too:
   deleting `target/debug` mid-run, which is safe during preflight's
