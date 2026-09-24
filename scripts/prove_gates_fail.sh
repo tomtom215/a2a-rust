@@ -375,6 +375,8 @@ injection_for() {
             echo "inert_bounds" ;;
         *"check_advisory_floors.py"*)
             echo "advisory_floors" ;;
+        *"check_lockfiles.sh"*)
+            echo "lockfiles" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
@@ -518,6 +520,7 @@ expected_marker() {
         timeout_nesting)  echo "push_delivery_timeout / HttpPushSender" ;;
         inert_bounds)     echo "max_probe_rows" ;;
         advisory_floors)  echo "RUSTSEC-2026-0285" ;;
+        lockfiles)        echo "STALE  itk/Cargo.lock" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         package_manifest) echo "NO_SUCH_README.md" ;;
@@ -882,6 +885,22 @@ PY
             sed -i 's/version = ">=0.23.45, <0.24"/version = ">=0.23, <0.24"/' "$client_toml"
             grep -q 'version = ">=0.23, <0.24"' "$client_toml" \
                 || { echo "advisory_floors: rustls requirement not found in $client_toml" >&2; return 1; }
+            ;;
+        lockfiles)
+            # Put `itk/Cargo.lock` back the way it was found on 2026-09-24:
+            # pinning a workspace crate at a version its manifest no longer
+            # has.
+            local lock=itk/Cargo.lock
+            note_touched "$lock"
+            python3 - "$lock" <<'PY' || { echo "lockfiles: a2a-protocol-types entry not found in $lock" >&2; return 1; }
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+t, n = re.subn(r'(name = "a2a-protocol-types"\nversion = )"[^"]+"', r'\1"0.11.0"', s, count=1)
+if n != 1:
+    sys.exit(1)
+open(p, "w").write(t)
+PY
             ;;
         inert_bounds)
             # A `max_*` bound one TaskStore honours and its five siblings do

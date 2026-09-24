@@ -340,6 +340,13 @@ jobs:
       - name: No published manifest admits a version with a RustSec advisory
         run: python3 scripts/check_advisory_floors.py
 
+      # Every tracked Cargo.lock satisfies its manifests. `itk/Cargo.lock` sat
+      # two releases stale because the release checklist named only two of the
+      # four, and the upstream a2a-itk harness, which builds `itk/` with
+      # `--locked`, could not build this repository's agent.
+      - name: Every tracked Cargo.lock is current
+        run: ./scripts/check_lockfiles.sh
+
       # The inventory that every other gate's coverage claim rests on. A gate
       # missing from it does not report a gap — it reports a smaller total, in
       # green, and `scripts/prove_gates_fail.sh` prints "N of N proven" over a

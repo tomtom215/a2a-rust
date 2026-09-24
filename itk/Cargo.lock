@@ -4,10 +4,10 @@ version = 4
 
 [[package]]
 name = "a2a-protocol-client"
-version = "0.11.0"
+version = "0.13.0"
 dependencies = [
  "a2a-protocol-types",
- "base64",
+ "base64 0.23.1",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -26,13 +26,15 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-server"
-version = "0.11.0"
+version = "0.13.0"
 dependencies = [
  "a2a-protocol-types",
  "bytes",
  "http-body-util",
  "hyper",
  "hyper-util",
+ "mutants",
+ "pin-project-lite",
  "prost",
  "protoc-bin-vendored",
  "serde",
@@ -44,14 +46,15 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tonic-types",
+ "tracing",
  "uuid",
 ]
 
 [[package]]
 name = "a2a-protocol-types"
-version = "0.11.0"
+version = "0.13.0"
 dependencies = [
- "base64",
+ "base64 0.23.1",
  "prost",
  "prost-build",
  "prost-types",
@@ -141,6 +144,12 @@ name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
+name = "base64"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bitflags"
@@ -446,7 +455,7 @@ dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
  "a2a-protocol-types",
- "base64",
+ "base64 0.22.1",
  "hyper",
  "hyper-util",
  "prost",
@@ -525,6 +534,12 @@ name = "multimap"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
+
+[[package]]
+name = "mutants"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "add0ac067452ff1aca8c5002111bd6b1c895baee6e45fcbc44e0193aea17be56"
 
 [[package]]
 name = "num-conv"
@@ -1013,7 +1028,7 @@ checksum = "ac2a5518c70fa84342385732db33fb3f44bc4cc748936eb5833d2df34d6445ef"
 dependencies = [
  "async-trait",
  "axum",
- "base64",
+ "base64 0.22.1",
  "bytes",
  "h2",
  "http",

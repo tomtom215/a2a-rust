@@ -88,9 +88,14 @@ git checkout -b release/vX.Y.Z main
 # the release. Find them all with:
 #     git grep -n 'a2a-protocol-\(types\|client\|server\|sdk\)\s*=' -- crates
 #
-# Then refresh BOTH lockfiles, which carry the crate versions:
+# Then refresh the THREE lockfiles that carry the crate versions:
 #     cargo metadata --format-version 1 >/dev/null          # root workspace
 #     (cd bindings/a2a-protocol-slimrpc && cargo metadata --format-version 1 >/dev/null)
+#     (cd itk && cargo metadata --format-version 1 >/dev/null)
+# This said "BOTH" and named two until 2026-09-24, by which point
+# itk/Cargo.lock pinned 0.11.0 against 0.13.0 manifests and the upstream
+# a2a-itk harness (which builds with --locked) could not build our agent.
+# scripts/check_lockfiles.sh checks every tracked lockfile and runs in CI.
 
 # On a MINOR release, the dependency snippets in prose move too — every
 # `a2a-protocol-* = "X.Y"` a reader is told to copy, in the root README, the
