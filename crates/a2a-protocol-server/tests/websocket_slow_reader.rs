@@ -168,9 +168,20 @@ async fn a_peer_that_stops_reading_mid_stream_is_closed_by_the_idle_bound() {
          connection slot: {served:?}"
     );
 
-    // And the stalled peer's stream was abandoned, not merely parked: read
-    // what the server managed to send, and the stream never finished. A task
-    // still blocked in its send would deliver everything once reading
+    // And the stalled peer's stream was abandoned, not merely parked. Not on
+    // Windows: whether a 12 MB burst overruns the peer's buffers there depends
+    // on loopback autotuning the 4 KiB receive buffer does not bound, and a
+    // server that finished the stream into buffers that took it all has done
+    // nothing wrong. The slot assertion above holds everywhere.
+    #[cfg(not(windows))]
+    assert_abandoned(&mut stalled).await;
+}
+
+/// Reads what the server managed to send a stalled peer, asserting the
+/// stream never finished.
+#[cfg(not(windows))]
+async fn assert_abandoned(stalled: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) {
+    // A task still blocked in its send would deliver everything once reading
     // resumed, completion included, having held the socket all along.
     let mut finished = false;
     while let Ok(Some(Ok(frame))) =
