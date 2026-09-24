@@ -93,6 +93,25 @@ documented way for adopters to obtain it.
 - Affected crate(s) and version(s).
 - Any suggested fix, if available.
 
+## Advisories in the dependencies you compile
+
+Your lockfile, not this repository's, decides which version of a dependency
+you build. When a dependency of these crates publishes a security fix, cargo
+moves you to it only if you update that dependency, or if a new release of
+these crates raises its minimum to the fixed version. Updating an a2a crate
+alone does neither when the old version still satisfies the requirement —
+an adopter found exactly that with rustls and RUSTSEC-2026-0285 on 0.12.1.
+
+From the release after 0.13.0, no requirement in a published manifest admits a
+version with a RustSec advisory: `scripts/check_advisory_floors.py`, a CI gate, tests every
+published version each normal and build dependency admits against the RustSec
+database. So upgrading these crates moves you off every advisory, known
+when the release was cut, in the crates they depend on directly. It says
+nothing about those crates' own dependencies, which their requirements
+govern; for those, and for advisories published since, update the
+dependency yourself (`cargo update -p rustls`) and run `cargo audit` or
+`cargo deny check advisories` against your own lockfile.
+
 ## Disclosure Timeline
 
 We follow a **90-day coordinated disclosure** timeline:
