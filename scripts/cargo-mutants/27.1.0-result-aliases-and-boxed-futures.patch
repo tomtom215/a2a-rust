@@ -1,3 +1,14 @@
+# SPDX-License-Identifier: MIT
+# Copyright 2021-2024 Martin Pool (cargo-mutants: the context and removed lines)
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (the added lines)
+#
+# A modification of cargo-mutants 27.1.0 (MIT), kept in this repository and
+# applied by scripts/install_cargo_mutants.sh to the checksum-pinned crates.io
+# tarball. It is licensed MIT, as cargo-mutants is, so the patched tool stays
+# under one license; it is not part of any a2a-rust crate. What it changes, why,
+# and the proof that it is the build CI runs: scripts/cargo-mutants/README.md.
+# `patch` reads the diff from the first `---` line and ignores this header.
+
 --- a/src/fnvalue.rs
 +++ b/src/fnvalue.rs
 @@ -74,8 +74,17 @@

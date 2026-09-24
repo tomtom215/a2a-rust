@@ -540,7 +540,7 @@ request's CI is the record for them.
 design choice for the maintainer, and the reason `swarm_scale` can fail the
 mutation baseline on a busy host; N16, N18; the HTTP+JSON residual above,
 unattributed below the bench's noise; `connection_timeout`, still measured
-by no test; the cargo-mutants patch, meant for upstream.
+by no test; the cargo-mutants patch (kept here, not upstreamed — see `scripts/cargo-mutants/README.md`).
 
 **Lessons, each of which cost something:**
 

@@ -24,8 +24,11 @@
 # `after` hook's whole body) is the function unchanged, not a mutant — the
 # stock text comparison missed it for differing only in `async move` or `()`.
 # Unit tests for each, in cargo-mutants' own style.
-# It is meant to go upstream; when a cargo-mutants release carries it, pin that
-# release here, delete the patch, and keep the self-test below.
+# It is kept here, not proposed upstream (a maintainer decision, 2026-09-24).
+# Its licence, provenance, hashes and the proof that the installed binary
+# carries it are in scripts/cargo-mutants/README.md. A future cargo-mutants
+# release is adopted only by re-deriving the patch against it and re-running
+# that proof; the self-test below is what refuses a binary without it.
 #
 # Why not `cargo install cargo-mutants`: that installs whatever is newest, so
 # the version the documents cite is an accident of when they were written

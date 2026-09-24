@@ -38,6 +38,13 @@ See PROVENANCE.md for the fuller account of each.
   - Derived from a2a-inspector's backend/validators.py.
   - Source: https://github.com/a2aproject/a2a-inspector
 
+* scripts/cargo-mutants/27.1.0-result-aliases-and-boxed-futures.patch
+  - A modification of cargo-mutants 27.1.0, used only to build the
+    mutation-testing tool CI runs; not part of any published crate.
+  - Licensed MIT, as cargo-mutants is. Its context and removed lines are
+    Copyright 2021-2024 Martin Pool; see scripts/cargo-mutants/README.md.
+  - Source: https://github.com/sourcefrog/cargo-mutants
+
 This repository's compiled dependency graph (crates.io packages pulled in by
 Cargo.toml/Cargo.lock) is not reproduced here — each carries its own license
 metadata, resolvable via `cargo license` or `cargo deny check licenses`, and
