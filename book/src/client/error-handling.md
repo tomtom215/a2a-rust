@@ -189,7 +189,7 @@ use a2a_protocol_sdk::server::ServerError;
 
 ### Don't Panic
 
-a2a-rust never panics on caller input or I/O failure — every fallible operation returns `Result`. (The only `expect` calls in the libraries assert internal invariants, such as propagating lock poisoning, that callers cannot trigger.) Follow the same pattern in your executors:
+a2a-rust reports failures as `Result`, not panics: every fallible operation returns one, and a CI gate freezes the `unwrap`, `expect`, `panic!`, `unreachable!` and `todo!` sites in library code. The 13 `expect` calls it allows each assert an internal invariant, such as propagating lock poisoning, that callers cannot trigger. The gate does not see arithmetic overflow or slice indexing, so treat "never panics" as the aim it is rather than a proven property. Follow the same pattern in your executors:
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;

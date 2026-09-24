@@ -40,6 +40,8 @@ Architecture Decision Records (ADRs) and implementation planning documents for t
 - **Planning a feature?** Check the implementation plan for architectural context
 - **Using this SDK as a coordinator, or wondering what an adopter hits?** Read [adopter-audit-2026-09-22.md](adopter-audit-2026-09-22.md) — seventy findings across every crate, which are fixed, and what is still open
 - **Wondering whether this scales to a swarm?** Read [swarm-scale-findings.md](swarm-scale-findings.md) — measured behaviour at a thousand agents sharing one task, and why the shard key has to be the context
+- **About to quote a claim this project makes?** Read [claims-ledger-2026-09-24.md](claims-ledger-2026-09-24.md) — every overstated claim found from 0.6.0 on, checked against the published artifacts, and what backs the ones that stand
+- **Asking whether it is ready for production?** Read [readiness-bar.md](readiness-bar.md) — what that would have to mean, written before measuring, and what has been measured against it
 - **Picking up work mid-stream?** Read [handoff.md](handoff.md) — branch state, what is in flight outside this repository, what to do first, and the ideas the project has not committed to
 
 ## License
