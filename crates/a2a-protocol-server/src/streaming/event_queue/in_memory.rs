@@ -408,6 +408,19 @@ pub struct InMemoryQueueReader {
     pending: std::collections::VecDeque<A2aResult<StreamEvent>>,
     /// Consulted when the channel closes; see [`Self::with_reattach`].
     reattach: Option<ReattachFn>,
+    /// The hook's answer while it is still being awaited.
+    ///
+    /// Kept here, not in a local of `read`, so that `read` is cancel-safe.
+    /// The SSE writer races `read()` against its keep-alive timer and drops
+    /// the loser; a hook future that lived only in `read` was dropped with
+    /// it, and the next `read` called the hook afresh. The hook's idle bound
+    /// is measured from the moment it is called, so every keep-alive
+    /// restarted it, and a subscription to a task parked at `input-required`
+    /// outlived its `subscribe_max_idle` indefinitely.
+    ///
+    /// In a `Mutex` only to keep the reader `Sync`, which it was before this
+    /// field; `read` takes `&mut self`, so the lock is never contended.
+    reattaching: std::sync::Mutex<Option<Pin<Box<dyn Future<Output = Reattached> + Send>>>>,
     /// Set once a frame reporting a terminal state has been handed to the
     /// consumer. Suppresses the synthesized final frame, so a client that
     /// already saw the real one does not get it twice.
@@ -495,6 +508,7 @@ impl InMemoryQueueReader {
             rx,
             pending: std::collections::VecDeque::new(),
             reattach: None,
+            reattaching: std::sync::Mutex::new(None),
             saw_terminal: false,
             replayed_through: 0,
         }
@@ -536,6 +550,7 @@ impl InMemoryQueueReader {
             rx,
             pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
+            reattaching: std::sync::Mutex::new(None),
             saw_terminal: false,
             replayed_through: 0,
         }
@@ -556,6 +571,7 @@ impl InMemoryQueueReader {
             rx,
             pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
+            reattaching: std::sync::Mutex::new(None),
             saw_terminal: false,
             replayed_through: 0,
         }
@@ -638,7 +654,20 @@ impl EventQueueReader for InMemoryQueueReader {
                             return None;
                         }
                         let reattach = self.reattach.as_ref()?;
-                        match reattach().await {
+                        let answer = {
+                            let slot = self
+                                .reattaching
+                                .get_mut()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            slot.get_or_insert_with(|| reattach()).await
+                        };
+                        // Only once the hook has answered: a `read` dropped
+                        // while awaiting it leaves it for the next `read`.
+                        *self
+                            .reattaching
+                            .get_mut()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+                        match answer {
                             Reattached::Channel(rx) => self.rx = rx,
                             Reattached::Final(event) => {
                                 self.saw_terminal = true;

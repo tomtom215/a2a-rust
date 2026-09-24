@@ -571,6 +571,68 @@ mod tests {
         assert!(ended.is_none(), "expected clean EOF, got: {ended:?}");
     }
 
+    /// The idle bound holds when `read()` is cancelled and called again,
+    /// which is what the SSE writer does at every keep-alive: it races
+    /// `read()` against the keep-alive timer in a `select!` and drops the
+    /// losing future. The bound used to live in the future the reattach
+    /// hook returns, so each keep-alive started it again, and with the
+    /// defaults — a 30 s keep-alive, a 300 s bound — a subscription to a
+    /// parked task never ended.
+    #[tokio::test]
+    async fn the_idle_bound_survives_a_read_cancelled_by_a_keep_alive() {
+        use crate::streaming::event_queue::EventQueueReader as _;
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+        let max_idle = std::time::Duration::from_millis(100);
+        let keep_alive = std::time::Duration::from_millis(30);
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(
+                crate::handler::HandlerLimits::default()
+                    .with_subscribe_reattach_interval(std::time::Duration::from_millis(5))
+                    .with_subscribe_max_idle(max_idle),
+            )
+            .build()
+            .unwrap();
+        handler
+            .task_store
+            .save(&Task {
+                id: TaskId::new("t-parked"),
+                context_id: ContextId::new("ctx-1"),
+                status: TaskStatus::new(TaskState::InputRequired),
+                history: None,
+                artifacts: None,
+                metadata: None,
+            })
+            .await
+            .unwrap();
+        let mut reader = handler
+            .on_resubscribe(
+                TaskIdParams {
+                    tenant: None,
+                    id: "t-parked".to_owned(),
+                },
+                None,
+            )
+            .await
+            .expect("resubscribe must succeed");
+        let _snapshot = reader.read().await.expect("snapshot");
+
+        let started = tokio::time::Instant::now();
+        let ended = loop {
+            // The keep-alive tick: shorter than the bound, as the defaults are.
+            if let Ok(event) = tokio::time::timeout(keep_alive, reader.read()).await {
+                break event;
+            }
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(5),
+                "a {max_idle:?} idle bound had not ended the stream after {:?} \
+                 of reads cancelled every {keep_alive:?}",
+                started.elapsed()
+            );
+        };
+        assert!(ended.is_none(), "expected clean EOF, got: {ended:?}");
+    }
+
     #[tokio::test]
     async fn resubscribe_success_returns_reader() {
         // Covers lines 47-54, 60-62: the success path where task exists and
