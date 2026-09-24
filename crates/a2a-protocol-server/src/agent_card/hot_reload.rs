@@ -721,9 +721,19 @@ mod tests {
 
         // No await between the spawn and the write: on this current-thread
         // runtime the watcher's task has not run yet.
+        let baseline = std::fs::metadata(&file).unwrap().modified().unwrap();
         let mut updated = minimal_agent_card();
         updated.name = "Poll Updated".into();
         std::fs::write(&file, serde_json::to_string(&updated).unwrap()).unwrap();
+        // Two writes this close can share an mtime where the clock is coarse
+        // (Windows), which no mtime poller could tell apart. Move the rewrite
+        // a second on, so what this measures is the baseline's timing alone.
+        std::fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(baseline + Duration::from_secs(1))
+            .unwrap();
 
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         while handler.current().name != "Poll Updated" {
