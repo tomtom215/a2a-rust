@@ -76,6 +76,11 @@ const MAX_WS_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
 /// the process (slowloris) — `accept_async` has no timeout of its own.
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long the closing handshake may take. A healthy peer takes the Close
+/// frame at once; one that has stopped reading never will, and until this
+/// elapses the connection keeps its `max_connections` slot (N30).
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
+
 /// Requests one connection may have in progress at once (audit M9). A
 /// shutdown waits for all of them by taking every permit back.
 const MAX_REQUESTS_PER_CONNECTION: u32 = 64;
@@ -440,9 +445,13 @@ impl WebSocketDispatcher {
 
         // Best-effort close handshake: sends any pending close reply so the
         // peer sees a clean WebSocket close rather than a bare TCP teardown.
-        let mut w = writer.sink.lock().await;
-        let _ = w.close().await;
-        drop(w);
+        // Bounded, because a peer that stopped reading cannot take the Close
+        // frame either, and this is what returns the connection's slot.
+        let _ = tokio::time::timeout(CLOSE_TIMEOUT, async {
+            let mut w = writer.sink.lock().await;
+            let _ = w.close().await;
+        })
+        .await;
 
         Ok(())
     }
@@ -459,6 +468,12 @@ impl WebSocketDispatcher {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(
             MAX_REQUESTS_PER_CONNECTION as usize,
         ));
+        // Cancelled when the peer is gone — closed, errored, or idle past the
+        // bound — so a request task blocked sending to a peer that stopped
+        // reading ends, and releases the sink it holds (N30). Not on shutdown:
+        // those requests are let finish below.
+        let peer_gone = tokio_util::sync::CancellationToken::new();
+        let _cancel_on_exit = peer_gone.clone().drop_guard();
 
         // Every arriving frame is traffic — including the Pong answering the
         // keepalive Ping below, which is what lets a quiet-but-live
@@ -521,9 +536,13 @@ impl WebSocketDispatcher {
                     let writer = Arc::clone(writer);
                     let handler = Arc::clone(&self.handler);
                     let headers = Arc::clone(headers);
+                    let peer_gone = peer_gone.clone();
                     tokio::spawn(async move {
                         // Boxed: see the note in dispatch/jsonrpc/mod.rs.
-                        Box::pin(process_ws_message(&handler, &text, writer, &headers)).await;
+                        tokio::select! {
+                            () = Box::pin(process_ws_message(&handler, &text, writer, &headers)) => {}
+                            () = peer_gone.cancelled() => {}
+                        }
                         drop(permit); // Release when done
                     });
                 }
@@ -609,11 +628,21 @@ impl WebSocketDispatcher {
             // outbound write may have refreshed the clock meanwhile, so this
             // must not close on the first tick.
             if ping_now {
-                let mut w = writer.sink.lock().await;
-                // A failed ping means the socket is already gone; let the next
-                // read observe it rather than guessing here.
-                let _ = w.send(WsMessage::Ping(Vec::new().into())).await;
-                drop(w);
+                // Never waits: not for the lock, which a stream send blocked
+                // on a peer that stopped reading can hold indefinitely, and
+                // not past the budget for the ping itself, which a full
+                // socket would also block. Either wait made this loop the
+                // thing that stalled, and the idle check above never ran
+                // again (N30). A ping not sent is a ping not answered, which
+                // is the verdict the bound exists to reach.
+                if let Ok(mut w) = writer.sink.try_lock() {
+                    let budget = idle.saturating_sub(writer.activity.idle_for());
+                    // A failed ping means the socket is already gone; let the
+                    // next read observe it rather than guessing here.
+                    let _ =
+                        tokio::time::timeout(budget, w.send(WsMessage::Ping(Vec::new().into())))
+                            .await;
+                }
                 // Deliberately *not* a `touch()`: our own keepalive must not be
                 // able to keep a dead peer's connection alive. Only the peer's
                 // answer counts.

@@ -130,6 +130,10 @@ someone scanning for such changes would look.
   audit N29). It used to be held back without loss, which stalled every
   other call on the socket — see **Fixed**. `ClientError::is_stream_lagged`
   identifies it; resubscribe to continue.
+- **A WebSocket request whose connection ends is cancelled** (server;
+  audit N30). It used to run on after its peer had gone, which is how a
+  peer that stopped reading held its connection open; a request on the HTTP
+  bindings is dropped the same way when its client disconnects.
 - **An idle `SubscribeToTask` stream over SSE now ends at
   `subscribe_max_idle`** (server; audit N25). It used to stay open for as
   long as its client did — see **Fixed**. A client that relied on the
@@ -416,6 +420,14 @@ someone scanning for such changes would look.
   sent more than 64 events. The reader no longer waits: a stream whose
   buffer overflows ends with a `stream_lagged` error, as a lagging reader
   does on the server.
+- **A WebSocket peer that stops reading is closed by the idle timeout**
+  (server; audit N30). With `with_idle_timeout` set, a peer that stopped
+  reading while being streamed to was never closed: the stream's send held
+  the sink's lock, the keepalive waited for that lock, and so did the
+  closing handshake, so the connection and its `max_connections` slot were
+  held for as long as the peer liked. The keepalive no longer waits, the
+  connection's requests are cancelled when the peer is gone, and the close
+  handshake is bounded at 1 s.
 
 - **The agent card's poll watcher sees a change made just after it starts**
   (audit N23). It read the file's baseline mtime inside its own task, on

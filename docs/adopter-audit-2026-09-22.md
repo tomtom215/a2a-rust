@@ -495,6 +495,24 @@ stores (`tests/cross_replica_cancel/`).
   more slowly than the agent writes, used to be backpressured without loss
   (at the cost of every other call on the socket) and is now told it
   lagged]**
+- **N30 — a WebSocket peer that stopped reading mid-stream was never
+  closed, and kept its connection slot** (Medium, server behaviour; found
+  by the drop-path audit, then reproduced). `with_idle_timeout` documents
+  that it closes "a client that has stopped reading its socket". Against
+  one being streamed to, three waits defeated it: the stream's send blocked
+  on the full socket while holding the sink lock; the keepalive waited for
+  that lock to send its ping, so the idle check never ran again; and once
+  the read loop ended, the closing handshake took the same lock. VALIDATED:
+  `a_peer_that_stops_reading_mid_stream_is_closed_by_the_idle_bound`
+  (`tests/websocket_slow_reader.rs`; `max_connections(1)`, a 1 s idle
+  bound, a peer with a 4 KiB receive buffer and a 12 MB stream) fails on
+  `main`: a second client is not served. **[Fixed: the ping never waits for
+  the lock or past the budget; request tasks are cancelled when the peer is
+  gone (closed, errored or idle — not on shutdown, which lets them finish);
+  the closing handshake is bounded at 1 s. Each part was removed in turn
+  and the test failed each time. Behaviour change: a request in flight when
+  its peer's connection ends is dropped, as an HTTP request is when its
+  client goes away — safe now that N26–N28 are fixed]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.
