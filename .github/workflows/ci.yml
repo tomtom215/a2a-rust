@@ -329,6 +329,17 @@ jobs:
       - name: Configurable bounds are honoured by every sibling, or allowlisted with a reason
         run: python3 scripts/check_inert_bounds.py
 
+      # `cargo deny` reads this repository's lockfile, which no consumer ever
+      # sees. A consumer's cargo keeps whatever version of a dependency its own
+      # lockfile holds, as long as our manifest admits it, so a fix that only
+      # moved our lockfile never reaches them. On 2026-09-24 the published
+      # manifests admitted versions under seven RustSec advisories while both
+      # deny jobs were green; an adopter had to find RUSTSEC-2026-0285 in their
+      # own tree (N24). This fails when any normal or build dependency of a
+      # published crate admits an affected, published version.
+      - name: No published manifest admits a version with a RustSec advisory
+        run: python3 scripts/check_advisory_floors.py
+
       # The inventory that every other gate's coverage claim rests on. A gate
       # missing from it does not report a gap — it reports a smaller total, in
       # green, and `scripts/prove_gates_fail.sh` prints "N of N proven" over a

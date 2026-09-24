@@ -74,7 +74,7 @@ tracing        = { workspace = true, optional = true }
 tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
 hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features = false, features = ["ring", "http1", "http2", "webpki-tokio"] }
-rustls         = { version = ">=0.23, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
+rustls         = { version = ">=0.23.45, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
 rustls-pki-types = { version = ">=1.7, <2", optional = true }
 webpki-roots   = { version = ">=1.0, <2", optional = true }
 tonic          = { workspace = true, optional = true }
@@ -95,10 +95,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 criterion = { workspace = true }
-bytes = "1"
+bytes = "1.11.1"
 rcgen = "0.14"
 tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
-rustls = { version = ">=0.23, <0.24", default-features = false, features = ["std", "tls12", "ring"] }
+rustls = { version = ">=0.23.45, <0.24", default-features = false, features = ["std", "tls12", "ring"] }
 rustls-pki-types = { version = ">=1.7, <2" }
 hyper = { workspace = true }
 http-body-util = { workspace = true }

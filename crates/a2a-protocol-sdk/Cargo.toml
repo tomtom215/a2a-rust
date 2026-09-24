@@ -80,7 +80,7 @@ prost       = { workspace = true }
 tonic        = { workspace = true }
 tokio-stream = { workspace = true, features = ["net"] }
 rcgen        = "0.14"
-rustls       = { version = ">=0.23, <0.24", default-features = false, features = ["std", "tls12", "ring"] }
+rustls       = { version = ">=0.23.45, <0.24", default-features = false, features = ["std", "tls12", "ring"] }
 # `observability_e2e.rs` (ADR 0013's gate): spans reach an in-memory exporter
 # through `tracing-opentelemetry` 0.33, the release built on the workspace's
 # opentelemetry 0.32 (crates.io index: `opentelemetry = "^0.32.0"`), and
