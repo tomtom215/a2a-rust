@@ -5,8 +5,8 @@
 
 //! A2A protocol v1.0 — HTTP client (hyper-backed).
 //!
-//! This crate provides [`A2aClient`], a full-featured client for communicating
-//! with any A2A-compliant agent over HTTP.
+//! This crate provides [`A2aClient`], a client for A2A v1.0 agents over
+//! JSON-RPC and REST, and WebSocket and gRPC behind feature flags.
 //!
 //! # Quick start
 //!

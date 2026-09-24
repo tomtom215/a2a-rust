@@ -7,7 +7,7 @@ HTTP client for the A2A protocol v1.0 -- async, hyper-backed, with pluggable tra
 
 ## Overview
 
-- Full-featured async HTTP client for communicating with any A2A-compliant agent
+- An async client for A2A v1.0 agents over all four bindings (v0.3-only agents are not reached; see below)
 - Built on hyper 1.x with tokio
 - Pluggable transport bindings: JSON-RPC 2.0 (default), REST, WebSocket, gRPC
 - Interceptor chain for auth, logging, custom middleware

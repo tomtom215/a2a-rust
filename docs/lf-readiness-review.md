@@ -8,6 +8,16 @@ keeps saying it wants: a Linux Foundation or A2A technical review, or an adopter
 of `a2a-protocol-types` — which is past 30,000 downloads and therefore has users
 who will never open an issue, only stop upgrading.
 
+> **Two rows of §1 no longer hold (checked 2026-09-24).** "No `unsafe`
+> anywhere in the published crates" was true of what the grep measured
+> (`crates/*/src`) but not of the published artifacts from 0.12.0 on: the
+> edition-2024 move made `std::env::set_var` `unsafe`, and the types, client
+> and server `.crate` files for 0.12.0, 0.12.1 and 0.13.0 each ship a
+> `build.rs` containing `unsafe { std::env::set_var("PROTOC", …) }`. And the
+> MSRV CI tests is 1.88, not 1.93, since 2026-09-09. The rest of this review
+> is left as measured on 2026-08-26; the ~3,600 req/s figure in §4 comes
+> from a one-off run of `probe_load.py` that no job repeats.
+
 ## Method, and what that means for these findings
 
 Every claim below was produced by running something, and the command is named so

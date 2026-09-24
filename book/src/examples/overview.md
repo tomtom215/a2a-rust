@@ -6,10 +6,10 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
-| [Hello Agent](./hello-agent.md) | **Smallest complete agent** — 37 lines, one dependency, no feature flags | None | Beginner |
+| [Hello Agent](./hello-agent.md) | **Smallest complete agent** — 28 lines of code above its tests, the SDK plus `tokio`, no SDK feature flags | None | Beginner |
 | [Incident-Response Team](./incident-response.md) | Multi-turn input-required, delegation, streaming, cancellation | None (optional local model) | Intermediate |
 | [Echo Agent](./echo-agent.md) | Minimal echo agent with JSON-RPC + REST servers and 6 client demos | None | Beginner |
-| [Agent Team](./agent-team.md) | 4-agent team with 81+ E2E tests exercising every SDK feature | None | Advanced |
+| [Agent Team](./agent-team.md) | 4-agent team with 102 E2E tests on its default feature set (the dogfood CI job runs them) | None | Advanced |
 | [Genai Agent](./genai-agent.md) | LLM-powered agent using genai (OpenAI, Anthropic, Gemini, Ollama, etc.) | API key | Intermediate |
 | [Rig Agent](./rig-agent.md) | Real rig-core agent behind A2A — hosted or fully local, no mock | None (local server works keyless) | Intermediate |
 | [Multi-Language Team](./multi-lang-team.md) | Rust coordinator delegating to Python, JS, Go, and Java A2A agents | Worker agents | Advanced |
@@ -18,7 +18,7 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 - **New to A2A?** Start with the [Hello Agent](./hello-agent.md) — the entire agent fits on one screen. Then read the [Echo Agent](./echo-agent.md) for the complete request lifecycle across four bindings.
 
-- **Evaluating the SDK?** Run the [Agent Team](./agent-team.md) — it exercises every SDK feature with 81+ automated tests and prints a pass/fail report.
+- **Evaluating the SDK?** Run the [Agent Team](./agent-team.md) — it runs 102 automated end-to-end tests across the SDK's features and prints a pass/fail report.
 
 - **Integrating an LLM?** See the [Genai Agent](./genai-agent.md) or [Rig Agent](./rig-agent.md) for patterns that bridge LLM frameworks with A2A's `AgentExecutor` trait.
 

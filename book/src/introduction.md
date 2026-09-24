@@ -9,7 +9,7 @@
 
 **a2a-rust** is a pure Rust implementation of the [Agent2Agent (A2A) protocol](https://a2a-protocol.org/) — an open standard for connecting AI agents over the network. It is written against the v1.0.1 specification; the version carried on the wire is `1.0`, since §3.6 excludes patch numbers from requests, responses and Agent Cards.
 
-If you're building AI agents that need to talk to each other, discover capabilities, delegate tasks, and stream results — this library gives you the full protocol stack with zero `unsafe` code, compile-time type safety, and production-grade hardening.
+If you're building AI agents that need to talk to each other, discover capabilities, delegate tasks, and stream results — this library gives you the full protocol stack — all eleven methods over four bindings — with no `unsafe` in its library code and hardening measured by the gates this book describes. It is `0.x`: [Stability](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md) says what may still change, and [the readiness bar](https://github.com/tomtom215/a2a-rust/blob/main/docs/readiness-bar.md) says what "ready for production" would have to mean and how much of it is measured.
 
 ## What is the A2A Protocol?
 
@@ -25,13 +25,13 @@ The protocol defines:
 
 ## Why Rust?
 
-Rust gives you performance, safety, and correctness without compromise:
+What Rust gives this library, stated as narrowly as it holds:
 
-- **Zero-cost abstractions** — Trait objects, generics, and async/await with no runtime overhead
-- **No `unsafe`** — The entire codebase is free of unsafe code
-- **Thread safety at compile time** — All public types implement `Send + Sync`
-- **Exhaustive pattern matching** — The compiler catches missing protocol states
-- **Production-ready** — Battle-tested HTTP via hyper, robust error handling, no panics on any caller input or I/O failure
+- **Predictable cost** — no garbage collector or runtime beyond tokio. The extension points are trait objects (`Arc<dyn AgentExecutor>`, boxed futures), so each call pays a dynamic dispatch and an allocation; the benchmark pages measure what that costs
+- **No `unsafe` in library code** — every published crate is `#![forbid(unsafe_code)]`. The attribute does not reach build scripts: the three protobuf-compiling crates' `build.rs` wrap `std::env::set_var("PROTOC", …)` in `unsafe`, which edition 2024 requires, and so do the TCK runner's and the ITK's
+- **Thread safety at compile time** — the compiler checks every cross-thread use; `Send + Sync` is asserted by test for the core types (`Task`, `TaskState`, `Message`, `Part`, `AgentCard` and the three error types), not for every public type
+- **Forward-compatible enums** — protocol enums such as `TaskState` are `#[non_exhaustive]`, so a new state in a later specification is a minor release, not a break. The cost is that your `match` needs a wildcard arm, and the compiler cannot tell you a state is new
+- **Errors, not panics** — HTTP is hyper's. Fallible operations return `Result`; a CI gate (`scripts/check_panic_paths.py`) freezes the set of `unwrap`, `expect`, `panic!`, `unreachable!` and `todo!` in library code, and the 13 `expect` calls it allows each assert an internal invariant (a poisoned lock, a retry loop that always runs once, a TLS provider that supports its own defaults). The gate cannot see arithmetic overflow or slice indexing, so "never panics" is not a claim it supports
 
 ## Architecture at a Glance
 
@@ -59,7 +59,7 @@ a2a-rust is organized as a Cargo workspace with four crates:
 
 ## Key Features
 
-- **Full v1.0 wire types** — Every A2A type with correct JSON serialization
+- **v1.0 wire types** — every A2A type, serialized to the specification's JSON and protobuf shapes and checked by golden-byte fixtures and the official TCK; the TCK's gaps are listed in the README's Project Status
 - **Quad transport** — JSON-RPC 2.0, REST, WebSocket (`websocket` feature flag), and gRPC (`grpc` feature flag), both client and server
 - **SSE streaming** — Real-time `SendStreamingMessage` and `SubscribeToTask`
 - **Push notifications** — Pluggable `PushSender` with SSRF protection
@@ -76,9 +76,8 @@ a2a-rust is organized as a Cargo workspace with four crates:
 - **Executor ergonomics** — `boxed_future`, `agent_executor!` macro, `EventEmitter` reduce boilerplate
 - **Executor timeout** — Kills hung agent tasks automatically
 - **CORS support** — Configurable cross-origin policies
-- **Fully configurable** — All defaults (timeouts, limits, intervals) are overridable via builders
-- **Mutation-tested** — Zero surviving mutants enforced via `cargo-mutants` CI gate
-- **No panics on fallible paths** — Every operation that can fail on input, network, or storage errors returns `Result`; the only `expect` calls in library code assert internal invariants (e.g. lock-poisoning propagation) that no caller input can trigger
+- **Configurable** — the handler's timeouts, limits and intervals are overridable via builders, and the book's defaults table is checked against the code. A few bounds are fixed constants (the client's 2 MiB cap on an agent card body is one)
+- **Mutation-tested** — every pull request runs `cargo-mutants` over the functions it changes and fails on a surviving mutant. That gate is `--in-diff`: code no pull request has touched since the gate existed is covered only by the weekly full sweep, which is advisory and has recorded survivors ([mutation history](reference/mutation-history.md))
 
 ## All 11 Protocol Methods
 

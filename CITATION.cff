@@ -26,6 +26,6 @@ keywords:
   - json-rpc
   - grpc
 abstract: >-
-  A complete Rust implementation of the Agent2Agent (A2A) protocol v1.0,
-  providing types, server framework, and client library for building
-  interoperable AI agent systems.
+  A Rust implementation of the Agent2Agent (A2A) protocol v1.0 — types,
+  server framework and client library, all eleven methods over four
+  bindings — for building interoperable AI agent systems.

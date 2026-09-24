@@ -475,8 +475,13 @@ example.
 
 Ranked by what is within this project's control.
 
-1. **Nothing, for MUST-level conformance as the suite can measure it.** 88/88
-   graded MUSTs pass on the full profile; the baseline is empty. This is done.
+1. **Nothing, for MUST-level conformance as the suite can measure it** — as
+   written when this list was made, when 88/88 graded MUSTs passed and the
+   baseline was empty. **Superseded:** since A2A v1.0.1 rewrote §5.4's error
+   table, four MUSTs fail against the suite's stale v1.0.0 copy and are
+   baselined (§20 and §21 of `docs/official-tck-findings.md`); quote "88 of
+   114 passing and 4 failing", as the section above says. Corrected
+   2026-09-24.
 2. **W5/W6 (in this project's control only to remove, not to fix).** Both are
    upstream SDK defects. The runner now fails if either starts passing, so they
    cannot linger unnoticed.

@@ -7,7 +7,7 @@ Server framework for the A2A protocol v1.0 -- build, serve, and scale AI agents.
 
 ## Overview
 
-- Complete server framework for building A2A-compliant agents
+- A server framework for A2A v1.0 agents: all eleven methods over four bindings, graded by the official TCK with the results and gaps listed in the repository README's Project Status
 - Built on hyper 1.x with tokio async runtime
 - Pluggable dispatchers: JSON-RPC 2.0, REST, WebSocket, gRPC, Axum
 - Pluggable storage: in-memory, SQLite, PostgreSQL

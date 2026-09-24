@@ -315,7 +315,8 @@ class of bug, and the gaps between layers are where production incidents hide:
 | **E2E dogfooding** | The full stack works under realistic conditions | That your *assertions* actually detect regressions |
 | **Mutation tests** | Your assertions detect real code changes | Protocol-level emergent behavior |
 
-**The a2a-rust experience:** After building ~1,630 unit/integration/property/fuzz
+**The a2a-rust experience:** At the first mutation run — when the suite had ~1,630
+unit/integration/property/fuzz tests; it has more than doubled since — after building those
 tests (with feature flags), an exhaustive E2E dogfood suite that caught 68 real bugs across 13
 documented passes, and achieving full green CI — **mutation testing still found gaps.** Tests
 that looked comprehensive were silently missing assertions on return values,
@@ -361,7 +362,7 @@ conditions that are hardest to reproduce in staging.
 
 ### What Mutation Testing Found in a2a-rust
 
-Even with ~1,630 passing tests (with feature flags), 102 E2E dogfood tests on `agent-team`'s default feature set (87 with `--no-default-features`), property tests, and fuzz targets —
+Even with ~1,630 passing tests (with feature flags, at the time), an E2E dogfood suite on `agent-team`, property tests, and fuzz targets —
 all green — the first mutation testing run surfaced gaps across every crate:
 
 - **Delegation methods** returning `()` instead of forwarding calls (e.g.,

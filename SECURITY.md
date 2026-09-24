@@ -78,7 +78,7 @@ Know what you can and cannot verify about a release:
 | Git tags `v0.2.0` … `v0.7.0` | **No** | Nothing to verify. These ten are lightweight — unannotated and unsigned — so they carry no tagger identity, no date, and no signature. |
 | Git tags `v0.8.0` onward | **Not signed, but annotated** | `git cat-file -t v0.9.0` prints `tag`, and `git for-each-ref` shows a tagger and a date. That establishes *who cut the release and when*; it does not establish authenticity, because nothing is GPG/SSH-signed, so `git tag -v` still cannot verify any release. `release.yml` refuses a lightweight tag, so this holds for every future release. |
 | Release binaries / SBOMs | Yes | Attested in the release workflow; see [`PROVENANCE.md`](PROVENANCE.md). |
-| Published crates | Yes (by crates.io) | Standard crates.io registry checksums. |
+| Published crates | **No** — integrity only | crates.io records a SHA-256 checksum per `.crate`, which cargo verifies on download. A checksum proves the bytes are the ones crates.io holds, not who published them; this file said "signed" until 2026-09-24. The release's `SHA256SUMS` asset and build attestation are what tie a `.crate` to this repository. |
 
 If you need a cryptographic link between a published version and this
 repository, use the build provenance attestations described in

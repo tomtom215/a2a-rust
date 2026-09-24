@@ -94,8 +94,8 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | | |
 |---|---|
 | **Mutation-tested** | `cargo-mutants` runs on every pull request (incremental, changed-files only) and fails the build if any mutant goes undetected by the test suite; mutants that time out are reported separately in the job summary rather than failing the build. A full-sweep matrix runs on demand |
-| **No `unsafe`** | `#![forbid(unsafe_code)]` at the root of all four published library crates, the benches harness crate, and the TCK runner; zero `unsafe` in `crates/*/src`, `tck/src`, or `benches/src`. The attribute is an inner one, so it reaches neither build scripts nor bench targets, and two places outside its reach do use `unsafe`: the four `build.rs` files each wrap `std::env::set_var("PROTOC", …)` in it, and `benches/benches/memory_overhead.rs` carries an `unsafe impl GlobalAlloc` for its allocation counter. The out-of-workspace `a2a-protocol-slimrpc` binding does not carry the attribute either, though it contains no `unsafe` |
-| **Regression-gated benchmarks** | Pull requests run `transport_throughput` and `protocol_overhead` twice (base branch vs PR) and fail when the 95 %-CI lower bound of a benchmark's median regression exceeds 50 % (default; individually noisy benchmarks carry documented per-benchmark overrides, e.g. `from_str/16384` at 75 %) — only statistically confident, substantial regressions trip the gate. See [`book/src/reference/regression-gate.md`](book/src/reference/regression-gate.md) for the threshold's derivation and the runner-noise limitations behind it |
+| **No `unsafe`** | `#![forbid(unsafe_code)]` at the root of all four published library crates, the benches harness crate, and the TCK runner; zero `unsafe` in `crates/*/src`, `tck/src`, or `benches/src`. The attribute is an inner one, so it reaches neither build scripts nor bench targets, and two kinds of file outside its reach do use `unsafe`: five `build.rs` files — the three published crates' that compile protobuf, the TCK runner's and the ITK's — each wrap `std::env::set_var("PROTOC", …)` in it, and `benches/benches/memory_overhead.rs` carries an `unsafe impl GlobalAlloc` for its allocation counter. The out-of-workspace `a2a-protocol-slimrpc` binding does not carry the attribute either, though it contains no `unsafe` |
+| **Regression-gated benchmarks** | Pull requests run `transport_throughput` and `protocol_overhead` twice (base branch vs PR) and fail when the 95 %-CI lower bound of a benchmark's median regression exceeds 50 % (default; `from_str/16384` is excluded from the gate outright, with the measurements that justified it in `benchmarks.yml`, because a 75 % override was tried and was not enough) — only statistically confident, substantial regressions trip the gate. See [`book/src/reference/regression-gate.md`](book/src/reference/regression-gate.md) for the threshold's derivation and the runner-noise limitations behind it |
 | **Conformance-gated** | The in-repo conformance runner grades all four bindings — JSON-RPC, REST, WebSocket, and gRPC — plus cross-binding equivalence, on every push to `main` and every pull request. Measurement against the A2A project's *official* TCK is reported separately under [Project Status](#project-status), including what that suite does not cover |
 
 ## Crate Structure
@@ -234,8 +234,9 @@ cargo run -p agent-team --features grpc,websocket,axum,sqlite,signing,otel
 
 ### Hello Agent (smallest complete agent)
 
-The whole SDK in one screen — 35 lines, one dependency (`a2a-protocol-sdk`), no
-feature flags. It greets whoever sends it a message:
+The whole SDK in one screen — 28 lines of code above its tests (counted
+2026-09-24, blank and comment lines excluded), the SDK plus `tokio` for the
+runtime, no SDK feature flags. It greets whoever sends it a message:
 
 ```bash
 cargo run -p hello-agent
@@ -276,7 +277,7 @@ cargo run -p echo-agent
 
 ### Multi-Language Agent Team
 
-A Rust coordinator agent that delegates to worker agents written in Python, JavaScript, Go, and Java — proving cross-language A2A interoperability:
+A Rust coordinator agent that delegates to worker agents written in Python, JavaScript, Go, and Java. It shows the shape of cross-language delegation; it does not prove it on its own — CI runs it with every worker unreachable, so a green job there means the coordinator's A2A surface works, not that four languages round-tripped. Cross-SDK interoperability is measured by `tck.yml`'s cross-language jobs and `scripts/go_sdk_interop.sh` instead:
 
 ```bash
 # Start the ITK worker agents first (see itk/README.md), then:
@@ -302,9 +303,9 @@ GENAI_MODEL=gpt-4o-mini cargo run -p genai-a2a-agent
 
 ### Technology Compatibility Kit (TCK)
 
-A standalone conformance test runner that validates any A2A server against
-the protocol spec over the JSON-RPC and REST bindings (the gRPC and
-WebSocket transports are covered by the agent-team E2E tests instead):
+A standalone conformance test runner that grades an A2A server over any of
+the four bindings — JSON-RPC, REST, WebSocket and gRPC — and `tck.yml` runs
+it against this repository's server on all four:
 
 ```bash
 # Test a local server
@@ -450,6 +451,19 @@ oldest toolchain the current dependency tree (`time`, `serde_with`,
 `darling`) declares support for. Lowering it further would mean holding
 those crates at older releases, a cost weighed against the adoption benefit
 on the [roadmap](ROADMAP.md).
+
+**Depending on the git repository instead of crates.io.** Cargo older than
+1.85 cannot read an edition-2024 manifest, and for a git dependency it does
+not say so: every lockfile operation fails with
+`no matching package named 'a2a-protocol-client' found`, although the crate
+is where it always was. Measured 2026-09-24 against `v0.13.0` with
+`cargo generate-lockfile`: cargo 1.80.1 and 1.84.1 fail that way, and 1.85.0
+resolves. 1.84.1 understands `resolver = "3"`, so the resolver setting is
+not the cause; the edition is, and it applies from 0.12.0 on. Resolve and
+build with the toolchain you ship, 1.88 or later. Pinning by a short `rev`
+resolved on cargo 1.88, 1.96 and 1.98, with and without
+`net.git-fetch-with-cli`; a full 40-character SHA is still the safer pin,
+because a short one can become ambiguous as the repository grows.
 
 ## Contributing
 

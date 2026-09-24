@@ -28,7 +28,7 @@
 //! |---|---|
 //! | [`on_send_message`] | `SendMessage`, `SendStreamingMessage` |
 //! | [`on_get_task`], [`on_list_tasks`], [`on_cancel_task`] | `GetTask`, `ListTasks`, `CancelTask` |
-//! | [`on_resubscribe`] | `TaskSubscription` |
+//! | [`on_resubscribe`] | `SubscribeToTask` |
 //! | [`on_get_extended_agent_card`] | `GetExtendedAgentCard` |
 //! | [`on_set_push_config`], [`on_get_push_config`], [`on_list_push_configs`], [`on_delete_push_config`] | Push-config CRUD |
 //!
