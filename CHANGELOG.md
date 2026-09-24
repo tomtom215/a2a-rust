@@ -428,6 +428,8 @@ someone scanning for such changes would look.
   held for as long as the peer liked. The keepalive no longer waits, the
   connection's requests are cancelled when the peer is gone, and the close
   handshake is bounded at 1 s.
+- **A gRPC stream the client cancels releases its subscription at once**
+  (server; audit N31), rather than at the task's next event.
 
 - **The agent card's poll watcher sees a change made just after it starts**
   (audit N23). It read the file's baseline mtime inside its own task, on

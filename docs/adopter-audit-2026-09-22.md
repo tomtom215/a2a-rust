@@ -513,6 +513,18 @@ stores (`tests/cross_replica_cancel/`).
   and the test failed each time. Behaviour change: a request in flight when
   its peer's connection ends is dropped, as an HTTP request is when its
   client goes away — safe now that N26–N28 are fixed]**
+- **N31 — a cancelled gRPC stream kept its subscription while the task was
+  quiet** (Low, server behaviour; found by the drop-path audit, then
+  reproduced). The task forwarding a queue reader into a gRPC response
+  noticed the client going away only when its next send failed; on a task
+  that emitted nothing more, the reader and its place on the task's queue
+  stayed for as long as the task was quiet (bounded at `subscribe_max_idle`
+  for a parked subscription only since N25). VALIDATED:
+  `a_cancelled_stream_releases_its_reader_while_the_task_is_quiet` fails on
+  `main`: a write after the stream was dropped still found a reader.
+  **[Fixed: the forwarder also waits on the channel closing. On WebSocket
+  the same wait is covered by N30's cancellation; the SSE writer notices at
+  its next keep-alive, which is bounded]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.
