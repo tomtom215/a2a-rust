@@ -225,6 +225,24 @@ mod tests {
         assert_eq!(last(&seen), (0, 0, 2, 1), "an errored close is");
     }
 
+    /// Every server builds its tracker with `for_dispatcher`, so a tracker it
+    /// failed to build is a server that never reports; the tests above make
+    /// their own and could not tell. It reports to the handler's metrics.
+    #[test]
+    fn a_dispatcher_with_a_handler_reports_to_its_metrics() {
+        struct Idle;
+        crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+        let seen = Arc::new(Seen::default());
+        let handler = crate::RequestHandlerBuilder::new(Idle)
+            .with_metrics(Arc::clone(&seen))
+            .build()
+            .unwrap();
+        let dispatcher = crate::JsonRpcDispatcher::new(Arc::new(handler));
+        let all = Connections::for_dispatcher(&dispatcher).expect("a handler, so a tracker");
+        drop(all.opened());
+        assert_eq!(last(&seen), (0, 0, 1, 0));
+    }
+
     #[test]
     fn a_connection_dropped_without_close_counts_as_closed_cleanly() {
         let seen = Arc::new(Seen::default());

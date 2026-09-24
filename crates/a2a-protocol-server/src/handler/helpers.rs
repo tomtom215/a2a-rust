@@ -583,6 +583,36 @@ mod tests {
         );
     }
 
+    /// With an OpenTelemetry layer recording the call's span, the trace sent
+    /// downstream is that span's, and under `Continue` it still carries the
+    /// caller's `tracestate`; under `Restart` it does not (§3.4). Only the
+    /// SDK's end-to-end test reached this branch, and cargo-mutants runs a
+    /// crate's own tests alone: deleting the `Continue` arm survived the
+    /// incremental mutation gate on this pull request.
+    #[cfg(feature = "otel")]
+    #[test]
+    fn a_recorded_span_carries_the_callers_tracestate_only_under_continue() {
+        use opentelemetry::trace::TracerProvider as _;
+        use tracing_subscriber::layer::SubscriberExt as _;
+        const PARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("helpers")));
+        let mut headers = HashMap::new();
+        headers.insert("traceparent".to_owned(), PARENT.to_owned());
+        headers.insert("tracestate".to_owned(), "vendor=value".to_owned());
+        tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::info_span!("call");
+            let _entered = span.enter();
+            let continued = parse_trace_context(&headers, InboundTracePolicy::Continue)
+                .expect("the recorded span is the trace");
+            assert_eq!(continued.tracestate(), Some("vendor=value"));
+            let restarted = parse_trace_context(&headers, InboundTracePolicy::Restart)
+                .expect("the recorded span is the trace");
+            assert_eq!(restarted.tracestate(), None);
+        });
+    }
+
     /// Every request mints its *own* span, not just a span different from
     /// the caller's. The assertions above compare this hop's span id with
     /// the peer's, so a `fresh_span_id` returning one fixed value satisfies

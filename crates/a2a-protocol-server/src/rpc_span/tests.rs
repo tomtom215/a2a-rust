@@ -215,3 +215,131 @@ fn a_long_method_original_is_cut_on_a_character_boundary() {
     let t = truncated(&s, 5);
     assert_eq!(t, "éé");
 }
+
+/// The fields `tracing` is given for the spans it creates, by field name,
+/// including those recorded after creation.
+#[cfg(feature = "tracing")]
+#[derive(Clone, Default)]
+struct Fields(Arc<std::sync::Mutex<std::collections::BTreeMap<String, String>>>);
+
+#[cfg(feature = "tracing")]
+struct Collect<'a>(&'a mut std::collections::BTreeMap<String, String>);
+
+#[cfg(feature = "tracing")]
+impl tracing::field::Visit for Collect<'_> {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.0.insert(field.name().to_owned(), value.to_owned());
+    }
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.0.insert(field.name().to_owned(), format!("{value:?}"));
+    }
+}
+
+#[cfg(feature = "tracing")]
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Fields {
+    fn on_new_span(
+        &self,
+        attrs: &tracing::span::Attributes<'_>,
+        _id: &tracing::span::Id,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        attrs.record(&mut Collect(&mut self.0.lock().unwrap()));
+    }
+    fn on_record(
+        &self,
+        _id: &tracing::span::Id,
+        values: &tracing::span::Record<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        values.record(&mut Collect(&mut self.0.lock().unwrap()));
+    }
+}
+
+/// The fields of the span a JSON-RPC call to `method` opens.
+#[cfg(feature = "tracing")]
+fn span_fields(method: &str) -> std::collections::BTreeMap<String, String> {
+    use tracing_subscriber::layer::SubscriberExt as _;
+    let fields = Fields::default();
+    let subscriber = tracing_subscriber::registry().with(fields.clone());
+    let handler = handler(&Seen::default());
+    tracing::subscriber::with_default(subscriber, || {
+        drop(ServerSpan::open(&handler, RpcSystem::JsonRpc, method, None));
+    });
+    let recorded = fields.0.lock().unwrap();
+    recorded.clone()
+}
+
+/// A served method names the span and leaves `rpc.method_original` unset; an
+/// unknown one names it by the system, as the conventions ask for `_OTHER`,
+/// and keeps what the peer sent. The incremental mutation gate found both
+/// comparisons unguarded: flipping either survived.
+#[cfg(feature = "tracing")]
+#[test]
+fn the_span_is_named_by_its_method_or_by_its_system_for_other() {
+    let served = span_fields("GetTask");
+    assert_eq!(
+        served.get("otel.name").map(String::as_str),
+        Some("lf.a2a.v1.A2AService/GetTask")
+    );
+    assert_eq!(served.get("rpc.method_original"), None);
+
+    let unknown = span_fields("NoSuchMethod");
+    assert_eq!(
+        unknown.get("otel.name").map(String::as_str),
+        Some(RpcSystem::JsonRpc.name())
+    );
+    assert_eq!(unknown.get("rpc.method").map(String::as_str), Some(OTHER));
+    assert_eq!(
+        unknown.get("rpc.method_original").map(String::as_str),
+        Some("NoSuchMethod")
+    );
+}
+
+/// Under `Continue` the caller's `traceparent` is the span's parent, so the
+/// call joins the caller's trace; under `Restart` it does not. The mutation
+/// gate found the policy comparison unguarded in the server crate's own
+/// tests: flipping it survived.
+#[cfg(feature = "otel")]
+#[test]
+fn only_continue_makes_the_callers_traceparent_the_spans_parent() {
+    use opentelemetry::trace::TracerProvider as _;
+    use tracing_subscriber::layer::SubscriberExt as _;
+    const TRACE: &str = "4bf92f3577b34da6a3ce929d0e0e4736";
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("rpc_span")));
+    let mut headers = HashMap::new();
+    headers.insert(
+        "traceparent".to_owned(),
+        format!("00-{TRACE}-00f067aa0ba902b7-01"),
+    );
+    let trace_under = |policy: InboundTracePolicy| -> String {
+        struct Idle;
+        crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+        let handler = crate::RequestHandlerBuilder::new(Idle)
+            .with_inbound_trace_policy(policy)
+            .build()
+            .unwrap();
+        let call = ServerSpan::open(&handler, RpcSystem::JsonRpc, "GetTask", Some(&headers));
+        let (trace, _, _) = call
+            .span
+            .in_scope(current_recorded_span)
+            .expect("the span is recorded");
+        format!("{:032x}", u128::from_be_bytes(trace))
+    };
+    tracing::subscriber::with_default(subscriber, || {
+        assert_eq!(trace_under(InboundTracePolicy::Continue), TRACE);
+        assert_ne!(trace_under(InboundTracePolicy::Restart), TRACE);
+    });
+}
+
+/// `Debug` names the call, and nothing a log line would regret.
+#[test]
+fn a_server_span_debugs_as_its_system_and_method() {
+    let handler = handler(&Seen::default());
+    let call = ServerSpan::open(&handler, RpcSystem::JsonRpc, "GetTask", None);
+    assert_eq!(
+        format!("{call:?}"),
+        r#"ServerSpan { system: JsonRpc, method: "lf.a2a.v1.A2AService/GetTask", .. }"#
+    );
+}

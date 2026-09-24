@@ -57,11 +57,10 @@ impl WireStatus for ServerError {
 
 impl WireStatus for A2aError {
     fn wire_status(&self, system: RpcSystem) -> Cow<'static, str> {
-        match system {
-            // The WebSocket binding's `send_error` path: the code, as is.
-            RpcSystem::JsonRpc => Cow::Owned(self.code.as_i32().to_string()),
-            _ => ServerError::Protocol(self.clone()).wire_status(system),
-        }
+        // `Protocol` carries the error unchanged, so on JSON-RPC this is the
+        // code as is — the WebSocket binding's `send_error` path. A separate
+        // arm for it said the same thing and was an equivalent mutant.
+        ServerError::Protocol(self.clone()).wire_status(system)
     }
 }
 
