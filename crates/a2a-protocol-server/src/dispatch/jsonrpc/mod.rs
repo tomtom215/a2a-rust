@@ -213,11 +213,8 @@ impl JsonRpcDispatcher {
             Err(e) => return self.refuse_unparsed(started, &e.to_string()),
         };
 
-        if raw.is_array() {
-            // Batch request: take ownership of the array to avoid per-item clones.
-            let serde_json::Value::Array(items) = raw else {
-                unreachable!()
-            };
+        // Batch request: take ownership of the array to avoid per-item clones.
+        if let serde_json::Value::Array(items) = raw {
             if items.is_empty() {
                 return self.refuse_unparsed(started, "empty batch request");
             }

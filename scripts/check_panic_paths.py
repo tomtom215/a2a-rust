@@ -56,7 +56,9 @@ BASELINE = ROOT / "scripts" / "panic_paths_baseline.txt"
 PATTERNS = {
     "unwrap": re.compile(r"\.unwrap\(\)"),
     "expect": re.compile(r"\.expect\("),
-    "panic": re.compile(r"\bpanic!\("),
+    # `unreachable!` panics exactly as `panic!` does; until 2026-09-24 it was
+    # not counted, and one sat in the JSON-RPC batch path.
+    "panic": re.compile(r"\b(?:panic|unreachable)!\("),
     "todo": re.compile(r"\b(?:todo|unimplemented)!\("),
 }
 CFG_TEST_ITEM = re.compile(r"#\[cfg\(test\)\]")
