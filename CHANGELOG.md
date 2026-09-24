@@ -323,6 +323,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The agent card's poll watcher sees a change made just after it starts**
+  (audit N23). It read the file's baseline mtime inside its own task, on
+  the blocking pool, so a card rewritten before that read landed became the
+  baseline and was never loaded. The baseline is now read when
+  `spawn_poll_watcher` is called.
 - **A WebSocket stream outlives the client that opened it**, as streams on
   the HTTP and gRPC bindings do (audit N22). Dropping the client, or the
   `WebSocketTransport`, aborted the connection's reader while the stream

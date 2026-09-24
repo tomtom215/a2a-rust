@@ -367,6 +367,16 @@ stores (`tests/cross_replica_cancel/`).
   `a_stream_outlives_the_transport_that_opened_it` fails on `main`
   (`638ff9a0`) and passes here. **[Fixed: the stream holds the connection
   too]**
+- **N23 — the agent card's poll watcher can miss the first change** (Low,
+  server behaviour; found when `Test (stable, macos-latest)` failed
+  `poll_watcher_detects_change` on this branch, in code it does not touch).
+  `spawn_poll_watcher` read the file's baseline mtime inside the spawned
+  task, through `spawn_blocking`. A rewrite that landed before that read
+  became the baseline, so it was never seen as a change and never loaded;
+  the test's 10 s deadline could not help, because the watcher was not
+  slow but blind. VALIDATED: a test that rewrites the file before the
+  watcher's task first runs fails on the old code every time and passes
+  with the fix. **[Fixed: the baseline is read in `spawn_poll_watcher`]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.

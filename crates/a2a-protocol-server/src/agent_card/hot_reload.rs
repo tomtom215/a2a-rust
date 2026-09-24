@@ -160,7 +160,11 @@ impl HotReloadAgentCardHandler {
     ) -> tokio::task::JoinHandle<()> {
         let handler = self.clone();
         let path = path.to_path_buf();
-        tokio::spawn(poll_watcher_loop(handler, path, interval))
+        // The baseline is read here, before the task exists, so a change made
+        // between this call and the task's first poll is seen as a change.
+        // Read inside the task, it could land after that change and swallow it.
+        let baseline = file_mtime(&path);
+        tokio::spawn(poll_watcher_loop(handler, path, interval, baseline))
     }
 
     /// Spawns a background task that reloads the agent card from `path`
@@ -254,8 +258,13 @@ async fn reload_from_file_async(
 
 /// Background loop that polls `path` for modification time changes and reloads
 /// the agent card when a change is detected.
-async fn poll_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf, interval: Duration) {
-    let mut last_mtime = file_mtime_async(&path).await;
+async fn poll_watcher_loop(
+    handler: HotReloadAgentCardHandler,
+    path: PathBuf,
+    interval: Duration,
+    baseline: Option<SystemTime>,
+) {
+    let mut last_mtime = baseline;
     let mut tick = tokio::time::interval(interval);
     // The first tick completes immediately; consume it so we don't reload on
     // startup (the caller already loaded the initial card).
@@ -691,6 +700,39 @@ mod tests {
         // The handler should still have the original card.
         assert_eq!(handler.current().name, "Test Agent");
 
+        handle.abort();
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// A change made after the watcher is spawned but before its task first
+    /// runs is still a change. The baseline used to be read inside the task,
+    /// on the blocking pool, and could land after the change and absorb it;
+    /// `poll_watcher_detects_change` failed that way on a loaded macOS runner.
+    #[tokio::test]
+    async fn a_change_before_the_watchers_first_poll_is_seen() {
+        let dir = std::env::temp_dir().join("a2a_poll_watcher_first_poll_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("agent_card.json");
+        let initial = minimal_agent_card();
+        std::fs::write(&file, serde_json::to_string(&initial).unwrap()).unwrap();
+        let handler = HotReloadAgentCardHandler::new(initial);
+        let handle = handler.spawn_poll_watcher(&file, Duration::from_millis(50));
+
+        // No await between the spawn and the write: on this current-thread
+        // runtime the watcher's task has not run yet.
+        let mut updated = minimal_agent_card();
+        updated.name = "Poll Updated".into();
+        std::fs::write(&file, serde_json::to_string(&updated).unwrap()).unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while handler.current().name != "Poll Updated" {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a change made before the watcher's first poll was never picked up"
+            );
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
         handle.abort();
         let _ = std::fs::remove_file(&file);
         let _ = std::fs::remove_dir(&dir);
