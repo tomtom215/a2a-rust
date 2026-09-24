@@ -487,11 +487,13 @@ body cargo-mutants can replace, stock and patched (`d7afef3a`, `d6259ff3`,
 `b0ebedc9`); N20 (`6e68d76a`); N19 (`d1faeed3`); phase 2 — spans on every
 binding, `rpc.server.call.duration`, connection statistics (O1, O2, O4, O5,
 O10, most of O11; `4426d3d2`); N21 recorded (`390f8f6b`); N22, a WebSocket
-stream that went silent when its client was dropped (`cb5d81d3`). Then three
-fixes the pull request's first CI run found: the mutants install self-test
-under forced colour (`384b4142`), `book_defaults` on a CRLF checkout
-(`1b49410d`), and N23, a card poll watcher blind to a change made as it
-started (`4c312e7a`).
+stream that went silent when its client was dropped (`cb5d81d3`). Then the
+fixes the pull request's CI found: the mutants install self-test under
+forced colour (`384b4142`), `book_defaults` on a CRLF checkout
+(`1b49410d`), N23, a card poll watcher blind to a change made as it
+started (`4c312e7a`, and its test given an mtime of its own for Windows,
+`be061ae2`), and tests for nine mutation survivors in phase 2's server
+code (`84ea735b`).
 
 **Phase 2's gate** is `crates/a2a-protocol-sdk/tests/observability_e2e/`.
 It failed on `main` and passes here 10 of 10. During development each of
@@ -530,7 +532,7 @@ mutants, 60 caught, 15 unviable, 0 missed; the 15 are all
 `Default::default()` for types with no `Default`. The server's 344 and the
 types' 23 in-diff mutants were not run at this head locally; the pull
 request's `mutants.yml` shards run them and are the record for those
-crates. The three fixes after `cb5d81d3` were checked by the targeted runs
+crates. The fixes after `cb5d81d3` were checked by the targeted runs
 their commit messages describe, not by a second full preflight; the pull
 request's CI is the record for them.
 
@@ -556,7 +558,9 @@ by no test; the cargo-mutants patch, meant for upstream.
 - **A mutant a crate's own tests cannot reach is a coverage fact about that
   crate.** cargo-mutants runs only the mutated crate's tests: the client's
   gRPC success path was covered from the server and SDK crates and
-  therefore, for mutation purposes, not at all.
+  therefore, for mutation purposes, not at all. It happened again with
+  phase 2: nine server survivors, every one covered by the SDK's
+  `observability_e2e` and by nothing in the server crate.
 - **Measure the cost before calling observability done.** The spans were
   green and correct, and a default build had become 36–46% slower per call.
   Clippy's `large_futures` had pointed at one of the two causes; the bench
