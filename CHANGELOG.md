@@ -398,6 +398,12 @@ someone scanning for such changes would look.
   slow agent the executor finished into nothing: the task stayed `working`
   in the store, and no later push notification was sent. The collection now
   runs on its own task, which shutdown waits for, and the request awaits it.
+- **A failing interceptor `after` hook no longer orphans a send's task**
+  (server; audit N28). `after` ran between spawning the executor and
+  attaching what persists its events, so its error left a task the agent
+  went on to complete at `submitted` in the store. It now runs once the
+  response exists. `ServerInterceptor::after`'s documentation said it runs
+  even when the handler fails; no method ever did that, and it now says so.
 
 - **The agent card's poll watcher sees a change made just after it starts**
   (audit N23). It read the file's baseline mtime inside its own task, on

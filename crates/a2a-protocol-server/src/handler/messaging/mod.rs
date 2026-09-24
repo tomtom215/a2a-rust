@@ -175,9 +175,13 @@ impl RequestHandler {
             .validate_and_commit(params, streaming, &call_ctx)
             .await?;
 
-        self.interceptors.run_after(&call_ctx).await?;
-
-        match committed {
+        // `after` runs once the response exists, not before: the executor is
+        // already running by now, and until the response path has attached
+        // the background processor (or run the blocking collection) nothing
+        // persists its events. Running `after` first meant an `after` error
+        // dropped the send there, and a task the agent went on to complete
+        // stayed `submitted` in the store (N28).
+        let response = match committed {
             // Boxed: a replay is the cold path, and inlining it here grows
             // the future every ordinary send carries.
             Committed::Replay(task) => {
@@ -193,7 +197,9 @@ impl RequestHandler {
                         .await
                 }
             }
-        }
+        }?;
+        self.interceptors.run_after(&call_ctx).await?;
+        Ok(response)
     }
 
     /// Takes the tenant's concurrency slot, validates the request, and

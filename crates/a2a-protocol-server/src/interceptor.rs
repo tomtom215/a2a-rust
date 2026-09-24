@@ -38,10 +38,17 @@ pub trait ServerInterceptor: Send + Sync + 'static {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
-    /// Called after the request handler has finished processing.
+    /// Called after the request handler has succeeded, before its response
+    /// is returned.
     ///
-    /// This is called even if the handler returned an error. It should not
-    /// alter the response — use it for logging, metrics, or cleanup.
+    /// It is **not** called when the handler returned an error, and an error
+    /// it returns replaces the handler's response. Until 2026-09-24 this said
+    /// the opposite on both counts, which no method did. For
+    /// `SendMessage` and `SendStreamingMessage` it runs once the task's
+    /// events are being persisted — after a blocking send has collected
+    /// them, or once a stream's processor is attached — so an error here
+    /// fails the call without orphaning the task the agent is running.
+    /// Use it for logging, metrics, or cleanup.
     ///
     /// # Errors
     ///

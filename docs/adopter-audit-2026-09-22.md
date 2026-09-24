@@ -462,6 +462,20 @@ stores (`tests/cross_replica_cancel/`).
   seven handler fields it uses (`SyncCollector`), in the call's span and
   tenant; the request awaits it, so a dropped request stops only the
   waiting]**
+- **N28 — an interceptor's failing `after` hook orphaned the task it ran
+  after** (Medium, server behaviour; found by the drop-path audit, then
+  reproduced). The send path ran `run_after` once the executor was spawned
+  but before the response path attached anything to persist its events; an
+  `after` error — or a client dropping the request while `after` awaited —
+  dropped the committed send there. The caller got an error for a task
+  that ran, and the store kept it at `submitted`. VALIDATED:
+  `a_failing_after_hook_does_not_orphan_the_running_task` fails on `main`
+  with the store at `submitted`. Found beside it: `ServerInterceptor::after`
+  was documented as "called even if the handler returned an error"; no
+  method calls it on an error, and the book's interceptor chapter already
+  said so. **[Fixed: `after` runs once the send's response exists; the
+  trait documentation now says what every method does. Whether `after`
+  *should* also run on errors is a design question left open]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.

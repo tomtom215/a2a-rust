@@ -3111,3 +3111,69 @@ async fn a_blocking_send_dropped_mid_work_still_records_the_outcome() {
         "the agent completed the task, but the store never heard"
     );
 }
+
+/// An interceptor whose `after` hook refuses every call.
+struct FailingAfter;
+
+impl crate::interceptor::ServerInterceptor for FailingAfter {
+    fn before<'a>(
+        &'a self,
+        _ctx: &'a crate::call_context::CallContext,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async { Ok(()) })
+    }
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a crate::call_context::CallContext,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::internal(
+                "after hook failed",
+            ))
+        })
+    }
+}
+
+/// An `after` hook that fails does not orphan the task it ran after. The
+/// executor is already running when `after` runs; the hook's error used to
+/// drop the send before anything persisting its events was attached, so a
+/// task the agent completed stayed `submitted` in the store.
+#[tokio::test]
+async fn a_failing_after_hook_does_not_orphan_the_running_task() {
+    for streaming in [false, true] {
+        let handler = RequestHandlerBuilder::new(SlowCompletingExecutor {
+            delay: std::time::Duration::from_millis(20),
+        })
+        .with_interceptor(FailingAfter)
+        .build()
+        .expect("build handler");
+        let context = format!("ctx-after-{streaming}");
+        let result = handler
+            .on_send_message(make_params(Some(&context)), streaming, None)
+            .await;
+        assert!(result.is_err(), "the after hook's error is still reported");
+
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let state = loop {
+            let listed = handler
+                .task_store
+                .list(&a2a_protocol_types::params::ListTasksParams::default())
+                .await
+                .expect("list");
+            let state = listed.tasks.first().map(|t| t.status.state);
+            if state == Some(TaskState::Completed) || tokio::time::Instant::now() >= deadline {
+                break state;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        };
+        assert_eq!(
+            state,
+            Some(TaskState::Completed),
+            "streaming={streaming}: the agent completed the task, but the store never heard"
+        );
+    }
+}
