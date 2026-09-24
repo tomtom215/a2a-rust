@@ -349,7 +349,19 @@ stores (`tests/cross_replica_cancel/`).
   host; a busy CI runner may see it. The fix is a design choice — have the
   blocking response wait, bounded, for the executor to return, or let
   admission accept a continuation of a task whose recorded state is already
-  interrupted — and is left for the maintainer. Open.
+  interrupted — and is left for the maintainer. **[Fixed on
+  `claude/peaceful-ptolemy-noka5b`: the maintainer chose the admission side.
+  The executor's writer marks its turn *parked* when the latest state it
+  writes is `input-required` or `auth-required` — before the event reaches
+  the queue, so no reader sees the state first — and admission waits, up to
+  `executor_drain_timeout`, for a parked turn's executor to finish rather
+  than refusing. A send into a task whose executor has not parked it is
+  still refused at once, and past the bound the refusal is unchanged, so two
+  executors never run for one task. `an_immediate_answer_to_input_required_is_admitted`
+  and `a_streaming_answer_to_input_required_is_admitted` fail on `main`
+  (`0b7e87c`) with the refusal above and pass with the fix. Their executor
+  lingers 300 ms after parking, which reproduces the race on an idle host;
+  the reproduction above needed four busy loops]**
 - **N22 — a WebSocket stream goes silent when its client is dropped**
   (Medium, client behaviour; found when `prove_gates_fail.sh` graded
   `cargo test --workspace --all-features` PRE-BROKEN on this branch). Dropping
@@ -377,6 +389,63 @@ stores (`tests/cross_replica_cancel/`).
   slow but blind. VALIDATED: a test that rewrites the file before the
   watcher's task first runs fails on the old code every time and passes
   with the fix. **[Fixed: the baseline is read in `spawn_poll_watcher`]**
+- **N24 — the published manifests admitted dependency versions under
+  RustSec advisories** (Medium, supply chain; reported by an adopter on
+  0.12.1 as "`cargo update -p a2a-protocol-client` does not advance rustls").
+  `cargo deny` reads this repository's lockfile; a consumer's cargo keeps
+  whatever its own lockfile holds as long as our requirement admits it, so
+  a fix that moved only our lockfile never reached them. On `main`
+  (`0b7e87c`) the normal and build dependencies of the four published
+  crates admitted affected, published versions under seven advisories:
+  `rustls` `>=0.23, <0.24` (RUSTSEC-2024-0336, RUSTSEC-2024-0399,
+  RUSTSEC-2026-0285), `ring` `0.17` (RUSTSEC-2025-0009), `bytes` `1`
+  (RUSTSEC-2026-0007), `sqlx` `0.8` (RUSTSEC-2024-0363), `time` `0.3`
+  (RUSTSEC-2026-0009) and `tokio` `>=1.38, <2` (RUSTSEC-2025-0023,
+  unsound) — thirteen requirement/advisory pairs. VALIDATED by
+  `scripts/check_advisory_floors.py` against the RustSec database at
+  `66105a54` and the crates.io version lists, 2026-09-24: exit 1 with those
+  thirteen on `main`, exit 0 with the new floors. **[Fixed: floors raised to
+  the patched versions, each within the 1.88 MSRV; both lockfiles already
+  satisfied them. The script is a CI gate, and `prove_gates_fail.sh`
+  injects the 0.13.0 rustls requirement back]**
+- **N25 — an idle `SubscribeToTask` over SSE never ended** (Medium, server
+  behaviour; found by the drop-path audit, then reproduced). The bound
+  `subscribe_max_idle` (300 s) was measured inside the future the reattach
+  hook returns, and that future lived only inside one `read()` call. The SSE
+  writer races `read()` against its keep-alive timer (30 s) and drops the
+  loser, so every keep-alive discarded the hook's future and the next
+  `read()` started the bound again. A subscription to a task parked at
+  `input-required` held its connection and polled the store every
+  `subscribe_reattach_interval` for as long as the client stayed. VALIDATED:
+  `the_idle_bound_survives_a_read_cancelled_by_a_keep_alive`, which cancels
+  `read()` every 30 ms against a 100 ms bound, fails on `main` at its 5 s
+  limit and passes with the fix; `resubscribe_gives_up_after_the_idle_bound`
+  never cancelled a read, which is why it passed. **[Fixed: the reader keeps
+  the pending hook future, so `read()` is cancel-safe and the bound runs
+  from the first close. Held in a `Mutex` to keep `InMemoryQueueReader`
+  `Sync`]**
+- **N26 — a send dropped mid-commit wedged its task** (High, server
+  behaviour; found by the drop-path audit, then reproduced). hyper drops a
+  request's future when its client goes away. Between claiming an
+  idempotency key and spawning the executor the send path holds the queue
+  lease, the cancellation token and the key, and only an `Err` released
+  them. A drop — a client timing out during a slow store write — released
+  nothing: every later continuation of that task was refused as "already
+  being processed" for the life of the process, the queue counted against
+  `max_concurrent_queues` permanently, and a keyed retry waited on a task
+  that would never exist. VALIDATED: `a_send_dropped_mid_commit_releases_what_it_took`
+  holds the history write open, aborts the send, and fails on `main` with
+  "a dropped send left its cancellation token registered".
+  **[Fixed: `CommitGuard` releases exactly what the send took — the lease if
+  it was taken, the token only if the entry is still this send's turn, the
+  key — when the commit future is dropped, and is disarmed when the commit
+  returns. `a_send_dropped_while_waiting_leaves_the_running_turn_cancelable`
+  fails when the guard removes any token under the id, and
+  `a_send_dropped_mid_commit_releases_its_idempotency_key` fails with the
+  guard disabled. Residual: if the drop lands after the task row is
+  written — possible only while an inline push config is being registered,
+  the one await between that write and the spawn — the row stays as written
+  with no executor]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.
