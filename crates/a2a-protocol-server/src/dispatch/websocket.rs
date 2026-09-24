@@ -450,6 +450,7 @@ impl WebSocketDispatcher {
         let _ = tokio::time::timeout(CLOSE_TIMEOUT, async {
             let mut w = writer.sink.lock().await;
             let _ = w.close().await;
+            drop(w);
         })
         .await;
 

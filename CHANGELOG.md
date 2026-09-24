@@ -57,10 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Transport(_)` to detect a dropped WebSocket, or
   `Protocol(e)` with `e.code == InternalError` to detect a truncated gRPC
   stream, should match `IncompleteStream { .. }` / `HttpClient(_)`, or ask
-  `is_retryable()`. Not a wire change. `WebSocketTransport` does not
-  reconnect: after a drop, every later call on it fails with a
-  non-retryable `Transport("WebSocket connection closed")`, so the retry
-  a retryable drop invites has to go through a new transport (audit N18).
+  `is_retryable()`. Not a wire change. The retry a retryable drop invites
+  reconnects on the same `WebSocketTransport` (audit N18; see **Fixed**).
 
 - **gRPC status codes map to what the caller has to do about them.** Over the
   gRPC transport and the slimrpc binding, `UNAUTHENTICATED` is now
@@ -130,6 +128,10 @@ someone scanning for such changes would look.
   audit N29). It used to be held back without loss, which stalled every
   other call on the socket — see **Fixed**. `ClientError::is_stream_lagged`
   identifies it; resubscribe to continue.
+- **A call on a `WebSocketTransport` whose socket has dropped reconnects**
+  (client; audit N18) instead of failing with a non-retryable `Transport`
+  error. Code that matched that error to detect a dead transport now sees
+  the call succeed, or fail retryably if the reconnect does.
 - **A WebSocket request whose connection ends is cancelled** (server;
   audit N30). It used to run on after its peer had gone, which is how a
   peer that stopped reading held its connection open; a request on the HTTP
@@ -421,6 +423,14 @@ someone scanning for such changes would look.
   went on to complete at `submitted` in the store. It now runs once the
   response exists. `ServerInterceptor::after`'s documentation said it runs
   even when the handler fails; no method ever did that, and it now says so.
+- **`WebSocketTransport` reconnects after its connection drops** (client;
+  audit N18). Once its socket dropped, every later call failed at once with
+  a non-retryable `Transport("WebSocket connection closed")`, so a
+  long-lived client had to be rebuilt by hand after any server restart. The
+  next call now reconnects to the same endpoint with the same configuration,
+  bounded by `connect_timeout`, one reconnect for concurrent callers; a call
+  that races the old connection's close fails as retryable. Streams already
+  open keep the connection they were opened on.
 - **An unread WebSocket stream no longer stalls other calls on the same
   socket** (client; audit N29). The transport's single reader waited for
   room in a stream's 64-frame buffer before reading anything else, so a

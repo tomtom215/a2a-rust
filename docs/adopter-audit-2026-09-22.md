@@ -306,8 +306,15 @@ stores (`tests/cross_replica_cancel/`).
   reconnect from the stored URL and config, bounded like the first connect;
   E3's circuit breaker would sit in front of it. Until then
   `a_call_on_a_dropped_websocket_is_refused_as_final` pins the refusal as
-  non-retryable, so a retry loop stops instead of spinning. Open; the
-  CHANGELOG's N13 entry says so.
+  non-retryable, so a retry loop stops instead of spinning. **[Fixed on
+  `claude/peaceful-ptolemy-noka5b`: the transport keeps its endpoint and
+  configuration and replaces a dead connection on the next call — one
+  reconnect for concurrent callers, bounded by `connect_timeout`; requests
+  and streams hold the connection they started on, so a reconnect cannot
+  silence one (N22). `a_transport_reconnects_after_its_server_restarts`
+  (server stopped and restarted on the same port) and
+  `a_call_after_a_dropped_websocket_reconnects` (which replaces the test
+  that pinned the refusal) both fail against the previous transport]**
 - **N19 — the WebSocket dispatcher's documentation claims the v0.3 method
   aliases** (Low, docs; found while adding spans to it). The
   `process_ws_message` doc comment and `book/src/building-agents/dispatchers.md`

@@ -347,3 +347,89 @@ async fn an_unread_stream_does_not_stall_a_unary_call_on_the_same_socket() {
         "the overflowed stream must end with a stream_lagged error"
     );
 }
+
+// ── Reconnecting (N18) ──────────────────────────────────────────────────────
+
+/// Serves until `stop` fires, on `listener`.
+fn serve_until(
+    listener: tokio::net::TcpListener,
+    stop: tokio::sync::oneshot::Receiver<()>,
+) -> tokio::task::JoinHandle<()> {
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(SimpleExecutor)
+            .with_agent_card(minimal_agent_card())
+            .build()
+            .expect("build handler"),
+    );
+    let dispatcher = Arc::new(
+        WebSocketDispatcher::new(Arc::clone(&handler))
+            .with_drain_timeout(std::time::Duration::from_secs(1)),
+    );
+    tokio::spawn(async move {
+        let _ = dispatcher
+            .serve_with_shutdown(listener, async {
+                let _ = stop.await;
+            })
+            .await;
+        let _ = handler.shutdown().await;
+    })
+}
+
+/// A transport whose server went away and came back serves the next call on
+/// a new connection. It used to refuse every call after the first drop with
+/// a non-retryable `Transport` error, so a long-lived client had to be
+/// rebuilt by hand after any server restart.
+#[tokio::test]
+async fn a_transport_reconnects_after_its_server_restarts() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let first = serve_until(listener, stopped);
+
+    let transport = WebSocketTransport::connect(format!("ws://{addr}"))
+        .await
+        .expect("connect");
+    let headers = HashMap::new();
+    transport
+        .send_request("ListTasks", serde_json::json!({}), &headers)
+        .await
+        .expect("a call on the first server");
+
+    // The server shuts down, closing the connection; a new one starts on the
+    // same port.
+    let _ = stop.send(());
+    first.await.expect("first server ends");
+    let listener = tokio::net::TcpListener::bind(addr).await.expect("rebind");
+    let (_stop, stopped) = tokio::sync::oneshot::channel();
+    let _second = serve_until(listener, stopped);
+
+    // A call can race the client's reader to the old connection's Close
+    // frame and fail; that failure is retryable, and the retry — what any
+    // retry policy does next — reconnects.
+    let mut outcomes = Vec::new();
+    for _ in 0..2 {
+        let answered = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            transport.send_request("ListTasks", serde_json::json!({}), &headers),
+        )
+        .await
+        .expect("bounded");
+        let done = answered.is_ok();
+        outcomes.push(answered);
+        if done {
+            break;
+        }
+    }
+    assert!(
+        outcomes.last().is_some_and(Result::is_ok),
+        "no call succeeded after the server came back: {outcomes:?}"
+    );
+    assert!(
+        outcomes
+            .iter()
+            .all(|o| o.as_ref().map_or_else(|e| e.is_retryable(), |_| true)),
+        "a failure on the way was not retryable: {outcomes:?}"
+    );
+}
