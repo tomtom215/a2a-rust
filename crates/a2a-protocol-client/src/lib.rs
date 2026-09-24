@@ -138,6 +138,9 @@ pub mod transport;
 #[cfg(feature = "testing")]
 pub mod testing;
 
+#[cfg(any(fuzzing, test))]
+pub mod fuzzing;
+
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 
 pub use auth::{AuthInterceptor, CredentialsStore, InMemoryCredentialsStore, SessionId};

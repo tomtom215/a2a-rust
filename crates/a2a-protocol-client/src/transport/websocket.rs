@@ -954,7 +954,7 @@ fn route_frame(pending: &PendingMap, text: &str) {
 }
 
 /// Extracts the JSON-RPC `id` field from a JSON text frame.
-fn extract_jsonrpc_id(text: &str) -> Option<String> {
+pub(crate) fn extract_jsonrpc_id(text: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(text).ok()?;
     match v.get("id") {
         Some(serde_json::Value::String(s)) => Some(s.clone()),

@@ -36,7 +36,7 @@
 
 pub(crate) mod error_frame;
 mod query;
-mod request;
+pub(crate) mod request;
 mod routing;
 mod streaming;
 
