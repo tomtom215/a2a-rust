@@ -325,6 +325,31 @@ stores (`tests/cross_replica_cancel/`).
   now expects `413`, and `server_error_overloaded_maps_to_503` is new. The
   body's `status` field still says `INTERNAL` for an overload, from the A2A
   code; an AIP-193 `UNAVAILABLE` there is left for a wire change of its own]**
+- **N21 — a blocking send answers `input-required` before the task stops being
+  in flight** (Medium, server behaviour; found when a mutation baseline
+  failed). `collect_events` returns as soon as the task reaches an interrupted
+  or terminal state (`sync_collector.rs`, the `break` after
+  `is_interrupted()`), without waiting for the executor's spawned future,
+  which is what removes the task's cancellation token. Admission refuses a
+  send while that token is live (`reject_in_flight_send`). So a client that
+  answers an `input-required` at once can be refused with "task … is already
+  being processed; wait for it to reach input-required or a terminal state" —
+  the state its previous response reported. VALIDATED by
+  `swarm_scale::cost::a_channel_gets_slower_as_it_ages`, which posts
+  sequentially to one task: it passes 10 of 10 on an idle machine and fails 5
+  of 5 on `main` (`638ff9a0`) under four busy loops on four cores, with that
+  error; this branch's trees fail identically, 20 of 20 each. The harness's
+  `settle` loop absorbs the first occurrence and nothing absorbs the rest. The
+  mutation baseline runs `swarm_scale`, and on this 4-core host on 2026-09-24
+  the server suite as that baseline runs it failed 3 of 3 times on `main`: two
+  to four `swarm_scale::cost` and `fan_in` tests on this refusal (`fan_in`
+  reports a single agent's own posts refused 40% of the time), and
+  `fan_out::every_tail_sees_every_post` timing out at 45 s. The same command
+  had passed on this host hours earlier, so how often it bites depends on the
+  host; a busy CI runner may see it. The fix is a design choice — have the
+  blocking response wait, bounded, for the executor to return, or let
+  admission accept a continuation of a task whose recorded state is already
+  interrupted — and is left for the maintainer. Open.
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.
