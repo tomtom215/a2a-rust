@@ -322,9 +322,11 @@ impl WebSocketTransportConfig {
 /// shared Mutex on the reader half. This prevents deadlocks when streaming
 /// responses are received concurrently with unary requests.
 ///
-/// Dropping the transport aborts its background reader/writer tasks and
-/// closes the underlying connection — a dropped transport does not leak a
-/// task or a socket.
+/// Dropping the transport, and every stream it opened, aborts its background
+/// reader/writer tasks and closes the underlying connection — a dropped
+/// transport does not leak a task or a socket. A stream keeps the connection
+/// open for as long as it is held, as streams on the HTTP and gRPC bindings
+/// outlive their client.
 pub struct WebSocketTransport {
     inner: Arc<Inner>,
 }
@@ -686,9 +688,14 @@ impl WebSocketTransport {
         // transport otherwise returns a stream with no timeout at all, so a
         // server that accepts the socket but never answers this request would
         // hang the consumer forever. The bound is lifted after the first frame.
+        //
+        // The stream holds the connection too, so it outlives the transport as
+        // an HTTP or gRPC stream outlives its client. Dropping `Inner` aborts
+        // the reader; with the entry (and so the sender) still held, a stream
+        // whose transport was dropped went silent instead of ending.
         Ok(EventStream::new(rx)
             .with_first_event_timeout(self.inner.request_timeout)
-            .holding(entry))
+            .holding((entry, Arc::clone(&self.inner))))
     }
 }
 
@@ -778,16 +785,6 @@ fn warn_dropped_per_request_headers(
     }
 }
 
-/// Marks the connection closed and fails every pending request.
-///
-/// Called from the background tasks whenever the connection reaches a state
-/// in which no pending request can ever be answered (server close, stream
-/// end, transport error, failed write). Without this, requests in flight at
-/// disconnect time hang until their full request timeout.
-///
-/// Not `async`: every step is synchronous — a `std` mutex, a `drain`, a
-/// non-blocking `oneshot::send` and a `try_send`. It was `async` only because
-/// the map used to be behind a Tokio mutex.
 /// A read error that the peer caused on purpose and would cause again — a
 /// frame over the size cap, or one that breaks the protocol — as distinct
 /// from the connection simply going away. `None` for the latter.
@@ -806,6 +803,16 @@ fn refusal(e: &tokio_tungstenite::tungstenite::Error) -> Option<String> {
     }
 }
 
+/// Marks the connection closed and fails every pending request.
+///
+/// Called from the background tasks whenever the connection reaches a state
+/// in which no pending request can ever be answered (server close, stream
+/// end, transport error, failed write). Without this, requests in flight at
+/// disconnect time hang until their full request timeout.
+///
+/// Not `async`: every step is synchronous — a `std` mutex, a `drain`, a
+/// non-blocking `oneshot::send` and a `try_send`. It was `async` only because
+/// the map used to be behind a Tokio mutex.
 fn fail_all_pending(pending: &PendingMap, closed: &AtomicBool, refused: Option<&str>) {
     closed.store(true, Ordering::Release);
     let entries: Vec<PendingRequest> = lock_pending(pending).drain().map(|(_, v)| v).collect();
@@ -1718,6 +1725,69 @@ mod tests {
             .await
             .expect("server must observe the connection closing after drop")
             .expect("channel open");
+    }
+
+    /// A stream outlives the transport that opened it, as it does on the HTTP
+    /// and gRPC bindings. Dropping the transport used to abort the reader task
+    /// while the stream's own guard kept its sender alive, so the stream went
+    /// silent: no later event, and no end either — only the idle bound, or
+    /// nothing at all without one.
+    #[tokio::test]
+    async fn a_stream_outlives_the_transport_that_opened_it() {
+        let (go_tx, go_rx) = tokio::sync::oneshot::channel::<()>();
+        let go_rx = Arc::new(Mutex::new(Some(go_rx)));
+        let addr = spawn_raw_ws_server(move |mut ws| {
+            let go_rx = go_rx.lock().unwrap().take();
+            async move {
+                let Some(Ok(WsMessage::Text(req))) = ws.next().await else {
+                    return;
+                };
+                let id = serde_json::from_str::<serde_json::Value>(&req).unwrap()["id"].clone();
+                let event = |state: &str| {
+                    let status = serde_json::json!({ "state": state });
+                    let update = serde_json::json!({ "taskId": "t", "contextId": "c", "status": status });
+                    let frame = serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": { "statusUpdate": update } });
+                    WsMessage::Text(frame.to_string().into())
+                };
+                let _ = ws.send(event("TASK_STATE_WORKING")).await;
+                if let Some(go) = go_rx {
+                    let _ = go.await;
+                }
+                let _ = ws.send(event("TASK_STATE_COMPLETED")).await;
+                while let Some(Ok(_)) = ws.next().await {}
+            }
+        })
+        .await;
+
+        let transport = WebSocketTransport::connect(format!("ws://{addr}"))
+            .await
+            .expect("connect");
+        let mut stream = transport
+            .send_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({"message": {}}),
+                &HashMap::new(),
+            )
+            .await
+            .expect("stream opens");
+        let first = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("the first event arrives");
+        assert!(matches!(first, Some(Ok(_))), "first event: {first:?}");
+
+        // `abort()` takes effect at once: an aborted task is never polled
+        // again, so without the fix nothing sent after this reaches the stream.
+        drop(transport);
+        let _ = go_tx.send(());
+
+        let second = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("the stream must not go silent once its transport is dropped");
+        assert!(matches!(second, Some(Ok(_))), "second event: {second:?}");
+        let end = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("the stream ends after its final event");
+        assert!(end.is_none(), "a completed stream ends cleanly: {end:?}");
     }
 
     /// A server-side close must fail an in-flight request promptly with a

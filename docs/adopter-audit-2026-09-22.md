@@ -350,6 +350,23 @@ stores (`tests/cross_replica_cancel/`).
   blocking response wait, bounded, for the executor to return, or let
   admission accept a continuation of a task whose recorded state is already
   interrupted — and is left for the maintainer. Open.
+- **N22 — a WebSocket stream goes silent when its client is dropped**
+  (Medium, client behaviour; found when `prove_gates_fail.sh` graded
+  `cargo test --workspace --all-features` PRE-BROKEN on this branch). Dropping
+  a `WebSocketTransport` aborts its reader task (`impl Drop for Inner`), but
+  the `EventStream` it returned holds a `PendingGuard`, whose map holds the
+  stream's sender. With the reader gone and the sender alive, the stream
+  receives nothing more and never ends; only the idle bound (5 min by
+  default) reports a `Timeout`. On the HTTP and gRPC bindings a stream
+  outlives its client. `scripted_peer_tests`, which drops the client after
+  the first event, failed on WebSocket when the abort beat the reader to the
+  peer's close: VALIDATED by timestamps on the reader's polls (polled
+  `Pending` 0.02 ms before the peer closed, never polled again) and by
+  failure counts under eight busy loops on four cores — 8 of 640 runs before
+  the fix, 0 of 300 after. The regression test
+  `a_stream_outlives_the_transport_that_opened_it` fails on `main`
+  (`638ff9a0`) and passes here. **[Fixed: the stream holds the connection
+  too]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.

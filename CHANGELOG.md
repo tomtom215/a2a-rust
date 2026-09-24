@@ -323,6 +323,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A WebSocket stream outlives the client that opened it**, as streams on
+  the HTTP and gRPC bindings do (audit N22). Dropping the client, or the
+  `WebSocketTransport`, aborted the connection's reader while the stream
+  still held its own sender, so the stream went silent: no later event, and
+  no end until the idle bound (five minutes by default) reported a
+  `Timeout`. The stream now holds the connection open until it is dropped.
 - **Wire: `RestDispatcher` answers an overload with `503` and an oversized
   body with `413`**, as the axum adapter always has, instead of `500` and
   `400`. The two HTTP+JSON dispatchers had separate mappings, so the same
