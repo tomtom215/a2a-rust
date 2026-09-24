@@ -88,7 +88,10 @@ pub fn idle<'a>() -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
     Box::pin(async {})
 }
 RUST
-    listing="$("$bin" mutants --list --dir "$dir" 2>&1)" || {
+    # `--colors=never`: the listing is matched as text below, and CI sets
+    # CARGO_TERM_COLOR=always, which cargo-mutants honours — the replacements
+    # then arrive wrapped in escape codes and no plain match can find them.
+    listing="$("$bin" mutants --list --colors=never --dir "$dir" 2>&1)" || {
         printf 'install_cargo_mutants: %s mutants --list failed:\n%s\n' "$bin" "$listing" >&2
         rm -rf "$dir"
         return 1
