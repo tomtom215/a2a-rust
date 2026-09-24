@@ -660,6 +660,12 @@ while the binding pins 0.15.
   `CARGO_INCREMENTAL=0`, which `dtolnay/rust-toolchain` sets. Locally,
   incremental state grew to 16 GB in one baseline. preflight now sets the
   same variable.
+- **A private field can break the public API.** N18's reconnect lock, a
+  `tokio::sync::Mutex<()>`, made `WebSocketTransport` stop being
+  `RefUnwindSafe`; `cargo semver-checks` caught it (exit 100,
+  `auto_trait_impl_removed`) where no test or lint did. The field is now
+  `AssertUnwindSafe` — true, since it guards `()` — and a compile-time
+  assertion pins the type's auto traits.
 - **Re-run the static gates after the last change, not before it.** The
   first branch preflight failed four gates, all introduced by this branch's
   own later edits: a file over the length limit, an API-reference row, a

@@ -342,7 +342,15 @@ pub struct WebSocketTransport {
     current: std::sync::Mutex<Arc<Inner>>,
     /// Held while reconnecting, so concurrent calls that find the
     /// connection dead reconnect once between them.
-    reconnecting: tokio::sync::Mutex<()>,
+    ///
+    /// `AssertUnwindSafe` keeps the transport `RefUnwindSafe`, as it was in
+    /// 0.13.0; a Tokio mutex alone is not, and losing the trait is an API
+    /// break (`cargo semver-checks`, `auto_trait_impl_removed`). The
+    /// assertion is true: the lock guards `()`, so no state can be left half
+    /// updated by a panic, and a Tokio mutex is released on unwind rather
+    /// than poisoned — a reconnect that panics leaves the next caller free
+    /// to reconnect.
+    reconnecting: std::panic::AssertUnwindSafe<tokio::sync::Mutex<()>>,
 }
 
 struct Inner {
@@ -444,7 +452,7 @@ impl WebSocketTransport {
             endpoint,
             config,
             current: std::sync::Mutex::new(Arc::new(first)),
-            reconnecting: tokio::sync::Mutex::new(()),
+            reconnecting: std::panic::AssertUnwindSafe(tokio::sync::Mutex::new(())),
         })
     }
 
@@ -1135,6 +1143,18 @@ fn validate_ws_url(url: &str) -> ClientResult<()> {
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+/// The auto traits `WebSocketTransport` had in 0.13.0. Losing one is an API
+/// break a downstream `catch_unwind` or thread-spawn notices at compile time;
+/// the N18 reconnect lock dropped `RefUnwindSafe` until it was wrapped.
+#[cfg(test)]
+const _: () = {
+    const fn assert_auto_traits<
+        T: Send + Sync + Unpin + std::panic::UnwindSafe + std::panic::RefUnwindSafe,
+    >() {
+    }
+    assert_auto_traits::<WebSocketTransport>();
+};
 
 #[cfg(test)]
 mod tests {
