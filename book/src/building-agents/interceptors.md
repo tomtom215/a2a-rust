@@ -31,7 +31,7 @@ impl ServerInterceptor for LoggingInterceptor {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            println!("Response: {}", ctx.method());
+            println!("Answered: {}", ctx.method());
             Ok(())
         })
     }
@@ -69,6 +69,62 @@ Interceptors execute in the order they're added:
 ```text
 Request → Auth → Logging → RateLimit → Handler → RateLimit → Logging → Auth → Response
 ```
+
+### Seeing every outcome: `on_complete`
+
+`after` runs only when the call succeeds, and an error it returns replaces
+the response. For work that must happen however the call ends — releasing
+what `before` acquired, closing an audit record, counting failures by
+caller — override `on_complete`. It is called once per call, in reverse
+order, on every interceptor whose `before` ran, with how the call ended:
+
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+use a2a_protocol_sdk::server::{CallContext, CallOutcome, ServerInterceptor};
+
+struct AuditInterceptor;
+
+impl ServerInterceptor for AuditInterceptor {
+    fn before<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn on_complete<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+        outcome: CallOutcome<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            match outcome {
+                CallOutcome::Succeeded => println!("{}: ok", ctx.method()),
+                CallOutcome::Failed(e) => println!("{}: {}", ctx.method(), e.metric_label()),
+                CallOutcome::Cancelled => println!("{}: client went away", ctx.method()),
+                _ => {}
+            }
+        })
+    }
+}
+```
+
+`Failed` carries the error the caller is sent, whether a `before` hook, the
+handler or an `after` hook produced it. `Cancelled` means the call's future
+was dropped unanswered — the client disconnected, or a timeout above the
+handler gave up — and the hook then runs in a task of its own. It returns
+nothing, so it cannot change the response. For `SendStreamingMessage` and
+`SubscribeToTask` the call ends when the stream is established, not when it
+closes. The trait method's documentation states the full contract.
 
 ### Example: Authentication
 

@@ -6,8 +6,10 @@
 //! Server-side interceptor chain.
 //!
 //! [`ServerInterceptor`] allows middleware-style hooks before and after each
-//! JSON-RPC or REST method invocation. [`ServerInterceptorChain`] manages an
-//! ordered list of interceptors and runs them sequentially.
+//! A2A method invocation, whatever the binding it arrived on, and one hook,
+//! [`on_complete`](ServerInterceptor::on_complete), that sees how every call
+//! ended. [`ServerInterceptorChain`] manages an ordered list of interceptors
+//! and runs them sequentially.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -16,6 +18,29 @@ use std::sync::Arc;
 use a2a_protocol_types::error::A2aResult;
 
 use crate::call_context::CallContext;
+use crate::error::ServerError;
+
+mod completion;
+#[cfg(test)]
+mod completion_tests;
+
+/// How a call ended, as [`ServerInterceptor::on_complete`] is told.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub enum CallOutcome<'a> {
+    /// The handler answered and every [`after`](ServerInterceptor::after)
+    /// hook succeeded: the caller is sent the handler's response.
+    Succeeded,
+    /// The call failed, and this is the error the caller is sent. It came
+    /// from a [`before`](ServerInterceptor::before) hook that refused the
+    /// call, from the handler, or from an [`after`](ServerInterceptor::after)
+    /// hook.
+    Failed(&'a ServerError),
+    /// The call's future was dropped before it answered, so the caller was
+    /// sent nothing: the client disconnected, a timeout above the handler
+    /// gave up on it, or the server shut down.
+    Cancelled,
+}
 
 /// A server-side interceptor for request processing.
 ///
@@ -58,6 +83,53 @@ pub trait ServerInterceptor: Send + Sync + 'static {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
+    /// Called once when a call ends, however it ends — with the response, with
+    /// an error, or by being dropped unanswered — on every interceptor whose
+    /// [`before`](Self::before) was called for it.
+    ///
+    /// This is the hook for work that must happen whatever the outcome:
+    /// releasing what `before` acquired, closing an audit record, counting
+    /// failures by caller. [`after`](Self::after) cannot do that, because it
+    /// runs only on success and its error replaces the response.
+    ///
+    /// The contract, in full:
+    ///
+    /// - **Pairing.** It is called on an interceptor exactly when that
+    ///   interceptor's `before` was called for the call, including when that
+    ///   `before` returned the error that refused it. An interceptor after
+    ///   the one that refused is not called, since its `before` never ran.
+    /// - **Order.** Reverse insertion order, as for `after`.
+    /// - **When.** On a call that answers, after every `after` hook and
+    ///   before the response is returned, so a record it writes exists before
+    ///   the caller sees the answer. On a dropped call it runs in a task
+    ///   spawned when the call is dropped, with [`CallOutcome::Cancelled`];
+    ///   if no Tokio runtime is running at that point it is not called.
+    /// - **Once.** It is started at most once per interceptor per call. If
+    ///   the call is dropped while one interceptor's `on_complete` is running,
+    ///   that one is not restarted, and the ones not yet started are then
+    ///   called with [`CallOutcome::Cancelled`].
+    /// - **No effect on the response.** It returns nothing, so it cannot
+    ///   change or fail the call.
+    ///
+    /// For `SendStreamingMessage` and `SubscribeToTask` the call ends when
+    /// the stream is established and its first frame can be sent, not when
+    /// the stream closes — the same point at which `after` runs.
+    ///
+    /// Calls that reach the handler through
+    /// [`ServerInterceptorChain::run_before`] and
+    /// [`run_after`](ServerInterceptorChain::run_after) directly, rather than
+    /// through [`RequestHandler`](crate::RequestHandler), do not call it.
+    ///
+    /// The default does nothing.
+    fn on_complete<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+        outcome: CallOutcome<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        let _ = (ctx, outcome);
+        Box::pin(async {})
+    }
+
     /// Returns `true` if this interceptor authenticates requests — i.e. its
     /// [`before`](Self::before) hook rejects callers that do not present
     /// valid credentials.
@@ -76,7 +148,7 @@ pub trait ServerInterceptor: Send + Sync + 'static {
 /// An ordered chain of [`ServerInterceptor`] instances.
 ///
 /// Interceptors are executed in insertion order for `before` and reverse order
-/// for `after`.
+/// for `after` and `on_complete`.
 #[derive(Default)]
 pub struct ServerInterceptorChain {
     interceptors: Vec<Arc<dyn ServerInterceptor>>,

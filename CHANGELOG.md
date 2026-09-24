@@ -166,6 +166,24 @@ someone scanning for such changes would look.
 
 ### Added
 
+- **`ServerInterceptor::on_complete` and `CallOutcome`.** `after` runs only
+  on success and its error replaces the response, so no hook saw a failed
+  or abandoned call: an interceptor that acquired something in `before` —
+  an in-flight gauge, a concurrency slot, an open audit record — had no
+  place to release it. `on_complete` is called once per call, in reverse
+  order, on every interceptor whose `before` ran (including the one that
+  refused the call), with `Succeeded`, `Failed(&ServerError)` — the error
+  the caller is sent — or `Cancelled`, when the call's future is dropped
+  unanswered. It returns `()`, so it cannot change the response. The
+  default does nothing, so existing interceptors compile and behave as
+  before. Every `RequestHandler` method, on every binding, runs through it;
+  calls made with `ServerInterceptorChain::run_before` and `run_after`
+  directly do not. A new test drops a real JSON-RPC and HTTP+JSON
+  connection mid-call and sees `Cancelled` in `on_complete` and `cancelled`
+  in the `rpc.server.call` record — the first test of the premise that
+  N26, N27 and N28 rest on: hyper drops a request's future when its client
+  disconnects.
+
 - **`Task::new`, `TaskQueryParams::new` (with `with_history_length` and
   `with_tenant`), and `a2a_protocol_server::CancellationToken`** (audit
   N16). A custom store or test built a `Task`, and every `GetTask` caller a

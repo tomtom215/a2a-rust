@@ -190,7 +190,7 @@ pub use handler::{
     HandlerLimits, InFlightReport, InboundTracePolicy, RequestHandler, SendMessageResult,
     ShutdownReport,
 };
-pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
+pub use interceptor::{CallOutcome, ServerInterceptor, ServerInterceptorChain};
 pub use metrics::{ConnectionPoolStats, Metrics, RpcCall};
 #[cfg(feature = "otel")]
 pub use otel::OtelMetrics;

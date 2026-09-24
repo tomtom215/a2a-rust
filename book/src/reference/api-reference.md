@@ -415,6 +415,7 @@ are rustdoc's job.
 | `ApiKeyAuthInterceptor` | Rejects requests whose API-key header is absent or not in the allowed set |
 | `BearerTokenAuthInterceptor` | Rejects requests whose bearer token is absent or not in the allowed set |
 | `ServerInterceptorChain` | An ordered chain of `ServerInterceptor` instances |
+| `CallOutcome` | How a call ended — succeeded, failed with the error sent, or cancelled — as `ServerInterceptor::on_complete` is told |
 | `Migration` | A single SQLite schema migration (`sqlite` feature) |
 | `MigrationRunner` | Runs schema migrations against a SQLite database (`sqlite` feature) |
 | `PgMigration` | A single PostgreSQL schema migration (`postgres` feature) |

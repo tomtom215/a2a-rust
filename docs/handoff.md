@@ -11,9 +11,9 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-24 — `claude/determined-galileo-rywiyj` merged as
-`8a54d7e9` (#142); the gate gaps and phase 2 are on
-`claude/keen-noether-q73ekn`.
+Last updated 2026-09-24 — `claude/keen-noether-q73ekn` merged as
+`0b7e87c2` (#143); the drop-path findings N21–N32, N16 and N18 are on
+`claude/peaceful-ptolemy-noka5b`.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -106,7 +106,8 @@ the *content* merge.
 | `claude/optimistic-bell-680i9p` | merged, still present | **Merged as `391f0df` via [#138](https://github.com/tomtom215/a2a-rust/pull/138).** It began as documentation corrections on top of 0.13.0 and is now substantially code: six audit fixes and the regression tests three of them shipped without, W3C Trace Context conformance, event-log durability, `InboundTracePolicy`, and two new CI gates. See its section below. |
 | `claude/pensive-allen-socw7b` | merged, still present | **Merged as `fa2e901` via [#141](https://github.com/tomtom215/a2a-rust/pull/141) on 2026-09-23.** The adopter audit and phase 1 of its fixes; see its section below. Safe to delete. |
 | `claude/determined-galileo-rywiyj` | merged, still present | **Merged as `8a54d7e9` via [#142](https://github.com/tomtom215/a2a-rust/pull/142) on 2026-09-23.** The adopter audit's open work after phase 1; see its section below. Safe to delete. |
-| `claude/keen-noether-q73ekn` | open — see note | **Destined for `main`.** The audit's gate gaps (escape classes 1, 6, 7, 8, 9), then phase 2 of observability. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
+| `claude/keen-noether-q73ekn` | merged, still present | **Merged as `0b7e87c2` via [#143](https://github.com/tomtom215/a2a-rust/pull/143).** The audit's gate gaps (escape classes 1, 6, 7, 8, 9), then phase 2 of observability. Safe to delete. |
+| `claude/peaceful-ptolemy-noka5b` | open — no PR yet | **Destined for `main`.** N21 (the maintainer chose the admission side), the adopter's four reports, the claims ledger, and the drop-path hunt (N24–N32, N16, N18). See its section below. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -536,9 +537,8 @@ crates. The fixes after `cb5d81d3` were checked by the targeted runs
 their commit messages describe, not by a second full preflight; the pull
 request's CI is the record for them.
 
-**Open, from this branch:** N21, a continuation refused as in flight — a
-design choice for the maintainer, and the reason `swarm_scale` can fail the
-mutation baseline on a busy host; N16, N18; the HTTP+JSON residual above,
+**Open, from this branch:** N21, N16 and N18 were closed on
+`claude/peaceful-ptolemy-noka5b`; the HTTP+JSON residual above,
 unattributed below the bench's noise; `connection_timeout`, still measured
 by no test; the cargo-mutants patch (kept here, not upstreamed — see `scripts/cargo-mutants/README.md`).
 
@@ -600,6 +600,118 @@ ADR 0013's option 5 (`init_telemetry`, OTLP traces; O3, O12), stream
 duration and active streams (O6), the task-outcome metric (E5, with O11's
 remainder), the client side (O8, O9), connection statistics for the gRPC
 and WebSocket listeners (O10) — then OW11 and phase 3.
+
+## `claude/peaceful-ptolemy-noka5b` — from "passes CI" to evidence
+
+Started 2026-09-24 from `0b7e87c2` (#143 merged). Order of work: a baseline
+on clean `main`; N21, on the side the maintainer chose (admission waits,
+bounded); the v0.13.0 adopter's four reports; a claims audit of every
+public statement from 0.6.0 on (`docs/claims-ledger-2026-09-24.md`); then a
+hunt through drop and cancellation paths, which found eight more defects,
+all present on `main`. Every finding has an entry in
+`docs/adopter-audit-2026-09-22.md` and a regression test.
+
+**Baseline on `main` (`0b7e87c2`), measured before any change here:**
+`scripts/preflight.sh --full` 73 of 73 PASS, "All gates passed."; `cargo
+deny check` exit 0 for the workspace and for the binding; a2a-tck `263b9cf`
+— full profile 84 PASS, 4 FAIL; minimal 63 PASS, 3 FAIL; CORE-CAP-004
+passes; every gate exits 0. **Not run on `main`:** nightly clippy and
+tests, `cargo semver-checks`, `prove_gates_fail.sh`.
+
+| N | What | Severity |
+|---|---|---|
+| N21 | a continuation refused while a parked turn's executor returns | Medium |
+| N24 | the manifests admitted versions under RustSec advisories (adopter #4) | Medium |
+| N25 | an idle SSE subscription never ended: each keep-alive reset its bound | Medium |
+| N26 | a send dropped mid-commit wedged its task | High |
+| N27 | a blocking send whose client left: the task stayed `working` | High |
+| N28 | a failing `after` hook orphaned the running task | Medium |
+| N29 | one unread WebSocket stream stalled every call on its socket | Medium |
+| N30 | a WebSocket peer that stopped reading was never closed and kept its slot | Medium |
+| N31 | a cancelled gRPC stream kept its subscription while the task was quiet | Low |
+| N32 | the card poll watcher skipped a fixed card after a failed parse | Low |
+| N16 | missing constructors; `CancellationToken` re-exported | Low (API) |
+| N18 | `WebSocketTransport` now reconnects, single-flight | Low (client) |
+
+The adopter's reports: #1 (old cargo, misleading error) reproduced — cargo
+1.80.1 and 1.84.1 fail, 1.85.0 resolves; the cause is edition 2024, not
+resolver 3 — and the README says so. #2 (short git rev) did not reproduce on
+cargo 1.88, 1.96 or 1.98. #3 is the CHANGELOG's new "Behaviour Changes"
+heading. #4 is N24, and `scripts/check_advisory_floors.py` is a new CI gate
+for it; on `main` it exits 1 with 13 requirement/advisory pairs.
+
+The binding's RUSTSEC-2026-0285 waiver was re-checked and is still blocked:
+`slim-auth` 0.16.0 reaches `aws-lc-rs =1.16.3` through
+`mls-rs-crypto-awslc` 0.25, and `slim-rpc` 2.3.3 requires `slim-auth ^0.16`
+while the binding pins 0.15.
+
+**Lessons:**
+
+- **The drop path is where the bugs were.** N25–N31 are each a future
+  dropped at an await its author did not treat as a stopping point. N26–N28
+  rest on the premise that hyper drops a request's future when the client
+  disconnects; `tests/interceptor_on_complete.rs` now pins it for JSON-RPC
+  and HTTP+JSON on a real socket. gRPC and WebSocket reach the same handler
+  methods but have no disconnect test of their own.
+- **A test that sleeps between turns hides the race it should catch.**
+  `a_continuation_keeps_what_earlier_turns_wrote` slept 50 ms, which is why
+  N21 showed only on a busy host. The new tests wait on conditions.
+- **preflight's disk estimate was stale.** CI runs with
+  `CARGO_INCREMENTAL=0`, which `dtolnay/rust-toolchain` sets. Locally,
+  incremental state grew to 16 GB in one baseline. preflight now sets the
+  same variable.
+- **Re-run the static gates after the last change, not before it.** The
+  first branch preflight failed four gates, all introduced by this branch's
+  own later edits: a file over the length limit, an API-reference row, a
+  field dead without `tracing`, and an example that timed out because a
+  local model server was contending for CPU.
+
+`ServerInterceptor::on_complete` and `CallOutcome` were added at the
+maintainer's request: one call per interceptor whose `before` ran, with
+`Succeeded`, `Failed(&ServerError)` or `Cancelled`, and no effect on the
+response. Every `RequestHandler` method runs its body between
+`interceptors.begin(&call_ctx)`, `call.before()` and `call.finish(result)`
+(`src/interceptor/completion.rs`), and all four bindings reach the ten
+handler methods and nothing else (read, not tested, for gRPC and
+WebSocket). Three mutations of the guard (no drop path, decrement after
+the await, count `before` only on success) each fail at least one of the
+new tests.
+
+A first version took the body as an argument, `intercept(ctx, body)`, and
+workspace clippy failed `large_futures` on every send path at about 30 KB:
+an `async fn` stores its argument and again the future it awaits. Measured,
+then designed around; the module comment records it. The unit and
+integration tests had passed on that version; only clippy caught it, so
+run clippy before calling a change on the send path done.
+
+**Open, from this branch:**
+
+- WS3 — genai, rig and mcp over every binding with the real model, and why
+  a WebSocket `SendMessage` timed out while a model server was busy;
+- extended fuzz runs, including the new `client_peer_input` target;
+- a flake hunt under CPU load;
+- `swarm_scale` under load, `main` against this branch, for N21;
+- in-diff mutation runs;
+- WS4 measurements against `docs/readiness-bar.md`, which defines the bar
+  and records no measurements yet;
+- WS5, a clean-`CARGO_HOME` walkthrough of the new Quick Start against
+  crates.io 0.13;
+- nightly clippy and tests, `cargo semver-checks`, and `prove_gates_fail.sh`
+  on this branch;
+
+Carried over, unchanged: `connection_timeout` is measured by no test; the
+HTTP+JSON telemetry residual; phase 2's remainder (ADR 0013), OW11 and
+phase 3.
+
+**Release:** `[Unreleased]` already carries `### Breaking Changes` from
+#141–#143, so the next release is 0.14.0, and `release.yml`'s cadence check
+refuses a second breaking minor in the calendar month of 0.13.0
+(2026-09-20): the earliest tag date is 2026-10-01. Release prep is a second
+pull request after this one merges, with the provenance manifest
+regenerated last (`RELEASING.md`).
+
+**What the next session should do first:** run the `swarm_scale`
+comparison for N21, then WS3.
 
 ## In flight outside this repository
 
