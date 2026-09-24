@@ -71,6 +71,7 @@ pub(crate) mod pb {
 
 pub use config::GrpcConfig;
 pub use dispatcher::GrpcDispatcher;
+pub(crate) use helpers::grpc_status_name;
 pub use native::A2aServiceImpl;
 pub use pb::a2a_service_server::A2aServiceServer;
 /// The TLS types [`GrpcDispatcher::with_tls`] takes, re-exported so a server

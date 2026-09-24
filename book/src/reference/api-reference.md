@@ -338,6 +338,7 @@ are rustdoc's job.
 | `ShutdownReport` | What a shutdown actually managed to do (live queues it had to destroy, whether executor cleanup completed) |
 | `InFlightReport` | What `RequestHandler::finish_in_flight` / `cancel_in_flight` did: tasks that completed on their own, tasks cancelled, still running at the end of the grace period, whether everything finished |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
+| `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |
 
 ### Traits
 

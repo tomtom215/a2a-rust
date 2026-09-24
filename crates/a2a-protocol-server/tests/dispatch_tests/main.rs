@@ -14,6 +14,7 @@
 mod hardening;
 mod jsonrpc;
 mod rest;
+mod rpc_calls;
 
 use std::net::SocketAddr;
 use std::sync::Arc;

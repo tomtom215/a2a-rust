@@ -18,14 +18,14 @@ All proposed beyond-spec features have been implemented:
 | Feature | Location | Details |
 |---|---|---|
 | **OpenTelemetry integration** | `crates/a2a-protocol-server/src/otel/` | `OtelMetrics` with OTLP export via `opentelemetry-otlp`; feature-gated under `otel` |
-| **Connection pooling metrics** | `crates/a2a-protocol-server/src/metrics.rs` | `ConnectionPoolStats` struct; `on_connection_pool_stats` on `Metrics` trait |
+| **Connection pooling metrics** | `crates/a2a-protocol-server/src/metrics/mod.rs` | `ConnectionPoolStats` struct; `on_connection_pool_stats` on `Metrics` trait |
 | **Hot-reload agent cards** | `crates/a2a-protocol-server/src/agent_card/hot_reload.rs` | `HotReloadAgentCardHandler` with file polling and SIGHUP reload |
 | **Store migration tooling** | `crates/a2a-protocol-server/src/store/migration.rs` | `MigrationRunner` with `BUILTIN_MIGRATIONS` (V1–V3), `schema_versions` table |
 | **Per-tenant configuration** | `crates/a2a-protocol-server/src/tenant_config.rs` | `PerTenantConfig`, `TenantLimits` with per-tenant overrides |
 | **TenantResolver trait** | `crates/a2a-protocol-server/src/tenant_resolver.rs` | `HeaderTenantResolver`, `BearerTokenTenantResolver`, `PathSegmentTenantResolver` |
 | **Agent card signing E2E** | `examples/agent-team/src/tests/coverage_gaps.rs` | `test_agent_card_signing` with ES256 key generation (`#[cfg(feature = "signing")]`) |
 | **Request ID propagation** | `crates/a2a-protocol-server/src/call_context.rs` | `CallContext::request_id` auto-extracted from `X-Request-ID` header |
-| **Metrics hooks** | `crates/a2a-protocol-server/src/metrics.rs` | `Metrics` trait: `on_request`, `on_response`, `on_error`, `on_latency`, `on_queue_depth_change` |
+| **Metrics hooks** | `crates/a2a-protocol-server/src/metrics/mod.rs` | `Metrics` trait: `on_request`, `on_response`, `on_error`, `on_latency`, `on_queue_depth_change` |
 | **Rate limiting** | `crates/a2a-protocol-server/src/rate_limit.rs` | `RateLimitInterceptor` with fixed-window per-caller counters |
 | **gRPC transport** | `crates/a2a-protocol-server/src/dispatch/grpc/` | `GrpcDispatcher` + `GrpcTransport` via `tonic` (`grpc` feature) |
 | **WebSocket transport** | `crates/a2a-protocol-server/src/dispatch/websocket.rs` | `WebSocketDispatcher` + `WebSocketTransport` via `tokio-tungstenite` (`websocket` feature) |

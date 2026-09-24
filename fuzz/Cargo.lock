@@ -40,6 +40,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "mutants",
+ "pin-project-lite",
  "ring",
  "serde",
  "serde_json",

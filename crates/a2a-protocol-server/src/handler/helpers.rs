@@ -194,6 +194,22 @@ fn parse_trace_context(
     if policy == InboundTracePolicy::Drop {
         return None;
     }
+    // The span this call runs in, when an OpenTelemetry layer records it:
+    // its id is the one to send downstream, because the exporter has it. The
+    // dispatcher already applied the policy when it opened the span — as the
+    // caller's child under `Continue`, a new root under `Restart` — so all
+    // that is left to carry is the caller's `tracestate`, and only when the
+    // trace is theirs (audit O2).
+    #[cfg(feature = "otel")]
+    if let Some((trace_id, span_id, flags)) = crate::rpc_span::current_recorded_span() {
+        let ours = TraceContext::from_bytes(trace_id, span_id, flags).ok()?;
+        return Some(match (policy, headers.get(TRACESTATE_HEADER)) {
+            (InboundTracePolicy::Continue, Some(state)) => {
+                ours.clone().with_tracestate(state).unwrap_or(ours)
+            }
+            _ => ours,
+        });
+    }
     let inbound = TraceContext::parse(headers.get(TRACEPARENT_HEADER)?).ok()?;
     if policy == InboundTracePolicy::Restart {
         // §3.4 "Restart trace": every property regenerated, and "Vendors

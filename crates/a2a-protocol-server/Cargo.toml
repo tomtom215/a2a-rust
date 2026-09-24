@@ -57,7 +57,7 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 ## terminated in front of it.
 grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls"]
 ## Enable OpenTelemetry integration for native OTLP export of traces and metrics.
-otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
+otel = ["tracing", "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
 ## A harness that grades an `AgentExecutor` against the protocol invariants
 ## that hold for any agent — terminal states, legal transitions, cooperative
 ## cancellation, parking. Intended as a dev-dependency: the TCK grades
@@ -87,6 +87,10 @@ tokio          = { workspace = true, features = ["signal"] }
 uuid           = { workspace = true }
 bytes          = "1"
 tokio-util     = { version = ">=0.7, <0.8", features = ["rt"] }
+# Pin projection for the future a call's span wraps it in (`rpc_span`), which
+# stores that future once rather than boxing it. Already in every build of
+# this crate through tokio and hyper, so no new crate.
+pin-project-lite = { version = ">=0.2.13, <0.3" }
 tracing        = { workspace = true, optional = true }
 hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features = false, features = ["ring", "http1", "http2", "webpki-tokio"] }
 rustls         = { version = ">=0.23, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
@@ -106,6 +110,11 @@ tonic-types       = { workspace = true, optional = true }
 prost             = { workspace = true, optional = true }
 tokio-stream      = { workspace = true, optional = true }
 opentelemetry     = { version = "0.32", optional = true }
+# Bridges the crate's `tracing` spans to OpenTelemetry, so the span an inbound
+# call runs in can take the caller's `traceparent` as its remote parent and
+# the id sent downstream names a span the exporter has (ADR 0013). 0.33 is the
+# release built on opentelemetry 0.32 (`opentelemetry = "^0.32"`, crates.io).
+tracing-opentelemetry = { version = ">=0.33, <0.34", optional = true, default-features = false }
 # `experimental_metrics_custom_reader` exposes `ManualReader` + the `MetricReader`
 # trait for the unit tests in `src/otel/mod.rs` that verify instrument emission
 # end-to-end. The feature only *adds* API surface — it does not change runtime

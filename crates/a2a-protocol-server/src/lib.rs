@@ -113,6 +113,8 @@ struct ReadmeDoctests;
 #[macro_use]
 mod trace;
 
+mod rpc_span;
+
 pub mod agent_card;
 pub mod auth;
 pub mod builder;
@@ -189,7 +191,7 @@ pub use handler::{
     ShutdownReport,
 };
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
-pub use metrics::{ConnectionPoolStats, Metrics};
+pub use metrics::{ConnectionPoolStats, Metrics, RpcCall};
 #[cfg(feature = "otel")]
 pub use otel::OtelMetrics;
 pub use push::{

@@ -329,7 +329,7 @@ impl opentelemetry_sdk::metrics::reader::MetricReader for SharedReader {
 
 /// Builds an `OtelMetrics` over a real SDK meter, returning the reader so the
 /// caller can collect what was recorded.
-fn recording_otel_metrics() -> (OtelMetrics, Arc<ManualReader>, SdkMeterProvider) {
+pub(super) fn recording_otel_metrics() -> (OtelMetrics, Arc<ManualReader>, SdkMeterProvider) {
     let reader = Arc::new(ManualReader::builder().build());
     let provider = SdkMeterProvider::builder()
         .with_reader(SharedReader(Arc::clone(&reader)))
@@ -342,7 +342,7 @@ fn recording_otel_metrics() -> (OtelMetrics, Arc<ManualReader>, SdkMeterProvider
 ///
 /// `None` means the instrument never appeared, which is a different failure
 /// from appearing with a zero total and is reported as such by the callers.
-fn sum_for(reader: &ManualReader, name: &str) -> Option<u64> {
+pub(super) fn sum_for(reader: &ManualReader, name: &str) -> Option<u64> {
     use opentelemetry_sdk::metrics::reader::MetricReader as _;
 
     let mut collected = ResourceMetrics::default();

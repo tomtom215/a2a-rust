@@ -101,7 +101,6 @@
 //! # }
 //! ```
 
-use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -111,7 +110,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 
-use super::{Dispatcher, pause_after_accept_error};
+use super::{Dispatcher, connections, pause_after_accept_error};
 
 mod idle;
 use idle::IdleTimeout;
@@ -214,12 +213,14 @@ impl Server {
     /// before, which is the whole point of it existing. Call
     /// [`RequestHandler::shutdown`](crate::RequestHandler::shutdown) after it
     /// to run the executor's cleanup hook.
+    #[allow(clippy::too_many_lines)]
     pub async fn serve_with_shutdown(
         self,
         dispatcher: impl Dispatcher,
         shutdown: impl Future<Output = ()> + Send,
     ) -> ServeReport {
         let Self { listener, config } = self;
+        let connections = connections::Connections::for_dispatcher(&dispatcher);
         let dispatcher = Arc::new(dispatcher);
         let graceful = hyper_util::server::graceful::GracefulShutdown::new();
         let accepted = AtomicU64::new(0);
@@ -275,6 +276,7 @@ impl Server {
                 graceful.watcher(),
                 permit,
                 &config,
+                connections.as_ref().map(connections::Connections::opened),
             );
         }
 
@@ -312,6 +314,7 @@ fn spawn_connection(
     watcher: hyper_util::server::graceful::Watcher,
     permit: tokio::sync::OwnedSemaphorePermit,
     config: &ServeConfig,
+    connection: Option<connections::Connection>,
 ) {
     // Disable Nagle so small SSE frames are not held for a delayed ACK.
     let _ = stream.set_nodelay(true);
@@ -322,10 +325,10 @@ fn spawn_connection(
     let header_read_timeout = config.header_read_timeout;
 
     tokio::spawn(async move {
-        let service = hyper::service::service_fn(move |req| {
-            let d = Arc::clone(&dispatcher);
-            async move { Ok::<_, Infallible>(d.dispatch(req).await) }
-        });
+        let service = super::service(
+            dispatcher,
+            connection.as_ref().map(connections::Connection::requests),
+        );
         // The builder is bound rather than chained: `serve_connection` borrows
         // it, and the connection future outlives the statement.
         let mut builder =
@@ -347,8 +350,12 @@ fn spawn_connection(
         // `_e` because `trace_warn!` compiles to nothing without the `tracing`
         // feature, which would make a plain `e` an unused binding there. The
         // repo's convention for a value that only a trace macro reads.
-        if let Err(_e) = watcher.watch(conn).await {
+        let result = watcher.watch(conn).await;
+        if let Err(_e) = &result {
             trace_warn!(error = %_e, "connection error");
+        }
+        if let Some(connection) = connection {
+            connection.close(result.is_err());
         }
         drop(permit);
     });

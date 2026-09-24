@@ -101,6 +101,22 @@ pub struct A2aServiceImpl {
     pub(super) config: GrpcConfig,
 }
 
+impl A2aServiceImpl {
+    /// The span one gRPC call runs in (ADR 0013).
+    fn rpc_span(
+        &self,
+        method: &str,
+        headers: &std::collections::HashMap<String, String>,
+    ) -> crate::rpc_span::ServerSpan {
+        crate::rpc_span::ServerSpan::open(
+            &self.handler,
+            crate::rpc_span::RpcSystem::Grpc,
+            method,
+            Some(headers),
+        )
+    }
+}
+
 #[tonic::async_trait]
 impl A2aService for A2aServiceImpl {
     // ── Messaging ────────────────────────────────────────────────────────
@@ -113,8 +129,8 @@ impl A2aService for A2aServiceImpl {
         let params: a2a_protocol_types::params::MessageSendParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
-            .handler
-            .on_send_message(params, false, Some(&headers))
+            .rpc_span("SendMessage", &headers)
+            .run(self.handler.on_send_message(params, false, Some(&headers)))
             .await
         {
             Ok(SendMessageResult::Response(resp)) => {
@@ -137,8 +153,8 @@ impl A2aService for A2aServiceImpl {
         let params: a2a_protocol_types::params::MessageSendParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
-            .handler
-            .on_send_message(params, true, Some(&headers))
+            .rpc_span("SendStreamingMessage", &headers)
+            .run(self.handler.on_send_message(params, true, Some(&headers)))
             .await
         {
             Ok(SendMessageResult::Stream(reader)) => Ok(Response::new(reader_to_native_stream(
@@ -164,7 +180,11 @@ impl A2aService for A2aServiceImpl {
         let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::TaskQueryParams =
             request.into_inner().try_into().map_err(bad_request)?;
-        match self.handler.on_get_task(params, Some(&headers)).await {
+        match self
+            .rpc_span("GetTask", &headers)
+            .run(self.handler.on_get_task(params, Some(&headers)))
+            .await
+        {
             Ok(task) => Ok(Response::new(task.try_into().map_err(bad_response)?)),
             Err(e) => Err(server_error_to_status(&e)),
         }
@@ -177,7 +197,11 @@ impl A2aService for A2aServiceImpl {
         let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::ListTasksParams =
             request.into_inner().try_into().map_err(bad_request)?;
-        match self.handler.on_list_tasks(params, Some(&headers)).await {
+        match self
+            .rpc_span("ListTasks", &headers)
+            .run(self.handler.on_list_tasks(params, Some(&headers)))
+            .await
+        {
             Ok(resp) => Ok(Response::new(resp.try_into().map_err(bad_response)?)),
             Err(e) => Err(server_error_to_status(&e)),
         }
@@ -190,7 +214,11 @@ impl A2aService for A2aServiceImpl {
         let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::CancelTaskParams =
             request.into_inner().try_into().map_err(bad_request)?;
-        match self.handler.on_cancel_task(params, Some(&headers)).await {
+        match self
+            .rpc_span("CancelTask", &headers)
+            .run(self.handler.on_cancel_task(params, Some(&headers)))
+            .await
+        {
             Ok(task) => Ok(Response::new(task.try_into().map_err(bad_response)?)),
             Err(e) => Err(server_error_to_status(&e)),
         }
@@ -204,7 +232,11 @@ impl A2aService for A2aServiceImpl {
     ) -> Result<Response<Self::SubscribeToTaskStream>, Status> {
         let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::TaskIdParams = request.into_inner().into();
-        match self.handler.on_resubscribe(params, Some(&headers)).await {
+        match self
+            .rpc_span("SubscribeToTask", &headers)
+            .run(self.handler.on_resubscribe(params, Some(&headers)))
+            .await
+        {
             Ok(reader) => Ok(Response::new(reader_to_native_stream(
                 reader,
                 self.config.stream_channel_capacity,
@@ -223,8 +255,8 @@ impl A2aService for A2aServiceImpl {
         let config: a2a_protocol_types::push::TaskPushNotificationConfig =
             request.into_inner().into();
         match self
-            .handler
-            .on_set_push_config(config, Some(&headers))
+            .rpc_span("CreateTaskPushNotificationConfig", &headers)
+            .run(self.handler.on_set_push_config(config, Some(&headers)))
             .await
         {
             Ok(cfg) => Ok(Response::new(cfg.into())),
@@ -239,8 +271,8 @@ impl A2aService for A2aServiceImpl {
         let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::GetPushConfigParams = request.into_inner().into();
         match self
-            .handler
-            .on_get_push_config(params, Some(&headers))
+            .rpc_span("GetTaskPushNotificationConfig", &headers)
+            .run(self.handler.on_get_push_config(params, Some(&headers)))
             .await
         {
             Ok(cfg) => Ok(Response::new(cfg.into())),
@@ -256,8 +288,12 @@ impl A2aService for A2aServiceImpl {
         let params: a2a_protocol_types::params::ListPushConfigsParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
-            .handler
-            .on_list_push_configs(&params.task_id, params.tenant.as_deref(), Some(&headers))
+            .rpc_span("ListTaskPushNotificationConfigs", &headers)
+            .run(self.handler.on_list_push_configs(
+                &params.task_id,
+                params.tenant.as_deref(),
+                Some(&headers),
+            ))
             .await
         {
             Ok(configs) => Ok(Response::new(
@@ -278,8 +314,8 @@ impl A2aService for A2aServiceImpl {
         let params: a2a_protocol_types::params::DeletePushConfigParams =
             request.into_inner().into();
         match self
-            .handler
-            .on_delete_push_config(params, Some(&headers))
+            .rpc_span("DeleteTaskPushNotificationConfig", &headers)
+            .run(self.handler.on_delete_push_config(params, Some(&headers)))
             .await
         {
             Ok(()) => Ok(Response::new(())),
@@ -295,8 +331,8 @@ impl A2aService for A2aServiceImpl {
     ) -> Result<Response<apb::AgentCard>, Status> {
         let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         match self
-            .handler
-            .on_get_extended_agent_card(Some(&headers))
+            .rpc_span("GetExtendedAgentCard", &headers)
+            .run(self.handler.on_get_extended_agent_card(Some(&headers)))
             .await
         {
             Ok(card) => Ok(Response::new(card.try_into().map_err(bad_response)?)),

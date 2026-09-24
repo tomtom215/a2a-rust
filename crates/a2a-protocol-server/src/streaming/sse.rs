@@ -308,7 +308,7 @@ pub fn build_sse_response(
 
     let body_writer = SseBodyWriter { tx };
 
-    tokio::spawn(async move {
+    tokio::spawn(crate::rpc_span::in_child_span("a2a.sse", async move {
         // Yield once before entering the read loop to ensure this task is
         // properly scheduled on the tokio executor. On multi-thread runtimes,
         // `tokio::spawn` may place this task on a different worker thread than
@@ -415,7 +415,7 @@ pub fn build_sse_response(
         }
 
         drop(body_writer);
-    });
+    }));
 
     let body = ChannelBody { rx };
 

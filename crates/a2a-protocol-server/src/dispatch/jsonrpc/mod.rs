@@ -19,10 +19,8 @@ use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming;
 
-use a2a_protocol_types::jsonrpc::{
-    JsonRpcError, JsonRpcErrorResponse, JsonRpcId, JsonRpcRequest, JsonRpcSuccessResponse,
-    JsonRpcVersion,
-};
+use a2a_protocol_types::error::ErrorCode;
+use a2a_protocol_types::jsonrpc::{JsonRpcError, JsonRpcErrorResponse, JsonRpcId, JsonRpcRequest};
 
 use crate::agent_card::StaticAgentCardHandler;
 use crate::dispatch::cors::CorsConfig;
@@ -135,7 +133,7 @@ impl JsonRpcDispatcher {
         // and moving that much state around on the stack per request costs
         // more than one allocation. It crossed the `large_futures` threshold
         // when `InMemoryQueueReader` gained its reattach hook (STREAM-SUB-002).
-        let mut resp = Box::pin(self.dispatch_inner(req)).await;
+        let mut resp = Box::pin(self.dispatch_inner(req, std::time::Instant::now())).await;
         if let Some(hval) = self
             .handler
             .activated_extensions_header_value(requested_extensions.as_deref())
@@ -155,6 +153,7 @@ impl JsonRpcDispatcher {
     async fn dispatch_inner(
         &self,
         req: hyper::Request<Incoming>,
+        started: std::time::Instant,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         // Validate Content-Type if present.
         if let Some(ct) = req.headers().get("content-type") {
@@ -169,8 +168,8 @@ impl JsonRpcDispatcher {
                 // readable `CONTENT_TYPE_NOT_SUPPORTED` reason. Routing it
                 // through `error_response` also attaches the §10.6 ErrorInfo
                 // detail like every other A2A error.
-                return error_response(
-                    None,
+                return self.refuse(
+                    started,
                     &ServerError::Protocol(
                         a2a_protocol_types::error::A2aError::content_type_not_supported(format!(
                             "unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"
@@ -190,7 +189,7 @@ impl JsonRpcDispatcher {
         if let Err(err) =
             super::validate_version_header(version_value, self.config.require_version_header)
         {
-            return error_response(None, &ServerError::Protocol(err));
+            return self.refuse(started, &ServerError::Protocol(err));
         }
 
         // Extract HTTP headers BEFORE consuming the body.
@@ -205,13 +204,13 @@ impl JsonRpcDispatcher {
         .await
         {
             Ok(bytes) => bytes,
-            Err(msg) => return parse_error_response(None, &msg),
+            Err(msg) => return self.refuse_unparsed(started, &msg),
         };
 
         // JSON-RPC 2.0 §6.3: detect batch (array) vs single (object) request.
         let raw: serde_json::Value = match serde_json::from_slice(&body_bytes) {
             Ok(v) => v,
-            Err(e) => return parse_error_response(None, &e.to_string()),
+            Err(e) => return self.refuse_unparsed(started, &e.to_string()),
         };
 
         if raw.is_array() {
@@ -220,12 +219,12 @@ impl JsonRpcDispatcher {
                 unreachable!()
             };
             if items.is_empty() {
-                return parse_error_response(None, "empty batch request");
+                return self.refuse_unparsed(started, "empty batch request");
             }
             // FIX(M8): Reject oversized batches to prevent resource exhaustion.
             if items.len() > self.config.max_batch_size {
-                return parse_error_response(
-                    None,
+                return self.refuse_unparsed(
+                    started,
                     &format!(
                         "batch too large: {} requests exceeds {} limit",
                         items.len(),
@@ -239,6 +238,7 @@ impl JsonRpcDispatcher {
                     Ok(r) => r,
                     Err(e) => {
                         // Invalid request within batch — return individual parse error.
+                        self.record_unrouted(started, ErrorCode::ParseError);
                         let err_resp = JsonRpcErrorResponse::new(
                             None,
                             JsonRpcError::new(
@@ -263,10 +263,54 @@ impl JsonRpcDispatcher {
             // Single request.
             let rpc_req: JsonRpcRequest = match serde_json::from_value(raw) {
                 Ok(r) => r,
-                Err(e) => return parse_error_response(None, &e.to_string()),
+                Err(e) => return self.refuse_unparsed(started, &e.to_string()),
             };
             self.dispatch_single_request_http(&rpc_req, &headers).await
         }
+    }
+
+    /// Answers a request refused before it named a method, and records it
+    /// as a failed call (audit O11).
+    fn refuse(
+        &self,
+        started: std::time::Instant,
+        err: &ServerError,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        self.record_unrouted(started, err.to_a2a_error().code);
+        error_response(None, err)
+    }
+
+    /// [`refuse`](Self::refuse) for a body that is not a JSON-RPC request.
+    fn refuse_unparsed(
+        &self,
+        started: std::time::Instant,
+        message: &str,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        self.record_unrouted(started, ErrorCode::ParseError);
+        parse_error_response(None, message)
+    }
+
+    fn record_unrouted(&self, started: std::time::Instant, code: ErrorCode) {
+        crate::rpc_span::record_unrouted(
+            &self.handler,
+            crate::rpc_span::RpcSystem::JsonRpc,
+            started,
+            &code.as_i32().to_string(),
+        );
+    }
+
+    /// The span one JSON-RPC call runs in (ADR 0013).
+    fn rpc_span(
+        &self,
+        rpc_req: &JsonRpcRequest,
+        headers: &HashMap<String, String>,
+    ) -> crate::rpc_span::ServerSpan {
+        crate::rpc_span::ServerSpan::open(
+            &self.handler,
+            crate::rpc_span::RpcSystem::JsonRpc,
+            &rpc_req.method,
+            Some(headers),
+        )
     }
 
     /// Dispatches a single JSON-RPC request and returns an HTTP response.
@@ -284,217 +328,145 @@ impl JsonRpcDispatcher {
         // Streaming methods return SSE, not JSON.
         match rpc_req.method.as_str() {
             "SendStreamingMessage" => {
-                return self.dispatch_send_message(id, rpc_req, true, headers).await;
+                let call = async {
+                    let params =
+                        parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req)?;
+                    self.handler
+                        .on_send_message(params, true, Some(headers))
+                        .await
+                };
+                self.rpc_span(rpc_req, headers)
+                    .run_with(call, |out| match out {
+                        Ok(SendMessageResult::Response(resp)) => success_response(id, &resp),
+                        Ok(SendMessageResult::Stream(reader)) => build_sse_response(
+                            reader,
+                            Some(self.config.sse_keep_alive_interval),
+                            Some(self.config.sse_channel_capacity),
+                            // JSON-RPC envelope echoing the request id per Section 9.4.2.
+                            Some(id),
+                        ),
+                        Err(e) => error_response(id, &e),
+                    })
+                    .await
             }
             "SubscribeToTask" => {
-                return match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_resubscribe(p, Some(headers)).await {
+                let call = async {
+                    let params = parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req)?;
+                    self.handler.on_resubscribe(params, Some(headers)).await
+                };
+                self.rpc_span(rpc_req, headers)
+                    .run_with(call, |out| match out {
                         Ok(reader) => build_sse_response(
                             reader,
                             Some(self.config.sse_keep_alive_interval),
                             Some(self.config.sse_channel_capacity),
                             // JSON-RPC envelope echoing the request id
                             // per Section 9.4.2.
-                            Some(id.clone()),
+                            Some(id),
                         ),
                         Err(e) => error_response(id, &e),
-                    },
-                    Err(e) => error_response(id, &e),
-                };
+                    })
+                    .await
             }
-            _ => {}
+            _ => json_response(200, self.dispatch_single_request(rpc_req, headers).await),
         }
-
-        let body = self.dispatch_single_request(rpc_req, headers).await;
-        json_response(200, body)
     }
 
     /// Dispatches a single JSON-RPC request and returns the response body bytes.
     ///
-    /// Used for both single and batch requests.
-    #[allow(clippy::too_many_lines)]
+    /// Used for both single and batch requests. The call runs in its
+    /// `SERVER` span and is recorded with the error code it answers with.
     async fn dispatch_single_request(
         &self,
         rpc_req: &JsonRpcRequest,
         headers: &HashMap<String, String>,
     ) -> Vec<u8> {
         let id = rpc_req.id.to_response_id();
+        self.rpc_span(rpc_req, headers)
+            .run(self.call(id.clone(), rpc_req, headers))
+            .await
+            .unwrap_or_else(|e| error_response_bytes(id, &e))
+    }
 
+    /// One non-streaming call: the success body, or the error to answer with.
+    #[allow(clippy::too_many_lines)]
+    async fn call(
+        &self,
+        id: JsonRpcId,
+        rpc_req: &JsonRpcRequest,
+        headers: &HashMap<String, String>,
+    ) -> Result<Vec<u8>, ServerError> {
+        let headers = Some(headers);
         match rpc_req.method.as_str() {
             "SendMessage" => {
-                match self
-                    .dispatch_send_message_inner(id.clone(), rpc_req, false, headers)
-                    .await
-                {
-                    Ok(resp) => serde_json::to_vec(&resp).unwrap_or_default(),
-                    Err(body) => body,
+                let params =
+                    parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req)?;
+                match self.handler.on_send_message(params, false, headers).await? {
+                    SendMessageResult::Response(resp) => Ok(success_response_bytes(id, &resp)),
+                    // Shouldn't happen in non-streaming mode.
+                    SendMessageResult::Stream(_) => {
+                        Err(ServerError::Internal("unexpected stream response".into()))
+                    }
                 }
             }
-            "SendStreamingMessage" => {
-                // In batch context, streaming is not supported — return error.
-                let err = ServerError::InvalidParams(
-                    "SendStreamingMessage not supported in batch requests".into(),
-                );
-                let a2a_err = err.to_a2a_error();
-                let resp = JsonRpcErrorResponse::new(
-                    id,
-                    JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message),
-                );
-                serde_json::to_vec(&resp).unwrap_or_default()
-            }
+            // In batch context, streaming is not supported.
+            "SendStreamingMessage" => Err(ServerError::InvalidParams(
+                "SendStreamingMessage not supported in batch requests".into(),
+            )),
+            "SubscribeToTask" => Err(ServerError::InvalidParams(
+                "SubscribeToTask not supported in batch requests".into(),
+            )),
             "GetTask" => {
-                match parse_params::<a2a_protocol_types::params::TaskQueryParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_get_task(p, Some(headers)).await {
-                        Ok(r) => success_response_bytes(id, &r),
-                        Err(e) => error_response_bytes(id, &e),
-                    },
-                    Err(e) => error_response_bytes(id, &e),
-                }
+                let params = parse_params::<a2a_protocol_types::params::TaskQueryParams>(rpc_req)?;
+                let task = self.handler.on_get_task(params, headers).await?;
+                Ok(success_response_bytes(id, &task))
             }
             "ListTasks" => {
-                match parse_params::<a2a_protocol_types::params::ListTasksParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_list_tasks(p, Some(headers)).await {
-                        Ok(r) => success_response_bytes(id, &r),
-                        Err(e) => error_response_bytes(id, &e),
-                    },
-                    Err(e) => error_response_bytes(id, &e),
-                }
+                let params = parse_params::<a2a_protocol_types::params::ListTasksParams>(rpc_req)?;
+                let tasks = self.handler.on_list_tasks(params, headers).await?;
+                Ok(success_response_bytes(id, &tasks))
             }
             "CancelTask" => {
-                match parse_params::<a2a_protocol_types::params::CancelTaskParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_cancel_task(p, Some(headers)).await {
-                        Ok(r) => success_response_bytes(id, &r),
-                        Err(e) => error_response_bytes(id, &e),
-                    },
-                    Err(e) => error_response_bytes(id, &e),
-                }
-            }
-            "SubscribeToTask" => {
-                let err = ServerError::InvalidParams(
-                    "SubscribeToTask not supported in batch requests".into(),
-                );
-                error_response_bytes(id, &err)
+                let params = parse_params::<a2a_protocol_types::params::CancelTaskParams>(rpc_req)?;
+                let task = self.handler.on_cancel_task(params, headers).await?;
+                Ok(success_response_bytes(id, &task))
             }
             "CreateTaskPushNotificationConfig" => {
-                match parse_params::<a2a_protocol_types::push::TaskPushNotificationConfig>(rpc_req)
-                {
-                    Ok(p) => match self.handler.on_set_push_config(p, Some(headers)).await {
-                        Ok(r) => success_response_bytes(id, &r),
-                        Err(e) => error_response_bytes(id, &e),
-                    },
-                    Err(e) => error_response_bytes(id, &e),
-                }
+                let params =
+                    parse_params::<a2a_protocol_types::push::TaskPushNotificationConfig>(rpc_req)?;
+                let config = self.handler.on_set_push_config(params, headers).await?;
+                Ok(success_response_bytes(id, &config))
             }
             "GetTaskPushNotificationConfig" => {
-                match parse_params::<a2a_protocol_types::params::GetPushConfigParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_get_push_config(p, Some(headers)).await {
-                        Ok(r) => success_response_bytes(id, &r),
-                        Err(e) => error_response_bytes(id, &e),
-                    },
-                    Err(e) => error_response_bytes(id, &e),
-                }
+                let params =
+                    parse_params::<a2a_protocol_types::params::GetPushConfigParams>(rpc_req)?;
+                let config = self.handler.on_get_push_config(params, headers).await?;
+                Ok(success_response_bytes(id, &config))
             }
             "ListTaskPushNotificationConfigs" => {
-                match parse_params::<a2a_protocol_types::params::ListPushConfigsParams>(rpc_req) {
-                    Ok(p) => match self
-                        .handler
-                        .on_list_push_configs(&p.task_id, p.tenant.as_deref(), Some(headers))
-                        .await
-                    {
-                        Ok(configs) => {
-                            let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
-                                configs,
-                                next_page_token: None,
-                            };
-                            success_response_bytes(id, &resp)
-                        }
-                        Err(e) => error_response_bytes(id, &e),
-                    },
-                    Err(e) => error_response_bytes(id, &e),
-                }
+                let params =
+                    parse_params::<a2a_protocol_types::params::ListPushConfigsParams>(rpc_req)?;
+                let configs = self
+                    .handler
+                    .on_list_push_configs(&params.task_id, params.tenant.as_deref(), headers)
+                    .await?;
+                let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
+                    configs,
+                    next_page_token: None,
+                };
+                Ok(success_response_bytes(id, &resp))
             }
             "DeleteTaskPushNotificationConfig" => {
-                match parse_params::<a2a_protocol_types::params::DeletePushConfigParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_delete_push_config(p, Some(headers)).await {
-                        Ok(()) => success_response_bytes(id, &serde_json::json!({})),
-                        Err(e) => error_response_bytes(id, &e),
-                    },
-                    Err(e) => error_response_bytes(id, &e),
-                }
+                let params =
+                    parse_params::<a2a_protocol_types::params::DeletePushConfigParams>(rpc_req)?;
+                self.handler.on_delete_push_config(params, headers).await?;
+                Ok(success_response_bytes(id, &serde_json::json!({})))
             }
             "GetExtendedAgentCard" => {
-                match self.handler.on_get_extended_agent_card(Some(headers)).await {
-                    Ok(r) => success_response_bytes(id, &r),
-                    Err(e) => error_response_bytes(id, &e),
-                }
+                let card = self.handler.on_get_extended_agent_card(headers).await?;
+                Ok(success_response_bytes(id, &card))
             }
-            other => {
-                let err = ServerError::MethodNotFound(other.to_owned());
-                error_response_bytes(id, &err)
-            }
-        }
-    }
-
-    /// Helper for dispatching `SendMessage` that returns either a success response
-    /// value (for batch) or the body bytes on error.
-    async fn dispatch_send_message_inner(
-        &self,
-        id: JsonRpcId,
-        rpc_req: &JsonRpcRequest,
-        streaming: bool,
-        headers: &HashMap<String, String>,
-    ) -> Result<JsonRpcSuccessResponse<serde_json::Value>, Vec<u8>> {
-        let params = match parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req) {
-            Ok(p) => p,
-            Err(e) => return Err(error_response_bytes(id, &e)),
-        };
-        match self
-            .handler
-            .on_send_message(params, streaming, Some(headers))
-            .await
-        {
-            Ok(SendMessageResult::Response(resp)) => {
-                let result = serde_json::to_value(&resp).unwrap_or(serde_json::Value::Null);
-                Ok(JsonRpcSuccessResponse {
-                    jsonrpc: JsonRpcVersion,
-                    id,
-                    result,
-                })
-            }
-            Ok(SendMessageResult::Stream(_)) => {
-                // Shouldn't happen in non-streaming mode.
-                let err = ServerError::Internal("unexpected stream response".into());
-                Err(error_response_bytes(id, &err))
-            }
-            Err(e) => Err(error_response_bytes(id, &e)),
-        }
-    }
-
-    async fn dispatch_send_message(
-        &self,
-        id: JsonRpcId,
-        rpc_req: &JsonRpcRequest,
-        streaming: bool,
-        headers: &HashMap<String, String>,
-    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = match parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req) {
-            Ok(p) => p,
-            Err(e) => return error_response(id, &e),
-        };
-        match self
-            .handler
-            .on_send_message(params, streaming, Some(headers))
-            .await
-        {
-            Ok(SendMessageResult::Response(resp)) => success_response(id, &resp),
-            Ok(SendMessageResult::Stream(reader)) => build_sse_response(
-                reader,
-                Some(self.config.sse_keep_alive_interval),
-                Some(self.config.sse_channel_capacity),
-                // JSON-RPC envelope echoing the request id per Section 9.4.2.
-                Some(id.clone()),
-            ),
-            Err(e) => error_response(id, &e),
+            other => Err(ServerError::MethodNotFound(other.to_owned())),
         }
     }
 }

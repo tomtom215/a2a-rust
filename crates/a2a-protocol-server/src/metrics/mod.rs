@@ -91,9 +91,10 @@ pub trait Metrics: Send + Sync + 'static {
     /// complete, while a later `GetTask` returns a task without it.
     ///
     /// Until this callback existed, the only report of that was a
-    /// `tracing::error!` — and `tracing` is not a default feature of this
-    /// crate, so a default build lost the record silently. A metrics callback
-    /// is always compiled, so the signal cannot be feature-gated away.
+    /// `tracing::error!` — and `tracing` was not then a default feature of
+    /// this crate, so a default build lost the record silently. A metrics
+    /// callback is always compiled, so the signal cannot be feature-gated
+    /// away.
     ///
     /// Treat any non-zero rate here as data loss in progress. The usual causes
     /// are a full disk, an unreachable database, or a store rejecting writes
@@ -118,6 +119,45 @@ pub trait Metrics: Send + Sync + 'static {
     /// previous report was a `tracing` macro that a default build compiles
     /// away.
     fn on_push_delivery(&self, _outcome: &str) {}
+
+    /// Called once per inbound A2A call, on every binding, when it finishes —
+    /// with what the OpenTelemetry semantic conventions'
+    /// `rpc.server.call.duration` records. See [`RpcCall`].
+    ///
+    /// Unlike [`on_request`](Metrics::on_request) and its siblings, this sees
+    /// a call the handler never reached: a body that is not JSON-RPC, an
+    /// unknown method, a call the peer abandoned. Those are the failures a
+    /// dashboard built on the handler's callbacks alone could not show.
+    fn on_rpc_call(&self, _call: &RpcCall<'_>) {}
+}
+
+/// One finished inbound call, as [`Metrics::on_rpc_call`] reports it.
+///
+/// Every field is a **bounded, low-cardinality** value, safe as a metric
+/// attribute: nothing here is a task id, a message, or a string the peer
+/// chose.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct RpcCall<'a> {
+    /// The binding, as `rpc.system.name`: `jsonrpc` (JSON-RPC over HTTP or
+    /// WebSocket), `a2a_http_json`, or `grpc`.
+    pub system: &'a str,
+    /// The method, as `rpc.method`: fully qualified
+    /// (`lf.a2a.v1.A2AService/SendMessage`) or `_OTHER` for one the server
+    /// does not serve. `None` when the request was refused before it named
+    /// one — a body that is not JSON-RPC, a batch over the limit.
+    pub method: Option<&'a str>,
+    /// From receipt to the response, or to the stream being established for
+    /// a streaming method — not to the stream's end.
+    pub duration: Duration,
+    /// The status the binding answered with, as `rpc.status_code`: the
+    /// JSON-RPC error code (`-32001`), the HTTP status (`404`), or the gRPC
+    /// status name (`NOT_FOUND`, and `OK` on success). `None` on success for
+    /// the bindings that send no status code for one.
+    pub status_code: Option<&'a str>,
+    /// Set if and only if the call failed, as `error.type`: the failing
+    /// `status_code`, or `cancelled` for a call dropped before it finished.
+    pub error_type: Option<&'a str>,
 }
 
 /// Operation labels passed to [`Metrics::on_persistence_error`].
@@ -354,139 +394,11 @@ impl<T: Metrics + ?Sized> Metrics for Arc<T> {
     fn on_push_delivery(&self, outcome: &str) {
         (**self).on_push_delivery(outcome);
     }
+
+    fn on_rpc_call(&self, call: &RpcCall<'_>) {
+        (**self).on_rpc_call(call);
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    /// A test metrics implementation that records which methods were called.
-    struct RecordingMetrics {
-        requests: AtomicU64,
-        responses: AtomicU64,
-        errors: AtomicU64,
-        latencies: AtomicU64,
-        queue_depths: AtomicU64,
-        pool_stats: AtomicU64,
-    }
-
-    impl RecordingMetrics {
-        fn new() -> Self {
-            Self {
-                requests: AtomicU64::new(0),
-                responses: AtomicU64::new(0),
-                errors: AtomicU64::new(0),
-                latencies: AtomicU64::new(0),
-                queue_depths: AtomicU64::new(0),
-                pool_stats: AtomicU64::new(0),
-            }
-        }
-    }
-
-    impl Metrics for RecordingMetrics {
-        fn on_request(&self, _method: &str) {
-            self.requests.fetch_add(1, Ordering::Relaxed);
-        }
-        fn on_response(&self, _method: &str) {
-            self.responses.fetch_add(1, Ordering::Relaxed);
-        }
-        fn on_error(&self, _method: &str, _error: &str) {
-            self.errors.fetch_add(1, Ordering::Relaxed);
-        }
-        fn on_latency(&self, _method: &str, _duration: Duration) {
-            self.latencies.fetch_add(1, Ordering::Relaxed);
-        }
-        fn on_queue_depth_change(&self, _active_queues: usize) {
-            self.queue_depths.fetch_add(1, Ordering::Relaxed);
-        }
-        fn on_connection_pool_stats(&self, _stats: &ConnectionPoolStats) {
-            self.pool_stats.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    #[test]
-    fn arc_delegates_on_request() {
-        let inner = Arc::new(RecordingMetrics::new());
-        let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
-        arc_metrics.on_request("test");
-        assert_eq!(inner.requests.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn arc_delegates_on_response() {
-        let inner = Arc::new(RecordingMetrics::new());
-        let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
-        arc_metrics.on_response("test");
-        assert_eq!(inner.responses.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn arc_delegates_on_error() {
-        let inner = Arc::new(RecordingMetrics::new());
-        let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
-        arc_metrics.on_error("test", "err");
-        assert_eq!(inner.errors.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn arc_delegates_on_latency() {
-        let inner = Arc::new(RecordingMetrics::new());
-        let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
-        arc_metrics.on_latency("test", Duration::from_millis(10));
-        assert_eq!(inner.latencies.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn arc_delegates_on_queue_depth_change() {
-        let inner = Arc::new(RecordingMetrics::new());
-        let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
-        arc_metrics.on_queue_depth_change(5);
-        assert_eq!(inner.queue_depths.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn arc_delegates_on_connection_pool_stats() {
-        let inner = Arc::new(RecordingMetrics::new());
-        let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
-        arc_metrics.on_connection_pool_stats(&ConnectionPoolStats::default());
-        assert_eq!(inner.pool_stats.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn arc_delegates_on_persistence_error_and_on_push_delivery() {
-        #[derive(Default)]
-        struct Seen {
-            persistence: std::sync::Mutex<Vec<(String, String)>>,
-            push: std::sync::Mutex<Vec<String>>,
-        }
-        impl Metrics for Seen {
-            fn on_persistence_error(&self, operation: &str, error_kind: &str) {
-                self.persistence
-                    .lock()
-                    .unwrap()
-                    .push((operation.to_owned(), error_kind.to_owned()));
-            }
-            fn on_push_delivery(&self, outcome: &str) {
-                self.push.lock().unwrap().push(outcome.to_owned());
-            }
-        }
-        let seen = Arc::new(Seen::default());
-        let via_arc: Arc<dyn Metrics> = Arc::clone(&seen) as Arc<dyn Metrics>;
-        // Called on the `Arc<dyn Metrics>` itself, which is what a handler holds.
-        Metrics::on_persistence_error(&via_arc, persistence_operation::QUEUE_HANDOFF, "closed");
-        Metrics::on_push_delivery(&via_arc, push_outcome::SKIPPED);
-        assert_eq!(
-            *seen.persistence.lock().unwrap(),
-            vec![(
-                persistence_operation::QUEUE_HANDOFF.to_owned(),
-                "closed".to_owned()
-            )],
-            "an Arc must forward persistence errors, not default them to nothing"
-        );
-        assert_eq!(
-            *seen.push.lock().unwrap(),
-            vec![push_outcome::SKIPPED.to_owned()]
-        );
-    }
-}
+mod tests;

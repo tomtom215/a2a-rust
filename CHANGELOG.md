@@ -230,6 +230,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/swarm-scale-findings.md` has the per-stage attribution showing what
   still dominates.
 
+- **Spans for every inbound call, on every binding** (ADR 0013; audit O1, O2,
+  O4). With the `tracing` feature — on by default — each call runs in one
+  `SERVER` span named `lf.a2a.v1.A2AService/{Method}`, with the semantic
+  conventions' `rpc.system.name`, `rpc.method`, and on failure
+  `rpc.status_code` and `error.type`; HTTP+JSON spans add `http.request.method`
+  and `http.route`. The executor, event processor, push delivery and SSE
+  writer run in child spans, the executor's carrying `a2a.task.id` and
+  `a2a.context.id`. With `otel` and a `tracing-opentelemetry` layer, an
+  inbound `traceparent` is the span's remote parent and the `traceparent` sent
+  downstream names that recorded span instead of an id nothing records.
+  `InboundTracePolicy::Drop` records no span for the call or anything it
+  spawns. Gate: `crates/a2a-protocol-sdk/tests/observability_e2e/`, which
+  failed on `main`.
+- **`rpc.server.call.duration`** in `OtelMetrics`, and **`Metrics::on_rpc_call`**
+  with **`RpcCall`** for any other exporter: every call's duration with the
+  conventions' buckets (`otel::RPC_DURATION_BUCKETS`), method, and the status
+  its binding answered with — including calls the handler never sees (a body
+  that is not JSON-RPC, an unknown method, an HTTP+JSON request refused on its
+  parameters) and calls whose peer went away (`error.type` `cancelled`)
+  (audit O5, O11). Additive: the callback defaults to a no-op.
+- **Connection statistics are reported.** `serve`, `serve_with_addr` and
+  `Server::serve_with_shutdown` now call `Metrics::on_connection_pool_stats`,
+  which nothing called, so the four `a2a.server.pool.*` instruments the book
+  catalogues were never emitted (audit O10). The gRPC and WebSocket
+  dispatchers' own listeners do not report them yet.
+
 ### Changed
 
 - **A client stream that ends before its final event yields
@@ -289,6 +315,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rewritten the document with every part in it, a status delta has not, so
   those rows are still the only record of appended parts.
 
+- **`a2a.server.latency` uses the semantic conventions' buckets** (5 ms to
+  10 s) and is deprecated in favour of `rpc.server.call.duration`, to be
+  removed no earlier than the next minor release. It kept the SDK's default
+  boundaries, sized for milliseconds, so every call under 5 s landed in one
+  bucket (audit O5). Dashboards that read its `le` labels see new ones.
+
 ### Fixed
 
 - **Wire: `RestDispatcher` answers an overload with `503` and an oversized
@@ -296,6 +328,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `400`. The two HTTP+JSON dispatchers had separate mappings, so the same
   overload told a client of one to retry and a client of the other not to
   (audit N20). One mapping now serves both.
+- **The pool counters count each connection once.** `OtelMetrics` added the
+  cumulative totals in each report to its counters, so every report
+  re-counted every earlier connection (audit O10).
 - **The WebSocket dispatcher's documentation** said it routes the v0.3
   `method/verb` aliases; it routes only `message/stream` of them and refuses
   the rest with `MethodNotFound`, as its own test asserts (audit N19).

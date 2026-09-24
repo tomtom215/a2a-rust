@@ -112,7 +112,6 @@ crates/a2a-protocol-server/src/auth/jwt.rs
 crates/a2a-protocol-server/src/builder.rs
 crates/a2a-protocol-server/src/dispatch/axum_adapter.rs
 crates/a2a-protocol-server/src/dispatch/grpc/native.rs
-crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs
 crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs
 crates/a2a-protocol-server/src/dispatch/rest/mod.rs
 crates/a2a-protocol-server/src/dispatch/rest/query.rs

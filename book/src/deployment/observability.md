@@ -137,6 +137,7 @@ treat them as the contract.
 
 | Metric | Type | Unit | Meaning |
 |---|---|---|---|
+| `rpc.server.call.duration` | histogram | s | Every inbound call, on every binding, by method and outcome |
 | `a2a.server.requests` | counter | request | Inbound A2A requests |
 | `a2a.server.responses` | counter | response | Outbound A2A responses |
 | `a2a.server.errors` | counter | error | Request errors |
@@ -148,6 +149,34 @@ treat them as the contract.
 | `a2a.server.pool.idle` | gauge | connection | Idle HTTP connections |
 | `a2a.server.pool.created` | counter | connection | Connections created since start |
 | `a2a.server.pool.closed` | counter | connection | Connections closed on error or timeout |
+
+`rpc.server.call.duration` is the OpenTelemetry semantic conventions'
+instrument, with their advisory buckets (5 ms to 10 s) and attributes:
+`rpc.system.name` (`jsonrpc` — over HTTP or WebSocket — `a2a_http_json`, or
+`grpc`); `rpc.method`, the fully qualified method
+(`lf.a2a.v1.A2AService/SendMessage`) or `_OTHER` for one the server does not
+serve; `rpc.status_code`; and, only when the call failed, `error.type`. Both
+are the status the binding answered with — the JSON-RPC error code (`-32001`),
+the HTTP status (`404`), or the gRPC status name (`NOT_FOUND`; gRPC also
+reports `OK`) — or `cancelled` for a call whose peer went away first. It
+records calls the handler never sees: on JSON-RPC, a body that is not a
+request (no `rpc.method`), an unknown method, a batch over the limit; on
+HTTP+JSON, a request refused on its body or parameters, under the route's
+method. For a streaming method it times the call up to the stream being
+established, not the stream.
+The same values reach a custom `Metrics` as `on_rpc_call`.
+
+`a2a.server.latency` is deprecated in its favour and stays until at least the
+next minor release, per `STABILITY.md` §3. It now uses the same buckets; it
+used the SDK's defaults, sized for milliseconds, which put every call under
+5 s in one bucket.
+
+The `pool` instruments are reported by the servers this crate runs — `serve`,
+`serve_with_addr` and `Server::serve_with_shutdown`. A connection is *active*
+while a request on it is in flight, including a response still streaming,
+and *idle* while it is open with none; `closed` counts connections that ended
+in an error or timeout. The gRPC and WebSocket dispatchers' own listeners,
+and a router you serve yourself, do not report them.
 
 `requests` and `responses` are separate on purpose. They are not redundant: the
 gap between them is requests that produced no response — a panicked executor, a
@@ -164,6 +193,7 @@ measured rather than derived — rendered through `opentelemetry-prometheus`
 
 | Instrument | Prometheus name |
 |---|---|
+| `rpc.server.call.duration` | `rpc_server_call_duration_seconds` |
 | `a2a.server.requests` | `a2a_server_requests_total` |
 | `a2a.server.responses` | `a2a_server_responses_total` |
 | `a2a.server.errors` | `a2a_server_errors_total` |
@@ -176,7 +206,7 @@ measured rather than derived — rendered through `opentelemetry-prometheus`
 | `a2a.server.pool.created` | `a2a_server_pool_created_total` |
 | `a2a.server.pool.closed` | `a2a_server_pool_closed_total` |
 
-Counters gain `_total`, the histogram gains `_seconds` from its `s` unit,
+Counters gain `_total`, the histograms gain `_seconds` from their `s` unit,
 and gauges gain nothing. Every series also carries
 `otel_scope_name="a2a.server"` — the default meter name, changeable with
 `OtelMetricsBuilder::meter_name`. Alongside them the exporter emits
@@ -193,16 +223,14 @@ and `{request}` and `request` both translate to nothing. So the deviation is
 a metadata-correctness issue, not a cause of wrong metric names here; other
 exporters may treat it differently.
 
-The deviation that *is* visible: OpenTelemetry names duration histograms
-`.duration`, so the conventional name would be
-`a2a.server.request.duration` → `a2a_server_request_duration_seconds`,
-which is what a dashboard template built for OTel will look for.
-`a2a_server_latency_seconds` will not match it.
-
-Neither is corrected in place, because the catalogue is published as a
-contract — see the line under *The catalogue* above — and changing a
-published contract is a breaking change that belongs in its own release
-with its own upgrade note. Both are recorded in `docs/handoff.md`.
+The deviation that was visible — a duration histogram not named for the
+conventions, so a dashboard template built for OpenTelemetry RPC metrics
+found nothing — is answered by adding `rpc.server.call.duration`, the name
+such a template looks for, rather than renaming `a2a.server.latency`: the
+catalogue is published as a contract (see the line under *The catalogue*
+above), so the old name is deprecated first and removed in a later release
+with its own upgrade note. The UCUM units are left as they are, for the same
+reason and because the measurement above shows they change nothing here.
 
 ## The four signals worth alerting on
 
@@ -236,17 +264,12 @@ skipped     a configuration result: push_delivery_timeout cut the schedule short
 
 Stated so a green dashboard is not mistaken for a complete one:
 
-* **No spans are exported.** The `otel` feature exports metrics and nothing
-  else: no `TracerProvider`, no span export, no durations recorded. Metrics
-  can say *this* server was slow; they cannot say a 40-second task was 38
-  seconds waiting two hops away.
-
-  Trace **context** is a separate thing and it is carried, as of 0.13 — see
-  [Trace context](#trace-context) below. That gives every hop in a
-  delegation chain the same trace id, which is what a collector needs to
-  join them. Recording the spans themselves is still yours to install.
-* **Nothing here measures the executor.** Latency is request latency; time spent
-  inside your `AgentExecutor` is yours to instrument.
+* **Spans are recorded, not exported for you.** Every call runs in a
+  `SERVER` span (see [Spans](#spans) below), but the `otel` feature's
+  `init_otlp_pipeline` installs a meter provider only: to export the spans,
+  install a `TracerProvider` and the `tracing-opentelemetry` layer yourself.
+* **The executor has a span, not a metric.** Its time is the `a2a.execute`
+  span's duration; no histogram records it.
 * **Task-store operations have no latency instrument.** `persistence_errors`
   counts failures, not slowness — a store degrading toward a timeout shows up
   in request latency first, without saying it was the store.
@@ -263,9 +286,44 @@ With `tracing` enabled and a subscriber installed:
 RUST_LOG=a2a_protocol_server=debug,a2a_protocol_client=debug cargo run
 ```
 
-Task and context identifiers are on the spans, so one request can be followed
-through **this** process. If you emit your own events from inside an executor,
-they inherit that context.
+Task and context identifiers are on the executor's span (`a2a.task.id`,
+`a2a.context.id`), so one request can be followed through **this** process.
+If you emit your own events from inside an executor, they inherit that
+context.
+
+## Spans
+
+With the `tracing` feature — on by default — every inbound call, on every
+binding, runs in one span of kind `SERVER`, named for the method as the gRPC
+service spells it: `lf.a2a.v1.A2AService/SendMessage`. It carries the
+semantic conventions' `rpc.system.name`, `rpc.method` and, when the call
+fails, `rpc.status_code` and `error.type` with the span's status set to
+error — the same values as `rpc.server.call.duration` above. A method the
+server does not serve is named for its binding (`jsonrpc`), with
+`rpc.method` `_OTHER` and the name the peer sent, cut to 128 bytes, as
+`rpc.method_original`.
+
+Work spawned for the call runs in `INTERNAL` children of that span:
+`a2a.execute` (the executor, with the task and context ids),
+`a2a.process_events`, `a2a.deliver_push` and `a2a.sse`. A span is exported
+when it closes, and `tracing` holds a span open until its children close, so
+a call's span reaches your backend once the work it spawned has finished —
+with its own end time, the call's, not theirs.
+
+Recording is not free. On a loopback round trip of about 175 µs, a
+`tracing-opentelemetry` layer over a batch processor added about 100 µs a
+call, almost all of it the bridge building the call's two spans; with no
+layer installed the spans cost too little to separate from noise on
+JSON-RPC. The measurement and its conditions are in ADR 0013.
+
+With the `otel` feature and a `tracing-opentelemetry` layer installed, a
+well-formed inbound `traceparent` is the `SERVER` span's remote parent, and
+the `traceparent` the executor sends onward names that recorded span — so a
+downstream agent's trace points at a parent your backend has. The inbound
+trace policy decides first: `Restart` makes the span a new root, and `Drop`
+records no span at all (the call's metric is still recorded). Without the
+`otel` feature the spans are ordinary `tracing` spans, and the id sent
+onward is minted for the hop, as before.
 
 **Logs alone still do not join a delegation chain.** An early revision of
 this page said they did, which was wrong: two processes produce two span
@@ -276,7 +334,7 @@ its own. What joins them is the trace id below.
 
 Since 0.13 the SDK carries [W3C Trace
 Context](https://www.w3.org/TR/trace-context/) across an A2A hop. It is
-propagation, not tracing: nothing here records a span or exports one. What it
+propagation: it works whether or not anything records spans. What it
 guarantees is that every agent in a chain sees the same trace id, so whatever
 does record spans can stitch them together — including across the Python,
 JavaScript, Go and Java agents in the interoperability kit, since

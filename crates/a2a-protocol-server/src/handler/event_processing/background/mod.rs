@@ -74,9 +74,9 @@ impl RequestHandler {
         // it as well as for the executor.
         self.in_flight
             .background()
-            .spawn(crate::store::tenant::TenantContext::scope(
-                tenant,
-                async move {
+            .spawn(crate::rpc_span::in_child_span(
+                "a2a.process_events",
+                crate::store::tenant::TenantContext::scope(tenant, async move {
                     let super::ProcessorLinks { cancel, gate } = links;
                     // Closes the gate however this task ends — including by panic —
                     // so no writer waits out its timeout on a processor that is gone.
@@ -178,7 +178,7 @@ impl RequestHandler {
                             }
                         }
                     }
-                },
+                }),
             ));
     }
 }
