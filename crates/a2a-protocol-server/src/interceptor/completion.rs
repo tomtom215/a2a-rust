@@ -29,8 +29,8 @@ use crate::error::ServerResult;
 
 impl ServerInterceptorChain {
     /// Starts one call through the chain. Nothing runs until
-    /// [`InterceptedCall::before`].
-    pub const fn begin<'a>(&'a self, ctx: &'a CallContext) -> InterceptedCall<'a> {
+    /// `InterceptedCall::before`.
+    pub(crate) const fn begin<'a>(&'a self, ctx: &'a CallContext) -> InterceptedCall<'a> {
         InterceptedCall {
             chain: self,
             ctx,
