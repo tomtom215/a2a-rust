@@ -46,7 +46,7 @@ Commit references are on `claude/peaceful-ptolemy-noka5b`.
 | `A2A_VERSION` — `"1.0.0"` | `a2a-protocol-types` README, **published 0.7.0–0.13.0** | `pub const A2A_VERSION: &str = "1.0"` in each | false | CHANGELOG correction (repo README was already right) |
 | `resubscribe()`, `get_authenticated_extended_card()`, `ClientBuilder::with_transport()` | `a2a-protocol-client` README, **published, every version** | No such methods in any published source | false | CHANGELOG correction (repo README was already right) |
 | `signing` = "Agent card signature verification" | client and server READMEs, **published, every version** | Both crates only forward `a2a-protocol-types/signing`; neither contains `signing`-gated code | false | CHANGELOG correction (repo READMEs were already right) |
-| "Complete server framework for building A2A-compliant agents" | server README, published and repo | Official TCK: 88 of 114 MUSTs pass, 4 fail, 22 unmeasured | unsupported | Rewritten |
+| "Complete server framework for building A2A-compliant agents" | server README, published and repo | Official TCK: 88 of 114 MUSTs pass across the three profiles (84 in the full profile), 4 fail, 22 unmeasured | unsupported | Rewritten |
 | "communicating with any A2A-compliant agent" | client README and `lib.rs` | v0.3-only agents are not reached (the client README says so) | unsupported | Rewritten |
 | "A complete Rust implementation" | `CITATION.cff` | as above | unsupported | Rewritten |
 | "the four `build.rs` files" use `unsafe` | `README.md`; 0.12.0 release notes | There are five | false | README fixed; notes recorded |
@@ -67,7 +67,7 @@ Commit references are on `claude/peaceful-ptolemy-noka5b`.
 
 | Claim | Evidence |
 |---|---|
-| Official TCK 88/114 MUSTs, 4 failing | `tck/conformance-baseline.json`; `official-tck.yml --min-graded 88`; re-run this session (see the handoff) |
+| Official TCK 88/114 MUSTs pass, 4 failing — the union of the three profiles; the full profile grades 88 (84 pass, 4 fail) | `tck/conformance-baseline.json`; `official-tck.yml --min-graded 88`; re-run on `main` at a2a-tck `263b9cf`, 2026-09-24 (see the handoff) |
 | Four bindings, eleven methods | `tck.yml` grades the in-repo runner on all four; `--equivalence` |
 | MSRV 1.88 | `Cargo.toml`; `ci.yml` matrix `[stable, "1.88"]` on three platforms |
 | `cargo-semver-checks` on every pull request | `ci.yml` |
