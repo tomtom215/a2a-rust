@@ -446,6 +446,22 @@ stores (`tests/cross_replica_cancel/`).
   written — possible only while an inline push config is being registered,
   the one await between that write and the spawn — the row stays as written
   with no executor]**
+- **N27 — a blocking send whose client went away left its task `working`
+  for good** (High, server behaviour; found by the drop-path audit, then
+  reproduced). A blocking `SendMessage` has no background processor: the
+  collector running in the request's future is the only thing persisting
+  the executor's events. hyper drops that future when the client goes away
+  — a client timeout on a slow model call is enough — after which the
+  executor's writes fail for want of a reader, its own failure report fails
+  the same way, and the stored task keeps the last state persisted before
+  the drop. No push notification for the rest of the task is sent either.
+  VALIDATED: `a_blocking_send_dropped_mid_work_still_records_the_outcome`
+  drops a blocking send 50 ms into a 200 ms task and fails on `main` with
+  the store at `working`. **[Fixed: the collection runs on a task of its
+  own on the handler's background tracker, holding owned clones of the
+  seven handler fields it uses (`SyncCollector`), in the call's span and
+  tenant; the request awaits it, so a dropped request stops only the
+  waiting]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.

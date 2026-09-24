@@ -392,6 +392,12 @@ someone scanning for such changes would look.
   task that did not exist. What the send took is now released when its
   future is dropped, and only what it took: a continuation dropped while it
   waits for the previous turn leaves that turn's executor cancelable.
+- **A blocking send whose client goes away still records the task's
+  outcome** (server; audit N27). The collector that persists a blocking
+  send's events ran in the request's future, so when a client timed out on a
+  slow agent the executor finished into nothing: the task stayed `working`
+  in the store, and no later push notification was sent. The collection now
+  runs on its own task, which shutdown waits for, and the request awaits it.
 
 - **The agent card's poll watcher sees a change made just after it starts**
   (audit N23). It read the file's baseline mtime inside its own task, on

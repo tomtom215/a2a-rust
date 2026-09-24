@@ -3034,3 +3034,80 @@ async fn a_send_dropped_mid_commit_releases_its_idempotency_key() {
         "the retry of a dropped keyed send did not run: {retry:?}"
     );
 }
+
+/// Works for `delay`, then completes the task.
+struct SlowCompletingExecutor {
+    delay: std::time::Duration,
+}
+
+impl crate::executor::AgentExecutor for SlowCompletingExecutor {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a crate::request_context::RequestContext,
+        queue: &'a dyn crate::streaming::EventQueueWriter,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            let status = |state| {
+                StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::with_timestamp(state),
+                    metadata: None,
+                })
+            };
+            queue.write(status(TaskState::Working)).await?;
+            tokio::time::sleep(self.delay).await;
+            queue.write(status(TaskState::Completed)).await?;
+            Ok(())
+        })
+    }
+}
+
+/// A blocking send whose client goes away while the agent works — a client
+/// timeout on a slow model call, typically — still leaves the task's
+/// outcome in the store. The request future was the only thing persisting a
+/// blocking send's events, so the executor finished into nothing and the
+/// task stayed `working` for good.
+#[tokio::test]
+async fn a_blocking_send_dropped_mid_work_still_records_the_outcome() {
+    let handler = std::sync::Arc::new(
+        RequestHandlerBuilder::new(SlowCompletingExecutor {
+            delay: std::time::Duration::from_millis(200),
+        })
+        .build()
+        .expect("build handler"),
+    );
+    let send = tokio::spawn({
+        let handler = std::sync::Arc::clone(&handler);
+        async move {
+            handler
+                .on_send_message(make_params(Some("ctx-blocking-drop")), false, None)
+                .await
+        }
+    });
+    // Let the executor start and report `working`, then drop the request.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    send.abort();
+    let _ = send.await;
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    let state = loop {
+        let listed = handler
+            .task_store
+            .list(&a2a_protocol_types::params::ListTasksParams::default())
+            .await
+            .expect("list");
+        let state = listed.tasks.first().map(|t| t.status.state);
+        if state == Some(TaskState::Completed) || tokio::time::Instant::now() >= deadline {
+            break state;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
+    assert_eq!(
+        state,
+        Some(TaskState::Completed),
+        "the agent completed the task, but the store never heard"
+    );
+}
