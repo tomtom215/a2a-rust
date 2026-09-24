@@ -113,35 +113,6 @@ pub struct TaskQueryParams {
     pub history_length: Option<u32>,
 }
 
-impl TaskQueryParams {
-    /// Parameters for fetching task `id`, with no tenant and no history limit.
-    ///
-    /// The struct is not `#[non_exhaustive]`, so a literal still compiles;
-    /// this is the form that keeps compiling when a field is added (N16).
-    #[must_use]
-    pub fn new(id: impl Into<String>) -> Self {
-        Self {
-            tenant: None,
-            id: id.into(),
-            history_length: None,
-        }
-    }
-
-    /// Asks for at most `n` of the most recent history messages.
-    #[must_use]
-    pub const fn with_history_length(mut self, n: u32) -> Self {
-        self.history_length = Some(n);
-        self
-    }
-
-    /// Scopes the request to `tenant`.
-    #[must_use]
-    pub fn with_tenant(mut self, tenant: impl Into<String>) -> Self {
-        self.tenant = Some(tenant.into());
-        self
-    }
-}
-
 // ── TaskIdParams ──────────────────────────────────────────────────────────────
 
 /// Minimal parameters identifying a single task by ID.

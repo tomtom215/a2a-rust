@@ -356,7 +356,6 @@ struct Inner {
     /// failed). New requests fail immediately instead of waiting out their
     /// full timeout against a connection that can no longer answer.
     closed: Arc<AtomicBool>,
-    endpoint: String,
     request_timeout: Duration,
     /// See [`WebSocketTransportConfig::max_pending_requests`].
     max_pending_requests: usize,
@@ -610,7 +609,6 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
             write_tx,
             pending,
             closed,
-            endpoint,
             request_timeout: config.request_timeout,
             max_pending_requests: config.max_pending_requests,
             reader_handle,
@@ -630,7 +628,7 @@ impl WebSocketTransport {
     ) -> ClientResult<serde_json::Value> {
         let inner = self.connection().await?;
         warn_dropped_per_request_headers(method, extra_headers, &inner.trace_drop_warned);
-        trace_info!(method, endpoint = %inner.endpoint, "sending WebSocket JSON-RPC request");
+        trace_info!(method, endpoint = %self.endpoint, "sending WebSocket JSON-RPC request");
 
         let rpc_req = build_rpc_request(method, params);
         let request_id = rpc_req
@@ -701,7 +699,7 @@ impl WebSocketTransport {
     ) -> ClientResult<EventStream> {
         let inner = self.connection().await?;
         warn_dropped_per_request_headers(method, extra_headers, &inner.trace_drop_warned);
-        trace_info!(method, endpoint = %inner.endpoint, "opening WebSocket stream");
+        trace_info!(method, endpoint = %self.endpoint, "opening WebSocket stream");
 
         let rpc_req = build_rpc_request(method, params);
         let request_id = rpc_req

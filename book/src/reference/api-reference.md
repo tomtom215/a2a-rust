@@ -330,6 +330,7 @@ are rustdoc's job.
 | `RequestHandler` | Central protocol orchestrator |
 | `RequestHandlerBuilder` | Fluent builder for handler configuration |
 | `RequestContext` | Per-execution context (task ID, message, etc.) |
+| `CancellationToken` | The type of `RequestContext::cancellation_token`, re-exported so an executor need not depend on `tokio-util` to name it |
 | `CallContext` | Per-request metadata (request ID, headers, tenant) |
 | `HandlerLimits` | Configurable validation limits |
 | `InboundTracePolicy` | What this handler does with a `traceparent` an as-yet unauthenticated peer sent (W3C Trace Context §7.2) |

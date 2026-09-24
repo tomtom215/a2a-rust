@@ -139,6 +139,7 @@ pub mod transport;
 pub mod testing;
 
 #[cfg(any(fuzzing, test))]
+#[doc(hidden)]
 pub mod fuzzing;
 
 // ── Flat re-exports ───────────────────────────────────────────────────────────
