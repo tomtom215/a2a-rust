@@ -438,6 +438,10 @@ someone scanning for such changes would look.
   handshake is bounded at 1 s.
 - **A gRPC stream the client cancels releases its subscription at once**
   (server; audit N31), rather than at the task's next event.
+- **The agent card's poll watcher retries a card that failed to parse**
+  (server; audit N32). It recorded the file's mtime even when the reload
+  failed, so on a filesystem with coarse timestamps a fix written in the
+  same second as a half-written file was never loaded.
 
 - **The agent card's poll watcher sees a change made just after it starts**
   (audit N23). It read the file's baseline mtime inside its own task, on

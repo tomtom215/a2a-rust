@@ -530,6 +530,29 @@ stores (`tests/cross_replica_cancel/`).
   **[Fixed: the forwarder also waits on the channel closing. On WebSocket
   the same wait is covered by N30's cancellation; the SSE writer notices at
   its next keep-alive, which is bounded]**
+- **N32 — the card poll watcher could skip a fixed card after a failed
+  parse** (Low, server behaviour; found by the drop-path audit, then
+  reproduced). The watcher recorded a file's mtime whether or not the
+  reload worked. On a filesystem with coarse timestamps (one to two
+  seconds on HFS+, FAT, some NFS), a poll that caught a half-written card
+  and a final write inside the same granule left the old card in place
+  until the next edit — N23's family, one step later. VALIDATED:
+  `a_card_that_failed_to_parse_is_retried_at_the_same_mtime` stamps both
+  writes with one mtime and fails on `main` at its 10 s deadline. **[Fixed:
+  the recorded mtime advances only on a successful reload, and a file that
+  stays broken is logged once per mtime rather than at every poll]**
+- **Examined and left, from the same audit** (CONJECTURED, not reproduced):
+  a queue write dropped between persisting and broadcasting an event — only
+  the executor timeout firing inside a terminal event's verdict wait can do
+  it — leaves live subscribers one event short; the blocking path's push
+  job reads webhook configs after the response, so a config deleted at
+  once can still receive that send's events, which were raised while it
+  was registered; the SLIMRPC binding's unicast bridge and multicast
+  fan-out outlive a dropped consumer while the agent is quiet, as N31 did;
+  `CleanupGuard`'s release is not on the shutdown tracker (unreachable
+  under the release profile's `panic = "abort"`); a WebSocket client
+  request registered in the instant after a connection drop waits its
+  timeout instead of failing at once.
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.
