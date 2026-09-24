@@ -234,3 +234,95 @@ async fn ws_transport_send_streaming_request_returns_stream() {
         "first event should be a Task snapshot per spec, got: {event:?}"
     );
 }
+
+// ── One unread stream must not stall the connection ─────────────────────────
+
+/// Emits `count` `working` updates, then completes.
+struct ChattyExecutor {
+    count: usize,
+}
+
+impl AgentExecutor for ChattyExecutor {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let status = |state| {
+                StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::new(state),
+                    metadata: None,
+                })
+            };
+            for _ in 0..self.count {
+                queue.write(status(TaskState::Working)).await?;
+            }
+            queue.write(status(TaskState::Completed)).await?;
+            Ok(())
+        })
+    }
+}
+
+/// A stream the caller has not read yet must not stop every other call on
+/// the same connection. The transport has one reader task per socket, and it
+/// awaited room in the unread stream's bounded channel before reading the
+/// next frame — so once the agent had sent more than the channel holds, a
+/// unary call's answer sat unread behind it until the call timed out.
+/// Opening a stream and then calling `GetTask` or `CancelTask` before
+/// reading it is an ordinary thing to do.
+#[tokio::test]
+async fn an_unread_stream_does_not_stall_a_unary_call_on_the_same_socket() {
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(ChattyExecutor { count: 300 })
+            .with_agent_card(minimal_agent_card())
+            .build()
+            .expect("build handler"),
+    );
+    let addr = Arc::new(WebSocketDispatcher::new(handler))
+        .serve_with_addr("127.0.0.1:0")
+        .await
+        .expect("start WS server");
+    let transport = WebSocketTransport::connect(format!("ws://{addr}"))
+        .await
+        .expect("connect");
+    let headers = HashMap::new();
+
+    let mut unread = transport
+        .send_streaming_request(
+            "SendStreamingMessage",
+            serde_json::to_value(make_send_params()).unwrap(),
+            &headers,
+        )
+        .await
+        .expect("open the stream");
+    // Let the burst arrive and fill whatever the transport buffers for it.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let answered = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        transport.send_request("ListTasks", serde_json::json!({}), &headers),
+    )
+    .await;
+    assert!(
+        matches!(answered, Ok(Ok(_))),
+        "a unary call behind an unread stream got {answered:?}"
+    );
+    // What could not be buffered for the unread stream is shed as the server
+    // sheds a lagging reader: an announced end, never a silent gap.
+    let mut lagged = false;
+    while let Ok(Some(item)) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), unread.next()).await
+    {
+        if let Err(e) = item {
+            lagged = e.is_stream_lagged();
+            break;
+        }
+    }
+    assert!(
+        lagged,
+        "the overflowed stream must end with a stream_lagged error"
+    );
+}

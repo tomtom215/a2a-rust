@@ -531,7 +531,7 @@ impl WebSocketTransport {
             let refused = loop {
                 match ws_reader.next().await {
                     Some(Ok(WsMessage::Text(text))) => {
-                        route_frame(&pending_for_reader, text.as_str()).await;
+                        route_frame(&pending_for_reader, text.as_str());
                     }
                     Some(Ok(WsMessage::Close(_))) | None => break None,
                     Some(Err(e)) => break refusal(&e),
@@ -876,7 +876,7 @@ fn connect_error(e: tokio_tungstenite::tungstenite::Error) -> ClientError {
 ///
 /// Extracts the JSON-RPC ID from the frame and looks up the corresponding
 /// pending request in the shared map.
-async fn route_frame(pending: &PendingMap, text: &str) {
+fn route_frame(pending: &PendingMap, text: &str) {
     // Try to extract the JSON-RPC ID to route the response.
     let Some(request_id) = extract_jsonrpc_id(text) else {
         // If we can't extract an ID, this might be a notification or malformed
@@ -916,14 +916,29 @@ async fn route_frame(pending: &PendingMap, text: &str) {
     }
 
     // Guard released. Wrap as an SSE data line for the existing EventStream SSE
-    // parser and deliver; a slow/stalled consumer blocks only this send now.
+    // parser and deliver — without waiting. This task is the socket's only
+    // reader, so awaiting room in one stream's channel stopped it reading
+    // every other frame: a stream the caller had not read yet held back a
+    // unary answer behind it until that call timed out (N29). A WebSocket
+    // multiplexes calls with no flow control of its own, so an unread
+    // stream's frames are either buffered or shed; the buffer is bounded, and
+    // what overflows it is shed the way the server sheds a lagging reader —
+    // the stream gets a `stream_lagged` error and ends, never a silent gap,
+    // and the caller can resubscribe. The last slot is kept for that error.
+    if streaming_tx.capacity() <= 1 {
+        let _ = streaming_tx.try_send(Err(ClientError::Protocol(
+            a2a_protocol_types::error::A2aError::stream_lagged(1),
+        )));
+        lock_pending(pending).remove(&request_id);
+        return;
+    }
     let sse_line = format!("data: {text}\n\n");
     if streaming_tx
-        .send(Ok(hyper::body::Bytes::from(sse_line)))
-        .await
+        .try_send(Ok(hyper::body::Bytes::from(sse_line)))
         .is_err()
     {
-        // Consumer dropped — remove the pending entry.
+        // Consumer dropped — remove the pending entry. (Not full: this task
+        // is the only sender, and it checked the capacity above.)
         lock_pending(pending).remove(&request_id);
         return;
     }

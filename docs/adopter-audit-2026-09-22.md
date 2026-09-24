@@ -476,6 +476,25 @@ stores (`tests/cross_replica_cancel/`).
   said so. **[Fixed: `after` runs once the send's response exists; the
   trait documentation now says what every method does. Whether `after`
   *should* also run on errors is a design question left open]**
+- **N29 — one unread WebSocket stream stalled every call on its socket**
+  (Medium, client behaviour; found by the drop-path audit, then
+  reproduced). `WebSocketTransport` has one reader task per socket, and it
+  awaited room in a stream's bounded channel (64 frames) before reading the
+  next frame. A caller that opened a stream and then made any other call
+  before reading it — `GetTask`, `CancelTask` — got no answer once the agent
+  had sent more than 64 events: the answer sat unread behind them until the
+  call timed out. The comment above the send said a stalled consumer
+  "blocks only this send". VALIDATED:
+  `an_unread_stream_does_not_stall_a_unary_call_on_the_same_socket` (300
+  events, unread) times out its `ListTasks` after 10 s on `main`.
+  **[Fixed: the reader never waits on a stream. A WebSocket multiplexes
+  calls with no flow control, so an unread stream's frames are buffered or
+  shed; the buffer stays 64, and what overflows it ends that stream with a
+  `stream_lagged` error — the server's own treatment of a lagging reader,
+  and one the caller can resubscribe from. Trade: a consumer that reads, but
+  more slowly than the agent writes, used to be backpressured without loss
+  (at the cost of every other call on the socket) and is now told it
+  lagged]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.

@@ -125,6 +125,11 @@ someone scanning for such changes would look.
   admitted** (server; audit N21). It used to be refused as "already being
   processed" whenever the executor that parked the task had not yet returned
   — see **Fixed**.
+- **A WebSocket stream the caller reads more slowly than the agent writes
+  ends with a `stream_lagged` error once 64 frames are waiting** (client;
+  audit N29). It used to be held back without loss, which stalled every
+  other call on the socket — see **Fixed**. `ClientError::is_stream_lagged`
+  identifies it; resubscribe to continue.
 - **An idle `SubscribeToTask` stream over SSE now ends at
   `subscribe_max_idle`** (server; audit N25). It used to stay open for as
   long as its client did — see **Fixed**. A client that relied on the
@@ -404,6 +409,13 @@ someone scanning for such changes would look.
   went on to complete at `submitted` in the store. It now runs once the
   response exists. `ServerInterceptor::after`'s documentation said it runs
   even when the handler fails; no method ever did that, and it now says so.
+- **An unread WebSocket stream no longer stalls other calls on the same
+  socket** (client; audit N29). The transport's single reader waited for
+  room in a stream's 64-frame buffer before reading anything else, so a
+  `GetTask` made before reading an open stream timed out once the agent had
+  sent more than 64 events. The reader no longer waits: a stream whose
+  buffer overflows ends with a `stream_lagged` error, as a lagging reader
+  does on the server.
 
 - **The agent card's poll watcher sees a change made just after it starts**
   (audit N23). It read the file's baseline mtime inside its own task, on
