@@ -273,7 +273,12 @@ stores (`tests/cross_replica_cancel/`).
   executor that stores or creates one needs its own `tokio-util` dependency
   at a compatible version. VALIDATED while converting the book: the pages
   now build both with literals, and `book-tests` depends on `tokio-util` for
-  the third. Open.
+  the third. **[Fixed on `claude/peaceful-ptolemy-noka5b`: `Task::new`,
+  `TaskQueryParams::new` with `with_history_length` and `with_tenant`, and
+  `a2a_protocol_server::CancellationToken` (so `a2a_protocol_sdk::server::`
+  too); `book-tests` dropped its `tokio-util` dependency. Neither struct was
+  made `#[non_exhaustive]`, which would break every literal now; that is a
+  choice for a breaking release]**
 - **N17 — `deny.toml` allows a licence no dependency carries** (Low,
   hygiene). `cargo deny check` on `main` passes with a warning that the
   `Unicode-DFS-2016` allowance matches no crate. An allowance with nothing

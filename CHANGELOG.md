@@ -164,6 +164,14 @@ someone scanning for such changes would look.
 
 ### Added
 
+- **`Task::new`, `TaskQueryParams::new` (with `with_history_length` and
+  `with_tenant`), and `a2a_protocol_server::CancellationToken`** (audit
+  N16). A custom store or test built a `Task`, and every `GetTask` caller a
+  `TaskQueryParams`, with a full struct literal that breaks when a field is
+  added; and an executor that stored its `RequestContext::cancellation_token`
+  needed its own `tokio-util` dependency at a matching version to name the
+  type. The re-export reaches the SDK as `a2a_protocol_sdk::server::CancellationToken`.
+
 - **`testing::ScriptedPeer`** (client feature `testing`): a loopback A2A
   peer that stalls, cuts off, mis-frames or refuses every call on purpose,
   over JSON-RPC, HTTP+JSON, WebSocket and gRPC, for testing code that calls

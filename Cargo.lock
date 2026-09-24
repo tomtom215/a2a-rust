@@ -37,7 +37,6 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
- "tokio-util",
  "tonic",
  "tracing-subscriber",
  "uuid",

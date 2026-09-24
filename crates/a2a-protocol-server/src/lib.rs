@@ -207,6 +207,11 @@ pub use store::{
     InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,
     TenantStoreConfig,
 };
+/// The type of [`RequestContext::cancellation_token`], re-exported so an
+/// executor can name it — to store it, or create one in a test — without its
+/// own `tokio-util` dependency at a version that must match this crate's
+/// (N16).
+pub use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "sqlite")]
 pub use push::{SqlitePushConfigStore, TenantAwareSqlitePushConfigStore};

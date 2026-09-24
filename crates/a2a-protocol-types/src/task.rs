@@ -435,6 +435,35 @@ pub struct Task {
 }
 
 impl Task {
+    /// A task in `status`, with no history, artifacts or metadata — what a
+    /// custom store or a test builds.
+    ///
+    /// The struct is not `#[non_exhaustive]`, so a literal still compiles;
+    /// this is the form that keeps compiling when a field is added (N16).
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
+    ///
+    /// let task = Task::new("t1", "c1", TaskStatus::new(TaskState::Working));
+    /// assert_eq!(task.id.as_ref(), "t1");
+    /// assert!(task.artifacts.is_none());
+    /// ```
+    #[must_use]
+    pub fn new(
+        id: impl Into<TaskId>,
+        context_id: impl Into<ContextId>,
+        status: TaskStatus,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            context_id: context_id.into(),
+            status,
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
     /// Returns the text of the first text [`Part`](crate::message::Part) in
     /// this task's artifacts, or `None` if it produced no text.
     ///

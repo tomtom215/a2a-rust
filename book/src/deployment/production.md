@@ -198,7 +198,7 @@ Implement `on_shutdown` in your executor for cleanup:
 # use std::future::Future;
 # use std::pin::Pin;
 # use a2a_protocol_sdk::prelude::*;
-# struct MyAgent { db_pool: sqlx::PgPool, cancel_token: tokio_util::sync::CancellationToken }
+# struct MyAgent { db_pool: sqlx::PgPool, cancel_token: a2a_protocol_sdk::server::CancellationToken }
 # impl AgentExecutor for MyAgent {
 # fn execute<'a>(&'a self, _: &'a RequestContext, _: &'a dyn EventQueueWriter)
 #     -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
