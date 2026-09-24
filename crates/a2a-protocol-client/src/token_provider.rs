@@ -796,6 +796,27 @@ mod tests {
         );
     }
 
+    // -- builds without TLS ----------------------------------------------------
+
+    /// Without `tls-rustls` an `https://` token endpoint cannot be reached, and
+    /// the provider says why before dialling rather than failing inside the
+    /// connector with a scheme error. Only a build without the feature
+    /// compiles this; with it, `check_endpoint_reachable` is `Ok(())` (so its
+    /// "replace with `Ok(())`" mutant is equivalent under `--all-features`).
+    #[cfg(not(feature = "tls-rustls"))]
+    #[test]
+    fn https_endpoints_are_refused_by_a_build_without_tls() {
+        let err = check_endpoint_reachable("HTTPS://auth.example.com/token", "token endpoint")
+            .expect_err("no TLS in this build");
+        assert!(
+            matches!(&err, ClientError::Transport(m) if m.contains("tls-rustls")),
+            "{err:?}"
+        );
+        assert!(
+            check_endpoint_reachable("http://auth.example.com/token", "token endpoint").is_ok()
+        );
+    }
+
     // -- redaction ------------------------------------------------------------
 
     #[test]
@@ -1333,6 +1354,31 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(url, "http://i/oauth/token");
+    }
+
+    /// `from_oidc_issuer` builds a provider aimed at the endpoint the issuer's
+    /// discovery document names — not at the issuer, and not at a default.
+    /// Until 2026-09-23 only `discover_token_endpoint` beneath it was tested.
+    #[tokio::test]
+    async fn from_oidc_issuer_targets_the_discovered_token_endpoint() {
+        let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let addr = spawn_token_server(
+            vec![(
+                200,
+                r#"{"issuer":"http://i","token_endpoint":"http://i/oauth/token"}"#.to_owned(),
+            )],
+            Arc::clone(&captured),
+            Arc::clone(&hits),
+        )
+        .await;
+
+        let provider =
+            OAuth2ClientCredentials::from_oidc_issuer(&format!("http://{addr}"), "cid", "csec")
+                .await
+                .expect("discovery succeeds");
+        assert_eq!(provider.token_url, "http://i/oauth/token");
+        assert_eq!(hits.load(Ordering::SeqCst), 1, "one discovery request");
     }
 
     #[tokio::test]

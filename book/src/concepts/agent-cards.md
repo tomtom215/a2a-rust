@@ -165,7 +165,8 @@ Because a card gives each binding its own URL, the endpoint follows the binding:
 An agent can expose a richer card via `GetExtendedAgentCard` for authenticated
 clients. This requires setting `capabilities.extended_agent_card = true`:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
 let capabilities = AgentCapabilities::none()
     .with_extended_agent_card(true);
 ```
@@ -180,13 +181,20 @@ If the capability is declared but no card is configured, the server returns
 
 For agent cards that don't change at runtime:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")) }
+# fn main() {
+# let my_executor = MyAgent;
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
 
 let handler = RequestHandlerBuilder::new(my_executor)
     .with_agent_card(make_agent_card())
     .build()
     .unwrap();
+# }
 ```
 
 The static handler automatically provides:
@@ -199,7 +207,11 @@ The static handler automatically provides:
 
 For agent cards that change (e.g., based on feature flags, load, or authentication):
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::{A2aResult, AgentInterface};
+# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")) }
 use a2a_protocol_sdk::server::{AgentCardProducer, DynamicAgentCardHandler};
 use a2a_protocol_sdk::types::agent_card::AgentCard;
 
@@ -221,7 +233,12 @@ The dynamic handler calls the producer on every request, computes a fresh ETag, 
 
 For agent cards loaded from a JSON file that may change at runtime:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")) }
+# #[tokio::main]
+# async fn main() {
+# let initial_card = make_agent_card();
 use a2a_protocol_sdk::server::HotReloadAgentCardHandler;
 use std::path::Path;
 use std::time::Duration;
@@ -239,6 +256,7 @@ let watcher = handler.spawn_poll_watcher(
 let signal_watcher = handler.spawn_signal_watcher(
     Path::new("/etc/a2a/agent.json"),
 );
+# }
 ```
 
 `HotReloadAgentCardHandler` implements `AgentCardProducer`, so it plugs directly into `DynamicAgentCardHandler` for full HTTP caching support. The internal `Arc<RwLock<AgentCard>>` ensures updates are atomic with low contention for concurrent readers.

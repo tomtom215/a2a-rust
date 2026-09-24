@@ -58,28 +58,11 @@ pub(super) fn validated_metadata(
 /// clients get the same machine-readable error identity as the JSON-RPC
 /// (`error.data`) and REST (`error.details`) bindings.
 pub(super) fn server_error_to_status(err: &ServerError) -> Status {
-    // Resource-limit rejections have no A2A/JSON-RPC code but map cleanly to the
-    // gRPC RESOURCE_EXHAUSTED status (the retryable overload signal), so
-    // special-case them before the code-based mapping.
     if let ServerError::Overloaded(msg) = err {
         return Status::new(tonic::Code::ResourceExhausted, msg.clone());
     }
     let a2a_err = err.to_a2a_error();
-    // Derived from §5.4's table rather than restating it. This was a second
-    // copy of the mapping, and when §5.4 moved `PushNotificationNotSupported`,
-    // `UnsupportedOperation` and `VersionNotSupported` off `UNIMPLEMENTED`,
-    // a copy is exactly what would have been left behind. `grpc_status()` is
-    // the table; this only turns its name into a `tonic::Code`.
-    let code = match a2a_err.code.grpc_status() {
-        "NOT_FOUND" => tonic::Code::NotFound,
-        "FAILED_PRECONDITION" => tonic::Code::FailedPrecondition,
-        "INVALID_ARGUMENT" => tonic::Code::InvalidArgument,
-        "UNIMPLEMENTED" => tonic::Code::Unimplemented,
-        // "INTERNAL", and any status name added to the table later: a code
-        // this function has not been taught is reported as an internal error
-        // rather than silently becoming some unrelated status.
-        _ => tonic::Code::Internal,
-    };
+    let code = grpc_code(err, a2a_err.code);
     if let Some(reason) = a2a_err.code.a2a_reason() {
         use tonic_types::StatusExt as _;
         let mut details = tonic_types::ErrorDetails::new();
@@ -91,6 +74,60 @@ pub(super) fn server_error_to_status(err: &ServerError) -> Status {
         return Status::with_error_details(code, a2a_err.message, details);
     }
     Status::new(code, a2a_err.message)
+}
+
+/// The gRPC status code this binding answers `err` with; `a2a_code` is
+/// `err.to_a2a_error().code`, passed in because the caller has it.
+fn grpc_code(err: &ServerError, a2a_code: a2a_protocol_types::error::ErrorCode) -> tonic::Code {
+    // Resource-limit rejections have no A2A/JSON-RPC code but map cleanly to the
+    // gRPC RESOURCE_EXHAUSTED status (the retryable overload signal), so
+    // special-case them before the code-based mapping.
+    if matches!(err, ServerError::Overloaded(_)) {
+        return tonic::Code::ResourceExhausted;
+    }
+    // Derived from §5.4's table rather than restating it. This was a second
+    // copy of the mapping, and when §5.4 moved `PushNotificationNotSupported`,
+    // `UnsupportedOperation` and `VersionNotSupported` off `UNIMPLEMENTED`,
+    // a copy is exactly what would have been left behind. `grpc_status()` is
+    // the table; this only turns its name into a `tonic::Code`.
+    match a2a_code.grpc_status() {
+        "NOT_FOUND" => tonic::Code::NotFound,
+        "FAILED_PRECONDITION" => tonic::Code::FailedPrecondition,
+        "INVALID_ARGUMENT" => tonic::Code::InvalidArgument,
+        "UNIMPLEMENTED" => tonic::Code::Unimplemented,
+        // "INTERNAL", and any status name added to the table later: a code
+        // this function has not been taught is reported as an internal error
+        // rather than silently becoming some unrelated status.
+        _ => tonic::Code::Internal,
+    }
+}
+
+/// The status this binding answers `err` with, by the canonical name the
+/// semantic conventions record as `rpc.status_code` — the name of the code
+/// [`server_error_to_status`] sends, so the two cannot disagree.
+pub fn grpc_status_name(err: &ServerError) -> &'static str {
+    use tonic::Code;
+    // Every code, not the few `grpc_code` returns today: a new arm there
+    // then needs nothing here, and tonic adding a code fails to compile.
+    match grpc_code(err, err.to_a2a_error().code) {
+        Code::Ok => "OK",
+        Code::Cancelled => "CANCELLED",
+        Code::Unknown => "UNKNOWN",
+        Code::InvalidArgument => "INVALID_ARGUMENT",
+        Code::DeadlineExceeded => "DEADLINE_EXCEEDED",
+        Code::NotFound => "NOT_FOUND",
+        Code::AlreadyExists => "ALREADY_EXISTS",
+        Code::PermissionDenied => "PERMISSION_DENIED",
+        Code::ResourceExhausted => "RESOURCE_EXHAUSTED",
+        Code::FailedPrecondition => "FAILED_PRECONDITION",
+        Code::Aborted => "ABORTED",
+        Code::OutOfRange => "OUT_OF_RANGE",
+        Code::Unimplemented => "UNIMPLEMENTED",
+        Code::Internal => "INTERNAL",
+        Code::Unavailable => "UNAVAILABLE",
+        Code::DataLoss => "DATA_LOSS",
+        Code::Unauthenticated => "UNAUTHENTICATED",
+    }
 }
 
 /// Resolves a `ToSocketAddrs` to a single `SocketAddr`.

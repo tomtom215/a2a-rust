@@ -47,6 +47,7 @@ use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming;
 
+mod connections;
 mod graceful;
 
 pub use graceful::{
@@ -148,6 +149,7 @@ pub async fn serve(
     addr: impl tokio::net::ToSocketAddrs,
     dispatcher: impl Dispatcher,
 ) -> std::io::Result<()> {
+    let connections = connections::Connections::for_dispatcher(&dispatcher);
     let dispatcher = Arc::new(dispatcher);
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
@@ -173,18 +175,45 @@ pub async fn serve(
         let _ = stream.set_nodelay(true);
         let io = hyper_util::rt::TokioIo::new(stream);
         let dispatcher = Arc::clone(&dispatcher);
+        let connection = connections.as_ref().map(connections::Connections::opened);
 
         tokio::spawn(async move {
-            let service = hyper::service::service_fn(move |req| {
-                let d = Arc::clone(&dispatcher);
-                async move { Ok::<_, Infallible>(d.dispatch(req).await) }
-            });
-            let _ =
+            let service = service(
+                dispatcher,
+                connection.as_ref().map(connections::Connection::requests),
+            );
+            let result =
                 hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
                     .serve_connection(io, service)
                     .await;
+            if let Some(connection) = connection {
+                connection.close(result.is_err());
+            }
         });
     }
+}
+
+/// The per-connection service: dispatches each request, counting it in
+/// flight on its connection when there is a tracker (audit O10).
+fn service<D: Dispatcher>(
+    dispatcher: Arc<D>,
+    requests: Option<connections::Requests>,
+) -> impl hyper::service::Service<
+    hyper::Request<Incoming>,
+    Response = DispatchResponse,
+    Error = Infallible,
+    Future = impl Future<Output = Result<DispatchResponse, Infallible>> + Send,
+> + Clone {
+    hyper::service::service_fn(move |req| {
+        let d = Arc::clone(&dispatcher);
+        let requests = requests.clone();
+        async move {
+            Ok::<_, Infallible>(match requests {
+                Some(requests) => requests.dispatch(&*d, req).await,
+                None => d.dispatch(req).await,
+            })
+        }
+    })
 }
 
 /// Starts an HTTP server and returns the bound [`SocketAddr`].
@@ -199,6 +228,7 @@ pub async fn serve_with_addr(
     addr: impl tokio::net::ToSocketAddrs,
     dispatcher: impl Dispatcher,
 ) -> std::io::Result<SocketAddr> {
+    let connections = connections::Connections::for_dispatcher(&dispatcher);
     let dispatcher = Arc::new(dispatcher);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let local_addr = listener.local_addr()?;
@@ -219,17 +249,21 @@ pub async fn serve_with_addr(
             let _ = stream.set_nodelay(true);
             let io = hyper_util::rt::TokioIo::new(stream);
             let dispatcher = Arc::clone(&dispatcher);
+            let connection = connections.as_ref().map(connections::Connections::opened);
 
             tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
+                let service = service(
+                    dispatcher,
+                    connection.as_ref().map(connections::Connection::requests),
+                );
+                let result = hyper_util::server::conn::auto::Builder::new(
                     hyper_util::rt::TokioExecutor::new(),
                 )
                 .serve_connection(io, service)
                 .await;
+                if let Some(connection) = connection {
+                    connection.close(result.is_err());
+                }
             });
         }
     });

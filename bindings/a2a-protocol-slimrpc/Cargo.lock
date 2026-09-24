@@ -27,6 +27,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "mutants",
+ "pin-project-lite",
  "serde",
  "serde_json",
  "tokio",

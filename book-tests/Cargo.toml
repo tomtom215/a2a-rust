@@ -34,6 +34,9 @@ a2a-protocol-sdk = { path = "../crates/a2a-protocol-sdk", features = [
 # import than the page teaches.
 a2a-protocol-client = { path = "../crates/a2a-protocol-client" }
 a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = [
+    # The authentication page's JWT section: `JwtAuthInterceptor` and
+    # `JwtValidator` exist only under this feature.
+    "auth-jwt",
     "axum",
     # Added with the testing page's conformance section, for the same reason
     # as `otel` and `postgres` below: without it that block could only be
@@ -60,7 +63,25 @@ a2a-protocol-types  = { path = "../crates/a2a-protocol-types" }
 # for a reason that has nothing to do with the SDK.
 # The push-notifications page's webhook example reads a `hyper::Request`'s
 # headers, which is the type a reader's hyper or axum receiver hands them.
+# The dispatchers page wires a dispatcher into hyper by hand, serves the
+# gRPC service from tonic directly, and mounts `A2aRouter` in an axum app —
+# three integrations a reader copies with these crates' own names.
+axum       = { version = "0.8", features = ["json", "query", "tokio"] }
 hyper      = { workspace = true }
+hyper-util = { workspace = true, features = ["server", "server-auto"] }
+tonic      = { workspace = true }
+# The pitfalls page shows the serde attributes the protocol types use.
+serde      = { workspace = true }
 serde_json = { workspace = true }
+# The stores page implements `TaskStore` over a `sqlx::PgPool`, the way a
+# reader backing it with their own database would.
+sqlx       = { workspace = true, features = ["postgres"] }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
 uuid       = { workspace = true }
+# The production page's health route answers with the dispatchers' own body
+# type; its executor cancels its own work with the `CancellationToken` that
+# `RequestContext` carries (a `tokio-util` type the server does not
+# re-export); and its logging setup reads `RUST_LOG` with `env-filter`.
+http-body-util     = { workspace = true }
+tokio-util         = { version = ">=0.7, <0.8" }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

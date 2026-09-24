@@ -194,6 +194,22 @@ fn parse_trace_context(
     if policy == InboundTracePolicy::Drop {
         return None;
     }
+    // The span this call runs in, when an OpenTelemetry layer records it:
+    // its id is the one to send downstream, because the exporter has it. The
+    // dispatcher already applied the policy when it opened the span — as the
+    // caller's child under `Continue`, a new root under `Restart` — so all
+    // that is left to carry is the caller's `tracestate`, and only when the
+    // trace is theirs (audit O2).
+    #[cfg(feature = "otel")]
+    if let Some((trace_id, span_id, flags)) = crate::rpc_span::current_recorded_span() {
+        let ours = TraceContext::from_bytes(trace_id, span_id, flags).ok()?;
+        return Some(match (policy, headers.get(TRACESTATE_HEADER)) {
+            (InboundTracePolicy::Continue, Some(state)) => {
+                ours.clone().with_tracestate(state).unwrap_or(ours)
+            }
+            _ => ours,
+        });
+    }
     let inbound = TraceContext::parse(headers.get(TRACEPARENT_HEADER)?).ok()?;
     if policy == InboundTracePolicy::Restart {
         // §3.4 "Restart trace": every property regenerated, and "Vendors
@@ -223,7 +239,7 @@ fn parse_trace_context(
 ///
 /// Splits on commas, trims whitespace, and drops empty segments. Returns an
 /// empty vec when the header is absent.
-pub(super) fn parse_extensions_header(headers: &HashMap<String, String>) -> Vec<String> {
+pub fn parse_extensions_header(headers: &HashMap<String, String>) -> Vec<String> {
     headers
         .get("a2a-extensions")
         .map(|v| {
@@ -565,6 +581,36 @@ mod tests {
                 .is_none(),
             "Drop refuses to trace an untrusted request at all"
         );
+    }
+
+    /// With an OpenTelemetry layer recording the call's span, the trace sent
+    /// downstream is that span's, and under `Continue` it still carries the
+    /// caller's `tracestate`; under `Restart` it does not (§3.4). Only the
+    /// SDK's end-to-end test reached this branch, and cargo-mutants runs a
+    /// crate's own tests alone: deleting the `Continue` arm survived the
+    /// incremental mutation gate on this pull request.
+    #[cfg(feature = "otel")]
+    #[test]
+    fn a_recorded_span_carries_the_callers_tracestate_only_under_continue() {
+        use opentelemetry::trace::TracerProvider as _;
+        use tracing_subscriber::layer::SubscriberExt as _;
+        const PARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("helpers")));
+        let mut headers = HashMap::new();
+        headers.insert("traceparent".to_owned(), PARENT.to_owned());
+        headers.insert("tracestate".to_owned(), "vendor=value".to_owned());
+        tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::info_span!("call");
+            let _entered = span.enter();
+            let continued = parse_trace_context(&headers, InboundTracePolicy::Continue)
+                .expect("the recorded span is the trace");
+            assert_eq!(continued.tracestate(), Some("vendor=value"));
+            let restarted = parse_trace_context(&headers, InboundTracePolicy::Restart)
+                .expect("the recorded span is the trace");
+            assert_eq!(restarted.tracestate(), None);
+        });
     }
 
     /// Every request mints its *own* span, not just a span different from

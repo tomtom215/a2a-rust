@@ -95,11 +95,17 @@ fn write_canonical(value: &serde_json::Value, buf: &mut Vec<u8>, depth: usize) -
             buf.extend_from_slice(if *b { b"true" } else { b"false" });
         }
         serde_json::Value::Number(n) => {
-            if n.is_i64() || n.is_u64() {
-                // Integers print exactly. (All i64/u64 magnitudes are below
-                // 1e21, so ECMAScript would render them in plain integer
-                // form as well.)
-                buf.extend_from_slice(n.to_string().as_bytes());
+            if let Some(i) = n.as_i64() {
+                // JCS numbers are IEEE 754 doubles (RFC 8785 §3.2.2.3), so an
+                // integer is rendered as the double it rounds to, exactly as
+                // `JSON.parse` then `JSON.stringify` would: itself up to 2^53,
+                // the nearest double beyond. `as` rounds to nearest, ties to
+                // even, as `JSON.parse` does.
+                #[allow(clippy::cast_precision_loss)]
+                write_es_number(i as f64, buf)?;
+            } else if let Some(u) = n.as_u64() {
+                #[allow(clippy::cast_precision_loss)]
+                write_es_number(u as f64, buf)?;
             } else {
                 // RFC 8785 §3.2.2: doubles use ECMAScript Number::toString
                 // formatting. serde_json's own Display differs from it
@@ -148,6 +154,48 @@ fn write_canonical(value: &serde_json::Value, buf: &mut Vec<u8>, depth: usize) -
     Ok(())
 }
 
+/// ECMA-262 `Number::toString` note 2 (RFC 8785 Appendix B note 4): when two
+/// shortest digit strings both read back as the double and are equally close
+/// to it, the even one is chosen. Rust's shortest formatting picks the upper
+/// one, so an exact tie — the double lies precisely halfway between the two —
+/// is corrected here.
+///
+/// `digits` and `n` are the shortest form (value `0.digits × 10^n`); the
+/// exact decimal expansion of `abs` decides whether it was a tie.
+fn round_tie_to_even(abs: f64, digits: &mut Vec<u8>, n: i32) {
+    // 800 significant digits cover every double exactly: the longest exact
+    // expansion (of the smallest subnormal) has 751.
+    let exact = format!("{abs:.800e}");
+    let Some((mantissa, exp)) = exact.split_once('e') else {
+        return;
+    };
+    if exp.parse::<i32>().ok().map(|e| e + 1) != Some(n) {
+        return;
+    }
+    let all: Vec<u8> = mantissa.bytes().filter(|b| *b != b'.').collect();
+    let k = digits.len();
+    // A tie: the exact value is `a` followed by a 5 and nothing else, where
+    // `a` is the k-digit truncation, and the formatter chose `a + 1`.
+    if all.len() <= k || all[k] != b'5' || all[k + 1..].iter().any(|d| *d != b'0') {
+        return;
+    }
+    let a = &all[..k];
+    // ASCII digits have the parity of their values. An odd `a` makes `a + 1`
+    // the even one, which the formatter already chose.
+    if a[k - 1] % 2 == 1 {
+        return;
+    }
+    // Equally close is not enough: `a` must also read back as this double.
+    // Just above a power of two the double below is half as far away, so `a`
+    // can round to it instead — 2^-24 is `5.960464477539063e-8` in V8 for
+    // exactly that reason. (`a` cannot end in 0: that would make a shorter
+    // string that reads back, and the formatter's was the shortest.)
+    let text = format!("0.{}e{n}", String::from_utf8_lossy(a));
+    if text.parse::<f64>().ok() == Some(abs) {
+        *digits = a.to_vec();
+    }
+}
+
 /// Writes an `f64` using ECMAScript `Number::toString` formatting
 /// (ECMA-262 §7.1.12.1 / "`ToString` applied to the Number type"), as RFC 8785
 /// §3.2.2 requires for JSON doubles.
@@ -172,12 +220,13 @@ fn write_es_number(f: f64, buf: &mut Vec<u8>) -> A2aResult<()> {
     let exp: i32 = exp
         .parse()
         .map_err(|e| A2aError::internal(format!("float exponent parse: {e}")))?;
-    let digits: Vec<u8> = mantissa.bytes().filter(|b| *b != b'.').collect();
+    let mut digits: Vec<u8> = mantissa.bytes().filter(|b| *b != b'.').collect();
+    let n = exp + 1;
+    round_tie_to_even(f.abs(), &mut digits, n);
     // Value = digits × 10^(n−k), with k digits and the decimal point
     // logically after position n (ECMA-262 notation).
     let k = i32::try_from(digits.len())
         .map_err(|_| A2aError::internal("float digit count overflow"))?;
-    let n = exp + 1;
 
     if k <= n && n <= 21 {
         // Integer with (n−k) trailing zeros.
@@ -882,14 +931,20 @@ mod tests {
         }
     }
 
-    /// Integers (i64/u64) keep their exact representation.
+    /// Integers render as the double they round to (RFC 8785 §3.2.2.3):
+    /// exactly up to 2^53, and beyond it as ECMAScript renders that double.
+    /// This test asserted the exact digits of `u64::MAX` and `i64::MIN` until
+    /// 2026-09-23, which pinned a deviation: `JSON.stringify(JSON.parse(t))`
+    /// in V8 gives the values below, and so does every conforming JCS
+    /// implementation, so a card carrying either integer could not be
+    /// verified across implementations.
     #[test]
-    fn canonicalize_integers_exact() {
+    fn canonicalize_integers_as_doubles() {
         for (value, expected) in [
             (serde_json::json!(0), "0"),
             (serde_json::json!(-1), "-1"),
-            (serde_json::json!(u64::MAX), "18446744073709551615"),
-            (serde_json::json!(i64::MIN), "-9223372036854775808"),
+            (serde_json::json!(u64::MAX), "18446744073709552000"),
+            (serde_json::json!(i64::MIN), "-9223372036854776000"),
         ] {
             let canonical = String::from_utf8(canonicalize(&value).unwrap()).unwrap();
             assert_eq!(canonical, expected);

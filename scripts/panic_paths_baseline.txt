@@ -8,4 +8,5 @@
 1 1 0 0  crates/a2a-protocol-server/build.rs
 0 2 0 0  crates/a2a-protocol-server/src/auth/jwt.rs
 0 1 0 0  crates/a2a-protocol-server/src/push/sender.rs
+0 2 0 0  crates/a2a-protocol-server/src/rpc_span/mod.rs
 1 1 0 0  crates/a2a-protocol-types/build.rs

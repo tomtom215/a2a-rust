@@ -13,8 +13,24 @@ Umbrella re-export crate for the A2A protocol v1.0 Rust SDK.
 
 ## Quick Start
 
+Every Rust block in this README is compiled as a doctest of the crate.
+
 ```rust
 use a2a_protocol_sdk::prelude::*;
+
+struct Echo;
+
+agent_executor!(Echo, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+    emit.status(TaskState::Completed).await
+});
+
+let card = AgentCard::new("echo", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"));
+let handler = RequestHandlerBuilder::new(Echo).with_agent_card(card).build()?;
+let _dispatcher = JsonRpcDispatcher::new(std::sync::Arc::new(handler));
+
+let _client = ClientBuilder::new("http://localhost:3000").build()?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ## Modules
@@ -36,20 +52,26 @@ use a2a_protocol_sdk::prelude::*;
 
 ## Features
 
-All features are pass-through to the constituent crates:
+Each feature forwards to the constituent crates named; `tls-rustls` and
+`tracing` are the defaults. The SDK takes those crates without their own
+defaults, so `default-features = false` here removes both.
 
-| Feature | Source Crate |
-|---------|-------------|
-| `signing` | `a2a-protocol-types` |
-| `tracing` | `a2a-protocol-client`, `a2a-protocol-server` |
-| `tls-rustls` | `a2a-protocol-client` |
-| `grpc` | `a2a-protocol-client`, `a2a-protocol-server` |
-| `grpc-tls` | `a2a-protocol-client` |
-| `otel` | `a2a-protocol-server` |
-| `websocket` | `a2a-protocol-client`, `a2a-protocol-server` |
-| `sqlite` | `a2a-protocol-server` |
-| `postgres` | `a2a-protocol-server` |
-| `axum` | `a2a-protocol-server` |
+| Feature | Default | Forwards to |
+|---------|---------|-------------|
+| `tls-rustls` | Yes | `a2a-protocol-client`, `a2a-protocol-server` |
+| `signing` | No | `a2a-protocol-types`, `a2a-protocol-client`, `a2a-protocol-server` |
+| `tracing` | Yes | `a2a-protocol-client`, `a2a-protocol-server` |
+| `grpc` | No | `a2a-protocol-client`, `a2a-protocol-server` |
+| `grpc-tls` | No | `a2a-protocol-client`, `a2a-protocol-server` (and turns on `grpc`, `tls-rustls`) |
+| `otel` | No | `a2a-protocol-server` |
+| `websocket` | No | `a2a-protocol-client`, `a2a-protocol-server` |
+| `sqlite` | No | `a2a-protocol-server` |
+| `postgres` | No | `a2a-protocol-server` |
+| `axum` | No | `a2a-protocol-server` |
+| `auth-jwt` | No | `a2a-protocol-server` |
+
+The server's `conformance` feature and the types crate's `proto` feature
+are not forwarded; depend on those crates directly to enable them.
 
 ## When to Use
 

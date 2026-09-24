@@ -231,6 +231,36 @@ mod tests {
         }
     }
 
+    /// `count` is held against the handler's global push-config ceiling, and
+    /// for this store it is per tenant: `None` would switch the ceiling off,
+    /// and a count across tenants would let one tenant exhaust another's.
+    #[tokio::test]
+    async fn count_is_per_tenant() {
+        let store = make_store().await;
+        TenantContext::scope("acme", async {
+            for task in ["t1", "t2"] {
+                store
+                    .set(make_config(task, None, "https://a.example.com"))
+                    .await
+                    .unwrap();
+            }
+        })
+        .await;
+        TenantContext::scope("globex", async {
+            store
+                .set(make_config("t1", None, "https://g.example.com"))
+                .await
+                .unwrap();
+        })
+        .await;
+        let acme = TenantContext::scope("acme", store.count()).await.unwrap();
+        let globex = TenantContext::scope("globex", store.count()).await.unwrap();
+        let unseen = TenantContext::scope("initech", store.count())
+            .await
+            .unwrap();
+        assert_eq!((acme, globex, unseen), (Some(2), Some(1), Some(0)));
+    }
+
     #[tokio::test]
     async fn set_and_get_within_tenant() {
         let store = make_store().await;

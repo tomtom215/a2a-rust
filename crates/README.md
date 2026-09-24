@@ -80,6 +80,7 @@ Features are defined on individual crates and passed through by the SDK umbrella
 | `axum` | server | Axum framework integration |
 | `auth-jwt` | server | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS with OIDC discovery) via `ring`; the header/token interceptors (`ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`) need no feature |
 | `conformance` | server | Harness that grades an `AgentExecutor` against the protocol invariants that hold for any agent — terminal states, legal transitions, cooperative cancellation, parking. Intended as a dev-dependency; pulls in no extra dependencies |
+| `testing` | client | A scripted hostile peer (`testing::ScriptedPeer`) that stalls, cuts off, mis-frames or refuses on each binding, for testing code that calls agents; not for production builds |
 
 ## Design Decisions
 

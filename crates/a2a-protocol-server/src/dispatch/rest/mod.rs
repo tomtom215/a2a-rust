@@ -9,7 +9,7 @@
 //! appropriate [`RequestHandler`] method, following the REST transport
 //! convention defined in the A2A protocol.
 
-mod query;
+pub(crate) mod query;
 mod response;
 
 use std::collections::HashMap;
@@ -209,8 +209,40 @@ impl RestDispatcher {
         resp
     }
 
+    /// Runs one routed call in its `SERVER` span, recorded with the HTTP
+    /// status it answered (ADR 0013).
+    ///
+    /// Not `async`: an `async fn` awaiting `call` would hold that future twice,
+    /// and a route's future is the largest thing a request allocates.
+    fn call(
+        &self,
+        http: &HttpRoute<'_>,
+        method: &str,
+        route: &str,
+        headers: &HashMap<String, String>,
+        call: impl std::future::Future<Output = hyper::Response<BoxBody<Bytes, Infallible>>>,
+    ) -> impl std::future::Future<Output = hyper::Response<BoxBody<Bytes, Infallible>>> {
+        let prefixed;
+        let route = if http.tenant_in_path {
+            prefixed = format!("/{{tenant}}{route}");
+            prefixed.as_str()
+        } else {
+            route
+        };
+        crate::rpc_span::ServerSpan::open(
+            &self.handler,
+            crate::rpc_span::RpcSystem::HttpJson,
+            method,
+            Some(headers),
+        )
+        .with_http(http.method, route)
+        .run_response(call)
+    }
+
     /// Dispatch on the tenant-stripped path.
-    #[allow(clippy::too_many_lines)]
+    // The route templates recorded as `http.route` (`/tasks/{id}`) are
+    // literal strings, not format strings.
+    #[allow(clippy::too_many_lines, clippy::literal_string_with_formatting_args)]
     async fn dispatch_rest(
         &self,
         req: hyper::Request<Incoming>,
@@ -226,6 +258,10 @@ impl RestDispatcher {
         // DELETE, the body on POST. Honour that when no prefix named one;
         // the path form wins when both are present, as it does under
         // `google.api.http` (a path variable is bound before the body).
+        let http = HttpRoute {
+            method,
+            tenant_in_path: tenant.is_some(),
+        };
         let query_tenant = if tenant.is_none() {
             parse_query_param(query, "tenant").filter(|t| !t.is_empty())
         } else {
@@ -237,10 +273,26 @@ impl RestDispatcher {
         // Also accept slash-separated variants: /message/send, /message/stream.
         match (method, path) {
             ("POST", "/message:send") => {
-                return self.handle_send(req, false, tenant, headers).await;
+                return self
+                    .call(
+                        &http,
+                        "SendMessage",
+                        "/message:send",
+                        headers,
+                        self.handle_send(req, false, tenant, headers),
+                    )
+                    .await;
             }
             ("POST", "/message:stream") => {
-                return self.handle_send(req, true, tenant, headers).await;
+                return self
+                    .call(
+                        &http,
+                        "SendStreamingMessage",
+                        "/message:stream",
+                        headers,
+                        self.handle_send(req, true, tenant, headers),
+                    )
+                    .await;
             }
             _ => {}
         }
@@ -252,7 +304,15 @@ impl RestDispatcher {
         {
             match (method, action) {
                 ("POST", "cancel") => {
-                    return self.handle_cancel_task(req, id, tenant, headers).await;
+                    return self
+                        .call(
+                            &http,
+                            "CancelTask",
+                            "/tasks/{id}:cancel",
+                            headers,
+                            self.handle_cancel_task(req, id, tenant, headers),
+                        )
+                        .await;
                 }
                 // Spec §11.3.2 (and the §5.3 method-mapping table)
                 // define `POST /tasks/{id}:subscribe`; the upstream
@@ -263,7 +323,15 @@ impl RestDispatcher {
                 // browser EventSource can only GET), while this SDK's
                 // client sends the spec-prose POST.
                 ("POST" | "GET", "subscribe") => {
-                    return self.handle_resubscribe(req, id, tenant, headers).await;
+                    return self
+                        .call(
+                            &http,
+                            "SubscribeToTask",
+                            "/tasks/{id}:subscribe",
+                            headers,
+                            self.handle_resubscribe(req, id, tenant, headers),
+                        )
+                        .await;
                 }
                 _ => {}
             }
@@ -273,12 +341,37 @@ impl RestDispatcher {
 
         match (method, segments.as_slice()) {
             // Tasks.
-            ("GET", ["tasks"]) => self.handle_list_tasks(query, tenant, headers).await,
-            ("GET", ["tasks", id]) => self.handle_get_task(id, query, tenant, headers).await,
+            ("GET", ["tasks"]) => {
+                self.call(
+                    &http,
+                    "ListTasks",
+                    "/tasks",
+                    headers,
+                    self.handle_list_tasks(query, tenant, headers),
+                )
+                .await
+            }
+            ("GET", ["tasks", id]) => {
+                self.call(
+                    &http,
+                    "GetTask",
+                    "/tasks/{id}",
+                    headers,
+                    self.handle_get_task(id, query, tenant, headers),
+                )
+                .await
+            }
 
             // Task cancel (slash-separated variant: /tasks/{id}/cancel).
             ("POST", ["tasks", id, "cancel"]) => {
-                self.handle_cancel_task(req, id, tenant, headers).await
+                self.call(
+                    &http,
+                    "CancelTask",
+                    "/tasks/{id}/cancel",
+                    headers,
+                    self.handle_cancel_task(req, id, tenant, headers),
+                )
+                .await
             }
 
             // Push notification configs (accept both plural and singular path segments).
@@ -290,8 +383,14 @@ impl RestDispatcher {
                     "pushNotificationConfigs" | "pushNotificationConfig",
                 ],
             ) => {
-                self.handle_set_push_config(req, task_id, tenant, headers)
-                    .await
+                self.call(
+                    &http,
+                    "CreateTaskPushNotificationConfig",
+                    "/tasks/{task_id}/pushNotificationConfigs",
+                    headers,
+                    self.handle_set_push_config(req, task_id, tenant, headers),
+                )
+                .await
             }
             (
                 "GET",
@@ -302,8 +401,14 @@ impl RestDispatcher {
                     config_id,
                 ],
             ) => {
-                self.handle_get_push_config(task_id, config_id, tenant, headers)
-                    .await
+                self.call(
+                    &http,
+                    "GetTaskPushNotificationConfig",
+                    "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
+                    headers,
+                    self.handle_get_push_config(task_id, config_id, tenant, headers),
+                )
+                .await
             }
             (
                 "GET",
@@ -313,8 +418,14 @@ impl RestDispatcher {
                     "pushNotificationConfigs" | "pushNotificationConfig",
                 ],
             ) => {
-                self.handle_list_push_configs(task_id, tenant, headers)
-                    .await
+                self.call(
+                    &http,
+                    "ListTaskPushNotificationConfigs",
+                    "/tasks/{task_id}/pushNotificationConfigs",
+                    headers,
+                    self.handle_list_push_configs(task_id, tenant, headers),
+                )
+                .await
             }
             (
                 "DELETE",
@@ -335,12 +446,27 @@ impl RestDispatcher {
                     "delete",
                 ],
             ) => {
-                self.handle_delete_push_config(task_id, config_id, tenant, headers)
-                    .await
+                self.call(
+                    &http,
+                    "DeleteTaskPushNotificationConfig",
+                    "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
+                    headers,
+                    self.handle_delete_push_config(task_id, config_id, tenant, headers),
+                )
+                .await
             }
 
             // Extended card.
-            ("GET", ["extendedAgentCard"]) => self.handle_extended_card(headers).await,
+            ("GET", ["extendedAgentCard"]) => {
+                self.call(
+                    &http,
+                    "GetExtendedAgentCard",
+                    "/extendedAgentCard",
+                    headers,
+                    self.handle_extended_card(headers),
+                )
+                .await
+            }
 
             _ => not_found_response(),
         }
@@ -620,6 +746,13 @@ impl RestDispatcher {
             Err(e) => server_error_to_response(&e),
         }
     }
+}
+
+/// What an HTTP+JSON call's span records about the HTTP request.
+struct HttpRoute<'a> {
+    method: &'a str,
+    /// The path began with a tenant segment, which the route template shows.
+    tenant_in_path: bool,
 }
 
 impl std::fmt::Debug for RestDispatcher {

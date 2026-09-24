@@ -322,9 +322,11 @@ impl WebSocketTransportConfig {
 /// shared Mutex on the reader half. This prevents deadlocks when streaming
 /// responses are received concurrently with unary requests.
 ///
-/// Dropping the transport aborts its background reader/writer tasks and
-/// closes the underlying connection — a dropped transport does not leak a
-/// task or a socket.
+/// Dropping the transport, and every stream it opened, aborts its background
+/// reader/writer tasks and closes the underlying connection — a dropped
+/// transport does not leak a task or a socket. A stream keeps the connection
+/// open for as long as it is held, as streams on the HTTP and gRPC bindings
+/// outlive their client.
 pub struct WebSocketTransport {
     inner: Arc<Inner>,
 }
@@ -482,7 +484,7 @@ impl WebSocketTransport {
                 config.connect_timeout
             ))
         })?
-        .map_err(|e| ClientError::Transport(format!("WebSocket connect failed: {e}")))?;
+        .map_err(connect_error)?;
 
         let (ws_writer, ws_reader) = ws_stream.split();
 
@@ -510,7 +512,7 @@ impl WebSocketTransport {
                     // The connection is dead: fail every pending request —
                     // including the one just registered — instead of leaving
                     // them to wait out their full timeouts.
-                    fail_all_pending(&pending_for_writer, &closed_for_writer);
+                    fail_all_pending(&pending_for_writer, &closed_for_writer, None);
                     break;
                 }
             }
@@ -522,21 +524,22 @@ impl WebSocketTransport {
         let closed_for_reader = Arc::clone(&closed);
         let reader_handle = tokio::spawn(async move {
             let mut ws_reader = ws_reader;
-            loop {
+            // Server closed, stream ended, or protocol/transport error — in
+            // every case no pending request can ever be answered again, so
+            // fail them all now (a Close frame previously left them hanging
+            // until their timeouts).
+            let refused = loop {
                 match ws_reader.next().await {
                     Some(Ok(WsMessage::Text(text))) => {
                         route_frame(&pending_for_reader, text.as_str()).await;
                     }
-                    // Server closed, stream ended, or protocol/transport
-                    // error — in every case no pending request can ever be
-                    // answered again, so fail them all now (a Close frame
-                    // previously left them hanging until their timeouts).
-                    Some(Ok(WsMessage::Close(_)) | Err(_)) | None => break,
+                    Some(Ok(WsMessage::Close(_))) | None => break None,
+                    Some(Err(e)) => break refusal(&e),
                     // Pong is handled automatically by tungstenite; other frames ignored
                     Some(Ok(_)) => {}
                 }
-            }
-            fail_all_pending(&pending_for_reader, &closed_for_reader);
+            };
+            fail_all_pending(&pending_for_reader, &closed_for_reader, refused.as_deref());
         });
 
         Ok(Self {
@@ -685,9 +688,14 @@ impl WebSocketTransport {
         // transport otherwise returns a stream with no timeout at all, so a
         // server that accepts the socket but never answers this request would
         // hang the consumer forever. The bound is lifted after the first frame.
+        //
+        // The stream holds the connection too, so it outlives the transport as
+        // an HTTP or gRPC stream outlives its client. Dropping `Inner` aborts
+        // the reader; with the entry (and so the sender) still held, a stream
+        // whose transport was dropped went silent instead of ending.
         Ok(EventStream::new(rx)
             .with_first_event_timeout(self.inner.request_timeout)
-            .holding(entry))
+            .holding((entry, Arc::clone(&self.inner))))
     }
 }
 
@@ -777,6 +785,24 @@ fn warn_dropped_per_request_headers(
     }
 }
 
+/// A read error that the peer caused on purpose and would cause again — a
+/// frame over the size cap, or one that breaks the protocol — as distinct
+/// from the connection simply going away. `None` for the latter.
+fn refusal(e: &tokio_tungstenite::tungstenite::Error) -> Option<String> {
+    use tokio_tungstenite::tungstenite::Error;
+    match e {
+        // A TCP close with no close frame arrives as a protocol error, but it
+        // is the connection going away, not a frame the peer sent.
+        Error::Io(_)
+        | Error::ConnectionClosed
+        | Error::AlreadyClosed
+        | Error::Protocol(
+            tokio_tungstenite::tungstenite::error::ProtocolError::ResetWithoutClosingHandshake,
+        ) => None,
+        other => Some(format!("WebSocket frame refused: {other}")),
+    }
+}
+
 /// Marks the connection closed and fails every pending request.
 ///
 /// Called from the background tasks whenever the connection reaches a state
@@ -787,26 +813,60 @@ fn warn_dropped_per_request_headers(
 /// Not `async`: every step is synchronous — a `std` mutex, a `drain`, a
 /// non-blocking `oneshot::send` and a `try_send`. It was `async` only because
 /// the map used to be behind a Tokio mutex.
-fn fail_all_pending(pending: &PendingMap, closed: &AtomicBool) {
+fn fail_all_pending(pending: &PendingMap, closed: &AtomicBool, refused: Option<&str>) {
     closed.store(true, Ordering::Release);
     let entries: Vec<PendingRequest> = lock_pending(pending).drain().map(|(_, v)| v).collect();
     for entry in entries {
         match entry {
-            PendingRequest::Unary(tx) => {
+            // A frame the peer sent that cannot be accepted: permanent, as an
+            // over-size body is on the HTTP bindings.
+            PendingRequest::Unary(tx) if refused.is_some() => {
                 let _ = tx.send(Err(ClientError::Transport(
-                    "WebSocket connection closed".into(),
+                    refused.unwrap_or_default().to_owned(),
                 )));
             }
-            PendingRequest::Streaming(tx) => {
+            PendingRequest::Streaming(tx) if refused.is_some() => {
                 // `try_send`, not `send().await`: a stalled consumer with a
-                // full channel must not wedge this cleanup. If the error
-                // doesn't fit, dropping the sender below still closes the
-                // stream, which the consumer observes as end-of-stream.
+                // full channel must not wedge this cleanup; if it does not
+                // fit, dropping the sender still ends the stream.
                 let _ = tx.try_send(Err(ClientError::Transport(
+                    refused.unwrap_or_default().to_owned(),
+                )));
+            }
+            // A call in flight when the connection drops is retryable, as a
+            // dropped HTTP connection is on the other bindings; this was a
+            // non-retryable `Transport` error.
+            PendingRequest::Unary(tx) => {
+                let _ = tx.send(Err(ClientError::HttpClient(
                     "WebSocket connection closed".into(),
                 )));
             }
+            // A stream still pending has not seen its final event (a final
+            // event removes it). Dropping the sender ends the body, and
+            // `EventStream` reports `IncompleteStream` — the same verdict,
+            // retryable and resumable, as a cut stream on every other
+            // binding. It used to be sent a `Transport` error, which is not
+            // retryable and read differently by binding.
+            PendingRequest::Streaming(tx) => drop(tx),
         }
+    }
+}
+
+/// A failed WebSocket handshake. A peer that answers the upgrade with an HTTP
+/// status is reported as that status — so a 401 reaches
+/// `BearerAuthInterceptor`, which drops a token the agent refused, as it does
+/// over HTTP and gRPC — and a connection that could not be made is retryable,
+/// as it is on the HTTP bindings. Both were a non-retryable `Transport`.
+fn connect_error(e: tokio_tungstenite::tungstenite::Error) -> ClientError {
+    use tokio_tungstenite::tungstenite::Error;
+    match e {
+        Error::Http(resp) => ClientError::UnexpectedStatus {
+            status: resp.status().as_u16(),
+            body: String::from_utf8_lossy(resp.body().as_deref().unwrap_or_default()).into_owned(),
+            retry_after: None,
+        },
+        Error::Io(io) => ClientError::HttpClient(format!("WebSocket connect failed: {io}")),
+        other => ClientError::Transport(format!("WebSocket connect failed: {other}")),
     }
 }
 
@@ -1388,10 +1448,18 @@ mod tests {
         .await
         .expect("connect");
 
+        let started = std::time::Instant::now();
         let err = transport
             .send_request("GetTask", serde_json::json!({"id": "t1"}), &HashMap::new())
             .await
             .expect_err("request must time out");
+        // At the 100 ms `connect_with_timeout` was given, not the 30 s
+        // default a dropped value would leave.
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "took {:?}",
+            started.elapsed()
+        );
         assert!(
             matches!(err, ClientError::Timeout(_)),
             "expected timeout, got: {err:?}"
@@ -1659,6 +1727,69 @@ mod tests {
             .expect("channel open");
     }
 
+    /// A stream outlives the transport that opened it, as it does on the HTTP
+    /// and gRPC bindings. Dropping the transport used to abort the reader task
+    /// while the stream's own guard kept its sender alive, so the stream went
+    /// silent: no later event, and no end either — only the idle bound, or
+    /// nothing at all without one.
+    #[tokio::test]
+    async fn a_stream_outlives_the_transport_that_opened_it() {
+        let (go_tx, go_rx) = tokio::sync::oneshot::channel::<()>();
+        let go_rx = Arc::new(Mutex::new(Some(go_rx)));
+        let addr = spawn_raw_ws_server(move |mut ws| {
+            let go_rx = go_rx.lock().unwrap().take();
+            async move {
+                let Some(Ok(WsMessage::Text(req))) = ws.next().await else {
+                    return;
+                };
+                let id = serde_json::from_str::<serde_json::Value>(&req).unwrap()["id"].clone();
+                let event = |state: &str| {
+                    let status = serde_json::json!({ "state": state });
+                    let update = serde_json::json!({ "taskId": "t", "contextId": "c", "status": status });
+                    let frame = serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": { "statusUpdate": update } });
+                    WsMessage::Text(frame.to_string().into())
+                };
+                let _ = ws.send(event("TASK_STATE_WORKING")).await;
+                if let Some(go) = go_rx {
+                    let _ = go.await;
+                }
+                let _ = ws.send(event("TASK_STATE_COMPLETED")).await;
+                while let Some(Ok(_)) = ws.next().await {}
+            }
+        })
+        .await;
+
+        let transport = WebSocketTransport::connect(format!("ws://{addr}"))
+            .await
+            .expect("connect");
+        let mut stream = transport
+            .send_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({"message": {}}),
+                &HashMap::new(),
+            )
+            .await
+            .expect("stream opens");
+        let first = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("the first event arrives");
+        assert!(matches!(first, Some(Ok(_))), "first event: {first:?}");
+
+        // `abort()` takes effect at once: an aborted task is never polled
+        // again, so without the fix nothing sent after this reaches the stream.
+        drop(transport);
+        let _ = go_tx.send(());
+
+        let second = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("the stream must not go silent once its transport is dropped");
+        assert!(matches!(second, Some(Ok(_))), "second event: {second:?}");
+        let end = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("the stream ends after its final event");
+        assert!(end.is_none(), "a completed stream ends cleanly: {end:?}");
+    }
+
     /// A server-side close must fail an in-flight request promptly with a
     /// transport error — not leave it hanging until the full request timeout
     /// (the reader task previously exited silently on a Close frame).
@@ -1683,9 +1814,11 @@ mod tests {
             .send_request("GetTask", serde_json::json!({"id": "t1"}), &HashMap::new())
             .await
             .expect_err("request must fail when the server closes");
+        // Retryable since 2026-09-23 (audit N13), as a dropped HTTP
+        // connection is; it was a non-retryable `Transport` error.
         assert!(
-            matches!(err, ClientError::Transport(_)),
-            "expected transport error, got: {err:?}"
+            matches!(err, ClientError::HttpClient(_)) && err.is_retryable(),
+            "expected a retryable HttpClient error, got: {err:?}"
         );
         assert!(
             start.elapsed() < Duration::from_secs(10),
@@ -1745,6 +1878,44 @@ mod tests {
             start.elapsed() < Duration::from_secs(10),
             "rejection must be prompt, took {:?}",
             start.elapsed()
+        );
+    }
+
+    /// An over-cap frame on a *stream* is a refusal too: the stream ends with
+    /// the non-retryable error, not as an incomplete stream a caller would
+    /// retry into the same frame.
+    #[tokio::test]
+    async fn oversized_frame_on_a_stream_is_a_refusal_not_a_cut() {
+        let addr = spawn_raw_ws_server(|mut ws| async move {
+            if let Some(Ok(_)) = ws.next().await {
+                let big = "x".repeat(64 * 1024);
+                let _ = ws
+                    .send(tokio_tungstenite::tungstenite::Message::Text(big.into()))
+                    .await;
+            }
+            while let Some(Ok(_)) = ws.next().await {}
+        })
+        .await;
+        let transport = WebSocketTransport::connect_with_config(
+            format!("ws://{addr}"),
+            WebSocketTransportConfig::default().with_max_message_size(16 * 1024),
+        )
+        .await
+        .expect("connect");
+        let mut stream = transport
+            .send_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({"message": {}}),
+                &HashMap::new(),
+            )
+            .await
+            .expect("stream opens");
+        let first = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .expect("prompt");
+        assert!(
+            matches!(first, Some(Err(ClientError::Transport(ref m))) if m.contains("refused")),
+            "expected the refusal, got {first:?}"
         );
     }
 

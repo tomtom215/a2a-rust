@@ -6,11 +6,19 @@ Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides f
 
 Routes JSON-RPC 2.0 requests to the handler:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
 use a2a_protocol_sdk::server::JsonRpcDispatcher;
 use std::sync::Arc;
 
 let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
+# Ok(())
+# }
 ```
 
 ### Features
@@ -51,11 +59,19 @@ Both JSON-RPC and REST dispatchers share a `DispatchConfig` for transport-level 
 
 Routes RESTful HTTP requests to the handler:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
 use a2a_protocol_sdk::server::RestDispatcher;
 use std::sync::Arc;
 
 let dispatcher = Arc::new(RestDispatcher::new(handler));
+# Ok(())
+# }
 ```
 
 ### Route Table
@@ -111,22 +127,31 @@ The REST dispatcher includes automatic protections:
 
 Both dispatchers implement the `Dispatcher` trait, so you can use the `serve()` helper to eliminate hyper boilerplate:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
 use a2a_protocol_server::serve::{serve, serve_with_addr};
 
 // Blocking — runs the accept loop on the current task
-serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await?;
+serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler.clone())).await?;
 
 // Non-blocking — spawns the server and returns the bound address
-let addr = serve_with_addr("127.0.0.1:0", dispatcher).await?;
+let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler)).await?;
 println!("Listening on {addr}");
+# Ok(())
+# }
 ```
 
 ### Manual wiring (advanced)
 
-Both dispatchers also expose a `dispatch` method for direct hyper integration:
+Both dispatchers also expose a `dispatch` method for direct hyper integration (this uses `hyper-util` with its `server-auto` feature):
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
 use std::sync::Arc;
 
 async fn start_server(
@@ -170,7 +195,13 @@ Provides bidirectional A2A communication over WebSocket. Enable with the `websoc
 a2a-protocol-server = { version = "0.13", features = ["websocket"] }
 ```
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
 use a2a_protocol_server::WebSocketDispatcher;
 use std::sync::Arc;
 
@@ -181,6 +212,8 @@ dispatcher.clone().serve("0.0.0.0:3000").await?;
 
 // Non-blocking (returns bound address)
 let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
+# Ok(())
+# }
 ```
 
 ### Protocol
@@ -188,9 +221,11 @@ let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
 - Client sends JSON-RPC 2.0 requests as WebSocket text frames
 - Server responds with JSON-RPC 2.0 responses as text frames
 - Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) send one frame per event, followed by a final JSON-RPC success response
-- The full A2A method surface is routed — the same method names (and v0.3
-  `method/verb` aliases) as `JsonRpcDispatcher`, including the
-  push-notification-config methods and `GetExtendedAgentCard`
+- The full A2A method surface is routed — the same method names as
+  `JsonRpcDispatcher`, including the push-notification-config methods and
+  `GetExtendedAgentCard`. Of the v0.3 `method/verb` spellings only
+  `message/stream` is accepted; the others are refused with
+  `MethodNotFound` (`-32601`), as they are over HTTP
 
 ### Authentication and tenancy
 
@@ -263,7 +298,13 @@ Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature 
 a2a-protocol-server = { version = "0.13", features = ["grpc"] }
 ```
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
 use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
 use std::sync::Arc;
 
@@ -271,13 +312,15 @@ let config = GrpcConfig::default()
     .with_max_message_size(8 * 1024 * 1024)
     .with_concurrency_limit(128);
 
-let dispatcher = GrpcDispatcher::new(handler, config);
-
-// Blocking server
-dispatcher.serve("0.0.0.0:50051").await?;
+// Blocking server (`serve` consumes the dispatcher)
+GrpcDispatcher::new(Arc::clone(&handler), config.clone())
+    .serve("0.0.0.0:50051")
+    .await?;
 
 // Non-blocking (returns bound address)
-let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
+let addr = GrpcDispatcher::new(Arc::clone(&handler), config.clone())
+    .serve_with_addr("127.0.0.1:0")
+    .await?;
 println!("gRPC listening on {addr}");
 
 // Pre-bind pattern (when you need the address before building the handler)
@@ -286,6 +329,8 @@ let addr = listener.local_addr()?;
 // ... build handler using addr for agent card URL ...
 let dispatcher = GrpcDispatcher::new(handler, config);
 let bound = dispatcher.serve_with_listener(listener)?;
+# Ok(())
+# }
 ```
 
 ### GrpcConfig
@@ -350,12 +395,22 @@ the only gRPC surface.
 
 For advanced scenarios, use `into_service()` to get a tonic service:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+# let dispatcher = a2a_protocol_server::GrpcDispatcher::new(handler, a2a_protocol_server::GrpcConfig::default());
+# let addr: std::net::SocketAddr = "127.0.0.1:50051".parse()?;
 let svc = dispatcher.into_service();
 tonic::transport::Server::builder()
     .add_service(svc)
     .serve(addr)
     .await?;
+# Ok(())
+# }
 ```
 
 ## A2aRouter (Axum)
@@ -367,7 +422,13 @@ idiomatic adapter that wraps `RequestHandler` as an `axum::Router`:
 a2a-protocol-server = { version = "0.13", features = ["axum"] }
 ```
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"));
 use a2a_protocol_server::A2aRouter;
 use std::sync::Arc;
 
@@ -382,16 +443,27 @@ let app = A2aRouter::new(handler).into_router();
 
 let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
 axum::serve(listener, app).await?;
+# Ok(())
+# }
 ```
 
 ### Composability
 
 The returned `Router` can be merged with other Axum routes and middleware:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# async fn custom_handler() -> &'static str { "ok" }
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+# use a2a_protocol_server::A2aRouter;
 let app = axum::Router::new()
     .merge(A2aRouter::new(handler).into_router())
     .route("/custom", axum::routing::get(custom_handler));
+# Ok(())
+# }
 ```
 
 ### Routes
@@ -404,7 +476,17 @@ Streaming methods return SSE responses. The router delegates entirely to
 
 Serve JSON-RPC and REST on different ports with the same handler:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use std::sync::Arc;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
+# fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc(jsonrpc_url))
+#         .with_interface(AgentInterface::rest(rest_url))
+# }
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_server::serve::serve_with_addr;
 
 let handler = Arc::new(
@@ -419,17 +501,29 @@ let jsonrpc_addr = serve_with_addr("127.0.0.1:3000", JsonRpcDispatcher::new(Arc:
 
 // REST on port 3001
 let rest_addr = serve_with_addr("127.0.0.1:3001", RestDispatcher::new(handler)).await?;
+# Ok(())
+# }
 ```
 
 ## CORS Configuration
 
-Both dispatchers support CORS for browser-based clients:
+Both dispatchers support CORS for browser-based clients. It is off until
+configured: without `with_cors`, no response carries CORS headers — an
+`OPTIONS` preflight included — so a browser refuses the cross-origin call.
 
-```rust,no_run
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
 use a2a_protocol_sdk::server::CorsConfig;
 
-// The dispatchers handle OPTIONS preflight automatically.
-// CORS headers are included on all responses.
+// Answers OPTIONS preflights, and adds the CORS headers to every response.
+let dispatcher = JsonRpcDispatcher::new(handler)
+    .with_cors(CorsConfig::new("https://my-app.example.com"));
+# Ok(())
+# }
 ```
 
 ## Next Steps

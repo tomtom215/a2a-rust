@@ -6,7 +6,13 @@ a2a-rust uses pluggable storage backends for tasks and push notification configs
 
 The `TaskStore` trait defines how tasks are persisted:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::types::error::A2aResult;
+# use a2a_protocol_sdk::types::params::ListTasksParams;
+# use a2a_protocol_sdk::types::responses::TaskListResponse;
+# use a2a_protocol_sdk::types::task::{Task, TaskId};
 pub trait TaskStore: Send + Sync + 'static {
     fn save<'a>(&'a self, task: &'a Task)
         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
@@ -26,7 +32,21 @@ pub trait TaskStore: Send + Sync + 'static {
     /// Returns the total number of tasks. Default returns 0.
     fn count<'a>(&'a self)
         -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>>;
+
+    // Further provided methods — idempotency keys, delta saves, an event
+    // log for stream resumption — have defaults; see the API docs.
 }
+# // The signatures above are the real trait's, and they are all it requires:
+# // this impl of it defines exactly these methods.
+# struct Probe;
+# impl a2a_protocol_sdk::server::store::TaskStore for Probe {
+#     fn save<'a>(&'a self, _: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
+#     fn get<'a>(&'a self, _: &'a TaskId) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> { Box::pin(async { Ok(None) }) }
+#     fn list<'a>(&'a self, _: &'a ListTasksParams) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> { Box::pin(async { Ok(TaskListResponse::new(vec![])) }) }
+#     fn insert_if_absent<'a>(&'a self, _: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> { Box::pin(async { Ok(true) }) }
+#     fn delete<'a>(&'a self, _: &'a TaskId) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
+#     fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> { Box::pin(async { Ok(0) }) }
+# }
 ```
 
 ### InMemoryTaskStore
@@ -73,12 +93,16 @@ Enable the `sqlite` feature for a production-ready persistent store:
 a2a-protocol-server = { version = "0.13", features = ["sqlite"] }
 ```
 
-```rust,ignore
+```rust,no_run
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_server::store::SqliteTaskStore;
 
 let store = SqliteTaskStore::new("sqlite:tasks.db").await?;
 // Or use an in-memory database for testing:
 let store = SqliteTaskStore::new("sqlite::memory:").await?;
+# Ok(())
+# }
 ```
 
 Features:
@@ -96,8 +120,14 @@ Features:
 
 For multi-tenant deployments, use `TenantAwareInMemoryTaskStore` which provides full tenant isolation using `tokio::task_local!`:
 
-```rust,ignore
-use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
+```rust
+# use a2a_protocol_sdk::types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+# #[tokio::main]
+# async fn main() -> () {
+# let task_id = TaskId::new("task-1");
+# let task = Task { id: task_id.clone(), context_id: ContextId::new("ctx-1"),
+#     status: TaskStatus::new(TaskState::Submitted), history: None, artifacts: None, metadata: None };
+use a2a_protocol_server::store::{TaskStore, TenantAwareInMemoryTaskStore, TenantContext};
 use std::sync::Arc;
 
 let store = Arc::new(TenantAwareInMemoryTaskStore::new());
@@ -122,6 +152,7 @@ TenantContext::scope("tenant-beta".to_string(), {
 
 // Track tenant count for capacity monitoring:
 let count = store.tenant_count().await;
+# }
 ```
 
 The `TenantContext::scope()` pattern uses `tokio::task_local!` to thread the tenant ID through the async call stack without passing it as a parameter. The `RequestHandler` automatically sets the tenant scope when `params.tenant` is populated.
@@ -130,10 +161,14 @@ The `TenantContext::scope()` pattern uses `tokio::task_local!` to thread the ten
 
 For persistent multi-tenant storage, enable the `sqlite` feature:
 
-```rust,ignore
+```rust,no_run
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_server::store::TenantAwareSqliteTaskStore;
 
 let store = TenantAwareSqliteTaskStore::new("sqlite:tasks.db").await?;
+# Ok(())
+# }
 ```
 
 This variant partitions data by a `tenant_id` column instead of using task-local storage, making it suitable for production deployments where tenants may span multiple server instances.
@@ -147,38 +182,60 @@ PostgreSQL-backed stores ship with the crate — `PostgresTaskStore`,
 migration runner — and are exercised against a live PostgreSQL 16 service
 in CI (`postgres_store_tests.rs`):
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_server::store::PostgresTaskStore;
 
 let store = PostgresTaskStore::with_migrations("postgres://user:pass@localhost/a2a").await?;
 let handler = RequestHandlerBuilder::new(MyExecutor)
     .with_task_store(store)
     .build()?;
+# Ok(())
+# }
 ```
 
 ### Custom Implementation
 
-```rust,ignore
-struct DynamoDbTaskStore {
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::types::error::A2aResult;
+# use a2a_protocol_sdk::types::params::ListTasksParams;
+# use a2a_protocol_sdk::types::responses::TaskListResponse;
+# use a2a_protocol_sdk::types::task::{Task, TaskId};
+# use a2a_protocol_sdk::types::error::A2aError;
+# use a2a_protocol_sdk::server::store::TaskStore;
+struct PgJsonTaskStore {
     pool: sqlx::PgPool,
 }
 
-impl TaskStore for DynamoDbTaskStore {
+impl TaskStore for PgJsonTaskStore {
     fn get<'a>(&'a self, id: &'a TaskId)
         -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>>
     {
         Box::pin(async move {
-            let row = sqlx::query_as("SELECT data FROM tasks WHERE id = $1")
-                .bind(id.as_ref())
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| A2aError::internal(e.to_string()))?;
+            let data: Option<serde_json::Value> =
+                sqlx::query_scalar("SELECT data FROM tasks WHERE id = $1")
+                    .bind(id.as_ref())
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(|e| A2aError::internal(e.to_string()))?;
 
-            Ok(row.map(|r| serde_json::from_value(r.data).unwrap()))
+            data.map(serde_json::from_value)
+                .transpose()
+                .map_err(|e| A2aError::internal(format!("stored task does not parse: {e}")))
         })
     }
 
-    // ... implement save, list, delete, insert_if_absent, count similarly
+    // ... implement save, list, delete, insert_if_absent similarly
+#     fn save<'a>(&'a self, _: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { unimplemented!() }
+#     fn list<'a>(&'a self, _: &'a ListTasksParams) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> { unimplemented!() }
+#     fn insert_if_absent<'a>(&'a self, _: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> { unimplemented!() }
+#     fn delete<'a>(&'a self, _: &'a TaskId) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { unimplemented!() }
 }
 ```
 
@@ -186,7 +243,11 @@ impl TaskStore for DynamoDbTaskStore {
 
 The `PushConfigStore` trait manages push notification configurations:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::types::error::A2aResult;
+# use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
 pub trait PushConfigStore: Send + Sync + 'static {
     fn set<'a>(&'a self, config: TaskPushNotificationConfig)
         -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>>;
@@ -209,6 +270,14 @@ pub trait PushConfigStore: Send + Sync + 'static {
         Box::pin(async { Ok(None) })
     }
 }
+# // The real trait requires exactly these four; this impl of it compiles.
+# struct Probe;
+# impl a2a_protocol_sdk::server::PushConfigStore for Probe {
+#     fn set<'a>(&'a self, c: TaskPushNotificationConfig) -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>> { Box::pin(async { Ok(c) }) }
+#     fn get<'a>(&'a self, _: &'a str, _: &'a str) -> Pin<Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + 'a>> { Box::pin(async { Ok(None) }) }
+#     fn list<'a>(&'a self, _: &'a str) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>> { Box::pin(async { Ok(vec![]) }) }
+#     fn delete<'a>(&'a self, _: &'a str, _: &'a str) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
+# }
 ```
 
 ### InMemoryPushConfigStore
@@ -229,12 +298,35 @@ Features:
 
 ## Wiring Custom Stores
 
-```rust,ignore
+```rust,no_run
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::types::task::TaskId;
+# use a2a_protocol_sdk::server::store::TaskStore;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
+# struct PgJsonTaskStore { pool: sqlx::PgPool }
+# impl TaskStore for PgJsonTaskStore {
+#     fn save<'a>(&'a self, _: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { unimplemented!() }
+#     fn get<'a>(&'a self, _: &'a TaskId) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> { unimplemented!() }
+#     fn list<'a>(&'a self, _: &'a ListTasksParams) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> { unimplemented!() }
+#     fn insert_if_absent<'a>(&'a self, _: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> { unimplemented!() }
+#     fn delete<'a>(&'a self, _: &'a TaskId) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { unimplemented!() }
+# }
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let executor = MyExecutor;
+# let database_url = "postgres://user:pass@localhost/a2a";
+use a2a_protocol_server::PostgresPushConfigStore;
+
+let pool = sqlx::PgPool::connect(database_url).await?;
 let handler = RequestHandlerBuilder::new(executor)
-    .with_task_store(DynamoDbTaskStore::new(client.clone()))
-    .with_push_config_store(PostgresPushConfigStore::new(pool))
-    .build()
-    .unwrap();
+    .with_task_store(PgJsonTaskStore { pool })
+    .with_push_config_store(PostgresPushConfigStore::new(database_url).await?)
+    .build()?;
+# Ok(())
+# }
 ```
 
 ## Design Considerations
@@ -301,14 +393,20 @@ empty page rather than scanning from the top.
 
 ### Concurrency
 
-Both traits require `Send + Sync`. Use connection pools, not single connections:
+Both traits require `Send + Sync`, and every method takes `&self`. Use a
+connection pool rather than a single connection: a query needs `&mut` access
+to a connection, so a store holding one has to put it behind a lock, and every
+call then waits for the one before it.
 
-```rust,ignore
-// Good
+```rust
+// Good — the pool hands each call its own connection
 struct MyStore { pool: sqlx::PgPool }
 
-// Bad — not Send + Sync
-struct MyStore { conn: sqlx::PgConnection }
+// Compiles, but serializes every store call behind one connection
+struct MySerialStore { conn: tokio::sync::Mutex<sqlx::PgConnection> }
+# fn assert_send_sync<T: Send + Sync>() {}
+# assert_send_sync::<MyStore>();
+# assert_send_sync::<MySerialStore>();
 ```
 
 ### Terminal states are final

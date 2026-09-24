@@ -201,6 +201,18 @@ jobs:
       - name: Dependency snippets name the current release line
         run: python3 scripts/check_doc_versions.py
 
+      # Every documented feature table — each crate's README (its crates.io
+      # page), crates/README.md and the two book pages — lists exactly the
+      # manifest's features, with the manifest's defaults. The 2026-09-22
+      # adopter audit found 17 disagreements across them (S12, K3, T8).
+      - name: Feature tables agree with the manifests
+        run: python3 scripts/check_feature_tables.py
+
+      # Each crate's README is compiled as a doctest by `cargo test`; this is
+      # the guard that the include doing it is still there.
+      - name: Crate READMEs are compiled as doctests
+        run: python3 scripts/check_readme_doctests.py
+
       # `scripts/prove_gates_fail.sh` proves the gates in *this* file can fail,
       # but it is a 20-minute source-injection sweep and cannot run on a PR.
       # This is its fast sibling: it proves the verdict-bearing steps in the

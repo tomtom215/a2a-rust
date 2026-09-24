@@ -12,6 +12,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **`tracing` is a default feature of `a2a-protocol-client`,
+  `a2a-protocol-server` and `a2a-protocol-sdk`.** A default build used to
+  compile every log call and failure report in the crates to nothing, so an
+  agent logged nothing however its subscriber was set up, and paths that
+  report only through `tracing` — a trace header the WebSocket binding
+  cannot carry, a skipped webhook — were silent (audit O13). The maintainer
+  chose default-on (ADR 0013). `tracing` was already in every default build's
+  dependency graph through the HTTP stack; the feature adds
+  `tracing-attributes` and `syn`. With no subscriber installed the cost is a
+  level check per call site. **Migration:** none for most builds. To keep the old behaviour,
+  depend with `default-features = false` (and re-add `tls-rustls` on the SDK
+  if you want HTTPS).
+
+- **`default-features = false` on `a2a-protocol-sdk` now removes what the
+  SDK's defaults enable.** The SDK took the client with the client's own
+  defaults, so rustls stayed in an SDK built without default features,
+  contrary to its manifest (audit K1). The SDK now takes the client and
+  server without their defaults and forwards its own: a default build
+  enables exactly what it did (plus `tracing`, above), and
+  `cargo tree -p a2a-protocol-sdk --no-default-features` has no rustls,
+  hyper-rustls or webpki-roots. **Migration:** a build that used
+  `default-features = false` and still reached `https://` agents was relying
+  on the defect; add `features = ["tls-rustls"]`.
+
+- **A peer that goes away mid-call reads the same on every binding.** Found
+  by driving each binding against a scripted peer that cuts streams off
+  (audit N13): the same event — the connection or stream ending before a
+  final event — was a retryable `Http` error on JSON-RPC and HTTP+JSON, a
+  non-retryable `Transport("WebSocket connection closed")` on WebSocket, and
+  a non-retryable `Protocol(InternalError)` on gRPC, so retry and resume
+  logic, and the failure class an executor reports, depended on the binding.
+  Now, over WebSocket, a stream in flight when the socket drops ends as
+  `IncompleteStream` (retryable, as `EventStream` rules on every other
+  binding), a unary call in flight fails with `HttpClient` (retryable), a
+  connection that cannot be made is `HttpClient`, and a handshake the peer
+  answers with an HTTP status is `UnexpectedStatus { status, .. }` — so a
+  401 reaches `BearerAuthInterceptor`, which drops the refused token, as it
+  already did over HTTP and gRPC. A frame over the size cap, or one that
+  breaks the protocol, stays a non-retryable `Transport` error. Over gRPC, a
+  response that ends with no `grpc-status` trailer — what tonic reports for a
+  truncated stream — ends a stream as `IncompleteStream` and fails a unary
+  call with `HttpClient`, both retryable. **Migration:** code matching
+  `Transport(_)` to detect a dropped WebSocket, or
+  `Protocol(e)` with `e.code == InternalError` to detect a truncated gRPC
+  stream, should match `IncompleteStream { .. }` / `HttpClient(_)`, or ask
+  `is_retryable()`. Not a wire change. `WebSocketTransport` does not
+  reconnect: after a drop, every later call on it fails with a
+  non-retryable `Transport("WebSocket connection closed")`, so the retry
+  a retryable drop invites has to go through a new transport (audit N18).
+
 - **gRPC status codes map to what the caller has to do about them.** Over the
   gRPC transport and the slimrpc binding, `UNAUTHENTICATED` is now
   `ClientError::UnexpectedStatus { status: 401, .. }` and `PERMISSION_DENIED`
@@ -63,6 +113,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`testing::ScriptedPeer`** (client feature `testing`): a loopback A2A
+  peer that stalls, cuts off, mis-frames or refuses every call on purpose,
+  over JSON-RPC, HTTP+JSON, WebSocket and gRPC, for testing code that calls
+  agents — a coordinator has to survive the worker it delegates to, and a
+  well-behaved test server never produces these failures. This crate's own
+  tests drive every binding against every script with it
+  (`tests/scripted_peer_tests.rs`), which is how N13 above was found. Adds no
+  dependency; not for production builds.
+
 - **`GrpcDispatcher::serve_with_shutdown` and
   `WebSocketDispatcher::serve_with_shutdown`**, with `with_completion_grace`,
   `with_task_grace` and `with_drain_timeout` on both dispatchers (defaults
@@ -77,6 +136,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WebSocket connection, once the tasks have ended, finishes the requests it
   has read and is closed with a Close frame. The gRPC server's own error is
   returned rather than discarded.
+
+- **Release gates for what a tag publishes** (`scripts/check_release_tree.py`,
+  four steps in `release.yml`). A release now fails if the tagged tree has
+  entries under `[Unreleased]`, if any packaged file changed after the
+  release's own notes were last edited, if a patch release or a second
+  breaking minor in one calendar month carries `### Breaking Changes`, or if a
+  packaged `.crate` was built from another commit or a dirty tree. `v0.13.0`
+  would have failed three of them (audit N7, N10). The cost is ordering:
+  release notes must be the last edit before the tag, and the next breaking
+  release cannot be tagged before October 2026. Not a change to any crate.
+
+- **The mutation gate grades function bodies it never could.**
+  `scripts/install_cargo_mutants.sh` installs a pinned cargo-mutants 27.1.0,
+  patched so that a function returning a `Result` alias (`A2aResult<T>`,
+  `ClientResult<T>`) or a boxed future (`Pin<Box<dyn Future<Output = T>>>`,
+  every object-safe async trait method here) gets a "replace the body" mutant
+  that compiles. Stock 27.1.0 generated none that did for 346 functions, so
+  whether their effects were tested at all had never been graded (audit N4,
+  N9, N11). The survivors the patched build found are killed by tests on
+  this branch. The install verifies the crate's checksum, applies the patch
+  exactly, and refuses a binary without it.
 
 - **A Go SDK interop gate in CI** (`go-sdk-interop`, `scripts/go_sdk_interop.sh`).
   The official Go SDK's client against this server, and this client against an
@@ -122,7 +202,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`CallInterceptor::on_error`** and **`TokenProvider::invalidate`**, both
   no-op by default. `BearerAuthInterceptor` uses them so an OAuth2 token the
   agent answered with `401` is not sent again; the refused call still fails.
-  JSON-RPC and HTTP+JSON only — gRPC's `Unauthenticated` is not yet mapped.
+  On every binding: gRPC's `UNAUTHENTICATED` and a WebSocket handshake refused
+  with 401 reach it as `UnexpectedStatus { status: 401, .. }` since the two
+  entries under **Breaking Changes**.
 
 - **`OAuth2ClientCredentials::with_failure_backoff`** (1 s), **`Method::returns_empty`**,
   and **`push::webhook::notification_token`**, which reads the push token under
@@ -147,6 +229,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3.2x → 2.1x. It does **not** make a send O(1);
   `docs/swarm-scale-findings.md` has the per-stage attribution showing what
   still dominates.
+
+- **Spans for every inbound call, on every binding** (ADR 0013; audit O1, O2,
+  O4). With the `tracing` feature — on by default — each call runs in one
+  `SERVER` span named `lf.a2a.v1.A2AService/{Method}`, with the semantic
+  conventions' `rpc.system.name`, `rpc.method`, and on failure
+  `rpc.status_code` and `error.type`; HTTP+JSON spans add `http.request.method`
+  and `http.route`. The executor, event processor, push delivery and SSE
+  writer run in child spans, the executor's carrying `a2a.task.id` and
+  `a2a.context.id`. With `otel` and a `tracing-opentelemetry` layer, an
+  inbound `traceparent` is the span's remote parent and the `traceparent` sent
+  downstream names that recorded span instead of an id nothing records.
+  `InboundTracePolicy::Drop` records no span for the call or anything it
+  spawns. Gate: `crates/a2a-protocol-sdk/tests/observability_e2e/`, which
+  failed on `main`.
+- **`rpc.server.call.duration`** in `OtelMetrics`, and **`Metrics::on_rpc_call`**
+  with **`RpcCall`** for any other exporter: every call's duration with the
+  conventions' buckets (`otel::RPC_DURATION_BUCKETS`), method, and the status
+  its binding answered with — including calls the handler never sees (a body
+  that is not JSON-RPC, an unknown method, an HTTP+JSON request refused on its
+  parameters) and calls whose peer went away (`error.type` `cancelled`)
+  (audit O5, O11). Additive: the callback defaults to a no-op.
+- **Connection statistics are reported.** `serve`, `serve_with_addr` and
+  `Server::serve_with_shutdown` now call `Metrics::on_connection_pool_stats`,
+  which nothing called, so the four `a2a.server.pool.*` instruments the book
+  catalogues were never emitted (audit O10). The gRPC and WebSocket
+  dispatchers' own listeners do not report them yet.
 
 ### Changed
 
@@ -207,7 +315,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rewritten the document with every part in it, a status delta has not, so
   those rows are still the only record of appended parts.
 
+- **`a2a.server.latency` uses the semantic conventions' buckets** (5 ms to
+  10 s) and is deprecated in favour of `rpc.server.call.duration`, to be
+  removed no earlier than the next minor release. It kept the SDK's default
+  boundaries, sized for milliseconds, so every call under 5 s landed in one
+  bucket (audit O5). Dashboards that read its `le` labels see new ones.
+
 ### Fixed
+
+- **The agent card's poll watcher sees a change made just after it starts**
+  (audit N23). It read the file's baseline mtime inside its own task, on
+  the blocking pool, so a card rewritten before that read landed became the
+  baseline and was never loaded. The baseline is now read when
+  `spawn_poll_watcher` is called.
+- **A WebSocket stream outlives the client that opened it**, as streams on
+  the HTTP and gRPC bindings do (audit N22). Dropping the client, or the
+  `WebSocketTransport`, aborted the connection's reader while the stream
+  still held its own sender, so the stream went silent: no later event, and
+  no end until the idle bound (five minutes by default) reported a
+  `Timeout`. The stream now holds the connection open until it is dropped.
+- **Wire: `RestDispatcher` answers an overload with `503` and an oversized
+  body with `413`**, as the axum adapter always has, instead of `500` and
+  `400`. The two HTTP+JSON dispatchers had separate mappings, so the same
+  overload told a client of one to retry and a client of the other not to
+  (audit N20). One mapping now serves both.
+- **The pool counters count each connection once.** `OtelMetrics` added the
+  cumulative totals in each report to its counters, so every report
+  re-counted every earlier connection (audit O10).
+- **The WebSocket dispatcher's documentation** said it routes the v0.3
+  `method/verb` aliases; it routes only `message/stream` of them and refuses
+  the rest with `MethodNotFound`, as its own test asserts (audit N19).
+
+- **The book's Rust examples compile.** 127 of its 130 `ignore`d blocks now
+  compile (the other 3 are `slimrpc`, outside the workspace), and 79 of those
+  also run; the other 48 would call a network or a database. Most needed only
+  hidden `# ` lines supplying what the page established in prose. Five could not have compiled as shown — each confirmed by
+  compiling the original with only its missing context added: a client
+  moved into two calls (E0382), a `match` on the `#[non_exhaustive]`
+  `SendMessageResponse` with no wildcard arm (E0004), an
+  `Arc<RateLimitInterceptor>` passed where a `ServerInterceptor` is required
+  (E0277), `&*writer` on a queue writer with no `Deref` (E0614), and
+  `ClientBuilder::new("…".into())` (E0283). Others named what does not exist
+  (`send_streaming_message()`, `AuthInterceptor::new`, `RetryInterceptor`)
+  or needed a feature the page did not mention (`hyper-util`'s
+  `server-auto`, `tracing-subscriber`'s `json`). And compiling them contradicted the prose around them:
+  - `AgentExecutor::cancel`'s default was documented as refusing with
+    `TaskNotCancelable`; it has cancelled since 0.7.
+  - The builder was said to choose the transport from the URL; without
+    `with_protocol_binding` it is always JSON-RPC.
+  - CORS read as on by default; it is off until `with_cors`.
+  - "`sqlx::PgConnection` is not `Send + Sync`" — it is. A single connection
+    is still the wrong choice, because every call then waits on its lock.
+  - The body-size pitfall's fix checked only `size_hint()`, which a chunked
+    body leaves unbounded; the page now adds `http_body_util::Limited`, as
+    the REST dispatcher does.
+  - The custom authentication interceptor compared tokens with a `HashSet`
+    lookup and did not mark itself `authenticates()`; the page now points
+    fixed token lists at the constant-time built-ins, and its example
+    records the caller and sets the marker.
+  - The production page's health-check example could not type-check; the
+    REST dispatcher and `A2aRouter` already answer `/health` and `/ready`,
+    and the JSON-RPC dispatcher does not, which the page now says.
+
+  `.book-ignore-baseline` now holds only the three `slimrpc` blocks.
+  Documentation only; no crate changed.
+
+- **The configuration reference's defaults are the defaults.**
+  `book/src/reference/configuration.md` gave `with_executor_timeout` a
+  default of None; the builder sets one hour, so a task can be failed by a
+  bound the page said was not there (audit S12). It also had no row for
+  `TaskStoreConfig::max_events_per_task` (512) or `idempotency_key_ttl` (24
+  hours), or for `require_version_header` (on) in `DispatchConfig` and
+  `GrpcConfig`. `crates/a2a-protocol-sdk/tests/book_defaults.rs` now reads
+  each defaults table on the page and compares it with the struct's real
+  `Default`, in both directions: a documented value that differs, a row that
+  names no field, and a field with no row all fail. Against the page as it
+  was, it reports exactly those five. Documentation only.
+
+- **The four crate READMEs — each crate's crates.io page — compile.** Seven
+  of their eight Rust blocks did not: the client's documented
+  `resubscribe()`, `get_authenticated_extended_card()` and
+  `ClientBuilder::with_transport()`, none of which exist; a `Message` literal
+  and `match`es that the types' `#[non_exhaustive]` rejects; a server prelude
+  that is the SDK's. Each README is now a doctest of its crate
+  (`#[cfg(doctest)] #[doc = include_str!("../README.md")]`), and its feature
+  table — like the two in the book and the one in `crates/README.md` — is
+  checked against the manifest by `scripts/check_feature_tables.py`, which
+  found 17 missing or wrong rows. The book and root README no longer say
+  `default-features = false` removes rustls from the SDK; it does not yet
+  (audit K1).
+
+- **Agent-card signing canonicalizes numbers the way RFC 8785 says.** Three
+  deviations, each found by the RFC's own vectors, now in
+  `crates/a2a-protocol-types/tests/rfc8785_vectors.rs`: a double exactly
+  halfway between two shortest renderings took the upper one, not the even
+  one (`1424953923781206.2`, Appendix B note 4); a card parsed from text
+  could read a float one ULP off, because serde_json's default parser is not
+  correctly rounded (5 of Appendix B's 24 values); and an integer beyond
+  2^53 was written with all its digits rather than as the double JCS
+  defines every number to be (`9007199254740993` is `9007199254740992`).
+  Against V8's `JSON.stringify` over the same 1,000,077 random doubles, the
+  canonicalizer disagreed 1,474 times from the bits and 237,518 times from
+  the text; it now disagrees 0 times on either, and 0 times over 8,552,446
+  structured ones (every `m × 2^e` with odd `m` below 4096), which is where
+  the fix's own first version was caught wrong at 2^-24. **What it trades:** a
+  signature made by 0.13.0 or earlier over a card holding an affected number
+  does not verify here, and the reverse — though neither verified against
+  any other conforming implementation, which is the correction (a
+  specification fix, `STABILITY.md` §2). The `signing` feature now enables
+  serde_json's `float_roundtrip`, which makes float parsing correctly
+  rounded, and slower, in every crate of a build that enables `signing`.
 
 - **`Server::serve_with_shutdown` sees its signal at the connection
   ceiling.** It waited for a connection permit before it looked at the

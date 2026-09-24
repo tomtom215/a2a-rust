@@ -251,28 +251,20 @@ fn a2a_error_to_response(err: &dyn std::fmt::Display, status: u16) -> axum::resp
         .into_response()
 }
 
-/// The HTTP status this adapter answers with, per §5.4.
+/// The HTTP status this adapter answers with: [`ServerError::http_status`],
+/// the one mapping both HTTP+JSON dispatchers use.
 ///
 /// This was a second, hand-written copy of §5.4's table, and it had drifted
 /// from the one in [`ErrorCode::http_status`] in three places:
 /// `TaskNotCancelable` and `InvalidStateTransition` answered `409`, and
 /// `PushNotSupported` answered `501`, where the table says `400` for all
-/// three. Two copies of a conformance table is how a specification update
-/// reaches one dispatcher and not the other, so there is now one copy and
-/// this defers to it.
+/// three. It then held the only copy of the `413`/`503` arms, so the REST
+/// dispatcher answered differently for the same errors (audit N20); both now
+/// live on `ServerError`.
 ///
-/// The two arms that remain are the ones §5.4 cannot answer for, because A2A
-/// has no error code for either: a body over the size limit, and a transient
-/// resource-limit rejection. Both are transport-level facts about this server
-/// rather than protocol errors, and `413`/`503` say so precisely.
+/// [`ServerError::http_status`]: crate::error::ServerError::http_status
 fn server_error_status(err: &crate::error::ServerError) -> u16 {
-    use crate::error::ServerError;
-
-    match err {
-        ServerError::PayloadTooLarge(_) => 413,
-        ServerError::Overloaded(_) => 503,
-        other => other.to_a2a_error().code.http_status(),
-    }
+    err.http_status()
 }
 
 fn handler_error_to_response(err: &crate::error::ServerError) -> axum::response::Response {
@@ -303,6 +295,9 @@ fn hyper_sse_to_axum(
 /// - `GET /tasks/{task_id}/pushNotificationConfigs` → `ListTaskPushNotificationConfigs`
 /// - `GET /tasks/{task_id}/pushNotificationConfigs/{id}` → `GetTaskPushNotificationConfig`
 /// - `DELETE /tasks/{task_id}/pushNotificationConfigs/{id}` → `DeleteTaskPushNotificationConfig`
+// The route templates recorded as `http.route` (`/tasks/{id}`) are literal
+// strings, not format strings.
+#[allow(clippy::too_many_lines, clippy::literal_string_with_formatting_args)]
 async fn handle_tasks_catchall(
     State(state): State<A2aState>,
     method: axum::http::Method,
@@ -315,38 +310,95 @@ async fn handle_tasks_catchall(
 
     match (method.as_str(), segments.as_slice()) {
         // GET /tasks/{id} (no colon action)
-        ("GET", [id]) if !id.contains(':') => handle_get_task_inner(&state, id, &hdrs).await,
+        ("GET", [id]) if !id.contains(':') => {
+            rpc_call(
+                &state.handler,
+                "GetTask",
+                (method.as_str(), "/tasks/{id}"),
+                &hdrs,
+                handle_get_task_inner(&state, id, &hdrs),
+            )
+            .await
+        }
 
         // POST /tasks/{id}:cancel
         ("POST", [id_action]) if id_action.ends_with(":cancel") => {
             let id = &id_action[..id_action.len() - ":cancel".len()];
-            handle_cancel_task_inner(&state, id, &hdrs).await
+            rpc_call(
+                &state.handler,
+                "CancelTask",
+                (method.as_str(), "/tasks/{id}:cancel"),
+                &hdrs,
+                handle_cancel_task_inner(&state, id, &hdrs),
+            )
+            .await
         }
 
         // GET|POST /tasks/{id}:subscribe
         ("GET" | "POST", [id_action]) if id_action.ends_with(":subscribe") => {
             let id = &id_action[..id_action.len() - ":subscribe".len()];
-            handle_subscribe_inner(&state, id, &hdrs).await
+            rpc_call(
+                &state.handler,
+                "SubscribeToTask",
+                (method.as_str(), "/tasks/{id}:subscribe"),
+                &hdrs,
+                handle_subscribe_inner(&state, id, &hdrs),
+            )
+            .await
         }
 
         // POST /tasks/{task_id}/pushNotificationConfigs
         ("POST", [task_id, "pushNotificationConfigs"]) => {
-            handle_create_push_config_inner(&state, task_id, &hdrs, body).await
+            rpc_call(
+                &state.handler,
+                "CreateTaskPushNotificationConfig",
+                (method.as_str(), "/tasks/{task_id}/pushNotificationConfigs"),
+                &hdrs,
+                handle_create_push_config_inner(&state, task_id, &hdrs, body),
+            )
+            .await
         }
 
         // GET /tasks/{task_id}/pushNotificationConfigs
         ("GET", [task_id, "pushNotificationConfigs"]) => {
-            handle_list_push_configs_inner(&state, task_id, &hdrs).await
+            rpc_call(
+                &state.handler,
+                "ListTaskPushNotificationConfigs",
+                (method.as_str(), "/tasks/{task_id}/pushNotificationConfigs"),
+                &hdrs,
+                handle_list_push_configs_inner(&state, task_id, &hdrs),
+            )
+            .await
         }
 
         // GET /tasks/{task_id}/pushNotificationConfigs/{config_id}
         ("GET", [task_id, "pushNotificationConfigs", config_id]) => {
-            handle_get_push_config_inner(&state, task_id, config_id, &hdrs).await
+            rpc_call(
+                &state.handler,
+                "GetTaskPushNotificationConfig",
+                (
+                    method.as_str(),
+                    "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
+                ),
+                &hdrs,
+                handle_get_push_config_inner(&state, task_id, config_id, &hdrs),
+            )
+            .await
         }
 
         // DELETE /tasks/{task_id}/pushNotificationConfigs/{config_id}
         ("DELETE", [task_id, "pushNotificationConfigs", config_id]) => {
-            handle_delete_push_config_inner(&state, task_id, config_id, &hdrs).await
+            rpc_call(
+                &state.handler,
+                "DeleteTaskPushNotificationConfig",
+                (
+                    method.as_str(),
+                    "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
+                ),
+                &hdrs,
+                handle_delete_push_config_inner(&state, task_id, config_id, &hdrs),
+            )
+            .await
         }
 
         _ => a2a_error_to_response(&"not found", 404),
@@ -355,12 +407,41 @@ async fn handle_tasks_catchall(
 
 // ── Route handlers (Axum extractor-based) ────────────────────────────────────
 
+/// Runs one routed call in its `SERVER` span, recorded with the HTTP status
+/// it answered (ADR 0013).
+///
+/// Not `async`: an `async fn` awaiting `call` would hold that future twice.
+fn rpc_call(
+    handler: &RequestHandler,
+    method: &str,
+    (http_method, route): (&str, &str),
+    hdrs: &HashMap<String, String>,
+    call: impl std::future::Future<Output = axum::response::Response>,
+) -> impl std::future::Future<Output = axum::response::Response> {
+    crate::rpc_span::ServerSpan::open(
+        handler,
+        crate::rpc_span::RpcSystem::HttpJson,
+        method,
+        Some(hdrs),
+    )
+    .with_http(http_method, route)
+    .run_response(call)
+}
+
 async fn handle_send_message(
     State(state): State<A2aState>,
     headers: axum::http::HeaderMap,
     TimedBody(body): TimedBody,
 ) -> axum::response::Response {
-    handle_send_inner(&state, false, &headers, body).await
+    let hdrs = extract_headers(&headers);
+    rpc_call(
+        &state.handler,
+        "SendMessage",
+        ("POST", "/message:send"),
+        &hdrs,
+        handle_send_inner(&state, false, &hdrs, body),
+    )
+    .await
 }
 
 async fn handle_stream_message(
@@ -368,7 +449,15 @@ async fn handle_stream_message(
     headers: axum::http::HeaderMap,
     TimedBody(body): TimedBody,
 ) -> axum::response::Response {
-    handle_send_inner(&state, true, &headers, body).await
+    let hdrs = extract_headers(&headers);
+    rpc_call(
+        &state.handler,
+        "SendStreamingMessage",
+        ("POST", "/message:stream"),
+        &hdrs,
+        handle_send_inner(&state, true, &hdrs, body),
+    )
+    .await
 }
 
 async fn handle_list_tasks(
@@ -389,10 +478,19 @@ async fn handle_list_tasks(
         include_artifacts: query.get("includeArtifacts").and_then(|v| v.parse().ok()),
         history_length: query.get("historyLength").and_then(|v| v.parse().ok()),
     };
-    match state.handler.on_list_tasks(params, Some(&hdrs)).await {
-        Ok(result) => axum::Json(result).into_response(),
-        Err(e) => handler_error_to_response(&e),
-    }
+    rpc_call(
+        &state.handler,
+        "ListTasks",
+        ("GET", "/tasks"),
+        &hdrs,
+        async {
+            match state.handler.on_list_tasks(params, Some(&hdrs)).await {
+                Ok(result) => axum::Json(result).into_response(),
+                Err(e) => handler_error_to_response(&e),
+            }
+        },
+    )
+    .await
 }
 
 async fn handle_extended_card(
@@ -400,10 +498,19 @@ async fn handle_extended_card(
     headers: axum::http::HeaderMap,
 ) -> axum::response::Response {
     let hdrs = extract_headers(&headers);
-    match state.handler.on_get_extended_agent_card(Some(&hdrs)).await {
-        Ok(card) => axum::Json(card).into_response(),
-        Err(e) => handler_error_to_response(&e),
-    }
+    rpc_call(
+        &state.handler,
+        "GetExtendedAgentCard",
+        ("GET", "/extendedAgentCard"),
+        &hdrs,
+        async {
+            match state.handler.on_get_extended_agent_card(Some(&hdrs)).await {
+                Ok(card) => axum::Json(card).into_response(),
+                Err(e) => handler_error_to_response(&e),
+            }
+        },
+    )
+    .await
 }
 
 async fn handle_agent_card(State(state): State<A2aState>) -> axum::response::Response {
@@ -459,10 +566,9 @@ async fn handle_ready(State(state): State<A2aState>) -> axum::response::Response
 async fn handle_send_inner(
     state: &A2aState,
     streaming: bool,
-    headers: &axum::http::HeaderMap,
+    hdrs: &HashMap<String, String>,
     body: Bytes,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(headers);
     let params: a2a_protocol_types::params::MessageSendParams = match serde_json::from_slice(&body)
     {
         Ok(p) => p,
@@ -470,7 +576,7 @@ async fn handle_send_inner(
     };
     match state
         .handler
-        .on_send_message(params, streaming, Some(&hdrs))
+        .on_send_message(params, streaming, Some(hdrs))
         .await
     {
         Ok(SendMessageResult::Response(resp)) => axum::Json(resp).into_response(),

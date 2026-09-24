@@ -786,9 +786,14 @@ impl ActivityClock {
 
 /// Processes a single JSON-RPC message received over WebSocket.
 ///
-/// Routes the same method surface as the JSON-RPC HTTP dispatcher — both the
-/// v1.0 `PascalCase` names and the v0.3 `method/verb` aliases — so a client
-/// can switch bindings without changing method names.
+/// Routes the v1.0 `PascalCase` method names the JSON-RPC HTTP dispatcher
+/// routes, so a client can switch bindings without changing method names.
+/// Of the v0.3 `method/verb` spellings only `message/stream` is accepted;
+/// the others are refused with `MethodNotFound`, as over HTTP
+/// (`ws_legacy_method_names_rejected`; audit N19).
+///
+/// Each call runs in its `SERVER` span and is recorded with the error code
+/// it answers with, as over HTTP (ADR 0013).
 #[allow(clippy::too_many_lines)]
 async fn process_ws_message(
     handler: &RequestHandler,
@@ -796,9 +801,16 @@ async fn process_ws_message(
     writer: WsSink,
     headers: &HashMap<String, String>,
 ) {
+    let started = std::time::Instant::now();
     let rpc_req: JsonRpcRequest = match serde_json::from_str(text) {
         Ok(req) => req,
         Err(e) => {
+            crate::rpc_span::record_unrouted(
+                handler,
+                crate::rpc_span::RpcSystem::JsonRpc,
+                started,
+                "-32700",
+            );
             let err_resp = JsonRpcErrorResponse::new(
                 None,
                 JsonRpcError::new(-32700, format!("parse error: {e}")),
@@ -863,16 +875,13 @@ async fn process_ws_message(
             .await;
         }
         "SubscribeToTask" => {
-            let params = match parse_params::<a2a_protocol_types::params::TaskIdParams>(
-                rpc_req.params.as_ref(),
-            ) {
-                Ok(p) => p,
-                Err(e) => {
-                    send_error(&writer, id, &e).await;
-                    return;
-                }
+            let call = async {
+                let params = parse_params::<a2a_protocol_types::params::TaskIdParams>(
+                    rpc_req.params.as_ref(),
+                )?;
+                handler.on_resubscribe(params, Some(headers)).await
             };
-            match handler.on_resubscribe(params, Some(headers)).await {
+            match ws_span(handler, &rpc_req, headers).run(call).await {
                 Ok(reader) => {
                     stream_events(&writer, reader, id).await;
                 }
@@ -959,10 +968,28 @@ async fn process_ws_message(
             .await;
         }
         other => {
-            let err = ServerError::MethodNotFound(other.to_owned());
-            send_error(&writer, id, &err).await;
+            let refused: Result<(), ServerError> = ws_span(handler, &rpc_req, headers)
+                .run(async { Err(ServerError::MethodNotFound(other.to_owned())) })
+                .await;
+            if let Err(err) = refused {
+                send_error(&writer, id, &err).await;
+            }
         }
     }
+}
+
+/// The span one WebSocket call runs in: JSON-RPC frames, so `jsonrpc`.
+fn ws_span(
+    handler: &RequestHandler,
+    rpc_req: &JsonRpcRequest,
+    headers: &HashMap<String, String>,
+) -> crate::rpc_span::ServerSpan {
+    crate::rpc_span::ServerSpan::open(
+        handler,
+        crate::rpc_span::RpcSystem::JsonRpc,
+        &rpc_req.method,
+        Some(headers),
+    )
 }
 
 /// Dispatches a `SendMessage` or `SendStreamingMessage`.
@@ -974,20 +1001,14 @@ async fn dispatch_send_message(
     id: JsonRpcId,
     writer: &WsSink,
 ) {
-    let params = match parse_params::<a2a_protocol_types::params::MessageSendParams>(
-        rpc_req.params.as_ref(),
-    ) {
-        Ok(p) => p,
-        Err(e) => {
-            send_error(writer, id, &e).await;
-            return;
-        }
+    let call = async {
+        let params =
+            parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req.params.as_ref())?;
+        handler
+            .on_send_message(params, streaming, Some(headers))
+            .await
     };
-
-    match handler
-        .on_send_message(params, streaming, Some(headers))
-        .await
-    {
+    match ws_span(handler, rpc_req, headers).run(call).await {
         Ok(SendMessageResult::Response(resp)) => {
             let result = serde_json::to_value(&resp).unwrap_or(serde_json::Value::Null);
             let success = JsonRpcSuccessResponse {
@@ -1078,7 +1099,10 @@ async fn dispatch_simple<'a, F>(
     >,
 {
     let params = rpc_req.params.clone().unwrap_or(serde_json::Value::Null);
-    match f(handler, params, headers).await {
+    match ws_span(handler, rpc_req, headers)
+        .run(f(handler, params, headers))
+        .await
+    {
         Ok(result) => {
             let success = JsonRpcSuccessResponse {
                 jsonrpc: JsonRpcVersion,
@@ -2022,6 +2046,59 @@ mod tests {
                 "v0.3-style name {legacy} must be MethodNotFound: {v}"
             );
         }
+    }
+
+    /// Every WebSocket call is recorded with the JSON-RPC code it was
+    /// answered with, as over HTTP — including a frame that is not a
+    /// request, and a method this server does not serve (ADR 0013; O11).
+    #[tokio::test]
+    async fn ws_calls_are_recorded_with_the_code_they_were_answered_with() {
+        type Seen = Arc<std::sync::Mutex<Vec<(Option<String>, Option<String>)>>>;
+        struct Recording(Seen);
+        impl crate::Metrics for Recording {
+            fn on_rpc_call(&self, call: &crate::RpcCall<'_>) {
+                assert_eq!(call.system, "jsonrpc");
+                self.0.lock().unwrap().push((
+                    call.method.map(str::to_owned),
+                    call.error_type.map(str::to_owned),
+                ));
+            }
+        }
+        let seen = Seen::default();
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .with_metrics(Recording(Arc::clone(&seen)))
+                .build()
+                .unwrap(),
+        );
+        let addr = Arc::new(WebSocketDispatcher::new(handler))
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind to port 0");
+        let mut ws = ws_connect(addr).await;
+
+        ws.send(WsMessage::Text("not json".into())).await.unwrap();
+        let _ = read_text(&mut ws).await;
+        for (id, method, params) in [
+            ("a", "tasks/get", serde_json::json!({})),
+            ("b", "GetTask", serde_json::json!({"id": "nope"})),
+        ] {
+            let _ = ws_call(
+                &mut ws,
+                serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}),
+            )
+            .await;
+        }
+
+        let s = |v: &str| Some(v.to_owned());
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [
+                (None, s("-32700")),
+                (s("_OTHER"), s("-32601")),
+                (s("lf.a2a.v1.A2AService/GetTask"), s("-32001")),
+            ]
+        );
     }
 
     // 17. Push-config methods are routed over WebSocket (parity with the

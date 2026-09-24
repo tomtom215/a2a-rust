@@ -203,12 +203,50 @@ git push origin vX.Y.Z
 
 This triggers the release workflow (`.github/workflows/release.yml`) which:
 
-1. **Validates** that all 4 crate versions match the tag and CHANGELOG entry exists
+1. **Validates** that all 4 crate versions match the tag and CHANGELOG entry
+   exists, and that the tag publishes what its notes describe (below)
 2. **Runs CI** (fmt, clippy, test, doc, MSRV check) and **security audit** (cargo-deny)
 3. **Packages** all crates with SLSA build provenance attestation
 4. **Runs a publish dry run** to verify packages are publishable
 5. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts
 6. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval; authenticates with Trusted Publishing, falling back to the environment secret)
+
+### The tag must be the release-preparation commit
+
+`v0.13.0` was tagged on the merge of #138 instead of on its release
+preparation, and shipped nineteen changes — one breaking — that the tagged
+`CHANGELOG.md` still listed under `[Unreleased]` and the release notes never
+mentioned (`docs/adopter-audit-2026-09-22.md`, N7). Four checks in
+`release.yml`, all in `scripts/check_release_tree.py`, now refuse that:
+
+| Step | Refuses |
+|---|---|
+| `Nothing is left under [Unreleased] in the tagged tree` | any entry under `## [Unreleased]`; the placeholder `Nothing yet.` is allowed |
+| `The tag is the release-preparation commit` | any file packaged into the four crates (their directories, and the root `Cargo.toml` they inherit from) that differs between the tag and the last commit that edited the release's own `## [X.Y.Z]` section — apart from the crates' version strings and pins |
+| `Breaking releases keep the STABILITY.md cadence` | a `### Breaking Changes` section in a patch release, or in a second release in the same calendar month as another breaking one |
+| `Packaged crates were built from the tagged commit` (package job) | a `.crate` whose `.cargo_vcs_info.json` names another commit, or a dirty tree |
+
+What that asks of the process: **write the release notes last.** Anything that
+changes packaged source after the `## [X.Y.Z]` section was last edited — a
+fix merged during release preparation, a test added to kill a mutant — fails
+the second check until the notes are edited again after it. That is the
+point: whoever changes shipped code after the notes were written has to open
+the notes, which is exactly the step 0.13.0 skipped. Bumping versions and pins
+after the notes is allowed, since 0.12.1 was prepared in that order.
+
+Before tagging, run all three tree checks on the commit you intend to tag:
+
+```bash
+for c in unreleased prep cadence; do
+  python3 scripts/check_release_tree.py "$c" vX.Y.Z HEAD || echo "FAILED: $c"
+done
+```
+
+`python3 scripts/check_release_tree.py history` runs them over every existing
+tag. Measured 2026-09-23: `prep` fails eight of the seventeen tags (`v0.2.0`,
+`v0.6.0` to `v0.10.0`, `v0.12.0`, `v0.13.0`), `unreleased` fails `v0.3.0` and
+`v0.13.0`, and `cadence` fails `v0.13.0`. None of that is retroactively
+fixable; it is the measurement of how often the gap was used.
 
 ### 4. Post-release
 

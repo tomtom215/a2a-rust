@@ -77,7 +77,10 @@ pub(super) fn server_error_to_response(
     err: &ServerError,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     let a2a_err = err.to_a2a_error();
-    let status = a2a_err.code.http_status();
+    // Not `a2a_err.code.http_status()`: that answers 400 for a body over the
+    // limit and 500 for an overload, where this binding's other dispatcher
+    // answers 413 and 503 (audit N20).
+    let status = err.http_status();
     let grpc_status = a2a_err.code.grpc_status();
     let details = a2a_err.error_info_data(None);
 
@@ -406,12 +409,22 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 500);
     }
 
+    /// Was `..._maps_to_400`, pinning the divergence audit N20 records: this
+    /// dispatcher's own body-limit check answers 413, as does the axum
+    /// adapter, and this path answered 400 for the same condition.
     #[tokio::test]
-    async fn server_error_payload_too_large_maps_to_400() {
+    async fn server_error_payload_too_large_maps_to_413() {
         let err = ServerError::PayloadTooLarge("too big".into());
         let resp = server_error_to_response(&err);
-        // PayloadTooLarge → InvalidRequest → 400
-        assert_eq!(resp.status().as_u16(), 400);
+        assert_eq!(resp.status().as_u16(), 413);
+    }
+
+    /// An overload is the retryable 503, not a 500 (audit N20).
+    #[tokio::test]
+    async fn server_error_overloaded_maps_to_503() {
+        let err = ServerError::Overloaded("at capacity".into());
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 503);
     }
 
     #[tokio::test]

@@ -22,7 +22,7 @@
 mod capability;
 mod concurrency;
 mod event_processing;
-mod helpers;
+pub(crate) mod helpers;
 mod introspection;
 mod lifecycle;
 mod limits;

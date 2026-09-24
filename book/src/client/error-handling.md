@@ -6,23 +6,30 @@ a2a-rust uses a layered error model: protocol-level errors (`A2aError`), client 
 
 Protocol errors defined by the A2A spec:
 
-```rust,ignore
+```rust
 use a2a_protocol_sdk::types::error::{A2aError, ErrorCode};
 
 // Common error codes
-ErrorCode::TaskNotFound         // Task doesn't exist
-ErrorCode::TaskNotCancelable    // Agent doesn't support cancellation
-ErrorCode::InvalidParams        // Bad request parameters
-ErrorCode::MethodNotFound       // Unknown method
-ErrorCode::InternalError        // Server-side failure
-ErrorCode::UnsupportedOperation // Operation invalid for current state
-                                // (e.g. SendMessage to terminal task,
-                                //  SubscribeToTask on completed task)
+let _common = [
+    ErrorCode::TaskNotFound,         // Task doesn't exist
+    ErrorCode::TaskNotCancelable,    // Task already in a terminal state
+    ErrorCode::InvalidParams,        // Bad request parameters
+    ErrorCode::MethodNotFound,       // Unknown method
+    ErrorCode::InternalError,        // Server-side failure
+    ErrorCode::UnsupportedOperation, // Operation invalid for current state
+                                     // (e.g. SendMessage to terminal task,
+                                     //  SubscribeToTask on completed task)
+];
+let e = A2aError::task_not_found("task-abc");
+assert_eq!(e.code, ErrorCode::TaskNotFound);
 ```
 
 ### Handling Protocol Errors
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(client: A2aClient) {
+# let params = TaskQueryParams { tenant: None, id: "task-abc".into(), history_length: None };
 match client.get_task(params).await {
     Ok(task) => println!("Got task: {}", task.id),
     Err(e) => {
@@ -30,13 +37,16 @@ match client.get_task(params).await {
         eprintln!("Error: {e}");
     }
 }
+# }
 ```
 
 ## Client Errors
 
 The client wraps transport and protocol errors:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(client: A2aClient, params: MessageSendParams) -> Result<(), ClientError> {
 match client.send_message(params).await {
     Ok(response) => { /* handle response */ }
     Err(e) => {
@@ -46,11 +56,16 @@ match client.send_message(params).await {
         eprintln!("Client error: {e}");
     }
 }
+# Ok(())
+# }
 ```
 
 ### Timeout Errors
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(url: &str, params: MessageSendParams) -> Result<(), ClientError> {
+# use std::time::Duration;
 // Per-request timeout
 let client = ClientBuilder::new(url)
     .with_timeout(Duration::from_secs(5))
@@ -64,6 +79,8 @@ match client.send_message(params).await {
         eprintln!("Failed (possibly timeout): {e}");
     }
 }
+# Ok(())
+# }
 ```
 
 ### A Stream That Ends Early
@@ -109,33 +126,48 @@ in the shapes seen in practice: a2a-go's AIP-193 object as a data frame
 
 ### Connection Errors
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# use std::time::Duration;
+# fn main() -> Result<(), ClientError> {
+# let url = "http://agent.example.com";
 // Connection timeout
 let client = ClientBuilder::new(url)
     .with_connection_timeout(Duration::from_secs(2))
     .build()?;
+# Ok(())
+# }
 ```
 
 ### Automatic Retries
 
 Use `RetryPolicy` to automatically retry transient errors:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::client::{ClientBuilder, ClientError};
+# fn main() -> Result<(), ClientError> {
+# let url = "http://agent.example.com";
 use a2a_protocol_client::RetryPolicy;
 
 let client = ClientBuilder::new(url)
     .with_retry_policy(RetryPolicy::default())
     .build()?;
+# Ok(())
+# }
 ```
 
 You can check if an error is retryable programmatically:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(client: A2aClient, params: MessageSendParams) -> Result<(), ClientError> {
 match client.send_message(params).await {
     Err(e) if e.is_retryable() => println!("Transient error: {e}"),
     Err(e) => println!("Permanent error: {e}"),
     Ok(resp) => { /* ... */ }
 }
+# Ok(())
+# }
 ```
 
 Retryable errors include: `Http`, `HttpClient`, `Timeout`, `IncompleteStream`, and `UnexpectedStatus` with codes 429, 502, 503, or 504. gRPC `DeadlineExceeded` and `Cancelled` errors also map to `Timeout` (retryable), and `Unavailable` maps to `HttpClient` (retryable).
@@ -159,53 +191,48 @@ use a2a_protocol_sdk::server::ServerError;
 
 a2a-rust never panics on caller input or I/O failure — every fallible operation returns `Result`. (The only `expect` calls in the libraries assert internal invariants, such as propagating lock poisoning, that callers cannot trigger.) Follow the same pattern in your executors:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# fn good() -> A2aResult<()> {
 // Good: return an error
 return Err(A2aError::internal("processing failed"));
+# }
+# fn bad() {
 
 // Bad: panic
 panic!("processing failed");
+# }
 ```
 
 ### Executor Error Handling
 
 In your `AgentExecutor`, catch errors and report them as status updates:
 
-```rust,ignore
-Box::pin(async move {
-    queue.write(/* Working */).await?;
+```rust
+use a2a_protocol_sdk::prelude::*;
+use a2a_protocol_sdk::types::failure::FailureClass;
 
-    match risky_operation().await {
+struct Summarizer;
+# async fn risky_operation(_: &Message) -> Result<String, std::io::Error> { Ok("ok".into()) }
+
+agent_executor!(Summarizer, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+    emit.status(TaskState::Working).await?;
+
+    match risky_operation(&ctx.message).await {
         Ok(result) => {
-            queue.write(/* ArtifactUpdate */).await?;
-            queue.write(/* Completed */).await?;
+            emit.artifact("summary", vec![Part::text(result)], None, Some(true)).await?;
+            emit.status(TaskState::Completed).await?;
         }
         Err(e) => {
-            // Report failure through the protocol
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                status: TaskStatus {
-                    state: TaskState::Failed,
-                    message: Some(Message {
-                        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-                        role: MessageRole::Agent,
-                        parts: vec![Part::text(&e.to_string())],
-                        task_id: None,
-                        context_id: None,
-                        reference_task_ids: None,
-                        extensions: None,
-                        metadata: None,
-                    }),
-                    timestamp: None,
-                },
-                metadata: None,
-            })).await?;
+            // Report failure through the protocol: a `Failed` status whose
+            // message says why, and a class a caller can branch on.
+            emit.fail(FailureClass::Internal, e.to_string()).await?;
         }
     }
 
     Ok(())
-})
+});
 ```
 
 ### Delegating to Another Agent with `?`
@@ -248,7 +275,9 @@ client's retry policy and the caller's agree. The failed task's status text is
 
 For streaming, handle errors per-event:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(mut stream: EventStream) {
 while let Some(event) = stream.next().await {
     match event {
         Ok(ev) => { /* process event */ }
@@ -259,6 +288,7 @@ while let Some(event) = stream.next().await {
         }
     }
 }
+# }
 ```
 
 ## Next Steps

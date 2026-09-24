@@ -108,11 +108,15 @@ impl RequestHandler {
 
         // On the handler's tracker, so shutdown can wait for this future to
         // end rather than exit underneath it.
+        // Read before `ctx` moves into the executor's future; the span
+        // records them when it is created.
+        let span_ids = (ctx.task_id.to_string(), ctx.context_id.clone());
         self.in_flight
             .executors()
-            .spawn(crate::store::tenant::TenantContext::scope(
-                tenant,
-                async move {
+            .spawn(crate::rpc_span::in_executor_span(
+                &span_ids.0,
+                &span_ids.1,
+                crate::store::tenant::TenantContext::scope(tenant, async move {
                     // Owned by this future, so the slot is returned when the executor
                     // finishes, fails, panics, or is aborted.
                     let _tenant_slot = tenant_slot;
@@ -158,7 +162,7 @@ impl RequestHandler {
                     event_queue_mgr.destroy(&task_id).await;
                     cancel_tokens.write().await.remove(&task_id);
                     cleanup_guard.task_id = None;
-                },
+                }),
             ))
     }
 }

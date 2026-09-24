@@ -132,6 +132,29 @@ impl ServerError {
         }
     }
 
+    /// The HTTP status the HTTP+JSON binding answers this error with.
+    ///
+    /// §5.4's table ([`ErrorCode::http_status`]) for everything it covers.
+    /// The two arms that remain are the ones §5.4 cannot answer for, because
+    /// A2A has no error code for either: a body over the size limit, and a
+    /// transient resource-limit rejection. Both are transport-level facts
+    /// about this server rather than protocol errors, and `413`/`503` say so
+    /// precisely — `503` is the status a client's retry logic keys on.
+    ///
+    /// One function for both HTTP+JSON dispatchers. `RestDispatcher` went
+    /// through `to_a2a_error()` alone and answered `400` and `500` for these
+    /// two where the axum adapter answered `413` and `503` (audit N20): the
+    /// same binding, two answers, and an overload that told a retrying client
+    /// not to retry.
+    #[must_use]
+    pub(crate) fn http_status(&self) -> u16 {
+        match self {
+            Self::PayloadTooLarge(_) => 413,
+            Self::Overloaded(_) => 503,
+            other => other.to_a2a_error().code.http_status(),
+        }
+    }
+
     /// Converts this server error into an [`A2aError`] suitable for wire responses.
     ///
     /// # Mapping

@@ -15,6 +15,7 @@
 //! nothing.
 
 use super::*;
+use std::convert::Infallible;
 
 use crate::DispatchConfig;
 use bytes::Bytes;

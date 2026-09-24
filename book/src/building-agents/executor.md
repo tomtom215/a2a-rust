@@ -4,7 +4,10 @@ The `AgentExecutor` trait is the heart of every A2A agent. It defines what happe
 
 ## The Trait
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::{A2aResult, EventQueueWriter, RequestContext};
 pub trait AgentExecutor: Send + Sync + 'static {
     /// Called when a message arrives (SendMessage or SendStreamingMessage).
     fn execute<'a>(
@@ -14,7 +17,7 @@ pub trait AgentExecutor: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
     /// Called when a client requests task cancellation.
-    /// Default: returns "task not cancelable" error.
+    /// Default: emits the terminal `Canceled` status and returns `Ok(())`.
     fn cancel<'a>(
         &'a self,
         ctx: &'a RequestContext,
@@ -27,13 +30,28 @@ pub trait AgentExecutor: Send + Sync + 'static {
         &'a self,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 }
+# // The signatures above are the real trait's: this impl of it uses them.
+# struct Probe;
+# impl a2a_protocol_sdk::server::AgentExecutor for Probe {
+#     fn execute<'a>(&'a self, _: &'a RequestContext, _: &'a dyn EventQueueWriter)
+#         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
+#     fn cancel<'a>(&'a self, _: &'a RequestContext, _: &'a dyn EventQueueWriter)
+#         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
+#     fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+#         Box::pin(async {})
+#     }
+# }
 ```
-
 ### Why `Pin<Box<dyn Future>>`?
 
 This signature ensures **object safety** — the trait can be stored as `Arc<dyn AgentExecutor>` and shared across threads. Standard `async fn` in traits would prevent this. The `Box::pin(async move { ... })` wrapper is the idiomatic pattern:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+struct MyAgent;
+
 impl AgentExecutor for MyAgent {
     fn execute<'a>(
         &'a self,
@@ -56,8 +74,13 @@ The `executor_helpers` module provides shortcuts to reduce boilerplate.
 
 Wraps an async block into the required `Pin<Box<dyn Future>>`:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
 use a2a_protocol_server::executor_helpers::boxed_future;
+# struct MyAgent;
+# impl AgentExecutor for MyAgent {
 
 fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter)
     -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>
@@ -67,16 +90,17 @@ fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWrite
         Ok(())
     })
 }
+# }
 ```
-
 ### `agent_executor!` macro
 
 Generates the full `AgentExecutor` impl from a closure-like syntax:
 
-```rust,ignore
+```rust
 use a2a_protocol_server::agent_executor;
 
 struct EchoAgent;
+struct CancelableAgent;
 
 // Simple form (execute only)
 agent_executor!(EchoAgent, |ctx, queue| async {
@@ -94,8 +118,11 @@ agent_executor!(CancelableAgent,
 
 Eliminates the repetitive `task_id.clone()` / `context_id.clone()` in every event:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
 use a2a_protocol_server::executor_helpers::EventEmitter;
+
+struct MyAgent;
 
 agent_executor!(MyAgent, |ctx, queue| async {
     let emit = EventEmitter::new(ctx, queue);
@@ -116,6 +143,7 @@ agent_executor!(MyAgent, |ctx, queue| async {
 | Method | Description |
 |--------|-------------|
 | `status(TaskState)` | Emit a status update event |
+| `fail(FailureClass, reason)` | Emit the terminal `Failed` status, with the reason and a failure class a caller can branch on |
 | `artifact(id, parts, append, last_chunk)` | Emit an artifact update event |
 | `is_cancelled()` | Check if the task was cancelled |
 
@@ -191,7 +219,9 @@ synthetic context claiming a call that never happened.
 
 The queue is your channel for sending events back to the client:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
 // Write a status update
 queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
     task_id: ctx.task_id.clone(),
@@ -209,8 +239,9 @@ queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     last_chunk: Some(true),
     metadata: None,
 })).await?;
+# Ok(())
+# }
 ```
-
 For **synchronous** clients (`SendMessage`), the handler collects all events and assembles the final `Task` response. For **streaming** clients (`SendStreamingMessage`), events are delivered as SSE in real time. Your executor doesn't need to know which mode the client used — just write events to the queue.
 
 ## Common Patterns
@@ -219,67 +250,66 @@ For **synchronous** clients (`SendMessage`), the handler collects all events and
 
 Most executors follow this structure:
 
-```rust,ignore
-Box::pin(async move {
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# async fn do_work(_: &Message) -> A2aResult<String> { Ok(String::new()) }
+struct MyAgent;
+
+agent_executor!(MyAgent, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+
     // 1. Working
-    queue.write(StreamResponse::StatusUpdate(/* Working */)).await?;
+    emit.status(TaskState::Working).await?;
 
     // 2. Produce results
     let result = do_work(&ctx.message).await?;
-    queue.write(StreamResponse::ArtifactUpdate(/* result */)).await?;
+    emit.artifact("result", vec![Part::text(result)], None, Some(true)).await?;
 
     // 3. Completed
-    queue.write(StreamResponse::StatusUpdate(/* Completed */)).await?;
+    emit.status(TaskState::Completed).await?;
 
     Ok(())
-})
+});
 ```
-
 ### Error Handling
 
-If your executor encounters an error, transition to `Failed` with a descriptive message:
+If your executor encounters an error, transition to `Failed` with a descriptive message. `EventEmitter::fail` writes that status, and records a failure class a caller can branch on — `Transient` for "retry me", `Internal` for a fault here:
 
-```rust,ignore
-Box::pin(async move {
-    queue.write(/* Working */).await?;
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# async fn do_work(_: &Message) -> Result<String, std::io::Error> { Ok(String::new()) }
+use a2a_protocol_sdk::types::failure::FailureClass;
+
+struct MyAgent;
+
+agent_executor!(MyAgent, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+    emit.status(TaskState::Working).await?;
 
     match do_work(&ctx.message).await {
         Ok(result) => {
-            queue.write(/* ArtifactUpdate with result */).await?;
-            queue.write(/* Completed */).await?;
+            emit.artifact("result", vec![Part::text(result)], None, Some(true)).await?;
+            emit.status(TaskState::Completed).await?;
         }
         Err(e) => {
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                status: TaskStatus {
-                    state: TaskState::Failed,
-                    message: Some(Message {
-                        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-                        role: MessageRole::Agent,
-                        parts: vec![Part::text(&format!("Error: {e}"))],
-                        task_id: None,
-                        context_id: None,
-                        reference_task_ids: None,
-                        extensions: None,
-                        metadata: None,
-                    }),
-                    timestamp: None,
-                },
-                metadata: None,
-            })).await?;
+            emit.fail(FailureClass::Internal, format!("Error: {e}")).await?;
         }
     }
 
     Ok(())
-})
+});
 ```
 
+Returning `Err` also ends the task `Failed`, with the error's text; the class
+is then inferred from its code, which can only say `InvalidRequest` or
+`Internal`.
 ### Requesting More Input
 
 When the agent needs clarification:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
 queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
     task_id: ctx.task_id.clone(),
     context_id: ContextId::new(ctx.context_id.clone()),
@@ -297,33 +327,50 @@ queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
     },
     metadata: None,
 })).await?;
+# Ok(())
+# }
 ```
 
 The client can then send another message with the same `context_id` to continue the conversation.
 
 ### Supporting Cancellation
 
-Override the `cancel` method:
+Every executor supports cancellation without writing anything. By the time
+`cancel` runs, the handler has triggered `ctx.cancellation_token`, which a
+running `execute` should observe (`EventEmitter::is_cancelled`), and the
+default `cancel` emits the terminal `Canceled` status.
 
-```rust,ignore
-fn cancel<'a>(
-    &'a self,
-    ctx: &'a RequestContext,
-    queue: &'a dyn EventQueueWriter,
-) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-    Box::pin(async move {
-        // Clean up any in-progress work
-        self.cancel_token.cancel();
+Override `cancel` when the task holds something that must be released:
 
-        queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            status: TaskStatus::new(TaskState::Canceled),
-            metadata: None,
-        })).await?;
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+use std::collections::HashSet;
+use std::sync::Mutex;
+# use a2a_protocol_sdk::prelude::*;
 
-        Ok(())
-    })
+struct GpuAgent {
+    // Tasks holding a GPU slot.
+    reserved: Mutex<HashSet<TaskId>>,
+}
+
+impl AgentExecutor for GpuAgent {
+#     fn execute<'a>(&'a self, _: &'a RequestContext, _: &'a dyn EventQueueWriter)
+#         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
+    fn cancel<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Release what the task holds...
+            if let Ok(mut reserved) = self.reserved.lock() {
+                reserved.remove(&ctx.task_id);
+            }
+            // ...then do what the default does: tell subscribers.
+            EventEmitter::new(ctx, queue).status(TaskState::Canceled).await
+        })
+    }
 }
 ```
 
@@ -331,7 +378,14 @@ fn cancel<'a>(
 
 Executors can hold state — database connections, model handles, configuration:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use std::sync::Arc;
+# use a2a_protocol_sdk::prelude::*;
+# struct Model;
+# impl Model { async fn generate(&self, _: &str, _: usize) -> A2aResult<String> { Ok(String::new()) } }
+# struct DatabasePool;
 struct LlmExecutor {
     model: Arc<Model>,
     db: Arc<DatabasePool>,
@@ -346,29 +400,31 @@ impl AgentExecutor for LlmExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Access self.model, self.db, self.max_tokens
-            let response = self.model.generate(&input, self.max_tokens).await?;
+            let input = ctx.message.text().unwrap_or_default();
+            let response = self.model.generate(input, self.max_tokens).await?;
             // ...
             Ok(())
         })
     }
 }
 ```
-
 Because the trait requires `Send + Sync + 'static`, the executor must be safe to share across threads. Use `Arc` for shared state.
 
 ## Executor Timeout
 
 The builder can set a timeout that kills hung executors:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# fn f(my_executor: impl AgentExecutor) -> ServerResult<RequestHandler> {
 use std::time::Duration;
 
 RequestHandlerBuilder::new(my_executor)
     .with_executor_timeout(Duration::from_secs(300))  // 5 minutes
     .build()
+# }
 ```
-
-If the executor doesn't complete within the timeout, the task transitions to `Failed` automatically.
+The default is one hour. If the executor doesn't complete within the timeout, the task transitions to `Failed` automatically, with the failure class `BudgetExhausted`: the same call would hit the same bound.
 
 ## Next Steps
 

@@ -1,0 +1,194 @@
+--- a/src/fnvalue.rs
++++ b/src/fnvalue.rs
+@@ -74,8 +74,17 @@
+                 }
+             } else if path_is_float(path) {
+                 vec![quote! { 0.0 }, quote! { 1.0 }, quote! { -1.0 }]
+-            } else if path_ends_with(path, "Result") {
+-                if let Some(ok_type) = match_first_type_arg(path, "Result") {
++            } else if let Some(output) = match_pinned_boxed_future(path) {
++                // `Pin<Box<dyn Future<Output = T> + ..>>`, the return type of an
++                // object-safe async trait method: a boxed future that yields
++                // each replacement of `T`.
++                type_replacements(output, error_exprs)
++                    .map(|rep| quote! { Box::pin(async move { #rep }) })
++                    .collect_vec()
++            } else if path_ends_with_result_alias(path) {
++                // `Result<T, E>`, and aliases such as `io::Result<T>` or
++                // `ClientResult<T>` whose name ends in `Result`.
++                if let Some(ok_type) = match_first_type_arg_of_last_segment(path) {
+                     type_replacements(ok_type, error_exprs)
+                         .map(|rep| {
+                             quote! { Ok(#rep) }
+@@ -453,7 +462,7 @@
+     use crate::fnvalue::match_impl_iterator;
+     use crate::pretty::ToPrettyString;
+ 
+-    use super::{known_map, return_type_replacements};
++    use super::{known_map, match_pinned_boxed_future, return_type_replacements};
+ 
+     #[test]
+     fn recurse_into_result_bool() {
+@@ -891,9 +900,98 @@
+     }
+ 
+     #[test]
++    fn result_alias_named_like_result() {
++        check_replacements(
++            &parse_quote! { -> ClientResult<bool> },
++            &[],
++            &["Ok(true)", "Ok(false)"],
++        );
++        check_replacements(&parse_quote! { -> crate::error::A2aResult<()> }, &[], &["Ok(())"]);
++    }
++
++    #[test]
++    fn pinned_boxed_future_yields_each_replacement() {
++        check_replacements(
++            &parse_quote! { -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> },
++            &[],
++            &[
++                "Box::pin(async move{true})",
++                "Box::pin(async move{false})",
++            ],
++        );
++        check_replacements(
++            &parse_quote! { -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + '_>> },
++            &[],
++            &["Box::pin(async move{Ok(())})"],
++        );
++    }
++
++    #[test]
++    fn pin_of_something_else_is_not_a_boxed_future() {
++        assert!(match_pinned_boxed_future(&parse_quote! { Pin<Box<u8>> }).is_none());
++        assert!(match_pinned_boxed_future(&parse_quote! { Pin<&mut dyn Future<Output = ()>> }).is_none());
++    }
++
++    #[test]
+     fn match_map() {
+         assert!(known_map(&parse_quote! { BTreeMap<String, usize> }).is_some());
+         assert!(known_map(&parse_quote! { HashMap<(usize, usize), bool> }).is_some());
+         assert!(known_map(&parse_quote! { Option<(usize, usize)> }).is_none());
+     }
+ }
++
++/// True for `Result` and for any type whose last path segment ends in
++/// `Result`, such as `io::Result` or a crate's `ClientResult` alias.
++fn path_ends_with_result_alias(path: &Path) -> bool {
++    path.segments
++        .last()
++        .is_some_and(|s| s.ident.to_string().ends_with("Result"))
++}
++
++/// The first type argument of the path's last segment, whatever its name.
++fn match_first_type_arg_of_last_segment(path: &Path) -> Option<&Type> {
++    let last = path.segments.last()?;
++    if let PathArguments::AngleBracketed(AngleBracketedGenericArguments { args, .. }) =
++        &last.arguments
++        && let Some(GenericArgument::Type(t)) = args.first()
++    {
++        return Some(t);
++    }
++    None
++}
++
++/// `Pin<Box<dyn Future<Output = T> + ..>>` -> `T`.
++fn match_pinned_boxed_future(path: &Path) -> Option<&Type> {
++    if path.segments.last()?.ident != "Pin" {
++        return None;
++    }
++    let Type::Path(boxed) = match_first_type_arg_of_last_segment(path)? else {
++        return None;
++    };
++    if boxed.path.segments.last()?.ident != "Box" {
++        return None;
++    }
++    let Type::TraitObject(object) = match_first_type_arg_of_last_segment(&boxed.path)? else {
++        return None;
++    };
++    object.bounds.iter().find_map(|bound| {
++        let TypeParamBound::Trait(TraitBound { path, .. }) = bound else {
++            return None;
++        };
++        let segment = path.segments.last()?;
++        if segment.ident != "Future" {
++            return None;
++        }
++        let PathArguments::AngleBracketed(AngleBracketedGenericArguments { args, .. }) =
++            &segment.arguments
++        else {
++            return None;
++        };
++        args.iter().find_map(|arg| match arg {
++            GenericArgument::AssocType(AssocType { ident, ty, .. }) if ident == "Output" => {
++                Some(ty)
++            }
++            _ => None,
++        })
++    })
++}
+--- a/src/visit.rs
++++ b/src/visit.rs
+@@ -362,7 +362,7 @@
+                     // them back for the comparison...
+                     let new_block = quote!( { #rep } ).to_token_stream().to_pretty_string();
+                     // dbg!(&orig_block, &new_block);
+-                    if orig_block == new_block {
++                    if same_body_text(&orig_block, &new_block) {
+                         trace!("Replacement is the same as the function body; skipping");
+                     } else {
+                         self.collect_mutant(body_span, None, &rep, Genre::FnValue);
+@@ -971,6 +971,18 @@
+         .transpose()
+ }
+ 
++/// True when a replacement's text is the function body's, allowing for the
++/// spellings of a boxed future that differ only in ways that cannot change
++/// what it yields: `async` and `async move` around a replacement, which is
++/// always a constant expression and so captures nothing, and an `async` block
++/// written `{}` or `{ () }`.
++fn same_body_text(orig: &str, replacement: &str) -> bool {
++    fn normalize(s: &str) -> String {
++        s.replace("async move", "async").replace("{()}", "{}")
++    }
++    orig == replacement || normalize(orig) == normalize(replacement)
++}
++
+ #[cfg(test)]
+ mod test {
+     use indoc::indoc;
+@@ -1032,6 +1044,33 @@
+         );
+     }
+ 
++    /// A boxed future already yielding the replacement is not mutated either,
++    /// whether or not its `async` block is `move` or its unit is spelled out.
++    #[test]
++    fn no_boxed_future_mutants_equivalent_to_source() {
++        let code = indoc! { "
++            use std::future::Future;
++            use std::pin::Pin;
++            fn ok<'a>() -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
++                Box::pin(async { Ok(()) })
++            }
++            fn idle<'a>() -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
++                Box::pin(async {})
++            }
++            fn yes<'a>() -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
++                Box::pin(async move { true })
++            }
++        "};
++        let source_file = SourceFile::for_tests("src/lib.rs", code, "unimportant", true);
++        let (mutants, _files) =
++            walk_file(&source_file, &[], &Options::default()).expect("walk_file");
++        let mutant_names = mutants.iter().map(|m| m.name(false)).collect_vec();
++        assert_eq!(
++            mutant_names,
++            ["src/lib.rs: replace yes -> Pin<Box<dyn Future<Output = bool>+Send +'a>> with Box::pin(async move{false})"]
++        );
++    }
++
+     /// We don't visit functions inside files marked with `#![cfg(test)]`.
+     #[test]
+     fn no_mutants_in_files_with_inner_cfg_test_attribute() {

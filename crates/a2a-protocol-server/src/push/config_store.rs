@@ -285,6 +285,49 @@ mod tests {
         }
     }
 
+    /// A store that implements only the required methods reports no count,
+    /// so the handler enforces only the per-task cap for it — the promise the
+    /// default makes to custom implementations written before `count`
+    /// existed. A default of `Some(n)` would hold every such store to a global
+    /// ceiling computed from a number it never reported.
+    #[tokio::test]
+    async fn a_store_without_count_reports_none() {
+        struct RequiredOnly;
+        impl PushConfigStore for RequiredOnly {
+            fn set<'a>(
+                &'a self,
+                config: TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>>
+            {
+                Box::pin(async move { Ok(config) })
+            }
+            fn get<'a>(
+                &'a self,
+                _task_id: &'a str,
+                _id: &'a str,
+            ) -> Pin<
+                Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + 'a>,
+            > {
+                Box::pin(async { Ok(None) })
+            }
+            fn list<'a>(
+                &'a self,
+                _task_id: &'a str,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(Vec::new()) })
+            }
+            fn delete<'a>(
+                &'a self,
+                _task_id: &'a str,
+                _id: &'a str,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+                Box::pin(async { Ok(()) })
+            }
+        }
+        assert_eq!(RequiredOnly.count().await.expect("count"), None);
+    }
+
     /// Regression (D1): storing a config without its `task_id` routing key
     /// must fail with a proper invalid-params error, not panic.
     #[tokio::test]

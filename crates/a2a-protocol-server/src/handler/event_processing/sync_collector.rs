@@ -505,9 +505,9 @@ impl RequestHandler {
         // Tracked, so a shutdown waits for the delivery it would otherwise cut.
         self.in_flight
             .background()
-            .spawn(crate::store::tenant::TenantContext::scope(
-                tenant,
-                job.run(),
+            .spawn(crate::rpc_span::in_child_span(
+                "a2a.deliver_push",
+                crate::store::tenant::TenantContext::scope(tenant, job.run()),
             ));
     }
 }

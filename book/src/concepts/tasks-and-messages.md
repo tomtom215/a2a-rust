@@ -8,7 +8,10 @@ A **Task** represents a unit of work. Every `SendMessage` call creates one.
 
 ### Task Structure
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::types::task::{ContextId, TaskId, TaskStatus, TaskState};
+# use a2a_protocol_sdk::types::message::{Message, MessageId, MessageRole, Part};
+# use a2a_protocol_sdk::types::artifact::{Artifact, ArtifactId};
 pub struct Task {
     pub id: TaskId,                          // Server-assigned unique ID
     pub context_id: ContextId,               // Conversation thread ID
@@ -17,6 +20,11 @@ pub struct Task {
     pub artifacts: Option<Vec<Artifact>>,    // Produced results
     pub metadata: Option<serde_json::Value>, // Arbitrary key-value data
 }
+# // The real type has exactly these fields: this literal of it names them all.
+# let _ = a2a_protocol_sdk::types::task::Task {
+#     id: TaskId::new("t"), context_id: ContextId::new("c"),
+#     status: TaskStatus::new(TaskState::Working), history: None, artifacts: None, metadata: None,
+# };
 ```
 
 ### Task States
@@ -101,7 +109,10 @@ On the wire, task states use SCREAMING_SNAKE_CASE with a `TASK_STATE_` prefix:
 
 A **Message** is a structured payload exchanged between client and agent:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::types::task::{ContextId, TaskId, TaskStatus, TaskState};
+# use a2a_protocol_sdk::types::message::{MessageId, MessageRole, Part};
+# use a2a_protocol_sdk::types::artifact::{Artifact, ArtifactId};
 pub struct Message {
     pub id: MessageId,                           // Unique message ID
     pub role: MessageRole,                       // User or Agent
@@ -112,6 +123,10 @@ pub struct Message {
     pub extensions: Option<Vec<String>>,         // Extension URIs
     pub metadata: Option<serde_json::Value>,
 }
+# let _ = a2a_protocol_sdk::types::message::Message {
+#     id: MessageId::new("m"), role: MessageRole::User, parts: vec![], task_id: None,
+#     context_id: None, reference_task_ids: None, extensions: None, metadata: None,
+# };
 ```
 
 ### Roles
@@ -144,15 +159,19 @@ Parts are the content units within messages and artifacts. Four types are suppor
 
 ### Text
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
 let part = Part::text("Hello, agent!");
+# assert_eq!(serde_json::to_value(&part).unwrap(), serde_json::json!({"text": "Hello, agent!"}));
 ```
 
 Wire format: `{"text": "Hello, agent!"}`
 
 ### Raw (inline bytes)
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# let base64_encoded_string = "aGVsbG8=";
 // Inline bytes (base64-encoded)
 let part = Part::raw(base64_encoded_string);
 ```
@@ -161,22 +180,26 @@ Wire format: `{"raw": "aGVsbG8=", "filename": "doc.bin", "mediaType": "applicati
 
 ### Url (URI reference)
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
 // URI reference
 let part = Part::url("https://example.com/document.pdf");
+# assert_eq!(serde_json::to_value(&part).unwrap(), serde_json::json!({"url": "https://example.com/document.pdf"}));
 ```
 
 Wire format: `{"url": "https://example.com/document.pdf"}`
 
 ### Structured Data
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
 let part = Part::data(serde_json::json!({
     "table": [
         {"name": "Alice", "score": 95},
         {"name": "Bob", "score": 87}
     ]
 }));
+# assert!(serde_json::to_value(&part).unwrap()["data"]["table"].is_array());
 ```
 
 Wire format: `{"data": {"table": [...]}}`
@@ -196,7 +219,10 @@ Any part can carry optional metadata:
 
 Artifacts are results produced by an agent, delivered as part of a task:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::types::task::{ContextId, TaskId, TaskStatus, TaskState};
+# use a2a_protocol_sdk::types::message::{Message, MessageId, MessageRole, Part};
+# use a2a_protocol_sdk::types::artifact::ArtifactId;
 pub struct Artifact {
     pub id: ArtifactId,
     pub name: Option<String>,
@@ -205,6 +231,10 @@ pub struct Artifact {
     pub extensions: Option<Vec<String>>,
     pub metadata: Option<serde_json::Value>,
 }
+# let _ = a2a_protocol_sdk::types::artifact::Artifact {
+#     id: ArtifactId::new("a"), name: None, description: None, parts: vec![],
+#     extensions: None, metadata: None,
+# };
 ```
 
 Create and validate an artifact:
@@ -224,7 +254,9 @@ artifact.validate().expect("artifact should be valid");
 
 Artifacts can be delivered incrementally during streaming:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
 // First chunk
 queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     task_id: ctx.task_id.clone(),
@@ -244,6 +276,8 @@ queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     last_chunk: Some(true),   // This is the last chunk
     metadata: None,
 })).await?;
+# Ok(())
+# }
 ```
 
 When `append=true`, the server finds the existing artifact by ID and:

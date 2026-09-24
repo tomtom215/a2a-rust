@@ -49,7 +49,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-TRAIT_SRC = REPO / "crates" / "a2a-protocol-server" / "src" / "metrics.rs"
+TRAIT_SRC = REPO / "crates" / "a2a-protocol-server" / "src" / "metrics" / "mod.rs"
 OTEL_SRC = REPO / "crates" / "a2a-protocol-server" / "src" / "otel" / "mod.rs"
 
 # Callbacks the OTLP exporter deliberately does not forward, each with the

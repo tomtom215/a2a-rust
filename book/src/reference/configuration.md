@@ -14,7 +14,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `with_push_config_store` | `impl PushConfigStore` | `InMemoryPushConfigStore` | Custom push config storage |
 | `with_push_sender` | `impl PushSender` | None | Webhook delivery implementation |
 | `with_interceptor` | `impl ServerInterceptor` | Empty chain | Server middleware |
-| `with_executor_timeout` | `Duration` | None | Max time for executor completion |
+| `with_executor_timeout` | `Duration` | 1 hour | Max time for executor completion (`DEFAULT_EXECUTOR_TIMEOUT`); `without_executor_timeout()` removes the bound |
 | `with_event_queue_capacity` | `usize` | 256 | Bounded channel size per stream. Increased from 64 to push the per-event cost inflection from ~52 to ~252 events. Increase further for tasks producing >250 events. |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |
 | `with_max_concurrent_streams` | `usize` | 1,024 | Limit concurrent SSE connections (pass `usize::MAX` to disable) |
@@ -54,6 +54,8 @@ Complete reference of all configuration options across a2a-rust crates.
 | `task_ttl` | `Option<Duration>` | 1 hour | TTL for completed/failed tasks |
 | `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps |
 | `max_page_size` | `u32` | 1,000 | Maximum tasks per page in list queries |
+| `max_events_per_task` | `Option<usize>` | 512 | Events one task's log keeps for `Last-Event-ID` resumption; `None` removes the bound |
+| `idempotency_key_ttl` | `Option<Duration>` | 24 hours | How long an idempotency key is honoured, matching the SQL stores' one day; `None` keeps keys forever |
 
 ### InMemoryPushConfigStore
 
@@ -76,6 +78,7 @@ Shared configuration for JSON-RPC, REST, and Axum dispatchers. Pass to
 | `sse_keep_alive_interval` | `Duration` | 30s | Periodic keep-alive comment interval for SSE streams |
 | `sse_channel_capacity` | `usize` | 64 | SSE response body channel buffer size |
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
+| `require_version_header` | `bool` | true | Reject a data-plane request with no `A2A-Version` header as `VersionNotSupported` (spec §3.6.2: absent means 0.3) |
 
 ### GrpcConfig
 
@@ -86,6 +89,7 @@ Configuration for the gRPC dispatcher (requires `grpc` feature).
 | `max_message_size` | `usize` | 4 MiB | Maximum inbound/outbound message size |
 | `concurrency_limit` | `usize` | 256 | Max concurrent gRPC requests per connection |
 | `stream_channel_capacity` | `usize` | 64 | Bounded channel for streaming responses |
+| `require_version_header` | `bool` | true | Reject a call with no `a2a-version` metadata as `VersionNotSupported` |
 
 ### PushRetryPolicy
 
@@ -182,39 +186,44 @@ and the `with_*` setters.
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `signing` | Off | Agent card signing |
-| `tracing` | Off | Structured logging via `tracing` crate |
+| `signing` | Off | Forwards `a2a-protocol-types/signing`; the server itself neither signs nor verifies the card it serves |
+| `tracing` | **On** | Structured logging via `tracing` crate; `default-features = false` compiles it out |
+| `tls-rustls` | Off | HTTPS delivery for the bundled push-notification sender |
 | `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | Off | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` (plaintext listener) |
 | `grpc-tls` | Off | TLS on the gRPC listener itself: `GrpcDispatcher::with_tls(ServerTlsConfig)` with a server identity and, optionally, a client CA for mutual TLS; implies `grpc`; the TLS types are re-exported from `dispatch::grpc` |
 | `otel` | Off | OpenTelemetry metrics via `opentelemetry-otlp` |
+| `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
+| `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 
 ### `a2a-protocol-client`
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | Agent card signing verification |
-| `tracing` | Off | Structured logging via `tracing` crate |
+| `tracing` | **On** | Structured logging via `tracing` crate; `default-features = false` compiles it out |
 | `tls-rustls` | **On** | HTTPS via rustls (no OpenSSL dependency); `default-features = false` for a plaintext-only build |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` (plaintext; `https://` is refused with a message naming `grpc-tls`) |
 | `grpc-tls` | Off | gRPC over TLS: implies `grpc` (not `tls-rustls`), verifies against the bundled Mozilla roots or a supplied `ClientTlsConfig` (re-exported from `transport::grpc`) |
+| `testing` | Off | A scripted hostile peer (`testing::ScriptedPeer`) that stalls, cuts off, mis-frames or refuses on each binding, for testing code that calls agents |
 
 ### `a2a-protocol-types`
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
+| `proto` | Off | Canonical protobuf message types and the JSON⇄proto conversions (turned on by `grpc`) |
 
 ### `a2a-protocol-sdk` (umbrella)
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | Enables `signing` in all sub-crates |
-| `tracing` | Off | Enables `tracing` in client and server |
+| `tracing` | **On** | Enables `tracing` in client and server |
 | `tls-rustls` | **On** | Enables `tls-rustls` in client and server |
 | `grpc` | Off | Enables `grpc` in client and server |
 | `grpc-tls` | Off | Enables `grpc-tls` in the client and the server: `https://` dialling on one side, `GrpcDispatcher::with_tls` on the other |
@@ -223,12 +232,13 @@ and the `with_*` setters.
 | `postgres` | Off | Enables `postgres` in the server |
 | `otel` | Off | Enables `otel` in the server |
 | `axum` | Off | Enables `axum` in the server |
+| `auth-jwt` | Off | Enables `auth-jwt` in the server |
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `RUST_LOG` | Log level filter (when `tracing` feature is enabled) |
+| `RUST_LOG` | Log level filter (when the `tracing` feature is enabled — every crate's default — and a subscriber reads it) |
 
 Examples:
 ```bash

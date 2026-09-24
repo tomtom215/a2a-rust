@@ -4,7 +4,9 @@ For long-running tasks or when you want real-time progress, use `stream_message`
 
 ## Basic Streaming
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(client: A2aClient, params: MessageSendParams) {
 let mut stream = client
     .stream_message(params)
     .await
@@ -40,6 +42,7 @@ while let Some(event) = stream.next().await {
         }
     }
 }
+# }
 ```
 
 ## Event Ordering
@@ -54,14 +57,20 @@ A typical stream delivers events in this order:
 
 > **Note:** The server always emits a `Task` snapshot as the **first event** in
 > any streaming response. For `subscribe_to_task()`, this allows reconnecting
-> clients to recover the current state. For `send_streaming_message()`, it
+> clients to recover the current state. For `stream_message()`, it
 > provides the initial task state before execution events begin.
 
 ## Chunked Artifacts
 
 Artifacts can be delivered in multiple chunks:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# fn extract_text(a: &Artifact) -> String { a.parts.iter().filter_map(Part::text_content).collect() }
+# async fn f(mut stream: EventStream) {
+# let mut buffer = String::new();
+# while let Some(event) = stream.next().await {
+# match event {
 Ok(StreamResponse::ArtifactUpdate(ev)) => {
     let is_append = ev.append.unwrap_or(false);
     let is_last = ev.last_chunk.unwrap_or(false);
@@ -80,13 +89,19 @@ Ok(StreamResponse::ArtifactUpdate(ev)) => {
         println!("Complete artifact: {buffer}");
     }
 }
+# _ => {}
+# }
+# }
+# }
 ```
 
 ## Re-subscribing
 
 If a stream disconnects, re-subscribe to get the latest state:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(client: A2aClient) -> Result<(), ClientError> {
 let mut stream = client
     .subscribe_to_task("task-abc")
     .await?;
@@ -95,6 +110,8 @@ let mut stream = client
 while let Some(event) = stream.next().await {
     // ...
 }
+# Ok(())
+# }
 ```
 
 ## How a Stream Ends
@@ -133,7 +150,10 @@ starts from the `Task` snapshot.
 
 A stream has three bounds, one per phase:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# fn main() -> Result<(), ClientError> {
+# let url = "http://agent.example.com";
 use std::time::Duration;
 
 let client = ClientBuilder::new(url)
@@ -141,6 +161,8 @@ let client = ClientBuilder::new(url)
     .with_stream_first_event_timeout(Duration::from_secs(120))   // first data
     .with_stream_idle_timeout(Some(Duration::from_secs(300)))    // between data
     .build()?;
+# Ok(())
+# }
 ```
 
 The **connect timeout** (default 30 seconds) bounds establishing the stream: until the response headers arrive (for gRPC, until the call is accepted), and reading the error body when the answer is not a stream.

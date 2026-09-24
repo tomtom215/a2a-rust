@@ -1045,6 +1045,48 @@ mod idempotency_tests {
             .expect("in-memory tenant store")
     }
 
+    /// Releasing a key frees it — within the tenant that holds it, and only
+    /// there. A release that did nothing survived mutation testing (N11): a
+    /// failed send would then hold its key until expiry, and every retry of
+    /// it would replay a task that never ran.
+    #[tokio::test]
+    async fn release_frees_the_key_in_its_own_tenant_only() {
+        let store = store().await;
+        for tenant in ["tenant-a", "tenant-b"] {
+            TenantContext::scope(tenant, async {
+                let claim = store
+                    .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+                    .await
+                    .unwrap();
+                assert_eq!(claim, IdempotencyClaim::Claimed);
+            })
+            .await;
+        }
+
+        TenantContext::scope("tenant-a", async {
+            store.release_idempotency_key(KEY).await.unwrap();
+            let reclaim = store
+                .claim_idempotency_key(KEY, &MessageId::new("m2"), &TaskId::new("t2"))
+                .await
+                .unwrap();
+            assert_eq!(reclaim, IdempotencyClaim::Claimed, "released, so free");
+        })
+        .await;
+
+        TenantContext::scope("tenant-b", async {
+            let held = store
+                .claim_idempotency_key(KEY, &MessageId::new("m2"), &TaskId::new("t2"))
+                .await
+                .unwrap();
+            assert_ne!(
+                held,
+                IdempotencyClaim::Claimed,
+                "tenant-a's release must not free tenant-b's key"
+            );
+        })
+        .await;
+    }
+
     #[tokio::test]
     async fn one_tenants_key_never_names_another_tenants_task() {
         // The security property. Sharing one key space across tenants would
@@ -1192,6 +1234,50 @@ mod event_log_tests {
                 other => panic!("only status events are written here, got {other:?}"),
             })
             .collect()
+    }
+
+    /// The earliest position still held, per tenant: `None` for an empty
+    /// log, the first appended position otherwise — never another tenant's.
+    /// A resuming subscriber is told whether its position is still served
+    /// from this; the method survived mutation testing untested (N11).
+    #[tokio::test]
+    async fn the_log_reports_its_earliest_position_per_tenant() {
+        let store = store().await;
+        let id = TaskId::new("shared-id");
+
+        TenantContext::scope("tenant-a", async {
+            store.save(&task("shared-id")).await.expect("save a");
+            assert_eq!(store.earliest_event_seq(&id).await.expect("empty"), None);
+            for seq in [5, 6, 7] {
+                store
+                    .append_event(&id, seq, &event("shared-id", TaskState::Working))
+                    .await
+                    .expect("append a");
+            }
+            assert_eq!(store.earliest_event_seq(&id).await.expect("a"), Some(5));
+        })
+        .await;
+
+        TenantContext::scope("tenant-b", async {
+            store.save(&task("shared-id")).await.expect("save b");
+            assert_eq!(
+                store.earliest_event_seq(&id).await.expect("b empty"),
+                None,
+                "tenant-a's log is not tenant-b's"
+            );
+            store
+                .append_event(&id, 3, &event("shared-id", TaskState::Working))
+                .await
+                .expect("append b");
+            assert_eq!(store.earliest_event_seq(&id).await.expect("b"), Some(3));
+        })
+        .await;
+
+        // And tenant-b's earlier position is not tenant-a's.
+        TenantContext::scope("tenant-a", async {
+            assert_eq!(store.earliest_event_seq(&id).await.expect("a"), Some(5));
+        })
+        .await;
     }
 
     #[tokio::test]

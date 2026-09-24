@@ -12,9 +12,10 @@ let client = ClientBuilder::new("http://agent.example.com")
     .expect("build client");
 ```
 
-The builder auto-selects the transport based on the URL. To explicitly choose:
+Without a binding the builder uses JSON-RPC; it does not look at the URL to choose. To choose another:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
 // Force JSON-RPC transport
 let client = ClientBuilder::new("http://agent.example.com")
     .with_protocol_binding("JSONRPC")
@@ -32,7 +33,9 @@ let client = ClientBuilder::new("http://agent.example.com")
 
 ### Timeouts
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# let url = "http://agent.example.com";
 use std::time::Duration;
 
 let client = ClientBuilder::new(url)
@@ -49,7 +52,9 @@ let client = ClientBuilder::new(url)
 
 Specify which MIME types the client can handle:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# let url = "http://agent.example.com";
 let client = ClientBuilder::new(url)
     .with_accepted_output_modes(vec![
         "text/plain".into(),
@@ -66,7 +71,9 @@ Default: `["text/plain", "application/json"]`
 
 Control how many historical messages are included in responses:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# let url = "http://agent.example.com";
 let client = ClientBuilder::new(url)
     .with_history_length(10)  // Include last 10 messages
     .build()
@@ -77,19 +84,32 @@ let client = ClientBuilder::new(url)
 
 Add request/response hooks:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# let url = "http://agent.example.com";
+use std::sync::Arc;
+use a2a_protocol_client::{
+    BearerAuthInterceptor, StaticTokenProvider, TracePropagationInterceptor,
+};
+
+let token = Arc::new(StaticTokenProvider::new("my-token"));
 let client = ClientBuilder::new(url)
-    .with_interceptor(MyAuthInterceptor::new())
-    .with_interceptor(LoggingInterceptor)
+    .with_interceptor(BearerAuthInterceptor::new(token))
+    .with_interceptor(TracePropagationInterceptor)
     .build()
     .unwrap();
 ```
+
+Your own hooks implement `CallInterceptor` and are added the same way.
 
 ### Retry Policy
 
 Enable automatic retries on transient failures (connection errors, timeouts, HTTP 429/502/503/504):
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# use std::time::Duration;
+# let url = "http://agent.example.com";
 use a2a_protocol_client::RetryPolicy;
 
 let client = ClientBuilder::new(url)
@@ -114,7 +134,9 @@ let client = ClientBuilder::new(url)
 
 For push notification workflows, return the task immediately without waiting for completion:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# let url = "http://agent.example.com";
 let client = ClientBuilder::new(url)
     .with_return_immediately(true)
     .build()
@@ -128,7 +150,7 @@ let client = ClientBuilder::new(url)
 | `new(url)` | — | Base URL of the agent (required) |
 | `from_card(&AgentCard)` | — | Build from an agent card, preferring `ClientConfig`'s default binding order (`["JSONRPC"]`), falling back to the card's first compatible interface. Only interfaces whose `protocolVersion` has major 1 count (empty counts; `v1.0` counts), so a v0.3 endpoint listed first is skipped; a card with none is refused with what it offers. If the chosen interface cannot be built (gRPC under sync `build()`, an unknown binding, a bad URL), `build()` moves to the next one |
 | `from_card_preferring(&AgentCard, &[String])` | — | Same, with your own binding order. The first preference the card offers wins; matching is case-insensitive |
-| `with_protocol_binding(str)` | Auto-detect | Force transport: `"JSONRPC"`, `"HTTP+JSON"` (or `"REST"`), or `"GRPC"`, in any case. On a builder made from a card, moves the endpoint and tenant to that binding's interface too, and turns off `build()`'s fallback to other interfaces |
+| `with_protocol_binding(str)` | `"JSONRPC"` | Force transport: `"JSONRPC"`, `"HTTP+JSON"` (or `"REST"`), or `"GRPC"`, in any case. On a builder made from a card, moves the endpoint and tenant to that binding's interface too, and turns off `build()`'s fallback to other interfaces |
 | `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |
 | `with_timeout(Duration)` | 30s | Per-request timeout |
 | `with_connection_timeout(Duration)` | 10s | TCP connection timeout |
@@ -149,7 +171,8 @@ let client = ClientBuilder::new(url)
 a connection pool internally (via hyper), so reuse avoids repeated DNS
 resolution, TCP handshakes, and TLS negotiation on every call.
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
 // ✅ Good: build once, reuse across requests
 struct MyOrchestrator {
     analyzer: A2aClient,
@@ -167,17 +190,18 @@ impl MyOrchestrator {
         }
     }
 
-    async fn run(&self) {
+    async fn run(&self, params: MessageSendParams) {
         // Reuse the same client for every request
-        let _ = self.analyzer.send_message(params).await;
+        let _ = self.analyzer.send_message(params.clone()).await;
         let _ = self.builder.send_message(params).await;
     }
 }
 ```
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
 // ❌ Avoid: rebuilding the client on every call
-async fn bad_pattern(url: &str) {
+async fn bad_pattern(url: &str, params: MessageSendParams) {
     // This works but wastes resources — connection pool is discarded each time
     let client = ClientBuilder::new(url).build().unwrap();
     let _ = client.send_message(params).await;
@@ -190,18 +214,25 @@ async fn bad_pattern(url: &str) {
 
 For gRPC transport, use `GrpcTransport::connect()` with `with_custom_transport()`:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::client::ClientBuilder;
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_client::GrpcTransport;
 
 let transport = GrpcTransport::connect("http://agent.example.com:50051").await?;
 let client = ClientBuilder::new("http://agent.example.com:50051")
     .with_custom_transport(transport)
     .build()?;
+# Ok(())
+# }
 ```
 
 Configure with `GrpcTransportConfig`:
 
-```rust,ignore
+```rust,no_run
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_client::transport::grpc::{GrpcTransport, GrpcTransportConfig};
 use std::time::Duration;
 
@@ -213,13 +244,21 @@ let transport = GrpcTransport::connect_with_config(
     "http://agent.example.com:50051",
     config,
 ).await?;
+# Ok(())
+# }
 ```
 
 ## Thread Safety
 
 `A2aClient` is `Send + Sync` and can be shared across tasks via `Arc`:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# #[tokio::main]
+# async fn main() {
+# let url = "http://agent.example.com";
+# let params = MessageSendParams::new(Message::new("m", MessageRole::User, vec![Part::text("hi")]));
+# let (params1, params2) = (params.clone(), params);
 use std::sync::Arc;
 
 let client = Arc::new(
@@ -232,6 +271,7 @@ tokio::spawn(async move { c1.send_message(params1).await });
 
 let c2 = Arc::clone(&client);
 tokio::spawn(async move { c2.send_message(params2).await });
+# }
 ```
 
 ## Next Steps

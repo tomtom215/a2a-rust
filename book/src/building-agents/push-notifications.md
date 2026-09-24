@@ -36,13 +36,19 @@ Push notifications let agents deliver results asynchronously via webhooks. Inste
 
 Enable push by providing a `PushSender`:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+# let my_executor = MyAgent;
 use a2a_protocol_sdk::server::{RequestHandlerBuilder, HttpPushSender};
 
 let handler = RequestHandlerBuilder::new(my_executor)
     .with_push_sender(HttpPushSender::new())
     .build()
     .unwrap();
+# }
 ```
 
 The built-in `HttpPushSender` includes:
@@ -64,7 +70,9 @@ The built-in `HttpPushSender` includes:
 
 Register a push notification configuration:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(client: A2aClient) -> Result<(), ClientError> {
 use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
 
 let config = TaskPushNotificationConfig::new(
@@ -74,11 +82,16 @@ let config = TaskPushNotificationConfig::new(
 
 let saved = client.set_push_config(config).await?;
 println!("Config ID: {:?}", saved.id);
+# Ok(())
+# }
 ```
 
 ### Managing Push Configs
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::types::params::ListPushConfigsParams;
+# async fn f(client: A2aClient) -> Result<(), ClientError> {
 // List all configs for a task
 let configs = client.list_push_configs(ListPushConfigsParams {
     tenant: None,
@@ -92,6 +105,8 @@ let config = client.get_push_config("task-abc", "config-123").await?;
 
 // Delete a config
 client.delete_push_config("task-abc", "config-123").await?;
+# Ok(())
+# }
 ```
 
 ## Authentication
@@ -146,7 +161,12 @@ their path or query.
 
 Implement the `PushSender` trait for custom delivery:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
+# mod aws_sdk_sqs { pub struct Client; } // stands in for the real crate
 use a2a_protocol_sdk::server::PushSender;
 
 struct SqsPushSender {
@@ -172,20 +192,32 @@ impl PushSender for SqsPushSender {
 
 The default `InMemoryPushConfigStore` stores configs in memory with per-task limits. For production, implement `PushConfigStore`:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
 use a2a_protocol_sdk::server::PushConfigStore;
 
-struct DynamoDbPushConfigStore { /* ... */ }
+struct MyPushConfigStore { /* ... */ }
 
-impl PushConfigStore for DynamoDbPushConfigStore {
+impl PushConfigStore for MyPushConfigStore {
     // Implement set, get, list, delete...
+#     fn set<'a>(&'a self, _: TaskPushNotificationConfig) -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>> { unimplemented!() }
+#     fn get<'a>(&'a self, _: &'a str, _: &'a str) -> Pin<Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + 'a>> { unimplemented!() }
+#     fn list<'a>(&'a self, _: &'a str) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>> { unimplemented!() }
+#     fn delete<'a>(&'a self, _: &'a str, _: &'a str) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { unimplemented!() }
 }
 
+# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
 RequestHandlerBuilder::new(executor)
-    .with_push_config_store(DynamoDbPushConfigStore::new(client))
+    .with_push_config_store(MyPushConfigStore { /* ... */ })
     // (SQLite and PostgreSQL push-config stores ship with the crate —
     //  SqlitePushConfigStore / PostgresPushConfigStore.)
     .build()
+# }
 ```
 
 ## Security Considerations

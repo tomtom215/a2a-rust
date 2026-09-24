@@ -104,7 +104,12 @@ A direct message response (for simple request/reply patterns):
 
 In your `AgentExecutor`, write events to the queue:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# struct MyExecutor;
+# async fn produce(_: &Message) -> Vec<String> { vec![] }
 impl AgentExecutor for MyExecutor {
     fn execute<'a>(
         &'a self,
@@ -112,6 +117,8 @@ impl AgentExecutor for MyExecutor {
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            let results = produce(&ctx.message).await;
+
             // Signal start
             queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),
@@ -166,19 +173,29 @@ With broadcast channels, writes never block on readers — if a reader is too sl
 
 Configure these via the builder:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+# let executor = MyAgent;
+# let _handler =
 RequestHandlerBuilder::new(executor)
     .with_event_queue_capacity(512)  // increase above 256 default for high-volume streams
     .with_max_event_size(8 * 1024 * 1024)  // 8 MiB
     .build()
     .unwrap()
+# ;
+# }
 ```
 
 ## Client-Side: Consuming Streams
 
 Use `stream_message` to receive events:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(client: A2aClient, params: MessageSendParams) {
 let mut stream = client
     .stream_message(params)
     .await
@@ -207,6 +224,7 @@ while let Some(event) = stream.next().await {
         }
     }
 }
+# }
 ```
 
 ### Client Protections
@@ -257,11 +275,14 @@ has started, so the same `ClientError::Protocol` arrives as the first
 
 If a stream disconnects, re-subscribe to an existing task:
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(client: A2aClient) {
 let mut stream = client
     .subscribe_to_task("task-abc")
     .await
     .expect("resubscribe");
+# }
 ```
 
 The server creates a new broadcast subscriber and immediately emits a `Task`

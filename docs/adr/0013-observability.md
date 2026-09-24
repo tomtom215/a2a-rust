@@ -47,6 +47,20 @@ The semantic conventions this ADR commits to were read from the
   custom ones ("If one of them applies, then the respective value MUST be
   used; otherwise, a custom value MAY be used").
 
+Re-read upstream on 2026-09-23 while implementing (`docs/rpc/rpc-metrics.md`,
+`rpc-spans.md`, `grpc.md`, `json-rpc.md` on `main`), which added three rules
+the list above lacks, all implemented:
+
+- The status attribute is `rpc.status_code` — Required for gRPC (the status
+  name, `OK` included), "when available" for JSON-RPC (the error code as a
+  string). On failure `error.type` "SHOULD be set to that status code".
+- A span whose `rpc.method` is `_OTHER` is named `{rpc.system.name}`, and a
+  JSON-RPC server that maps a method to `_OTHER` "MUST also set
+  `rpc.method_original`" — here cut to 128 bytes, since the peer chooses it.
+- For JSON-RPC `rpc.method` is Opt-In, because a general-purpose
+  instrumentation cannot bound it. This server can — it serves eleven
+  methods and maps the rest to `_OTHER` — so it sets it.
+
 ## Options
 
 ### 1. What records spans
@@ -126,13 +140,34 @@ existing `init_otlp_pipeline*` functions stay, deprecated.
 - `tracing` spans cost nothing when the feature is off and a disabled-level
   check when it is on without a subscriber; the cost with an exporter
   installed is measured before and after, not asserted.
+
+  **Measured 2026-09-24**, a blocking `SendMessage` round trip over
+  loopback to `serve_with_addr` with a trivial executor (criterion, bench
+  profile, 4-vCPU Xeon at 2.1 GHz, two tokio workers; 15 s per point, and the
+  before tree re-run to bound drift, which was within ±5%). Before is this
+  branch without phase 2, after is with it; about 175 µs a call before.
+  With no subscriber: JSON-RPC +1 to +5%, within the noise; HTTP+JSON +8 to
+  +10%, which experiments could not attribute below that noise. With
+  `OtelMetrics` alone: 0 to +15%. With a `tracing-opentelemetry` layer over a
+  batch processor as well: +55 to +63%, about 100 µs a call, almost all of it
+  the bridge recording the call's two spans; the before tree, which has no
+  spans to record, pays nothing for the same layer. The first cut of this
+  work cost +36% and +46% with no subscriber: the connection counter wrapped
+  every response body, which made hyper send each fixed-size response
+  chunked, and each call's future was boxed. Both were fixed before commit
+  and the fix measured.
 - Adding dependencies: `tracing-opentelemetry`, and the `trace` and
   `http-proto` features of the OpenTelemetry crates already in use. Each is
   checked against `deny.toml` before it lands.
 
 ## Open questions
 
-- Whether `tracing` becomes a default feature of the server and SDK crates.
-  Today it is off by default, so a default build records no spans and logs
-  nothing. Turning it on changes the dependency graph of every adopter; it is
-  a maintainer decision, not one this ADR takes.
+- ~~Whether `tracing` becomes a default feature of the server and SDK
+  crates.~~ **Decided 2026-09-23 by the maintainer: yes, with `tracing`'s own
+  default features.** Measured before deciding: `tracing` was already in every
+  default build's dependency graph through the HTTP stack, so the feature adds
+  `tracing-attributes` and `syn`. The client takes it by default too: its
+  failure paths report through `tracing` like the server's, and a default
+  client build that dropped them was O13's other half. The SDK now takes the
+  client and server without their own defaults (audit K1), so
+  `default-features = false` on any of the three removes it again.

@@ -63,6 +63,44 @@ async fn default_count_returns_zero() {
     assert_eq!(count, 0, "default count() should return 0");
 }
 
+/// A store that has not implemented the event log or idempotency keys says
+/// so rather than pretending. The defaults are load-bearing: a resuming
+/// subscriber is refused on `append_event`'s error, and told no position is
+/// retained by `earliest_event_seq`'s `None`; a store that claimed success
+/// would silently lose events or double-execute a retried send (audit N11,
+/// whose survivors these were).
+#[tokio::test]
+async fn defaults_a_store_has_not_implemented_refuse_rather_than_pretend() {
+    use a2a_protocol_types::error::ErrorCode;
+
+    let store = MinimalStore;
+    let id = TaskId::new("t");
+    let task = Task {
+        id: id.clone(),
+        context_id: a2a_protocol_types::task::ContextId::new("ctx"),
+        status: a2a_protocol_types::task::TaskStatus::new(
+            a2a_protocol_types::task::TaskState::Submitted,
+        ),
+        history: None,
+        artifacts: None,
+        metadata: None,
+    };
+
+    let appended = store
+        .append_event(&id, 1, &StreamResponse::Task(task))
+        .await;
+    assert_eq!(
+        appended.map_err(|e| e.code),
+        Err(ErrorCode::UnsupportedOperation)
+    );
+    let released = store.release_idempotency_key("k").await;
+    assert_eq!(
+        released.map_err(|e| e.code),
+        Err(ErrorCode::UnsupportedOperation)
+    );
+    assert_eq!(store.earliest_event_seq(&id).await.unwrap(), None);
+}
+
 /// Covers `TaskStoreConfig::default()` (lines 222-231).
 #[test]
 fn task_store_config_default_values() {

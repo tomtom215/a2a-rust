@@ -55,6 +55,9 @@ stores (`tests/cross_replica_cancel/`).
   cargo-mutants cargo-nextest --locked` with no version, so the "27.1.0" the
   documents cite is whatever was newest when they were written. It is also
   the newest today (`cargo search`, 2026-09-23), so nothing has drifted yet.
+  **[Fixed on this branch: `scripts/install_cargo_mutants.sh` pins
+  cargo-mutants 27.1.0 by the crates.io checksum and cargo-nextest 0.9.146,
+  and both `mutants.yml` jobs install through it]**
 - **N5 — the `FATAL: role "root" does not exist` lines in every PostgreSQL
   job are the service health check**, not the tests. `--health-cmd
   pg_isready` runs as the container's `root` with no `-U`, and each probe
@@ -87,8 +90,8 @@ stores (`tests/cross_replica_cancel/`).
   (checked by searching the whole 54,863-character body). Found because
   `cargo semver-checks` reported nothing to do for a tree whose
   `[Unreleased]` claimed a breaking change. **[Corrected in CHANGELOG and
-  `STABILITY.md` §1; the process gap — nothing checks that a tag's tree has
-  an empty `[Unreleased]` — is open.]**
+  `STABILITY.md` §1. The process gap is closed by four `release.yml` checks
+  (N10), each proven able to fail by `prove_workflow_gates_fail.py`.]**
 - **N8 — the mutation gate scored uncompilable feature-gated mutants as
   caught** (Medium, gate). `mutants.yml` passed `--all-features` after `--`,
   so each mutant was built without features and, if it did not compile with
@@ -109,6 +112,271 @@ stores (`tests/cross_replica_cancel/`).
   `Result` (types are unchanged, so it is not an API change), which will
   surface mutants no run has ever graded; measure how many survive before
   deciding.
+  **Measured 2026-09-23** on `main` with the return types rewritten to an
+  alias named `Result` (a scratch tree, not committed), `--all-features`
+  given to cargo-mutants, CI's test filter and live PostgreSQL: 274 mutants
+  over the 184 functions. types 11 (9 caught, 2 unviable, 0 missed); client
+  144 (34 caught, 107 unviable, 3 missed); server 119 (84 caught, 33
+  unviable, 2 missed); 0 timeouts. The five survivors, each now resolved on
+  this branch and each checked by applying it by hand:
+  - client `GrpcTransport::to_json` → `Ok(null)`: no client-crate test made a
+    successful gRPC call (the success path was covered from the server and
+    SDK crates, whose tests a client mutant never runs). Killed by
+    `tests/grpc_unary_success_tests.rs`.
+  - client `WebSocketTransport::check_open` → `Ok(())`: killed by
+    `a_call_on_a_dropped_websocket_is_refused_as_final` (see N18).
+  - client `check_endpoint_reachable` → `Ok(())`: equivalent under
+    `--all-features`, where the function's body *is* `Ok(())`; its no-TLS
+    branch had no test and now has one, which the CI
+    `--no-default-features` job runs.
+  - server `PostgresTaskStore::push_artifact` → `Ok(None)` and `Ok(Some(0))`:
+    both make `save_artifact_delta` fall back to `save`, which stores the
+    same bytes and moves the task to the front of `list`. Only the
+    appended-parts delta was checked for list order; killed by
+    `artifact_push_preserves_list_position`.
+
+  The 142 unviable are mostly `Ok(Default::default())` for a type with no
+  `Default`, which no tool can build; 85 functions had no other body
+  replacement. Each was reviewed by reading (2026-09-23): for 79 a test in
+  the function's own crate asserts something a trivial body would break —
+  the crate matters, because cargo-mutants runs only the mutated crate's
+  tests. The other 6 now have one: `A2aClient::from_card` (its test asserted
+  only a timeout a default client also has), `OAuth2ClientCredentials::
+  from_oidc_issuer` (untested anywhere), `GrpcTransport::connect` and
+  `GrpcTransport::parse_params` (covered only from the SDK crate; the client
+  crate's gRPC stub now answers only the id it is asked for), and the timeout
+  arguments of `RestTransport::with_timeout` and
+  `WebSocketTransport::connect_with_timeout` (no test bounded the elapsed
+  time, so a dropped value fell back to the 30 s default unnoticed; the REST
+  test was run against exactly that and failed at 30.0 s). The review also
+  noted that `connection_timeout` in the JSON-RPC and REST transports is still
+  checked by no test that measures it. **[Resolved on this branch; the
+  maintainer chose a patched cargo-mutants in CI, which makes these
+  mutants part of every run.]**
+
+- **N10 — no release was ever checked to be its own release preparation,
+  and eight of seventeen tags were not** (Medium, release
+  process; escape class 9). `scripts/check_release_tree.py` asks, for a tag,
+  whether any file packaged into the four crates changed after the release's
+  own CHANGELOG section was last edited. VALIDATED by its `history` mode on
+  2026-09-23: `prep` fails `v0.2.0`, `v0.6.0`, `v0.7.0`, `v0.8.0`, `v0.9.0`,
+  `v0.10.0`, `v0.12.0` and `v0.13.0`; `unreleased` fails `v0.3.0` and
+  `v0.13.0` (19 entries — N7's count, re-derived from the tagged file);
+  `cadence` fails `v0.13.0` (a second breaking minor in September 2026); its
+  `vcs` mode confirms from the crates.io downloads that all four 0.13.0
+  crates were built from `391f0df` (server SHA-256 `02f16ab4…42f389`, as N7
+  records). What the late changes were varies: `v0.10.0`'s is one lint fix
+  across twelve files, `v0.12.0`'s are mostly `#[cfg(test)]` additions with
+  some library lines — whether any of them changed behaviour was not
+  established, and it does not need to be for the gate to be right, since
+  the notes were not re-read against them. **[Gated: the four checks run in
+  `release.yml`; `RELEASING.md` says what they ask of the process.]**
+
+- **N12 — signing canonicalized integers beyond 2^53 with all their digits**
+  (Medium, signing interop; not in the tables). RFC 8785 §3.2.2.3 makes
+  every JSON number an IEEE 754 double, so `9007199254740993` canonicalizes
+  as `9007199254740992`, as V8's `JSON.stringify(JSON.parse(…))` renders it;
+  `canonicalize` wrote the literal, so the canonical bytes of any card whose
+  metadata carried such an integer disagreed with every conforming
+  implementation. VALIDATED by `rfc8785_integers_are_doubles` failing on
+  unchanged code (`left: "9007199254740993"`, `right: "9007199254740992"`).
+  A unit test, `canonicalize_integers_exact`, had pinned the deviation by
+  asserting `u64::MAX`'s exact digits. **[Fixed with T2.]**
+- **N13 — a peer that goes away mid-call read differently on each binding**
+  (Medium, client; found by E6's scripted peer). The same cut — the stream or
+  connection ending before a final event — was a retryable `Http` error over
+  JSON-RPC and HTTP+JSON, a non-retryable `Transport` over WebSocket and a
+  non-retryable `Protocol(InternalError)` over gRPC. A WebSocket handshake
+  refused with 401 was `Transport` too, so `BearerAuthInterceptor` never
+  dropped the token (the gap OW5 closed for gRPC). VALIDATED:
+  `tests/scripted_peer_tests.rs` failed three of five tests, five wrong
+  outcomes, on the unfixed transports — e.g. `WebSocket: expected a
+  retryable error, got Some(Err(Transport("WebSocket connection closed")))`
+  and `Grpc: … Protocol(A2aError { code: InternalError, message: "protocol
+  error: missing grpc-status trailer, …" })`. **[Fixed on this branch; see
+  the CHANGELOG's first breaking entry.]**
+- **N14 — under parallel load a sequential post to a private channel was
+  refused as "already being processed"** (severity unknown; CONJECTURED).
+  `swarm_scale cost::a_channel_gets_slower_as_it_ages`, run by
+  `--run-ignored all` alongside the rest of the server suite on 4 cores,
+  failed with `task … is already being processed; wait for it to reach
+  input-required or a terminal state before sending again` on a post the
+  test makes only after the previous one returned. OW4 attributes these
+  experiments' parallel failures to contention; a refusal of a *sequential*
+  post is a different claim — that a blocking send can answer before the
+  task is released for the next — and is not established either way. CI
+  excludes `binary(swarm_scale)` from mutation runs, so nothing runs it under
+  load. Next step: reproduce with the test alone and a CPU hog.
+- **N11 — cargo-mutants makes no viable body replacement for a function
+  returning `Pin<Box<dyn Future<…>>>`** (Medium, gate; wider than N9). It
+  offers `Pin::new()`, `Pin::from_iter(…)`, `Pin::new(Box::new(Default::default()))`
+  and `Pin::from(Box::new(Default::default()))`, none of which compiles, so
+  "replace the body" has never been graded for 162 functions: 144 in the
+  server (every `TaskStore`, `PushConfigStore`, `ServerInterceptor` and
+  event-queue implementation) and 18 in the client. VALIDATED with
+  `cargo mutants --list --all-features` on `main` (648 such mutants); the
+  cause is `type_replacements` in cargo-mutants 27.1.0's `src/fnvalue.rs`,
+  which has no case for `Pin` or `dyn Future`. Statement-level mutants inside
+  those bodies are still generated and graded. Spelling a return type as
+  `Result` does not reach these: the alias sits inside `Output = …`.
+  **[Fixed on this branch: `scripts/install_cargo_mutants.sh` builds
+  cargo-mutants 27.1.0 from its checksum-pinned crate with
+  `scripts/cargo-mutants/27.1.0-result-aliases-and-boxed-futures.patch`, which
+  replaces a boxed future's body with one yielding each replacement of its
+  output and skips a replacement equal to the body; `mutants.yml` runs it.
+  Measured with the patch on `main`'s tree plus this branch's earlier commits
+  (`--re 'Box::pin\(async move'`, `--all-features`, CI's test filter, live
+  PostgreSQL): client 23 mutants, 18 caught, 5 unviable, 0 missed; server 229,
+  142 caught, 50 unviable, 37 missed. Of the 37, 10 are equivalent: four
+  interceptors' `after` and `on_shutdown`, whose bodies already are the
+  replacement; two `close`s whose effect is nothing; and three trait defaults.
+  The patched build no longer generates 8 of them. Two remain, and each is
+  expected to survive: `CancelOnFirstWrite::close`, which forwards to a no-op,
+  and `TaskStore::earliest_event_seq`'s `Ok(None)`, whose body opens with `let
+  _ = task_id;`. 8 were the push-config `count`s, which this branch's
+  `PushConfigStore` count tests, committed while the measurement ran, already
+  kill. The other 19 were untested: `TaskStore`'s defaults for `append_event`,
+  `release_idempotency_key` and `earliest_event_seq`, and
+  `release_idempotency_key` or `earliest_event_seq` on the in-memory, SQLite
+  and PostgreSQL tenant stores and the PostgreSQL store. Each now has a test.
+  Re-run with the patched build over the 41 mutants of those functions
+  (`swarm_scale` left out of the filter: it failed the unmutated baseline on
+  this host, on `main` too): 40 caught, 1 missed — the equivalent
+  `Ok(None)`.]**
+- **N15 — the book taught code that does not compile, and prose the code
+  contradicts** (Medium, docs; escape class 1). Found by compiling the 127
+  `ignore`d blocks. Five could not compile as shown; each was confirmed by
+  compiling the original with only its missing context added, under nightly
+  rustdoc with the error code pinned (a wrong-code control fails): E0382 (a
+  value sent twice, `client/builder.md`), E0004 (`match` on the
+  `#[non_exhaustive]` `SendMessageResponse`, `client/sending-messages.md`),
+  E0277 (`Arc<RateLimitInterceptor>` as a `ServerInterceptor`,
+  `building-agents/interceptors.md`), E0614 (`&*writer`,
+  `deployment/testing.md`), E0283 (`ClientBuilder::new("…".into())`).
+  Prose the code contradicts, each checked against the source: `cancel`'s
+  default refuses (it has cancelled since 0.7; `executor.rs:96`); the
+  builder picks the transport from the URL (it defaults to JSON-RPC;
+  `transport_factory.rs`); CORS is on by default (off until `with_cors`);
+  `sqlx::PgConnection` is not `Send + Sync` (a `compile_fail` block asserting
+  it compiled). Two examples taught weaker security than the SDK practises: a
+  body-size check on `size_hint()` alone, which the REST dispatcher's own
+  comment calls a memory-amplification DoS, and a token check by `HashSet`
+  lookup. VALIDATED as above. **[Fixed on this branch: every block but
+  `slimrpc`'s three compiles; `check_book_code.sh` holds the rest at zero.]**
+- **N16 — types a caller builds with no constructor, and a public field of a
+  type the SDK does not export** (Low, API; next to K2). `TaskQueryParams`,
+  which `get_task` takes, and `Task`, which a custom store or a test
+  builds, have no `new`; both need a full struct literal, so adding a field
+  breaks every caller (neither is `#[non_exhaustive]`, so that is also the
+  only way). `RequestContext::cancellation_token` is a
+  `tokio_util::sync::CancellationToken`, which no crate here re-exports, so an
+  executor that stores or creates one needs its own `tokio-util` dependency
+  at a compatible version. VALIDATED while converting the book: the pages
+  now build both with literals, and `book-tests` depends on `tokio-util` for
+  the third. Open.
+- **N17 — `deny.toml` allows a licence no dependency carries** (Low,
+  hygiene). `cargo deny check` on `main` passes with a warning that the
+  `Unicode-DFS-2016` allowance matches no crate. An allowance with nothing
+  behind it widens the policy for a future dependency without anyone
+  deciding to. VALIDATED (`cargo deny check`, exit 0 with the warning). The
+  slimrpc binding's own policy had the same shape: `CDLA-Permissive-2.0`,
+  which the root tree needs for `webpki-roots`, matched nothing there.
+  **[Fixed on this branch: both allowances removed, and both policies set
+  `unused-allowed-license = "deny"`. Probed: re-adding `Unicode-DFS-2016` to
+  the root policy fails `cargo deny check licenses` with
+  `license-not-encountered`, exit 4. The deny jobs are marketplace actions
+  `prove_gates_fail.sh` cannot inject into (`ci_gate_audit.sh` says why), so
+  the probe is the evidence.]**
+- **N18 — `WebSocketTransport` never reconnects** (Low, client; found
+  while fixing N13). Once its socket drops, `closed` stays set and every
+  later call fails at once with a non-retryable `Transport("WebSocket
+  connection closed")`. N13 made the drop itself retryable, as it is on every
+  other binding, but on this one only a new transport can act on that: a
+  caller retrying on the same client gets one futile attempt. VALIDATED with
+  a scripted peer that cuts the connection: the in-flight `send_message`
+  failed `HttpClient("WebSocket connection closed")` with one connection
+  made, and the next call on the same client failed `Transport(…)`. (The
+  retry policy did not re-send the first call, since `SendMessage` is not
+  idempotent unless the peer honours idempotency keys.) The fix is a lazy
+  reconnect from the stored URL and config, bounded like the first connect;
+  E3's circuit breaker would sit in front of it. Until then
+  `a_call_on_a_dropped_websocket_is_refused_as_final` pins the refusal as
+  non-retryable, so a retry loop stops instead of spinning. Open; the
+  CHANGELOG's N13 entry says so.
+- **N19 — the WebSocket dispatcher's documentation claims the v0.3 method
+  aliases** (Low, docs; found while adding spans to it). The
+  `process_ws_message` doc comment and `book/src/building-agents/dispatchers.md`
+  said it routes "the v0.3 `method/verb` aliases"; of those it routes only
+  `message/stream`, and `ws_legacy_method_names_rejected` asserts that
+  `message/send`, `tasks/list` and `tasks/get` are refused with `-32601`.
+  VALIDATED by reading the dispatch match and the test. **[Fixed on this
+  branch: both documents now say what the code does; the behaviour is
+  unchanged]**
+- **N20 — the two HTTP+JSON dispatchers answer the same error with different
+  statuses** (Medium, server wire; found while mapping each binding's status
+  for `error.type`). The axum adapter answered `ServerError::Overloaded` with
+  `503` and `PayloadTooLarge` with `413`; `RestDispatcher` sent both through
+  `to_a2a_error()` and answered `500` and `400` — though its own body-limit
+  check answers `413`. A client whose retry policy keys on `503` retried an
+  overloaded axum server and gave up on an overloaded `RestDispatcher`.
+  VALIDATED by reading both mappings; the existing test
+  `server_error_payload_too_large_maps_to_400` pinned the `400`. **[Fixed on
+  this branch: one `ServerError::http_status` serves both, the pinned test
+  now expects `413`, and `server_error_overloaded_maps_to_503` is new. The
+  body's `status` field still says `INTERNAL` for an overload, from the A2A
+  code; an AIP-193 `UNAVAILABLE` there is left for a wire change of its own]**
+- **N21 — a blocking send answers `input-required` before the task stops being
+  in flight** (Medium, server behaviour; found when a mutation baseline
+  failed). `collect_events` returns as soon as the task reaches an interrupted
+  or terminal state (`sync_collector.rs`, the `break` after
+  `is_interrupted()`), without waiting for the executor's spawned future,
+  which is what removes the task's cancellation token. Admission refuses a
+  send while that token is live (`reject_in_flight_send`). So a client that
+  answers an `input-required` at once can be refused with "task … is already
+  being processed; wait for it to reach input-required or a terminal state" —
+  the state its previous response reported. VALIDATED by
+  `swarm_scale::cost::a_channel_gets_slower_as_it_ages`, which posts
+  sequentially to one task: it passes 10 of 10 on an idle machine and fails 5
+  of 5 on `main` (`638ff9a0`) under four busy loops on four cores, with that
+  error; this branch's trees fail identically, 20 of 20 each. The harness's
+  `settle` loop absorbs the first occurrence and nothing absorbs the rest. The
+  mutation baseline runs `swarm_scale`, and on this 4-core host on 2026-09-24
+  the server suite as that baseline runs it failed 3 of 3 times on `main`: two
+  to four `swarm_scale::cost` and `fan_in` tests on this refusal (`fan_in`
+  reports a single agent's own posts refused 40% of the time), and
+  `fan_out::every_tail_sees_every_post` timing out at 45 s. The same command
+  had passed on this host hours earlier, so how often it bites depends on the
+  host; a busy CI runner may see it. The fix is a design choice — have the
+  blocking response wait, bounded, for the executor to return, or let
+  admission accept a continuation of a task whose recorded state is already
+  interrupted — and is left for the maintainer. Open.
+- **N22 — a WebSocket stream goes silent when its client is dropped**
+  (Medium, client behaviour; found when `prove_gates_fail.sh` graded
+  `cargo test --workspace --all-features` PRE-BROKEN on this branch). Dropping
+  a `WebSocketTransport` aborts its reader task (`impl Drop for Inner`), but
+  the `EventStream` it returned holds a `PendingGuard`, whose map holds the
+  stream's sender. With the reader gone and the sender alive, the stream
+  receives nothing more and never ends; only the idle bound (5 min by
+  default) reports a `Timeout`. On the HTTP and gRPC bindings a stream
+  outlives its client. `scripted_peer_tests`, which drops the client after
+  the first event, failed on WebSocket when the abort beat the reader to the
+  peer's close: VALIDATED by timestamps on the reader's polls (polled
+  `Pending` 0.02 ms before the peer closed, never polled again) and by
+  failure counts under eight busy loops on four cores — 8 of 640 runs before
+  the fix, 0 of 300 after. The regression test
+  `a_stream_outlives_the_transport_that_opened_it` fails on `main`
+  (`638ff9a0`) and passes here. **[Fixed: the stream holds the connection
+  too]**
+- **N23 — the agent card's poll watcher can miss the first change** (Low,
+  server behaviour; found when `Test (stable, macos-latest)` failed
+  `poll_watcher_detects_change` on this branch, in code it does not touch).
+  `spawn_poll_watcher` read the file's baseline mtime inside the spawned
+  task, through `spawn_blocking`. A rewrite that landed before that read
+  became the baseline, so it was never seen as a change and never loaded;
+  the test's 10 s deadline could not help, because the watcher was not
+  slow but blind. VALIDATED: a test that rewrites the file before the
+  watcher's task first runs fails on the old code every time and passes
+  with the fix. **[Fixed: the baseline is read in `spawn_poll_watcher`]**
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.
@@ -495,19 +763,19 @@ first, and `scripts/go_sdk_interop.sh` is the interop harness made permanent.
 
 | # | Sev | Finding | Evidence |
 |---|---|---|---|
-| O1 | Critical | **No spans exist in any crate.** The book claims "Task and context identifiers are on the spans … events from inside an executor inherit that context"; this is false. | VALIDATED [re-checked]: a grep for `span!\|info_span\|#[instrument]\|.instrument(\|Span::current` over `crates/` returns 0 hits. `book/src/deployment/observability.md:266-268` |
-| O2 | Critical | **The server sends downstream a span id it never records.** `fresh_span_id` (`server/src/handler/helpers.rs:169`) creates a child span id and stores it in `CallContext`, and that id is what goes downstream. No span with that id is ever exported, so every Go agent's trace points at a parent the backend never sees. A user who adds `tracing-opentelemetry` cannot repair this. | VALIDATED: inbound `00f067aa0ba902b7` went downstream as `0508261a5e764cd6`. [re-checked the call sites] |
+| O1 | Critical | **[Fixed on this branch: every binding — JSON-RPC over HTTP and WebSocket, HTTP+JSON through `RestDispatcher` and the axum router, gRPC — runs each call in one `SERVER` span, and the executor's span carries `a2a.task.id` and `a2a.context.id`, which is what the book claims. The gate `crates/a2a-protocol-sdk/tests/observability_e2e/` asserts the span tree on JSON-RPC, HTTP+JSON and gRPC; the WebSocket and axum spans are exercised by tests that check their metrics, not their spans]** **No spans exist in any crate.** The book claims "Task and context identifiers are on the spans … events from inside an executor inherit that context"; this is false. | VALIDATED [re-checked]: a grep for `span!\|info_span\|#[instrument]\|.instrument(\|Span::current` over `crates/` returns 0 hits. `book/src/deployment/observability.md:266-268` |
+| O2 | Critical | **[Fixed on this branch with the `otel` feature and a `tracing-opentelemetry` layer: the downstream `traceparent` names the recorded `SERVER` span; the gate asserts, per binding, that the id the executor sees was exported. Without a recording layer the id is still minted, as ADR 0013 option 3 decides — there is no recorded span to name]** **The server sends downstream a span id it never records.** `fresh_span_id` (`server/src/handler/helpers.rs:169`) creates a child span id and stores it in `CallContext`, and that id is what goes downstream. No span with that id is ever exported, so every Go agent's trace points at a parent the backend never sees. A user who adds `tracing-opentelemetry` cannot repair this. | VALIDATED: inbound `00f067aa0ba902b7` went downstream as `0508261a5e764cd6`. [re-checked the call sites] |
 | O3 | High | `Cargo.toml` feature `otel` says "native OTLP export of traces and metrics". `opentelemetry-otlp` is built with only `metrics`, and there is no `TracerProvider`. The 0.13.0 sweep fixed three documents and missed this one, which docs.rs publishes. | VALIDATED [re-checked]: `server/Cargo.toml:54,109`, `otel/pipeline.rs:54` |
-| O4 | High | The executor and background work run in `tokio::spawn` with no `.instrument(...)`. This happens at 4 sites: `execute.rs:106`, `background/mod.rs:62`, `sync_collector.rs:439`, `streaming/sse.rs:264`. A user's own outer span (e.g. an axum `TraceLayer`) is not the parent either. | CONJECTURED (code); the no-span result is VALIDATED |
-| O5 | High | The latency histogram records seconds but keeps the SDK's millisecond-sized default buckets `[0,5,10,25,…]`, so everything under 5 s lands in one bucket. Names are not semconv: `a2a.server.latency` / `method`, where semconv has `rpc.server.duration` / `rpc.method` / `rpc.system`. The unit strings in the doc (`otel/mod.rs:65`) are wrong. | VALIDATED (ManualReader) |
+| O4 | High | **[Fixed on this branch: the four spawn sites run in `INTERNAL` child spans (`a2a.execute`, `a2a.process_events`, `a2a.deliver_push`, `a2a.sse`); the gate asserts every one has a recorded parent. Its first version found the SSE writer spawned after the call's span had closed, a root span per stream; fixed with `ServerSpan::run_with`, and probed by moving it back out]** The executor and background work run in `tokio::spawn` with no `.instrument(...)`. This happens at 4 sites: `execute.rs:106`, `background/mod.rs:62`, `sync_collector.rs:439`, `streaming/sse.rs:264`. A user's own outer span (e.g. an axum `TraceLayer`) is not the parent either. | CONJECTURED (code); the no-span result is VALIDATED |
+| O5 | High | **[Fixed on this branch: `rpc.server.call.duration` with the conventions' buckets and attributes (verified upstream 2026-09-23, ADR 0013); `a2a.server.latency` takes the same buckets and is deprecated; the unit strings in `otel/mod.rs` now match what is emitted]** The latency histogram records seconds but keeps the SDK's millisecond-sized default buckets `[0,5,10,25,…]`, so everything under 5 s lands in one bucket. Names are not semconv: `a2a.server.latency` / `method`, where semconv has `rpc.server.duration` / `rpc.method` / `rpc.system`. The unit strings in the doc (`otel/mod.rs:65`) are wrong. | VALIDATED (ManualReader) |
 | O6 | High | Streaming latency measures only stream setup. A 1.5 s stream recorded 0.0006 s. There is no stream-duration, events-per-stream or active-stream metric. | VALIDATED |
 | O7 | High | If `OtelMetricsBuilder::build()` runs before the global MeterProvider is installed, every metric is silently a no-op for the life of the process. There is no warning. | VALIDATED |
 | O8 | High | The client has no spans, no metrics hook and no retry counter. `CallInterceptor::after` is skipped when the transport errors (`client/src/methods/send_message.rs:91-100`), so an interceptor cannot time a call or count its errors. | VALIDATED |
 | O9 | High | Outbound `traceparent` is opt-in twice: `TracePropagationInterceptor` **and** `CurrentTrace::scope(ctx.trace_context())` around each call. Neither is in the prelude, and the scope is not inherited across `tokio::spawn`. With the interceptor but no scope, nothing is sent. | VALIDATED |
-| O10 | Medium | The `pool.{active,idle,created,closed}` metrics are advertised (README.md:77, observability.md:147-150) but `on_connection_pool_stats` has no production caller. If it were called, cumulative totals passed to `Counter::add` would double-count. | VALIDATED |
-| O11 | Medium | Some failures produce no metric: malformed JSON, unknown method, executor failure or timeout, tenant-resolution failure (conjectured), and push delivery aborted by a config-store read error (`background/push_delivery/mod.rs:72-74`). There is no task-outcome metric. | VALIDATED except as marked |
+| O10 | Medium | **[Fixed on this branch for `serve`, `serve_with_addr` and `Server::serve_with_shutdown` (`serve/connections.rs`), and the double count fixed (`pool_counters_count_each_connection_once`). The gRPC and WebSocket dispatchers' listeners still report nothing]** The `pool.{active,idle,created,closed}` metrics are advertised (README.md:77, observability.md:147-150) but `on_connection_pool_stats` has no production caller. If it were called, cumulative totals passed to `Counter::add` would double-count. | VALIDATED |
+| O11 | Medium | **[Partly fixed on this branch: malformed JSON, an unknown method, an HTTP+JSON request refused on its body or parameters, and a call whose peer went away are now recorded by `rpc.server.call.duration`. Still open: executor failure or timeout (the call succeeds with a failed task — a task-outcome metric, E5), tenant-resolution failure, and the push delivery a config-store read error aborts]** Some failures produce no metric: malformed JSON, unknown method, executor failure or timeout, tenant-resolution failure (conjectured), and push delivery aborted by a config-store read error (`background/push_delivery/mod.rs:72-74`). There is no task-outcome metric. | VALIDATED except as marked |
 | O12 | Medium | OTLP setup covers only part of the `OTEL_*` configuration. It is gRPC only and ignores `OTEL_EXPORTER_OTLP_PROTOCOL`. The `service_name` argument overrides `OTEL_SERVICE_NAME`, and `service.version` is never set. There is no log bridge and no Prometheus option. Graceful shutdown doesn't flush the meter provider, which loses up to 60 s of metrics. `tracing` is off by default in the server and the sdk. | CONJECTURED (code) |
-| O13 | Medium | Many failure paths report only through `trace_*!`, which compiles to nothing without the non-default `tracing` feature. Examples: the WebSocket traceparent drop, which the book says "warns once per connection", and skipped webhooks. | VALIDATED |
+| O13 | Medium | **[Fixed on this branch: `tracing` is a default feature of the client, server and SDK (maintainer's decision, ADR 0013), so a default build of any of them reports these paths to whatever subscriber is installed. Escape class 3's other half — nothing checks that a failure surfaces somewhere — is still open]** Many failure paths report only through `trace_*!`, which compiles to nothing without the non-default `tracing` feature. Examples: the WebSocket traceparent drop, which the book says "warns once per connection", and skipped webhooks. | VALIDATED |
 | O14 | Medium | Health endpoints are inconsistent. axum `/ready` checks the store. REST `/ready` is a constant. JSON-RPC has `/health` and `/ready` (per the devx audit's live run). gRPC has no `grpc.health.v1`. | Mixed; the two audits disagreed on JSON-RPC, and the live run was taken as authoritative |
 | O15 | Medium | Push webhooks carry no `traceparent` (`push/sender.rs:851-906`). WebSocket drops it by design. Only JSON-RPC propagation is tested end to end. | CONJECTURED except JSON-RPC |
 | O16 | Low | **[Push URL logging fixed: `9ee3cc3`; the rest is open]** Two INFO lines per request. The untrusted JSON-RPC method name is logged at INFO, a log-forging risk with the plain `fmt` format. The full webhook URL is logged at INFO (`push/sender.rs:776`), and those URLs often carry secrets. Endpoint URLs are logged at INFO on every client call. | VALIDATED except the push URL |
@@ -533,7 +801,7 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 | S9 | Medium | **[Fixed: `3f6f7d3`]** README.md:60 says `shutdown()` reports a queue it had to force-destroy. The field is "always 0" (`handler/shutdown/mod.rs:30`), and every queue is destroyed unconditionally. | VALIDATED |
 | S10 | Medium | `EventEmitter::status(state)` can't carry a progress message. `RequestContext.task_id` is a `TaskId` but `context_id` is a `String`. | VALIDATED (compile) |
 | S11 | Medium | The README's one-line `serve()` is the unhardened path: no connection cap, no header or idle timeout, no shutdown. There is no top-level `max_concurrent_tasks` (per-tenant only). | CONJECTURED (code, but the crate's own docs agree) |
-| S12 | Medium | `book/src/reference/configuration.md:17` gives the executor-timeout default as None; the code sets 1 h. The server README's `signing` row says "verification", but the crate does no signing. The feature table omits grpc-tls, auth-jwt, tls-rustls and conformance. | VALIDATED |
+| S12 | Medium | **[Fixed on this branch: feature tables gated by `check_feature_tables.py`; every defaults table on the configuration page, the executor timeout included, gated by `tests/book_defaults.rs`, which reported five wrong or missing rows on the unfixed page]** `book/src/reference/configuration.md:17` gives the executor-timeout default as None; the code sets 1 h. The server README's `signing` row says "verification", but the crate does no signing. The feature table omits grpc-tls, auth-jwt, tls-rustls and conformance. | VALIDATED |
 | S13 | Low | The README says rate limiting is "per-caller". Without auth or `trusted_proxy_hops`, every caller shares the `"anonymous"` bucket (`rate_limit/identity.rs:45`). | VALIDATED |
 | S14 | Low | A missing or `0.3` `A2A-Version` header gets `-32009` with `"id":null` even though the request id was known. There is no v0.3 compatibility layer (a2a-go ships `a2acompat/a2av0`). | VALIDATED |
 | S15 | Low | Tasks in flight at a crash or shutdown stay non-terminal in the durable store, and there is no recovery path. | CONJECTURED |
@@ -547,7 +815,7 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 | C2 | High | **[Fixed: `efd6be0`]** **A stream ending with no terminal event returns `None` like normal completion.** A partial final frame is silently dropped. There is no resume: the client parses `id:` but drops it, and `subscribe_to_task` can't send `Last-Event-ID`, although the server supports resumption. | VALIDATED |
 | C3 | High | **[Fixed: `4377528`]** **OAuth2 refresh failures run one after another under one lock.** A failed refresh caches nothing, so each queued caller runs its own full-timeout refresh (`token_provider.rs:538`). With 1 s timeouts, 5 callers failed at 1, 2, 3, 4 and 5 s; at the 30 s default with 100 callers, that is about 50 minutes. | VALIDATED |
 | C4 | High | **[Fixed: `5ac7e9a`]** **`ClientError` doesn't convert to `A2aError`**, so `?` in an executor fails (`E0277`). Only the reverse conversion exists (`error/mod.rs:184`). Every call site has to convert to a string, which loses whether it was a timeout, a transient failure or a protocol error. | VALIDATED [re-checked] |
-| C5 | High | **The client README (its crates.io page) documents APIs that don't exist**: `resubscribe()`, `get_authenticated_extended_card()`, `ClientBuilder::with_transport()`. It says "10 variants" (there are 11), has a non-exhaustive `match` that won't compile, and gives the wrong description for the `signing` row. | VALIDATED [re-checked] |
+| C5 | High | **[Fixed: the README is a doctest now]** **The client README (its crates.io page) documents APIs that don't exist**: `resubscribe()`, `get_authenticated_extended_card()`, `ClientBuilder::with_transport()`. It says "10 variants" (there are 11), has a non-exhaustive `match` that won't compile, and gives the wrong description for the `signing` row. | VALIDATED [re-checked] |
 | C6 | Medium | **[Fixed: `46791be`]** The first-event timeout reuses `stream_connect_timeout` (30 s). A Go agent that flushes headers and then thinks longer than 30 s is cut off (`jsonrpc.rs:401`, `rest/streaming.rs:87`). gRPC has the same problem. | VALIDATED (stub) |
 | C7 | Medium | The blocking `send_message` has a 30 s `request_timeout`, too short for delegation, and retry is off by default. Both shipped coordinators wrap calls in their own timeouts. | CONJECTURED (code) |
 | C8 | Medium | **[Fixed: `85c5a6c`, `adce975`]** REST streaming errors aren't decoded, although REST unary errors are. `subscribe_to_task` 404 gives `UnexpectedStatus` where `get_task` gives `TaskNotFound`. Go's in-stream AIP-193 `{"error":…}` frames become `Serialization("unknown variant error")`. | VALIDATED (stub and Go server) |
@@ -574,13 +842,13 @@ non-idempotent sends is correctly limited; body size limits are enforced.
 | # | Sev | Finding | Evidence |
 |---|---|---|---|
 | T1 | High | **[Read side fixed: `8e218a4`; write side is open work OW1]** **Agent cards with security requirements can't be exchanged with a2a-go in either direction.** Rust writes `{"o":{"list":["s"]}}` (proto/spec shape); Go writes `{"o":["s"]}`, and each side fails to parse the other. Rust matches the spec, but in practice the reader must accept both shapes. | VALIDATED (both directions) |
-| T2 | High | **Signing: serde_json lacks `float_roundtrip`**, so floats in a card are off by one ULP before canonicalization. The RFC 8785 §3.2.4 example gives `333333333.33333325`, 5 of 24 Appendix-B vectors fail after parsing, and 29.7% of random exponent-form doubles parse wrong. | VALIDATED [re-checked: the feature is absent from every manifest] |
+| T2 | High | **[Fixed: `signing` enables `float_roundtrip`; RFC 8785 vectors gate it]** **Signing: serde_json lacks `float_roundtrip`**, so floats in a card are off by one ULP before canonicalization. The RFC 8785 §3.2.4 example gives `333333333.33333325`, 5 of 24 Appendix-B vectors fail after parsing, and 29.7% of random exponent-form doubles parse wrong. | VALIDATED [re-checked: the feature is absent from every manifest] |
 | T3 | High | **Signing: verification canonicalizes the re-serialized struct, not the received JSON** (`signing.rs:70-71`). Any unknown field, the legacy `url`, a missing `skills`, `null` capabilities, snake_case aliases or the v0.3 scheme form makes a valid peer signature fail. Empty defaults (`"skills":[]`) are added to the canonical bytes. There is no cross-SDK signing test. | VALIDATED [re-checked the code path] |
-| T4 | Medium | The ES number formatter gets exact ties wrong (`1424953923781206.3` vs `.2`). `crit` headers go unchecked (RFC 7515 §4.1.11). A bad signature surfaces as `-32603 Internal`. | VALIDATED |
+| T4 | Medium | **[Ties fixed with T2; `crit` and the `-32603` mapping are open]** The ES number formatter gets exact ties wrong (`1424953923781206.3` vs `.2`). `crit` headers go unchecked (RFC 7515 §4.1.11). A bad signature surfaces as `-32603 Internal`. | VALIDATED |
 | T5 | Medium | One unknown enum value fails the whole payload: `TASK_STATE_PAUSED` fails the `Task`, `ROLE_SYSTEM` the `Message`, and an unknown or extra key in `StreamResponse` fails the event. A newer peer can break stream consumers. | VALIDATED |
 | T6 | Medium | Values accepted over JSON can't be converted to proto (non-base64 `raw`, integers above 2^53, non-RFC3339 timestamps), so GetTask over gRPC or slimrpc returns INTERNAL. `has_valid_timestamp` accepts `"garbage T garbage garbage"`. | VALIDATED |
 | T7 | Medium | JSON requires `contextId` on `Task`; proto doesn't. Large numbers in metadata are silently rounded, and `1e400` rejects the whole message. | VALIDATED |
-| T8 | Medium | The types README says `A2A_VERSION = "1.0.0"`; the code has `"1.0"`. Its `Message` literal won't compile, its `match` is non-exhaustive, and `proto` is undocumented. `first-agent.md` and `concepts/agent-cards.md` teach `protocol_version: "1.0.0"` with a 16-field literal instead of the existing builders. | VALIDATED [re-checked README] |
+| T8 | Medium | **[README half fixed: it is a doctest now; the book pages' `protocol_version: "1.0.0"` literals are open]** The types README says `A2A_VERSION = "1.0.0"`; the code has `"1.0"`. Its `Message` literal won't compile, its `match` is non-exhaustive, and `proto` is undocumented. `first-agent.md` and `concepts/agent-cards.md` teach `protocol_version: "1.0.0"` with a 16-field literal instead of the existing builders. | VALIDATED [re-checked README] |
 | T9 | Low | `parse_iso8601_to_unix_millis` rolls invalid dates over (`2026-02-31` becomes Mar 3) and accepts non-ISO forms. It feeds ListTasks `statusTimestampAfter`. | VALIDATED |
 | T10 | Low | Lossy round-trips through proto and JSON. These matter because signing re-serializes. | VALIDATED |
 | T11 | Low | Semver: core structs have all-public fields and aren't `#[non_exhaustive]`, which is inconsistent with `AgentCapabilities`. `TaskState::ALL: [Self; 9]` exposes the variant count. | VALIDATED |
@@ -590,9 +858,9 @@ non-idempotent sends is correctly limited; body size limits are enforced.
 
 | # | Sev | Finding | Evidence |
 |---|---|---|---|
-| K1 | Medium | `default-features = false` on the sdk does not remove TLS. The sdk's client and server dependencies don't set it, so rustls still comes in, and the manifest comment says otherwise. | VALIDATED (`cargo tree`) [re-checked manifest] |
+| K1 | Medium | **[Fixed on this branch: the SDK takes the client and server with `default-features = false` and forwards its own defaults; `cargo tree -p a2a-protocol-sdk --no-default-features` has no rustls, hyper-rustls or webpki-roots]** `default-features = false` on the sdk does not remove TLS. The sdk's client and server dependencies don't set it, so rustls still comes in, and the manifest comment says otherwise. | VALIDATED (`cargo tree`) [re-checked manifest] |
 | K2 | Medium | The prelude lacks what a server or coordinator needs: `Server`/`ServeConfig`, `FailureClass`, `CurrentTrace`, `TracePropagationInterceptor`, the caching resolver and `ErrorCode`. The shipped coordinator examples depend on 7 crates, not the sdk alone. | VALIDATED (compile) |
-| K3 | Low | The sdk README feature table omits `auth-jwt` and misattributes `tls-rustls`/`grpc-tls`. `conformance` and a bare `proto` are not forwarded. The crate root has no server+client example, and the macro docs use `a2a_protocol_server::` paths. | VALIDATED |
+| K3 | Low | **[Feature table fixed and gated; the forwarding of `conformance` and `proto` is open]** The sdk README feature table omits `auth-jwt` and misattributes `tls-rustls`/`grpc-tls`. `conformance` and a bare `proto` are not forwarded. The crate root has no server+client example, and the macro docs use `a2a_protocol_server::` paths. | VALIDATED |
 | K4 | Low | slimrpc: the docs say "no change to any of those crates" was needed, which the README contradicts. It names a nonexistent `A2aClientBuilder`. It inherits T6 (INTERNAL on unconvertible tasks). It builds, and 57 tests pass. | VALIDATED |
 
 ## 6. Why these got past review and tests
@@ -603,6 +871,14 @@ Each of these gaps is tied to at least one defect that escaped:
    crates.io pages) are not compiled; 130 of the book's 206 Rust blocks are
    `ignore`; Cargo feature docs and defaults tables are unchecked. This let
    through O1, O3, O10, C5, T8, S9 and S12.
+   **[Gated: the four crate READMEs compile as doctests
+   (`check_readme_doctests.py` guards the include); every feature table is
+   checked against its manifest (`check_feature_tables.py`); the
+   configuration page's defaults tables against the structs' `Default`
+   (`tests/book_defaults.rs`); and 127 of the book's 130 `ignore` blocks now
+   compile, which found N15 — the other 3 are `slimrpc`, outside the
+   workspace. Still unchecked: prose that makes a claim no code block
+   exercises.]**
 2. **The observability check only looks at one side.**
    `check_otel_metrics_coverage.py` confirms the exporter overrides every
    callback. Nothing confirms that a real server run produces each
@@ -622,15 +898,30 @@ Each of these gaps is tied to at least one defect that escaped:
    let through T1, S2, S7, C8 and C9.
 6. **Nothing tests hostile or stalled peers.** No stub server stalls, cuts
    off or mis-frames a stream. This let through C1, C2, C6 and C11.
+   **[Gated: E6's `ScriptedPeer` drives every binding through stall,
+   cut-off, mis-frame and 401 in `tests/scripted_peer_tests.rs`; its first
+   run found N13.]**
 7. **Signing has no external test vectors.** RFC 8785 Appendix B is not in
    the tests. This let through T2, T3 and T4.
+   **[Gated: `crates/a2a-protocol-types/tests/rfc8785_vectors.rs` carries
+   Appendix B, the §3.2.3 sort sample and the §3.2.4 bytes, plus V8-sourced
+   tie-rule edges; they found T2, the T4 tie and N12. T3 needs cross-SDK
+   signed cards, not vectors, and is open.]**
 8. **New parsers of peer input aren't required to have fuzz targets.**
    `check_fuzz_matrix.py` only checks that existing targets run. The
    traceparent panic shipped in 0.13.0 this way; JWT, REST query and
    X-Forwarded-For are still unfuzzed.
+   **[Targets added: `jwt_token`, `rest_route`, `forwarded_for`, and for
+   parsers the audit did not name, `webhook_url` and `page_token`; each ran
+   its 60-second smoke clean. `fuzz/README.md` now keeps the inventory of
+   every peer-input parser and its target, which is the requirement in
+   written form; nothing yet fails when a new parser is added without a
+   row. The client's REST error bodies and `Retry-After` are listed there as
+   not yet covered.]**
 9. **Release policy isn't checked by machine.** 0.12.0 (09-10) and 0.13.0
    (09-20) were both breaking, and `STABILITY.md` allows one breaking minor
    release per month. The `PurgeReport` rename skipped deprecation.
+   **[Gated at release time: N10. Deprecate-first is still unchecked.]**
 
 **Feature matrix: no defect.** Each feature of every crate compiles alone,
 and CI's `cargo hack --each-feature` already covers that.
@@ -752,6 +1043,10 @@ operator, highest first.
   a worker that stalls, cuts a stream, sends a malformed frame or answers
   401. Escape class 6 (section 6) is this repository's own version of the
   same gap.
+- **[Built: `a2a_protocol_client::testing::ScriptedPeer`, feature
+  `testing`, on all four bindings; `tests/scripted_peer_tests.rs` runs every
+  script against every binding. The C1 stall tests were not ported onto it;
+  they still run as they were.]**
 - **Missing.** The raw-TCP stubs exist only inside individual test files
   (`crates/a2a-protocol-client/tests/stream_liveness_tests.rs`,
   `hostile_server_tests.rs`), one per test.

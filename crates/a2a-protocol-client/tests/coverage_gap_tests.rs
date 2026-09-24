@@ -215,7 +215,7 @@ fn client_from_card_with_valid_interface() {
             url: "http://localhost:8080".into(),
             protocol_binding: "JSONRPC".into(),
             protocol_version: "1.0.0".into(),
-            tenant: None,
+            tenant: Some("acme".into()),
         }],
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
@@ -243,4 +243,7 @@ fn client_from_card_with_valid_interface() {
         client.config().request_timeout,
         std::time::Duration::from_secs(30)
     );
+    // Only the card can supply this: a client built without it has no
+    // tenant, so a `from_card` that ignored its card would fail here.
+    assert_eq!(client.config().tenant.as_deref(), Some("acme"));
 }

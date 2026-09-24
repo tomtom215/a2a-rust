@@ -20,14 +20,18 @@ categories             = ["network-programming", "web-programming", "api-binding
 [features]
 ## HTTPS is on by default: the A2A spec serves agents over HTTPS, so both the
 ## client (reaching agents) and the bundled push sender (delivering webhooks)
-## must speak TLS out of the box. Opt out with `default-features = false`.
-default = ["tls-rustls"]
+## must speak TLS out of the box. `tracing` is on by default too, so a default
+## build logs through the application's subscriber. Opt out of both with
+## `default-features = false`: the three crates below are taken without their
+## own defaults, so this list is the only one in force.
+default = ["tls-rustls", "tracing"]
 ## Make `a2a_protocol_types::signing` available across the three crates.
 ##
 ## Signing and verification are primitives you call, not behaviour the server or
 ## client performs on your behalf — see those crates' own `signing` entries.
 signing = ["a2a-protocol-types/signing", "a2a-protocol-server/signing", "a2a-protocol-client/signing"]
-## Enable structured logging via the `tracing` crate.
+## Structured logging via the `tracing` crate, in the client and server (on by
+## default).
 tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing"]
 ## Enable HTTPS support via rustls, for both the client and the bundled
 ## server-side push notification sender.
@@ -59,9 +63,11 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+# Without their own defaults, so the `default` list above decides what a
+# default build enables and `default-features = false` removes it (audit K1).
 a2a-protocol-types  = { version = "0.13.0", path = "../a2a-protocol-types" }
-a2a-protocol-client = { version = "0.13.0", path = "../a2a-protocol-client" }
-a2a-protocol-server = { version = "0.13.0", path = "../a2a-protocol-server" }
+a2a-protocol-client = { version = "0.13.0", path = "../a2a-protocol-client", default-features = false }
+a2a-protocol-server = { version = "0.13.0", path = "../a2a-protocol-server", default-features = false }
 
 [dev-dependencies]
 tokio       = { workspace = true, features = ["rt-multi-thread", "macros"] }
@@ -75,3 +81,12 @@ tonic        = { workspace = true }
 tokio-stream = { workspace = true, features = ["net"] }
 rcgen        = "0.14"
 rustls       = { version = ">=0.23, <0.24", default-features = false, features = ["std", "tls12", "ring"] }
+# `observability_e2e.rs` (ADR 0013's gate): spans reach an in-memory exporter
+# through `tracing-opentelemetry` 0.33, the release built on the workspace's
+# opentelemetry 0.32 (crates.io index: `opentelemetry = "^0.32.0"`), and
+# metrics reach a `ManualReader`.
+tracing                = { workspace = true }
+tracing-subscriber     = { workspace = true }
+tracing-opentelemetry  = { version = ">=0.33, <0.34", default-features = false }
+opentelemetry          = { version = "0.32" }
+opentelemetry_sdk      = { version = "0.32", features = ["trace", "metrics", "testing", "experimental_metrics_custom_reader"] }

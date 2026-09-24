@@ -44,12 +44,13 @@
 mod builder;
 mod pipeline;
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use opentelemetry::KeyValue;
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 
-use crate::metrics::{ConnectionPoolStats, Metrics};
+use crate::metrics::{ConnectionPoolStats, Metrics, RpcCall};
 
 pub use builder::OtelMetricsBuilder;
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
@@ -62,19 +63,26 @@ pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
 ///
 /// | Instrument | Kind | Unit | Description |
 /// |---|---|---|---|
-/// | `a2a.server.requests` | Counter | `{request}` | Total inbound requests |
-/// | `a2a.server.responses` | Counter | `{response}` | Total outbound responses |
-/// | `a2a.server.errors` | Counter | `{error}` | Total errors |
+/// | `rpc.server.call.duration` | Histogram | `s` | Every inbound call, per the semantic conventions |
+/// | `a2a.server.requests` | Counter | `request` | Total inbound requests |
+/// | `a2a.server.responses` | Counter | `response` | Total outbound responses |
+/// | `a2a.server.errors` | Counter | `error` | Total errors |
 /// | `a2a.server.latency` | Histogram | `s` | Request latency in seconds |
-/// | `a2a.server.queue_depth` | Gauge | `{queue}` | Number of active event queues |
-/// | `a2a.server.pool.active` | Gauge | `{connection}` | Active (in-use) connections |
-/// | `a2a.server.pool.idle` | Gauge | `{connection}` | Idle connections |
-/// | `a2a.server.pool.created` | Counter | `{connection}` | Total connections created |
-/// | `a2a.server.pool.closed` | Counter | `{connection}` | Connections closed |
+/// | `a2a.server.queue_depth` | Gauge | `queue` | Number of active event queues |
+/// | `a2a.server.persistence_errors` | Counter | `error` | Task writes that failed |
+/// | `a2a.server.push_deliveries` | Counter | `delivery` | Push attempts, by `outcome` |
+/// | `a2a.server.pool.active` | Gauge | `connection` | Active (in-use) connections |
+/// | `a2a.server.pool.idle` | Gauge | `connection` | Idle connections |
+/// | `a2a.server.pool.created` | Counter | `connection` | Total connections created |
+/// | `a2a.server.pool.closed` | Counter | `connection` | Connections closed |
 ///
-/// All counters and the histogram carry a `method` attribute.
-/// The error counter additionally carries an `error` attribute.
+/// `rpc.server.call.duration` carries `rpc.system.name`, `rpc.method`,
+/// `rpc.status_code` and, on failure, `error.type` (see [`RpcCall`]). The
+/// `a2a.server.*` counters and histogram carry a `method` attribute; the
+/// error counter additionally carries an `error` attribute. Both histograms
+/// use the conventions' advisory buckets ([`RPC_DURATION_BUCKETS`]).
 pub struct OtelMetrics {
+    rpc_call_histogram: Histogram<f64>,
     request_counter: Counter<u64>,
     response_counter: Counter<u64>,
     error_counter: Counter<u64>,
@@ -84,6 +92,10 @@ pub struct OtelMetrics {
     pool_idle_gauge: Gauge<u64>,
     pool_created_counter: Counter<u64>,
     pool_closed_counter: Counter<u64>,
+    /// The cumulative totals last added to the two pool counters: a report
+    /// carries totals since start, and a counter takes increments.
+    pool_created_seen: AtomicU64,
+    pool_closed_seen: AtomicU64,
     persistence_error_counter: Counter<u64>,
     push_delivery_counter: Counter<u64>,
 }
@@ -118,11 +130,7 @@ impl OtelMetrics {
             .with_unit("error")
             .build();
 
-        let latency_histogram = meter
-            .f64_histogram("a2a.server.latency")
-            .with_description("A2A request latency")
-            .with_unit("s")
-            .build();
+        let (rpc_call_histogram, latency_histogram) = Self::duration_instruments(meter);
 
         let queue_depth_gauge = meter
             .u64_gauge("a2a.server.queue_depth")
@@ -157,6 +165,7 @@ impl OtelMetrics {
         let (persistence_error_counter, push_delivery_counter) = Self::failure_instruments(meter);
 
         Self {
+            rpc_call_histogram,
             request_counter,
             response_counter,
             error_counter,
@@ -166,9 +175,33 @@ impl OtelMetrics {
             pool_idle_gauge,
             pool_created_counter,
             pool_closed_counter,
+            pool_created_seen: AtomicU64::new(0),
+            pool_closed_seen: AtomicU64::new(0),
             persistence_error_counter,
             push_delivery_counter,
         }
+    }
+
+    /// The two call-duration histograms, which share the conventions' buckets.
+    fn duration_instruments(meter: &Meter) -> (Histogram<f64>, Histogram<f64>) {
+        let rpc_call_histogram = meter
+            .f64_histogram("rpc.server.call.duration")
+            .with_description("Measures the duration of an incoming Remote Procedure Call (RPC).")
+            .with_unit("s")
+            .with_boundaries(RPC_DURATION_BUCKETS.to_vec())
+            .build();
+
+        // The SDK's default boundaries run 0, 5, 10, … 10 000 — sized for
+        // milliseconds — so a histogram in seconds put every call under 5 s in
+        // one bucket (audit O5).
+        let latency_histogram = meter
+            .f64_histogram("a2a.server.latency")
+            .with_description("A2A request latency")
+            .with_unit("s")
+            .with_boundaries(RPC_DURATION_BUCKETS.to_vec())
+            .build();
+
+        (rpc_call_histogram, latency_histogram)
     }
 
     /// The two failure signals the request path cannot see.
@@ -255,13 +288,50 @@ impl Metrics for OtelMetrics {
             .record(u64::from(stats.active_connections), &[]);
         self.pool_idle_gauge
             .record(u64::from(stats.idle_connections), &[]);
+        // A report carries totals since start. Adding each total to a
+        // counter counted every earlier connection again on every report
+        // (audit O10); add only what is new since the largest total seen.
+        // `fetch_max` keeps that right when two reports race or arrive out
+        // of order: a stale total adds nothing.
+        let created = self
+            .pool_created_seen
+            .fetch_max(stats.total_connections_created, Ordering::Relaxed);
         self.pool_created_counter
-            .add(stats.total_connections_created, &[]);
-        self.pool_closed_counter.add(stats.connections_closed, &[]);
+            .add(stats.total_connections_created.saturating_sub(created), &[]);
+        let closed = self
+            .pool_closed_seen
+            .fetch_max(stats.connections_closed, Ordering::Relaxed);
+        self.pool_closed_counter
+            .add(stats.connections_closed.saturating_sub(closed), &[]);
+    }
+
+    fn on_rpc_call(&self, call: &RpcCall<'_>) {
+        let mut attributes = Vec::with_capacity(4);
+        attributes.push(KeyValue::new("rpc.system.name", call.system.to_owned()));
+        if let Some(method) = call.method {
+            attributes.push(KeyValue::new("rpc.method", method.to_owned()));
+        }
+        if let Some(status) = call.status_code {
+            attributes.push(KeyValue::new("rpc.status_code", status.to_owned()));
+        }
+        if let Some(error) = call.error_type {
+            attributes.push(KeyValue::new("error.type", error.to_owned()));
+        }
+        self.rpc_call_histogram
+            .record(call.duration.as_secs_f64(), &attributes);
     }
 }
 
+/// The explicit bucket boundaries, in seconds, the OpenTelemetry semantic
+/// conventions advise for `rpc.server.call.duration`
+/// (`docs/rpc/rpc-metrics.md`, read 2026-09-23).
+pub const RPC_DURATION_BUCKETS: [f64; 14] = [
+    0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+];
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
+#[cfg(test)]
+mod rpc_tests;
 #[cfg(test)]
 mod tests;

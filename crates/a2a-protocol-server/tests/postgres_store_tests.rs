@@ -571,6 +571,48 @@ async fn push_set_get_list_delete() -> A2aResult<()> {
     Ok(())
 }
 
+/// `count` is what the handler holds against its global push-config
+/// ceiling; `None`, or a constant, would switch that ceiling off. Until
+/// 2026-09-23 no test called it on either PostgreSQL push store.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn push_count_spans_tasks() -> A2aResult<()> {
+    let db = TestDb::create("push_count").await;
+    let store = PostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("open postgres push store");
+    assert_eq!(store.count().await?, Some(0));
+    store.set(make_push_config("t1")).await?;
+    store.set(make_push_config("t1")).await?;
+    store.set(make_push_config("t2")).await?;
+    assert_eq!(store.count().await?, Some(3));
+    db.drop_db().await;
+    Ok(())
+}
+
+/// The tenant-aware store counts per tenant, so the ceiling is per tenant.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_push_count_is_per_tenant() -> A2aResult<()> {
+    let db = TestDb::create("tenant_push_count").await;
+    let store = TenantAwarePostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("open tenant postgres push store");
+    TenantContext::scope("acme", async {
+        store.set(make_push_config("t1")).await?;
+        store.set(make_push_config("t2")).await?;
+        A2aResult::Ok(())
+    })
+    .await?;
+    TenantContext::scope("globex", store.set(make_push_config("t1"))).await?;
+    let acme = TenantContext::scope("acme", store.count()).await?;
+    let globex = TenantContext::scope("globex", store.count()).await?;
+    let unseen = TenantContext::scope("initech", store.count()).await?;
+    assert_eq!((acme, globex, unseen), (Some(2), Some(1), Some(0)));
+    db.drop_db().await;
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn push_upsert() -> A2aResult<()> {
@@ -1231,6 +1273,45 @@ async fn artifact_delta_preserves_list_position() -> A2aResult<()> {
     Ok(())
 }
 
+/// The same for a pushed artifact. Until 2026-09-23 only the appended-parts
+/// delta was checked here, so a `push_artifact` that always fell back to
+/// `save` — the same bytes, a reordered list — survived mutation testing
+/// (audit N9's measurement: `Ok(None)` and `Ok(Some(0))` at
+/// `postgres_store/artifact_delta.rs`).
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn artifact_push_preserves_list_position() -> A2aResult<()> {
+    let db = TestDb::create("push_order").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+    let older = task_with_artifacts("older", Some(vec![artifact("a", 1)]));
+    store.save(&older).await?;
+    let newer = task_with_artifacts("newer", None);
+    store.save(&newer).await?;
+
+    let ids = |r: a2a_protocol_types::responses::TaskListResponse| {
+        r.tasks.iter().map(|t| t.id.clone()).collect::<Vec<_>>()
+    };
+    let before = ids(store.list(&ListTasksParams::default()).await?);
+
+    let mut grown = older.clone();
+    grown.artifacts.as_mut().unwrap().push(artifact("b", 1));
+    store
+        .save_artifact_delta(&grown, ArtifactDelta::Pushed { index: 1 })
+        .await?;
+
+    let after = ids(store.list(&ListTasksParams::default()).await?);
+    assert_eq!(before, after, "pushing an artifact reordered the list");
+    assert_eq!(
+        store.get(&TaskId::new("older")).await?,
+        Some(grown),
+        "the pushed artifact is stored"
+    );
+
+    db.drop_db().await;
+    Ok(())
+}
+
 // ── Retention ────────────────────────────────────────────────────────────────
 //
 // Age is written directly rather than waited for: the policy is measured in
@@ -1813,6 +1894,32 @@ async fn postgres_a_task_with_no_events_reports_zero_rather_than_failing() -> A2
     Ok(())
 }
 
+/// The earliest position the log still holds: `None` for a task with no
+/// events, the first appended position otherwise. A resuming subscriber is
+/// told whether its position is still served from this; the method survived
+/// mutation testing untested (N11).
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_the_log_reports_its_earliest_position() -> A2aResult<()> {
+    let db = TestDb::create("evlog_earliest").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    let task = make_task("t1", "ctx1");
+    store.save(&task).await?;
+    assert_eq!(store.earliest_event_seq(&task.id).await?, None);
+    for seq in [5, 6, 7] {
+        store
+            .append_event(&task.id, seq, &log_event("t1", TaskState::Working))
+            .await?;
+    }
+    assert_eq!(store.earliest_event_seq(&task.id).await?, Some(5));
+
+    db.drop_db().await;
+    Ok(())
+}
+
 /// The log goes with the task. An orphaned log would be replayed onto a task
 /// that later reused the id.
 #[tokio::test]
@@ -1936,6 +2043,111 @@ async fn tenant_postgres_store_advertises_event_log_support() {
         "the tenant-aware Postgres store implements append_event; \
          it must advertise support"
     );
+
+    db.drop_db().await;
+}
+
+/// Releasing a key frees it within the tenant that holds it, and only there.
+/// A release that did nothing survived mutation testing (N11): a failed send
+/// would hold its key, and every retry of it would replay a task that never
+/// ran.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_release_frees_the_key_in_its_own_tenant_only() {
+    use a2a_protocol_server::store::task_store::IdempotencyClaim;
+    use a2a_protocol_types::message::MessageId;
+
+    let db = TestDb::create("t_idem_release").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+
+    for tenant in ["tenant-a", "tenant-b"] {
+        TenantContext::scope(tenant, async {
+            let claim = store
+                .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("t1".into()))
+                .await
+                .expect("claim");
+            assert_eq!(claim, IdempotencyClaim::Claimed);
+        })
+        .await;
+    }
+
+    TenantContext::scope("tenant-a", async {
+        store
+            .release_idempotency_key(IDEM_KEY)
+            .await
+            .expect("release");
+        let reclaim = store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m2"), &TaskId("t2".into()))
+            .await
+            .expect("reclaim");
+        assert_eq!(reclaim, IdempotencyClaim::Claimed, "released, so free");
+    })
+    .await;
+
+    TenantContext::scope("tenant-b", async {
+        let held = store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m2"), &TaskId("t2".into()))
+            .await
+            .expect("claim b");
+        assert_ne!(
+            held,
+            IdempotencyClaim::Claimed,
+            "tenant-a's release must not free tenant-b's key"
+        );
+    })
+    .await;
+
+    db.drop_db().await;
+}
+
+/// The earliest position still held, per tenant — never another tenant's.
+/// Untested until mutation testing found its siblings (N11).
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_the_log_reports_its_earliest_position_per_tenant() {
+    let db = TestDb::create("t_evlog_earliest").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+    let id = TaskId("shared".into());
+
+    TenantContext::scope("tenant-a", async {
+        store
+            .save(&make_task("shared", "ctx1"))
+            .await
+            .expect("save a");
+        assert_eq!(store.earliest_event_seq(&id).await.expect("empty"), None);
+        for seq in [5, 6, 7] {
+            store
+                .append_event(&id, seq, &log_event("shared", TaskState::Working))
+                .await
+                .expect("append a");
+        }
+    })
+    .await;
+    TenantContext::scope("tenant-b", async {
+        store
+            .save(&make_task("shared", "ctx1"))
+            .await
+            .expect("save b");
+        assert_eq!(store.earliest_event_seq(&id).await.expect("b empty"), None);
+        store
+            .append_event(&id, 3, &log_event("shared", TaskState::Working))
+            .await
+            .expect("append b");
+        assert_eq!(store.earliest_event_seq(&id).await.expect("b"), Some(3));
+    })
+    .await;
+    TenantContext::scope("tenant-a", async {
+        assert_eq!(
+            store.earliest_event_seq(&id).await.expect("a"),
+            Some(5),
+            "tenant-b's earlier position is not tenant-a's"
+        );
+    })
+    .await;
 
     db.drop_db().await;
 }

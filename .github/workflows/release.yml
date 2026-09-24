@@ -99,6 +99,25 @@ jobs:
       - name: Provenance manifest describes the commit being released
         run: ./scripts/check_provenance_manifest.py "$GITHUB_SHA"
 
+      # v0.13.0 was tagged on the merge of #138 rather than on its release
+      # preparation, so the crates shipped nineteen changes — one breaking —
+      # that the tagged CHANGELOG still listed under [Unreleased] and the
+      # release notes never mentioned (audit N7). Every gate here was green.
+      # These three ask the questions that would have stopped it; each is in
+      # scripts/check_release_tree.py with its reasoning, and that script's
+      # `history` mode reports what each would have said about every past tag.
+      - name: Nothing is left under [Unreleased] in the tagged tree
+        run: python3 scripts/check_release_tree.py unreleased "$GITHUB_REF_NAME" "$GITHUB_SHA"
+
+      - name: The tag is the release-preparation commit
+        run: python3 scripts/check_release_tree.py prep "$GITHUB_REF_NAME" "$GITHUB_SHA"
+
+      # STABILITY.md §2–3 by machine rather than by memory: no breaking change
+      # in a patch, and at most one breaking minor per calendar month. 0.12.0
+      # (2026-09-10) and 0.13.0 (2026-09-20) were both breaking.
+      - name: Breaking releases keep the STABILITY.md cadence
+        run: python3 scripts/check_release_tree.py cadence "$GITHUB_REF_NAME" "$GITHUB_SHA"
+
       - name: Extract version metadata
         id: meta
         shell: bash
@@ -349,6 +368,11 @@ jobs:
           echo "::group::Archive sizes"
           ls -lh target/package/*.crate
           echo "::endgroup::"
+
+      # Each .crate names the commit it was built from. Reading that file by
+      # hand is how N7 was established; this reads it for every release.
+      - name: Packaged crates were built from the tagged commit
+        run: python3 scripts/check_release_tree.py vcs "$GITHUB_SHA" target/package/*.crate
 
       - name: Generate SHA-256 checksums
         shell: bash

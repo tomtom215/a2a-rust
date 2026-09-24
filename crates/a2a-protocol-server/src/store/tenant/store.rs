@@ -1402,6 +1402,48 @@ mod idempotency_isolation_tests {
         .await;
     }
 
+    /// Releasing a key frees it within the tenant that holds it, and only
+    /// there. A release that did nothing survived mutation testing (N11): a
+    /// failed send would hold its key, and every retry of it would replay a
+    /// task that never ran.
+    #[tokio::test]
+    async fn release_frees_the_key_in_its_own_tenant_only() {
+        let store = TenantAwareInMemoryTaskStore::new();
+        for tenant in ["tenant-a", "tenant-b"] {
+            TenantContext::scope(tenant, async {
+                let claim = store
+                    .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+                    .await
+                    .unwrap();
+                assert_eq!(claim, IdempotencyClaim::Claimed);
+            })
+            .await;
+        }
+
+        TenantContext::scope("tenant-a", async {
+            store.release_idempotency_key(KEY).await.unwrap();
+            let reclaim = store
+                .claim_idempotency_key(KEY, &MessageId::new("m2"), &TaskId::new("t2"))
+                .await
+                .unwrap();
+            assert_eq!(reclaim, IdempotencyClaim::Claimed, "released, so free");
+        })
+        .await;
+
+        TenantContext::scope("tenant-b", async {
+            let held = store
+                .claim_idempotency_key(KEY, &MessageId::new("m2"), &TaskId::new("t2"))
+                .await
+                .unwrap();
+            assert_ne!(
+                held,
+                IdempotencyClaim::Claimed,
+                "tenant-a's release must not free tenant-b's key"
+            );
+        })
+        .await;
+    }
+
     #[tokio::test]
     async fn releasing_under_an_unknown_tenant_creates_no_partition() {
         // A release must not be what allocates a tenant, or a failed send
@@ -1439,6 +1481,46 @@ mod event_log_tests {
             status: TaskStatus::new(state),
             metadata: None,
         })
+    }
+
+    /// The earliest position still held, from the tenant's own partition:
+    /// `None` for an empty log or an unknown tenant — without creating one —
+    /// and never another tenant's. Untested until mutation testing found it
+    /// (N11); the trait default it overrides answers `None` for everything.
+    #[tokio::test]
+    async fn the_log_reports_its_earliest_position_per_tenant() {
+        let store = TenantAwareInMemoryTaskStore::new();
+        let id = TaskId::new("shared");
+
+        TenantContext::scope("tenant-a", async {
+            store
+                .save(&make_task("shared", TaskState::Working))
+                .await
+                .expect("save a");
+            assert_eq!(store.earliest_event_seq(&id).await.expect("empty"), None);
+            for seq in [5, 6, 7] {
+                store
+                    .append_event(&id, seq, &event("shared", TaskState::Working))
+                    .await
+                    .expect("append a");
+            }
+            assert_eq!(store.earliest_event_seq(&id).await.expect("a"), Some(5));
+        })
+        .await;
+
+        TenantContext::scope("tenant-b", async {
+            assert_eq!(
+                store.earliest_event_seq(&id).await.expect("unknown"),
+                None,
+                "tenant-a's log is not tenant-b's"
+            );
+        })
+        .await;
+        assert_eq!(
+            store.tenant_count().await,
+            1,
+            "asking for tenant-b's log must not create its partition"
+        );
     }
 
     #[tokio::test]

@@ -16,26 +16,38 @@ Using `#[serde(default)]` on a `Vec<T>` field means the field is present but emp
 
 The A2A spec distinguishes between "omitted" and "empty array" for fields like `history` and `artifacts`, so `Option<Vec<T>>` is the correct choice.
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::types::message::Message;
+# #[derive(serde::Serialize, serde::Deserialize)]
+# struct Wrong {
 // Wrong: field is always present (empty vec if omitted)
 #[serde(default)]
 pub history: Vec<Message>,
+# }
+# #[derive(serde::Serialize, serde::Deserialize)]
+# struct Correct {
 
 // Correct: field is absent when not provided
 #[serde(skip_serializing_if = "Option::is_none")]
 pub history: Option<Vec<Message>>,
+# }
+# assert_eq!(serde_json::to_string(&Wrong { history: vec![] }).unwrap(), r#"{"history":[]}"#);
+# assert_eq!(serde_json::to_string(&Correct { history: None }).unwrap(), "{}");
 ```
 
 ### `#[non_exhaustive]` on enums breaks downstream matches
 
 Adding `#[non_exhaustive]` to `TaskState`, `ErrorCode`, etc. forces downstream crates to include a wildcard arm. This is intentional for forward compatibility:
 
-```rust,ignore
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# fn f(task: Task) {
 match task.status.state {
     TaskState::Completed => { /* ... */ }
     TaskState::Failed => { /* ... */ }
     _ => { /* Handle future states */ }
 }
+# }
 ```
 
 ## Hyper 1.x Pitfalls
@@ -44,11 +56,14 @@ match task.status.state {
 
 Hyper 1.x `Incoming` body is consumed on read. You cannot read the body twice. Buffer it first:
 
-```rust,ignore
+```rust,no_run
+# async fn f(req: hyper::Request<hyper::body::Incoming>) -> Result<(), Box<dyn std::error::Error>> {
 use http_body_util::BodyExt;
 
 let bytes = req.into_body().collect().await?.to_bytes();
 // Now work from `bytes` (can be cloned, read multiple times)
+# Ok(())
+# }
 ```
 
 ### Response builder panics on invalid header values
@@ -59,14 +74,24 @@ let bytes = req.into_body().collect().await?.to_bytes();
 
 ### `size_hint()` upper bound may be None
 
-`hyper::body::Body::size_hint().upper()` returns `None` when Content-Length is absent. Always check for `None` before comparing against the body size limit:
+`hyper::body::Body::size_hint().upper()` returns `None` when Content-Length is absent — a chunked or HTTP/2 body. So the size hint can only reject early; it cannot enforce the limit. Enforce it while reading, with `http_body_util::Limited`:
 
-```rust,ignore
+```rust
+# use http_body_util::{BodyExt, Limited};
+# use hyper::body::{Body, Bytes, Incoming};
+# const MAX_BODY_SIZE: u64 = 4 * 1024 * 1024;
+# async fn read(body: Incoming) -> Result<Bytes, Box<dyn std::error::Error + Send + Sync>> {
+// Fast path: an honest Content-Length over the limit is refused unread.
 if let Some(upper) = body.size_hint().upper() {
     if upper > MAX_BODY_SIZE {
-        return Err(/* payload too large */);
+        return Err("payload too large".into());
     }
 }
+// `None` means no declared length: without `Limited`, the whole body would
+// be buffered before any check ran.
+let bytes = Limited::new(body, MAX_BODY_SIZE as usize).collect().await?.to_bytes();
+# Ok(bytes)
+# }
 ```
 
 ## SSE Streaming Pitfalls
@@ -99,7 +124,14 @@ Push notification `credentials` can contain newlines that inject additional HTTP
 
 Rust does not yet support `async fn` in traits that are used as `dyn Trait`. The `TaskStore`, `AgentExecutor`, and `PushSender` traits use explicit `Pin<Box<dyn Future<Output = ...> + Send + 'a>>` return types:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# struct Args;
+# struct T;
+# type Result<X> = std::result::Result<X, ()>;
+# struct S;
+# impl S {
 // The pattern for all object-safe async trait methods
 fn my_method<'a>(
     &'a self,
@@ -107,9 +139,11 @@ fn my_method<'a>(
 ) -> Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>> {
     Box::pin(async move {
         // async code here
+#         let result = T;
         Ok(result)
     })
 }
+# }
 ```
 
 ### Cancellation token cleanup

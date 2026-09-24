@@ -73,3 +73,38 @@ path = "fuzz_targets/trace_context.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "jwt_token"
+path = "fuzz_targets/jwt_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rest_route"
+path = "fuzz_targets/rest_route.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "forwarded_for"
+path = "fuzz_targets/forwarded_for.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "webhook_url"
+path = "fuzz_targets/webhook_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "page_token"
+path = "fuzz_targets/page_token.rs"
+test = false
+doc = false
+bench = false
