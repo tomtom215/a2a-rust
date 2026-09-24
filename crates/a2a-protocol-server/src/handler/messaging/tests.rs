@@ -3077,8 +3077,24 @@ async fn a_blocking_send_dropped_mid_work_still_records_the_outcome() {
                 .await
         }
     });
-    // Let the executor start and report `working`, then drop the request.
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Once the store shows the task `working` — the executor has started and
+    // the collection is persisting — drop the request.
+    let started = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let listed = handler
+            .task_store
+            .list(&a2a_protocol_types::params::ListTasksParams::default())
+            .await
+            .expect("list");
+        if listed.tasks.first().map(|t| t.status.state) == Some(TaskState::Working) {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < started,
+            "the task never started working"
+        );
+        tokio::task::yield_now().await;
+    }
     send.abort();
     let _ = send.await;
 
