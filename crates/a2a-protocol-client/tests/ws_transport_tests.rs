@@ -310,6 +310,27 @@ async fn an_unread_stream_does_not_stall_a_unary_call_on_the_same_socket() {
         matches!(answered, Ok(Ok(_))),
         "a unary call behind an unread stream got {answered:?}"
     );
+    // Only once the agent has finished — every frame sent — is an overflow
+    // certain; on a slow runner the burst may still be arriving here.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let listed = transport
+            .send_request("ListTasks", serde_json::json!({}), &headers)
+            .await
+            .expect("ListTasks");
+        if listed.to_string().contains("TASK_STATE_COMPLETED") {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the agent never finished its burst"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    // The store hears of completion before the stream's last frames are
+    // written to the socket; give them a moment to arrive and be routed.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
     // What could not be buffered for the unread stream is shed as the server
     // sheds a lagging reader: an announced end, never a silent gap.
     let mut lagged = false;
