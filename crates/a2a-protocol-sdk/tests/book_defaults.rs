@@ -33,6 +33,9 @@ fn page() -> String {
         "/../../book/src/reference/configuration.md"
     ))
     .expect("configuration page")
+    // A Windows checkout has CRLF line endings, and `table` finds a heading
+    // by the newlines around it.
+    .replace("\r\n", "\n")
 }
 
 /// The rows of the first table under `### {heading}`: first cell -> Default cell.
