@@ -35,6 +35,7 @@ use super::helpers::build_call_context;
 use super::{RequestHandler, SendMessageResult};
 
 mod admission;
+mod commit_guard;
 mod continuation;
 mod create;
 mod decisions;
@@ -282,6 +283,15 @@ impl RequestHandler {
             idempotency::SendKey::Claimed(key) => Some(key),
             idempotency::SendKey::Absent => None,
         };
+        // Released on drop until the commit returns (N26): see `commit_guard`.
+        let mut guard = commit_guard::CommitGuard::new(
+            task_id.clone(),
+            self.event_queue_manager.clone(),
+            std::sync::Arc::clone(&self.cancellation_tokens),
+            std::sync::Arc::clone(&self.task_store),
+            claimed_key.clone(),
+        );
+        let guard_ref = &mut guard;
 
         // Boxed: this block holds the whole creation path's locals, and
         // inlining it here puts the JSON-RPC and REST dispatch futures over
@@ -319,8 +329,11 @@ impl RequestHandler {
             // first, then the token, then the row.
             let (writer, reader, persistence_rx) =
                 self.lease_event_queue(&task_id, use_background).await?;
-            self.register_cancellation_token(&task_id, ctx.cancellation_token.clone())
+            guard_ref.leased();
+            let turn = self
+                .register_cancellation_token(&task_id, ctx.cancellation_token.clone())
                 .await;
+            guard_ref.registered(&turn);
             self.persist_initial_task(&task).await?;
 
             // Boxed, and with every local confined to the helper, so this cold
@@ -342,7 +355,7 @@ impl RequestHandler {
 
             let cancel = ctx.cancellation_token.clone();
             let gate = writer.terminal_gate();
-            let executor_handle = self.spawn_executor(ctx, writer, tenant_slot);
+            let executor_handle = self.spawn_executor(ctx, writer, tenant_slot, turn);
             Ok(Started {
                 task,
                 reader,
@@ -353,6 +366,7 @@ impl RequestHandler {
             })
         })
         .await;
+        guard.disarm();
 
         match started {
             Ok(started) => Ok(Committed::Started(Box::new(started))),

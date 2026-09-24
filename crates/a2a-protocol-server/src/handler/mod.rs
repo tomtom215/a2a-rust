@@ -132,6 +132,31 @@ pub(crate) struct CancellationEntry {
     pub(crate) token: tokio_util::sync::CancellationToken,
     /// When this entry was created (for time-based eviction).
     pub(crate) created_at: Instant,
+    /// What the executor holding this token has said about its turn: whether
+    /// it has parked the task at an interrupted state, and whether it has
+    /// finished. Admission reads it to tell a continuation racing the end of
+    /// a turn from a send into a task that is genuinely still working (N21).
+    pub(crate) turn: Arc<ExecutorTurn>,
+}
+
+/// The state of one executor turn, shared by the executor's writer, its
+/// cleanup, and admission.
+#[derive(Debug, Default)]
+pub(crate) struct ExecutorTurn {
+    /// The last state the executor wrote was `input-required` or
+    /// `auth-required`. Set *before* the event reaches the queue, so no
+    /// reader can see the interrupted state while this still says otherwise.
+    pub(crate) parked: std::sync::atomic::AtomicBool,
+    /// Cancelled once the executor's queue and token have been released —
+    /// the moment a continuation can be admitted.
+    pub(crate) finished: tokio_util::sync::CancellationToken,
+}
+
+impl ExecutorTurn {
+    /// Whether the executor's latest state asks the client for input.
+    pub(crate) fn is_parked(&self) -> bool {
+        self.parked.load(std::sync::atomic::Ordering::Acquire)
+    }
 }
 
 impl RequestHandler {

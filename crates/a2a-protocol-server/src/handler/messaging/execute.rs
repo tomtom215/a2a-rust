@@ -28,10 +28,10 @@ use crate::streaming::{EventQueueManager, EventQueueWriter, InMemoryQueueWriter}
 
 use super::terminal::TerminalTracking;
 
-use super::super::{CancellationEntry, RequestHandler};
+use super::super::{CancellationEntry, ExecutorTurn, RequestHandler};
 
 /// The handler's cancellation-token map, as the spawned task holds it.
-type CancellationTokens = Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>;
+pub(super) type CancellationTokens = Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>;
 
 /// Releases a task's event queue and cancellation token when the executor's
 /// future is dropped before reaching its explicit cleanup — a panic, or an
@@ -56,6 +56,7 @@ struct CleanupGuard {
     task_id: Option<TaskId>,
     queue_mgr: EventQueueManager,
     tokens: CancellationTokens,
+    turn: Arc<ExecutorTurn>,
 }
 
 impl Drop for CleanupGuard {
@@ -63,9 +64,11 @@ impl Drop for CleanupGuard {
         if let Some(tid) = self.task_id.take() {
             let qmgr = self.queue_mgr.clone();
             let tokens = Arc::clone(&self.tokens);
+            let turn = Arc::clone(&self.turn);
             tokio::task::spawn(async move {
                 qmgr.destroy(&tid).await;
                 tokens.write().await.remove(&tid);
+                turn.finished.cancel();
             });
         }
     }
@@ -83,6 +86,7 @@ impl RequestHandler {
         ctx: RequestContext,
         writer: Arc<InMemoryQueueWriter>,
         tenant_slot: Option<OwnedSemaphorePermit>,
+        turn: Arc<ExecutorTurn>,
     ) -> JoinHandle<()> {
         let executor = Arc::clone(&self.executor);
         let task_id = ctx.task_id.clone();
@@ -129,9 +133,10 @@ impl RequestHandler {
                         task_id: Some(task_id.clone()),
                         queue_mgr: event_queue_mgr.clone(),
                         tokens: Arc::clone(&cancel_tokens),
+                        turn: Arc::clone(&turn),
                     };
 
-                    let writer = TerminalTracking::new(writer);
+                    let writer = TerminalTracking::new(writer, Arc::clone(&turn));
                     let result =
                         run_executor(executor.as_ref(), &ctx, &writer, executor_timeout).await;
                     if let Err((ref e, class)) = result {
@@ -162,6 +167,9 @@ impl RequestHandler {
                     event_queue_mgr.destroy(&task_id).await;
                     cancel_tokens.write().await.remove(&task_id);
                     cleanup_guard.task_id = None;
+                    // Last: a continuation waiting in admission may now lease
+                    // a queue and register a token under the same id.
+                    turn.finished.cancel();
                 }),
             ))
     }

@@ -16,22 +16,24 @@
 //!
 //! [`HandlerLimits::max_cancellation_tokens`]: crate::handler::HandlerLimits::max_cancellation_tokens
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use a2a_protocol_types::task::TaskId;
 use tokio_util::sync::CancellationToken;
 
-use super::super::{CancellationEntry, RequestHandler};
+use super::super::{CancellationEntry, ExecutorTurn, RequestHandler};
 use super::decisions::{evict_aged_token, token_aged, token_still_evictable};
 
 impl RequestHandler {
     /// Sweeps stale tokens if the map is at capacity, then inserts `token`
-    /// for `task_id`.
+    /// for `task_id`, returning the turn state the executor will report
+    /// through.
     pub(super) async fn register_cancellation_token(
         &self,
         task_id: &TaskId,
         token: CancellationToken,
-    ) {
+    ) -> Arc<ExecutorTurn> {
         // Phase 1.
         let (cancelled_ids, aged_candidates) = self.collect_stale_candidates().await;
         let mut stale_ids = cancelled_ids;
@@ -43,14 +45,17 @@ impl RequestHandler {
         }
 
         // Phase 3: Insert the new token under WRITE lock.
+        let turn = Arc::new(ExecutorTurn::default());
         let mut tokens = self.cancellation_tokens.write().await;
         tokens.insert(
             task_id.clone(),
             CancellationEntry {
                 token,
                 created_at: Instant::now(),
+                turn: Arc::clone(&turn),
             },
         );
+        turn
     }
 
     /// Phase 1: collects `(cancelled, aged)` candidate ids under the READ
