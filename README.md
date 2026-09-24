@@ -130,79 +130,73 @@ a2a-protocol-sdk = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
-### Implement an agent
+### A complete agent, and a client that calls it
 
-```rust
+One file, `src/main.rs`. It starts the agent on a port the OS picks, then
+sends it a message and streams a second one. `cargo run` prints `Hello, Tom!`
+and then the streamed events.
+
+```rust,no_run
+use std::sync::Arc;
+
 use a2a_protocol_sdk::prelude::*;
 
 struct MyAgent;
 
-// The agent_executor! macro eliminates Pin<Box<dyn Future>> boilerplate
+// `agent_executor!` writes the `AgentExecutor` impl: no `Pin<Box<dyn Future>>`
+// by hand.
 agent_executor!(MyAgent, |ctx, queue| async {
     let emit = EventEmitter::new(ctx, queue);
-
     emit.status(TaskState::Working).await?;
-    emit.artifact("result", vec![Part::text("Hello from my agent!")], None, Some(true)).await?;
+    let who = ctx.message.text().unwrap_or("world");
+    emit.artifact("greeting", vec![Part::text(format!("Hello, {who}!"))], None, Some(true))
+        .await?;
     emit.status(TaskState::Completed).await?;
-
     Ok(())
 });
-```
 
-> **Note:** `AgentExecutor` is object-safe — methods return `Pin<Box<dyn Future>>`.
-> This means `RequestHandler`, `RestDispatcher`, and `JsonRpcDispatcher` are **not generic**;
-> they store the executor as `Arc<dyn AgentExecutor>` for easy composition.
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // The server, on a port the OS picks.
+    let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler)).await?;
 
-### Start a server
-
-```rust
-use std::sync::Arc;
-use a2a_protocol_sdk::prelude::*;
-
-let handler = Arc::new(
-    RequestHandlerBuilder::new(MyAgent)
-        .with_agent_card(agent_card)
-        .build()
-        .expect("build handler"),
-);
-
-// One-liner server startup (replaces ~25 lines of hyper boilerplate)
-serve("0.0.0.0:3000", JsonRpcDispatcher::new(handler)).await?;
-```
-
-### Use the client
-
-```rust
-use a2a_protocol_sdk::prelude::*;
-
-let client = ClientBuilder::new("http://localhost:8080")
-    .with_retry_policy(RetryPolicy::default())  // automatic retry on transient errors
-    .build()
-    .expect("build client");
-
-// Synchronous request
-let response = client
-    .send_message(params)
-    .await
-    .expect("send_message");
-
-// Streaming request
-let mut stream = client
-    .stream_message(params)
-    .await
-    .expect("stream_message");
-
-while let Some(event) = stream.next().await {
-    match event? {
-        StreamResponse::StatusUpdate(ev) => println!("Status: {:?}", ev.status.state),
-        StreamResponse::ArtifactUpdate(ev) => println!("Artifact: {}", ev.artifact.id),
-        StreamResponse::Task(task) => println!("Task: {}", task.id),
-        StreamResponse::Message(msg) => println!("Message: {:?}", msg),
-        // StreamResponse is #[non_exhaustive] — always keep a catch-all.
-        _ => {}
+    // A client for it.
+    let client = ClientBuilder::new(format!("http://{addr}")).build()?;
+    let reply = client
+        .send_message(MessageSendParams::new(Message::user_text("m1", "Tom")))
+        .await?;
+    if let SendMessageResponse::Task(task) = reply {
+        println!("{}", task.text().unwrap_or("(no text)")); // Hello, Tom!
     }
+
+    // The same call, streamed: each event as the agent emits it.
+    let mut stream = client
+        .stream_message(MessageSendParams::new(Message::user_text("m2", "Ana")))
+        .await?;
+    while let Some(event) = stream.next().await {
+        match event? {
+            StreamResponse::StatusUpdate(ev) => println!("status: {:?}", ev.status.state),
+            StreamResponse::ArtifactUpdate(ev) => println!("artifact: {}", ev.artifact.id),
+            // `StreamResponse` is `#[non_exhaustive]`: keep a catch-all.
+            _ => {}
+        }
+    }
+    Ok(())
 }
 ```
+
+`AgentExecutor` is object-safe — its methods return `Pin<Box<dyn Future>>` —
+so `RequestHandler` and the dispatchers are not generic over your agent; they
+hold it as `Arc<dyn AgentExecutor>`. `serve_with_addr` returns once the
+listener is bound; `serve` runs until the process ends, for a standalone
+server. `RestDispatcher` serves the HTTP+JSON binding the same way, and the
+[book](https://a2a-rust.com/) covers the gRPC and WebSocket
+ones.
+
+This program is compiled by `cargo test --workspace` (the `a2a-book-tests`
+crate includes this README), so it cannot quietly stop compiling as the
+Quick Start once did.
 
 ## Examples
 
@@ -333,7 +327,7 @@ Commands, flags, a captured transcript and the exit-code table are in
 
 ## Architecture
 
-```
+```text
 ┌────────────────────────────────────────────┐
 │  Your Code                                 │
 │  implements AgentExecutor or uses Client   │
@@ -422,7 +416,7 @@ cd fuzz && cargo +nightly fuzz run json_deser
 
 Published as `0.x`. All 11 A2A methods are implemented across the four transports, alongside HTTP caching, agent-card signing, optional `tracing` and OpenTelemetry, TLS, and the request-hardening features listed above. The API is still stabilizing — minor versions may carry breaking changes, as described under [Stability](#stability). [`docs/implementation/plan.md`](docs/implementation/plan.md) covers the implementation history and beyond-spec extensions.
 
-Against the A2A project's official Technology Compatibility Kit, **88 of 114 MUST requirements pass and 4 fail** (re-measured 2026-09-01 against `a2a-tck@de6af18`). All four failures are the same cause, and it is not a deviation from the specification: the suite grades §5.4's error-mapping table against the copy of the specification it vendors, which its own `specification/version.json` records as A2A **v1.0.0**, taken 2026-03-13. A2A released **v1.0.1** on 2026-05-28, which rewrote six of that table's nine rows. Each of the four fails on exactly the one binding whose cell the two copies disagree about and passes on the bindings where they agree; this SDK answers what the published table says, as does the official Python SDK. They are baselined in `tck/conformance-baseline.json` with the evidence in [§20](docs/official-tck-findings.md#20-grpc-err-002-and-http_json-status-001-the-suites-vendored-specification-is-stale) and [§21](docs/official-tck-findings.md#21-core-cancel-002-and-stream-sub-003-two-more-rows-of-20s-stale-table), and they clear when the suite refreshes its copy — reported upstream as [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231). Of the remaining 22, 21 have no test function in the upstream suite and one (`CARD-EXT-002`) is structurally inapplicable — so they are unmeasured rather than passing. [`docs/official-tck-findings.md`](docs/official-tck-findings.md) has the per-requirement breakdown and reproduction steps; [§16](docs/official-tck-findings.md#16-what-the-21-not-tested-musts-actually-are-one-family-at-a-time) accounts for the 21 family by family — six the upstream suite tags unautomatable, two it has ruled out of scope, and thirteen open backlog items in its own tracker — and shows why none can be closed from this repository.
+Against the A2A project's official Technology Compatibility Kit, **88 of 114 MUST requirements pass and 4 fail** across the three profiles CI grades — 84 on the full profile, and the four capability-negotiation requirements (`CORE-CAP-001` to `004`) on the minimal and required-extension profiles, which a full-capability server cannot exercise (re-measured 2026-09-24 against `a2a-tck@263b9cf`, the same result as 2026-09-01 at `de6af18`). All four failures are the same cause, and it is not a deviation from the specification: the suite grades §5.4's error-mapping table against the copy of the specification it vendors, which its own `specification/version.json` records as A2A **v1.0.0**, taken 2026-03-13. A2A released **v1.0.1** on 2026-05-28, which rewrote six of that table's nine rows. Each of the four fails on exactly the one binding whose cell the two copies disagree about and passes on the bindings where they agree; this SDK answers what the published table says, as does the official Python SDK. They are baselined in `tck/conformance-baseline.json` with the evidence in [§20](docs/official-tck-findings.md#20-grpc-err-002-and-http_json-status-001-the-suites-vendored-specification-is-stale) and [§21](docs/official-tck-findings.md#21-core-cancel-002-and-stream-sub-003-two-more-rows-of-20s-stale-table), and they clear when the suite refreshes its copy — reported upstream as [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231). Of the remaining 22, 21 have no test function in the upstream suite and one (`CARD-EXT-002`) is structurally inapplicable — so they are unmeasured rather than passing. [`docs/official-tck-findings.md`](docs/official-tck-findings.md) has the per-requirement breakdown and reproduction steps; [§16](docs/official-tck-findings.md#16-what-the-21-not-tested-musts-actually-are-one-family-at-a-time) accounts for the 21 family by family — six the upstream suite tags unautomatable, two it has ruled out of scope, and thirteen open backlog items in its own tracker — and shows why none can be closed from this repository.
 
 [ROADMAP.md](ROADMAP.md) is the honest counterpart to this section: it records where this project's own gates do not yet measure everything they appear to, which conformance claims rest on the in-repo runner rather than the official suite, and which questions are still undecided. Worth reading before depending on this SDK for anything load-bearing.
 
