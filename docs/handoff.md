@@ -630,6 +630,12 @@ tests, `cargo semver-checks`, `prove_gates_fail.sh`.
 | N30 | a WebSocket peer that stopped reading was never closed and kept its slot | Medium |
 | N31 | a cancelled gRPC stream kept its subscription while the task was quiet | Low |
 | N32 | the card poll watcher skipped a fixed card after a failed parse | Low |
+| N33 | JSON that is not a Request object answered -32700, not -32600 | Low |
+| N34 | a part in a media type the card does not declare reached the executor | Medium |
+| N35 | task statuses served without a timestamp | Low |
+| N36 | a refused credential answered `400`; the client never dropped a revoked token | Medium |
+| N37 | the axum adapter's errors were not AIP-193 | Low |
+| N38 | HTTP+JSON responses labelled `application/json`, not `application/a2a+json` | Low |
 | N16 | missing constructors; `CancellationToken` re-exported | Low (API) |
 | N18 | `WebSocketTransport` now reconnects, single-flight | Low (client) |
 
@@ -666,11 +672,46 @@ while the binding pins 0.15.
   `auto_trait_impl_removed`) where no test or lint did. The field is now
   `AssertUnwindSafe` — true, since it guards `()` — and a compile-time
   assertion pins the type's auto traits.
+- **A manual build left behind fills the disk under the next gate.**
+  `package_binding.py`, run by hand, left 6.8 GB in
+  `bindings/a2a-protocol-slimrpc/target`, which nothing cleans. Full
+  preflight #10 then failed two gates (exit 1 and 101) with ~24 GB of
+  build output against a ~25 GB allowance; a full disk is the likely
+  cause, not a confirmed one — the log was lost to a container restart
+  before its errors were read. Delete a manual build's target directory
+  before starting the next long run, and read `df` first.
+- **The `pkill -f` lesson above did not stick.** It killed its own shell
+  at least three more times on this branch. Stop helpers by PID, found with
+  `ps -eo pid,args | awk '$3 ~ /name/'`; a pattern like
+  `pgrep -f "name[.]sh"` does not match its own command line.
+- **A release gate's healthy fixture can be the version, not the gate.**
+  `prove_workflow_gates_fail.py` tagged its healthy release at the
+  version the crates declare; bumping to 0.14.0 before release prep made
+  that a release with no notes, and two probes went INCONCLUSIVE. Both
+  release fixtures now key off the newest dated CHANGELOG heading
+  (`37320002`).
 - **Re-run the static gates after the last change, not before it.** The
   first branch preflight failed four gates, all introduced by this branch's
   own later edits: a file over the length limit, an API-reference row, a
   field dead without `tracing`, and an example that timed out because a
   local model server was contending for CPU.
+
+**ACTS, the official conformance suite** (a2aproject/a2a-itk `429945f6`,
+`run_acts.py --mount itk --transport all`). N33–N38 are what it found in
+the SDK. The rest of the gap to the official Rust SDK's agent, which was
+CONFORMANT on the same suite when ours scored 85/75/74 per binding, was the
+ITK agent: the `tck-*` behaviours, the client-parse fixture, and the
+reduced-capability and auth passes (`itk/src/acts_modes.rs`, whose guard
+refuses through the SDK's own `BearerTokenAuthInterceptor` and
+`A2aError::permission_denied`, so the auth tests grade what an adopter
+gets). At `9496d1b1`: JSON-RPC 101/101, gRPC 88/88, HTTP+JSON 91/92, every
+MUST passing, CONFORMANT overall; the one failure was REST-CT-001, which is
+N38. I first recorded REST-CT-001 as ACTS contradicting the spec;
+§11.1 says otherwise, and the code had cited the 2026-03-31 snapshot.
+An ACTS run at `dfc69ed2`, after the N38 fix, was in progress when this
+was written; its result is not recorded here yet. Build the ITK
+and run ACTS with the workspace `target/` cleared: the two together do not
+fit the disk (see Lessons).
 
 `ServerInterceptor::on_complete` and `CallOutcome` were added at the
 maintainer's request: one call per interceptor whose `before` ran, with
@@ -692,6 +733,11 @@ run clippy before calling a change on the send path done.
 
 **Open, from this branch:**
 
+- task #16, CI: pin the official suites, a lightweight daily canary, an
+  ACTS gate against a baseline, and spec/proto drift detection — the last
+  is what N38 (and the push sender's Content-Type before it) needed;
+- the genai 0.5.3 → 0.6.5 upgrade (supersedes #128);
+
 - WS3 — genai, rig and mcp over every binding with the real model, and why
   a WebSocket `SendMessage` timed out while a model server was busy;
 - extended fuzz runs, including the new `client_peer_input` target;
@@ -709,15 +755,29 @@ Carried over, unchanged: `connection_timeout` is measured by no test; the
 HTTP+JSON telemetry residual; phase 2's remainder (ADR 0013), OW11 and
 phase 3.
 
-**Release:** `[Unreleased]` already carries `### Breaking Changes` from
-#141–#143, so the next release is 0.14.0, and `release.yml`'s cadence check
+**Release:** the next release is 0.14.0 (`[Unreleased]` carries
+`### Breaking Changes` from #141–#143), and `release.yml`'s cadence check
 refuses a second breaking minor in the calendar month of 0.13.0
-(2026-09-20): the earliest tag date is 2026-10-01. Release prep is a second
-pull request after this one merges, with the provenance manifest
-regenerated last (`RELEASING.md`).
+(2026-09-20): the earliest tag date is 2026-10-01. The crates are already
+at 0.14.0 on this branch (`fd028712`, the maintainer's choice): N36 needs a
+types API that `cargo package` could not find in the published 0.13.0.
+Until the tag, `cargo semver-checks` reads 0.13 → 0.14 as allowed to break.
+Release prep (notes, CITATION, SECURITY, ROADMAP, the provenance manifest
+last) is still a second pull request (`RELEASING.md`).
 
-**What the next session should do first:** run the `swarm_scale`
-comparison for N21, then WS3.
+**Verification of record, at `9496d1b1`:** GitHub CI green, 21 of 21 jobs,
+including `Test (1.88, macos-latest)`, which had failed at `37320002` on a
+graceful-drain test that slept instead of waiting for its request
+(`ff63be5a`). The last full local preflight, at `fd028712`, passed 74 of
+75 gates; the 75th was `prove_workflow_gates_fail.py`, fixed and re-run
+alone in `37320002`. N38 (`dfc69ed2`) was checked by the four crates'
+tests with all features (3706 passed, 0 failed, 109 ignored), workspace
+and per-feature clippy, rustdoc and the 21 script gates, not by a full
+preflight.
+
+**What the next session should do first:** check CI on the branch head,
+then the genai upgrade, then the `swarm_scale` comparison for N21 and
+WS3.
 
 ## In flight outside this repository
 
