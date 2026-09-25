@@ -71,8 +71,10 @@ added, behind `auth-jwt` only, is `base64` (tiny, already in-tree via
   and anything unlisted are rejected, and HS256 is only ever verified against a
   configured secret — never a JWKS public key — so the RS256→HS256 confusion
   downgrade is structurally impossible.
-- **Rejections map to `InvalidRequest` (HTTP 400 / gRPC `INVALID_ARGUMENT`),
-  not 401.** The A2A error set has no unauthenticated code (the spec models
+- **Superseded by [ADR 0014](0014-auth-rejection-status.md) (2026-09-25):
+  refusals now answer `401`/`403` and gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED`.**
+  As first decided: **Rejections map to `InvalidRequest` (HTTP 400 / gRPC
+  `INVALID_ARGUMENT`), not 401.** The A2A error set has no unauthenticated code (the spec models
   auth at the transport/security-scheme layer), and the interceptor abstraction
   produces an `A2aError` with a fixed status. Deployments needing true `401`
   with `WWW-Authenticate` terminate auth at a gateway; these helpers are the

@@ -103,12 +103,30 @@ let interceptor = JwtAuthInterceptor::new(
 
 ### Error mapping (important)
 
-An interceptor rejection surfaces as A2A `InvalidRequest`
-(**HTTP 400** / gRPC `INVALID_ARGUMENT`), *not* `401`. The A2A protocol has no
-dedicated "unauthenticated" error code — the spec models authentication at the
-transport/security-scheme layer. When you need real `401` semantics with a
-`WWW-Authenticate` challenge, terminate authentication at a gateway in front of
-the agent; these interceptors are the self-contained, defense-in-depth option.
+A refused credential answers with each binding's own status (since 0.14.0;
+[ADR 0014](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0014-auth-rejection-status.md)):
+
+| Binding | No usable credential | Credential not permitted |
+|---|---|---|
+| HTTP+JSON | `401` + `WWW-Authenticate` | `403` |
+| JSON-RPC over HTTP | `401` + `WWW-Authenticate`, body `-32600` | `403`, body `-32600` |
+| gRPC | `UNAUTHENTICATED` | `PERMISSION_DENIED` |
+| WebSocket | body `-32600` only (see below) | body `-32600` only |
+
+The built-in interceptors send `Bearer realm="a2a"` (bearer and JWT) or
+`ApiKey header="x-api-key"` as the challenge, and never say why a credential
+was refused. A client that refreshes on `401` — this SDK's
+`BearerAuthInterceptor` does — recovers from a revoked or rotated token on
+its next call. A custom interceptor gets the same statuses by returning
+`A2aError::unauthenticated(message, challenge)` or
+`A2aError::permission_denied(message)`.
+
+WebSocket runs interceptors per message after the connection is upgraded, so
+there is no HTTP status to send; authenticate at your gateway or reverse
+proxy if WebSocket clients need a `401`.
+
+Until 0.13 every refusal answered `400` / `INVALID_ARGUMENT`; see
+**Behaviour Changes** in the changelog.
 
 ## Client: acquiring and attaching tokens
 

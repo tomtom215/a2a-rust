@@ -22,6 +22,7 @@ are rustdoc's job.
 |--------|----------|
 | `agent_card` | Agent card and capability discovery types |
 | `artifact` | Artifact types for the A2A protocol |
+| `auth_rejection` | Why a request was refused on authentication or authorization grounds |
 | `error` | A2A protocol error types |
 | `events` | Server-sent event types for A2A streaming |
 | `extensions` | Agent extension and card-signature types |
@@ -180,6 +181,8 @@ are rustdoc's job.
 |------|-------------|
 | `A2aError` | Protocol-level error |
 | `ErrorCode` | Standard error codes |
+| `AuthRejection` | A refused credential an `A2aError` carries: its kind and `WWW-Authenticate` challenge |
+| `AuthRejectionKind` | `Unauthenticated` (HTTP 401, gRPC UNAUTHENTICATED) or `PermissionDenied` (HTTP 403, gRPC PERMISSION_DENIED) |
 | `A2aResult<T>` | Alias for `Result<T, A2aError>` |
 
 ### JSON-RPC

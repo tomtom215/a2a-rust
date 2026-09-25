@@ -161,8 +161,20 @@ pub(super) fn error_response(
         error.data = Some(data);
     }
     let resp = JsonRpcErrorResponse::new(id.clone(), error);
+    // A refused credential answers 401/403 over HTTP, the body unchanged
+    // (N36): JSON-RPC runs over HTTP, and a client refreshes a token on the
+    // status, not on a -32600 it cannot tell from a malformed request.
+    let status = if err.auth_rejection().is_some() {
+        err.http_status()
+    } else {
+        200
+    };
     match serde_json::to_vec(&resp) {
-        Ok(body) => json_response(200, body),
+        Ok(body) => {
+            let mut resp = json_response(status, body);
+            crate::dispatch::add_auth_challenge(resp.headers_mut(), err);
+            resp
+        }
         Err(e) => internal_serialization_error(id, &e),
     }
 }

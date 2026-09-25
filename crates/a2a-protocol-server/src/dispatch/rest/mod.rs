@@ -9,8 +9,13 @@
 //! appropriate [`RequestHandler`] method, following the REST transport
 //! convention defined in the A2A protocol.
 
+mod error_response;
 pub(crate) mod query;
 mod response;
+
+// The axum adapter answers errors through these, so the two HTTP+JSON
+// dispatchers send one error shape (audit N37).
+pub(crate) use error_response::{error_json_response, server_error_to_response};
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -25,13 +30,13 @@ use crate::dispatch::cors::CorsConfig;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
 
+use error_response::not_found_response;
 use query::{
     contains_path_traversal, parse_list_tasks_query, parse_query_param, parse_query_param_u32,
     percent_decode, strip_tenant_prefix,
 };
 use response::{
-    error_json_response, extract_headers, health_response, inject_field_if_missing,
-    json_ok_response, not_found_response, read_body_limited, server_error_to_response,
+    extract_headers, health_response, inject_field_if_missing, json_ok_response, read_body_limited,
 };
 
 /// REST HTTP request dispatcher.

@@ -578,6 +578,30 @@ stores (`tests/cross_replica_cancel/`).
   builds its statuses with `TaskStatus::new`. **[Fixed: the event queue
   stamps an empty status timestamp on write; two unit tests in
   `streaming/event_queue/status_stamp.rs`]**
+- **N36 — a refused credential answered `400`, so this SDK's client never
+  dropped a revoked token** (Medium, server behaviour; found by the ACTS
+  conformance suite, SEC-AUTH-006 and SEC-EXTCARD-001/002/004, then traced to
+  the client). ADR 0010 mapped every refusal to `InvalidRequest` and sent
+  `401` needs to a gateway. The client's `BearerAuthInterceptor` invalidates
+  a token on `401` only, so against this server a revoked or rotated token
+  was re-sent until the provider's cache expired. VALIDATED:
+  `a2a-protocol-sdk/tests/auth_rejection_e2e.rs` fails on JSON-RPC,
+  HTTP+JSON and gRPC with the old mapping and passes with the new; five
+  status tests in `a2a-protocol-server/tests/auth_rejection_status.rs` fail
+  and pass likewise. Nothing had pinned the status before. **[Fixed: ADR
+  0014 — `401` + `WWW-Authenticate` / `403`, gRPC
+  `UNAUTHENTICATED`/`PERMISSION_DENIED`; the JSON-RPC body unchanged;
+  WebSocket still the body alone]**
+- **N37 — the axum adapter's errors were not the AIP-193 shape spec §11.6
+  names** (Low, server wire behaviour, `axum` feature; found reading the
+  N36 change). The adapter answered `{"error": "<text>"}` where
+  `RestDispatcher` answers `google.rpc.Status` with `code`, `status` and the
+  `ErrorInfo` details, so a client could not read the error identity from
+  the adapter, and one request got two shapes from this crate's two
+  HTTP+JSON dispatchers. VALIDATED: `tests/http_json_error_parity.rs` fails
+  on the old adapter (`{"error": "task not found: nope"}`). **[Fixed: the
+  adapter answers through the REST dispatcher's builders; REST's route and
+  body errors gain `status`]**
 - **Examined and left, from the same audit** (CONJECTURED, not reproduced):
   a queue write dropped between persisting and broadcasting an event — only
   the executor timeout firing inside a terminal event's verdict wait can do

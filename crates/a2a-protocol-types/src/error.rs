@@ -11,6 +11,7 @@
 
 use std::fmt;
 
+use crate::auth_rejection::AuthRejection;
 use serde::{Deserialize, Serialize};
 
 /// The `google.rpc.ErrorInfo.domain` value for A2A-specific errors.
@@ -300,6 +301,11 @@ pub struct A2aError {
     /// Optional structured error details.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
+    /// Set when this error refuses a credential; see
+    /// [`auth_rejection`](Self::auth_rejection). Not on the wire: each
+    /// binding answers it with its own status instead.
+    #[serde(skip)]
+    auth_rejection: Option<AuthRejection>,
 }
 
 impl A2aError {
@@ -320,6 +326,7 @@ impl A2aError {
             code,
             message: message.into(),
             data: None,
+            auth_rejection: None,
         }
     }
 
@@ -330,10 +337,46 @@ impl A2aError {
             code,
             message: message.into(),
             data: Some(data),
+            auth_rejection: None,
         }
     }
 
     // ── Named constructors ────────────────────────────────────────────────
+
+    /// Refuses a request that carries no usable credential: HTTP `401` with
+    /// `challenge` as its `WWW-Authenticate` header (e.g.
+    /// `Bearer realm="a2a"`), gRPC `UNAUTHENTICATED`. Over JSON-RPC the body
+    /// is an Invalid Request (-32600), as it was before the refusal had a
+    /// status of its own.
+    ///
+    /// Return it from an `a2a-protocol-server` `ServerInterceptor` that
+    /// authenticates. `message` reaches the caller, so it should not say
+    /// *why* the credential failed.
+    #[must_use]
+    pub fn unauthenticated(message: impl Into<String>, challenge: impl Into<String>) -> Self {
+        let mut err = Self::new(ErrorCode::InvalidRequest, message);
+        err.auth_rejection = Some(AuthRejection::unauthenticated(challenge.into()));
+        err
+    }
+
+    /// Refuses an authenticated caller the operation: HTTP `403`, gRPC
+    /// `PERMISSION_DENIED`, JSON-RPC Invalid Request (-32600). Spec §3.3.2:
+    /// it must not reveal whether a resource the caller cannot see exists.
+    #[must_use]
+    pub fn permission_denied(message: impl Into<String>) -> Self {
+        let mut err = Self::new(ErrorCode::InvalidRequest, message);
+        err.auth_rejection = Some(AuthRejection::permission_denied());
+        err
+    }
+
+    /// The credential refusal this error carries, if it is one. Set only by
+    /// [`unauthenticated`](Self::unauthenticated) and
+    /// [`permission_denied`](Self::permission_denied), and never read from
+    /// the wire.
+    #[must_use]
+    pub const fn auth_rejection(&self) -> Option<&AuthRejection> {
+        self.auth_rejection.as_ref()
+    }
 
     /// Creates a "Task not found" error for the given task ID string.
     #[must_use]

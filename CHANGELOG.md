@@ -119,6 +119,22 @@ what a new task on an existing context inherits (#130) reached them filed
 under **Fixed**; that entry did say it changed the wire shape, but not where
 someone scanning for such changes would look.
 
+- **The axum adapter's error bodies are AIP-193, as `RestDispatcher`'s are**
+  (server, `axum` feature; audit N37). It answered `{"error": "<text>"}`; it
+  now answers `{"error": {"code", "status", "message", "details"}}` through
+  the REST dispatcher's own builders. A client that read `error` as a string
+  from the adapter reads `error.message`. REST's own route and body errors
+  gain the `status` name they lacked.
+- **A refused credential answers `401`/`403`, not `400`** (server; audit N36,
+  ADR 0014). The auth interceptors answered every refusal as
+  `InvalidRequest`: HTTP `400` on both HTTP bindings, gRPC
+  `INVALID_ARGUMENT`. Now a missing or wrong credential answers `401` with a
+  `WWW-Authenticate` challenge (`Bearer realm="a2a"`, or
+  `ApiKey header="x-api-key"`) and gRPC `UNAUTHENTICATED`; the AIP-193 body's
+  `status` says `UNAUTHENTICATED`. JSON-RPC answers the same `401` with the
+  body unchanged (`-32600`); batches stay `200`. WebSocket is unchanged (the
+  body alone). **Migration:** a client or alert that matched `400` for an
+  auth failure matches `401`/`403`.
 - **`SendMessage` refuses a part whose `mediaType` the agent card does not
   declare, with `ContentTypeNotSupportedError`** (server; audit N34). When
   the card declares input modes — `defaultInputModes` or any skill's
@@ -491,6 +507,16 @@ someone scanning for such changes would look.
   persisted or streamed; a timestamp the executor set is kept. The stamp
   counts toward `max_event_size`, so a status event within a few dozen
   bytes of that limit may now be refused.
+- **The two HTTP+JSON dispatchers answer the same failure identically**
+  (server; audit N37) — see **Behaviour Changes**. Found while fixing N36.
+- **This SDK's client recovers from a revoked or rotated token against this
+  SDK's server** (server; audit N36). The client drops a cached token on
+  `401`; the server never sent one, so the refused token was re-sent on every
+  call until the provider's cache expired, on every binding. See **Behaviour
+  Changes**. New in `a2a-protocol-types`: `A2aError::unauthenticated`,
+  `A2aError::permission_denied`, `A2aError::auth_rejection` and
+  `AuthRejection`/`AuthRejectionKind`, for custom interceptors to get the
+  same statuses.
 - **`SendMessage` checks message parts' media types against the agent
   card** (server; audit N34) — see **Behaviour Changes** for what is
   refused and how to opt out. Found by the ACTS conformance suite

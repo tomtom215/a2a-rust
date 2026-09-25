@@ -103,6 +103,7 @@ pub const A2A_EXTENSIONS_HEADER: &str = "A2A-Extensions";
 
 pub mod agent_card;
 pub mod artifact;
+pub mod auth_rejection;
 pub mod error;
 pub mod events;
 pub mod extensions;
@@ -127,6 +128,7 @@ pub mod trace_context;
 
 pub use agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentProvider, AgentSkill};
 pub use artifact::{Artifact, ArtifactId};
+pub use auth_rejection::{AuthRejection, AuthRejectionKind};
 pub use error::{A2aError, A2aResult, ErrorCode};
 pub use events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 pub use extensions::{AgentCardSignature, AgentExtension};

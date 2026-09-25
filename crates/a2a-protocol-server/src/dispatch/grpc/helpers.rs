@@ -85,6 +85,13 @@ fn grpc_code(err: &ServerError, a2a_code: a2a_protocol_types::error::ErrorCode) 
     if matches!(err, ServerError::Overloaded(_)) {
         return tonic::Code::ResourceExhausted;
     }
+    // A refused credential has its own codes (N36); `status_name` is the
+    // one place that names them.
+    match err.status_name() {
+        "UNAUTHENTICATED" => return tonic::Code::Unauthenticated,
+        "PERMISSION_DENIED" => return tonic::Code::PermissionDenied,
+        _ => {}
+    }
     // Derived from §5.4's table rather than restating it. This was a second
     // copy of the mapping, and when §5.4 moved `PushNotificationNotSupported`,
     // `UnsupportedOperation` and `VersionNotSupported` off `UNIMPLEMENTED`,

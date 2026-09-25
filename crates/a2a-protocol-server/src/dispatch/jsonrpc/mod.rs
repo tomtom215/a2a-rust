@@ -341,7 +341,17 @@ impl JsonRpcDispatcher {
                     })
                     .await
             }
-            _ => json_response(200, self.dispatch_single_request(rpc_req, headers).await),
+            // Not `dispatch_single_request`, which answers bytes: a single
+            // call's HTTP status can carry a refused credential (N36), a
+            // batch's cannot, since one batch answers many calls.
+            _ => match self
+                .rpc_span(rpc_req, headers)
+                .run(self.call(id.clone(), rpc_req, headers))
+                .await
+            {
+                Ok(body) => json_response(200, body),
+                Err(e) => error_response(id, &e),
+            },
         }
     }
 

@@ -18,16 +18,15 @@
 //!
 //! # Error mapping
 //!
-//! An interceptor rejects a request by returning an
-//! [`A2aError`]. The A2A protocol has no
-//! dedicated "unauthenticated" error code (the spec models authentication at
-//! the transport/security-scheme layer, e.g. an HTTP `401` with
-//! `WWW-Authenticate`), so a rejection surfaces as
-//! [`InvalidRequest`](a2a_protocol_types::error::ErrorCode::InvalidRequest)
-//! (HTTP 400 / gRPC `INVALID_ARGUMENT`). When you need true `401` semantics
-//! with a challenge header, terminate authentication at a gateway in front of
-//! the agent; these interceptors are the self-contained, defense-in-depth
-//! option and never reveal *why* a credential was rejected to the caller.
+//! An interceptor rejects a request by returning an [`A2aError`]; these
+//! return [`A2aError::unauthenticated`], which each binding answers with its
+//! own status (ADR 0014, audit N36): HTTP `401` with a `WWW-Authenticate`
+//! challenge on both HTTP bindings (the JSON-RPC body stays `-32600`), gRPC
+//! `UNAUTHENTICATED`. A custom interceptor refusing an authenticated caller
+//! returns [`A2aError::permission_denied`] for `403` / `PERMISSION_DENIED`.
+//! The WebSocket binding checks per message after the upgrade, so it has no
+//! status to send and answers the body alone. None of these interceptors
+//! reveals *why* a credential was rejected.
 //!
 //! # Example
 //!
@@ -47,7 +46,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use a2a_protocol_types::error::{A2aError, A2aResult, ErrorCode};
+use a2a_protocol_types::error::{A2aError, A2aResult};
 
 use crate::call_context::CallContext;
 use crate::interceptor::ServerInterceptor;
@@ -58,12 +57,19 @@ pub mod jwt;
 #[cfg(feature = "auth-jwt")]
 pub use jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
 
-/// Builds the generic "unauthenticated" rejection.
+/// The challenge the bearer-token interceptors send with a `401`.
+pub(crate) const BEARER_CHALLENGE: &str = "Bearer realm=\"a2a\"";
+
+/// Builds the generic "unauthenticated" rejection: HTTP `401` with
+/// `challenge`, gRPC `UNAUTHENTICATED`, JSON-RPC -32600 (audit N36).
 ///
 /// The message is intentionally generic — it never says whether the header was
-/// absent, malformed, or simply wrong, so it cannot be used as an oracle.
-pub(crate) fn auth_rejected() -> A2aError {
-    A2aError::new(ErrorCode::InvalidRequest, "authentication required")
+/// absent, malformed, or simply wrong, so it cannot be used as an oracle. For
+/// the same reason the challenge is fixed per interceptor: RFC 6750's
+/// `error="invalid_token"` would tell a caller which of those it was, and it
+/// is only a SHOULD.
+pub(crate) fn auth_rejected(challenge: &str) -> A2aError {
+    A2aError::unauthenticated("authentication required", challenge)
 }
 
 /// Compares two byte slices in constant time (with respect to their content).
@@ -236,12 +242,15 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            // No registered scheme names an API key; the challenge names the
+            // header the credential goes in.
+            let challenge = format!("ApiKey header=\"{}\"", self.header_name);
             let key = ctx
                 .http_headers()
                 .get(&self.header_name)
-                .ok_or_else(auth_rejected)?;
+                .ok_or_else(|| auth_rejected(&challenge))?;
             match labelled_constant_time_match(key.as_bytes(), &self.allowed) {
-                CredentialMatch::NoMatch => Err(auth_rejected()),
+                CredentialMatch::NoMatch => Err(auth_rejected(&challenge)),
                 CredentialMatch::Unnamed => Ok(()),
                 CredentialMatch::Named(identity) => {
                     ctx.set_caller_identity(identity);
@@ -342,10 +351,10 @@ impl ServerInterceptor for BearerTokenAuthInterceptor {
             let header = ctx
                 .http_headers()
                 .get("authorization")
-                .ok_or_else(auth_rejected)?;
-            let token = extract_bearer(header).ok_or_else(auth_rejected)?;
+                .ok_or_else(|| auth_rejected(BEARER_CHALLENGE))?;
+            let token = extract_bearer(header).ok_or_else(|| auth_rejected(BEARER_CHALLENGE))?;
             match labelled_constant_time_match(token.as_bytes(), &self.allowed) {
-                CredentialMatch::NoMatch => Err(auth_rejected()),
+                CredentialMatch::NoMatch => Err(auth_rejected(BEARER_CHALLENGE)),
                 CredentialMatch::Unnamed => Ok(()),
                 CredentialMatch::Named(identity) => {
                     ctx.set_caller_identity(identity);
