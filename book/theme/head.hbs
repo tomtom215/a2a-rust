@@ -3,17 +3,14 @@
   SEO, Open Graph, Twitter Card and schema.org metadata for a2a-rust docs.
 
   Notes on choices:
-  - Canonical URL, og:url, and twitter:url start as seed values pointing at
-    the site root and are rewritten to the current page URL by the inline
-    script below. Google Search Console previously flagged introduction.html
-    with "Duplicate without user-selected canonical" because every page had
-    the same hardcoded canonical pointing to `/`. mdbook's Handlebars pipeline
-    does not expose string-manipulation helpers, so a pure server-rendered
-    per-page canonical is not feasible from a user `head.hbs` override —
-    JS injection is the pragmatic fix. Googlebot and Bingbot are both
-    Chromium-based and honour JS-written canonical/og:url values; pre-render
-    crawlers that do not execute JS fall back to the site root, which is
-    strictly better than a wrong per-page canonical.
+  - The canonical link, og:url, twitter:url, the og/twitter titles and the
+    description are site-wide seeds here. scripts/seo_postprocess.py rewrites
+    them per page in the built HTML, before deploy (docs.yml), because
+    mdBook's Handlebars has no string helpers to derive a page URL. Until
+    2026-09-25 a script in the page did this after load, which left every
+    served page declaring the site root as its canonical, the cause of
+    Search Console's "Duplicate without user-selected canonical"; Google
+    advises against changing a canonical with JavaScript.
   - Twitter card is `summary_large_image` so cards render with the full
     preview image on X/Twitter, LinkedIn, Slack, and Discord.
   - JSON-LD describes the project as a whole and legitimately uses the site
@@ -52,58 +49,9 @@
 <meta name="twitter:image" content="https://a2a-rust.com/og-image.png">
 <meta name="twitter:image:alt" content="a2a-rust — Rust SDK for the Agent2Agent (A2A) protocol">
 
-<!-- Canonical and alternate URLs. Per-page canonical is set by the script below. -->
+<!-- Canonical URL. Set per page by scripts/seo_postprocess.py after the build. -->
 <link rel="canonical" id="a2a-canonical" href="https://a2a-rust.com/">
 
-<script>
-  // Rewrite canonical / og:url / twitter:url to the current page URL. See the
-  // comment block at the top of this file for why this is JS-driven instead
-  // of server-rendered. Runs synchronously before the first paint so crawlers
-  // that execute JS (Googlebot, Bingbot) pick up the correct values on their
-  // rendering pass.
-  (function () {
-    var origin = "https://a2a-rust.com";
-    var path = window.location.pathname || "/";
-    // `/print.html` is excluded by a noindex meta tag emitted by mdbook, so
-    // we still want the canonical to reflect its real URL if for some reason
-    // a crawler reaches it — that just lets Google dedupe correctly.
-    var canonicalUrl = origin + path;
-    var canonicalEl = document.getElementById("a2a-canonical");
-    if (canonicalEl) canonicalEl.href = canonicalUrl;
-    var ogUrlEl = document.getElementById("a2a-og-url");
-    if (ogUrlEl) ogUrlEl.setAttribute("content", canonicalUrl);
-    var twUrlEl = document.getElementById("a2a-twitter-url");
-    if (twUrlEl) twUrlEl.setAttribute("content", canonicalUrl);
-
-    // Per-page share titles: mdBook emits a unique <title> per page; mirror
-    // it into the OG/Twitter cards so shared links carry the chapter name
-    // instead of one identical site-wide title.
-    var pageTitle = document.title;
-    if (pageTitle) {
-      var ogT = document.getElementById("a2a-og-title");
-      if (ogT) ogT.setAttribute("content", pageTitle);
-      var twT = document.getElementById("a2a-tw-title");
-      if (twT) twT.setAttribute("content", pageTitle);
-    }
-
-    // Per-page meta description: derive it from the chapter's first
-    // paragraph once the DOM is parsed. A unique description per page
-    // avoids the "duplicate meta descriptions" SERP penalty; crawlers that
-    // do not execute JS keep the site-wide default, which is strictly
-    // better than nothing.
-    document.addEventListener("DOMContentLoaded", function () {
-      var p = document.querySelector("main p, .content p");
-      if (!p) return;
-      var text = (p.textContent || "").trim().replace(/\s+/g, " ");
-      if (text.length < 40) return;
-      if (text.length > 155) text = text.slice(0, 152).replace(/\s+\S*$/, "") + "…";
-      ["a2a-desc", "a2a-og-desc", "a2a-tw-desc"].forEach(function (id) {
-        var el = document.getElementById(id);
-        if (el) el.setAttribute("content", text);
-      });
-    });
-  })();
-</script>
 
 <!-- Structured Data (JSON-LD) for search engines. Describes the project as a
      whole; `url` legitimately points to the root and is NOT rewritten. -->
@@ -121,7 +69,7 @@
     "name": "Rust"
   },
   "license": "https://opensource.org/licenses/Apache-2.0",
-  "runtimePlatform": "Rust 1.93+",
+  "runtimePlatform": "Rust __A2A_MSRV__+",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, macOS, Windows",
   "author": {

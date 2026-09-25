@@ -756,6 +756,24 @@ someone scanning for such changes would look.
 
 ### Internal
 
+- **The documentation site serves each page's own canonical URL.** Every
+  page's HTML declared the site root as its canonical and carried two
+  identical site-wide descriptions; a script rewrote them after load, which
+  Google advises against for canonicals (Search Console reported
+  introduction.html as "Duplicate without user-selected canonical").
+  `scripts/seo_postprocess.py` now writes the canonical, share URLs, titles
+  and one description per page into the built HTML before deploy, and
+  `docs.yml` fails the deploy if any page is wrong; `print.html` and
+  `404.html` are `noindex`, the sitemap drops `introduction.html` (a copy of
+  the root), the benchmark dashboard gains a canonical and description, and
+  the JSON-LD's MSRV (it said 1.93) is read from `Cargo.toml`.
+- **STABILITY.md's one-breaking-minor-a-month rule gains a declared
+  exception** for fixes adopters cannot wait for. A release's notes may
+  carry `**Cadence exception:** <reason>`; `check_release_tree.py cadence`
+  then accepts a second breaking minor in the month and prints the reason,
+  and refuses the line without one. Breaking changes in a patch release are
+  still refused. `prove_workflow_gates_fail.py` proves the reasonless case
+  fails.
 - **The genai examples move to genai 0.6.5** (`genai-a2a-agent`,
   `incident-response`; supersedes Dependabot's #128). 0.12 kept them on 0.5
   because every 0.6.x depends on the unmaintained `paste`

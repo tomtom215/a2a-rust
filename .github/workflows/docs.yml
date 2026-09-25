@@ -36,6 +36,14 @@ jobs:
       - name: Build book
         run: mdbook build book
 
+      - name: Write per-page SEO metadata
+        # The served HTML carries each page's own canonical URL, share URL,
+        # titles and description, and noindex on print.html and 404.html;
+        # the check fails the deploy if any page does not. See the script.
+        run: |
+          python3 scripts/seo_postprocess.py book/book
+          python3 scripts/seo_postprocess.py book/book --check
+
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
           toolchain: stable
