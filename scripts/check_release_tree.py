@@ -67,6 +67,10 @@ PUBLISHED = (
 PACKAGED = (*PUBLISHED, "Cargo.toml")
 
 PLACEHOLDER = "Nothing yet."
+# `**Cadence exception:** <reason>` in a release's CHANGELOG section. The
+# reason must say something: twenty characters is enough for "critical fix
+# for ..." and too many for a bare "yes" or "n/a".
+CADENCE_EXCEPTION = re.compile(r"(?m)^\*\*Cadence exception:\*\*[ \t]*(?P<reason>\S.{19,})$")
 HEADING = re.compile(r"^## \[(?P<ver>[^\]]+)\](?: - (?P<date>\d{4}-\d{2}-\d{2}))?", re.M)
 # A crate's own version and its pins on sibling crates — the strings release
 # preparation is expected to change, and nothing else.
@@ -209,12 +213,21 @@ def check_cadence(repo: Path, tag: str, rev: str) -> list[str]:
     # release, not two.
     base = version.split("-")[0]
     clash = [v for v, d, b in rows if b and v.split("-")[0] != base and d and d[:7] == date[:7]]
-    if clash:
+    # STABILITY.md section 3's exception: the release's own notes may declare
+    # that it cannot wait for the next month (a critical fix that needs a
+    # break), with the reason, so the exception is deliberate and visible to
+    # adopters in the release notes rather than a gate someone switched off.
+    exception = CADENCE_EXCEPTION.search(section(text, version) or "")
+    if clash and exception:
+        print(f"cadence exception declared for {version} (same month as "
+              f"{', '.join(clash)}): {exception.group('reason').strip()}")
+    elif clash:
         problems.append(
             f"{version} ({date}) is a breaking release, and so is {', '.join(clash)} in "
             f"the same calendar month. STABILITY.md section 3 allows at most one "
-            "breaking minor per calendar month: batch the breaks, or wait for the "
-            "next month."
+            "breaking minor per calendar month: batch the breaks, wait for the "
+            "next month, or declare an exception in the release's notes with a "
+            "line '**Cadence exception:** <why this cannot wait>'."
         )
     return problems
 

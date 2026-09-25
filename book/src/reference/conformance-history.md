@@ -479,6 +479,15 @@ HTTP+JSON 91/92, every MUST passing (a2a-rust `d04d64eb`, a2a-itk
 `429945f6`, 2026-09-25; JSON-RPC 101/101 and gRPC 88/88 in the same run). The
 official Rust SDK's agent fails the same test for the same reason.
 
+**It does not block.** ACTS rates an agent conformant when every graded MUST
+test passes (its specification §12.7; `is_conformant` in a2a-itk's
+`scripts/acts_report.py`), and `run_acts.py` exits 0 on a conformant run, so
+a failed SHOULD such as this one leaves the exit status green: 0 at
+`d04d64eb`, where a run with a failed MUST (SEC-AUTH-002, earlier that day)
+exited 1. No workflow here runs ACTS yet. A gate added later must key on
+that exit status, or list REST-CT-001 as a known SHOULD failure if it
+compares test by test.
+
 **Reversed when** the widely used clients accept `application/a2a+json`
 responses, a2a-go's among them. `rest_and_axum_answer_operations_with_the_same_headers`
 pins the current headers, and `go_sdk_interop.sh` would show when the switch

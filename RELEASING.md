@@ -230,7 +230,7 @@ mentioned (`docs/adopter-audit-2026-09-22.md`, N7). Four checks in
 |---|---|
 | `Nothing is left under [Unreleased] in the tagged tree` | any entry under `## [Unreleased]`; the placeholder `Nothing yet.` is allowed |
 | `The tag is the release-preparation commit` | any file packaged into the four crates (their directories, and the root `Cargo.toml` they inherit from) that differs between the tag and the last commit that edited the release's own `## [X.Y.Z]` section — apart from the crates' version strings and pins |
-| `Breaking releases keep the STABILITY.md cadence` | a `### Breaking Changes` section in a patch release, or in a second release in the same calendar month as another breaking one |
+| `Breaking releases keep the STABILITY.md cadence` | a `### Breaking Changes` section in a patch release, or in a second release in the same calendar month as another breaking one, unless that release's section declares `**Cadence exception:** <reason>` (STABILITY.md §3) |
 | `Packaged crates were built from the tagged commit` (package job) | a `.crate` whose `.cargo_vcs_info.json` names another commit, or a dirty tree |
 
 What that asks of the process: **write the release notes last.** Anything that

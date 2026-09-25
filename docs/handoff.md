@@ -743,7 +743,10 @@ run clippy before calling a change on the send path done.
 
 - task #16, CI: pin the official suites, a lightweight daily canary, an
   ACTS gate against a baseline, and spec/proto drift detection — the last
-  is what N38 (and the push sender's Content-Type before it) needed;
+  is what N38 (and the push sender's Content-Type before it) needed. The
+  ACTS gate must key on `run_acts.py`'s exit status (MUST-only, §12.7) or
+  baseline REST-CT-001, which fails by choice (conformance history,
+  "Deliberate deviations");
 - N38's media type: recorded as a deliberate deviation in
   `book/src/reference/conformance-history.md`. The maintainer chose not to
   report a2a-go's `application/json`-only error decoding upstream for now

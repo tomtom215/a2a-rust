@@ -1181,6 +1181,11 @@ def build_registry() -> dict[str, Probe | Exempt]:
                 "in the same calendar month",
             ),
             Defect(
+                "a same-month break whose exception gives no reason",
+                _next_release_fixture("same-month-empty-exception"),
+                "in the same calendar month",
+            ),
+            Defect(
                 "a breaking change in a patch release",
                 _next_release_fixture("breaking-patch"),
                 "is a patch release",
@@ -1431,7 +1436,7 @@ def _next_release_fixture(defect: str | None = None) -> Setup:
         major, minor, _ = (int(x) for x in current.split("-")[0].split("."))
         nxt = f"{major}.{minor + 1}.0" if defect != "breaking-patch" else f"{major}.{minor}.1"
         date = "2100-01-15"
-        if defect == "same-month":
+        if defect in ("same-month", "same-month-empty-exception", "same-month-excepted"):
             # The month of the newest dated release that carries breaking
             # changes, read from the file so it cannot go stale.
             text = (REPO / "CHANGELOG.md").read_text()
@@ -1466,6 +1471,10 @@ def _next_release_fixture(defect: str | None = None) -> Setup:
         body = m.group(1).strip()
         if not body or body == "Nothing yet.":
             body = "### Fixed\n\n- A fixture entry."
+        if defect == "same-month-empty-exception":
+            body = "**Cadence exception:** n/a\n\n" + body
+        elif defect == "same-month-excepted":
+            body = "**Cadence exception:** a critical fix that cannot wait a month\n\n" + body
         if "### Breaking Changes" not in body:
             # The cadence defects need a breaking release to be wrong about.
             body = "### Breaking Changes\n\n- A fixture break.\n\n" + body
