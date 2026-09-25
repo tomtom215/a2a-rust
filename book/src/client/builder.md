@@ -130,6 +130,11 @@ let client = ClientBuilder::new(url)
     .unwrap();
 ```
 
+Sends (`send_message`, `stream_message`, creating a push config) are retried only
+on 429/503, which prove the server did not process them. After a timeout or a
+dropped connection they are not re-sent unless they carry an idempotency key the
+peer honours; see [Idempotent Sends](./idempotency.md).
+
 ### Return Immediately
 
 For push notification workflows, return the task immediately without waiting for completion:
@@ -164,6 +169,13 @@ let client = ClientBuilder::new(url)
 | `with_return_immediately(bool)` | false | Don't wait for task completion |
 | `with_tenant(str)` | None (auto from `AgentCard`) | Default tenant for multi-tenancy |
 | `with_interceptor(impl CallInterceptor)` | Empty chain | Add request/response hook |
+| `with_max_response_size(usize)` | 32 MiB | Largest buffered (non-streaming) response body |
+| `without_tls()` | TLS on with the `tls-rustls` feature | Disable TLS (plain HTTP only) |
+| `with_peer_honouring_idempotency(bool)` | false (true when the card advertises the extension) | Let a keyed send be retried after an ambiguous failure; see [Idempotent Sends](./idempotency.md) |
+| `with_grpc_bare_address_scheme(GrpcBareAddressScheme)` | `HttpsExceptLoopback` | How `build_grpc` dials a bare `host:port` |
+| `with_grpc_tls_config(ClientTlsConfig)` | None (bundled Mozilla roots) | TLS settings for `build_grpc` (`grpc-tls` feature) |
+| `build()` | — | Construct a JSON-RPC or REST client |
+| `build_grpc()` (async) | — | Construct a gRPC client (`grpc` feature) |
 
 ## Client Reuse (Best Practice)
 
@@ -212,7 +224,11 @@ async fn bad_pattern(url: &str, params: MessageSendParams) {
 
 > Requires the `grpc` feature: `a2a-protocol-client = { version = "0.14", features = ["grpc"] }`
 
-For gRPC transport, use `GrpcTransport::connect()` with `with_custom_transport()`:
+`ClientBuilder::new(url).build_grpc().await?` (or `from_card(&card)?.build_grpc()`)
+builds a gRPC client that uses this builder's timeouts and limits; a transport
+passed to `with_custom_transport` keeps only its own `GrpcTransportConfig`.
+
+To construct the transport yourself, use `GrpcTransport::connect()` with `with_custom_transport()`:
 
 ```rust,no_run
 # use a2a_protocol_sdk::client::ClientBuilder;

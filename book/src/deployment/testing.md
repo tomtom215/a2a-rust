@@ -407,13 +407,13 @@ export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgre
 # The -E filter is part of "exactly". Both invocations in mutants.yml carry
 # it, because --run-ignored all otherwise picks up the soak and swarm-scale
 # binaries, whose tests run for 30 to 140 seconds EACH, once per mutant.
-cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants \
-  -- --all-features --run-ignored all \
+cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants --all-features \
+  -- --run-ignored all \
      -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'
 
 # Test a specific file
 cargo mutants --file crates/a2a-protocol-types/src/task.rs \
-  --test-tool=nextest -- --all-features
+  --test-tool=nextest --all-features
 
 # Dry-run: list all mutants without running tests
 cargo mutants --list --workspace
@@ -497,7 +497,7 @@ returns `true` for terminal states.
 
 ## Performance Benchmarks
 
-The `benches/` directory contains Criterion.rs benchmarks across all 14 suites (see the [benchmark results](../reference/benchmarks.md) page for the current count)
+The `benches/` directory contains Criterion.rs benchmarks across 15 suites (see the [benchmark results](../reference/benchmarks.md) page for the current count)
 measuring SDK overhead independently of agent logic:
 
 | Suite | Coverage |
@@ -515,6 +515,8 @@ measuring SDK overhead independently of agent logic:
 | Enterprise Scenarios | Multi-tenant, push configs, eviction, rate limiting, CORS |
 | Production Scenarios | Cold start, reconnection, agent burst, dispatch routing |
 | Advanced Scenarios | Tenant resolvers, hot-reload, fan-out, pagination, artifacts |
+| Coordinator Chain Under Fault | End-to-end latency of a 5-hop agent chain with fault injection at every link |
+| Send Latency Breakdown | Attributes the cost of a blocking send to its component parts |
 
 ```bash
 # Run all benchmarks

@@ -44,7 +44,8 @@ Features are off by default to minimize compile times and dependency trees, with
 two exceptions. **`tls-rustls` is on by default** for `a2a-protocol-client` and
 `a2a-protocol-sdk`, because the A2A spec serves agents over HTTPS and the client
 (and the bundled push sender) must reach them out of the box. **`tracing` is on
-by default** for all three, so a default build logs through whatever `tracing`
+by default** for `a2a-protocol-client`, `a2a-protocol-server` and
+`a2a-protocol-sdk`, so a default build logs through whatever `tracing`
 subscriber the application installs.
 `default-features = false` removes a crate's defaults — on the SDK too, which
 takes the client and server without theirs: an SDK built that way has no rustls
@@ -62,7 +63,7 @@ and no logging.
 | Feature | Description |
 |---------|-------------|
 | `tls-rustls` | HTTPS via rustls (no OpenSSL required) |
-| `signing` | Agent card signing verification |
+| `signing` | Forwards `a2a-protocol-types/signing`; the client neither signs nor verifies cards on its own (call `verify_agent_card` yourself) |
 | `tracing` | Structured logging via the `tracing` crate |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` (plaintext) |

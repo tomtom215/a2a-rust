@@ -358,9 +358,8 @@ cat >> "$OUTPUT_FILE" <<'SECTION'
 Stream throughput under varying event volumes and consumer speeds.
 Reveals buffering and flow-control overhead that synthetic single-event tests miss.
 
-The default broadcast channel capacity was increased from 64 to 256 events in
-v0.5.0, pushing the per-event cost inflection point from ~52 events to ~252
-events. Deployments with >256 events/task should use
+The default broadcast channel capacity is 256 events (raised from 64 in
+v0.5.0). Deployments with >256 events/task should use
 `EventQueueManager::with_capacity()` to set a higher value.
 
 SECTION
@@ -405,12 +404,10 @@ emit_table "memory_" "count"
 cat >> "$OUTPUT_FILE" <<'SECTION'
 ## Cross-Language Comparison
 
-Standardized workloads designed to be reproduced identically across all
-A2A SDK implementations (Python, Go, JS, Java, C#/.NET).
-
-- All SDKs hit the **same Rust echo server** (eliminates server-side variance)
-- All workloads use **identical JSON payloads** from `benches/cross_language/`
-- Results use **median ± MAD** to resist outlier pollution
+Rust-side criterion baselines for the workloads in `benches/cross_language/`.
+Every row below is this SDK only. The measured cross-SDK comparison — this
+SDK's server against the official Python SDK's server — is on
+[Cross-Language Benchmark](cross-language-benchmarks.md).
 
 SECTION
 
@@ -453,8 +450,8 @@ cat >> "$OUTPUT_FILE" <<'SECTION'
 
 SDK capabilities exercising previously-unbenchmarked paths: tenant resolver
 overhead, agent card hot-reload and discovery, subscribe fan-out for
-reconnection bursts, streaming artifact accumulation cost (the 90µs/event
-bottleneck), pagination full walk, and extended agent card round-trip.
+reconnection bursts, streaming artifact accumulation cost, pagination full
+walk, and extended agent card round-trip.
 
 SECTION
 
@@ -465,6 +462,11 @@ emit_table "advanced_"
 
 cat >> "$OUTPUT_FILE" <<'SECTION'
 ## Agent-Level Latency Under Fault
+
+> **Not run by the benchmarks workflow; no results are published here.**
+> `benchmarks.yml` does not run this bench, so the two groups below have no
+> tables. To measure it locally:
+> `cargo bench -p a2a-benchmarks --bench coordinator_chain_under_fault`.
 
 End-to-end latency through a **5-hop in-process coordinator chain** as the
 links between hops are made progressively less reliable. Unlike every other
@@ -554,29 +556,36 @@ Transport streaming benchmarks use \`worker_threads(1)\` runtime to eliminate
 cross-thread variance entirely (24 high severe → 4 high mild outliers, 3×
 tighter confidence intervals).
 
+FOOTER
+
+# Quoted from the tables above, so computed from the same estimates.json files.
+DV_GET="$CRITERION_DIR/data_volume_get/lookup"
+STREAM_VOL="$CRITERION_DIR/backpressure_stream_volume"
+
+cat >> "$OUTPUT_FILE" <<SECTION
 ### Data volume get() at 100K tasks
 
-The `data_volume/get/100K` benchmark previously reported ~42% faster lookups
-than the 1K/10K cases due to a **CPU cache warming artifact** from the large
-`populate_store()` setup filling L1/L2 caches. A 4MB cache-busting step was
-added in v0.5.0 to flush caches between populate and measure, producing more
-representative O(1) lookup times across all scales. The 1K/10K number (~450ns)
-remains the representative baseline.
+\`data_volume_get/lookup\` reports $(extract_median "$DV_GET/1000/new/estimates.json") at 1K
+tasks, $(extract_median "$DV_GET/10000/new/estimates.json") at 10K and $(extract_median "$DV_GET/100000/new/estimates.json") at 100K. A 100K
+figure below the 1K/10K ones has previously been traced to a **CPU cache
+warming artifact** from the large \`populate_store()\` setup filling L1/L2
+caches; a 4MB cache-busting step was added in v0.5.0 to flush caches between
+populate and measure. Where the 100K figure is still the lowest, that step has
+not removed the effect, and the 1K/10K numbers are the representative O(1)
+lookup baseline.
 
-### Stream volume per-event cost inflection
+### Stream volume per-event cost
 
-Per-event cost inflects dramatically when events exceed the broadcast channel
-capacity. The default capacity was increased from 64 to **256** events in
-v0.5.0, pushing the inflection from ~52 events to ~252 events:
-
-- Below capacity: ~4µs/event (fast path)
-- At capacity boundary: ~53µs/event (12× jump — broadcast back-pressure)
-- Above capacity: ~130µs/event (SSE frame accumulation under overflow)
+The default broadcast channel capacity is **256** events (raised from 64 in
+v0.5.0). \`backpressure_stream_volume\` straddles it:
+$(extract_median "$STREAM_VOL/52_events/new/estimates.json") for 52 events, $(extract_median "$STREAM_VOL/252_events/new/estimates.json") for 252 and
+$(extract_median "$STREAM_VOL/502_events/new/estimates.json") for 502, so the per-event cost below and above
+capacity can be read directly from the table.
 
 Production deployments expecting >256 events/task should increase
-`EventQueueManager::with_capacity()` to match their peak volume.
+\`EventQueueManager::with_capacity()\` to match their peak volume.
 
-FOOTER
+SECTION
 
 # These two sections quote measurements, so they are computed from the same
 # estimates.json files the tables above are built from. Do not fold them back
@@ -652,40 +661,48 @@ single-request saving.
 
 SECTION
 
-cat >> "$OUTPUT_FILE" <<'FOOTER'
+# Quoted from the tables above, so computed from the same estimates.json files.
+# Counts use extract_median_ns, which is what the count-mode tables print.
+cat >> "$OUTPUT_FILE" <<SECTION
 ### Deserialization allocation overhead
 
-Deserialization allocates ~3× more than serialization (Task: 1,026 vs 342
-allocs). This is inherent to serde_json's parsing model: every field creates
-an intermediate `String`/`Vec` allocation during parsing. The
-`serde_helpers::deser_from_str()` helper enables serde_json's borrowed-data
-path for ~15-25% fewer allocations. The `serde_helpers::SerBuffer` provides
+Deserialization allocates several times more than serialization (Task:
+$(extract_median_ns "$CRITERION_DIR/memory_deserialize/task_alloc_count/new/estimates.json") vs $(extract_median_ns "$CRITERION_DIR/memory_serialize/task_alloc_count/new/estimates.json") allocs). This is inherent to serde_json's parsing model: every
+field creates an intermediate \`String\`/\`Vec\` allocation during parsing. The
+\`serde_helpers::deser_from_str()\` helper enables serde_json's borrowed-data
+path for ~15-25% fewer allocations. The \`serde_helpers::SerBuffer\` provides
 thread-local buffer reuse for serialization, eliminating the 2.3× small-payload
 overhead.
 
 ### History depth allocation scaling
 
-History depth scales at ~494 deserialization allocs/turn and ~242 serialization
-allocs/turn (linear, constant marginal cost). At 50 turns: 24,714 deser allocs
-per `store.get()`. The `serde_helpers` module provides optimized paths; for
-maximum throughput on deep histories, consider storing pre-serialized bytes
-alongside parsed structs to avoid re-parsing on every read.
+History depth scales roughly linearly: \`memory_history_scaling\` records
+$(extract_median_ns "$CRITERION_DIR/memory_history_scaling/deserialize_allocs/1/new/estimates.json") deserialization allocs at 1 turn and $(extract_median_ns "$CRITERION_DIR/memory_history_scaling/deserialize_allocs/50/new/estimates.json") at 50 turns
+($(extract_median_ns "$CRITERION_DIR/memory_history_scaling/serialize_allocs/1/new/estimates.json") and $(extract_median_ns "$CRITERION_DIR/memory_history_scaling/serialize_allocs/50/new/estimates.json") for serialization), so a 50-turn task
+costs $(extract_median_ns "$CRITERION_DIR/memory_history_scaling/deserialize_allocs/50/new/estimates.json") deser allocs per \`store.get()\`. The \`serde_helpers\` module
+provides optimized paths; for maximum throughput on deep histories, consider
+storing pre-serialized bytes alongside parsed structs to avoid re-parsing on
+every read.
 
 ### Artifact accumulation clone cost
 
 The background event processor clones the full Task struct on each SSE event.
-Clone cost scales linearly at ~133ns/artifact. For tasks with 500+ accumulated
-artifacts, consider batching event processing or using the planned
+Clone cost grows with artifact count: \`task_clone_at_depth\` is
+$(extract_median "$CRITERION_DIR/advanced_artifact_accumulation/task_clone_at_depth/0/new/estimates.json") with no artifacts and $(extract_median "$CRITERION_DIR/advanced_artifact_accumulation/task_clone_at_depth/500/new/estimates.json") with 500. For tasks with 500+
+accumulated artifacts, consider batching event processing or using the planned
 copy-on-write artifact storage (tracked as a future optimization).
 
 ### Slow consumer timer calibration
 
-The `backpressure/timer_calibration` benchmarks measure actual
-`tokio::time::sleep()` durations on the CI runner. On shared runners,
-1ms sleep ≈ 2.09ms actual, 5ms sleep ≈ 6.14ms actual. Slow consumer
+The \`backpressure/timer_calibration\` benchmarks measure actual
+\`tokio::time::sleep()\` durations on the CI runner. On shared runners,
+1ms sleep ≈ $(extract_median "$CRITERION_DIR/backpressure_timer_calibration/sleep_1ms_actual/new/estimates.json") actual, 5ms sleep ≈ $(extract_median "$CRITERION_DIR/backpressure_timer_calibration/sleep_5ms_actual/new/estimates.json") actual. Slow consumer
 results should be interpreted against these calibrated durations, not
 the nominal sleep values.
 
+SECTION
+
+cat >> "$OUTPUT_FILE" <<'FOOTER'
 ### Data volume save() wide confidence intervals
 
 The `data_volume/save/after_prefill/10000` benchmark reports wide confidence
@@ -696,56 +713,54 @@ index crosses internal node-split thresholds during insert. The median
 B-tree data structure, not measurement noise. This is an acceptable tradeoff:
 the BTreeSet enables O(page\_size) pagination queries vs O(n) full scans.
 
+FOOTER
+
+cat >> "$OUTPUT_FILE" <<SECTION
 ### Dispatch routing: direct handler vs HTTP round-trip
 
-The `production/dispatch_routing/direct_handler_invoke` benchmark may report
-marginally higher latency than `full_http_roundtrip`. This is **not anomalous**
-— the HTTP path reuses a warm keep-alive connection that amortizes TCP setup
-cost, while direct handler invocation exercises the full dispatch path without
-connection pooling benefits. The ~7% difference validates that the HTTP layer
-adds near-zero overhead for repeat requests on warm connections.
+\`production/dispatch_routing/direct_handler_invoke\` calls the request handler
+directly and reports $(extract_median "$CRITERION_DIR/production_dispatch_routing/direct_handler_invoke/new/estimates.json"); \`full_http_roundtrip\` sends a message through
+a JSON-RPC server over a warm keep-alive connection and reports
+$(extract_median "$CRITERION_DIR/production_dispatch_routing/full_http_roundtrip/new/estimates.json"). The difference is the dispatch and transport overhead the
+direct call bypasses.
 
-### Subscribe fan-out O(1) scaling
+### Subscribe fan-out scaling
 
-The `advanced/subscribe_fanout` benchmark shows O(1) cost from 1→5 subscribers
-(~2.9ms both), with gradual increase at 10 subscribers (~3.6ms). The broadcast
-channel delivers to all subscribers in a single pass; the inflection at 10+
-subscribers reflects increased channel contention and memory pressure from
-concurrent readers.
+\`advanced/subscribe_fanout\` reports $(extract_median "$CRITERION_DIR/advanced_subscribe_fanout/concurrent_subscribers/1/new/estimates.json") with 1 subscriber, $(extract_median "$CRITERION_DIR/advanced_subscribe_fanout/concurrent_subscribers/5/new/estimates.json") with 5
+and $(extract_median "$CRITERION_DIR/advanced_subscribe_fanout/concurrent_subscribers/10/new/estimates.json") with 10.
 
-### Agent burst sub-linear scaling
+### Agent burst scaling
 
-The `production/agent_burst` benchmark shows per-agent cost decreasing as
-concurrency increases: 714µs/agent at 10, 390µs/agent at 50, 310µs/agent at
-100. This sub-linear scaling confirms the SDK handles high-fanout agent
-coordination without degradation — Tokio's work-stealing scheduler amortizes
-task scheduling overhead across the burst.
+\`production/agent_burst\` times the whole burst: $(extract_median "$CRITERION_DIR/production_agent_burst/agents/10/new/estimates.json") for 10 agents,
+$(extract_median "$CRITERION_DIR/production_agent_burst/agents/50/new/estimates.json") for 50 and $(extract_median "$CRITERION_DIR/production_agent_burst/agents/100/new/estimates.json") for 100 — per agent, $(derive_per_agent "$CRITERION_DIR/production_agent_burst/agents/10/new/estimates.json" 10),
+$(derive_per_agent "$CRITERION_DIR/production_agent_burst/agents/50/new/estimates.json" 50) and $(derive_per_agent "$CRITERION_DIR/production_agent_burst/agents/100/new/estimates.json" 100) respectively.
 
 ### Cold start vs steady state
 
-The `production/cold_start/first_request` benchmark (~328µs) appears faster
-than `steady_state` (~1.97ms). This is because `first_request` creates a
-fresh server per iteration (sample\_size=20), measuring server handler
-initialization + first TCP connect. The `steady_state` benchmark reuses an
-existing keep-alive connection, measuring the full HTTP round-trip with
-connection overhead already amortized. The two benchmarks measure different
-things — they are complementary, not comparable.
+\`production/cold_start/first_request\` ($(extract_median "$CRITERION_DIR/production_cold_start/first_request/new/estimates.json")) creates a fresh server per
+iteration (sample\\_size=20), measuring server handler initialization + first
+TCP connect. \`steady_state\` ($(extract_median "$CRITERION_DIR/production_cold_start/steady_state/new/estimates.json")) reuses an existing keep-alive
+connection, measuring the full HTTP round-trip with connection overhead already
+amortized. The two benchmarks measure different things — they are
+complementary, not comparable.
 
-### Tenant resolver negligible overhead
+### Tenant resolver overhead
 
-Tenant resolvers operate at 88–173ns per request, representing ~0.008% of a
-typical 1.6ms round-trip. Header extraction (128ns) is marginally slower than
-the miss path (88ns) due to value parsing; path extraction (173ns) is slowest
-due to URL path parsing overhead. All resolvers are effectively free at
-production scale.
+Per request, the tenant resolvers cost $(extract_median "$CRITERION_DIR/advanced_tenant_resolver/header_resolver/new/estimates.json") (header), $(extract_median "$CRITERION_DIR/advanced_tenant_resolver/header_resolver_miss/new/estimates.json") (header
+miss), $(extract_median "$CRITERION_DIR/advanced_tenant_resolver/path_resolver/new/estimates.json") (path), $(extract_median "$CRITERION_DIR/advanced_tenant_resolver/bearer_resolver/new/estimates.json") (bearer) and $(extract_median "$CRITERION_DIR/advanced_tenant_resolver/bearer_resolver_with_mapper/new/estimates.json") (bearer with mapper),
+against $(extract_median "$CRITERION_DIR/transport_jsonrpc_send/single_message/new/estimates.json") for a full JSON-RPC round trip
+(\`transport_jsonrpc_send/single_message\`).
 
-### Pagination context index 2× speedup
+### Pagination context index
 
-The `advanced/pagination_walk` filtered benchmarks show ~2× speedup over
-unfiltered walks (309µs vs 592µs at 1000 tasks). The BTreeSet context index
-eliminates half the scan work by only iterating tasks matching the
-`context_id` filter.
+At 1000 tasks, the \`advanced/pagination_walk\` filtered walk takes
+$(extract_median "$CRITERION_DIR/advanced_pagination_walk/filtered/1000_tasks_page_50/new/estimates.json") against $(extract_median "$CRITERION_DIR/advanced_pagination_walk/unfiltered/1000_tasks_page_50/new/estimates.json") unfiltered. The BTreeSet context index
+reduces the scan work by only iterating tasks matching the \`context_id\`
+filter.
 
+SECTION
+
+cat >> "$OUTPUT_FILE" <<'FOOTER'
 ---
 
 ## Methodology

@@ -30,9 +30,13 @@ Creating a release through the GitHub web UI produces a lightweight tag.
 
 The [release workflow](https://github.com/tomtom215/a2a-rust/blob/main/.github/workflows/release.yml) automatically:
 
-1. Validates the tag against crate versions, CHANGELOG.md, CITATION.cff, and SECURITY.md
+1. Validates the tag — annotated; on the release-preparation commit; nothing
+   left under `[Unreleased]`; breaking releases within STABILITY.md's cadence —
+   against crate versions, CHANGELOG.md, CITATION.cff, SECURITY.md and the
+   provenance manifest
 2. Runs the full CI suite and security audit
-3. Packages all crates with SLSA build provenance
+3. Packages all crates with SLSA build provenance, and checks each `.crate` was
+   built from the tagged commit in a clean tree
 4. Creates a GitHub release with notes extracted from CHANGELOG.md
 5. Publishes crates to crates.io in dependency order (behind a manually
    approved `crates-io` environment)
@@ -91,8 +95,8 @@ correction at the top of CHANGELOG.md's 0.13.0 section. Full detail in
   instead of parsing English out of a message.
 - **A conformance harness for `AgentExecutor`**, behind the `conformance`
   feature: thirteen checks an implementation can run against itself.
-- **Breaking:** eight items. `RequestContext`, `IdempotencyClaim` and
-  `KeyError` are `#[non_exhaustive]`; `EventQueueReader::read` yields a
+- **Breaking:** nine items. `RequestContext`, `IdempotencyClaim`, `KeyError`,
+  `RetentionPolicy` and `PurgeReport` are `#[non_exhaustive]`; `EventQueueReader::read` yields a
   `StreamEvent` carrying the log position; `FailureClass::ALL` is a slice
   rather than a fixed-size array; `PurgeReport::journal_orphans_deleted` is
   now `orphan_rows_deleted`; `build()` refuses a signed agent card it would

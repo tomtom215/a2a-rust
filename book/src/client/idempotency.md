@@ -2,7 +2,7 @@
 
 A send whose connection drops *after* the request bytes are on the wire is
 ambiguous: the task may exist, or it may not. The client will not retry it,
-and that refusal is correct — `message/send` creates server-side state, so a
+and that refusal is correct — `SendMessage` creates server-side state, so a
 blind re-send can start a second task.
 
 That leaves a caller with no good move. The only recovery is to list the tasks

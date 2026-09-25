@@ -63,7 +63,9 @@ a2a-protocol-server = "0.14"
 
 ## Feature Flags
 
-Features are defined on individual crates and passed through by the SDK umbrella:
+Features are defined on individual crates. The SDK umbrella forwards all of them
+except `proto`, `conformance` and `testing`; depend on those crates directly to
+enable them:
 
 | Feature | Crate(s) | Purpose |
 |---------|----------|---------|

@@ -26,7 +26,7 @@ This policy covers **every crate published from this repository**:
 * **`bindings/a2a-protocol-slimrpc`**, which is publishable and **is covered by
   this policy**, even though it is deliberately *outside* the root workspace —
   it is not in `Cargo.toml`'s `members` list and carries its own `Cargo.lock`
-  and its own `deny.toml`, because `agntcy-slim-rpc` brings 379 transitive
+  and its own `deny.toml`, because `agntcy-slim-rpc` brings 359 transitive
   dependencies into a tree the SDK crates must not inherit. "All crates in the
   workspace" therefore did not reach it, which is why this section now names
   it. Two things a reporter should know about it: it has **never been

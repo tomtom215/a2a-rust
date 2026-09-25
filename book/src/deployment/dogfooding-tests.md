@@ -90,30 +90,31 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 | 57 | grpc-streaming | gRPC | `SendStreamingMessage` over gRPC transport (feature-gated) |
 | 58 | grpc-get-task | gRPC | `GetTask` after `SendMessage` over gRPC (feature-gated) |
 
-> **Note:** Tests 51-52 require the `websocket` feature flag: `cargo run -p agent-team --features websocket`
-> Tests 56-58 require the `grpc` feature flag: `cargo run -p agent-team --features grpc`
+> **Note:** Tests 51-52 need the `websocket` feature and tests 56-58 the `grpc` feature — both
+> on by default. With `--no-default-features`, add `--features websocket` / `--features grpc`.
 
-## Tests 61-79: E2E Coverage Gaps (`coverage_gaps.rs`)
+## Tests 61-79: E2E Coverage Gaps (`coverage_gaps/`)
 
 | # | Test | Category | What it exercises |
 |---|------|----------|-------------------|
 | 61 | batch-single-element | Batch JSON-RPC | Single-element batch `[{...}]` with `SendMessage` |
 | 62 | batch-multi-request | Batch JSON-RPC | Multi-request batch: `SendMessage` + `GetTask` |
-| 63 | batch-empty | Batch JSON-RPC | Empty batch `[]` returns parse error |
+| 63 | batch-empty | Batch JSON-RPC | Empty batch `[]` is answered Invalid Request (-32600) |
 | 64 | batch-mixed | Batch JSON-RPC | Mixed valid/invalid requests in batch |
 | 65 | batch-streaming-rejected | Batch JSON-RPC | `SendStreamingMessage` in batch returns error |
 | 66 | batch-subscribe-rejected | Batch JSON-RPC | `SubscribeToTask` in batch returns error |
 | 67 | real-auth-rejection | Auth | Interceptor rejects unauthenticated requests |
 | 68 | extended-agent-card | Cards | `GetExtendedAgentCard` via JSON-RPC |
+| 68b | extended-card-requires-auth | Cards | Extended card refused without an authenticating interceptor (spec §13.3) |
 | 69 | dynamic-agent-card | Cards | `DynamicAgentCardHandler` runtime card generation |
 | 70 | agent-card-caching | Caching | ETag, `If-None-Match`, 304 Not Modified |
-| 71 | backpressure-lagged | Streaming | Slow reader skips lagged events (capacity=2) |
+| 71 | backpressure-lagged | Streaming | Slow reader receives a `stream_lagged` error, not a silent gap (capacity=2) |
 | 72 | push-global-limit | Push config | Global push config limit enforcement (DoS prevention) |
 | 73 | webhook-url-scheme | Push config | Rejects non-HTTP webhook URL schemes (ftp://, file://) |
 | 74 | combined-filter | ListTasks | Combined status + context_id filtering |
 | 75 | latency-metrics | Metrics | Verifies `on_request()` callback fires |
 | 76 | timeout-retryable | Retry | Timeout errors are classified as retryable |
-| 77 | concurrent-cancels | Stress | 10 parallel cancel requests on same task |
+| 77 | concurrent-cancels | Stress | 10 parallel cancels of non-existent tasks |
 | 78 | stale-page-token | Pagination | Graceful handling of invalid page tokens |
 | 79 | agent-card-signing | Signing | ES256 key generation, JWS sign/verify, tamper detection (`signing` feature) |
 
@@ -208,7 +209,7 @@ In addition to the 102 agent-team E2E tests (87 with `--no-default-features`), t
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|
 | **TLS/mTLS** | `crates/a2a-protocol-client/tests/tls_integration_tests.rs` | 7 | Client cert validation, SNI hostname verification, unknown CA rejection, mutual TLS |
-| **WebSocket server** | `crates/a2a-protocol-server/tests/websocket_tests.rs` | 7 | Send/stream, error handling, ping/pong, connection reuse, close frames |
+| **WebSocket server** | `crates/a2a-protocol-server/tests/websocket_tests.rs` | 9 | Send/stream, error handling, ping/pong, connection reuse, close frames |
 | **Memory & load stress** | `crates/a2a-protocol-server/tests/stress_tests.rs` | 5 | 200 concurrent requests, sustained load (500 requests/10 waves), eviction under load, multi-tenant isolation (10×50), rapid connect/disconnect |
 
 ## Features NOT Covered by E2E Tests

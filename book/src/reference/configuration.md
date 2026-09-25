@@ -20,6 +20,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `with_max_concurrent_streams` | `usize` | 1,024 | Limit concurrent SSE connections (pass `usize::MAX` to disable) |
 | `with_metrics` | `impl Metrics` | `NoopMetrics` | Metrics observer for handler activity |
 | `with_handler_limits` | `HandlerLimits` | See below | Configurable validation limits |
+| `allow_undeclared_input_modes()` | — | Off | Accept message parts whose `mediaType` the card's input modes do not declare; by default, when the card declares any, such a part is refused with `ContentTypeNotSupportedError` |
 
 ### HandlerLimits
 
@@ -31,7 +32,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_token_age` | `Duration` | 1 hour | Stale token eviction age |
 | `push_delivery_timeout` | `Duration` | 5s | Per-webhook delivery timeout |
 | `push_delivery_budget` | `Duration` | 30s | Total push-delivery time per event, across all configs |
-| `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished |
+| `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn's executor to return |
 | `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
 | `max_push_configs_per_task` | `usize` | 100 | Maximum push configs per task (uniform across store backends) |
@@ -110,11 +111,28 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `trusted_proxy_hops` | `usize` | 0 | How many `X-Forwarded-For` hops to trust (0 = ignore XFF entirely) |
 | `max_buckets` | `usize` | 10,000 | Hard bound on tracked caller buckets (fail-closed when full) |
 
+### ServeConfig
+
+Limits for a `Server` (`Server::bind(addr).await?.with_config(config)`). The
+three shutdown phases run in order — `completion_grace`, then `task_grace`, then
+`drain_timeout` — and the gRPC and WebSocket dispatchers' `serve_with_shutdown`
+take the same three through their own `with_completion_grace`,
+`with_task_grace` and `with_drain_timeout`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_connections` | `Option<usize>` | None | Ceiling on connections served at once; `None` is unbounded |
+| `completion_grace` | `Duration` | 5s | On shutdown, how long in-flight tasks get to finish on their own before they are cancelled (`DEFAULT_COMPLETION_GRACE`) |
+| `task_grace` | `Duration` | 10s | How long cancelled tasks get to cancel what they delegated and write a terminal event (`DEFAULT_TASK_GRACE`) |
+| `drain_timeout` | `Duration` | 15s | How long connections get to finish before they are reported abandoned (`DEFAULT_DRAIN_TIMEOUT`) |
+| `header_read_timeout` | `Option<Duration>` | 30s | How long a peer may take to send complete request headers; `None` disables |
+| `idle_timeout` | `Option<Duration>` | 75s | How long a connection may carry no traffic before it is closed; `None` disables |
+
 ### Internal Limits
 
 | Limit | Value | Description |
 |-------|-------|-------------|
-| Event queue type | `broadcast` | Fan-out to multiple subscribers; slow readers skip missed events |
+| Event queue type | `broadcast` | Fan-out to multiple subscribers; a reader that falls behind the ring receives a `streamLagged` error and its stream ends (no silent gap) |
 | Rate limiter cleanup interval | 256 checks | Stale buckets (from departed callers) evicted every 256 `check()` calls |
 | Rate limiter window CAS | Lock-free | Window transitions use `compare_exchange` to avoid TOCTOU races |
 | Credential store poisoning | Fail-fast | `InMemoryCredentialsStore` panics on poisoned locks rather than returning `None` |
@@ -125,7 +143,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `with_protocol_binding` | `&str` | Auto-detect | Transport: `"JSONRPC"`, `"REST"`, or `"GRPC"` |
+| `with_protocol_binding` | `impl Into<String>` | `"JSONRPC"` (`new`); the card's interface chosen by `preferred_bindings` (`from_card`) | Transport: `"JSONRPC"`, `"HTTP+JSON"` (alias `"REST"`), or `"GRPC"` — the last needs `build_grpc()`; `build()` refuses it |
 | `with_timeout` | `Duration` | 30s | Per-request timeout |
 | `with_connection_timeout` | `Duration` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout` | `Duration` | 30s | Establishing a stream: until the response headers (gRPC: until the call is accepted) |
@@ -170,7 +188,7 @@ and the `with_*` setters.
 | Limit | Value | Description |
 |-------|-------|-------------|
 | Event size | 16 MiB (`ClientBuilder::with_max_event_size`) | Largest single stream event; larger ones are refused with an error and skipped, and a line that outgrows it is refused as soon as it does (aligned with server) |
-| Connect timeout | 30s (default) | Initial connection timeout |
+| Stream connect timeout | 30s (`with_stream_connect_timeout`) | Until the response headers; the first event then has its own 5-minute bound |
 
 ## HTTP Caching (Agent Card)
 
@@ -194,7 +212,7 @@ and the `with_*` setters.
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` (plaintext listener) |
 | `grpc-tls` | Off | TLS on the gRPC listener itself: `GrpcDispatcher::with_tls(ServerTlsConfig)` with a server identity and, optionally, a client CA for mutual TLS; implies `grpc`; the TLS types are re-exported from `dispatch::grpc` |
-| `otel` | Off | OpenTelemetry metrics via `opentelemetry-otlp` |
+| `otel` | Off | OpenTelemetry metrics and spans via `opentelemetry-otlp` / `tracing-opentelemetry` (implies `tracing`) |
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
@@ -203,7 +221,7 @@ and the `with_*` setters.
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `signing` | Off | Agent card signing verification |
+| `signing` | Off | Forwards `a2a-protocol-types/signing`; the client itself neither signs nor verifies anything |
 | `tracing` | **On** | Structured logging via `tracing` crate; `default-features = false` compiles it out |
 | `tls-rustls` | **On** | HTTPS via rustls (no OpenSSL dependency); `default-features = false` for a plaintext-only build |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |

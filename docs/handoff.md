@@ -795,6 +795,26 @@ precondition because a slow runner sent too few requests in its fixed
 window; the load loop now has a request floor. Neither fix has had a full
 preflight; see the commit for what ran.
 
+**Documentation audit, 2026-09-25.** Six read-only agents audited every
+book page, the root, crate and binding READMEs, and `book/static`, each
+finding with source evidence; each then applied its own verified fixes
+within its pages, and the root README was reviewed by hand. It found one
+code defect, fixed with a test that fails without it: the SLIMRPC binding's
+server still answered a refused credential `INVALID_ARGUMENT` (N36's
+residue). The largest gaps were an `upgrading.md` with no 0.13 → 0.14
+section, a push-delivery label table that described `timeout_truncated` as
+`skipped`, pages saying the executor timeout and `tracing` were off by
+default, lag described as a silent gap (the stream ends), and benchmark
+prose contradicting its own tables (fixed in `generate_book_page.sh`).
+Verified after: `a2a-book-tests` 216 passed (every book and README block),
+agent-team 102/102, workspace clippy, rustdoc `-D warnings`, 22 script
+gates, the book built with mdBook 0.4.40 and `seo_postprocess.py --check`
+clean on 65 pages, and the changed pages rendered and read.
+
+**Open decision: the docs site deploys from `main`,** and the book tells
+readers to install 0.14, which is not on crates.io until the tag. Merge and
+release on the same day, or move `docs.yml` to deploy on release tags.
+
 **What the next session should do first:** check CI on the branch head,
 then the `swarm_scale`
 comparison for N21 and WS3.

@@ -23,14 +23,18 @@ curl -X POST http://127.0.0.1:3000 \
 ```json
 {"jsonrpc":"2.0","id":1,"result":{"task":{
   "artifacts":[{"artifactId":"greeting","parts":[{"text":"Hello, Tom!"}]}],
-  "status":{"state":"TASK_STATE_COMPLETED"}}}}
+  "status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-...Z"}, ...}}}
 ```
+
+(Abridged: the task also carries its `id` and `contextId`, among other fields.)
 
 The `A2A-Version: 1.0` header is required — the server refuses requests that
 omit it with `VERSION_NOT_SUPPORTED`, rather than guessing which spec revision
 you meant.
 
-That is the entire agent, from `examples/hello-agent/src/main.rs`:
+That is the agent, from `examples/hello-agent/src/main.rs` — shown here without
+the agent card it also publishes; [Hello Agent](../examples/hello-agent.md) has
+the whole file:
 
 ```rust,no_run
 use a2a_protocol_sdk::prelude::*;
@@ -79,59 +83,36 @@ eleven methods over each, and prints the resulting coverage matrix.
 cargo run -p echo-agent
 ```
 
-You'll see output like (ports are randomly assigned):
+What it prints, in order (ports are assigned by the OS, so they differ per run):
 
-```text
-=== A2A Echo Agent Example ===
+1. **The endpoints** — `=== A2A Echo Agent — full-surface demo ===`, then one
+   line each for JSON-RPC, HTTP+JSON, gRPC and WebSocket, and the local
+   webhook sink that push configs point at.
+2. **Discovery, once** — `resolve_agent_card()` fetches
+   `/.well-known/agent-card.json` and prints the agent's name, version,
+   interface count and its streaming, push and extended-card capabilities.
+   One card describes every binding.
+3. **A sweep per binding** — under `--- JSONRPC ---`, `--- HTTP+JSON ---`,
+   `--- GRPC ---` and `--- WEBSOCKET ---`, every A2A method is driven over
+   that binding: send and stream, get, list, cancel and subscribe, the four
+   push-config methods, and the extended card.
+4. **Counter-tests** — `--- counter-tests (calls that must be refused) ---`:
+   calls a second agent, advertising no optional capabilities, must refuse
+   as the specification requires.
+5. **The matrix** — `=== Coverage: every A2A method over every binding ===`,
+   one row per method and one column per binding, each cell `ok`, `n/a`
+   (with the reason printed beneath the grid) or `MISSING`.
 
-JSON-RPC server listening on http://127.0.0.1:<port>
-REST server listening on http://127.0.0.1:<port>
-
---- Demo 1: Synchronous SendMessage (JSON-RPC) ---
-  Task ID:    550e8400-e29b-41d4-a716-446655440000
-  Status:     Completed
-  Artifact:   echo-artifact
-  Content:    Echo: Hello from JSON-RPC client!
-
---- Demo 2: Streaming SendMessage (JSON-RPC) ---
-  Status update: Working
-  Artifact update: echo-artifact
-  Content:    Echo: Hello from streaming client!
-  Status update: Completed
-
---- Demo 3: Synchronous SendMessage (REST) ---
-  Task ID:    ...
-  Status:     Completed
-  Content:    Echo: Hello from REST client!
-
---- Demo 4: Streaming SendMessage (REST) ---
-  Status update: Working
-  Content:    Echo: Hello from REST streaming!
-  Status update: Completed
-
---- Demo 5: Agent Card Discovery ---
-  Agent:      Echo Agent
-  Version:    1.0.0
-  Skills:     ["Echo"]
-  Streaming:  true
-  Interfaces: 2
-
---- Demo 6: GetTask ---
-  Fetched task: ... (Completed)
-
-=== All demos completed successfully! ===
-```
+The exit code is the verdict: `0` no cell is missing and every counter-test was
+refused, `1` a call or counter-test failed, `2` a matrix cell never ran.
 
 ## What Just Happened?
 
-The example exercised all major protocol operations:
-
-1. **Synchronous send** (JSON-RPC) — Client sends a message, waits for the complete task
-2. **Streaming send** (JSON-RPC) — Client receives real-time SSE events as the agent works
-3. **Synchronous send** (REST) — Same operation over the REST transport
-4. **Streaming send** (REST) — SSE streaming over REST
-5. **Agent card discovery** — Fetches `/.well-known/agent-card.json` to discover the agent's capabilities
-6. **GetTask** — Retrieves a previously completed task by ID
+The matrix is computed, not asserted: each call records itself, and the
+rows come from `a2a_protocol_types::method::Method::ALL` — the
+specification's eleven methods, not a list this example chose. A gap is an
+exit code, so the example cannot quietly shrink and still print a
+full-looking report.
 
 ## The Code in Brief
 

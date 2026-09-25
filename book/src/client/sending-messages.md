@@ -125,6 +125,12 @@ let follow_up = client
 | Client-provided `taskId` doesn't exist | `TaskNotFound` |
 | `taskId`/`contextId` mismatch | `InvalidParams` |
 | Empty message parts | `InvalidParams` |
+| A part's `mediaType` not among the card's declared input modes | `ContentTypeNotSupported` |
+
+The last check applies only when the agent's card declares input modes
+(`defaultInputModes` or a skill's `inputModes`), and only to parts that carry a
+`mediaType`; the multi-part example below needs an agent whose card admits
+`image/png` or declares no input modes.
 
 ## Multi-Part Messages
 

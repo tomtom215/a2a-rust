@@ -23,7 +23,7 @@ This gives you sensible defaults:
 - No push sender (webhooks disabled)
 - No interceptors
 - No agent card
-- No executor timeout
+- 1-hour executor timeout (`without_executor_timeout()` removes it)
 
 ### Full Configuration
 
@@ -84,7 +84,8 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_push_config_store(impl PushConfigStore)` | `InMemoryPushConfigStore` | Custom push config storage |
 | `with_push_sender(impl PushSender)` | None | Webhook delivery implementation |
 | `with_interceptor(impl ServerInterceptor)` | Empty chain | Add a server interceptor |
-| `with_executor_timeout(Duration)` | None | Timeout for executor completion |
+| `with_executor_timeout(Duration)` | 1 hour | Timeout for executor completion |
+| `without_executor_timeout()` | — | Remove the 1-hour ceiling (an executor that never returns then pins its task, queue and cancellation token) |
 | `with_event_queue_capacity(usize)` | 256 | Bounded channel size per stream |
 | `with_max_event_size(usize)` | 16 MiB | Maximum serialized event size |
 | `with_max_concurrent_streams(usize)` | 1,024 | Limit concurrent SSE streams (pass `usize::MAX` to disable) |
@@ -93,6 +94,10 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_metrics(impl Metrics)` | `NoopMetrics` | Metrics observer for handler activity |
 | `with_tenant_resolver(impl TenantResolver)` | None | Multi-tenant tenant extraction |
 | `with_tenant_config(PerTenantConfig)` | None | Per-tenant concurrency, executor timeout and queue capacity. `rate_limit_rps` additionally needs the same config on `RateLimitInterceptor::with_tenant_config` |
+| `require_resolved_tenant()` | off | Refuse a request the configured tenant resolver cannot place, instead of using the shared default partition |
+| `with_inbound_trace_policy(InboundTracePolicy)` | `Continue` | What to do with a `traceparent` sent by a not-yet-authenticated peer (`Continue`, `Restart` or `Drop`) |
+| `allow_unauthenticated_extended_card()` | off | Serve `GetExtendedAgentCard` even when no authenticating interceptor is registered (spec §13.3 requires one) |
+| `allow_undeclared_input_modes()` | off (enforced) | When the card declares `defaultInputModes` or any skill's `inputModes`, `SendMessage` refuses a part whose explicit `mediaType` is outside them with `ContentTypeNotSupportedError` (-32005, HTTP 400). Parts without a `mediaType`, and cards declaring no modes, are not checked. This turns the check off |
 
 ### HandlerLimits
 
@@ -112,6 +117,10 @@ The `HandlerLimits` struct configures per-handler bounds:
 | `max_push_configs_per_task` | `usize` | 100 | Maximum push configs per task (uniform across store backends) |
 | `max_parts_per_artifact` | `usize` | 10,000 | Maximum parts a single artifact may accumulate |
 | `max_total_push_configs` | `usize` | 100,000 | Global push-config ceiling across all tasks |
+| `subscribe_reattach_interval` | `Duration` | 250 ms | How often a `SubscribeToTask` stream re-checks whether its task has finished once the current turn's queue has closed |
+| `subscribe_max_idle` | `Duration` | 5 minutes | How long a `SubscribeToTask` stream waits for a parked task to make progress before ending; the client resubscribes (§3.5.2) |
+| `subscribe_replay_limit` | `usize` | 1,000 | Maximum logged events replayed to a client resuming with `Last-Event-ID` |
+| `subscribe_replay_catchup` | `Duration` | 2 seconds | How long a resuming `SubscribeToTask` waits for the event log to catch up with what was already broadcast; zero disables the wait |
 
 ### Build-Time Validation
 
@@ -121,6 +130,7 @@ The `HandlerLimits` struct configures per-handler bounds:
 - `max_id_length` must be greater than zero
 - `max_metadata_size` must be greater than zero
 - `push_delivery_timeout` must be non-zero
+- A signed agent card must already declare every extension the handler advertises (adding one would invalidate the signature)
 
 ## Calling the Handler Directly
 
@@ -141,7 +151,7 @@ middleware, and server lifecycle:
 | `on_get_task(params, headers)` | `GetTask` |
 | `on_list_tasks(params, headers)` | `ListTasks` |
 | `on_cancel_task(params, headers)` | `CancelTask` |
-| `on_resubscribe(params, headers)` | `TaskSubscription` |
+| `on_resubscribe(params, headers)` | `SubscribeToTask` |
 | `on_get_extended_agent_card(params, headers)` | `GetExtendedAgentCard` |
 | `on_set_push_config(params, headers)` | `CreateTaskPushNotificationConfig` |
 | `on_get_push_config(params, headers)` | `GetTaskPushNotificationConfig` |

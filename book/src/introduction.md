@@ -99,5 +99,5 @@ a2a-rust is organized as a Cargo workspace with four crates:
 
 - **[Installation](./getting-started/installation.md)** — Add a2a-rust to your project
 - **[Quick Start](./getting-started/quick-start.md)** — See the protocol in action in 5 minutes
-- **[Your First Agent](./getting-started/first-agent.md)** — Build an echo agent from scratch
+- **[Your First Agent](./getting-started/first-agent.md)** — Build a calculator agent from scratch
 - **[Protocol Overview](./concepts/protocol-overview.md)** — Understand the A2A protocol model

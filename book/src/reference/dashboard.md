@@ -32,8 +32,9 @@ Benchmark Dashboard &rarr;
 
 All benchmarks use [Criterion.rs](https://github.com/bheisler/criterion.rs)
 with **median ± MAD** (Median Absolute Deviation) as the robust central
-tendency measure. Each benchmark runs 100 samples with warm-up iterations to
-avoid cold-start artifacts.
+tendency measure. Each benchmark runs Criterion's default of 100 samples unless
+its group sets a smaller `sample_size` (10–30 for the slow end-to-end groups),
+with warm-up iterations to avoid cold-start artifacts.
 
 - **Environment**: CI runners (`ubuntu-latest`) — use for relative comparisons
   and regression detection, not absolute performance guarantees

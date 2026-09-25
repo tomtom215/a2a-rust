@@ -39,6 +39,13 @@ let handler = RequestHandlerBuilder::new(my_executor)
 `ApiKeyAuthInterceptor::new([...])` reads `x-api-key` by default; change the
 header with `.with_header("X-Company-Key")`.
 
+`new` authenticates without naming the caller, so every valid caller shares
+the rate limiter's `"anonymous"` bucket. To give each credential an identity
+(`CallContext::caller_identity`), build the interceptor with
+`BearerTokenAuthInterceptor::with_labelled_tokens([(token, "caller-a"), …])` or
+`ApiKeyAuthInterceptor::with_labelled_keys(…)`; the label, not the secret, is
+what reaches rate limiting, logs and metrics.
+
 ### JWT (HS256 / RS256 / ES256)
 
 Enable the `auth-jwt` feature. `JwtAuthInterceptor` verifies the token's
@@ -46,8 +53,12 @@ signature and its `exp`/`nbf`/`iss`/`aud` claims. Keys come from a static
 `Jwks`, a shared HS256 secret, or a remote JWKS endpoint.
 
 ```toml
-a2a-protocol-server = { version = "0.14", features = ["auth-jwt"] }
+a2a-protocol-server = { version = "0.14", features = ["auth-jwt", "tls-rustls"] }
 ```
+
+`tls-rustls` is needed to fetch JWKS or OIDC discovery documents over
+`https://`; without it the fetch is plaintext-only. Static keys and HS256 need
+only `auth-jwt`.
 
 **Validate tokens from an OIDC issuer** (discovers the issuer's JWKS, caches it,
 and refetches on key rotation):
@@ -113,6 +124,9 @@ A refused credential answers with each binding's own status (since 0.14.0;
 | gRPC | `UNAUTHENTICATED` | `PERMISSION_DENIED` |
 | WebSocket | body `-32600` only (see below) | body `-32600` only |
 
+JSON-RPC batches answer `200`, since one response answers many calls; each
+refused entry's body is `-32600`.
+
 The built-in interceptors send `Bearer realm="a2a"` (bearer and JWT) or
 `ApiKey header="x-api-key"` as the challenge, and never say why a credential
 was refused. A client that refreshes on `401` — this SDK's
@@ -125,7 +139,7 @@ WebSocket runs interceptors per message after the connection is upgraded, so
 there is no HTTP status to send; authenticate at your gateway or reverse
 proxy if WebSocket clients need a `401`.
 
-Until 0.13 every refusal answered `400` / `INVALID_ARGUMENT`; see
+Through 0.13 every refusal answered `400` / `INVALID_ARGUMENT`; see
 **Behaviour Changes** in the changelog.
 
 ## Client: acquiring and attaching tokens
@@ -148,7 +162,10 @@ let client = ClientBuilder::new("https://agent.example.com")
 `BearerAuthInterceptor` asks its provider for a token before **every** request,
 so a provider that refreshes keeps a long-lived client authenticated across
 token rotations. When the agent answers `401` (surfaced as
-`ClientError::UnexpectedStatus` over JSON-RPC and REST), the interceptor calls
+`ClientError::UnexpectedStatus { status: 401 }` over JSON-RPC, REST and gRPC,
+and for a WebSocket handshake refused with `401`; a refusal inside an open
+WebSocket connection is a `-32600` body and does not trigger this), the
+interceptor calls
 `TokenProvider::invalidate` with the token it sent. The call that got the `401`
 still fails, but the next one fetches a new token instead of resending the
 refused one until it expires. A custom `TokenProvider` gets this only if it

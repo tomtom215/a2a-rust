@@ -1,6 +1,7 @@
 # Hello Agent
 
-The smallest complete A2A agent: 37 lines, one dependency, no feature flags.
+The smallest complete A2A agent: 28 lines of code above its tests (blank and
+comment lines excluded), one dependency, no feature flags.
 
 ```bash
 cargo run -p hello-agent
@@ -64,7 +65,7 @@ curl -X POST http://127.0.0.1:3000 \
 {"jsonrpc":"2.0","id":1,"result":{"task":{
   "artifacts":[{"artifactId":"greeting","parts":[{"text":"Hello, Tom!"}]}],
   "contextId":"6cac14dc-...","id":"82c82725-...",
-  "status":{"state":"TASK_STATE_COMPLETED"}}}}
+  "status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-...Z"}, ...}}}
 ```
 
 `A2A-Version: 1.0` is required. Without it the server answers
@@ -115,7 +116,8 @@ Four tests live under `#[cfg(test)]` in the same file. Each boots the agent on
 an ephemeral port and drives it through a real `A2aClient`:
 
 - `greets_the_caller_by_the_text_they_sent` — the positive control. Without it,
-  an agent hardcoded to emit `"Hello, world!"` would pass the other two.
+  an agent hardcoded to emit `"Hello, world!"` would pass
+  `greets_world_when_there_is_no_text`.
 - `greets_world_when_there_is_no_text` — a message of only file parts still
   gets a greeting rather than an error.
 - `finds_text_that_follows_a_file_part` — a leading non-text part must not hide

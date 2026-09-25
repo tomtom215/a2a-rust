@@ -97,16 +97,23 @@ matching, and 7 branch-only specifications, all triaged.
 
 ## Why it is not in the workspace
 
-`agntcy-slim-rpc` brings **379 transitive dependencies**, including `aws-lc-sys`
+`agntcy-slim-rpc` brings **359 transitive dependencies**, including `aws-lc-sys`
 — a native C crypto build. For comparison, in this repository:
 
 | Crate | Unique transitive deps |
 |---|---|
-| `a2a-protocol-types` | 12 |
-| `a2a-protocol-server` (default) | 53 |
-| `a2a-protocol-sdk` (default) | 67 |
-| `a2a-protocol-server` (all features) | 191 |
-| **`agntcy-slim-rpc` alone** | **379** |
+| `a2a-protocol-types` | 11 |
+| `a2a-protocol-server` (default) | 55 |
+| `a2a-protocol-sdk` (default) | 69 |
+| `a2a-protocol-server` (all features) | 206 |
+| **`agntcy-slim-rpc` alone** | **359** |
+
+Measured 2026-09-25 with `cargo tree -p <crate> [--all-features] -e normal
+--prefix none --offline`, counting distinct `name version` pairs and excluding
+the crate itself — normal dependencies only, no build or dev dependencies. The
+workspace rows are resolved against the workspace `Cargo.lock`;
+`agntcy-slim-rpc` (2.3.0) against this crate's own. The default rows include
+`tracing`, which the client, server and SDK enable by default.
 
 So this crate sits outside the workspace with its own `Cargo.lock`. None of that
 graph reaches the lockfile, `deny.toml` allow-list, or audit surface of the four
@@ -118,7 +125,7 @@ way.
 | Extension point | Used by |
 |---|---|
 | `a2a_protocol_client::transport::Transport` | `SlimRpcTransport` |
-| `A2aClientBuilder::with_custom_transport` | injecting it, no fork needed |
+| `a2a_protocol_client::ClientBuilder::with_custom_transport` | injecting it, no fork needed |
 | `a2a_protocol_server::RequestHandler` | `SlimRpcServer` drives the same handler the HTTP bindings drive |
 | `AgentInterface::protocol_binding` | advertising the binding on the agent card |
 
@@ -304,7 +311,7 @@ consumer one `ClientError::Timeout` naming the setting (`:101`), which
 waits behind the buffered events and is followed by the end of the stream.
 What a stalled consumer can hold is therefore 64 events in the bridge channel,
 64 in the `EventStream`'s own re-framing hop
-(`crates/a2a-protocol-client/src/streaming/event_stream.rs:52`), one in
+(`crates/a2a-protocol-client/src/streaming/event_stream.rs:59`), one in
 flight between them, and whatever the agent sent inside the window — not
 everything it sends until the RPC deadline. That deadline — `with_timeout`,
 otherwise `MAX_TIMEOUT` = 36 000 s (`agntcy-slim-rpc` `lib.rs:208`) — still
@@ -346,7 +353,7 @@ after the window because nothing else was ever going to.
 
 ### (b) A server streaming to a peer that stops acking
 
-**Mechanism.** `event_stream` (`src/server/methods/mod.rs:402`) pulls domain
+**Mechanism.** `event_stream` (`src/server/methods/mod.rs:407`) pulls domain
 events from the handler's queue as `agntcy-slim-rpc`'s `send_response_stream`
 (`rpc_session.rs:219`) asks for them. That function publishes each frame with
 `publish().await` and does not wait for its acknowledgement: it keeps one
@@ -365,8 +372,8 @@ frames of channel depth, 512 retained frames, and per-frame timer state that
 lives at most `interval × retries` = 10 s. If the datapath stops draining — a
 stalled node link — `publish().await` blocks, `event_stream` stops pulling, the
 handler's broadcast queue overruns at `DEFAULT_QUEUE_CAPACITY` = 256
-(`crates/a2a-protocol-server/src/streaming/event_queue/mod.rs:45`), and the
-reader is handed a lag error (`in_memory.rs:424`) that `event_stream` turns into
+(`crates/a2a-protocol-server/src/streaming/event_queue/mod.rs:47`), and the
+reader is handed a lag error (`in_memory.rs:643`) that `event_stream` turns into
 an `InternalError` ending the stream. If the datapath drains but the peer never
 acks — it has gone away — each frame's timer expires after ten retries;
 `on_timer_failure` → `on_failure` (`session_sender.rs:485`, `:454`) clears the
@@ -531,13 +538,14 @@ cannot rot while the tests stay green.
 ## Tests
 
 ```
-cargo test -- --test-threads=1                      # 72 tests, plus the doc tests
-SPIRE_BIN_DIR=... cargo test -- --ignored           # + 9 against real SPIRE
+cargo test -- --test-threads=1                      # unit, integration and doc tests
+SPIRE_BIN_DIR=... cargo test -- --ignored           # + the SPIRE-gated tests
 ```
 
-81 tests across ten topologies — 39 unit, 33 integration, 9 needing SPIRE,
-counted from the 2026-09-10 run. None are mocked, and each topology exists
-because it can fail in a way the ones above it cannot.
+Unit tests in `src/`, and integration tests across ten topologies; nine
+integration tests — three in each SPIFFE suite — are `#[ignore]`d because
+they need SPIRE. None are mocked, and each topology exists because it can
+fail in a way the ones above it cannot.
 
 | Suite | Topology | What only this can catch |
 |---|---|---|
@@ -565,7 +573,7 @@ missing, so it can never quietly report coverage it does not have.
 `spiffe_rotation.rs` is slow on purpose — it waits for real wall-clock expiry,
 which is the only way to test what happens after it.
 
-Three of these found real bugs the tier above could not have:
+Four of these found real bugs the tier above could not have:
 
 `remote_node.rs` found that a client never announced its own name to the node,
 so nothing could route an agent's reply back and every call failed its session

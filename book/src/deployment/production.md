@@ -54,7 +54,7 @@ The REST dispatcher automatically rejects:
 
 | Limit | Value | Transport |
 |-------|-------|-----------|
-| Request body | 4 MiB | REST |
+| Request body | 4 MiB | JSON-RPC and REST |
 | Query string | 4 KiB | REST |
 | Event size | 16 MiB (configurable) | All SSE transports |
 
@@ -62,9 +62,11 @@ The REST dispatcher automatically rejects:
 
 ### Executor Timeout
 
-Prevent hung tasks from consuming resources forever. There is deliberately no
-default (a fixed value would silently fail legitimately long-running agent
-tasks) — set one matched to your workload:
+Prevent hung tasks from consuming resources forever. The default ceiling is
+one hour (`DEFAULT_EXECUTOR_TIMEOUT`): an executor that never returns would
+otherwise pin its task, queue and cancellation token for the life of the
+process. Set one matched to your workload, or call `without_executor_timeout()`
+if your executors are genuinely unbounded:
 
 ```rust
 # use a2a_protocol_sdk::prelude::*;
@@ -132,9 +134,10 @@ running when the process exits. `Server::serve_with_shutdown` does it in the
 order that works:
 
 1. stop accepting;
-2. cancel every in-flight task and wait up to `task_grace` (default 10 s) for
-   the executors to act on it — cancel what they delegated, return — after
-   which the executor's `cancel` hook writes the terminal `Canceled` for any
+2. let in-flight tasks finish on their own for up to `completion_grace`
+   (default 5 s), then cancel the rest and wait up to `task_grace` (default
+   10 s) for the executors to act on it — cancel what they delegated,
+   return — after which the executor's `cancel` hook writes the terminal `Canceled` for any
    that did not write one, so every open stream ends with a terminal event;
 3. drain connections, for up to `drain_timeout` (default 15 s).
 
@@ -148,6 +151,7 @@ use a2a_protocol_server::RequestHandler;
 async fn run(handler: Arc<RequestHandler>) -> std::io::Result<()> {
     let server = Server::bind("0.0.0.0:3000").await?.with_config(
         ServeConfig::new()
+            .with_completion_grace(Duration::from_secs(5))
             .with_task_grace(Duration::from_secs(10))
             .with_drain_timeout(Duration::from_secs(15)),
     );
@@ -238,8 +242,11 @@ RequestHandlerBuilder::new(executor)
 # }
 ```
 
-For advanced rate limiting (sliding windows, distributed counters), use a
-reverse proxy or implement a custom `ServerInterceptor`.
+For a limit shared across replicas, use `with_shared_counter` with
+`PostgresRateLimitCounter` or your own `RateLimitCounter` — see
+[Running More Than One Replica](./horizontal-scaling.md#rate-limiting-needs-a-shared-counter).
+For sliding windows, use a reverse proxy or implement a custom
+`ServerInterceptor`.
 
 ### Client Retry & Reuse
 
@@ -327,7 +334,7 @@ The `InMemoryTaskStore` uses a pre-allocated `HashMap` with secondary indexes fo
 
 - **O(1) amortized save/get/delete** — constant-time operations regardless of store size
 - **No resize-induced latency spikes** — pre-allocation to the configured `max_capacity` eliminates the periodic full-rehash events that cause unpredictable 5-7× latency cliffs when the table outgrows its capacity
-- **O(log n + page\_size) list queries** — a `BTreeMap<u64, TaskId>` index keyed by a per-write sequence gives most-recently-updated-first order and O(log n) cursor positioning, and a `HashMap<String, BTreeMap<u64, TaskId>>` context index enables O(log m + page\_size) filtered queries where m = matching tasks. This replaces the previous O(n log n) per-call sort that caused 20-70× regressions at 10K+ tasks.
+- **O(log n + page\_size) list queries** — a `BTreeMap<(i64, u64), TaskId>` index keyed by (status timestamp, write sequence) gives the spec's status-timestamp-descending order and O(log n) cursor positioning, and a `HashMap<String, BTreeMap<(i64, u64), TaskId>>` context index enables O(log m + page\_size) filtered queries where m = matching tasks. This replaces the previous O(n log n) per-call sort that caused 20-70× regressions at 10K+ tasks.
 
 ### No Web Framework Overhead
 

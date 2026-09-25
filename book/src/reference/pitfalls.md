@@ -6,9 +6,9 @@ A catalog of non-obvious problems encountered during development. Each entry doc
 
 ### Untagged enums hide inner errors
 
-`#[serde(untagged)]` on `JsonRpcResponse<T>` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. (Note: `SendMessageResponse` and `StreamResponse` both use `#[serde(rename_all = "camelCase")]` — externally tagged — so they produce clearer errors.)
+`#[serde(untagged)]` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. `JsonRpcResponse<T>` hit this until 0.7; its `Deserialize` is now hand-written — it enforces exactly one of `result` / `error` (JSON-RPC 2.0 §5) and surfaces a mistyped `result`'s own error — and only its `Serialize` stays untagged. (`SendMessageResponse` and `StreamResponse` use `#[serde(rename_all = "camelCase")]` — externally tagged — so they produce clear errors too.)
 
-**Workaround:** When debugging `JsonRpcResponse`, temporarily switch to an externally tagged enum to see the real error. In production, log the raw JSON before attempting deserialization.
+**Workaround:** for an untagged enum of your own, hand-write `Deserialize`, or log the raw JSON before attempting deserialization.
 
 ### `#[serde(default)]` vs `Option<T>`
 
@@ -393,7 +393,7 @@ A malicious SSE stream sending many oversized events could fill the parser's int
 
 ### Background event processor can miss fast executor events (fixed)
 
-In streaming mode, the background event processor previously subscribed to the broadcast channel *after* the executor started. For very fast executors, events could be written before the subscription was active, meaning the task store was not updated. The fix introduces a dedicated persistence channel (mpsc) that is independent of the broadcast channel used for SSE delivery, ensuring the background processor never misses events regardless of executor speed. See Bug #38 in [dogfooding-bugs](../deployment/dogfooding-bugs.md).
+In streaming mode, the background event processor previously subscribed to the broadcast channel *after* the executor started. For very fast executors, events could be written before the subscription was active, meaning the task store was not updated. The fix introduces a dedicated persistence channel (mpsc) that is independent of the broadcast channel used for SSE delivery, so a fast executor cannot outrun the subscription; a persistence channel still full after the queue's write timeout fails the write with an error rather than dropping the event. See Bug #38 in [dogfooding-bugs](../deployment/dogfooding-bugs.md).
 
 ### Event queue writer silently swallows serialization errors (fixed)
 
@@ -405,7 +405,7 @@ In streaming mode, the background event processor previously subscribed to the b
 
 ### Lagged event queue reader drops diagnostic count (fixed)
 
-The broadcast channel `Lagged(n)` error provides the exact count of dropped events, but the reader used `_n` (underscore prefix), discarding the count. The warning message said "skipping missed events" without saying how many. The fix exposes the count in the log: `"event queue reader lagged, {n} events skipped"`.
+The broadcast channel `Lagged(n)` error provides the exact count of dropped events, but the reader used `_n` (underscore prefix), discarding the count. The warning message said "skipping missed events" without saying how many. The fix exposes the count in the log: `"event queue reader lagged, {n} events dropped"`. The reader no longer skips ahead either: it returns `A2aError::stream_lagged(n)`, and the stream ends with that error.
 
 ## Client Pitfalls
 
@@ -415,7 +415,7 @@ The error body truncation helper sliced at a fixed byte offset (`body[..512]`). 
 
 ### SSE parser `line_buf` can grow without bound (fixed)
 
-The SSE parser's internal line buffer grew without limit for lines without newlines. A malicious server sending a single very long line could cause OOM. The fix caps `line_buf` at 2× `max_event_size`.
+The SSE parser's internal line buffer grew without limit for lines without newlines. A malicious server sending a single very long line could cause OOM. It was first capped at 2× `max_event_size`, past which bytes were dropped silently; a line that outgrows `max_event_size` is now refused as soon as it does, with `SseParseError::EventTooLarge`, and none of the rest of it is buffered.
 
 ### REST path parameters are not percent-encoded (fixed)
 

@@ -60,13 +60,18 @@ which is a different request.
 
 ## Writing it
 
-Most of the time you do not. When an executor returns `Err`, the server
-classifies from the error code — which can only ever yield `InvalidRequest`
-or `Internal`, because no `ErrorCode` carries the meaning "transient" or
-"refused on policy". An executor deadline is classified `BudgetExhausted`,
-since a deadline is a bound that was hit rather than an agent that broke.
+Most of the time you do not. When an executor returns `Err`, the server uses
+a class recorded on the error with `failure::set_error_class`, and otherwise
+classifies from the error code — which yields only `InvalidRequest` or
+`Internal`, because no `ErrorCode` carries the meaning "transient" or
+"refused on policy". (`?` on a client call records `Transient` for any
+retryable `ClientError`; see [Error Handling](./error-handling.md).) An
+executor deadline is classified `BudgetExhausted`, since a deadline is a bound
+that was hit rather than an agent that broke.
 
-The two classes no error code can express need the agent to say so:
+The two classes no error code can express need the agent to say so, either
+with `set_error_class` on the error it returns or by emitting its own
+classified status:
 
 ```rust
 # use a2a_protocol_server::{EventEmitter, agent_executor};

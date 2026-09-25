@@ -5,7 +5,8 @@
 
 Two independent things, often confused: **logs** say what happened in one
 request, **metrics** say what is happening across all of them. This SDK ships
-both, and **neither is on by default**.
+both. Logging (`tracing`) is on by default and still needs a subscriber;
+metrics export (`otel`) is **off by default**.
 
 That default is deliberate. A protocol library that pulled in an OpenTelemetry
 exporter to serve one agent would be the wrong trade for most users. The cost
@@ -18,8 +19,9 @@ and the answer is almost always this page's first section.
 a2a-protocol-server = { version = "0.14", features = ["tracing", "otel"] }
 ```
 
-* **`tracing`** — the crate's logging calls compile to nothing without it. With
-  it, your binary still has to install a subscriber; the library emits events
+* **`tracing`** — on by default in all three crates; with
+  `default-features = false` the logging calls compile to nothing. With it,
+  your binary still has to install a subscriber; the library emits events
   and does not decide where they go.
 * **`otel`** — makes `OtelMetrics` available, which exports over OTLP.
 
@@ -235,7 +237,7 @@ reason and because the measurement above shows they change nothing here.
 ## The four signals worth alerting on
 
 **`errors` / `requests`.** The obvious one. Split by `method`: a rising error
-rate confined to `message/stream` is a different incident from one across
+rate confined to `SendStreamingMessage` is a different incident from one across
 everything.
 
 **`persistence_errors` above zero, at all.** A store write that fails means the
@@ -247,17 +249,20 @@ Alert on any non-zero rate rather than on a threshold.
 A depth that grows monotonically is subscribers that never closed — usually a
 client that stopped reading without disconnecting.
 
-**`push_deliveries{outcome="skipped"}`.** Not a network failure. It means
-`push_delivery_timeout` was shorter than the sender's own retry schedule, so
-the delivery was abandoned with attempts remaining. It will not resolve on its
-own and it will not appear as a webhook error, because the webhook was never
-the problem. The four labels:
+**`push_deliveries{outcome="timeout_truncated"}`.** Not a network failure. It
+means `push_delivery_timeout` was shorter than the sender's own retry schedule,
+so the delivery was abandoned with attempts remaining. It will not resolve on
+its own and it will not appear as a webhook error, because the webhook was
+never the problem. `outcome="skipped"` is its sibling: the 30-second per-event
+budget ran out before this config was reached, so nothing was sent to it. The
+five labels:
 
 ```text
-delivered   the webhook accepted it
-failed      reached, and refused it — or the sender itself errored
-timeout     the webhook did not answer inside the time it was given
-skipped     a configuration result: push_delivery_timeout cut the schedule short
+delivered          the webhook accepted it
+failed             reached, and refused it — or the sender itself errored
+timeout            the webhook did not answer inside the time it was given
+timeout_truncated  a configuration result: push_delivery_timeout cut the schedule short
+skipped            the per-event budget ran out before this config was tried
 ```
 
 ## What is not measured
@@ -395,8 +400,8 @@ chains are readable end to end.
 **What is not done.** Nothing *interprets* `tracestate` — the SDK adds no
 vendor entry of its own and reads nobody else's; it only truncates whole
 entries when a list exceeds the documented 4096-character or 32-member cap
-(W3C §3.3.1.5). There is no sampler. The `a2a.task.id` of each hop is still
-not attached to anything, because there is no span to attach it to.
+(W3C §3.3.1.5). There is no sampler. Each hop's `a2a.task.id` is on its own
+`a2a.execute` span; nothing links one hop's task id to the next hop's.
 
 See also [Troubleshooting](./troubleshooting.md) for the symptom-first version
 of this page, and [Production Hardening](./production.md) for health checks.

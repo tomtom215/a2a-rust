@@ -168,7 +168,7 @@ wildcards         = "warn"
 # it would be theatre: `reqwest` arrives twice in this graph, 0.12 under the
 # SLIM stack and 0.13 under `opentelemetry-otlp`, neither of which this repo
 # selects. The reason the root gives — avoiding a large transitive tree — is
-# already moot in a crate that took 379 dependencies to exist.
+# already moot in a crate that took some 360 dependencies to exist.
 deny = []
 
 # ---------------------------------------------------------------------------

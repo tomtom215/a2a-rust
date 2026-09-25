@@ -431,4 +431,4 @@ is not enough — that is the race the rule exists to close.
 ## Next Steps
 
 - **[Production Hardening](../deployment/production.md)** — Deployment checklist
-- **[Configuration Reference](../
+- **[Configuration Reference](../reference/configuration.md)** — Every builder and store default

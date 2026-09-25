@@ -251,6 +251,7 @@ are rustdoc's job.
 | `list_tasks(params)` | `TaskListResponse` | Query tasks |
 | `cancel_task(id)` | `Task` | Cancel a running task |
 | `subscribe_to_task(id)` | `EventStream` | Re-subscribe to task events |
+| `subscribe_to_task_from(id, last_event_id)` | `EventStream` | Resume a broken stream from its last SSE `id:` (sends `Last-Event-ID`) |
 | `set_push_config(config)` | `TaskPushNotificationConfig` | Create push config |
 | `get_push_config(task_id, id)` | `TaskPushNotificationConfig` | Get push config |
 | `list_push_configs(params)` | `ListPushConfigsResponse` | List push configs |

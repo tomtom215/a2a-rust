@@ -10,29 +10,29 @@ If you are reading this before anything is wrong, read
 [Observability](./observability.md) instead and turn the signals on — most of
 the entries below are much shorter when `a2a.server.*` metrics exist.
 
-## Start here: almost nothing is on by default
+## Start here: most features are off by default
 
-**`a2a-protocol-server` declares no default features.** That is deliberate — a
-protocol library should not drag in a TLS stack, a database driver and an
-OpenTelemetry exporter to serve one agent — but it means several "it does
-nothing" symptoms are one line in `Cargo.toml`.
+**`a2a-protocol-server`'s only default feature is `tracing`.** That is
+deliberate — a protocol library should not drag in a TLS stack, a database
+driver and an OpenTelemetry exporter to serve one agent — but it means several
+"it does nothing" symptoms are one line in `Cargo.toml`.
 
 Which crate you depend on changes the answer, and this is worth checking before
 anything else:
 
 | Crate | Default features |
 |---|---|
-| `a2a-protocol-sdk` | `tls-rustls` |
-| `a2a-protocol-client` | `tls-rustls` |
-| `a2a-protocol-server` | **none** |
+| `a2a-protocol-sdk` | `tls-rustls`, `tracing` |
+| `a2a-protocol-client` | `tls-rustls`, `tracing` |
+| `a2a-protocol-server` | `tracing` |
 
 So a reader who depends on the umbrella `a2a-protocol-sdk` already has TLS, and
 one who depends on `a2a-protocol-server` directly does not. Everything else is
-off in both cases:
+off in all three cases:
 
 | You want | Feature |
 |---|---|
-| Structured logs | `tracing` |
+| Structured logs | `tracing` (default; re-add it if you set `default-features = false`) |
 | Metrics over OTLP (metrics only — there is no span export) | `otel` |
 | SQLite / PostgreSQL task stores | `sqlite`, `postgres` |
 | WebSocket, gRPC, Axum | `websocket`, `grpc`, `axum` |
@@ -78,15 +78,21 @@ Read the outcome label before doing anything else:
 a2a.server.push_deliveries{outcome="delivered"}   the webhook accepted it
 a2a.server.push_deliveries{outcome="failed"}      reached, and refused it — or the sender errored
 a2a.server.push_deliveries{outcome="timeout"}     the webhook did not answer in time
+a2a.server.push_deliveries{outcome="timeout_truncated"}  push_delivery_timeout cut the retry schedule short
 a2a.server.push_deliveries{outcome="skipped"}     nothing was attempted
 ```
 
-`skipped` is the one that surprises people, because it is **not a network
-result — it is a configuration result.** The sender reports how long its own
+`timeout_truncated` is the one that surprises people, because it is **not a
+network result — it is a configuration result.** The sender reports how long its own
 retry schedule needs, and `push_delivery_timeout` was shorter than that. The
 delivery was cut short with attempts still left on the schedule. Nothing was
 wrong with the webhook, and nothing will be, however many times you restart it:
 either raise `push_delivery_timeout` or shorten the sender's schedule.
+
+`skipped` means the per-event delivery budget ran out before this config was
+reached, so nothing was sent to it — look at the arithmetic between
+`max_push_configs_per_task`, `push_delivery_timeout` and the 30-second
+per-event budget.
 
 If the counter shows no datapoints at all under any label, the delivery path
 was never reached — check that a push config was actually registered for the
@@ -113,11 +119,11 @@ Three different limits produce this, and they say so:
 |---|---|---|
 | `event size N bytes exceeds maximum M bytes` | One event exceeded `DEFAULT_MAX_EVENT_SIZE` (16 MiB) | Send the payload as an artifact reference, not inline |
 | `event queue: the persistence channel was still full after …; the background processor is not draining events` | Events are produced faster than they are persisted | Slow producer, or a stuck store — check `a2a.server.persistence_errors` |
-| Subscriber sees a gap, no error | The queue buffer (`DEFAULT_QUEUE_CAPACITY`, 256) overflowed for a slow consumer | Raise the capacity, or consume faster |
+| `stream_lagged` error frame, then the stream ends | The queue buffer (`DEFAULT_QUEUE_CAPACITY`, 256) overflowed for a slow consumer | Resubscribe, raise the capacity, or consume faster |
 
-The last one is worth stating plainly: a consumer that is too slow loses
-*events*, not the task. The task's stored state remains correct, and refetching
-it gives the truth. Streams are a live view, not the record.
+The last one is worth stating plainly: a consumer that is too slow loses the
+*rest of the stream*, not the task, and is told so. The task's stored state
+remains correct, and refetching it gives the truth. Streams are a live view, not the record.
 
 ## Requests are refused with `Overloaded`
 

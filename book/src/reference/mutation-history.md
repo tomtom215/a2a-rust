@@ -582,15 +582,16 @@ reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
 Across these `a2a-server` files: **57 survivors addressed, none remaining.**
 Every one of the nine reports exit 0, and nothing was excluded anywhere in the
 project at the time — no `--exclude-re`, no `#[mutants::skip]`, no baselined
-exception. (Since 2026-09-10 there are exactly three `#[mutants::skip]`
-attributes, none in these nine files; see ADR 0006.)
+exception. (Since 2026-09-10 there are `#[mutants::skip]` attributes — three
+then, four since 2026-09-22 — none in these nine files; see ADR 0006.)
 
 **What that sentence does not cover.** Nine files is not the crate.
 `a2a-server` has 2113 mutants; these nine account for 487 of them. Treat "zero
 survivors" as a claim about the nine rows, not the crate.
 
 **The weekly sweep ran on 2026-08-10** (scheduled 03:33 UTC, `041c3666` on
-`main`) and is the current whole-repo figure:
+`main`) and was, when this was written, the current whole-repo figure (the
+newest is the top row of [History](#history) below):
 
 | | Caught | Missed | Timeout | Unviable | Score |
 |---|---:|---:|---:|---:|---:|

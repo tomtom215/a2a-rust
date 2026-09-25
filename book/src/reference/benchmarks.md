@@ -199,9 +199,8 @@ the happy path gives an incomplete picture.
 Stream throughput under varying event volumes and consumer speeds.
 Reveals buffering and flow-control overhead that synthetic single-event tests miss.
 
-The default broadcast channel capacity was increased from 64 to 256 events in
-v0.5.0, pushing the per-event cost inflection point from ~52 events to ~252
-events. Deployments with >256 events/task should use
+The default broadcast channel capacity is 256 events (raised from 64 in
+v0.5.0). Deployments with >256 events/task should use
 `EventQueueManager::with_capacity()` to set a higher value.
 
 | Benchmark | Median |
@@ -301,12 +300,10 @@ bytes — not time — encoded as nanoseconds for Criterion tracking.
 
 ## Cross-Language Comparison
 
-Standardized workloads designed to be reproduced identically across all
-A2A SDK implementations (Python, Go, JS, Java, C#/.NET).
-
-- All SDKs hit the **same Rust echo server** (eliminates server-side variance)
-- All workloads use **identical JSON payloads** from `benches/cross_language/`
-- Results use **median ± MAD** to resist outlier pollution
+Rust-side criterion baselines for the workloads in `benches/cross_language/`.
+Every row below is this SDK only. The measured cross-SDK comparison — this
+SDK's server against the official Python SDK's server — is on
+[Cross-Language Benchmark](cross-language-benchmarks.md).
 
 | Benchmark | Median |
 |-----------|--------|
@@ -408,8 +405,8 @@ lifecycle, parallel agent bursts, and dispatch routing overhead isolation.
 
 SDK capabilities exercising previously-unbenchmarked paths: tenant resolver
 overhead, agent card hot-reload and discovery, subscribe fan-out for
-reconnection bursts, streaming artifact accumulation cost (the 90µs/event
-bottleneck), pagination full walk, and extended agent card round-trip.
+reconnection bursts, streaming artifact accumulation cost, pagination full
+walk, and extended agent card round-trip.
 
 | Benchmark | Median |
 |-----------|--------|
@@ -442,6 +439,11 @@ bottleneck), pagination full walk, and extended agent card round-trip.
 | `advanced_tenant_resolver/path_resolver` | 235 ns |
 
 ## Agent-Level Latency Under Fault
+
+> **Not run by the benchmarks workflow; no results are published here.**
+> `benchmarks.yml` does not run this bench, so the two groups below have no
+> tables. To measure it locally:
+> `cargo bench -p a2a-benchmarks --bench coordinator_chain_under_fault`.
 
 End-to-end latency through a **5-hop in-process coordinator chain** as the
 links between hops are made progressively less reliable. Unlike every other
@@ -521,22 +523,22 @@ tighter confidence intervals).
 
 ### Data volume get() at 100K tasks
 
-The `data_volume/get/100K` benchmark previously reported ~42% faster lookups
-than the 1K/10K cases due to a **CPU cache warming artifact** from the large
-`populate_store()` setup filling L1/L2 caches. A 4MB cache-busting step was
-added in v0.5.0 to flush caches between populate and measure, producing more
-representative O(1) lookup times across all scales. The 1K/10K number (~450ns)
-remains the representative baseline.
+`data_volume_get/lookup` reports 460 ns at 1K
+tasks, 463 ns at 10K and 262 ns at 100K. A 100K
+figure below the 1K/10K ones has previously been traced to a **CPU cache
+warming artifact** from the large `populate_store()` setup filling L1/L2
+caches; a 4MB cache-busting step was added in v0.5.0 to flush caches between
+populate and measure. Where the 100K figure is still the lowest, that step has
+not removed the effect, and the 1K/10K numbers are the representative O(1)
+lookup baseline.
 
-### Stream volume per-event cost inflection
+### Stream volume per-event cost
 
-Per-event cost inflects dramatically when events exceed the broadcast channel
-capacity. The default capacity was increased from 64 to **256** events in
-v0.5.0, pushing the inflection from ~52 events to ~252 events:
-
-- Below capacity: ~4µs/event (fast path)
-- At capacity boundary: ~53µs/event (12× jump — broadcast back-pressure)
-- Above capacity: ~130µs/event (SSE frame accumulation under overflow)
+The default broadcast channel capacity is **256** events (raised from 64 in
+v0.5.0). `backpressure_stream_volume` straddles it:
+622.6 µs for 52 events, 1.71 ms for 252 and
+3.10 ms for 502, so the per-event cost below and above
+capacity can be read directly from the table.
 
 Production deployments expecting >256 events/task should increase
 `EventQueueManager::with_capacity()` to match their peak volume.
@@ -602,9 +604,9 @@ single-request saving.
 
 ### Deserialization allocation overhead
 
-Deserialization allocates ~3× more than serialization (Task: 1,026 vs 342
-allocs). This is inherent to serde_json's parsing model: every field creates
-an intermediate `String`/`Vec` allocation during parsing. The
+Deserialization allocates several times more than serialization (Task:
+1037 vs 346 allocs). This is inherent to serde_json's parsing model: every
+field creates an intermediate `String`/`Vec` allocation during parsing. The
 `serde_helpers::deser_from_str()` helper enables serde_json's borrowed-data
 path for ~15-25% fewer allocations. The `serde_helpers::SerBuffer` provides
 thread-local buffer reuse for serialization, eliminating the 2.3× small-payload
@@ -612,24 +614,27 @@ overhead.
 
 ### History depth allocation scaling
 
-History depth scales at ~494 deserialization allocs/turn and ~242 serialization
-allocs/turn (linear, constant marginal cost). At 50 turns: 24,714 deser allocs
-per `store.get()`. The `serde_helpers` module provides optimized paths; for
-maximum throughput on deep histories, consider storing pre-serialized bytes
-alongside parsed structs to avoid re-parsing on every read.
+History depth scales roughly linearly: `memory_history_scaling` records
+1298 deserialization allocs at 1 turn and 23230 at 50 turns
+(477 and 8750 for serialization), so a 50-turn task
+costs 23230 deser allocs per `store.get()`. The `serde_helpers` module
+provides optimized paths; for maximum throughput on deep histories, consider
+storing pre-serialized bytes alongside parsed structs to avoid re-parsing on
+every read.
 
 ### Artifact accumulation clone cost
 
 The background event processor clones the full Task struct on each SSE event.
-Clone cost scales linearly at ~133ns/artifact. For tasks with 500+ accumulated
-artifacts, consider batching event processing or using the planned
+Clone cost grows with artifact count: `task_clone_at_depth` is
+99 ns with no artifacts and 73.4 µs with 500. For tasks with 500+
+accumulated artifacts, consider batching event processing or using the planned
 copy-on-write artifact storage (tracked as a future optimization).
 
 ### Slow consumer timer calibration
 
 The `backpressure/timer_calibration` benchmarks measure actual
 `tokio::time::sleep()` durations on the CI runner. On shared runners,
-1ms sleep ≈ 2.09ms actual, 5ms sleep ≈ 6.14ms actual. Slow consumer
+1ms sleep ≈ 2.10 ms actual, 5ms sleep ≈ 6.13 ms actual. Slow consumer
 results should be interpreted against these calibrated durations, not
 the nominal sleep values.
 
@@ -645,53 +650,45 @@ the BTreeSet enables O(page\_size) pagination queries vs O(n) full scans.
 
 ### Dispatch routing: direct handler vs HTTP round-trip
 
-The `production/dispatch_routing/direct_handler_invoke` benchmark may report
-marginally higher latency than `full_http_roundtrip`. This is **not anomalous**
-— the HTTP path reuses a warm keep-alive connection that amortizes TCP setup
-cost, while direct handler invocation exercises the full dispatch path without
-connection pooling benefits. The ~7% difference validates that the HTTP layer
-adds near-zero overhead for repeat requests on warm connections.
+`production/dispatch_routing/direct_handler_invoke` calls the request handler
+directly and reports 61.2 µs; `full_http_roundtrip` sends a message through
+a JSON-RPC server over a warm keep-alive connection and reports
+169.7 µs. The difference is the dispatch and transport overhead the
+direct call bypasses.
 
-### Subscribe fan-out O(1) scaling
+### Subscribe fan-out scaling
 
-The `advanced/subscribe_fanout` benchmark shows O(1) cost from 1→5 subscribers
-(~2.9ms both), with gradual increase at 10 subscribers (~3.6ms). The broadcast
-channel delivers to all subscribers in a single pass; the inflection at 10+
-subscribers reflects increased channel contention and memory pressure from
-concurrent readers.
+`advanced/subscribe_fanout` reports 610.7 µs with 1 subscriber, 729.2 µs with 5
+and 957.5 µs with 10.
 
-### Agent burst sub-linear scaling
+### Agent burst scaling
 
-The `production/agent_burst` benchmark shows per-agent cost decreasing as
-concurrency increases: 714µs/agent at 10, 390µs/agent at 50, 310µs/agent at
-100. This sub-linear scaling confirms the SDK handles high-fanout agent
-coordination without degradation — Tokio's work-stealing scheduler amortizes
-task scheduling overhead across the burst.
+`production/agent_burst` times the whole burst: 3.68 ms for 10 agents,
+17.60 ms for 50 and 35.29 ms for 100 — per agent, 368.0 µs,
+352.0 µs and 352.9 µs respectively.
 
 ### Cold start vs steady state
 
-The `production/cold_start/first_request` benchmark (~328µs) appears faster
-than `steady_state` (~1.97ms). This is because `first_request` creates a
-fresh server per iteration (sample\_size=20), measuring server handler
-initialization + first TCP connect. The `steady_state` benchmark reuses an
-existing keep-alive connection, measuring the full HTTP round-trip with
-connection overhead already amortized. The two benchmarks measure different
-things — they are complementary, not comparable.
+`production/cold_start/first_request` (333.0 µs) creates a fresh server per
+iteration (sample\_size=20), measuring server handler initialization + first
+TCP connect. `steady_state` (177.0 µs) reuses an existing keep-alive
+connection, measuring the full HTTP round-trip with connection overhead already
+amortized. The two benchmarks measure different things — they are
+complementary, not comparable.
 
-### Tenant resolver negligible overhead
+### Tenant resolver overhead
 
-Tenant resolvers operate at 88–173ns per request, representing ~0.008% of a
-typical 1.6ms round-trip. Header extraction (128ns) is marginally slower than
-the miss path (88ns) due to value parsing; path extraction (173ns) is slowest
-due to URL path parsing overhead. All resolvers are effectively free at
-production scale.
+Per request, the tenant resolvers cost 185 ns (header), 152 ns (header
+miss), 235 ns (path), 184 ns (bearer) and 204 ns (bearer with mapper),
+against 169.6 µs for a full JSON-RPC round trip
+(`transport_jsonrpc_send/single_message`).
 
-### Pagination context index 2× speedup
+### Pagination context index
 
-The `advanced/pagination_walk` filtered benchmarks show ~2× speedup over
-unfiltered walks (309µs vs 592µs at 1000 tasks). The BTreeSet context index
-eliminates half the scan work by only iterating tasks matching the
-`context_id` filter.
+At 1000 tasks, the `advanced/pagination_walk` filtered walk takes
+317.5 µs against 674.4 µs unfiltered. The BTreeSet context index
+reduces the scan work by only iterating tasks matching the `context_id`
+filter.
 
 ---
 
