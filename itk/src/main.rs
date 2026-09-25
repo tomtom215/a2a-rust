@@ -622,12 +622,13 @@ async fn main() {
     let card = build_card(http_port, grpc_port);
     // The ACTS auth pass guards every operation; otherwise only the
     // extended card is (see `acts_modes`).
-    let builder = if acts_modes::auth_enforced() {
-        RequestHandlerBuilder::new(ItkExecutor).with_interceptor(acts_modes::bearer())
+    let scope = if acts_modes::auth_enforced() {
+        acts_modes::Scope::Everything
     } else {
-        RequestHandlerBuilder::new(ItkExecutor)
-            .with_interceptor(acts_modes::ExtendedCardGuard(acts_modes::bearer()))
+        acts_modes::Scope::ExtendedCard
     };
+    let builder =
+        RequestHandlerBuilder::new(ItkExecutor).with_interceptor(acts_modes::Guard::new(scope));
     let handler = Arc::new(
         builder
             .with_agent_card(card)
