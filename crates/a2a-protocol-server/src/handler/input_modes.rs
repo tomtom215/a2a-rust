@@ -36,7 +36,7 @@ use super::RequestHandler;
 use crate::error::{ServerError, ServerResult};
 
 /// The media types a card accepts, or `None` when nothing is to be enforced.
-pub(crate) fn accepted_input_modes(
+pub fn accepted_input_modes(
     card: Option<&AgentCard>,
     allow_undeclared: bool,
 ) -> Option<Vec<String>> {
@@ -88,7 +88,7 @@ impl RequestHandler {
     /// # Errors
     ///
     /// `ContentTypeNotSupportedError`, naming the part and its media type.
-    pub(crate) fn ensure_input_modes_supported(&self, message: &Message) -> ServerResult<()> {
+    pub fn ensure_input_modes_supported(&self, message: &Message) -> ServerResult<()> {
         let Some(accepted) = &self.accepted_input_modes else {
             return Ok(());
         };

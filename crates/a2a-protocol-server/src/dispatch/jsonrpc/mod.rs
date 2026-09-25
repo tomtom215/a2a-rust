@@ -9,6 +9,7 @@
 //! them to the appropriate [`RequestHandler`] method, and serializes the
 //! response (or streams SSE for streaming methods).
 
+mod refusal;
 mod response;
 
 use std::collections::HashMap;
@@ -30,9 +31,8 @@ use crate::serve::Dispatcher;
 use crate::streaming::build_sse_response;
 
 use response::{
-    error_response, error_response_bytes, extract_headers, invalid_request_response, json_response,
-    parse_error_response, parse_params, read_body_limited, success_response,
-    success_response_bytes,
+    error_response, error_response_bytes, extract_headers, json_response, parse_params,
+    read_body_limited, success_response, success_response_bytes,
 };
 
 /// JSON-RPC 2.0 request dispatcher.
@@ -270,49 +270,6 @@ impl JsonRpcDispatcher {
             };
             self.dispatch_single_request_http(&rpc_req, &headers).await
         }
-    }
-
-    /// Answers a request refused before it named a method, and records it
-    /// as a failed call (audit O11).
-    fn refuse(
-        &self,
-        started: std::time::Instant,
-        err: &ServerError,
-    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        self.record_unrouted(started, err.to_a2a_error().code);
-        error_response(None, err)
-    }
-
-    /// [`refuse`](Self::refuse) for a body that is not a JSON-RPC request.
-    fn refuse_unparsed(
-        &self,
-        started: std::time::Instant,
-        message: &str,
-    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        self.record_unrouted(started, ErrorCode::ParseError);
-        parse_error_response(None, message)
-    }
-
-    /// [`refuse`](Self::refuse) for a body that is JSON but not a valid
-    /// Request object: JSON-RPC 2.0's Invalid Request (-32600), where
-    /// [`refuse_unparsed`](Self::refuse_unparsed) is for a body that is not
-    /// JSON at all. Until 2026-09-25 every such body was answered -32700.
-    fn refuse_invalid(
-        &self,
-        started: std::time::Instant,
-        message: &str,
-    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        self.record_unrouted(started, ErrorCode::InvalidRequest);
-        invalid_request_response(None, message)
-    }
-
-    fn record_unrouted(&self, started: std::time::Instant, code: ErrorCode) {
-        crate::rpc_span::record_unrouted(
-            &self.handler,
-            crate::rpc_span::RpcSystem::JsonRpc,
-            started,
-            &code.as_i32().to_string(),
-        );
     }
 
     /// The span one JSON-RPC call runs in (ADR 0013).
