@@ -119,6 +119,17 @@ what a new task on an existing context inherits (#130) reached them filed
 under **Fixed**; that entry did say it changed the wire shape, but not where
 someone scanning for such changes would look.
 
+- **`SendMessage` refuses a part whose `mediaType` the agent card does not
+  declare, with `ContentTypeNotSupportedError`** (server; audit N34). When
+  the card declares input modes — `defaultInputModes` or any skill's
+  `inputModes` — a part carrying an explicit `mediaType` outside them is
+  refused (-32005 over JSON-RPC, HTTP 400 over HTTP+JSON), as spec §3.1.1
+  requires; it used to reach the executor. Parts without a `mediaType` are
+  not checked, and nothing is enforced without a card or when the card
+  declares no modes. **Migration:** declare every media type the agent
+  accepts on its card, or call
+  `RequestHandlerBuilder::allow_undeclared_input_modes()` to keep the old
+  behaviour while the card is corrected.
 - **A continuation sent the moment a task reaches `input-required` is
   admitted** (server; audit N21). It used to be refused as "already being
   processed" whenever the executor that parked the task had not yet returned
@@ -470,6 +481,11 @@ someone scanning for such changes would look.
   (server; audit N32). It recorded the file's mtime even when the reload
   failed, so on a filesystem with coarse timestamps a fix written in the
   same second as a half-written file was never loaded.
+- **`SendMessage` checks message parts' media types against the agent
+  card** (server; audit N34) — see **Behaviour Changes** for what is
+  refused and how to opt out. Found by the ACTS conformance suite
+  (CORE-SEND-004, a MUST); the official Rust SDK has the same gap open as
+  a2aproject/a2a-rs#270.
 - **JSON that is not a JSON-RPC Request object is answered Invalid Request
   (-32600), not Parse error (-32700)** (server, JSON-RPC and WebSocket; audit
   N33). A body with no `method`, a bare value such as `1`, an empty batch

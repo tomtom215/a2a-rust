@@ -112,6 +112,7 @@ pub struct RequestHandlerBuilder {
     require_resolved_tenant: bool,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
     allow_unauthenticated_extended_card: bool,
+    allow_undeclared_input_modes: bool,
 }
 
 impl RequestHandlerBuilder {
@@ -139,6 +140,7 @@ impl RequestHandlerBuilder {
             require_resolved_tenant: false,
             inbound_trace_policy: crate::handler::InboundTracePolicy::Continue,
             allow_unauthenticated_extended_card: false,
+            allow_undeclared_input_modes: false,
         }
     }
 
@@ -373,6 +375,21 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Accepts message parts whose `mediaType` the agent card does not
+    /// declare.
+    ///
+    /// By default, when the card declares input modes — `defaultInputModes`
+    /// or any skill's `inputModes` — a `SendMessage` part carrying a
+    /// `mediaType` outside them is refused with
+    /// `ContentTypeNotSupportedError`, as spec §3.1.1 requires. Call this
+    /// for an agent whose card under-declares what it accepts, until the
+    /// card is corrected. Parts without a `mediaType` are never checked.
+    #[must_use]
+    pub const fn allow_undeclared_input_modes(mut self) -> Self {
+        self.allow_undeclared_input_modes = true;
+        self
+    }
+
     /// Applies per-tenant resource limits.
     ///
     /// The handler enforces `max_concurrent_tasks`, `executor_timeout` and
@@ -539,6 +556,11 @@ impl RequestHandlerBuilder {
             })
             .unwrap_or_default();
 
+        let accepted_input_modes = crate::handler::input_modes::accepted_input_modes(
+            agent_card.as_ref(),
+            self.allow_undeclared_input_modes,
+        );
+
         Ok(RequestHandler {
             executor: self.executor,
             task_store,
@@ -569,6 +591,7 @@ impl RequestHandlerBuilder {
             require_resolved_tenant: self.require_resolved_tenant,
             inbound_trace_policy: self.inbound_trace_policy,
             allow_unauthenticated_extended_card: self.allow_unauthenticated_extended_card,
+            accepted_input_modes,
             required_extensions,
             declared_extensions,
             tenant_config: self.tenant_config,
@@ -605,6 +628,10 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field(
                 "allow_unauthenticated_extended_card",
                 &self.allow_unauthenticated_extended_card,
+            )
+            .field(
+                "allow_undeclared_input_modes",
+                &self.allow_undeclared_input_modes,
             )
             .finish()
     }

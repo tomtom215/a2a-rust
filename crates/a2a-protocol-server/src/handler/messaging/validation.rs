@@ -64,6 +64,10 @@ impl RequestHandler {
             ));
         }
 
+        // Spec §3.1.1: a part whose media type the card does not declare is
+        // ContentTypeNotSupportedError (ACTS CORE-SEND-004).
+        self.ensure_input_modes_supported(&params.message)?;
+
         // Cross-binding portability: every client-supplied `metadata` field
         // must be a JSON object so the resulting task is representable over
         // gRPC (google.protobuf.Struct), not just over JSON-RPC/REST. Reject

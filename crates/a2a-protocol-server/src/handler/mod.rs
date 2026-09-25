@@ -23,6 +23,7 @@ mod capability;
 mod concurrency;
 mod event_processing;
 pub(crate) mod helpers;
+pub(crate) mod input_modes;
 mod introspection;
 mod lifecycle;
 mod limits;
@@ -101,6 +102,11 @@ pub struct RequestHandler {
     /// operation MUST require authentication, so the default is `false`:
     /// without an authenticator the endpoint refuses to serve the card.
     pub(crate) allow_unauthenticated_extended_card: bool,
+    /// The media types the agent card accepts for message parts, or `None`
+    /// when none are enforced (no card, a card declaring none, or
+    /// [`allow_undeclared_input_modes`](crate::builder::RequestHandlerBuilder::allow_undeclared_input_modes)).
+    /// See `input_modes`.
+    pub(crate) accepted_input_modes: Option<Vec<String>>,
     /// URIs of agent-card extensions marked `required: true`. Every
     /// data-plane operation checks the client's `A2A-Extensions` declaration
     /// against this set (§3.3.4) and rejects with

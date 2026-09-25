@@ -558,6 +558,17 @@ stores (`tests/cross_replica_cancel/`).
   `websocket_tests.rs` fail on the unfixed dispatchers; a body that is not
   JSON stays -32700 and is tested too. **[Fixed: the dispatchers parse to
   a JSON value first, and only a failure there is -32700]**
+- **N34 — a part in a media type the card does not declare reached the
+  executor** (Medium, server behaviour; found by the ACTS conformance suite,
+  CORE-SEND-004, a MUST). Spec §3.1.1 lists `ContentTypeNotSupportedError`
+  for "a Media Type provided in the request's message parts [that] is not
+  supported by the agent"; nothing here checked. The maintainer chose
+  enforcement by default with an opt-out (2026-09-25), since an agent
+  whose card under-declares would otherwise start refusing traffic with no
+  way back. VALIDATED: seven unit tests in `handler/input_modes.rs` through
+  the builder. **[Fixed: parts with an explicit `mediaType` are checked
+  against `defaultInputModes` and every skill's `inputModes`;
+  `allow_undeclared_input_modes()` opts out]**
 - **Examined and left, from the same audit** (CONJECTURED, not reproduced):
   a queue write dropped between persisting and broadcasting an event — only
   the executor timeout firing inside a terminal event's verdict wait can do
