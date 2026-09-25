@@ -137,9 +137,10 @@ pub(crate) async fn run(
     };
 
     if behaviour == "tck-message-response" {
-        return queue
-            .write(StreamResponse::Message(agent_message(ctx, "tck-message-response ok")))
-            .await;
+        // A direct reply: no task exists, so it names none (DM-FMT-003).
+        let mut reply = agent_message(ctx, "tck-message-response ok");
+        reply.task_id = None;
+        return queue.write(StreamResponse::Message(reply)).await;
     }
 
     status(ctx, queue, Working, "working").await?;
