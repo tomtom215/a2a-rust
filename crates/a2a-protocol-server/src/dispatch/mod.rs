@@ -70,8 +70,8 @@ pub struct DispatchConfig {
     pub sse_channel_capacity: usize,
     /// Maximum number of requests allowed in a JSON-RPC batch. Default: 100.
     ///
-    /// Batches exceeding this limit are rejected with a parse error before
-    /// any individual request is dispatched.
+    /// Batches exceeding this limit, like an empty one, are answered Invalid
+    /// Request (-32600) before any individual request is dispatched.
     pub max_batch_size: usize,
     /// Whether data-plane requests must carry an `A2A-Version` header.
     /// Default: `true`.

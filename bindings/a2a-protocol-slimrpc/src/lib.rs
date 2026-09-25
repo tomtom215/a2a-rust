@@ -36,7 +36,7 @@
 //! | Extension point | Used for |
 //! |---|---|
 //! | `a2a_protocol_client::transport::Transport` | [`SlimRpcTransport`] plugs into any `A2aClient` |
-//! | `A2aClientBuilder::with_custom_transport` | injecting it, with no fork |
+//! | `a2a_protocol_client::ClientBuilder::with_custom_transport` | injecting it, with no fork |
 //! | `a2a_protocol_server::RequestHandler` | [`SlimRpcServer`] drives the same handler the HTTP bindings drive |
 //! | `AgentInterface::protocol_binding` | advertising [`SLIMRPC_PROTOCOL_BINDING`] |
 //!

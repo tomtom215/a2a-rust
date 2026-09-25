@@ -140,6 +140,12 @@ someone scanning for such changes would look.
   body unchanged (`-32600`); batches stay `200`. WebSocket is unchanged (the
   body alone). **Migration:** a client or alert that matched `400` for an
   auth failure matches `401`/`403`.
+- **The SLIMRPC binding's server answers a refused credential
+  `UNAUTHENTICATED` or `PERMISSION_DENIED`** (binding; audit N36). It mapped
+  by error code alone, so the same refusal went out as `INVALID_ARGUMENT` and
+  a client never dropped a revoked token there, the N36 defect the gRPC
+  dispatcher had already been fixed for. Found auditing the book on
+  2026-09-25. **Migration:** as for gRPC above.
 - **`SendMessage` refuses a part whose `mediaType` the agent card does not
   declare, with `ContentTypeNotSupportedError`** (server; audit N34). When
   the card declares input modes — `defaultInputModes` or any skill's

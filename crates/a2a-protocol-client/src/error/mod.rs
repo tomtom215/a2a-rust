@@ -156,23 +156,29 @@ impl ClientError {
         }
     }
 
-    /// Returns `true` when this is the server's recoverable consumer-lag
-    /// signal on a streaming subscription rather than a real failure.
+    /// Returns `true` when this is the consumer-lag signal on a streaming
+    /// subscription: the reader fell too far behind the agent, and the stream
+    /// was cut off, rather than the task failing.
     ///
-    /// **Do not stop reading when this is true.** The stream continues, and a
-    /// consumer that keeps polling still receives every later event including
-    /// the terminal status. Treating it as fatal silently truncates the task:
+    /// **The stream ends here; the task does not.** This SDK's server writes
+    /// one lag error frame when a reader overruns its event queue and then
+    /// closes the stream, and the WebSocket transport ends a stream the same
+    /// way once 64 frames are waiting unread (audit N29). What was read is a
+    /// contiguous prefix. To continue, resubscribe: over SSE with
+    /// [`subscribe_to_task_from`](crate::A2aClient::subscribe_to_task_from)
+    /// and the stream's last event id, which replays what was missed.
     ///
     /// ```no_run
     /// # async fn demo(stream: &mut a2a_protocol_client::streaming::EventStream) {
     /// while let Some(event) = stream.next().await {
     ///     match event {
     ///         Ok(ev) => { /* handle */ }
-    ///         // Recoverable: note the gap and keep going.
+    ///         // Not a task failure: the stream was cut off. Resubscribe.
     ///         Err(e) if e.is_stream_lagged() => {
-    ///             eprintln!("dropped {:?} events", e.dropped_event_count());
+    ///             eprintln!("stream cut off after {:?} dropped events", e.dropped_event_count());
+    ///             break;
     ///         }
-    ///         Err(e) => break, // genuinely fatal
+    ///         Err(e) => break, // a real failure
     ///     }
     /// }
     /// # }

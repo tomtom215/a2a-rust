@@ -591,7 +591,10 @@ stores (`tests/cross_replica_cancel/`).
   and pass likewise. Nothing had pinned the status before. **[Fixed: ADR
   0014 — `401` + `WWW-Authenticate` / `403`, gRPC
   `UNAUTHENTICATED`/`PERMISSION_DENIED`; the JSON-RPC body unchanged;
-  WebSocket still the body alone]**
+  WebSocket still the body alone. The SLIMRPC binding's server still sent
+  `INVALID_ARGUMENT` until 2026-09-25, found auditing the book; it now maps
+  the rejection too, and `a_refused_credential_reaches_the_client_as_401_or_403`
+  fails on the old mapping]**
 - **N37 — the axum adapter's errors were not the AIP-193 shape spec §11.6
   names** (Low, server wire behaviour, `axum` feature; found reading the
   N36 change). The adapter answered `{"error": "<text>"}` where
