@@ -106,7 +106,18 @@ fn params(seq: usize) -> MessageSendParams {
 /// warmup and again at the end.
 ///
 /// Returns `(early, late, requests)`.
-async fn under_load<F, Fut>(handler: &Arc<RequestHandler>, probe: F) -> (usize, usize, usize)
+///
+/// The loop runs for [`LOAD_DURATION`] *and* until `min_requests` have been
+/// sent. Time alone made the request count a property of the machine: on
+/// 2026-09-25 a Windows runner managed 320 in the window, where the
+/// task-store test needs more than 400 to overrun its capacity twice, and
+/// the test failed its own precondition (CI run 36167594713). A floor can
+/// only add requests, so it costs no detection power.
+async fn under_load<F, Fut>(
+    handler: &Arc<RequestHandler>,
+    min_requests: usize,
+    probe: F,
+) -> (usize, usize, usize)
 where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = usize>,
@@ -122,7 +133,7 @@ where
     let early = probe().await;
 
     let deadline = Instant::now() + LOAD_DURATION;
-    while Instant::now() < deadline {
+    while Instant::now() < deadline || sent < min_requests {
         let _ = handler.on_send_message(params(sent), false, None).await;
         sent += 1;
     }
@@ -193,7 +204,7 @@ async fn event_queues_do_not_accumulate_under_sustained_load() {
     let handler = handler_with_capacity(10_000);
     let probe_handler = Arc::clone(&handler);
 
-    let (early, late, sent) = under_load(&handler, || {
+    let (early, late, sent) = under_load(&handler, WARMUP_REQUESTS * 2 + 1, || {
         let h = Arc::clone(&probe_handler);
         async move { h.active_queue_count().await }
     })
@@ -222,7 +233,7 @@ async fn the_task_store_stays_bounded_under_sustained_load() {
     let handler = handler_with_capacity(CAPACITY);
     let probe_handler = Arc::clone(&handler);
 
-    let (_early, late, sent) = under_load(&handler, || {
+    let (_early, late, sent) = under_load(&handler, CAPACITY * 2 + 1, || {
         let h = Arc::clone(&probe_handler);
         async move { usize::try_from(h.task_count().await.unwrap_or(0)).unwrap_or(usize::MAX) }
     })
@@ -257,7 +268,7 @@ async fn cancellation_tokens_do_not_accumulate_under_sustained_load() {
     let handler = handler_with_capacity(10_000);
     let probe_handler = Arc::clone(&handler);
 
-    let (early, late, sent) = under_load(&handler, || {
+    let (early, late, sent) = under_load(&handler, WARMUP_REQUESTS * 2 + 1, || {
         let h = Arc::clone(&probe_handler);
         async move { h.cancellation_token_count().await }
     })
