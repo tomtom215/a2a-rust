@@ -1307,16 +1307,22 @@ RELEASE_FILES = (
 )
 
 
-def repo_version() -> str:
-    """The version the crates currently declare — the fixture's healthy tag.
+def released_version() -> str:
+    """The newest version with a dated `## [X.Y.Z] - YYYY-MM-DD` heading in
+    CHANGELOG.md — the last release actually cut, and the fixture's healthy tag.
 
-    Read rather than hardcoded, so a version bump does not quietly turn the
-    healthy control into a defect and every release probe INCONCLUSIVE.
+    Not the version the crates declare. Between the version bump and release
+    preparation those name a release whose notes, CITATION.cff and
+    SECURITY.md rows do not exist yet, so a fixture tagged there fails two
+    release gates for real and turns their probes INCONCLUSIVE. That is how
+    this read `Cargo.toml` until 2026-09-25, when 0.14.0 was bumped ahead of
+    its release prep. The release files always describe the last release, so
+    this is the version they agree with at every point in the cycle.
     """
-    text = (REPO / "crates/a2a-protocol-types/Cargo.toml").read_text()
-    m = re.search(r'(?m)^version\s*=\s*"([^"]+)"', text)
+    text = (REPO / "CHANGELOG.md").read_text()
+    m = re.search(r"(?m)^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}", text)
     if not m:
-        raise SystemExit("error: cannot read version from a2a-protocol-types/Cargo.toml")
+        raise SystemExit("error: CHANGELOG.md has no dated `## [X.Y.Z] - date` heading")
     return m.group(1)
 
 
@@ -1326,7 +1332,7 @@ def _release_fixture(
     """A git repo holding this repo's real release-relevant files, tagged."""
 
     def setup(d: Path) -> dict[str, str]:
-        version = repo_version()
+        version = released_version()
         r = d / "r"
         for rel in RELEASE_FILES:
             dst = r / rel
@@ -1421,7 +1427,7 @@ def _next_release_fixture(defect: str | None = None) -> Setup:
         g = lambda *a: subprocess.run(  # noqa: E731
             ["git", "-C", str(r), *a], check=True, capture_output=True, text=True
         ).stdout.strip()
-        current = repo_version()
+        current = released_version()
         major, minor, _ = (int(x) for x in current.split("-")[0].split("."))
         nxt = f"{major}.{minor + 1}.0" if defect != "breaking-patch" else f"{major}.{minor}.1"
         date = "2100-01-15"
@@ -1439,6 +1445,19 @@ def _next_release_fixture(defect: str | None = None) -> Setup:
             dst = r / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / rel, dst)
+        # Start from the released version. The tree may already declare the
+        # next one (0.14.0 was bumped ahead of its release prep), and the
+        # healthy control's point is the bump *after* the notes below, which
+        # would otherwise be an empty commit git refuses.
+        declared = re.search(
+            r'(?m)^version\s*=\s*"([^"]+)"',
+            (r / "crates/a2a-protocol-types/Cargo.toml").read_text(),
+        ).group(1)
+        if declared != current:
+            for rel in RELEASE_FILES:
+                if rel.endswith("Cargo.toml"):
+                    p = r / rel
+                    p.write_text(p.read_text().replace(f'"{declared}"', f'"{current}"'))
         cl = r / "CHANGELOG.md"
         text = cl.read_text()
         m = re.search(r"(?ms)^## \[Unreleased\]\n(.*?)(?=^## \[)", text)
