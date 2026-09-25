@@ -475,7 +475,8 @@ and the official Rust SDK (a2aproject/a2a-rs) also send `application/json`.
 
 **Effect on conformance scores.** ACTS test `REST-CT-001` (level SHOULD)
 fails on HTTP+JSON, and is the only ACTS failure on any binding:
-HTTP+JSON 91/92, every MUST passing (a2a-itk `429945f6`, 2026-09-25). The
+HTTP+JSON 91/92, every MUST passing (a2a-rust `d04d64eb`, a2a-itk
+`429945f6`, 2026-09-25; JSON-RPC 101/101 and gRPC 88/88 in the same run). The
 official Rust SDK's agent fails the same test for the same reason.
 
 **Reversed when** the widely used clients accept `application/a2a+json`
