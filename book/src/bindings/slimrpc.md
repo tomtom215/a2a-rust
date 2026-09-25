@@ -55,7 +55,7 @@ complete — neither is.
 ```toml
 [dependencies]
 a2a-protocol-slimrpc = "0.5"
-a2a-protocol-server  = "0.13"
+a2a-protocol-server  = "0.14"
 ```
 
 ### Why two version numbers

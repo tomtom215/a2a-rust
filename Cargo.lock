@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-client"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "a2a-protocol-server",
  "a2a-protocol-types",
@@ -123,7 +123,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-sdk"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
@@ -145,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-server"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "a2a-protocol-types",
  "axum",
@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-types"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "base64 0.23.1",
  "criterion",

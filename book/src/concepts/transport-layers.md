@@ -132,10 +132,10 @@ The **WebSocket** transport (`websocket` feature flag) provides a persistent bid
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.13", features = ["websocket"] }
+a2a-protocol-server = { version = "0.14", features = ["websocket"] }
 
 # Client
-a2a-protocol-client = { version = "0.13", features = ["websocket"] }
+a2a-protocol-client = { version = "0.14", features = ["websocket"] }
 ```
 
 ### Server
@@ -222,10 +222,10 @@ The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via p
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.13", features = ["grpc"] }
+a2a-protocol-server = { version = "0.14", features = ["grpc"] }
 
 # Client
-a2a-protocol-client = { version = "0.13", features = ["grpc"] }
+a2a-protocol-client = { version = "0.14", features = ["grpc"] }
 ```
 
 ### Server

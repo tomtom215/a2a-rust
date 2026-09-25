@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-sdk"
-version     = "0.13.0"
+version     = "0.14.0"
 description = "Agent2Agent (A2A) protocol v1.0 — convenience umbrella re-export crate"
 readme      = "README.md"
 
@@ -65,9 +65,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 # Without their own defaults, so the `default` list above decides what a
 # default build enables and `default-features = false` removes it (audit K1).
-a2a-protocol-types  = { version = "0.13.0", path = "../a2a-protocol-types" }
-a2a-protocol-client = { version = "0.13.0", path = "../a2a-protocol-client", default-features = false }
-a2a-protocol-server = { version = "0.13.0", path = "../a2a-protocol-server", default-features = false }
+a2a-protocol-types  = { version = "0.14.0", path = "../a2a-protocol-types" }
+a2a-protocol-client = { version = "0.14.0", path = "../a2a-protocol-client", default-features = false }
+a2a-protocol-server = { version = "0.14.0", path = "../a2a-protocol-server", default-features = false }
 
 [dev-dependencies]
 tokio       = { workspace = true, features = ["rt-multi-thread", "macros"] }

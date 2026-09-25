@@ -17,7 +17,7 @@ Add the `conformance` feature as a dev-dependency:
 
 ```toml
 [dev-dependencies]
-a2a-protocol-server = { version = "0.13", features = ["conformance"] }
+a2a-protocol-server = { version = "0.14", features = ["conformance"] }
 ```
 
 ```rust
