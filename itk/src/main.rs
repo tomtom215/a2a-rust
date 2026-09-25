@@ -44,9 +44,7 @@ use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartCon
 use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::{TaskState, TaskStatus};
-use a2a_protocol_types::{
-    AgentCapabilities, AgentCard, AgentInterface, AgentSkill, SendMessageResponse,
-};
+use a2a_protocol_types::{AgentCard, AgentInterface, AgentSkill, SendMessageResponse};
 
 // Generated from protos/instruction.proto (vendored from a2aproject/a2a-itk).
 mod pb {
@@ -355,6 +353,8 @@ fn handle_instruction<'a>(
 }
 
 mod acts;
+mod acts_client_parse;
+mod acts_modes;
 
 // ── Executor ─────────────────────────────────────────────────────────────────
 
@@ -481,6 +481,7 @@ fn build_card(http_port: u16, grpc_port: u16) -> AgentCard {
     // `hostname:port` per the A2A proto, and `grpc.insecure_channel` on the
     // Python side rejects a scheme outright.
     let grpc_url = format!("127.0.0.1:{grpc_port}");
+    let (security_schemes, security_requirements) = acts_modes::security();
     AgentCard {
         url: Some(http_url.clone()),
         name: "a2a-rust ITK current agent".into(),
@@ -489,9 +490,7 @@ fn build_card(http_port: u16, grpc_port: u16) -> AgentCard {
         provider: None,
         documentation_url: None,
         icon_url: None,
-        capabilities: AgentCapabilities::none()
-            .with_streaming(true)
-            .with_push_notifications(true),
+        capabilities: acts_modes::capabilities(),
         default_input_modes: vec!["application/x-protobuf".into(), "text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
         skills: vec![AgentSkill {
@@ -524,8 +523,8 @@ fn build_card(http_port: u16, grpc_port: u16) -> AgentCard {
                 tenant: None,
             },
         ],
-        security_schemes: None,
-        security_requirements: None,
+        security_schemes,
+        security_requirements,
         signatures: None,
     }
 }
@@ -621,8 +620,16 @@ async fn main() {
     }
 
     let card = build_card(http_port, grpc_port);
-    let handler = Arc::new(
+    // The ACTS auth pass guards every operation; otherwise only the
+    // extended card is (see `acts_modes`).
+    let builder = if acts_modes::auth_enforced() {
+        RequestHandlerBuilder::new(ItkExecutor).with_interceptor(acts_modes::bearer())
+    } else {
         RequestHandlerBuilder::new(ItkExecutor)
+            .with_interceptor(acts_modes::ExtendedCardGuard(acts_modes::bearer()))
+    };
+    let handler = Arc::new(
+        builder
             .with_agent_card(card)
             .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
             .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())

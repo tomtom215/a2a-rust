@@ -31,8 +31,9 @@ use crate::ItkExecutor;
 
 /// Every behaviour this agent implements, by prefix. Longest first, so that
 /// no prefix shadows a longer one that begins with it.
-const BEHAVIOURS: [&str; 15] = [
+const BEHAVIOURS: [&str; 16] = [
     "tck-artifact-file-url",
+    "tck-client-parse",
     "tck-message-response",
     "tck-artifact-text",
     "tck-artifact-data",
@@ -132,9 +133,7 @@ pub(crate) async fn run(
     behaviour: &'static str,
     continuation: bool,
 ) -> A2aResult<()> {
-    use TaskState::{
-        AuthRequired, Canceled, Completed, Failed, InputRequired, Rejected, Working,
-    };
+    use TaskState::{AuthRequired, Canceled, Completed, Failed, InputRequired, Rejected, Working};
 
     if behaviour == "tck-message-response" {
         // A direct reply: no task exists, so it names none (DM-FMT-003).
@@ -145,6 +144,21 @@ pub(crate) async fn run(
 
     status(ctx, queue, Working, "working").await?;
     match behaviour {
+        "tck-client-parse" => {
+            let parsed = match crate::acts_client_parse::request(&ctx.message) {
+                Ok((operation, payload)) => {
+                    crate::acts_client_parse::parse(&operation, payload).await
+                }
+                Err(e) => Err(e),
+            };
+            match parsed {
+                Ok(value) => {
+                    artifact(ctx, queue, "parsed", Part::data(value), false, true).await?;
+                    status(ctx, queue, Completed, "parsed").await
+                }
+                Err(e) => status(ctx, queue, Failed, &e).await,
+            }
+        }
         "tck-complete-task" => status(ctx, queue, Completed, "task completed").await,
         "tck-input-required" if continuation => {
             status(ctx, queue, Completed, "input received").await
@@ -183,8 +197,15 @@ pub(crate) async fn run(
             }
         }
         "tck-artifact-text" => {
-            artifact(ctx, queue, "text", Part::text("generated text content"), false, true)
-                .await?;
+            artifact(
+                ctx,
+                queue,
+                "text",
+                Part::text("generated text content"),
+                false,
+                true,
+            )
+            .await?;
             status(ctx, queue, Completed, "artifact produced").await
         }
         "tck-artifact-data" => {
@@ -208,20 +229,40 @@ pub(crate) async fn run(
             status(ctx, queue, Completed, "artifact produced").await
         }
         "tck-stream-basic" => {
-            artifact(ctx, queue, "stream", Part::text("streamed content"), false, true).await?;
+            artifact(
+                ctx,
+                queue,
+                "stream",
+                Part::text("streamed content"),
+                false,
+                true,
+            )
+            .await?;
             status(ctx, queue, Completed, "stream complete").await
         }
         "tck-stream-chunked" => {
             let chunks = ["chunk one ", "chunk two ", "chunk three"];
             for (i, chunk) in chunks.iter().enumerate() {
-                artifact(ctx, queue, "chunked", Part::text(*chunk), i > 0, i + 1 == chunks.len())
-                    .await?;
+                artifact(
+                    ctx,
+                    queue,
+                    "chunked",
+                    Part::text(*chunk),
+                    i > 0,
+                    i + 1 == chunks.len(),
+                )
+                .await?;
             }
             status(ctx, queue, Completed, "stream complete").await
         }
         other => {
-            status(ctx, queue, Failed, &format!("behaviour {other} is declared but not handled"))
-                .await
+            status(
+                ctx,
+                queue,
+                Failed,
+                &format!("behaviour {other} is declared but not handled"),
+            )
+            .await
         }
     }
 }

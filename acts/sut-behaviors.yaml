@@ -8,9 +8,9 @@
 # Implemented in itk/src/acts.rs. A unit test there checks that this list and
 # that module's `BEHAVIOURS` name the same prefixes.
 #
-# Not implemented: `tck-client-parse` (the CLIENT-PARSE-*, CLIENT-AUTH-001 and
-# CLIENT-CAP-001 tests), which asks the agent to act as a client and report
-# what it parsed. Those tests fail by design until it is.
+# `tck-client-parse` runs the payload through this SDK's real client against
+# a loopback fixture (itk/src/acts_client_parse.rs). The reduced-capability
+# and auth passes are itk/src/acts_modes.rs.
 
 acts_version: "1.0"
 
@@ -106,3 +106,8 @@ behaviors:
     streaming: true
     artifacts:
       - text: "chunk one chunk two chunk three"
+
+  - prefix: "tck-client-parse"
+    description: "Parse a canonical wire payload with this SDK's client and return the result"
+    response_type: task
+    terminal_state: TASK_STATE_COMPLETED
