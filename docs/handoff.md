@@ -708,8 +708,8 @@ gets). At `9496d1b1`: JSON-RPC 101/101, gRPC 88/88, HTTP+JSON 91/92, every
 MUST passing, CONFORMANT overall; the one failure was REST-CT-001, which is
 N38. I first recorded REST-CT-001 as ACTS contradicting the spec;
 §11.1 says otherwise, and the code had cited the 2026-03-31 snapshot.
-An ACTS run at `dfc69ed2`, after the N38 fix, was in progress when this
-was written; its result is not recorded here yet. Build the ITK
+At `dfc69ed2`, after the N38 fix: JSON-RPC 101/101, gRPC 88/88, HTTP+JSON
+92/92, every MUST passing, CONFORMANT, no failures. Build the ITK
 and run ACTS with the workspace `target/` cleared: the two together do not
 fit the disk (see Lessons).
 
