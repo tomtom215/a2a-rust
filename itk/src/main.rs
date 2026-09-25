@@ -354,6 +354,8 @@ fn handle_instruction<'a>(
     })
 }
 
+mod acts;
+
 // ── Executor ─────────────────────────────────────────────────────────────────
 
 struct ItkExecutor;
@@ -394,6 +396,11 @@ impl AgentExecutor for ItkExecutor {
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            // ACTS conformance messages (`tck-*`) before the traversal
+            // protocol: see `acts.rs`.
+            if let Some((behaviour, continuation)) = acts::behaviour(ctx) {
+                return acts::run(ctx, queue, behaviour, continuation).await;
+            }
             queue
                 .write(Self::status_event(ctx, TaskState::Working, None))
                 .await?;

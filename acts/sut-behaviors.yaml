@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The ACTS `tck-*` behaviours this repository's ITK agent implements
+# (ACTS §11.1). The a2a-itk runner (`run_acts.py`) reads this file from the
+# repository root and FAILS any test needing a prefix not listed here.
+#
+# Implemented in itk/src/acts.rs. A unit test there checks that this list and
+# that module's `BEHAVIOURS` name the same prefixes.
+#
+# Not implemented: `tck-client-parse` (the CLIENT-PARSE-*, CLIENT-AUTH-001 and
+# CLIENT-CAP-001 tests), which asks the agent to act as a client and report
+# what it parsed. Those tests fail by design until it is.
+
+acts_version: "1.0"
+
+behaviors:
+  - prefix: "tck-complete-task"
+    description: "Complete the task with a text status message"
+    response_type: task
+    terminal_state: TASK_STATE_COMPLETED
+
+  - prefix: "tck-input-required"
+    description: "Ask for input; complete on the next turn"
+    response_type: task
+    terminal_state: TASK_STATE_INPUT_REQUIRED
+
+  - prefix: "tck-auth-required"
+    description: "Stop in AUTH_REQUIRED"
+    response_type: task
+    terminal_state: TASK_STATE_AUTH_REQUIRED
+
+  - prefix: "tck-reject-task"
+    description: "Reject the task"
+    response_type: task
+    terminal_state: TASK_STATE_REJECTED
+
+  - prefix: "tck-task-failure"
+    description: "Fail the task with an error message"
+    response_type: task
+    terminal_state: TASK_STATE_FAILED
+
+  - prefix: "tck-message-response"
+    description: "Answer with a direct Message, not a Task"
+    response_type: message
+
+  - prefix: "tck-multi-turn"
+    description: "Stay in INPUT_REQUIRED until a turn says 'done'"
+    response_type: task
+    terminal_state: TASK_STATE_COMPLETED
+
+  - prefix: "tck-cancel"
+    description: "Stay in WORKING until canceled"
+    response_type: task
+    terminal_state: TASK_STATE_CANCELED
+
+  - prefix: "tck-long-running"
+    description: "Stay in WORKING for a second, then complete"
+    response_type: task
+    terminal_state: TASK_STATE_COMPLETED
+    delay_ms: 1000
+
+  - prefix: "tck-artifact-text"
+    description: "Complete with a text artifact"
+    response_type: task
+    terminal_state: TASK_STATE_COMPLETED
+    artifacts:
+      - text: "generated text content"
+
+  - prefix: "tck-artifact-data"
+    description: "Complete with a structured data artifact"
+    response_type: task
+    terminal_state: TASK_STATE_COMPLETED
+    artifacts:
+      - data: {key: "value", count: 1}
+
+  - prefix: "tck-artifact-file"
+    description: "Complete with a file artifact carrying inline bytes"
+    response_type: task
+    terminal_state: TASK_STATE_COMPLETED
+    artifacts:
+      - file: {name: "document.txt", mediaType: "text/plain"}
+
+  - prefix: "tck-artifact-file-url"
+    description: "Complete with a file artifact carrying a URL"
+    response_type: task
+    terminal_state: TASK_STATE_COMPLETED
+    artifacts:
+      - fileUrl:
+          url: "https://example.com/document.txt"
+          name: "document.txt"
+          mediaType: "text/plain"
+
+  - prefix: "tck-stream-basic"
+    description: "Stream working, an artifact, then completed"
+    response_type: task
+    terminal_state: TASK_STATE_COMPLETED
+    streaming: true
+    artifacts:
+      - text: "streamed content"
+
+  - prefix: "tck-stream-chunked"
+    description: "Stream one artifact in three appended chunks"
+    response_type: task
+    terminal_state: TASK_STATE_COMPLETED
+    streaming: true
+    artifacts:
+      - text: "chunk one chunk two chunk three"
