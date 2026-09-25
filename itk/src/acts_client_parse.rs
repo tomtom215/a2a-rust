@@ -68,6 +68,22 @@ fn reserialize(e: serde_json::Error) -> String {
     format!("re-serializing: {e}")
 }
 
+/// What the client made of the payload: the decoded value, or — when the
+/// payload was an A2A error — the error as the client surfaced it, in the
+/// `{error: {code, message, data}}` shape ACTS compares (CLIENT-PARSE-004).
+/// Anything else the client refused with is a parse failure.
+fn surfaced(
+    result: Result<Result<Value, serde_json::Error>, a2a_protocol_client::ClientError>,
+) -> Result<Value, String> {
+    match result {
+        Ok(value) => value.map_err(reserialize),
+        Err(a2a_protocol_client::ClientError::Protocol(e)) => Ok(json!({
+            "error": {"code": e.code.as_i32(), "message": e.message, "data": e.data}
+        })),
+        Err(e) => Err(format!("client refused the response: {e}")),
+    }
+}
+
 async fn drive(operation: &str, base: &str) -> Result<Value, String> {
     match operation {
         "get_agent_card" => {
@@ -86,31 +102,30 @@ async fn drive(operation: &str, base: &str) -> Result<Value, String> {
                         MessageId::new("client-parse"),
                         vec![Part::text("client parse")],
                     );
-                    let resp = client
-                        .send_message(MessageSendParams {
-                            tenant: None,
-                            message,
-                            configuration: None,
-                            metadata: None,
-                        })
-                        .await
-                        .map_err(|e| format!("client refused the response: {e}"))?;
-                    serde_json::to_value(&resp).map_err(reserialize)
+                    surfaced(
+                        client
+                            .send_message(MessageSendParams {
+                                tenant: None,
+                                message,
+                                configuration: None,
+                                metadata: None,
+                            })
+                            .await
+                            .map(|v| serde_json::to_value(&v)),
+                    )
                 }
-                "get_task" => {
-                    let task = client
+                "get_task" => surfaced(
+                    client
                         .get_task(TaskQueryParams::new("client-parse"))
                         .await
-                        .map_err(|e| format!("client refused the response: {e}"))?;
-                    serde_json::to_value(&task).map_err(reserialize)
-                }
-                "get_extended_agent_card" => {
-                    let card = client
+                        .map(|v| serde_json::to_value(&v)),
+                ),
+                "get_extended_agent_card" => surfaced(
+                    client
                         .get_extended_agent_card()
                         .await
-                        .map_err(|e| format!("client refused the response: {e}"))?;
-                    serde_json::to_value(&card).map_err(reserialize)
-                }
+                        .map(|v| serde_json::to_value(&v)),
+                ),
                 _ => Err(format!("tck-client-parse: no client call for {other}")),
             }
         }
@@ -119,6 +134,12 @@ async fn drive(operation: &str, base: &str) -> Result<Value, String> {
 
 /// The body the fixture sends for a request whose JSON-RPC id is `id`.
 fn answer(payload: &Value, id: &Value, is_card_path: bool) -> Value {
+    if !is_card_path
+        && payload.get("jsonrpc").is_some()
+        && let Some(error) = payload.get("error")
+    {
+        return json!({"jsonrpc": "2.0", "id": id, "error": error});
+    }
     let inner = payload
         .get("result")
         .filter(|_| payload.get("jsonrpc").is_some())
@@ -223,6 +244,31 @@ mod tests {
     fn a_card_is_served_bare_on_the_well_known_path() {
         let card = json!({"name": "A"});
         assert_eq!(answer(&card, &json!(null), true), card);
+    }
+
+    #[test]
+    fn an_error_envelope_stays_an_error() {
+        let payload = json!({"jsonrpc": "2.0", "id": "req-004",
+                             "error": {"code": -32001, "message": "Task not found"}});
+        let body = answer(&payload, &json!(3), false);
+        assert_eq!(body["error"]["code"], -32001);
+        assert!(body.get("result").is_none(), "{body}");
+    }
+
+    /// CLIENT-PARSE-004: an A2A error the client surfaces is the parse
+    /// result, not a failure to parse.
+    #[tokio::test]
+    async fn the_client_surfaces_a_golden_error_through_http() {
+        let payload = json!({"jsonrpc": "2.0", "id": "req-004",
+                             "error": {"code": -32001, "message": "Task not found"}});
+        let parsed = parse("get_task", payload).await.expect("surfaced");
+        assert_eq!(parsed["error"]["code"], -32001);
+        assert!(
+            parsed["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("not found")
+        );
     }
 
     #[tokio::test]
