@@ -831,7 +831,17 @@ mod tests {
     /// must be accepted.
     #[tokio::test]
     async fn event_of_exactly_max_size_is_accepted() {
-        let event = make_status_event("t-exact", TaskState::Working);
+        // Already stamped: `write` stamps an empty status timestamp before it
+        // measures (N35), so an unstamped event would grow past `exact` by
+        // the stamp's length and the boundary would no longer be at `exact`.
+        let stamped = || {
+            let mut event = make_status_event("t-exact", TaskState::Working);
+            if let StreamResponse::StatusUpdate(u) = &mut event {
+                u.status.timestamp = Some("2026-01-02T03:04:05.000Z".into());
+            }
+            event
+        };
+        let event = stamped();
         let exact = serde_json::to_vec(&event).expect("serializes").len();
 
         let (writer, _reader) = new_in_memory_queue_with_options(16, exact, DEFAULT_WRITE_TIMEOUT);
@@ -843,7 +853,7 @@ mod tests {
 
         // And one byte under the size is still rejected, which pins the
         // boundary from the other side.
-        let event = make_status_event("t-exact", TaskState::Working);
+        let event = stamped();
         let (writer, _reader) =
             new_in_memory_queue_with_options(16, exact - 1, DEFAULT_WRITE_TIMEOUT);
         assert!(

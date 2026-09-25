@@ -488,7 +488,9 @@ someone scanning for such changes would look.
   timestamps, `ListTasks` is ordered by them (§3.1.4), and ACTS
   DM-SERIAL-001 (a MUST) failed. The event queue now stamps any status
   update or task snapshot the executor left without one, before it is
-  persisted or streamed; a timestamp the executor set is kept.
+  persisted or streamed; a timestamp the executor set is kept. The stamp
+  counts toward `max_event_size`, so a status event within a few dozen
+  bytes of that limit may now be refused.
 - **`SendMessage` checks message parts' media types against the agent
   card** (server; audit N34) — see **Behaviour Changes** for what is
   refused and how to opt out. Found by the ACTS conformance suite
