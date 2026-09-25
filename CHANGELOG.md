@@ -119,6 +119,17 @@ what a new task on an existing context inherits (#130) reached them filed
 under **Fixed**; that entry did say it changed the wire shape, but not where
 someone scanning for such changes would look.
 
+- **HTTP+JSON operation responses are `Content-Type: application/a2a+json`**
+  (server; audit N38). Spec §11.1 says the A2A media type SHOULD be used
+  for requests and responses; `RestDispatcher` and the axum adapter sent
+  `application/json`. Successes and errors both change; the adapter's
+  successes also gain the `A2A-Version` header its errors and
+  `RestDispatcher` already sent. The agent card's well-known URL,
+  `/health` and `/ready` stay `application/json`, and JSON-RPC stays
+  `application/json` (§9). Both media types are still accepted on
+  requests. **Migration:** a client that required `application/json` on
+  an HTTP+JSON response accepts `application/a2a+json`; this SDK's client
+  does not check it.
 - **The axum adapter's error bodies are AIP-193, as `RestDispatcher`'s are**
   (server, `axum` feature; audit N37). It answered `{"error": "<text>"}`; it
   now answers `{"error": {"code", "status", "message", "details"}}` through
@@ -509,6 +520,11 @@ someone scanning for such changes would look.
   bytes of that limit may now be refused.
 - **The two HTTP+JSON dispatchers answer the same failure identically**
   (server; audit N37) — see **Behaviour Changes**. Found while fixing N36.
+- **HTTP+JSON responses carry the A2A media type** (server; audit N38) —
+  see **Behaviour Changes**. The response header cited a §11.1 from the
+  2026-03-31 specification snapshot, which said `application/json`;
+  upstream changed that line, and the 2026-08-30 refresh did not reach the
+  code. Found by the ACTS conformance suite (REST-CT-001, a SHOULD).
 - **This SDK's client recovers from a revoked or rotated token against this
   SDK's server** (server; audit N36). The client drops a cached token on
   `401`; the server never sent one, so the refused token was re-sent on every

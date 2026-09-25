@@ -16,6 +16,7 @@ mod response;
 // The axum adapter answers errors through these, so the two HTTP+JSON
 // dispatchers send one error shape (audit N37).
 pub(crate) use error_response::{error_json_response, server_error_to_response};
+pub(crate) use response::json_ok_response;
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -35,9 +36,7 @@ use query::{
     contains_path_traversal, parse_list_tasks_query, parse_query_param, parse_query_param_u32,
     percent_decode, strip_tenant_prefix,
 };
-use response::{
-    extract_headers, health_response, inject_field_if_missing, json_ok_response, read_body_limited,
-};
+use response::{extract_headers, health_response, inject_field_if_missing, read_body_limited};
 
 /// REST HTTP request dispatcher.
 ///

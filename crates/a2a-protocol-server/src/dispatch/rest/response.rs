@@ -24,7 +24,7 @@ pub(super) fn extract_headers(headers: &hyper::HeaderMap) -> HashMap<String, Str
     map
 }
 
-pub(super) fn json_ok_response<T: serde::Serialize>(
+pub fn json_ok_response<T: serde::Serialize>(
     value: &T,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     match serde_json::to_vec(value) {
@@ -43,21 +43,36 @@ pub(super) fn internal_error_response() -> hyper::Response<BoxBody<Bytes, Infall
 }
 
 /// Returns a health check response.
+///
+/// `application/json`, not the A2A media type: a probe is not an A2A
+/// operation, and the tooling that polls it expects plain JSON.
 pub(super) fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
     let body = br#"{"status":"ok"}"#;
-    build_json_response(200, body.to_vec())
+    build_response(200, body.to_vec(), a2a_protocol_types::JSON_CONTENT_TYPE)
 }
 
-/// Builds a JSON HTTP response with the given status and body.
+/// Builds an A2A operation's JSON response, success or error.
+///
+/// §11.1: `application/a2a+json` SHOULD be used for requests and responses.
+/// This emitted `application/json` until 2026-09-25, citing a §11.1 that
+/// said so in the specification snapshot of 2026-03-31; upstream changed the
+/// line, and the 2026-08-30 refresh did not reach this comment (ACTS
+/// REST-CT-001). Both media types stay accepted on ingress.
 pub(super) fn build_json_response(
     status: u16,
     body: Vec<u8>,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    build_response(status, body, a2a_protocol_types::A2A_CONTENT_TYPE)
+}
+
+fn build_response(
+    status: u16,
+    body: Vec<u8>,
+    content_type: &'static str,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     hyper::Response::builder()
         .status(status)
-        // §11.1: the REST binding emits application/json; the registered
-        // a2a+json media type remains accepted on ingress.
-        .header("content-type", a2a_protocol_types::JSON_CONTENT_TYPE)
+        .header("content-type", content_type)
         .header(
             a2a_protocol_types::A2A_VERSION_HEADER,
             a2a_protocol_types::A2A_VERSION,
@@ -162,6 +177,16 @@ mod tests {
         assert_eq!(val["status"], "ok");
     }
 
+    #[test]
+    fn health_stays_plain_json_while_operations_use_the_a2a_media_type() {
+        let ct = |r: hyper::Response<BoxBody<Bytes, Infallible>>| {
+            r.headers()["content-type"].to_str().unwrap().to_owned()
+        };
+        assert_eq!(ct(health_response()), "application/json");
+        assert_eq!(ct(json_ok_response(&1)), "application/a2a+json");
+        assert_eq!(ct(internal_error_response()), "application/a2a+json");
+    }
+
     #[tokio::test]
     async fn internal_error_response_is_500() {
         let resp = internal_error_response();
@@ -237,7 +262,7 @@ mod tests {
                 resp.headers()
                     .get("content-type")
                     .and_then(|v| v.to_str().ok()),
-                Some(a2a_protocol_types::JSON_CONTENT_TYPE),
+                Some(a2a_protocol_types::A2A_CONTENT_TYPE),
             );
         }
     }

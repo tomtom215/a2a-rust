@@ -105,3 +105,58 @@ async fn rest_and_axum_answer_the_same_failures_identically() {
         );
     }
 }
+
+/// Both dispatchers label operations, successes and errors alike,
+/// `application/a2a+json` (§11.1, ACTS REST-CT-001) and carry `A2A-Version`;
+/// the liveness probe, not an A2A operation, stays `application/json`. Before
+/// 2026-09-25 `RestDispatcher` sent `application/json` from a stale reading
+/// of §11.1, and the adapter's successes did too, without a version.
+#[tokio::test]
+async fn rest_and_axum_label_operations_with_the_a2a_media_type() {
+    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
+        .await
+        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let axum_addr = listener.local_addr().unwrap();
+    let app = A2aRouter::new(handler()).into_router();
+    tokio::spawn(async move { axum::serve(listener, app).await });
+
+    let heads = |addr: std::net::SocketAddr, path: &'static str, token: Option<&'static str>| async move {
+        let client =
+            hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+                .build_http::<Full<Bytes>>();
+        let mut req = hyper::Request::builder()
+            .uri(format!("http://{addr}{path}"))
+            .header("a2a-version", "1.0");
+        if let Some(t) = token {
+            req = req.header("authorization", format!("Bearer {t}"));
+        }
+        let resp = client
+            .request(req.body(Full::new(Bytes::new())).unwrap())
+            .await
+            .unwrap();
+        let h = |n: &str| {
+            resp.headers()
+                .get(n)
+                .map(|v| v.to_str().unwrap().to_owned())
+        };
+        (resp.status().as_u16(), h("content-type"), h("a2a-version"))
+    };
+
+    let cases: [(&str, Option<&str>, u16, &str); 3] = [
+        ("/tasks", Some("good"), 200, "application/a2a+json"),
+        ("/tasks/nope", Some("good"), 404, "application/a2a+json"),
+        ("/health", None, 200, "application/json"),
+    ];
+    for (path, token, status, ct) in cases {
+        let r = heads(rest, path, token).await;
+        let a = heads(axum_addr, path, token).await;
+        assert_eq!(r.0, status, "GET {path}");
+        assert_eq!(r.1.as_deref(), Some(ct), "GET {path}: RestDispatcher");
+        assert_eq!(a.1.as_deref(), Some(ct), "GET {path}: axum adapter");
+        if ct == "application/a2a+json" {
+            assert_eq!(r.2.as_deref(), Some("1.0"), "GET {path}: RestDispatcher");
+            assert_eq!(a.2.as_deref(), Some("1.0"), "GET {path}: axum adapter");
+        }
+    }
+}

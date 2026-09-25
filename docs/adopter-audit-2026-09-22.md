@@ -602,6 +602,20 @@ stores (`tests/cross_replica_cancel/`).
   on the old adapter (`{"error": "task not found: nope"}`). **[Fixed: the
   adapter answers through the REST dispatcher's builders; REST's route and
   body errors gain `status`]**
+- **N38 — HTTP+JSON responses were labelled `application/json`** (Low,
+  server wire behaviour; found by the ACTS conformance suite, REST-CT-001,
+  a SHOULD). Spec §11.1 reads "`application/a2a+json` **SHOULD** be used
+  for requests and responses"; the 2026-03-31 snapshot this was written
+  against read `application/json`, and the comment citing it outlived the
+  2026-08-30 refresh, as the push sender's Content-Type once had. The
+  axum adapter's successes also sent no `A2A-Version`. VALIDATED:
+  `rest_and_axum_label_operations_with_the_a2a_media_type` in
+  `tests/http_json_error_parity.rs` fails on the old dispatchers
+  (`GET /tasks` answered `application/json`). This had been recorded in
+  this session as ACTS contradicting the spec; reading §11.1 showed
+  otherwise. **[Fixed: operations and their errors answer
+  `application/a2a+json` from both dispatchers; the card's well-known URL
+  and the probes stay `application/json`]**
 - **Examined and left, from the same audit** (CONJECTURED, not reproduced):
   a queue write dropped between persisting and broadcasting an event — only
   the executor timeout firing inside a terminal event's verdict wait can do

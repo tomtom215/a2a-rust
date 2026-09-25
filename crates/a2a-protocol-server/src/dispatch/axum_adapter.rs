@@ -270,6 +270,14 @@ fn bad_body(err: &serde_json::Error) -> axum::response::Response {
 
 /// Converts a hyper `Response<BoxBody<Bytes, Infallible>>` (from SSE builder)
 /// into an axum `Response`.
+/// An A2A operation's success response, built by the REST dispatcher's own
+/// builder so both HTTP+JSON dispatchers answer with the same headers:
+/// `application/a2a+json` (§11.1) and `A2A-Version`. `axum::Json` would
+/// send `application/json` and no version.
+fn a2a_json<T: serde::Serialize>(value: &T) -> axum::response::Response {
+    hyper_to_axum(crate::dispatch::rest::json_ok_response(value))
+}
+
 fn hyper_to_axum(
     resp: hyper::Response<http_body_util::combinators::BoxBody<Bytes, Infallible>>,
 ) -> axum::response::Response {
@@ -480,7 +488,7 @@ async fn handle_list_tasks(
         &hdrs,
         async {
             match state.handler.on_list_tasks(params, Some(&hdrs)).await {
-                Ok(result) => axum::Json(result).into_response(),
+                Ok(result) => a2a_json(&result),
                 Err(e) => handler_error_to_response(&e),
             }
         },
@@ -500,7 +508,7 @@ async fn handle_extended_card(
         &hdrs,
         async {
             match state.handler.on_get_extended_agent_card(Some(&hdrs)).await {
-                Ok(card) => axum::Json(card).into_response(),
+                Ok(card) => a2a_json(&card),
                 Err(e) => handler_error_to_response(&e),
             }
         },
@@ -574,7 +582,7 @@ async fn handle_send_inner(
         .on_send_message(params, streaming, Some(hdrs))
         .await
     {
-        Ok(SendMessageResult::Response(resp)) => axum::Json(resp).into_response(),
+        Ok(SendMessageResult::Response(resp)) => a2a_json(&resp),
         Ok(SendMessageResult::Stream(reader)) => hyper_to_axum(build_sse_response(
             reader,
             Some(state.config.sse_keep_alive_interval),
@@ -596,7 +604,7 @@ async fn handle_get_task_inner(
         history_length: None,
     };
     match state.handler.on_get_task(params, Some(hdrs)).await {
-        Ok(task) => axum::Json(task).into_response(),
+        Ok(task) => a2a_json(&task),
         Err(e) => handler_error_to_response(&e),
     }
 }
@@ -612,7 +620,7 @@ async fn handle_cancel_task_inner(
         metadata: None,
     };
     match state.handler.on_cancel_task(params, Some(hdrs)).await {
-        Ok(task) => axum::Json(task).into_response(),
+        Ok(task) => a2a_json(&task),
         Err(e) => handler_error_to_response(&e),
     }
 }
@@ -657,7 +665,7 @@ async fn handle_create_push_config_inner(
             Err(e) => return bad_body(&e),
         };
     match state.handler.on_set_push_config(config, Some(hdrs)).await {
-        Ok(result) => axum::Json(result).into_response(),
+        Ok(result) => a2a_json(&result),
         Err(e) => handler_error_to_response(&e),
     }
 }
@@ -674,7 +682,7 @@ async fn handle_get_push_config_inner(
         id: config_id.to_owned(),
     };
     match state.handler.on_get_push_config(params, Some(hdrs)).await {
-        Ok(config) => axum::Json(config).into_response(),
+        Ok(config) => a2a_json(&config),
         Err(e) => handler_error_to_response(&e),
     }
 }
@@ -694,7 +702,7 @@ async fn handle_list_push_configs_inner(
                 configs,
                 next_page_token: None,
             };
-            axum::Json(resp).into_response()
+            a2a_json(&resp)
         }
         Err(e) => handler_error_to_response(&e),
     }
@@ -716,7 +724,7 @@ async fn handle_delete_push_config_inner(
         .on_delete_push_config(params, Some(hdrs))
         .await
     {
-        Ok(()) => axum::Json(serde_json::json!({})).into_response(),
+        Ok(()) => a2a_json(&serde_json::json!({})),
         Err(e) => handler_error_to_response(&e),
     }
 }
