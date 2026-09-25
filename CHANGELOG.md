@@ -756,6 +756,14 @@ someone scanning for such changes would look.
 
 ### Internal
 
+- **The genai examples move to genai 0.6.5** (`genai-a2a-agent`,
+  `incident-response`; supersedes Dependabot's #128). 0.12 kept them on 0.5
+  because every 0.6.x depends on the unmaintained `paste`
+  (RUSTSEC-2024-0436). That advisory is now `deny.toml`'s first ignore, with
+  its justification: it is informational, `paste` is a compile-time
+  proc-macro, and it reaches only these two examples, not a published
+  crate. genai 0.7.0-beta.24 was considered and still depends on `paste`.
+  No source change was needed; both examples' tests pass.
 - **`scripts/check_panic_paths.py` counts `unreachable!`**, which panics as
   `panic!` does and was invisible to the gate. The one in library code — the
   JSON-RPC dispatcher's batch branch, after an `is_array()` test that made

@@ -744,15 +744,14 @@ run clippy before calling a change on the send path done.
 - task #16, CI: pin the official suites, a lightweight daily canary, an
   ACTS gate against a baseline, and spec/proto drift detection — the last
   is what N38 (and the push sender's Content-Type before it) needed;
-- report a2a-go's `application/json`-only error decoding upstream
-  (`internal/rest/rest.go`, `FromRESTError`, v2.5.0), then revisit N38;
-- the genai 0.5.3 → 0.6.5 upgrade (supersedes #128): builds, clippy
-  clean, the two examples' 27 tests pass, but `cargo deny` fails on
-  `paste` (RUSTSEC-2024-0436, unmaintained, a proc-macro reached only from
-  the two examples), and `deny.toml` has no advisory ignores. Waiting on
-  the maintainer: add the first waiver, or stay on 0.5.3. The change is in
-  a local stash only, so a new session redoes it (two `Cargo.toml` lines
-  and `cargo update -p genai`);
+- N38's media type: recorded as a deliberate deviation in
+  `book/src/reference/conformance-history.md`. The maintainer chose not to
+  report a2a-go's `application/json`-only error decoding upstream for now
+  (2026-09-25); revisit when a2a-go changes, using `go_sdk_interop.sh`;
+- close Dependabot's #128: genai 0.6.5 landed on this branch with
+  `deny.toml`'s first advisory ignore (RUSTSEC-2024-0436, `paste`), the
+  maintainer's choice on 2026-09-25; 0.7.0-beta.24 was checked and still
+  depends on `paste`. Drop the ignore when genai drops `paste`;
 
 - WS3 — genai, rig and mcp over every binding with the real model, and why
   a WebSocket `SendMessage` timed out while a model server was busy;
@@ -794,7 +793,7 @@ window; the load loop now has a request floor. Neither fix has had a full
 preflight; see the commit for what ran.
 
 **What the next session should do first:** check CI on the branch head,
-then the maintainer's answer on the genai waiver, then the `swarm_scale`
+then the `swarm_scale`
 comparison for N21 and WS3.
 
 ## In flight outside this repository
