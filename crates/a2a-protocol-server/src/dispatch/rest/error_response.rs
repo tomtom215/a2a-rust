@@ -120,7 +120,7 @@ mod tests {
             resp.headers()
                 .get("content-type")
                 .and_then(|v| v.to_str().ok()),
-            Some(a2a_protocol_types::A2A_CONTENT_TYPE),
+            Some(a2a_protocol_types::JSON_CONTENT_TYPE),
         );
     }
 

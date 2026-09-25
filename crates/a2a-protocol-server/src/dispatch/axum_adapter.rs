@@ -271,9 +271,8 @@ fn bad_body(err: &serde_json::Error) -> axum::response::Response {
 /// Converts a hyper `Response<BoxBody<Bytes, Infallible>>` (from SSE builder)
 /// into an axum `Response`.
 /// An A2A operation's success response, built by the REST dispatcher's own
-/// builder so both HTTP+JSON dispatchers answer with the same headers:
-/// `application/a2a+json` (§11.1) and `A2A-Version`. `axum::Json` would
-/// send `application/json` and no version.
+/// builder so both HTTP+JSON dispatchers answer with the same headers;
+/// `axum::Json` sent no `A2A-Version`.
 fn a2a_json<T: serde::Serialize>(value: &T) -> axum::response::Response {
     hyper_to_axum(crate::dispatch::rest::json_ok_response(value))
 }

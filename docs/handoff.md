@@ -635,7 +635,7 @@ tests, `cargo semver-checks`, `prove_gates_fail.sh`.
 | N35 | task statuses served without a timestamp | Low |
 | N36 | a refused credential answered `400`; the client never dropped a revoked token | Medium |
 | N37 | the axum adapter's errors were not AIP-193 | Low |
-| N38 | HTTP+JSON responses labelled `application/json`, not `application/a2a+json` | Low |
+| N38 | the axum adapter's successes carried no `A2A-Version`; `application/json` kept by choice | Low |
 | N16 | missing constructors; `CancellationToken` re-exported | Low (API) |
 | N18 | `WebSocketTransport` now reconnects, single-flight | Low (client) |
 
@@ -690,6 +690,10 @@ while the binding pins 0.15.
   that a release with no notes, and two probes went INCONCLUSIVE. Both
   release fixtures now key off the newest dated CHANGELOG heading
   (`37320002`).
+- **A spec SHOULD is not the only reader of the wire.** N38's switch to
+  the spec's media type passed every test here and ACTS, and broke the
+  official Go client; only the cross-SDK interop gate caught it. Run
+  `go_sdk_interop.sh` before pushing any change to HTTP+JSON headers.
 - **Re-run the static gates after the last change, not before it.** The
   first branch preflight failed four gates, all introduced by this branch's
   own later edits: a file over the length limit, an API-reference row, a
@@ -705,11 +709,15 @@ reduced-capability and auth passes (`itk/src/acts_modes.rs`, whose guard
 refuses through the SDK's own `BearerTokenAuthInterceptor` and
 `A2aError::permission_denied`, so the auth tests grade what an adopter
 gets). At `9496d1b1`: JSON-RPC 101/101, gRPC 88/88, HTTP+JSON 91/92, every
-MUST passing, CONFORMANT overall; the one failure was REST-CT-001, which is
-N38. I first recorded REST-CT-001 as ACTS contradicting the spec;
-§11.1 says otherwise, and the code had cited the 2026-03-31 snapshot.
-At `dfc69ed2`, after the N38 fix: JSON-RPC 101/101, gRPC 88/88, HTTP+JSON
-92/92, every MUST passing, CONFORMANT, no failures. Build the ITK
+MUST passing, CONFORMANT overall; the one failure was REST-CT-001 (a
+SHOULD: `application/a2a+json` on HTTP+JSON responses, §11.1). I first
+recorded it as ACTS contradicting the spec; §11.1 says otherwise, and the
+code had cited the 2026-03-31 snapshot. `dfc69ed2` switched to the A2A
+media type and ACTS went to 92/92, but CI's `go_sdk_interop.sh` failed:
+a2a-go's client reads HTTP+JSON errors only under `application/json`. The
+switch was reverted and the deviation documented (N38 in the audit); the
+official Rust SDK fails REST-CT-001 the same way. So REST-CT-001 fails by
+choice until a2a-go accepts both. Build the ITK
 and run ACTS with the workspace `target/` cleared: the two together do not
 fit the disk (see Lessons).
 
@@ -736,7 +744,15 @@ run clippy before calling a change on the send path done.
 - task #16, CI: pin the official suites, a lightweight daily canary, an
   ACTS gate against a baseline, and spec/proto drift detection — the last
   is what N38 (and the push sender's Content-Type before it) needed;
-- the genai 0.5.3 → 0.6.5 upgrade (supersedes #128);
+- report a2a-go's `application/json`-only error decoding upstream
+  (`internal/rest/rest.go`, `FromRESTError`, v2.5.0), then revisit N38;
+- the genai 0.5.3 → 0.6.5 upgrade (supersedes #128): builds, clippy
+  clean, the two examples' 27 tests pass, but `cargo deny` fails on
+  `paste` (RUSTSEC-2024-0436, unmaintained, a proc-macro reached only from
+  the two examples), and `deny.toml` has no advisory ignores. Waiting on
+  the maintainer: add the first waiver, or stay on 0.5.3. The change is in
+  a local stash only, so a new session redoes it (two `Cargo.toml` lines
+  and `cargo update -p genai`);
 
 - WS3 — genai, rig and mcp over every binding with the real model, and why
   a WebSocket `SendMessage` timed out while a model server was busy;
@@ -770,14 +786,16 @@ including `Test (1.88, macos-latest)`, which had failed at `37320002` on a
 graceful-drain test that slept instead of waiting for its request
 (`ff63be5a`). The last full local preflight, at `fd028712`, passed 74 of
 75 gates; the 75th was `prove_workflow_gates_fail.py`, fixed and re-run
-alone in `37320002`. N38 (`dfc69ed2`) was checked by the four crates'
-tests with all features (3706 passed, 0 failed, 109 ignored), workspace
-and per-feature clippy, rustdoc and the 21 script gates, not by a full
-preflight.
+alone in `37320002`. After that, CI at `20a6d817` failed two jobs: the
+Go interop (N38's switch, reverted) and `Test (stable, windows-latest)`,
+where `the_task_store_stays_bounded_under_sustained_load` failed its own
+precondition because a slow runner sent too few requests in its fixed
+window; the load loop now has a request floor. Neither fix has had a full
+preflight; see the commit for what ran.
 
 **What the next session should do first:** check CI on the branch head,
-then the genai upgrade, then the `swarm_scale` comparison for N21 and
-WS3.
+then the maintainer's answer on the genai waiver, then the `swarm_scale`
+comparison for N21 and WS3.
 
 ## In flight outside this repository
 

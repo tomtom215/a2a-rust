@@ -506,11 +506,11 @@ async fn rest_response_has_a2a_version_header() {
         resp.headers()
             .get("content-type")
             .and_then(|v| v.to_str().ok()),
-        // §11.1 says `application/a2a+json` SHOULD be used; this pinned
-        // `application/json` from the 2026-03-31 specification snapshot,
-        // whose §11.1 said so, until 2026-09-25 (ACTS REST-CT-001).
-        Some("application/a2a+json"),
-        "responses emit application/a2a+json per spec §11.1"
+        // Not what §11.1 recommends (`application/a2a+json`, a SHOULD): the
+        // official Go SDK's client cannot read errors labelled that way.
+        // See `build_json_response`.
+        Some("application/json"),
+        "responses emit application/json for a2a-go interop"
     );
 }
 

@@ -602,20 +602,23 @@ stores (`tests/cross_replica_cancel/`).
   on the old adapter (`{"error": "task not found: nope"}`). **[Fixed: the
   adapter answers through the REST dispatcher's builders; REST's route and
   body errors gain `status`]**
-- **N38 — HTTP+JSON responses were labelled `application/json`** (Low,
-  server wire behaviour; found by the ACTS conformance suite, REST-CT-001,
-  a SHOULD). Spec §11.1 reads "`application/a2a+json` **SHOULD** be used
-  for requests and responses"; the 2026-03-31 snapshot this was written
-  against read `application/json`, and the comment citing it outlived the
-  2026-08-30 refresh, as the push sender's Content-Type once had. The
-  axum adapter's successes also sent no `A2A-Version`. VALIDATED:
-  `rest_and_axum_label_operations_with_the_a2a_media_type` in
-  `tests/http_json_error_parity.rs` fails on the old dispatchers
-  (`GET /tasks` answered `application/json`). This had been recorded in
-  this session as ACTS contradicting the spec; reading §11.1 showed
-  otherwise. **[Fixed: operations and their errors answer
-  `application/a2a+json` from both dispatchers; the card's well-known URL
-  and the probes stay `application/json`]**
+- **N38 — HTTP+JSON responses are labelled `application/json`, and the
+  axum adapter's successes carried no `A2A-Version`** (Low, server wire
+  behaviour; found by the ACTS conformance suite, REST-CT-001, a SHOULD).
+  Spec §11.1 reads "`application/a2a+json` **SHOULD** be used for requests
+  and responses"; the code cited §11.1 for `application/json`, from the
+  2026-03-31 snapshot, which said so. Switching to the A2A media type
+  (`dfc69ed2`) broke the official Go SDK: a2a-go v2.5.0's
+  `internal/rest.FromRESTError` decodes an error body only under
+  `application/json`, so every HTTP+JSON error reached a Go client as a
+  bare "server error" (`go_sdk_interop.sh`, 5 failures on CI). a2a-go's
+  server and the official Rust SDK send `application/json` as well, and
+  the latter fails REST-CT-001 too. **[Kept as a deliberate deviation,
+  with the citation corrected; `application/a2a+json` stays accepted on
+  requests. Fixed: the adapter's successes go through the REST builder and
+  carry `A2A-Version`; `rest_and_axum_answer_operations_with_the_same_headers`
+  fails on the old adapter. Open: report the Go client's check upstream,
+  and switch once clients accept both]**
 - **Examined and left, from the same audit** (CONJECTURED, not reproduced):
   a queue write dropped between persisting and broadcasting an event — only
   the executor timeout firing inside a terminal event's verdict wait can do
