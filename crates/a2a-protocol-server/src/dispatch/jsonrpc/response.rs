@@ -184,6 +184,25 @@ pub(super) fn parse_error_response(
     }
 }
 
+/// JSON-RPC 2.0 Invalid Request (-32600): the body is JSON but not a valid
+/// Request object.
+pub(super) fn invalid_request_response(
+    id: JsonRpcId,
+    message: &str,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    let resp = JsonRpcErrorResponse::new(
+        id.clone(),
+        JsonRpcError::new(
+            a2a_protocol_types::error::ErrorCode::InvalidRequest.as_i32(),
+            format!("Invalid Request: {message}"),
+        ),
+    );
+    match serde_json::to_vec(&resp) {
+        Ok(body) => json_response(200, body),
+        Err(e) => internal_serialization_error(id, &e),
+    }
+}
+
 /// Fallback response when JSON-RPC serialization itself fails.
 pub(super) fn internal_serialization_error(
     _id: JsonRpcId,

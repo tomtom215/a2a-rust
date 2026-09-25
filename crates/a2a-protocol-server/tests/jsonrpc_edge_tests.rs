@@ -367,3 +367,52 @@ async fn jsonrpc_options_returns_204_or_200() {
         "OPTIONS should return 204 or 200"
     );
 }
+
+// ── Parse error vs Invalid Request (ACTS CORE-ERR-006) ──────────────────────
+//
+// JSON-RPC 2.0 §5.1: -32700 is for a body that is not JSON; a body that is
+// JSON but not a valid Request object is -32600. Until 2026-09-25 every body
+// that failed to deserialize was answered -32700, including the examples the
+// JSON-RPC specification itself answers -32600 (`1`, `[]`, `[1]`).
+
+fn error_code(resp: &str) -> i64 {
+    let v: serde_json::Value = serde_json::from_str(resp).expect("a JSON-RPC response");
+    v["error"]["code"].as_i64().expect("an error code")
+}
+
+#[tokio::test]
+async fn a_request_without_a_method_is_an_invalid_request() {
+    let addr = start_jsonrpc_server().await;
+    let (status, resp) = post_jsonrpc(addr, r#"{"jsonrpc":"2.0","id":1,"params":{}}"#).await;
+    assert_eq!(status, 200);
+    assert_eq!(error_code(&resp), -32600, "{resp}");
+}
+
+#[tokio::test]
+async fn a_bare_json_value_is_an_invalid_request() {
+    let addr = start_jsonrpc_server().await;
+    let (_, resp) = post_jsonrpc(addr, "1").await;
+    assert_eq!(error_code(&resp), -32600, "{resp}");
+}
+
+#[tokio::test]
+async fn an_empty_batch_is_an_invalid_request() {
+    let addr = start_jsonrpc_server().await;
+    let (_, resp) = post_jsonrpc(addr, "[]").await;
+    assert_eq!(error_code(&resp), -32600, "{resp}");
+}
+
+#[tokio::test]
+async fn a_batch_item_that_is_not_a_request_is_an_invalid_request() {
+    let addr = start_jsonrpc_server().await;
+    let (_, resp) = post_jsonrpc(addr, "[1]").await;
+    let v: serde_json::Value = serde_json::from_str(&resp).expect("a batch response");
+    assert_eq!(v[0]["error"]["code"], -32600, "{resp}");
+}
+
+#[tokio::test]
+async fn a_body_that_is_not_json_is_still_a_parse_error() {
+    let addr = start_jsonrpc_server().await;
+    let (_, resp) = post_jsonrpc(addr, r#"{"jsonrpc":"2.0","#).await;
+    assert_eq!(error_code(&resp), -32700, "{resp}");
+}

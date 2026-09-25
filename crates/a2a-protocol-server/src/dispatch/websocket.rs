@@ -832,19 +832,25 @@ async fn process_ws_message(
     headers: &HashMap<String, String>,
 ) {
     let started = std::time::Instant::now();
-    let rpc_req: JsonRpcRequest = match serde_json::from_str(text) {
+    // Not JSON: Parse error (-32700). JSON but not a Request object — no
+    // `method`, a bare number: Invalid Request (-32600). Until 2026-09-25
+    // both were answered -32700 (ACTS CORE-ERR-006).
+    let parsed = serde_json::from_str::<serde_json::Value>(text)
+        .map_err(|e| (-32700, format!("parse error: {e}")))
+        .and_then(|v| {
+            serde_json::from_value::<JsonRpcRequest>(v)
+                .map_err(|e| (-32600, format!("Invalid Request: {e}")))
+        });
+    let rpc_req = match parsed {
         Ok(req) => req,
-        Err(e) => {
+        Err((code, message)) => {
             crate::rpc_span::record_unrouted(
                 handler,
                 crate::rpc_span::RpcSystem::JsonRpc,
                 started,
-                "-32700",
+                &code.to_string(),
             );
-            let err_resp = JsonRpcErrorResponse::new(
-                None,
-                JsonRpcError::new(-32700, format!("parse error: {e}")),
-            );
+            let err_resp = JsonRpcErrorResponse::new(None, JsonRpcError::new(code, message));
             send_json(&writer, &err_resp).await;
             return;
         }

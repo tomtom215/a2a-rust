@@ -470,6 +470,13 @@ someone scanning for such changes would look.
   (server; audit N32). It recorded the file's mtime even when the reload
   failed, so on a filesystem with coarse timestamps a fix written in the
   same second as a half-written file was never loaded.
+- **JSON that is not a JSON-RPC Request object is answered Invalid Request
+  (-32600), not Parse error (-32700)** (server, JSON-RPC and WebSocket; audit
+  N33). A body with no `method`, a bare value such as `1`, an empty batch
+  `[]` and a batch item that is not a request were all answered -32700,
+  which JSON-RPC 2.0 reserves for a body that is not JSON; its own examples
+  answer these -32600. Found by the ACTS conformance suite (CORE-ERR-006, a
+  MUST). A client that matched on -32700 for these cases now sees -32600.
 
 - **The agent card's poll watcher sees a change made just after it starts**
   (audit N23). It read the file's baseline mtime inside its own task, on

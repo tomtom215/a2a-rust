@@ -548,6 +548,16 @@ stores (`tests/cross_replica_cancel/`).
   writes with one mtime and fails on `main` at its 10 s deadline. **[Fixed:
   the recorded mtime advances only on a successful reload, and a file that
   stays broken is logged once per mtime rather than at every poll]**
+- **N33 — JSON that is not a Request object was answered Parse error**
+  (Low, server wire behaviour, JSON-RPC and WebSocket; found by the ACTS
+  conformance suite, a2a-itk `429945f6`, CORE-ERR-006, a MUST). Every body
+  that failed to deserialize as a `JsonRpcRequest` was answered -32700,
+  including valid JSON with no `method`, a bare `1`, `[]` and `[1]`, which
+  JSON-RPC 2.0 §5.1 and its examples answer -32600. VALIDATED: four HTTP
+  tests in `jsonrpc_edge_tests.rs` and one WebSocket test in
+  `websocket_tests.rs` fail on the unfixed dispatchers; a body that is not
+  JSON stays -32700 and is tested too. **[Fixed: the dispatchers parse to
+  a JSON value first, and only a failure there is -32700]**
 - **Examined and left, from the same audit** (CONJECTURED, not reproduced):
   a queue write dropped between persisting and broadcasting an event — only
   the executor timeout firing inside a terminal event's verdict wait can do
