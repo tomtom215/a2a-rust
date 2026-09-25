@@ -617,8 +617,9 @@ stores (`tests/cross_replica_cancel/`).
   with the citation corrected; `application/a2a+json` stays accepted on
   requests. Fixed: the adapter's successes go through the REST builder and
   carry `A2A-Version`; `rest_and_axum_answer_operations_with_the_same_headers`
-  fails on the old adapter. Open: report the Go client's check upstream,
-  and switch once clients accept both]**
+  fails on the old adapter. The deviation is recorded in the book's
+  conformance history, "Deliberate deviations"; not reported upstream at
+  this time, by the maintainer's decision (2026-09-25)]**
 - **Examined and left, from the same audit** (CONJECTURED, not reproduced):
   a queue write dropped between persisting and broadcasting an event — only
   the executor timeout firing inside a terminal event's verdict wait can do

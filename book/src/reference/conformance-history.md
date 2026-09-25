@@ -447,6 +447,43 @@ would start no agent — but the "wait for agent" step that follows exits 1 afte
 the gate steps run even after a red suite. `itk.yml:147`'s `if: failure()` is a
 diagnostic upload.
 
+## Deliberate deviations
+
+Places where this SDK knowingly does not do what the specification
+recommends. Each one is a **SHOULD**, never a MUST; each gives the evidence
+for the choice and the condition under which it would be reversed.
+
+### HTTP+JSON responses are `application/json`, not `application/a2a+json`
+
+**Specification.** §11.1: "`application/a2a+json` **SHOULD** be used for
+requests and responses."
+
+**This SDK.** `RestDispatcher` and the axum adapter label HTTP+JSON
+responses, successes and errors, `application/json`. Requests in either
+media type are accepted. JSON-RPC is unaffected: §9 specifies
+`application/json`.
+
+**Why.** Interoperability with the official Go SDK. a2a-go v2.5.0's HTTP+JSON
+client (`internal/rest/rest.go`, `FromRESTError`) decodes an error response
+only when its `Content-Type` begins with `application/json`, and otherwise
+reports a generic server error. With `application/a2a+json`, a Go client
+lost the identity of every HTTP+JSON error — `TaskNotFound`,
+`TaskNotCancelable` and the rest. This was measured, not inferred: the change
+was made on 2026-09-25 (`dfc69ed2`), `go_sdk_interop.sh` failed five checks
+in CI, and it was reverted (`cf2a7e96`). For reference, a2a-go's own server
+and the official Rust SDK (a2aproject/a2a-rs) also send `application/json`.
+
+**Effect on conformance scores.** ACTS test `REST-CT-001` (level SHOULD)
+fails on HTTP+JSON, and is the only ACTS failure on any binding:
+HTTP+JSON 91/92, every MUST passing (a2a-itk `429945f6`, 2026-09-25). The
+official Rust SDK's agent fails the same test for the same reason.
+
+**Reversed when** the widely used clients accept `application/a2a+json`
+responses, a2a-go's among them. `rest_and_axum_answer_operations_with_the_same_headers`
+pins the current headers, and `go_sdk_interop.sh` would show when the switch
+is safe. Not reported upstream at this time, by the maintainer's decision
+(2026-09-25).
+
 ## Transport coverage
 
 The repo implements four transports. TCK coverage is not uniform across them,
