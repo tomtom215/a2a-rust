@@ -111,7 +111,9 @@ async fn jsonrpc_records_every_refusal_with_the_code_it_answered() {
             failed("jsonrpc", Some("_OTHER"), "-32601"),
             failed("jsonrpc", get_task, "-32602"),
             failed("jsonrpc", get_task, "-32001"),
-            failed("jsonrpc", None, "-32700"),
+            // JSON, but not a request: Invalid Request, as JSON-RPC 2.0
+            // answers its own `[1]` example (N33; -32700 before 2026-09-25).
+            failed("jsonrpc", None, "-32600"),
             failed("jsonrpc", get_task, "-32001"),
         ]
     );
