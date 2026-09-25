@@ -569,6 +569,15 @@ stores (`tests/cross_replica_cancel/`).
   the builder. **[Fixed: parts with an explicit `mediaType` are checked
   against `defaultInputModes` and every skill's `inputModes`;
   `allow_undeclared_input_modes()` opts out]**
+- **N35 — task statuses were served without a timestamp** (Low, server
+  wire behaviour; found by the ACTS conformance suite, DM-SERIAL-001, a
+  MUST). `EventEmitter::status` used `TaskStatus::new`, whose own doc says
+  to prefer `with_timestamp` in production, so any agent using the helper —
+  or writing `TaskStatus::new` itself — produced statuses `ListTasks` could
+  not order by time (§3.1.4). VALIDATED by ACTS on the ITK agent, which
+  builds its statuses with `TaskStatus::new`. **[Fixed: the event queue
+  stamps an empty status timestamp on write; two unit tests in
+  `streaming/event_queue/status_stamp.rs`]**
 - **Examined and left, from the same audit** (CONJECTURED, not reproduced):
   a queue write dropped between persisting and broadcasting an event — only
   the executor timeout firing inside a terminal event's verdict wait can do

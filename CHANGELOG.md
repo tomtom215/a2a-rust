@@ -481,6 +481,14 @@ someone scanning for such changes would look.
   (server; audit N32). It recorded the file's mtime even when the reload
   failed, so on a filesystem with coarse timestamps a fix written in the
   same second as a half-written file was never loaded.
+- **Every task status carries a timestamp** (server; audit N35).
+  `EventEmitter::status` — the helper executors are pointed to — built its
+  status with `TaskStatus::new`, which leaves `timestamp` empty, so agents
+  built on it served statuses with no time: spec §5.6.1 wants ISO 8601 UTC
+  timestamps, `ListTasks` is ordered by them (§3.1.4), and ACTS
+  DM-SERIAL-001 (a MUST) failed. The event queue now stamps any status
+  update or task snapshot the executor left without one, before it is
+  persisted or streamed; a timestamp the executor set is kept.
 - **`SendMessage` checks message parts' media types against the agent
   card** (server; audit N34) — see **Behaviour Changes** for what is
   refused and how to opt out. Found by the ACTS conformance suite

@@ -16,6 +16,7 @@
 
 mod in_memory;
 mod manager;
+mod status_stamp;
 pub(crate) mod terminal_gate;
 
 pub use in_memory::{InMemoryQueueReader, InMemoryQueueWriter};

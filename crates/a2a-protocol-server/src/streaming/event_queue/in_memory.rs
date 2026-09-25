@@ -281,9 +281,11 @@ impl InMemoryQueueWriter {
 impl EventQueueWriter for InMemoryQueueWriter {
     fn write<'a>(
         &'a self,
-        event: StreamResponse,
+        mut event: StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            // Before anything persists or broadcasts it (N35).
+            super::status_stamp::stamp_status(&mut event);
             self.check_event_size(&event)?;
             // Send to the persistence channel first (if configured) — this
             // channel is independent of SSE consumer backpressure.
