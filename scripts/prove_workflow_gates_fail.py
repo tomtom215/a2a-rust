@@ -698,6 +698,58 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "a2a_protocol_server",
         "a2a_protocol_sdk",
     ]
+    # The SEO step rewrites the built pages, then checks them. Its fixture is
+    # pages made from the real `head.hbs` (it has no Handlebars expressions),
+    # so a template change the script cannot handle is caught here, and the
+    # real script, `book.toml` and `Cargo.toml` it reads the origin and MSRV
+    # from.
+    def _seo_site(template_edit=None, pages=True):
+        def setup(d):
+            for rel in ("scripts/seo_postprocess.py", "book/book.toml", "Cargo.toml"):
+                (d / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO / rel, d / rel)
+            site = d / "book" / "book"
+            site.mkdir(parents=True, exist_ok=True)
+            if not pages:
+                return {}
+            head = (REPO / "book/theme/head.hbs").read_text(encoding="utf-8")
+            if template_edit:
+                head = template_edit(head)
+            desc = '<meta name="description" content="site-wide">'
+            para = "<p>" + "A paragraph long enough to become the description. " * 2 + "</p>"
+            for rel, title in (
+                ("index.html", "Introduction"),
+                ("introduction.html", "Introduction"),
+                ("guide/page.html", "A Page"),
+                ("print.html", "Print"),
+                ("404.html", "Not Found"),
+            ):
+                robots = '<meta name="robots" content="noindex">' if rel == "print.html" else ""
+                page = (
+                    f"<html><head>{desc}{robots}{head}<title>{title} - a2a-rust</title>"
+                    f"</head><body><main><h1>{title}</h1>{para}</main></body></html>"
+                )
+                (site / rel).parent.mkdir(parents=True, exist_ok=True)
+                (site / rel).write_text(page, encoding="utf-8")
+            return {}
+
+        return setup
+
+    reg["docs.yml::build::Write per-page SEO metadata"] = Probe(
+        healthy=_seo_site(),
+        defects=[
+            Defect(
+                "the template lost its canonical link, so no page can carry its own",
+                _seo_site(lambda h: re.sub(r'<link rel="canonical"[^>]*>', "", h)),
+                "expected one #a2a-canonical",
+            ),
+            Defect(
+                "the book build produced no pages",
+                _seo_site(pages=False),
+                "no book pages",
+            ),
+        ],
+    )
     reg["docs.yml::build::Place API documentation under /api/"] = Probe(
         healthy=_rustdoc_fixture(ALL_DOC_CRATES),
         defects=[
