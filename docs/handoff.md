@@ -831,9 +831,11 @@ unsupported media type be accepted. It is baselined, with the evidence in
 passing and 5 failing (README, ROADMAP, conformance history). The in-diff
 mutation run on the same head found surviving mutants in
 `status_stamp.rs`, `dispatch/grpc/helpers.rs` (two arms),
-`messaging/admission.rs` and `dispatch/rest/error_response.rs` (eight
-arms of `canonical_status_name`); each now has a test that fails under its
-mutation. Those are packaged
+`messaging/admission.rs`, `dispatch/rest/error_response.rs` (eight
+arms of `canonical_status_name`) and `agent_card/hot_reload.rs`; each now
+has a test that fails under its mutation. The default
+`ServerInterceptor::on_complete` survivor is equivalent and is skipped
+with an ADR 0006 note. Those are packaged
 files, so the 0.14.0 notes were touched in the same commit and the manifest
 regenerated after it.
 

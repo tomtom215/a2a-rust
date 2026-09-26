@@ -121,6 +121,10 @@ pub trait ServerInterceptor: Send + Sync + 'static {
     /// through [`RequestHandler`](crate::RequestHandler), do not call it.
     ///
     /// The default does nothing.
+    // Equivalent mutant: the body is an empty future, and cargo-mutants'
+    // replacement is `Box::pin(async move { () })`, another empty future.
+    // No test can distinguish the two (ADR 0006).
+    #[mutants::skip]
     fn on_complete<'a>(
         &'a self,
         ctx: &'a CallContext,

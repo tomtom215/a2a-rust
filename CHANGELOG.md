@@ -810,9 +810,15 @@ someone scanning for such changes would look.
   `PERMISSION_DENIED` mappings for a refused credential (N36; their tests
   lived in the SDK crate, which the server crate's mutation run does not
   execute), admitting a send when the task's only token is already
-  cancelled (N21), and every `google.rpc.Code` name the REST dispatcher's
+  cancelled (N21), every `google.rpc.Code` name the REST dispatcher's
   plain error responses carry (N37; eight of its eleven arms were
-  untested). Tests only; no behaviour changed.
+  untested), and the agent-card poll watcher warning once about a card
+  that stays broken (N32; in a test binary of its own, because a
+  thread-local capture in the unit-test binary saw 0 warnings in some
+  full-suite runs once another test had cached the callsite as
+  uninterested). The default `ServerInterceptor::on_complete` is marked
+  `#[mutants::skip]`: it is an empty future, and so is the mutant (ADR
+  0006). Tests only; no behaviour changed.
 - **The official TCK's `CORE-SEND-003` is baselined** as a defect in the
   suite: it declares no expected error, so it demands that a message part
   with an unsupported media type be accepted, and it began failing when N34
