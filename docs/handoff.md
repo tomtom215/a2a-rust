@@ -829,9 +829,11 @@ not N34: the requirement declares no `expected_error`, so it demands that an
 unsupported media type be accepted. It is baselined, with the evidence in
 `docs/official-tck-findings.md` §22. The tally to quote is now 87 of 114
 passing and 5 failing (README, ROADMAP, conformance history). The in-diff
-mutation run on the same head found three surviving mutants, one each in
-`status_stamp.rs`, `dispatch/grpc/helpers.rs` and `messaging/admission.rs`;
-each now has a test that fails under its mutation. Those are packaged
+mutation run on the same head found surviving mutants in
+`status_stamp.rs`, `dispatch/grpc/helpers.rs` (two arms),
+`messaging/admission.rs` and `dispatch/rest/error_response.rs` (eight
+arms of `canonical_status_name`); each now has a test that fails under its
+mutation. Those are packaged
 files, so the 0.14.0 notes were touched in the same commit and the manifest
 regenerated after it.
 

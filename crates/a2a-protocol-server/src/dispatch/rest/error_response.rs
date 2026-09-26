@@ -113,6 +113,46 @@ mod tests {
         assert_eq!(val["error"]["code"], 400);
     }
 
+    /// Every code `canonical_status_name` maps reaches the body under
+    /// `error.status`, and a code Google's mapping does not name gets none.
+    #[tokio::test]
+    async fn error_json_response_names_each_mapped_code() {
+        let table = [
+            (400, "INVALID_ARGUMENT"),
+            (401, "UNAUTHENTICATED"),
+            (403, "PERMISSION_DENIED"),
+            (404, "NOT_FOUND"),
+            (409, "ABORTED"),
+            (429, "RESOURCE_EXHAUSTED"),
+            (499, "CANCELLED"),
+            (500, "INTERNAL"),
+            (501, "UNIMPLEMENTED"),
+            (503, "UNAVAILABLE"),
+            (504, "DEADLINE_EXCEEDED"),
+        ];
+        for (code, name) in table {
+            let body = error_json_response(code, "x")
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes();
+            let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(val["error"]["status"], name, "status {code}");
+        }
+        let body = error_json_response(413, "x")
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            val["error"].get("status").is_none(),
+            "413 has no name: {val}"
+        );
+    }
+
     #[tokio::test]
     async fn error_json_response_has_a2a_content_type() {
         let resp = error_json_response(404, "not found");
