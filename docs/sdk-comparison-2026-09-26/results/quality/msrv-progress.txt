@@ -1,0 +1,10 @@
+a2a-rs 1.85 a2a-lf EXIT: 0
+a2a-rs 1.85 a2a-client-lf EXIT: 101
+a2a-rs 1.85 a2a-server-lf EXIT: 101
+a2a-rs 1.85 a2a-pb EXIT: 101
+a2a-rs 1.85 a2a-grpc EXIT: 101
+a2a-rs 1.85 a2a-slimrpc EXIT: 101
+a2a-rust 1.88 a2a-protocol-types EXIT: 0
+a2a-rust 1.88 a2a-protocol-client EXIT: 0
+a2a-rust 1.88 a2a-protocol-server EXIT: 0
+a2a-rust 1.88 a2a-protocol-sdk EXIT: 0

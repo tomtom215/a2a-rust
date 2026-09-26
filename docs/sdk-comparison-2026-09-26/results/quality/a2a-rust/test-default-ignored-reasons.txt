@@ -1,0 +1,7 @@
+     65 requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)
+     16 load experiment; run explicitly with --ignored (see the module docs)
+     14 needs a live PostgreSQL (see the module docs)
+     14 
+      1 sustained load; run explicitly with --ignored (see the module docs)
+      1 sustained load against a live PostgreSQL; see the module docs
+      1 load experiment; needs A2A_TEST_POSTGRES_URL; run with --ignored

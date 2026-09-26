@@ -1,0 +1,1644 @@
+CMD: (cwd /opt/bench/a2a-rs) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rs CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo rustdoc -j 2 -p a2a-lf -- -W missing_docs
+START: 2026-09-26T10:07:24Z
+   Compiling serde_core v1.0.228
+   Compiling syn v2.0.117
+   Compiling libc v0.2.185
+   Compiling num-traits v0.2.19
+   Compiling serde v1.0.228
+   Compiling serde_derive v1.0.228
+   Compiling serde_json v1.0.151
+    Checking getrandom v0.4.2
+   Compiling thiserror-impl v2.0.18
+    Checking memchr v2.8.0
+    Checking chrono v0.4.45
+    Checking thiserror v2.0.18
+    Checking uuid v1.23.0
+ Documenting a2a-lf v0.3.1 (/opt/bench/a2a-rs/a2a)
+warning: missing documentation for a module
+ --> a2a/src/lib.rs:5:1
+  |
+5 | pub mod agent_card;
+  | ^^^^^^^^^^^^^^^^^^
+  |
+  = note: requested on the command line with `-W missing-docs`
+
+warning: missing documentation for a module
+ --> a2a/src/lib.rs:6:1
+  |
+6 | pub mod errordetails;
+  | ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+ --> a2a/src/lib.rs:7:1
+  |
+7 | pub mod errors;
+  | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+ --> a2a/src/lib.rs:8:1
+  |
+8 | pub mod event;
+  | ^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+ --> a2a/src/lib.rs:9:1
+  |
+9 | pub mod jsonrpc;
+  | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a/src/lib.rs:10:1
+   |
+10 | pub mod types;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:17:5
+   |
+17 |     pub name: String,
+   |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:18:5
+   |
+18 |     pub description: String,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:19:5
+   |
+19 |     pub version: String,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:20:5
+   |
+20 |     pub supported_interfaces: Vec<AgentInterface>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:21:5
+   |
+21 |     pub capabilities: AgentCapabilities,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:22:5
+   |
+22 |     pub default_input_modes: Vec<String>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:23:5
+   |
+23 |     pub default_output_modes: Vec<String>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:25:5
+   |
+25 |     pub skills: Vec<AgentSkill>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:28:5
+   |
+28 |     pub provider: Option<AgentProvider>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:31:5
+   |
+31 |     pub documentation_url: Option<String>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:34:5
+   |
+34 |     pub icon_url: Option<String>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:37:5
+   |
+37 |     pub security_schemes: Option<HashMap<String, SecurityScheme>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:44:5
+   |
+44 |     pub security_requirements: Option<Vec<SecurityRequirement>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/agent_card.rs:47:5
+   |
+47 |     pub signatures: Option<Vec<AgentCardSignature>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:137:5
+    |
+137 |     pub url: String,
+    |     ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:138:5
+    |
+138 |     pub protocol_binding: TransportProtocol,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:139:5
+    |
+139 |     pub protocol_version: ProtocolVersion,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:140:5
+    |
+140 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/agent_card.rs:164:5
+    |
+164 |     pub fn new(url: impl Into<String>, protocol_binding: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a/src/agent_card.rs:174:5
+    |
+174 |     pub fn wire_url(&self) -> String {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:216:5
+    |
+216 |     pub organization: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:217:5
+    |
+217 |     pub url: String,
+    |     ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:229:5
+    |
+229 |     pub streaming: Option<bool>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:232:5
+    |
+232 |     pub push_notifications: Option<bool>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:235:5
+    |
+235 |     pub extensions: Option<Vec<AgentExtension>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:238:5
+    |
+238 |     pub extended_agent_card: Option<bool>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:249:5
+    |
+249 |     pub uri: String,
+    |     ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:252:5
+    |
+252 |     pub description: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:255:5
+    |
+255 |     pub required: Option<bool>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:258:5
+    |
+258 |     pub params: Option<HashMap<String, Value>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:269:5
+    |
+269 |     pub id: String,
+    |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:270:5
+    |
+270 |     pub name: String,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:271:5
+    |
+271 |     pub description: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:272:5
+    |
+272 |     pub tags: Vec<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:275:5
+    |
+275 |     pub examples: Option<Vec<String>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:278:5
+    |
+278 |     pub input_modes: Option<Vec<String>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:281:5
+    |
+281 |     pub output_modes: Option<Vec<String>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:288:5
+    |
+288 |     pub security_requirements: Option<Vec<SecurityRequirement>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/agent_card.rs:298:5
+    |
+298 |     ApiKey(ApiKeySecurityScheme),
+    |     ^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/agent_card.rs:299:5
+    |
+299 |     HttpAuth(HttpAuthSecurityScheme),
+    |     ^^^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/agent_card.rs:300:5
+    |
+300 |     OAuth2(OAuth2SecurityScheme),
+    |     ^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/agent_card.rs:301:5
+    |
+301 |     OpenIdConnect(OpenIdConnectSecurityScheme),
+    |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/agent_card.rs:302:5
+    |
+302 |     MutualTls(MutualTlsSecurityScheme),
+    |     ^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a/src/agent_card.rs:357:1
+    |
+357 | pub struct ApiKeySecurityScheme {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:358:5
+    |
+358 |     pub location: String,
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:359:5
+    |
+359 |     pub name: String,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:361:5
+    |
+361 |     pub description: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a/src/agent_card.rs:366:1
+    |
+366 | pub struct HttpAuthSecurityScheme {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:367:5
+    |
+367 |     pub scheme: String,
+    |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:369:5
+    |
+369 |     pub description: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:371:5
+    |
+371 |     pub bearer_format: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a/src/agent_card.rs:376:1
+    |
+376 | pub struct OAuth2SecurityScheme {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:377:5
+    |
+377 |     pub flows: OAuthFlows,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:379:5
+    |
+379 |     pub description: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:381:5
+    |
+381 |     pub oauth2_metadata_url: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a/src/agent_card.rs:386:1
+    |
+386 | pub struct OpenIdConnectSecurityScheme {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:387:5
+    |
+387 |     pub open_id_connect_url: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:389:5
+    |
+389 |     pub description: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a/src/agent_card.rs:394:1
+    |
+394 | pub struct MutualTlsSecurityScheme {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:396:5
+    |
+396 |     pub description: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an enum
+   --> a2a/src/agent_card.rs:404:1
+    |
+404 | pub enum OAuthFlows {
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/agent_card.rs:405:5
+    |
+405 |     AuthorizationCode(AuthorizationCodeOAuthFlow),
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/agent_card.rs:406:5
+    |
+406 |     ClientCredentials(ClientCredentialsOAuthFlow),
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/agent_card.rs:407:5
+    |
+407 |     DeviceCode(DeviceCodeOAuthFlow),
+    |     ^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/agent_card.rs:408:5
+    |
+408 |     Implicit(ImplicitOAuthFlow),
+    |     ^^^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/agent_card.rs:409:5
+    |
+409 |     Password(PasswordOAuthFlow),
+    |     ^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a/src/agent_card.rs:458:1
+    |
+458 | pub struct AuthorizationCodeOAuthFlow {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:459:5
+    |
+459 |     pub authorization_url: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:460:5
+    |
+460 |     pub token_url: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:461:5
+    |
+461 |     pub scopes: HashMap<String, String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:463:5
+    |
+463 |     pub refresh_url: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:465:5
+    |
+465 |     pub pkce_required: Option<bool>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a/src/agent_card.rs:470:1
+    |
+470 | pub struct ClientCredentialsOAuthFlow {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:471:5
+    |
+471 |     pub token_url: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:472:5
+    |
+472 |     pub scopes: HashMap<String, String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:474:5
+    |
+474 |     pub refresh_url: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a/src/agent_card.rs:479:1
+    |
+479 | pub struct DeviceCodeOAuthFlow {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:480:5
+    |
+480 |     pub device_authorization_url: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:481:5
+    |
+481 |     pub token_url: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:482:5
+    |
+482 |     pub scopes: HashMap<String, String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:484:5
+    |
+484 |     pub refresh_url: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a/src/agent_card.rs:489:1
+    |
+489 | pub struct ImplicitOAuthFlow {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:490:5
+    |
+490 |     pub authorization_url: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:491:5
+    |
+491 |     pub scopes: HashMap<String, String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:493:5
+    |
+493 |     pub refresh_url: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a/src/agent_card.rs:498:1
+    |
+498 | pub struct PasswordOAuthFlow {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:499:5
+    |
+499 |     pub token_url: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:500:5
+    |
+500 |     pub scopes: HashMap<String, String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:502:5
+    |
+502 |     pub refresh_url: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:520:5
+    |
+520 |     pub protected: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:521:5
+    |
+521 |     pub signature: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/agent_card.rs:523:5
+    |
+523 |     pub header: Option<HashMap<String, Value>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+ --> a2a/src/errordetails.rs:8:1
+  |
+8 | pub const ERROR_INFO_TYPE: &str = "type.googleapis.com/google.rpc.ErrorInfo";
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+ --> a2a/src/errordetails.rs:9:1
+  |
+9 | pub const BAD_REQUEST_TYPE: &str = "type.googleapis.com/google.rpc.BadRequest";
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errordetails.rs:10:1
+   |
+10 | pub const STRUCT_TYPE: &str = "type.googleapis.com/google.protobuf.Struct";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errordetails.rs:11:1
+   |
+11 | pub const PROTOCOL_DOMAIN: &str = "a2a-protocol.org";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/errordetails.rs:16:5
+   |
+16 |     pub field: String,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/errordetails.rs:17:5
+   |
+17 |     pub description: String,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/errordetails.rs:27:5
+   |
+27 |     pub type_url: String,
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/errordetails.rs:28:5
+   |
+28 |     pub value: HashMap<String, Value>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a/src/errordetails.rs:32:5
+   |
+32 |     pub fn new(type_url: impl Into<String>, value: HashMap<String, Value>) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/errors.rs:80:5
+   |
+80 |     pub code: i32,
+   |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/errors.rs:81:5
+   |
+81 |     pub message: String,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/errors.rs:82:5
+   |
+82 |     pub details: Option<Vec<TypedDetail>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a/src/errors.rs:86:5
+   |
+86 |     pub fn new(code: i32, message: impl Into<String>) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> a2a/src/errors.rs:94:5
+   |
+94 |     pub fn with_details(mut self, details: Vec<TypedDetail>) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:101:5
+    |
+101 |     pub fn task_not_found(task_id: &str) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:108:5
+    |
+108 |     pub fn task_not_cancelable(task_id: &str) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:115:5
+    |
+115 |     pub fn push_notification_not_supported() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:122:5
+    |
+122 |     pub fn unsupported_operation(msg: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:137:5
+    |
+137 |     pub fn content_type_not_supported() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:144:5
+    |
+144 |     pub fn invalid_agent_response() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:148:5
+    |
+148 |     pub fn version_not_supported(version: &str) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:155:5
+    |
+155 |     pub fn internal(msg: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:159:5
+    |
+159 |     pub fn invalid_params(msg: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:163:5
+    |
+163 |     pub fn parse_error(msg: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:167:5
+    |
+167 |     pub fn invalid_request(msg: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/errors.rs:171:5
+    |
+171 |     pub fn method_not_found(method: &str) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:13:5
+   |
+13 |     pub const TASK_NOT_FOUND: i32 = -32001;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:14:5
+   |
+14 |     pub const TASK_NOT_CANCELABLE: i32 = -32002;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:15:5
+   |
+15 |     pub const PUSH_NOTIFICATION_NOT_SUPPORTED: i32 = -32003;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:16:5
+   |
+16 |     pub const UNSUPPORTED_OPERATION: i32 = -32004;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:17:5
+   |
+17 |     pub const CONTENT_TYPE_NOT_SUPPORTED: i32 = -32005;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:18:5
+   |
+18 |     pub const INVALID_AGENT_RESPONSE: i32 = -32006;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:19:5
+   |
+19 |     pub const EXTENDED_CARD_NOT_CONFIGURED: i32 = -32007;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:20:5
+   |
+20 |     pub const EXTENSION_SUPPORT_REQUIRED: i32 = -32008;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:21:5
+   |
+21 |     pub const VERSION_NOT_SUPPORTED: i32 = -32009;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:24:5
+   |
+24 |     pub const PARSE_ERROR: i32 = -32700;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:25:5
+   |
+25 |     pub const INVALID_REQUEST: i32 = -32600;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:26:5
+   |
+26 |     pub const METHOD_NOT_FOUND: i32 = -32601;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:27:5
+   |
+27 |     pub const INVALID_PARAMS: i32 = -32602;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+  --> a2a/src/errors.rs:28:5
+   |
+28 |     pub const INTERNAL_ERROR: i32 = -32603;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/event.rs:16:5
+   |
+16 |     Task(Task),
+   |     ^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/event.rs:17:5
+   |
+17 |     Message(Message),
+   |     ^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/event.rs:18:5
+   |
+18 |     StatusUpdate(TaskStatusUpdateEvent),
+   |     ^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/event.rs:19:5
+   |
+19 |     ArtifactUpdate(TaskArtifactUpdateEvent),
+   |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/event.rs:69:5
+   |
+69 |     pub task_id: TaskId,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/event.rs:70:5
+   |
+70 |     pub context_id: String,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/event.rs:71:5
+   |
+71 |     pub status: TaskStatus,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/event.rs:74:5
+   |
+74 |     pub metadata: Option<HashMap<String, Value>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/event.rs:85:5
+   |
+85 |     pub task_id: TaskId,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/event.rs:86:5
+   |
+86 |     pub context_id: String,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/event.rs:87:5
+   |
+87 |     pub artifact: Artifact,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/event.rs:90:5
+   |
+90 |     pub append: Option<bool>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/event.rs:93:5
+   |
+93 |     pub last_chunk: Option<bool>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/event.rs:96:5
+   |
+96 |     pub metadata: Option<HashMap<String, Value>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:13:5
+   |
+13 |     pub jsonrpc: String,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:14:5
+   |
+14 |     pub id: JsonRpcId,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:15:5
+   |
+15 |     pub method: String,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:17:5
+   |
+17 |     pub params: Option<Value>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a/src/jsonrpc.rs:21:5
+   |
+21 |     pub fn new(id: JsonRpcId, method: impl Into<String>, params: Option<Value>) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:34:5
+   |
+34 |     pub jsonrpc: String,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:35:5
+   |
+35 |     pub id: JsonRpcId,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:37:5
+   |
+37 |     pub result: Option<Value>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:39:5
+   |
+39 |     pub error: Option<JsonRpcError>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a/src/jsonrpc.rs:43:5
+   |
+43 |     pub fn success(id: JsonRpcId, result: Value) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a/src/jsonrpc.rs:52:5
+   |
+52 |     pub fn error(id: JsonRpcId, error: JsonRpcError) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:65:5
+   |
+65 |     pub code: i32,
+   |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:66:5
+   |
+66 |     pub message: String,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a/src/jsonrpc.rs:68:5
+   |
+68 |     pub data: Option<Value>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/jsonrpc.rs:78:5
+   |
+78 |     String(String),
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/jsonrpc.rs:79:5
+   |
+79 |     Number(i64),
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/jsonrpc.rs:80:5
+   |
+80 |     Null,
+   |     ^^^^
+
+warning: missing documentation for a module
+   --> a2a/src/jsonrpc.rs:137:1
+    |
+137 | pub mod methods {
+    | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:138:5
+    |
+138 |     pub const SEND_MESSAGE: &str = "SendMessage";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:139:5
+    |
+139 |     pub const SEND_STREAMING_MESSAGE: &str = "SendStreamingMessage";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:140:5
+    |
+140 |     pub const GET_TASK: &str = "GetTask";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:141:5
+    |
+141 |     pub const LIST_TASKS: &str = "ListTasks";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:142:5
+    |
+142 |     pub const CANCEL_TASK: &str = "CancelTask";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:143:5
+    |
+143 |     pub const SUBSCRIBE_TO_TASK: &str = "SubscribeToTask";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:144:5
+    |
+144 |     pub const CREATE_PUSH_CONFIG: &str = "CreateTaskPushNotificationConfig";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:145:5
+    |
+145 |     pub const GET_PUSH_CONFIG: &str = "GetTaskPushNotificationConfig";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:146:5
+    |
+146 |     pub const LIST_PUSH_CONFIGS: &str = "ListTaskPushNotificationConfigs";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:147:5
+    |
+147 |     pub const DELETE_PUSH_CONFIG: &str = "DeleteTaskPushNotificationConfig";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> a2a/src/jsonrpc.rs:148:5
+    |
+148 |     pub const GET_EXTENDED_AGENT_CARD: &str = "GetExtendedAgentCard";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a/src/jsonrpc.rs:150:5
+    |
+150 |     pub fn is_streaming(method: &str) -> bool {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a/src/jsonrpc.rs:154:5
+    |
+154 |     pub fn is_valid(method: &str) -> bool {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:49:5
+   |
+49 |     Unspecified,
+   |     ^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:50:5
+   |
+50 |     User,
+   |     ^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:51:5
+   |
+51 |     Agent,
+   |     ^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:87:5
+   |
+87 |     Unspecified,
+   |     ^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:88:5
+   |
+88 |     Submitted,
+   |     ^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:89:5
+   |
+89 |     Working,
+   |     ^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:90:5
+   |
+90 |     Completed,
+   |     ^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:91:5
+   |
+91 |     Failed,
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:92:5
+   |
+92 |     Canceled,
+   |     ^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:93:5
+   |
+93 |     InputRequired,
+   |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:94:5
+   |
+94 |     Rejected,
+   |     ^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a/src/types.rs:95:5
+   |
+95 |     AuthRequired,
+   |     ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:164:5
+    |
+164 |     pub content: PartContent,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/types.rs:176:5
+    |
+176 |     Text(String),
+    |     ^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/types.rs:177:5
+    |
+177 |     Raw(Vec<u8>),
+    |     ^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/types.rs:178:5
+    |
+178 |     Url(String),
+    |     ^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/types.rs:179:5
+    |
+179 |     Data(Value),
+    |     ^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/types.rs:183:5
+    |
+183 |     pub fn text(text: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/types.rs:192:5
+    |
+192 |     pub fn raw(data: Vec<u8>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/types.rs:201:5
+    |
+201 |     pub fn url(url: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a/src/types.rs:210:5
+    |
+210 |     pub fn data(value: Value) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a/src/types.rs:219:5
+    |
+219 |     pub fn with_media_type(mut self, media_type: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a/src/types.rs:224:5
+    |
+224 |     pub fn with_filename(mut self, filename: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a/src/types.rs:229:5
+    |
+229 |     pub fn as_text(&self) -> Option<&str> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:372:5
+    |
+372 |     pub state: TaskState,
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:375:5
+    |
+375 |     pub message: Option<Message>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:378:5
+    |
+378 |     pub timestamp: Option<DateTime<Utc>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:389:5
+    |
+389 |     pub id: TaskId,
+    |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:390:5
+    |
+390 |     pub context_id: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:391:5
+    |
+391 |     pub status: TaskStatus,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:394:5
+    |
+394 |     pub artifacts: Option<Vec<Artifact>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:397:5
+    |
+397 |     pub history: Option<Vec<Message>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:400:5
+    |
+400 |     pub metadata: Option<HashMap<String, Value>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:411:5
+    |
+411 |     pub artifact_id: ArtifactId,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:414:5
+    |
+414 |     pub name: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:417:5
+    |
+417 |     pub description: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:419:5
+    |
+419 |     pub parts: Vec<Part>,
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:422:5
+    |
+422 |     pub metadata: Option<HashMap<String, Value>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:425:5
+    |
+425 |     pub extensions: Option<Vec<String>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:437:5
+    |
+437 |     pub accepted_output_modes: Option<Vec<String>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:441:5
+    |
+441 |     pub task_push_notification_config: Option<TaskPushNotificationConfig>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:444:5
+    |
+444 |     pub history_length: Option<i32>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:447:5
+    |
+447 |     pub return_immediately: Option<bool>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:454:5
+    |
+454 |     pub message: Message,
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:457:5
+    |
+457 |     pub configuration: Option<SendMessageConfiguration>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:460:5
+    |
+460 |     pub metadata: Option<HashMap<String, Value>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:463:5
+    |
+463 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/types.rs:469:5
+    |
+469 |     Task(Task),
+    |     ^^^^
+
+warning: missing documentation for a variant
+   --> a2a/src/types.rs:470:5
+    |
+470 |     Message(Message),
+    |     ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:507:5
+    |
+507 |     pub id: TaskId,
+    |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:510:5
+    |
+510 |     pub history_length: Option<i32>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:513:5
+    |
+513 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:521:5
+    |
+521 |     pub context_id: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:524:5
+    |
+524 |     pub status: Option<TaskState>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:527:5
+    |
+527 |     pub page_size: Option<i32>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:530:5
+    |
+530 |     pub page_token: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:533:5
+    |
+533 |     pub history_length: Option<i32>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:536:5
+    |
+536 |     pub status_timestamp_after: Option<DateTime<Utc>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:539:5
+    |
+539 |     pub include_artifacts: Option<bool>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:542:5
+    |
+542 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:549:5
+    |
+549 |     pub tasks: Vec<Task>,
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:550:5
+    |
+550 |     pub next_page_token: String,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:551:5
+    |
+551 |     pub page_size: i32,
+    |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:552:5
+    |
+552 |     pub total_size: i32,
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:559:5
+    |
+559 |     pub id: TaskId,
+    |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:562:5
+    |
+562 |     pub metadata: Option<HashMap<String, Value>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:565:5
+    |
+565 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:572:5
+    |
+572 |     pub id: TaskId,
+    |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:575:5
+    |
+575 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:583:5
+    |
+583 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:626:5
+    |
+626 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:633:5
+    |
+633 |     pub task_id: TaskId,
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:634:5
+    |
+634 |     pub id: String,
+    |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:637:5
+    |
+637 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:644:5
+    |
+644 |     pub task_id: TaskId,
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:647:5
+    |
+647 |     pub page_size: Option<i32>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:650:5
+    |
+650 |     pub page_token: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:653:5
+    |
+653 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:661:5
+    |
+661 |     pub configs: Vec<TaskPushNotificationConfig>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:664:5
+    |
+664 |     pub next_page_token: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:671:5
+    |
+671 |     pub task_id: TaskId,
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:672:5
+    |
+672 |     pub id: String,
+    |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a/src/types.rs:675:5
+    |
+675 |     pub tenant: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: this URL is not a hyperlink
+  --> a2a/src/../README.md:34:15
+   |
+34 | - Repository: https://github.com/a2aproject/a2a-rs
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: bare URLs are not automatically turned into clickable links
+   = note: `#[warn(rustdoc::bare_urls)]` on by default
+help: use an automatic link instead
+   |
+34 | - Repository: <https://github.com/a2aproject/a2a-rs>
+   |               +                                    +
+
+warning: this URL is not a hyperlink
+  --> a2a/src/../README.md:35:21
+   |
+35 | - Workspace README: https://github.com/a2aproject/a2a-rs/blob/main/README.md
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: bare URLs are not automatically turned into clickable links
+help: use an automatic link instead
+   |
+35 | - Workspace README: <https://github.com/a2aproject/a2a-rs/blob/main/README.md>
+   |                     +                                                        +
+
+warning: `a2a-lf` (lib doc) generated 268 warnings (run `cargo fix --lib -p a2a-lf` to apply 2 suggestions)
+    Finished `dev` profile [unoptimized] target(s) in 5.10s
+   Generated /opt/bench/target-quality-a2a-rs/doc/a2a/index.html
+EXIT: 0
+END: 2026-09-26T10:07:30Z

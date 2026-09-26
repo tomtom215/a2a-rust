@@ -1,0 +1,9 @@
+CMD: (cwd /opt/bench/a2a-rust-src) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rust CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo rustdoc -j 2 -p a2a-protocol-sdk -- -W missing_docs
+START: 2026-09-26T10:26:30Z
+   Compiling a2a-protocol-server v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-server)
+   Compiling a2a-protocol-client v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-client)
+ Documenting a2a-protocol-sdk v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-sdk)
+    Finished `dev` profile [unoptimized] target(s) in 3.52s
+   Generated /opt/bench/target-quality-a2a-rust/doc/a2a_protocol_sdk/index.html
+EXIT: 0
+END: 2026-09-26T10:26:33Z

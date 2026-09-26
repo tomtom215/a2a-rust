@@ -1,0 +1,1 @@
+cargo tree -q --locked -i rsa -e all --target all (and with --all-features) printed NOTHING: rsa 0.9.10 is in Cargo.lock only via sqlx-mysql, which no feature of any workspace member activates (Cargo.lock is feature-agnostic).

@@ -1,0 +1,20 @@
+CMD: (cwd /opt/bench/a2a-rs) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rs/msrv cargo +1.85 check -j 2 --locked -p a2a-server-lf
+rustc 1.85.1 (4eb161250 2025-03-15)
+error: rustc 1.85.1 is not supported by the following packages:
+  icu_collections@2.2.0 requires rustc 1.86
+  icu_locale_core@2.2.0 requires rustc 1.86
+  icu_normalizer@2.2.0 requires rustc 1.86
+  icu_normalizer_data@2.2.0 requires rustc 1.86
+  icu_normalizer_data@2.2.0 requires rustc 1.86
+  icu_normalizer_data@2.2.0 requires rustc 1.86
+  icu_properties@2.2.0 requires rustc 1.86
+  icu_properties_data@2.2.0 requires rustc 1.86
+  icu_properties_data@2.2.0 requires rustc 1.86
+  icu_properties_data@2.2.0 requires rustc 1.86
+  icu_provider@2.2.0 requires rustc 1.86
+  tonic@0.14.6 requires rustc 1.88
+Either upgrade rustc or select compatible dependency versions with
+`cargo update <name>@<current-ver> --precise <compatible-ver>`
+where `<compatible-ver>` is the latest version supporting rustc 1.85.1
+
+EXIT: 101

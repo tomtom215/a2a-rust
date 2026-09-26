@@ -1,0 +1,23 @@
+info: syncing channel updates for 1.85-x86_64-unknown-linux-gnu
+info: latest update on 2025-03-18 for version 1.85.1 (4eb161250 2025-03-15)
+info: downloading 3 components
+
+  1.85-x86_64-unknown-linux-gnu installed - rustc 1.85.1 (4eb161250 2025-03-15)
+
+info: checking for self-update (current version: 1.29.0)
+info: downloading self-update (new version: 1.29.1)
+
+real	0m15.384s
+user	0m8.216s
+sys	0m2.545s
+info: syncing channel updates for 1.88-x86_64-unknown-linux-gnu
+info: latest update on 2025-06-26 for version 1.88.0 (6b00bc388 2025-06-23)
+info: downloading 3 components
+
+  1.88-x86_64-unknown-linux-gnu installed - rustc 1.88.0 (6b00bc388 2025-06-23)
+
+info: checking for self-update (current version: 1.29.1)
+
+real	0m13.639s
+user	0m8.407s
+sys	0m2.342s

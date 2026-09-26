@@ -1,0 +1,13 @@
+CMD: tokei <crate>/src -t Rust -o json  (a2a-pb: '-e gen' for hand-written, src/gen separately); doc = embedded Markdown (///, //!) lines
+proj      crate                        files  total  code  comments  doc  blanks
+a2a-rs    a2a-lf-0.3.1                     7   3215  2630       107   100    378
+a2a-rs    a2a-client-lf-0.2.5             10   4749  3992        93   187    477
+a2a-rs    a2a-server-lf-0.4.4             16   7736  6620       159   270    687
+a2a-rs    a2a-pb-0.2.1                     3   2506  2225        77    12    192
+a2a-rs    a2a-grpc-0.3.7                   4   1219  1076        14    18    111
+a2a-rs    a2a-slimrpc-0.2.9                5   1131   967        18    33    113
+a2a-rs    a2a-pb-0.2.1/src/gen             2   2139  1736         2   401      0
+a2a-rust  a2a-protocol-types-0.14.0       31  15677 10550       775  2792   1560
+a2a-rust  a2a-protocol-client-0.14.0      50  22947 15807      1287  3728   2125
+a2a-rust  a2a-protocol-server-0.14.0     186  74364 50102      4882 12779   6601
+a2a-rust  a2a-protocol-sdk-0.14.0          1    115    42        15    46     12

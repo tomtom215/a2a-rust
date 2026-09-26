@@ -1,0 +1,44 @@
+consumer-a2a-rust-a2a-protocol-types-all v0.0.0 (/opt/bench/consumers/a2a-rust-a2a-protocol-types-all)
+a2a-protocol-types v0.14.0
+base64 v0.23.1
+prost v0.14.4
+bytes v1.12.1
+prost-derive v0.14.4 (proc-macro)
+anyhow v1.0.104
+itertools v0.14.0
+either v1.18.0
+proc-macro2 v1.0.107
+unicode-ident v1.0.26
+quote v1.0.47
+proc-macro2 v1.0.107 (*)
+syn v2.0.119
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+unicode-ident v1.0.26
+prost-types v0.14.4
+prost v0.14.4 (*)
+ring v0.17.14
+cfg-if v1.0.5
+getrandom v0.2.17
+cfg-if v1.0.5
+libc v0.2.189
+untrusted v0.9.0
+serde v1.0.229
+serde_core v1.0.229
+serde_derive v1.0.229 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+unicode-ident v1.0.26
+serde_json v1.0.151
+itoa v1.0.18
+memchr v2.8.3
+serde_core v1.0.229
+zmij v1.0.23
+time v0.3.55
+deranged v0.5.8
+num-conv v0.2.2
+powerfmt v0.2.0
+time-core v0.1.9

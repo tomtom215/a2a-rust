@@ -1,0 +1,81 @@
+CMD: (cwd /opt/bench/a2a-rs) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rs CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo doc -j 2 --no-deps -p a2a-lf -p a2a-client-lf -p a2a-server-lf -p a2a-pb -p a2a-grpc -p a2a-slimrpc
+START: 2026-09-26T10:07:05Z
+    Checking bstr v1.12.1
+    Checking a2a-lf v0.3.1 (/opt/bench/a2a-rs/a2a)
+    Checking globset v0.4.20
+    Checking regorus v0.11.0
+    Checking a2a-pb v0.2.1 (/opt/bench/a2a-rs/a2a-pb)
+    Checking a2a-client-lf v0.2.5 (/opt/bench/a2a-rs/a2a-client)
+    Checking a2a-server-lf v0.4.4 (/opt/bench/a2a-rs/a2a-server)
+    Checking agntcy-slim-auth v0.15.3
+ Documenting a2a-grpc v0.3.7 (/opt/bench/a2a-rs/a2a-grpc)
+ Documenting a2a-client-lf v0.2.5 (/opt/bench/a2a-rs/a2a-client)
+    Checking agntcy-slim-config v0.16.0
+warning: `auto_impl` is both a crate and an attribute macro
+  --> a2a-client/src/transport.rs:17:7
+   |
+17 | /// [`auto_impl`], enabling `A2AClient<Box<dyn Transport>>` for runtime-selected transports.
+   |       ^^^^^^^^^ ambiguous link
+   |
+   = note: `#[warn(rustdoc::broken_intra_doc_links)]` on by default
+help: to link to the crate, prefix with `mod@`
+   |
+17 | /// [`mod@auto_impl`], enabling `A2AClient<Box<dyn Transport>>` for runtime-selected transports.
+   |       ++++
+help: to link to the attribute macro, prefix with `macro@`
+   |
+17 | /// [`macro@auto_impl`], enabling `A2AClient<Box<dyn Transport>>` for runtime-selected transports.
+   |       ++++++
+
+warning: `a2a-client-lf` (lib doc) generated 1 warning
+    Checking agntcy-slim-mls v0.3.9
+ Documenting a2a-server-lf v0.4.4 (/opt/bench/a2a-rs/a2a-server)
+warning: unresolved link to `TaskStore::list`
+   --> a2a-server/src/handler.rs:792:11
+    |
+792 |     /// [`TaskStore::list`].
+    |           ^^^^^^^^^^^^^^^ no item named `TaskStore` in scope
+    |
+    = note: `#[warn(rustdoc::broken_intra_doc_links)]` on by default
+
+warning: `a2a-server-lf` (lib doc) generated 1 warning
+ Documenting a2a-pb v0.2.1 (/opt/bench/a2a-rs/a2a-pb)
+    Checking agntcy-slim-proto v0.6.0
+    Checking agntcy-slim-tracing v0.4.19
+ Documenting a2a-lf v0.3.1 (/opt/bench/a2a-rs/a2a)
+    Checking agntcy-slim-datapath v0.18.6
+warning: this URL is not a hyperlink
+  --> a2a/src/../README.md:34:15
+   |
+34 | - Repository: https://github.com/a2aproject/a2a-rs
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: bare URLs are not automatically turned into clickable links
+   = note: `#[warn(rustdoc::bare_urls)]` on by default
+help: use an automatic link instead
+   |
+34 | - Repository: <https://github.com/a2aproject/a2a-rs>
+   |               +                                    +
+
+warning: this URL is not a hyperlink
+  --> a2a/src/../README.md:35:21
+   |
+35 | - Workspace README: https://github.com/a2aproject/a2a-rs/blob/main/README.md
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: bare URLs are not automatically turned into clickable links
+help: use an automatic link instead
+   |
+35 | - Workspace README: <https://github.com/a2aproject/a2a-rs/blob/main/README.md>
+   |                     +                                                        +
+
+warning: `a2a-lf` (lib doc) generated 2 warnings (run `cargo fix --lib -p a2a-lf` to apply 2 suggestions)
+    Checking agntcy-slim-session v0.7.10
+    Checking agntcy-slim-controller v0.13.0
+    Checking agntcy-slim-service v0.12.10
+    Checking agntcy-slim-rpc v2.3.0
+ Documenting a2a-slimrpc v0.2.9 (/opt/bench/a2a-rs/a2a-slimrpc)
+    Finished `dev` profile [unoptimized] target(s) in 19.61s
+   Generated /opt/bench/target-quality-a2a-rs/doc/a2a_client/index.html and 5 other files
+EXIT: 0
+END: 2026-09-26T10:07:24Z

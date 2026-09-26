@@ -1,0 +1,16 @@
+CMD: grep -rE '^\s*#\[(tokio::)?test(\(.*\))?\]' --include=*.rs (excluding target/, .git/) per top-level dir; counts attribute lines
+bindings 89
+crates 3699
+examples 154
+itk 7
+tck 33
+tools 28
+  README.md 0
+  a2a-protocol-client 778
+  a2a-protocol-sdk 48
+  a2a-protocol-server 2245
+  a2a-protocol-types 628
+  a2a-protocol-slimrpc 89
+TOTAL_tokio_test 2085
+TOTAL_test 1925
+OTHER: proptest! blocks 5; #[rstest] 0; #[test_case 0

@@ -1,0 +1,13 @@
+# diff -r (excluding Cargo.toml, Cargo.toml.orig, .cargo_vcs_info.json, Cargo.lock) : crates/a2a-protocol-client-0.14.0 vs /opt/bench/a2a-rust-src/crates/a2a-protocol-client
+{
+  "git": {
+    "sha1": "10f34350f6e45003fcaf0c66769f921777fe59f9"
+  },
+  "path_in_vcs": "crates/a2a-protocol-client"
+}
+## files in .crate:
+85
+## Cargo.toml.orig vs git Cargo.toml:
+identical
+## src/ files in git not in crate:
+RESULT: missing=0 differs=0

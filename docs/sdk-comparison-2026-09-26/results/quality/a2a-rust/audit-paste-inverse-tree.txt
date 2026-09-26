@@ -1,0 +1,12 @@
+paste v1.0.15 (proc-macro)
+└── paste feature "default"
+    └── genai v0.6.5
+        ├── genai feature "default"
+        │   ├── genai-a2a-agent v0.0.0 (/opt/bench/a2a-rust-src/examples/genai-agent)
+        │   │   └── genai-a2a-agent feature "default" (command-line)
+        │   └── incident-response v0.0.0 (/opt/bench/a2a-rust-src/examples/incident-response)
+        │       ├── incident-response feature "auth-jwt"
+        │       │   └── incident-response feature "default" (command-line)
+        │       ├── incident-response feature "default" (command-line)
+        │       ├── incident-response feature "otel"
+        │       │   └── incident-response feature "default" (command-line)

@@ -1,0 +1,12 @@
+MATCH build.rs:27: [block] unsafe { std::env::set_var("PROTOC", path) };
+CRATE a2a-protocol-types-0.14.0 files=32 unsafe_total=1 {'block': 1}
+  ATTR src/lib.rs:31: #![forbid(unsafe_code)]
+MATCH build.rs:24: [block] unsafe { std::env::set_var("PROTOC", path) };
+CRATE a2a-protocol-client-0.14.0 files=51 unsafe_total=1 {'block': 1}
+  ATTR src/lib.rs:102: #![forbid(unsafe_code)]
+MATCH build.rs:27: [block] unsafe { std::env::set_var("PROTOC", path) };
+CRATE a2a-protocol-server-0.14.0 files=187 unsafe_total=1 {'block': 1}
+  ATTR src/lib.rs:94: #![forbid(unsafe_code)]
+CRATE a2a-protocol-sdk-0.14.0 files=1 unsafe_total=0 {}
+  ATTR src/lib.rs:29: #![forbid(unsafe_code)]
+TOTAL 3

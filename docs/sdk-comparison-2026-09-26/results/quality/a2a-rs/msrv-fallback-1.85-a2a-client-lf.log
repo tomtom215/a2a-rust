@@ -1,0 +1,44 @@
+CMD: (cwd /opt/bench/msrv-lock/a2a-rs) CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.85 check -j 2 --locked -p a2a-client-lf
+ Downloading crates ...
+  Downloaded tonic v0.14.5
+   Compiling libc v0.2.189
+   Compiling syn v3.0.6
+   Compiling syn v2.0.119
+    Checking bytes v1.12.1
+    Checking smallvec v1.16.2
+    Checking pin-project-lite v0.2.17
+    Checking futures-core v0.3.34
+   Compiling parking_lot_core v0.9.12
+   Compiling synstructure v0.14.0
+    Checking scopeguard v1.2.0
+    Checking lock_api v0.4.14
+    Checking errno v0.3.14
+   Compiling anyhow v1.0.104
+    Checking once_cell v1.21.4
+    Checking futures-sink v0.3.34
+   Compiling zerofrom-derive v0.1.8
+    Checking signal-hook-registry v1.4.8
+    Checking parking_lot v0.12.5
+    Checking mio v1.2.3
+    Checking socket2 v0.6.5
+   Compiling tokio-macros v2.7.2
+   Compiling either v1.18.0
+   Compiling itertools v0.14.0
+    Checking tokio v1.53.1
+    Checking zerofrom v0.1.8
+   Compiling yoke-derive v0.8.3
+error[E0599]: no function or associated item named `from_utf8` found for type `str` in the current scope
+   --> /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/yoke-derive-0.8.3/src/lib.rs:202:32
+    |
+202 |         let underscores = str::from_utf8(&underscores).expect("_ is ASCII and thus UTF-8");
+    |                                ^^^^^^^^^ function or associated item not found in `str`
+    |
+help: you are looking for the module in `std`, not the primitive type
+    |
+202 |         let underscores = std::str::from_utf8(&underscores).expect("_ is ASCII and thus UTF-8");
+    |                           +++++
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `yoke-derive` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+EXIT: 101

@@ -1,0 +1,38 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.22s
+     Running tests/tenancy.rs (/opt/bench/claims/target/debug/deps/tenancy-bb1ea170416b198d)
+
+running 6 tests
+test bearer_resolver_isolates ... bearer+TenantAwareInMemory: owner_get_ok=true other_tenant_get_ok=false other_tenant_list_contains=false
+  other tenant GetTask body: {"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Task not found: a6b71f98-7618-4c4d-83d2-f9cfe4504290","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"TASK_NOT_F
+ok
+test header_resolver_with_default_store ... header+DEFAULT InMemoryTaskStore: owner_get_ok=true other_tenant_get_ok=true other_tenant_list_contains=true
+  other tenant GetTask body: {"jsonrpc":"2.0","id":1,"result":{"artifacts":[{"artifactId":"greeting","parts":[{"text":"Hello, hi!"}]}],"contextId":"0c450583-2b2b-44b3-b0e5-cb10c16b4abe","history":[{"messageId":"m-1790417984242228588-1","parts":[{"te
+RESULT default-store isolation: owner=true cross_get=true cross_list=true
+ok
+test header_resolver_with_tenant_aware_store_isolates ... header+TenantAwareInMemory: owner_get_ok=true other_tenant_get_ok=false other_tenant_list_contains=false
+  other tenant GetTask body: {"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Task not found: d0d5fe31-a89f-4de7-9152-fc2b81ba720c","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"TASK_NOT_F
+B naming tenant A in params: {"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"request tenant 'A' does not match the authenticated tenant"}}
+ok
+test path_resolver_over_rest ... PathSegmentTenantResolver(1) POST /tenants/acme/message:send -> 400 {"error":{"code":400,"message":"request tenant 'acme' does not match the authenticated tenant","status":"INVALID_ARGUMENT"}}
+executor saw tenants: []
+
+thread 'path_resolver_over_rest' (8968) panicked at tests/tenancy.rs:124:5:
+assertion `left == right` failed: path-resolved tenant request should succeed
+  left: 400
+ right: 200
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test per_tenant_max_concurrent_tasks ... A second concurrent: {"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"tenant 'A' already has 1 task(s) in flight"}}
+B concurrent: {"jsonrpc":"2.0","id":1,"result":{"task":{"artifacts":[{"artifactId":"greeting","parts":[{"text":"Hello, hi!"}]}],"conte
+ok
+test rest_tenant_path_without_resolver ... no resolver: send=200 tenants_seen=[Some("acme")] own_get=200 other_tenant_get=404
+ok
+
+failures:
+
+failures:
+    path_resolver_over_rest
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.58s
+
+error: test failed, to rerun pass `--test tenancy`

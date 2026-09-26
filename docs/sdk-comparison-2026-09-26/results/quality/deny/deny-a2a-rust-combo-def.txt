@@ -1,0 +1,160 @@
+CMD: cargo deny --manifest-path /opt/bench/consumers/a2a-rust-combo-def/Cargo.toml --config /opt/bench/results/quality/deny.toml check licenses advisories bans sources
+warning[license-not-encountered]: license was not encountered
+   ┌─ /opt/bench/results/quality/deny.toml:16:59
+   │
+16 │   "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC",
+   │                                                           ━━━━━━━━━━━━ unmatched license allowance
+
+warning[license-not-encountered]: license was not encountered
+   ┌─ /opt/bench/results/quality/deny.toml:17:50
+   │
+17 │   "Unicode-3.0", "Zlib", "CDLA-Permissive-2.0", "MPL-2.0",
+   │                                                  ━━━━━━━ unmatched license allowance
+
+warning[license-not-encountered]: license was not encountered
+   ┌─ /opt/bench/results/quality/deny.toml:17:19
+   │
+17 │   "Unicode-3.0", "Zlib", "CDLA-Permissive-2.0", "MPL-2.0",
+   │                   ━━━━ unmatched license allowance
+
+warning[duplicate]: found 2 duplicate entries for crate 'getrandom'
+   ┌─ /opt/bench/consumers/a2a-rust-combo-def/Cargo.lock:20:1
+   │  
+20 │ ╭ getrandom 0.2.17 registry+https://github.com/rust-lang/crates.io-index
+21 │ │ getrandom 0.4.3 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰─────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ getrandom v0.2.17
+     └── ring v0.17.14
+         ├── rustls v0.23.45
+         │   ├── a2a-protocol-client v0.14.0
+         │   │   └── consumer-a2a-rust-combo-def v0.0.0
+         │   ├── hyper-rustls v0.27.10
+         │   │   └── a2a-protocol-client v0.14.0 (*)
+         │   └── tokio-rustls v0.26.5
+         │       └── hyper-rustls v0.27.10 (*)
+         └── rustls-webpki v0.103.15
+             └── rustls v0.23.45 (*)
+   ├ getrandom v0.4.3
+     └── uuid v1.26.1
+         ├── a2a-protocol-client v0.14.0
+         │   └── consumer-a2a-rust-combo-def v0.0.0
+         └── a2a-protocol-server v0.14.0
+             └── consumer-a2a-rust-combo-def v0.0.0 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'syn'
+   ┌─ /opt/bench/consumers/a2a-rust-combo-def/Cargo.lock:57:1
+   │  
+57 │ ╭ syn 2.0.119 registry+https://github.com/rust-lang/crates.io-index
+58 │ │ syn 3.0.6 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰───────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ syn v2.0.119
+     └── tracing-attributes v0.1.31
+         └── tracing v0.1.44
+             ├── a2a-protocol-client v0.14.0
+             │   └── consumer-a2a-rust-combo-def v0.0.0
+             ├── a2a-protocol-server v0.14.0
+             │   └── consumer-a2a-rust-combo-def v0.0.0 (*)
+             ├── h2 v0.4.19
+             │   └── hyper v1.11.1
+             │       ├── a2a-protocol-client v0.14.0 (*)
+             │       ├── a2a-protocol-server v0.14.0 (*)
+             │       ├── hyper-rustls v0.27.10
+             │       │   └── a2a-protocol-client v0.14.0 (*)
+             │       └── hyper-util v0.1.21
+             │           ├── a2a-protocol-client v0.14.0 (*)
+             │           ├── a2a-protocol-server v0.14.0 (*)
+             │           └── hyper-rustls v0.27.10 (*)
+             └── hyper-util v0.1.21 (*)
+   ├ syn v3.0.6
+     ├── futures-macro v0.3.34
+     │   └── futures-util v0.3.34
+     │       ├── hyper-util v0.1.21
+     │       │   ├── a2a-protocol-client v0.14.0
+     │       │   │   └── consumer-a2a-rust-combo-def v0.0.0
+     │       │   ├── a2a-protocol-server v0.14.0
+     │       │   │   └── consumer-a2a-rust-combo-def v0.0.0 (*)
+     │       │   └── hyper-rustls v0.27.10
+     │       │       └── a2a-protocol-client v0.14.0 (*)
+     │       └── tokio-util v0.7.19
+     │           ├── a2a-protocol-server v0.14.0 (*)
+     │           └── h2 v0.4.19
+     │               └── hyper v1.11.1
+     │                   ├── a2a-protocol-client v0.14.0 (*)
+     │                   ├── a2a-protocol-server v0.14.0 (*)
+     │                   ├── hyper-rustls v0.27.10 (*)
+     │                   └── hyper-util v0.1.21 (*)
+     ├── serde_derive v1.0.229
+     │   └── serde v1.0.229
+     │       ├── a2a-protocol-client v0.14.0 (*)
+     │       ├── a2a-protocol-server v0.14.0 (*)
+     │       └── a2a-protocol-types v0.14.0
+     │           ├── a2a-protocol-client v0.14.0 (*)
+     │           ├── a2a-protocol-server v0.14.0 (*)
+     │           └── consumer-a2a-rust-combo-def v0.0.0 (*)
+     └── tokio-macros v2.7.2
+         └── tokio v1.53.1
+             ├── a2a-protocol-client v0.14.0 (*)
+             ├── a2a-protocol-server v0.14.0 (*)
+             ├── h2 v0.4.19 (*)
+             ├── hyper v1.11.1 (*)
+             ├── hyper-rustls v0.27.10 (*)
+             ├── hyper-util v0.1.21 (*)
+             ├── tokio-rustls v0.26.5
+             │   └── hyper-rustls v0.27.10 (*)
+             └── tokio-util v0.7.19 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows-sys'
+   ┌─ /opt/bench/consumers/a2a-rust-combo-def/Cargo.lock:75:1
+   │  
+75 │ ╭ windows-sys 0.52.0 registry+https://github.com/rust-lang/crates.io-index
+76 │ │ windows-sys 0.61.2 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰────────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ windows-sys v0.52.0
+     └── ring v0.17.14
+         ├── rustls v0.23.45
+         │   ├── a2a-protocol-client v0.14.0
+         │   │   └── consumer-a2a-rust-combo-def v0.0.0
+         │   ├── hyper-rustls v0.27.10
+         │   │   └── a2a-protocol-client v0.14.0 (*)
+         │   └── tokio-rustls v0.26.5
+         │       └── hyper-rustls v0.27.10 (*)
+         └── rustls-webpki v0.103.15
+             └── rustls v0.23.45 (*)
+   ├ windows-sys v0.61.2
+     ├── errno v0.3.14
+     │   └── signal-hook-registry v1.4.8
+     │       └── tokio v1.53.1
+     │           ├── a2a-protocol-client v0.14.0
+     │           │   └── consumer-a2a-rust-combo-def v0.0.0
+     │           ├── a2a-protocol-server v0.14.0
+     │           │   └── consumer-a2a-rust-combo-def v0.0.0 (*)
+     │           ├── h2 v0.4.19
+     │           │   └── hyper v1.11.1
+     │           │       ├── a2a-protocol-client v0.14.0 (*)
+     │           │       ├── a2a-protocol-server v0.14.0 (*)
+     │           │       ├── hyper-rustls v0.27.10
+     │           │       │   └── a2a-protocol-client v0.14.0 (*)
+     │           │       └── hyper-util v0.1.21
+     │           │           ├── a2a-protocol-client v0.14.0 (*)
+     │           │           ├── a2a-protocol-server v0.14.0 (*)
+     │           │           └── hyper-rustls v0.27.10 (*)
+     │           ├── hyper v1.11.1 (*)
+     │           ├── hyper-rustls v0.27.10 (*)
+     │           ├── hyper-util v0.1.21 (*)
+     │           ├── tokio-rustls v0.26.5
+     │           │   └── hyper-rustls v0.27.10 (*)
+     │           └── tokio-util v0.7.19
+     │               ├── a2a-protocol-server v0.14.0 (*)
+     │               └── h2 v0.4.19 (*)
+     ├── mio v1.2.3
+     │   └── tokio v1.53.1 (*)
+     ├── socket2 v0.6.5
+     │   ├── hyper-util v0.1.21 (*)
+     │   └── tokio v1.53.1 (*)
+     └── tokio v1.53.1 (*)
+
+advisories ok, bans ok, licenses ok, sources ok
+EXIT: 0

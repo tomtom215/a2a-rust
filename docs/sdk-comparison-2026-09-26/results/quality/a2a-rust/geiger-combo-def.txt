@@ -1,0 +1,507 @@
+CMD: (cwd /opt/bench/consumers/a2a-rust-combo-def) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rust/geiger CARGO_BUILD_JOBS=2 cargo geiger --output-format Ascii   (cargo-geiger 0.13.0; 'Failed to match (ignoring source)' noise lines filtered)
+     Removed 0 files
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/proc-macro2-ed65e559bd5c1499/build_script_build-ed65e559bd5c1499.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/unicode_ident-b1b6666166350455.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libunicode_ident-b1b6666166350455.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libunicode_ident-b1b6666166350455.rlib","emit":"link"}
+   Compiling libc v0.2.189
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/libc-62f6ea40000ffd18/build_script_build-62f6ea40000ffd18.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/proc-macro2-ed65e559bd5c1499/build_script_build-ed65e559bd5c1499","emit":"link"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/libc-62f6ea40000ffd18/build_script_build-62f6ea40000ffd18","emit":"link"}
+   Compiling quote v1.0.47
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/quote-fd103bd4a8d25b47/build_script_build-fd103bd4a8d25b47.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/proc_macro2-3a002da7aead1bf6.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/quote-fd103bd4a8d25b47/build_script_build-fd103bd4a8d25b47","emit":"link"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libproc_macro2-3a002da7aead1bf6.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libc-e2e394d9439f84e9.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libproc_macro2-3a002da7aead1bf6.rlib","emit":"link"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/quote-ac50cb6e7437b86e.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libquote-ac50cb6e7437b86e.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libquote-ac50cb6e7437b86e.rlib","emit":"link"}
+   Compiling syn v3.0.6
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/liblibc-e2e394d9439f84e9.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/syn-20a6c82606a8233f.d","emit":"dep-info"}
+    Checking pin-project-lite v0.2.17
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/pin_project_lite-1c9470760f3f77d1.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libpin_project_lite-1c9470760f3f77d1.rmeta","emit":"metadata"}
+    Checking bytes v1.12.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/bytes-556acd7dcc5f3875.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libbytes-556acd7dcc5f3875.rmeta","emit":"metadata"}
+    Checking itoa v1.0.18
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/itoa-3ab40ec427ae8b72.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libitoa-3ab40ec427ae8b72.rmeta","emit":"metadata"}
+    Checking errno v0.3.14
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/errno-c62c9a0575704de3.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/liberrno-c62c9a0575704de3.rmeta","emit":"metadata"}
+    Checking once_cell v1.21.4
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/once_cell-3969925b50c28977.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libonce_cell-3969925b50c28977.rmeta","emit":"metadata"}
+    Checking cfg-if v1.0.5
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/cfg_if-a16cf9a13dbd10fe.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libcfg_if-a16cf9a13dbd10fe.rmeta","emit":"metadata"}
+   Compiling shlex v2.0.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/shlex-305100f611503a16.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libshlex-305100f611503a16.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libshlex-305100f611503a16.rlib","emit":"link"}
+    Checking futures-core v0.3.34
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/futures_core-91388449a43b8cda.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libfutures_core-91388449a43b8cda.rmeta","emit":"metadata"}
+   Compiling find-msvc-tools v0.1.14
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/find_msvc_tools-1eeb0a497b809739.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libfind_msvc_tools-1eeb0a497b809739.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libfind_msvc_tools-1eeb0a497b809739.rlib","emit":"link"}
+   Compiling cc v1.5.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/cc-5c56b059aa8bd989.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libcc-5c56b059aa8bd989.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libsyn-20a6c82606a8233f.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libcc-5c56b059aa8bd989.rlib","emit":"link"}
+    Checking signal-hook-registry v1.4.8
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/signal_hook_registry-6a1fdacd5e61329d.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libsignal_hook_registry-6a1fdacd5e61329d.rmeta","emit":"metadata"}
+    Checking mio v1.2.3
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/mio-9f27d02427564293.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libmio-9f27d02427564293.rmeta","emit":"metadata"}
+    Checking socket2 v0.6.5
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/socket2-f356d36fd374dfe3.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libsocket2-f356d36fd374dfe3.rmeta","emit":"metadata"}
+   Compiling ring v0.17.14
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/ring-db4a9617789e0f9f/build_script_build-db4a9617789e0f9f.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libsyn-20a6c82606a8233f.rlib","emit":"link"}
+   Compiling tokio-macros v2.7.2
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/tokio_macros-ecac467c7ccbf3ce.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/ring-db4a9617789e0f9f/build_script_build-db4a9617789e0f9f","emit":"link"}
+   Compiling futures-macro v0.3.34
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/futures_macro-47151a38484230c6.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libtokio_macros-ecac467c7ccbf3ce.so","emit":"link"}
+    Checking tokio v1.53.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libfutures_macro-47151a38484230c6.so","emit":"link"}
+    Checking http v1.5.0
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/http-b279001c085e57de.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/tokio-6925a76a0476458f.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libhttp-b279001c085e57de.rmeta","emit":"metadata"}
+   Compiling syn v2.0.119
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/syn-d8a46ce2c94c0db6.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libtokio-6925a76a0476458f.rmeta","emit":"metadata"}
+    Checking futures-task v0.3.34
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/futures_task-0a10b11550a38138.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libfutures_task-0a10b11550a38138.rmeta","emit":"metadata"}
+    Checking slab v0.4.12
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/slab-336d154c0f968b7b.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libslab-336d154c0f968b7b.rmeta","emit":"metadata"}
+    Checking futures-util v0.3.34
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/futures_util-ed70836eaf9d8e55.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libsyn-d8a46ce2c94c0db6.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libfutures_util-ed70836eaf9d8e55.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libsyn-d8a46ce2c94c0db6.rlib","emit":"link"}
+   Compiling tracing-attributes v0.1.31
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/tracing_attributes-3c194c198b34939b.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libtracing_attributes-3c194c198b34939b.so","emit":"link"}
+    Checking tracing-core v0.1.36
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/tracing_core-6eea14c9a70a5391.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libtracing_core-6eea14c9a70a5391.rmeta","emit":"metadata"}
+    Checking zeroize v1.9.0
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/zeroize-a012c176b7e81d7a.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libzeroize-a012c176b7e81d7a.rmeta","emit":"metadata"}
+   Compiling httparse v1.10.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/httparse-3f133ceb9c504e0a/build_script_build-3f133ceb9c504e0a.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/httparse-3f133ceb9c504e0a/build_script_build-3f133ceb9c504e0a","emit":"link"}
+    Checking hashbrown v0.17.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/hashbrown-a03dddd4030ee6d2.d","emit":"dep-info"}
+    Checking futures-sink v0.3.34
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/futures_sink-94840c279322235c.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libfutures_sink-94840c279322235c.rmeta","emit":"metadata"}
+    Checking equivalent v1.0.2
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/equivalent-f09fea7d31020d82.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libequivalent-f09fea7d31020d82.rmeta","emit":"metadata"}
+   Compiling serde_core v1.0.229
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/serde_core-2999e6d671bc1347/build_script_build-2999e6d671bc1347.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libhashbrown-a03dddd4030ee6d2.rmeta","emit":"metadata"}
+    Checking indexmap v2.14.2
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/serde_core-2999e6d671bc1347/build_script_build-2999e6d671bc1347","emit":"link"}
+    Checking tokio-util v0.7.19
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/indexmap-a04c5aacd933fc2a.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/tokio_util-f3fe4c3553c628a3.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libindexmap-a04c5aacd933fc2a.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libtokio_util-f3fe4c3553c628a3.rmeta","emit":"metadata"}
+    Checking rustls-pki-types v1.15.1
+    Checking tracing v0.1.44
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/rustls_pki_types-dd1dcf0708266df6.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/tracing-6f290fd15fd04e63.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libtracing-6f290fd15fd04e63.rmeta","emit":"metadata"}
+    Checking http-body v1.1.0
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/http_body-253ca651da67f015.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libhttp_body-253ca651da67f015.rmeta","emit":"metadata"}
+    Checking getrandom v0.2.17
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/librustls_pki_types-dd1dcf0708266df6.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/getrandom-d8dab057538481ab.d","emit":"dep-info"}
+    Checking try-lock v0.2.5
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/try_lock-737c19666dd62845.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libtry_lock-737c19666dd62845.rmeta","emit":"metadata"}
+   Compiling zmij v1.0.23
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libgetrandom-d8dab057538481ab.rmeta","emit":"metadata"}
+    Checking atomic-waker v1.1.2
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/zmij-9689cc978d026be0/build_script_build-9689cc978d026be0.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/atomic_waker-29498a9e66af2c2d.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libatomic_waker-29498a9e66af2c2d.rmeta","emit":"metadata"}
+    Checking untrusted v0.9.0
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/untrusted-ac4be118cfac4ffa.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libuntrusted-ac4be118cfac4ffa.rmeta","emit":"metadata"}
+    Checking fnv v1.0.7
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/fnv-79a684ce5fc07f8f.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libfnv-79a684ce5fc07f8f.rmeta","emit":"metadata"}
+    Checking h2 v0.4.19
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/zmij-9689cc978d026be0/build_script_build-9689cc978d026be0","emit":"link"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/ring-fbec6bd882d6e437.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/h2-e415517111fcc4c6.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libring-fbec6bd882d6e437.rmeta","emit":"metadata"}
+    Checking want v0.3.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/want-28135831d719af66.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libwant-28135831d719af66.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/httparse-6c4942b8eb7203fc.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libhttparse-6c4942b8eb7203fc.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/serde_core-0bfd9e4f3dac5a77.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libh2-e415517111fcc4c6.rmeta","emit":"metadata"}
+    Checking futures-channel v0.3.34
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/futures_channel-c2a534f444da1488.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libfutures_channel-c2a534f444da1488.rmeta","emit":"metadata"}
+   Compiling serde v1.0.229
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/serde-e5a0aa3cf0fa0be4/build_script_build-e5a0aa3cf0fa0be4.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/serde-e5a0aa3cf0fa0be4/build_script_build-e5a0aa3cf0fa0be4","emit":"link"}
+   Compiling serde_json v1.0.151
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/serde_json-4a743efb0397392d/build_script_build-4a743efb0397392d.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/serde_json-4a743efb0397392d/build_script_build-4a743efb0397392d","emit":"link"}
+   Compiling rustls v0.23.45
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/rustls-95903545af8bcb49/build_script_build-95903545af8bcb49.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/rustls-95903545af8bcb49/build_script_build-95903545af8bcb49","emit":"link"}
+    Checking smallvec v1.16.2
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/smallvec-4812189beb407010.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libsmallvec-4812189beb407010.rmeta","emit":"metadata"}
+   Compiling getrandom v0.4.3
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/getrandom-f3f23d479e1eaea1/build_script_build-f3f23d479e1eaea1.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/getrandom-f3f23d479e1eaea1/build_script_build-f3f23d479e1eaea1","emit":"link"}
+    Checking httpdate v1.0.3
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/httpdate-29646a1dbde39a79.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libhttpdate-29646a1dbde39a79.rmeta","emit":"metadata"}
+    Checking hyper v1.11.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libserde_core-0bfd9e4f3dac5a77.rmeta","emit":"metadata"}
+    Checking rustls-webpki v0.103.15
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/webpki-4561220761354ba5.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/hyper-e9efec24de87c658.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libwebpki-4561220761354ba5.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/zmij-c09b7cd7f49c481a.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libzmij-c09b7cd7f49c481a.rmeta","emit":"metadata"}
+   Compiling serde_derive v1.0.229
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libhyper-e9efec24de87c658.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/serde_derive-f82a5bcc505a5c43.d","emit":"dep-info"}
+   Compiling a2a-protocol-types v0.14.0
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/a2a-protocol-types-f892af4ebcdaad0a/build_script_build-f892af4ebcdaad0a.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/a2a-protocol-types-f892af4ebcdaad0a/build_script_build-f892af4ebcdaad0a","emit":"link"}
+    Checking memchr v2.8.3
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/memchr-41f9e724e598b49f.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libmemchr-41f9e724e598b49f.rmeta","emit":"metadata"}
+    Checking tower-service v0.3.3
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/tower_service-df9da1e748a92f6f.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libtower_service-df9da1e748a92f6f.rmeta","emit":"metadata"}
+    Checking subtle v2.6.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/subtle-d94ca97855cd83b7.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libsubtle-d94ca97855cd83b7.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/rustls-3f56cc5f05aa2e72.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libserde_derive-f82a5bcc505a5c43.so","emit":"link"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/serde-b61aab365d1ee480.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libserde-b61aab365d1ee480.rmeta","emit":"metadata"}
+    Checking hyper-util v0.1.21
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/hyper_util-247b0163bf27b126.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/librustls-3f56cc5f05aa2e72.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/serde_json-e2d9fcb124a63682.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libserde_json-e2d9fcb124a63682.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/getrandom-f456a7f5c03c83cf.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libgetrandom-f456a7f5c03c83cf.rmeta","emit":"metadata"}
+    Checking uuid v1.26.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libhyper_util-247b0163bf27b126.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/uuid-83cd892afb434cc1.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libuuid-83cd892afb434cc1.rmeta","emit":"metadata"}
+    Checking tokio-rustls v0.26.5
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/tokio_rustls-701af078b9dd3118.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/a2a_protocol_types-1a44cb2d62443457.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libtokio_rustls-701af078b9dd3118.rmeta","emit":"metadata"}
+    Checking webpki-roots v1.0.9
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/webpki_roots-aab619c3e9033c29.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libwebpki_roots-aab619c3e9033c29.rmeta","emit":"metadata"}
+    Checking http-body-util v0.1.5
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/http_body_util-90638ab4fff24641.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libhttp_body_util-90638ab4fff24641.rmeta","emit":"metadata"}
+   Compiling a2a-protocol-client v0.14.0
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/a2a-protocol-client-c435cbafa0738f64/build_script_build-c435cbafa0738f64.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/a2a-protocol-client-c435cbafa0738f64/build_script_build-c435cbafa0738f64","emit":"link"}
+   Compiling a2a-protocol-server v0.14.0
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/a2a-protocol-server-decb45b42e8189f8/build_script_build-decb45b42e8189f8.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/build/a2a-protocol-server-decb45b42e8189f8/build_script_build-decb45b42e8189f8","emit":"link"}
+    Checking hyper-rustls v0.27.10
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/hyper_rustls-68225d2cdabd953f.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libhyper_rustls-68225d2cdabd953f.rmeta","emit":"metadata"}
+    Checking base64 v0.23.1
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/base64-f537632568858c88.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libbase64-f537632568858c88.rmeta","emit":"metadata"}
+   Compiling mutants v0.0.4
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/mutants-d40ee9c97aa89cd4.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libmutants-d40ee9c97aa89cd4.so","emit":"link"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/liba2a_protocol_types-1a44cb2d62443457.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/a2a_protocol_client-f624f8512e1843c6.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/a2a_protocol_server-1a411a92d5b37c02.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/liba2a_protocol_client-f624f8512e1843c6.rmeta","emit":"metadata"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/liba2a_protocol_server-1a411a92d5b37c02.rmeta","emit":"metadata"}
+    Checking consumer-a2a-rust-combo-def v0.0.0 (/opt/bench/consumers/a2a-rust-combo-def)
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/consumer_a2a_rust_combo_def-42d7d13c93246532.d","emit":"dep-info"}
+{"$message_type":"artifact","artifact":"/opt/bench/target-quality-a2a-rust/geiger/debug/deps/libconsumer_a2a_rust_combo_def-42d7d13c93246532.rmeta","emit":"metadata"}
+    Finished `dev` profile [unoptimized] target(s) in 18.44s
+Failed to parse file: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/lib.rs, Syn(Error("expected `;`"), "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/lib.rs") 
+    Scanning done
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ecdsa-p521.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/README.md
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-webpki-0.103.15/src/data/alg-rsa-pkcs1-sha512-absent-params.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/data/alg-rsa-encryption.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-rsa-encryption.der
+WARNING: Dependency file was never scanned: /opt/bench/target-quality-a2a-rust/geiger/debug/build/serde-498f53d73eff96ef/out/private.rs
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ml-dsa-65.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-rsa-pkcs1-sha512.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ecdsa-p384.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ml-dsa-87.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-webpki-0.103.15/src/data/alg-rsa-pkcs1-sha384-absent-params.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ed448.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-rsa-pss-sha256.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ecdsa-p256k1.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/ec/suite_b/ecdsa/ecPublicKey_p256_pkcs8_v1_template.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-rsa-pkcs1-sha256.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/ec/curve25519/ed25519/ed25519_pkcs8_v2_template.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ecdsa-sha512.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ecdsa-p256.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/lib.rs
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ecdsa-sha384.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cc-1.5.1/src/detect_compiler_family.c
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/ec/suite_b/ecdsa/ecPublicKey_p384_pkcs8_v1_template.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-webpki-0.103.15/src/data/alg-rsa-pkcs1-sha256-absent-params.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ed25519.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ecdsa-sha256.der
+WARNING: Dependency file was never scanned: /opt/bench/target-quality-a2a-rust/geiger/debug/build/serde_core-64f1da837b2bf5ef/out/private.rs
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-rsa-pkcs1-sha384.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-rsa-pss-sha512.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-rsa-pss-sha384.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.15.1/src/data/alg-ml-dsa-44.der
+WARNING: Dependency file was never scanned: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/getrandom-0.4.3/README.md
+
+Metric output format: x/y
+    x = unsafe code used by the build
+    y = total unsafe code found in the crate
+
+Symbols:
+    :) = No `unsafe` usage found, declares #![forbid(unsafe_code)]
+    ?  = No `unsafe` usage found, missing #![forbid(unsafe_code)]
+    !  = `unsafe` usage found
+
+Functions  Expressions  Impls  Traits  Methods  Dependency
+
+0/0        0/0          0/0    0/0     0/0      ?  consumer-a2a-rust-combo-def 0.0.0
+0/0        0/0          0/0    0/0     0/0      :) |-- a2a-protocol-client 0.14.0
+0/0        0/0          0/0    0/0     0/0      :) |   |-- a2a-protocol-types 0.14.0
+8/8        285/285      0/0    0/0     2/2      !  |   |   |-- base64 0.23.1
+8/8        432/444      0/0    0/0     8/8      !  |   |   |-- ring 0.17.14
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   |-- cfg-if 1.0.5
+3/6        67/192       1/1    0/0     3/3      !  |   |   |   |-- getrandom 0.2.17
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   |   |-- cfg-if 1.0.5
+0/93       35/738       2/10   0/0     8/101    !  |   |   |   |   `-- libc 0.2.189
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   `-- untrusted 0.9.0
+0/0        0/5          0/0    0/0     0/0      ?  |   |   |-- serde 1.0.229
+0/0        5/5          0/0    0/0     0/0      !  |   |   |   |-- serde_core 1.0.229
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   `-- serde_derive 1.0.229
+0/0        14/14        0/0    0/0     3/3      !  |   |   |       |-- proc-macro2 1.0.107
+0/0        4/4          0/0    0/0     0/0      !  |   |   |       |   `-- unicode-ident 1.0.26
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |       |-- quote 1.0.47
+0/0        14/14        0/0    0/0     3/3      !  |   |   |       |   `-- proc-macro2 1.0.107
+0/0        88/88        3/3    0/0     2/2      !  |   |   |       `-- syn 3.0.6
+0/0        14/14        0/0    0/0     3/3      !  |   |   |           |-- proc-macro2 1.0.107
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |           |-- quote 1.0.47
+0/0        4/4          0/0    0/0     0/0      !  |   |   |           `-- unicode-ident 1.0.26
+0/0        75/80        0/0    0/0     0/1      !  |   |   `-- serde_json 1.0.151
+0/0        80/85        0/0    0/0     0/0      !  |   |       |-- indexmap 2.14.2
+0/0        0/0          0/0    0/0     0/0      ?  |   |       |   |-- equivalent 1.0.2
+1/1        1343/1612    18/23  1/1     86/99    !  |   |       |   |-- hashbrown 0.17.1
+0/0        0/0          0/0    0/0     0/0      ?  |   |       |   |   |-- equivalent 1.0.2
+0/0        5/5          0/0    0/0     0/0      !  |   |       |   |   `-- serde_core 1.0.229
+0/0        5/5          0/0    0/0     0/0      !  |   |       |   `-- serde_core 1.0.229
+1/1        145/145      0/0    0/0     0/0      !  |   |       |-- itoa 1.0.18
+34/48      1992/2440    2/2    0/0     110/148  !  |   |       |-- memchr 2.8.3
+0/0        5/5          0/0    0/0     0/0      !  |   |       |-- serde_core 1.0.229
+3/3        620/620      0/0    0/0     6/6      !  |   |       `-- zmij 1.0.23
+8/8        285/285      0/0    0/0     2/2      !  |   |-- base64 0.23.1
+6/10       452/550      26/32  0/0     6/10     !  |   |-- futures-util 0.3.34
+0/0        81/81        8/8    0/0     3/3      !  |   |   |-- futures-channel 0.3.34
+0/0        36/36        2/2    0/0     0/0      !  |   |   |   |-- futures-core 0.3.34
+0/0        2/2          0/0    0/0     0/0      !  |   |   |   `-- futures-sink 0.3.34
+0/0        36/36        2/2    0/0     0/0      !  |   |   |-- futures-core 0.3.34
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |-- futures-macro 0.3.34
+0/0        14/14        0/0    0/0     3/3      !  |   |   |   |-- proc-macro2 1.0.107
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   |-- quote 1.0.47
+0/0        88/88        3/3    0/0     2/2      !  |   |   |   `-- syn 3.0.6
+0/0        2/2          0/0    0/0     0/0      !  |   |   |-- futures-sink 0.3.34
+9/9        79/79        12/12  1/1     11/11    !  |   |   |-- futures-task 0.3.34
+0/93       35/738       2/10   0/0     8/101    !  |   |   |-- libc 0.2.189
+34/48      1992/2440    2/2    0/0     110/148  !  |   |   |-- memchr 2.8.3
+0/0        11/191       0/0    0/0     2/2      !  |   |   |-- pin-project-lite 0.2.17
+0/0        29/29        0/0    0/0     3/3      !  |   |   `-- slab 0.4.12
+0/0        0/5          0/0    0/0     0/0      ?  |   |       `-- serde 1.0.229
+0/0        6/6          0/0    0/0     0/0      !  |   |-- http-body-util 0.1.5
+40/40      780/826      12/14  1/1     16/20    !  |   |   |-- bytes 1.12.1
+0/0        0/5          0/0    0/0     0/0      ?  |   |   |   `-- serde 1.0.229
+0/0        36/36        2/2    0/0     0/0      !  |   |   |-- futures-core 0.3.34
+0/0        4/4          0/0    0/0     0/0      !  |   |   |-- http-body 1.1.0
+40/40      780/826      12/14  1/1     16/20    !  |   |   |   |-- bytes 1.12.1
+1/1        168/168      10/10  0/0     2/2      !  |   |   |   `-- http 1.5.0
+40/40      780/826      12/14  1/1     16/20    !  |   |   |       |-- bytes 1.12.1
+1/1        145/145      0/0    0/0     0/0      !  |   |   |       `-- itoa 1.0.18
+1/1        168/168      10/10  0/0     2/2      !  |   |   |-- http 1.5.0
+0/0        11/191       0/0    0/0     2/2      !  |   |   |-- pin-project-lite 0.2.17
+25/30      2186/3011    105/119 3/3     104/139  !  |   |   `-- tokio 1.53.1
+40/40      780/826      12/14  1/1     16/20    !  |   |       |-- bytes 1.12.1
+0/93       35/738       2/10   0/0     8/101    !  |   |       |-- libc 0.2.189
+1/2        171/693      0/21   0/0     9/23     !  |   |       |-- mio 1.2.3
+0/93       35/738       2/10   0/0     8/101    !  |   |       |   `-- libc 0.2.189
+0/0        11/191       0/0    0/0     2/2      !  |   |       |-- pin-project-lite 0.2.17
+0/0        12/12        0/0    0/0     0/0      !  |   |       |-- signal-hook-registry 1.4.8
+0/0        35/103       0/0    0/0     0/0      !  |   |       |   |-- errno 0.3.14
+0/93       35/738       2/10   0/0     8/101    !  |   |       |   |   `-- libc 0.2.189
+0/93       35/738       2/10   0/0     8/101    !  |   |       |   `-- libc 0.2.189
+3/6        662/818      4/6    0/0     5/7      !  |   |       |-- socket2 0.6.5
+0/93       35/738       2/10   0/0     8/101    !  |   |       |   `-- libc 0.2.189
+0/0        0/0          0/0    0/0     0/0      ?  |   |       `-- tokio-macros 2.7.2
+0/0        14/14        0/0    0/0     3/3      !  |   |           |-- proc-macro2 1.0.107
+0/0        0/0          0/0    0/0     0/0      ?  |   |           |-- quote 1.0.47
+0/0        88/88        3/3    0/0     2/2      !  |   |           `-- syn 3.0.6
+0/0        0/0          0/0    0/0     0/0      ?  |   |-- hyper-rustls 0.27.10
+1/1        168/168      10/10  0/0     2/2      !  |   |   |-- http 1.5.0
+0/0        52/52        1/1    0/0     0/0      !  |   |   |-- hyper-util 0.1.21
+8/8        285/285      0/0    0/0     2/2      !  |   |   |   |-- base64 0.23.1
+40/40      780/826      12/14  1/1     16/20    !  |   |   |   |-- bytes 1.12.1
+0/0        81/81        8/8    0/0     3/3      !  |   |   |   |-- futures-channel 0.3.34
+6/10       452/550      26/32  0/0     6/10     !  |   |   |   |-- futures-util 0.3.34
+0/0        4/4          0/0    0/0     0/0      !  |   |   |   |-- http-body 1.1.0
+1/1        168/168      10/10  0/0     2/2      !  |   |   |   |-- http 1.5.0
+13/19      256/345      0/0    0/0     6/6      !  |   |   |   |-- httparse 1.10.1
+0/1        119/136      0/11   0/1     4/4      !  |   |   |   |-- hyper 1.11.1
+0/0        32/32        2/2    0/0     0/0      !  |   |   |   |   |-- atomic-waker 1.1.2
+40/40      780/826      12/14  1/1     16/20    !  |   |   |   |   |-- bytes 1.12.1
+0/0        81/81        8/8    0/0     3/3      !  |   |   |   |   |-- futures-channel 0.3.34
+0/0        36/36        2/2    0/0     0/0      !  |   |   |   |   |-- futures-core 0.3.34
+6/10       452/550      26/32  0/0     6/10     !  |   |   |   |   |-- futures-util 0.3.34
+0/0        3/3          0/0    0/0     0/0      !  |   |   |   |   |-- h2 0.4.19
+0/0        32/32        2/2    0/0     0/0      !  |   |   |   |   |   |-- atomic-waker 1.1.2
+40/40      780/826      12/14  1/1     16/20    !  |   |   |   |   |   |-- bytes 1.12.1
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   |   |   |-- fnv 1.0.7
+0/0        36/36        2/2    0/0     0/0      !  |   |   |   |   |   |-- futures-core 0.3.34
+0/0        2/2          0/0    0/0     0/0      !  |   |   |   |   |   |-- futures-sink 0.3.34
+1/1        168/168      10/10  0/0     2/2      !  |   |   |   |   |   |-- http 1.5.0
+0/0        80/85        0/0    0/0     0/0      !  |   |   |   |   |   |-- indexmap 2.14.2
+0/0        29/29        0/0    0/0     3/3      !  |   |   |   |   |   |-- slab 0.4.12
+0/0        59/73        1/1    0/0     1/1      !  |   |   |   |   |   |-- tokio-util 0.7.19
+40/40      780/826      12/14  1/1     16/20    !  |   |   |   |   |   |   |-- bytes 1.12.1
+0/0        36/36        2/2    0/0     0/0      !  |   |   |   |   |   |   |-- futures-core 0.3.34
+0/0        2/2          0/0    0/0     0/0      !  |   |   |   |   |   |   |-- futures-sink 0.3.34
+6/10       452/550      26/32  0/0     6/10     !  |   |   |   |   |   |   |-- futures-util 0.3.34
+0/93       35/738       2/10   0/0     8/101    !  |   |   |   |   |   |   |-- libc 0.2.189
+0/0        11/191       0/0    0/0     2/2      !  |   |   |   |   |   |   |-- pin-project-lite 0.2.17
+0/0        29/29        0/0    0/0     3/3      !  |   |   |   |   |   |   |-- slab 0.4.12
+25/30      2186/3011    105/119 3/3     104/139  !  |   |   |   |   |   |   |-- tokio 1.53.1
+0/0        17/17        1/1    0/0     0/0      !  |   |   |   |   |   |   `-- tracing 0.1.44
+0/0        11/191       0/0    0/0     2/2      !  |   |   |   |   |   |       |-- pin-project-lite 0.2.17
+0/1        0/0          0/0    0/0     0/0      ?  |   |   |   |   |   |       |-- tracing-attributes 0.1.31
+0/0        14/14        0/0    0/0     3/3      !  |   |   |   |   |   |       |   |-- proc-macro2 1.0.107
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   |   |   |       |   |-- quote 1.0.47
+0/0        87/87        3/3    0/0     2/2      !  |   |   |   |   |   |       |   `-- syn 2.0.119
+0/0        14/14        0/0    0/0     3/3      !  |   |   |   |   |   |       |       |-- proc-macro2 1.0.107
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   |   |   |       |       |-- quote 1.0.47
+0/0        4/4          0/0    0/0     0/0      !  |   |   |   |   |   |       |       `-- unicode-ident 1.0.26
+0/0        77/98        1/5    0/0     2/2      !  |   |   |   |   |   |       `-- tracing-core 0.1.36
+0/0        81/128       5/9    0/0     3/5      !  |   |   |   |   |   |           `-- once_cell 1.21.4
+25/30      2186/3011    105/119 3/3     104/139  !  |   |   |   |   |   |-- tokio 1.53.1
+0/0        17/17        1/1    0/0     0/0      !  |   |   |   |   |   `-- tracing 0.1.44
+0/0        6/6          0/0    0/0     0/0      !  |   |   |   |   |-- http-body-util 0.1.5
+0/0        4/4          0/0    0/0     0/0      !  |   |   |   |   |-- http-body 1.1.0
+1/1        168/168      10/10  0/0     2/2      !  |   |   |   |   |-- http 1.5.0
+13/19      256/345      0/0    0/0     6/6      !  |   |   |   |   |-- httparse 1.10.1
+0/0        0/0          0/0    0/0     0/0      :) |   |   |   |   |-- httpdate 1.0.3
+1/1        145/145      0/0    0/0     0/0      !  |   |   |   |   |-- itoa 1.0.18
+0/0        11/191       0/0    0/0     2/2      !  |   |   |   |   |-- pin-project-lite 0.2.17
+1/1        606/608      7/7    1/1     14/14    !  |   |   |   |   |-- smallvec 1.16.2
+0/0        0/5          0/0    0/0     0/0      ?  |   |   |   |   |   `-- serde 1.0.229
+25/30      2186/3011    105/119 3/3     104/139  !  |   |   |   |   |-- tokio 1.53.1
+0/0        17/17        1/1    0/0     0/0      !  |   |   |   |   |-- tracing 0.1.44
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   |   `-- want 0.3.1
+0/0        20/20        2/2    0/0     1/1      !  |   |   |   |       `-- try-lock 0.2.5
+0/93       35/738       2/10   0/0     8/101    !  |   |   |   |-- libc 0.2.189
+0/0        11/191       0/0    0/0     2/2      !  |   |   |   |-- pin-project-lite 0.2.17
+3/6        662/818      4/6    0/0     5/7      !  |   |   |   |-- socket2 0.6.5
+25/30      2186/3011    105/119 3/3     104/139  !  |   |   |   |-- tokio 1.53.1
+0/0        0/0          0/0    0/0     0/0      :) |   |   |   |-- tower-service 0.3.3
+0/0        17/17        1/1    0/0     0/0      !  |   |   |   `-- tracing 0.1.44
+0/1        119/136      0/11   0/1     4/4      !  |   |   |-- hyper 1.11.1
+0/0        0/0          0/0    0/0     0/0      :) |   |   |-- rustls 0.23.45
+0/0        81/128       5/9    0/0     3/5      !  |   |   |   |-- once_cell 1.21.4
+8/8        432/444      0/0    0/0     8/8      !  |   |   |   |-- ring 0.17.14
+0/0        1/1          0/0    0/0     0/0      !  |   |   |   |-- rustls-pki-types 1.15.1
+2/2        27/37        0/1    0/0     0/2      !  |   |   |   |   `-- zeroize 1.9.0
+0/0        0/5          0/0    0/0     0/0      ?  |   |   |   |       `-- serde 1.0.229
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   |-- rustls-webpki 0.103.15
+8/8        432/444      0/0    0/0     8/8      !  |   |   |   |   |-- ring 0.17.14
+0/0        1/1          0/0    0/0     0/0      !  |   |   |   |   |-- rustls-pki-types 1.15.1
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   |   `-- untrusted 0.9.0
+0/0        8/8          0/0    0/0     0/0      !  |   |   |   |-- subtle 2.6.1
+2/2        27/37        0/1    0/0     0/2      !  |   |   |   `-- zeroize 1.9.0
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |-- tokio-rustls 0.26.5
+0/0        0/0          0/0    0/0     0/0      :) |   |   |   |-- rustls 0.23.45
+25/30      2186/3011    105/119 3/3     104/139  !  |   |   |   `-- tokio 1.53.1
+25/30      2186/3011    105/119 3/3     104/139  !  |   |   |-- tokio 1.53.1
+0/0        0/0          0/0    0/0     0/0      :) |   |   |-- tower-service 0.3.3
+0/0        0/0          0/0    0/0     0/0      :) |   |   `-- webpki-roots 1.0.9
+0/0        1/1          0/0    0/0     0/0      !  |   |       `-- rustls-pki-types 1.15.1
+0/0        52/52        1/1    0/0     0/0      !  |   |-- hyper-util 0.1.21
+0/1        119/136      0/11   0/1     4/4      !  |   |-- hyper 1.11.1
+0/0        1/1          0/0    0/0     0/0      !  |   |-- rustls-pki-types 1.15.1
+0/0        0/0          0/0    0/0     0/0      :) |   |-- rustls 0.23.45
+0/0        0/5          0/0    0/0     0/0      ?  |   |-- serde 1.0.229
+0/0        75/80        0/0    0/0     0/1      !  |   |-- serde_json 1.0.151
+25/30      2186/3011    105/119 3/3     104/139  !  |   |-- tokio 1.53.1
+0/0        17/17        1/1    0/0     0/0      !  |   |-- tracing 0.1.44
+1/1        21/21        0/0    0/0     1/1      !  |   |-- uuid 1.26.1
+3/7        64/249       0/0    0/0     0/0      !  |   |   |-- getrandom 0.4.3
+0/0        0/0          0/0    0/0     0/0      ?  |   |   |   |-- cfg-if 1.0.5
+0/93       35/738       2/10   0/0     8/101    !  |   |   |   `-- libc 0.2.189
+0/0        5/5          0/0    0/0     0/0      !  |   |   `-- serde_core 1.0.229
+0/0        0/0          0/0    0/0     0/0      :) |   `-- webpki-roots 1.0.9
+0/0        0/0          0/0    0/0     0/0      :) |-- a2a-protocol-server 0.14.0
+0/0        0/0          0/0    0/0     0/0      :) |   |-- a2a-protocol-types 0.14.0
+8/8        285/285      0/0    0/0     2/2      !  |   |-- base64 0.23.1
+40/40      780/826      12/14  1/1     16/20    !  |   |-- bytes 1.12.1
+6/10       452/550      26/32  0/0     6/10     !  |   |-- futures-util 0.3.34
+0/0        6/6          0/0    0/0     0/0      !  |   |-- http-body-util 0.1.5
+0/0        0/0          0/0    0/0     0/0      ?  |   |-- hyper-rustls 0.27.10
+0/0        52/52        1/1    0/0     0/0      !  |   |-- hyper-util 0.1.21
+0/1        119/136      0/11   0/1     4/4      !  |   |-- hyper 1.11.1
+0/0        0/0          0/0    0/0     0/0      ?  |   |-- mutants 0.0.4
+0/0        11/191       0/0    0/0     2/2      !  |   |-- pin-project-lite 0.2.17
+8/8        432/444      0/0    0/0     8/8      !  |   |-- ring 0.17.14
+0/0        1/1          0/0    0/0     0/0      !  |   |-- rustls-pki-types 1.15.1
+0/0        0/0          0/0    0/0     0/0      :) |   |-- rustls 0.23.45
+0/0        0/5          0/0    0/0     0/0      ?  |   |-- serde 1.0.229
+0/0        75/80        0/0    0/0     0/1      !  |   |-- serde_json 1.0.151
+0/0        59/73        1/1    0/0     1/1      !  |   |-- tokio-util 0.7.19
+25/30      2186/3011    105/119 3/3     104/139  !  |   |-- tokio 1.53.1
+0/0        17/17        1/1    0/0     0/0      !  |   |-- tracing 0.1.44
+1/1        21/21        0/0    0/0     1/1      !  |   |-- uuid 1.26.1
+0/0        0/0          0/0    0/0     0/0      :) |   `-- webpki-roots 1.0.9
+0/0        0/0          0/0    0/0     0/0      :) `-- a2a-protocol-types 0.14.0
+
+163/298    11429/15281  228/306 7/8     423/631
+
+error: Found 32 warnings
+EXIT: 1

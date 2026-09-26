@@ -1,0 +1,1263 @@
+CMD: (cwd /opt/bench/a2a-rs) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rs CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test -j 2 --workspace --exclude itk-rust-current-agent
+START: 2026-09-26T10:00:46Z
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.185
+   Compiling syn v2.0.117
+   Compiling cfg-if v1.0.4
+   Compiling memchr v2.8.0
+   Compiling serde_core v1.0.228
+   Compiling smallvec v1.15.1
+   Compiling itoa v1.0.18
+   Compiling serde v1.0.228
+   Compiling pin-project-lite v0.2.17
+   Compiling log v0.4.29
+   Compiling either v1.15.0
+   Compiling once_cell v1.21.4
+   Compiling bytes v1.12.1
+   Compiling zeroize_derive v1.5.0
+   Compiling serde_derive v1.0.228
+   Compiling zeroize v1.9.0
+   Compiling equivalent v1.0.2
+   Compiling parking_lot_core v0.9.12
+   Compiling scopeguard v1.2.0
+   Compiling lock_api v0.4.14
+   Compiling parking_lot v0.12.5
+   Compiling bitflags v2.11.1
+   Compiling prettyplease v0.2.37
+   Compiling regex-syntax v0.8.10
+   Compiling futures-core v0.3.34
+   Compiling regex-automata v0.4.18
+   Compiling mio v1.2.0
+   Compiling regex v1.12.3
+   Compiling errno v0.3.14
+   Compiling shlex v1.3.0
+   Compiling signal-hook-registry v1.4.8
+   Compiling tokio-macros v2.7.0
+   Compiling tracing-core v0.1.36
+   Compiling jobserver v0.1.34
+   Compiling socket2 v0.6.3
+   Compiling find-msvc-tools v0.1.9
+   Compiling fnv v1.0.7
+   Compiling autocfg v1.5.0
+   Compiling tokio v1.53.1
+   Compiling cc v1.2.60
+   Compiling tracing-attributes v0.1.31
+   Compiling thiserror v2.0.18
+   Compiling tracing v0.1.44
+   Compiling thiserror-impl v2.0.18
+   Compiling syn v3.0.5
+   Compiling futures-sink v0.3.34
+   Compiling subtle v2.6.1
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling hashbrown v0.17.0
+   Compiling num-traits v0.2.19
+   Compiling minimal-lexical v0.2.1
+   Compiling http v1.5.0
+   Compiling anyhow v1.0.103
+   Compiling slab v0.4.12
+   Compiling percent-encoding v2.3.2
+   Compiling futures-channel v0.3.34
+   Compiling synstructure v0.13.2
+   Compiling futures-macro v0.3.34
+   Compiling futures-io v0.3.34
+   Compiling futures-task v0.3.34
+   Compiling zmij v1.0.21
+   Compiling futures-util v0.3.34
+   Compiling indexmap v2.14.0
+   Compiling base64 v0.22.1
+   Compiling serde_json v1.0.151
+   Compiling tower-service v0.3.3
+   Compiling glob v0.3.3
+   Compiling clang-sys v1.8.1
+   Compiling http-body v1.0.1
+   Compiling tokio-util v0.7.18
+   Compiling itertools v0.14.0
+   Compiling httparse v1.10.1
+   Compiling nom v7.1.3
+   Compiling prost-derive v0.14.4
+   Compiling libloading v0.8.9
+   Compiling httpdate v1.0.3
+   Compiling atomic-waker v1.1.2
+   Compiling bindgen v0.72.1
+   Compiling try-lock v0.2.5
+   Compiling want v0.3.1
+   Compiling h2 v0.4.19
+   Compiling cexpr v0.6.0
+   Compiling zerofrom-derive v0.1.7
+   Compiling displaydoc v0.2.5
+   Compiling itertools v0.13.0
+   Compiling rustc-hash v2.1.2
+   Compiling ipnet v2.12.0
+   Compiling zerofrom v0.1.7
+   Compiling hyper v1.11.1
+   Compiling yoke-derive v0.8.2
+   Compiling cmake v0.1.58
+   Compiling stable_deref_trait v1.2.1
+   Compiling dunce v1.0.5
+   Compiling fs_extra v1.3.0
+   Compiling yoke v0.8.2
+   Compiling hyper-util v0.1.20
+   Compiling tower-layer v0.3.3
+   Compiling form_urlencoded v1.2.2
+   Compiling zerovec-derive v0.11.3
+   Compiling aws-lc-sys v0.39.0
+   Compiling foldhash v0.1.5
+   Compiling hashbrown v0.15.5
+   Compiling zerovec v0.11.6
+   Compiling http-body-util v0.1.5
+   Compiling sync_wrapper v1.0.2
+   Compiling aws-lc-rs v1.16.2
+   Compiling mime v0.3.17
+   Compiling ryu v1.0.23
+   Compiling untrusted v0.9.0
+   Compiling tower v0.5.3
+   Compiling untrusted v0.7.1
+   Compiling fastrand v2.4.1
+   Compiling serde_urlencoded v0.7.1
+   Compiling tinystr v0.8.3
+   Compiling pulldown-cmark v0.13.3
+   Compiling heck v0.5.0
+   Compiling rustix v1.1.4
+   Compiling litemap v0.8.2
+   Compiling writeable v0.6.3
+   Compiling getrandom v0.4.2
+   Compiling icu_locale_core v2.2.0
+   Compiling prost v0.14.4
+   Compiling potential_utf v0.1.5
+   Compiling zerotrie v0.2.4
+   Compiling rustls-pki-types v1.14.0
+   Compiling rand_core v0.10.1
+   Compiling utf8_iter v1.0.4
+   Compiling unicase v2.9.0
+   Compiling linux-raw-sys v0.12.1
+   Compiling icu_properties_data v2.2.0
+   Compiling icu_normalizer_data v2.2.0
+   Compiling icu_collections v2.2.0
+   Compiling icu_provider v2.2.0
+   Compiling prost-types v0.14.4
+   Compiling async-trait v0.1.92
+   Compiling fixedbitset v0.5.7
+   Compiling cpufeatures v0.3.0
+   Compiling iana-time-zone v0.1.65
+   Compiling chrono v0.4.45
+   Compiling tempfile v3.27.0
+   Compiling chacha20 v0.10.1
+   Compiling petgraph v0.8.3
+   Compiling pulldown-cmark-to-cmark v22.0.0
+   Compiling tokio-stream v0.1.19
+   Compiling pin-project-internal v1.1.11
+   Compiling serde_path_to_error v0.1.20
+   Compiling multimap v0.10.1
+   Compiling prost-build v0.14.3
+   Compiling pin-project v1.1.11
+   Compiling icu_normalizer v2.2.0
+   Compiling rand v0.10.2
+   Compiling icu_properties v2.2.0
+   Compiling axum-core v0.5.6
+   Compiling axum-macros v0.5.1
+   Compiling matchit v0.8.4
+   Compiling rustls v0.23.43
+   Compiling axum v0.8.9
+   Compiling idna_adapter v1.2.1
+   Compiling hyper-timeout v0.5.2
+   Compiling tonic v0.14.6
+   Compiling idna v1.1.0
+   Compiling uuid v1.23.0
+   Compiling tonic-build v0.14.5
+   Compiling protoc-bin-vendored-linux-s390_64 v3.2.0
+   Compiling protoc-bin-vendored-win32 v3.2.0
+   Compiling protoc-bin-vendored-linux-x86_64 v3.2.0
+   Compiling protoc-bin-vendored-macos-aarch_64 v3.2.0
+   Compiling protoc-bin-vendored-linux-aarch_64 v3.2.0
+   Compiling protoc-bin-vendored-macos-x86_64 v3.2.0
+   Compiling protoc-bin-vendored-linux-x86_32 v3.2.0
+   Compiling protoc-bin-vendored-linux-ppcle_64 v3.2.0
+   Compiling protoc-bin-vendored v3.2.0
+   Compiling tonic-prost-build v0.14.5
+   Compiling url v2.5.8
+   Compiling futures-executor v0.3.34
+   Compiling openssl-probe v0.2.1
+   Compiling rustls-native-certs v0.8.3
+   Compiling tonic-prost v0.14.5
+   Compiling iri-string v0.7.12
+   Compiling tower-http v0.6.8
+   Compiling encoding_rs v0.8.35
+   Compiling num-conv v0.2.1
+   Compiling time-core v0.1.8
+   Compiling powerfmt v0.2.0
+   Compiling deranged v0.5.8
+   Compiling aho-corasick v1.1.4
+   Compiling rustls-webpki v0.103.13
+   Compiling futures v0.3.34
+   Compiling version_check v0.9.5
+   Compiling lazy_static v1.5.0
+   Compiling semver v1.0.28
+   Compiling rustversion v1.0.22
+   Compiling pbjson-build v0.9.0
+   Compiling tokio-rustls v0.26.4
+   Compiling hyper-rustls v0.27.8
+   Compiling rustls-platform-verifier v0.7.0
+   Compiling base64 v0.23.1
+   Compiling reqwest v0.13.4
+   Compiling arc-swap v1.9.1
+   Compiling pbjson-types v0.9.0
+   Compiling generic-array v0.14.7
+   Compiling getrandom v0.2.17
+   Compiling a2a-lf v0.3.1 (/opt/bench/a2a-rs/a2a)
+   Compiling a2a-pb v0.2.1 (/opt/bench/a2a-rs/a2a-pb)
+   Compiling pbjson v0.9.0
+   Compiling typenum v1.20.1
+   Compiling const-oid v0.9.6
+   Compiling strsim v0.11.1
+   Compiling sharded-slab v0.1.7
+   Compiling matchers v0.2.0
+   Compiling tracing-log v0.2.0
+   Compiling thread_local v1.1.9
+   Compiling nu-ansi-term v0.50.3
+   Compiling tracing-subscriber v0.3.23
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling zerocopy v0.8.48
+   Compiling digest v0.10.7
+   Compiling rand_core v0.6.4
+   Compiling fs-err v3.3.0
+   Compiling async-stream-impl v0.3.6
+   Compiling async-stream v0.3.6
+   Compiling time-macros v0.2.27
+   Compiling auto_impl v1.3.0
+   Compiling time v0.3.47
+   Compiling tonic-tls v0.7.1
+   Compiling getrandom v0.3.4
+   Compiling axum-server v0.8.0
+   Compiling a2a-client-lf v0.2.5 (/opt/bench/a2a-rs/a2a-client)
+   Compiling tonic-types v0.14.5
+   Compiling tower-http v0.7.1
+   Compiling num-integer v0.1.46
+   Compiling ident_case v1.0.1
+   Compiling darling_core v0.20.11
+   Compiling darling_macro v0.20.11
+   Compiling a2a-server-lf v0.4.4 (/opt/bench/a2a-rs/a2a-server)
+   Compiling ppv-lite86 v0.2.21
+   Compiling darling v0.20.11
+   Compiling num-bigint v0.4.6
+   Compiling ring v0.17.14
+   Compiling mls-rs-codec-derive v0.2.0
+   Compiling mls-rs-codec v0.7.0
+   Compiling der v0.7.10
+   Compiling hex v0.4.3
+   Compiling maybe-async v0.2.10
+   Compiling cpufeatures v0.2.17
+   Compiling mls-rs-core v0.26.0
+   Compiling rand_core v0.9.5
+   Compiling bstr v1.12.1
+   Compiling ref-cast v1.0.25
+   Compiling rand_chacha v0.9.0
+   Compiling spki v0.7.3
+   Compiling signature v2.2.0
+   Compiling ref-cast-impl v1.0.25
+   Compiling bit-vec v0.8.0
+   Compiling bit-set v0.8.0
+   Compiling pkcs8 v0.10.2
+   Compiling rusticata-macros v4.1.0
+   Compiling rand v0.9.4
+   Compiling ff v0.13.1
+   Compiling ahash v0.8.12
+   Compiling asn1-rs-derive v0.6.0
+   Compiling asn1-rs-impl v0.2.0
+   Compiling base16ct v0.2.0
+   Compiling asn1-rs v0.7.1
+   Compiling sec1 v0.7.3
+   Compiling group v0.13.0
+   Compiling num-rational v0.4.2
+   Compiling num-iter v0.1.46
+   Compiling crypto-bigint v0.5.5
+   Compiling rustc_version v0.4.1
+   Compiling num-complex v0.4.6
+   Compiling oid-registry v0.8.1
+   Compiling data-encoding v2.10.0
+   Compiling borrow-or-share v0.2.4
+   Compiling siphasher v1.0.3
+   Compiling unicode-general-category v1.1.0
+   Compiling thiserror v1.0.69
+   Compiling phf_shared v0.12.1
+   Compiling fluent-uri v0.4.1
+   Compiling num v0.4.3
+   Compiling elliptic-curve v0.13.8
+   Compiling curve25519-dalek v4.1.3
+   Compiling mls-rs-identity-x509 v0.20.0
+   Compiling sha2 v0.10.9
+   Compiling rand_chacha v0.3.1
+   Compiling hmac v0.12.1
+   Compiling thiserror-impl v1.0.69
+   Compiling agntcy-slim-version v2.3.0
+   Compiling outref v0.5.2
+   Compiling chrono-tz v0.10.4
+   Compiling crossbeam-utils v0.8.21
+   Compiling vsimd v0.8.0
+   Compiling micromap v0.3.0
+   Compiling byteorder v1.5.0
+   Compiling msvc_spectre_libs v0.1.3
+   Compiling referencing v0.47.0
+   Compiling murmur3 v0.4.1
+   Compiling uuid-simd v0.8.0
+   Compiling rfc6979 v0.4.0
+   Compiling rand v0.8.6
+   Compiling fraction v0.15.4
+   Compiling phf v0.12.1
+   Compiling der-parser v10.0.0
+   Compiling fancy-regex v0.18.0
+   Compiling mls-rs-crypto-traits v0.21.0
+   Compiling sha1 v0.10.6
+   Compiling simple_asn1 v0.6.4
+   Compiling jsonschema-regex v0.47.0
+   Compiling pem v3.0.6
+   Compiling regorus v0.11.0
+   Compiling opentelemetry v0.32.0
+   Compiling cobs v0.3.0
+   Compiling email_address v0.2.9
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling serde_derive_internals v0.29.1
+   Compiling num_cpus v1.17.0
+   Compiling inotify-sys v0.1.5
+   Compiling num-cmp v0.1.0
+   Compiling unsafe-libyaml v0.2.11
+   Compiling better_any v0.2.1
+   Compiling bytecount v0.6.9
+   Compiling deadpool-runtime v0.1.4
+   Compiling base64 v0.21.7
+   Compiling typed-arena v2.0.2
+   Compiling crossbeam-epoch v0.9.21
+   Compiling same-file v1.0.6
+   Compiling antlr4rust v0.5.2
+   Compiling walkdir v2.5.0
+   Compiling deadpool v0.12.3
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling pem v4.0.0
+   Compiling jsonschema v0.47.0
+   Compiling schemars_derive v1.2.1
+   Compiling inotify v0.11.1
+   Compiling postcard v1.1.3
+   Compiling jsonwebtoken v10.3.0
+   Compiling yasna v0.6.0
+   Compiling mls-rs-crypto-hpke v0.20.0
+   Compiling x509-parser v0.18.1
+   Compiling ecdsa v0.16.9
+   Compiling primeorder v0.13.6
+   Compiling ed25519 v2.2.3
+   Compiling globset v0.4.20
+   Compiling num-bigint v0.5.1
+   Compiling reqwest v0.12.28
+   Compiling notify-types v2.1.0
+   Compiling rustls-pemfile v2.2.0
+   Compiling assert-json-diff v2.0.2
+   Compiling headers-core v0.3.0
+   Compiling lru v0.18.2
+   Compiling dyn-clone v1.0.20
+   Compiling spin v0.12.3
+   Compiling base64ct v1.8.3
+   Compiling vcpkg v0.2.15
+   Compiling pkg-config v0.3.33
+   Compiling pastey v0.2.3
+   Compiling cel v0.14.3
+   Compiling libsqlite3-sys v0.35.0
+   Compiling oauth2 v5.0.0
+   Compiling spiffe v0.12.0
+   Compiling schemars v1.2.1
+   Compiling headers v0.4.1
+   Compiling wiremock v0.6.5
+   Compiling notify v8.2.0
+   Compiling ed25519-dalek v2.2.0
+   Compiling p256 v0.13.2
+   Compiling mls-rs-crypto-awslc v0.23.0
+   Compiling rcgen v0.14.10
+   Compiling a2a-grpc v0.3.7 (/opt/bench/a2a-rs/a2a-grpc)
+   Compiling trait-variant v0.1.2
+   Compiling web-time v1.1.0
+   Compiling display-error-chain v0.2.2
+   Compiling rayon-core v1.13.0
+   Compiling agntcy-slim-auth v0.15.3
+   Compiling examples v0.1.0 (/opt/bench/a2a-rs/examples)
+   Compiling crossbeam-deque v0.8.6
+   Compiling opentelemetry_sdk v0.32.1
+   Compiling agntcy-slim-config v0.16.0
+   Compiling tracing-test-macro v0.2.6
+   Compiling simdutf8 v0.1.5
+   Compiling utf-8 v0.7.6
+   Compiling fastwebsockets v0.10.0
+   Compiling tracing-test v0.2.6
+   Compiling tokio-retry v0.3.2
+   Compiling hashlink v0.10.0
+   Compiling drain v0.2.1
+   Compiling duration-string v0.5.3
+   Compiling fs2 v0.4.3
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling fallible-iterator v0.3.0
+   Compiling rusqlite v0.37.0
+   Compiling rayon v1.12.0
+   Compiling opentelemetry-proto v0.32.0
+   Compiling opentelemetry-http v0.32.0
+   Compiling agntcy-slim-proto v0.6.0
+   Compiling debug_tree v0.4.0
+   Compiling spin v0.10.0
+   Compiling anstyle v1.0.14
+   Compiling mls-rs v0.54.0
+   Compiling opentelemetry-otlp v0.32.0
+   Compiling mls-rs-provider-sqlite v0.22.0
+   Compiling opentelemetry-stdout v0.32.0
+   Compiling tracing-opentelemetry v0.33.0
+   Compiling twox-hash v2.1.2
+   Compiling opentelemetry-semantic-conventions v0.32.1
+   Compiling utf8parse v0.2.2
+   Compiling anstyle-parse v1.0.0
+   Compiling agntcy-slim-tracing v0.4.19
+   Compiling agntcy-slim-persistence v0.1.0
+   Compiling anstyle-query v1.1.5
+   Compiling colorchoice v1.0.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling anstream v1.0.0
+   Compiling agntcy-slim-datapath v0.18.6
+   Compiling agntcy-slim-mls v0.3.9
+   Compiling clap_lex v1.1.0
+   Compiling futures-timer v3.0.3
+   Compiling clap_builder v4.6.6
+   Compiling agntcy-slim-signal v0.1.25
+   Compiling clap_derive v4.6.4
+   Compiling predicates-core v1.0.10
+   Compiling clap v4.6.6
+   Compiling agntcy-slim-session v0.7.10
+   Compiling termtree v0.5.1
+   Compiling difflib v0.4.0
+   Compiling agntcy-slim-controller v0.13.0
+   Compiling assert_cmd v2.2.2
+   Compiling predicates v3.1.4
+   Compiling predicates-tree v1.0.13
+   Compiling wait-timeout v0.2.1
+   Compiling agntcy-slim-service v0.12.10
+   Compiling a2a-cli v0.2.1 (/opt/bench/a2a-rs/a2acli)
+   Compiling agntcy-slim-rpc v2.3.0
+   Compiling a2a-slimrpc v0.2.9 (/opt/bench/a2a-rs/a2a-slimrpc)
+    Finished `test` profile [unoptimized] target(s) in 3m 29s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2acli-ecef21c344b8fb9e)
+
+running 69 tests
+test tests::test_agent_card_render_text_marks_an_empty_interface_list ... ok
+test tests::test_agent_card_render_text ... ok
+test tests::test_binding_protocols ... ok
+test tests::test_build_push_notification_config ... ok
+test tests::test_build_send_message_request_populates_optional_fields ... ok
+test tests::test_build_send_message_request_without_optional_fields ... ok
+test tests::test_build_push_notification_config_requires_auth_scheme ... ok
+test tests::test_build_push_notification_config_without_authentication ... ok
+test tests::test_card_file_errors_map_to_appendix_d_codes ... ok
+test tests::test_cli_error_exit_codes_and_envelope_codes ... ok
+test tests::test_cli_error_report_prints_one_json_line_to_stderr ... ok
+test tests::test_cli_parse_push_config_create_command ... ok
+test tests::test_config_source_labels ... ok
+test tests::test_cli_parse_send_command ... ok
+test tests::test_consume_stream_reports_json_error ... ok
+test tests::test_consume_stream_propagates_destroy_error_on_completion ... ok
+test tests::test_consume_stream_text_mode_does_not_serialize ... ok
+test tests::test_find_flag_value_supports_space_and_equals_forms ... ok
+test tests::test_finish_client_call_propagates_destroy_error ... ok
+test tests::test_flatten_clap_message ... ok
+test tests::test_is_loopback_host ... ok
+test tests::test_is_settled_classifies_task_states ... ok
+test tests::test_list_push_configs_render_text_empty_and_paged ... ok
+test tests::test_list_tasks_render_text_empty_and_paged ... ok
+test tests::test_means_not_a_readable_path_classification ... ok
+test tests::test_message_render_text_renders_every_part_kind ... ok
+test tests::test_message_render_text_marks_an_empty_part_list ... ok
+test tests::test_negotiate_a2a_version_never_goes_below_the_1x_floor ... ok
+test tests::test_negotiate_a2a_version_takes_the_highest_shared_1x ... ok
+test tests::test_negotiate_a2a_version_uses_an_explicit_flag_verbatim ... ok
+test tests::test_normalize_card_reference_file_forms ... ok
+test tests::test_normalize_card_reference_host_forms ... ok
+test tests::test_parse_data_part_json_rejects_malformed_content ... ok
+test tests::test_normalize_card_reference_prefers_an_existing_file_over_a_host ... ok
+test tests::test_parse_dotenv_ignores_blank_lines_and_comments ... ok
+test tests::test_parse_dotenv_basic ... ok
+test tests::test_parse_dotenv_strips_one_layer_of_quotes ... ok
+test tests::test_parse_dotenv_tolerates_export_prefix ... ok
+test tests::test_apply_request_auth_builds_headers ... ok
+test tests::test_parse_duration_rejects_invalid_input ... ok
+test tests::test_parse_duration_variants ... ok
+test tests::test_parse_header ... ok
+test tests::test_parse_header_requires_name ... ok
+test tests::test_parse_header_requires_separator ... ok
+test tests::test_parse_protocol_version ... ok
+test tests::test_push_config_deleted_render_text ... ok
+test tests::test_push_config_render_text_includes_token_and_auth_scheme ... ok
+test tests::test_redact_secret ... ok
+test tests::test_render_part_without_media_type_falls_back_to_name_and_url ... ok
+test tests::test_resolve_message_parts_positional_text_is_shorthand ... ok
+test tests::test_resolve_message_parts_preserves_interleaved_order_and_media_type ... ok
+test tests::test_resolve_message_parts_rejects_media_type_without_preceding_part ... ok
+test tests::test_resolve_message_parts_rejects_positional_text_with_part_flags ... ok
+test tests::test_resolve_agent_selection_matrix ... ok
+test tests::test_send_message_response_renders_the_message_arm ... ok
+test tests::test_stream_response_render_text_covers_update_events ... ok
+test tests::test_synthesized_endpoint_card_carries_only_the_named_interface ... ok
+test tests::test_task_outcome_is_read_from_the_reported_value ... ok
+test tests::test_task_outcome_note_names_only_non_success_and_paused_states ... ok
+test tests::test_task_render_text_lists_artifacts_and_resume_hint ... ok
+test tests::test_task_state_conversion ... ok
+test tests::test_task_state_label_covers_every_state ... ok
+test tests::test_test_transport_methods_return_unused_errors ... ok
+test tests::test_usage_error_maps_to_the_appendix_d_usage_code ... ok
+test tests::test_validate_a2a_version ... ok
+test tests::test_windows_path_shapes_are_recognized_as_files ... ok
+test tests::test_card_fetch_failures_are_classified_per_appendix_d ... ok
+test tests::test_run_surfaces_errors_in_lib_tests ... ok
+test tests::test_run_executes_all_commands_in_lib_tests ... ok
+
+test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.31s
+
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2acli-afd4351d879a0b92)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/e2e.rs (/opt/bench/target-quality-a2a-rs/debug/deps/e2e-1e14d3bc8452ad2e)
+
+running 74 tests
+test a_malformed_invocation_reports_the_error_envelope ... ok
+test a_missing_subcommand_reports_the_error_envelope ... ok
+test agent_card_accepts_a_bare_origin ... ok
+test a_declared_interface_tenant_is_not_displaced_by_the_tenant_flag ... ok
+test agent_card_reads_a_file_url ... ok
+test agent_card_reads_a_plain_local_path ... ok
+test a2a_version_is_signaled_once_on_every_request ... ok
+test agent_card_accepts_a_full_card_url_without_appending_the_well_known_path ... ok
+test a_paused_outcome_is_named_on_stderr ... ok
+test api_key_is_attached_as_a_header_to_the_card_fetch ... ok
+test card_file_that_is_not_a_card_reports_card_invalid ... ok
+test config_show_reports_a_local_card_file_as_the_resolved_card ... ok
+test base_url_still_resolves_a_card_but_warns_it_is_deprecated ... ok
+test config_show_reports_dotenv_file_as_the_source ... ok
+test config_show_reports_an_explicit_transport_preference_in_order ... ok
+test config_show_reports_effective_settings_and_sources ... ok
+test config_show_reports_the_effective_a2a_version ... ok
+test config_show_reports_the_resolved_card_reference ... ok
+test card_and_extended_card_commands_work ... ok
+test data_part_reads_json_from_a_local_file ... ok
+test data_part_rejects_a_value_that_is_neither_a_file_nor_valid_json ... ok
+test data_part_reports_a_usage_error_when_stdin_is_not_utf8 ... ok
+test data_part_reports_the_real_error_for_an_unreadable_existing_path ... ok
+test credentials_and_service_params_reach_the_agent_not_only_the_card_fetch ... ok
+test context_id_is_passed_through_opaquely_to_a_new_task ... ok
+test endpoint_and_agent_card_are_mutually_exclusive ... ok
+test default_base_url_does_not_warn_about_deprecation ... ok
+test endpoint_requires_exactly_one_transport ... ok
+test debug_flag_emits_diagnostics_without_leaking_the_bearer_token ... ok
+test endpoint_connects_without_resolving_a_card ... ok
+test explicit_config_flag_overrides_local_dotenv_discovery ... ok
+test file_part_reports_a_usage_error_for_a_missing_local_path ... ok
+test explicit_a2a_version_replaces_the_default_rather_than_appending ... ok
+test global_dotenv_is_discovered_under_xdg_config_home ... ok
+test insecure_flag_prints_a_warning_and_names_the_credential_risk ... ok
+test insecure_flag_still_builds_a_working_authenticated_client ... ok
+test help_and_version_are_not_treated_as_usage_errors ... ok
+test invalid_a2a_version_is_a_usage_error_without_contacting_the_agent ... ok
+test failed_and_rejected_outcomes_are_named_on_stderr_and_still_exit_zero ... ok
+test media_type_alone_with_no_other_part_flag_is_rejected ... ok
+test missing_card_file_reports_card_not_found ... ok
+test local_dotenv_file_sets_a_default_without_a_flag ... ok
+test no_insecure_flag_means_no_warning ... ok
+test json_output_is_still_available_via_output_flag ... ok
+test real_env_var_outranks_a_local_dotenv_file ... ok
+test repeated_sends_without_explicit_ids_never_reuse_a_previous_task ... ok
+test selected_interface_tenant_is_used_absent_an_explicit_tenant_flag ... ok
+test send_async_returns_immediately_without_waiting ... ok
+test send_accepts_task_id_alone_without_requiring_context_id ... ok
+test push_config_crud_commands_work ... ok
+test send_exits_cleanly_on_a_message_only_reply ... ok
+test send_blocks_by_default_until_task_settles ... ok
+test send_falls_back_to_polling_when_the_stream_fails_to_open ... ok
+test send_rejects_a_message_with_no_content_at_all ... ok
+test send_rejects_media_type_without_preceding_part ... ok
+test send_rejects_positional_text_combined_with_part_flags ... ok
+test send_names_a_non_success_outcome ... ok
+test send_reads_local_file_part_and_stdin_data_part ... ok
+test send_stream_propagates_a_non_unsupported_error_instead_of_falling_back ... ok
+test send_rejects_task_id_with_mismatched_context_id ... ok
+test binary_reports_a2a_and_non_a2a_errors ... ok
+test send_rejects_unknown_task_id_without_creating_one ... ok
+test send_with_ordered_message_parts_and_media_type ... ok
+test streamed_status_updates_name_a_paused_outcome ... ok
+test stream_and_subscribe_commands_work ... ok
+test successful_and_cancelled_outcomes_stay_silent ... ok
+test task_get_wait_polls_until_settled ... ok
+test task_get_without_wait_does_not_poll ... ok
+test text_is_the_default_output_format ... ok
+test task_get_wait_times_out ... ok
+test text_output_prints_resume_hint_on_input_required ... ok
+test the_outcome_warning_is_emitted_in_json_mode_too ... ok
+test send_task_list_and_cancel_commands_work ... ok
+test the_tenant_flag_applies_when_the_interface_declares_none ... ok
+
+test result: ok. 74 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.96s
+
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a_client-0b9183cee3ee2792)
+
+running 118 tests
+test auth::tests::test_auth_interceptor_bearer ... ok
+test auth::tests::test_auth_interceptor_custom ... ok
+test auth::tests::test_in_memory_credentials_store_default ... ok
+test auth::tests::test_in_memory_credentials_store_new ... ok
+test auth::tests::test_in_memory_credentials_store_set_get ... ok
+test auth::tests::test_credentials_store_get ... ok
+test client::tests::test_cancel_task ... ok
+test client::tests::test_create_push_config ... ok
+test client::tests::test_delete_push_config ... ok
+test client::tests::test_declared_tenant_replaces_a_caller_supplied_one ... ok
+test client::tests::test_declared_tenant_is_echoed_on_requests ... ok
+test client::tests::test_destroy ... ok
+test client::tests::test_get_push_config ... ok
+test client::tests::test_get_extended_agent_card ... ok
+test client::tests::test_get_task ... ok
+test client::tests::test_new_sets_default_params ... ok
+test client::tests::test_list_push_configs ... ok
+test client::tests::test_send_message ... ok
+test client::tests::test_list_tasks ... ok
+test client::tests::test_send_message_applies_interceptors_and_reverses_after_order ... ok
+test client::tests::test_send_message_preserves_transport_error_after_after_hooks ... ok
+test client::tests::test_with_interceptors ... ok
+test client::tests::test_subscribe_to_task ... ok
+test client::tests::test_send_streaming_message ... ok
+test client::tests::test_without_a_declared_tenant_the_request_is_untouched ... ok
+test factory::tests::test_builder_no_defaults ... ok
+test agent_card::tests::test_resolve_accepts_null_skills ... ok
+test factory::tests::test_builder_preferred_bindings ... ok
+test factory::tests::test_create_from_card_no_matching_transport ... ok
+test factory::tests::test_builder_with_interceptor ... ok
+test factory::tests::test_builder_defaults ... ok
+test factory::tests::test_create_from_card_applies_the_declared_tenant ... ok
+test factory::tests::test_create_from_card_treats_an_empty_tenant_as_undeclared ... ok
+test factory::tests::test_transport_key_from_interface ... ok
+test factory::tests::test_transport_key_from_interface_no_version ... ok
+test factory::tests::test_transport_key_from_protocol ... ok
+test jsonrpc::tests::test_create_push_config_sends_flat_request_shape ... ok
+test jsonrpc::tests::test_create_push_config_rejects_missing_result ... ok
+test factory::tests::test_create_from_card_without_a_declared_tenant ... ok
+test jsonrpc::tests::test_find_event_boundary_cr ... ok
+test jsonrpc::tests::test_find_event_boundary_crlf ... ok
+test jsonrpc::tests::test_find_event_boundary_lf ... ok
+test factory::tests::test_create_from_card_with_interface_returns_selected_interface ... ok
+test jsonrpc::tests::test_find_event_boundary_none ... ok
+test jsonrpc::tests::test_jsonrpc_transport_factory_create ... ok
+test jsonrpc::tests::test_jsonrpc_transport_new ... ok
+test jsonrpc::tests::test_parse_jsonrpc_error_bad_request_does_not_override_explicit_code ... ok
+test jsonrpc::tests::test_parse_jsonrpc_error_bad_request_empty_violations ... ok
+test jsonrpc::tests::test_parse_jsonrpc_error_error_info_overrides_bad_request_code ... ok
+test jsonrpc::tests::test_parse_jsonrpc_error_ignores_non_protocol_domain ... ok
+test jsonrpc::tests::test_parse_jsonrpc_error_no_data ... ok
+test jsonrpc::tests::test_parse_jsonrpc_error_non_array_data ... ok
+test jsonrpc::tests::test_parse_jsonrpc_error_with_bad_request ... ok
+test jsonrpc::tests::test_parse_jsonrpc_error_with_error_info ... ok
+test jsonrpc::tests::test_parse_sse_stream_chunked_delivery ... ok
+test jsonrpc::tests::test_parse_sse_stream_cr_line_endings ... ok
+test jsonrpc::tests::test_create_push_config_surfaces_jsonrpc_error ... ok
+test jsonrpc::tests::test_parse_sse_stream_crlf_line_endings ... ok
+test jsonrpc::tests::test_parse_sse_stream_data_no_space ... ok
+test jsonrpc::tests::test_parse_sse_stream_direct_invalid_protojson_surfaces_error ... ok
+test jsonrpc::tests::test_parse_sse_stream_direct_stream_response ... ok
+test jsonrpc::tests::test_parse_sse_stream_empty_data_lines_skipped ... ok
+test jsonrpc::tests::test_parse_sse_stream_invalid_protojson_result_surfaces_error ... ok
+test jsonrpc::tests::test_parse_sse_stream_invalid_utf8_surfaces_error ... ok
+test jsonrpc::tests::test_parse_sse_stream_jsonrpc_envelope ... ok
+test jsonrpc::tests::test_parse_sse_stream_jsonrpc_error ... ok
+test jsonrpc::tests::test_parse_sse_stream_multiple_events_separate_chunks ... ok
+test jsonrpc::tests::test_parse_sse_stream_multiple_events_single_chunk ... ok
+test jsonrpc::tests::test_parse_sse_stream_rest_multiple_events_single_chunk ... ok
+test jsonrpc::tests::test_parse_sse_stream_rest_ok ... ok
+test jsonrpc::tests::test_parse_sse_stream_rest_parse_error ... ok
+test jsonrpc::tests::test_parse_sse_stream_split_multibyte_utf8 ... ok
+test jsonrpc::tests::test_jsonrpc_transport_factory ... ok
+test jsonrpc::tests::test_get_push_config_uses_protojson_request_path ... ok
+test jsonrpc::tests::test_stream_tail_delivers_an_unterminated_final_event ... ok
+test jsonrpc::tests::test_stream_tail_delivers_an_unterminated_final_event_rest ... ok
+test jsonrpc::tests::test_stream_tail_empty_envelope_is_reported ... ok
+test jsonrpc::tests::test_stream_tail_empty_stream_yields_nothing ... ok
+test jsonrpc::tests::test_stream_tail_envelope_split_across_chunks ... ok
+test jsonrpc::tests::test_stream_tail_reports_an_unconvertible_envelope_result ... ok
+test jsonrpc::tests::test_stream_tail_reports_an_unparseable_remainder ... ok
+test jsonrpc::tests::test_stream_tail_reports_invalid_utf8 ... ok
+test jsonrpc::tests::test_stream_tail_surfaces_a_plain_jsonrpc_error_envelope ... ok
+test jsonrpc::tests::test_stream_tail_whitespace_ends_cleanly ... ok
+test jsonrpc::tests::test_stream_tail_delivers_an_envelope_result ... ok
+test jsonrpc::tests::test_parse_sse_stream_surfaces_stream_errors ... ok
+test jsonrpc::tests::test_parse_sse_stream_rest_surfaces_stream_errors ... ok
+test jsonrpc::tests::test_subscribe_to_task_rejects_non_streaming_success_result ... ok
+test jsonrpc::tests::test_subscribe_to_task_streams_on_text_event_stream_response ... ok
+test jsonrpc::tests::test_subscribe_to_task_surfaces_jsonrpc_error_on_plain_json_response ... ok
+test jsonrpc::tests::test_subscribe_to_task_surfaces_unparseable_non_streaming_body ... ok
+test jsonrpc::tests::test_with_root_certificates_pem_factory_create ... ok
+test middleware::tests::test_default_after ... ok
+test middleware::tests::test_default_after_with_error ... ok
+test jsonrpc::tests::test_with_root_certificates_pem_valid ... ok
+test middleware::tests::test_default_before ... ok
+test middleware::tests::test_logging_interceptor_after_err ... ok
+test middleware::tests::test_logging_interceptor_after_ok ... ok
+test middleware::tests::test_logging_interceptor_before ... ok
+test push_config_compat::tests::falls_back_to_flattened_protojson_list_task_push_configs_shape ... ok
+test push_config_compat::tests::falls_back_to_flattened_protojson_task_push_config_shape ... ok
+test push_config_compat::tests::falls_back_to_raw_array_list_task_push_configs_shape ... ok
+test push_config_compat::tests::parses_nested_list_task_push_configs_shape ... ok
+test push_config_compat::tests::parses_nested_task_push_config_shape ... ok
+test push_config_compat::tests::serializes_flat_create_task_push_config_request ... ok
+test rest::tests::test_parse_rest_error_accepts_go_reason_aliases ... ok
+test rest::tests::test_parse_rest_error_bad_request_fallback ... ok
+test rest::tests::test_parse_rest_error_bad_request_with_error_info_uses_reason ... ok
+test rest::tests::test_parse_rest_error_preserves_a2a_error_code ... ok
+test rest::tests::test_build_request_adds_params ... ok
+test rest::tests::test_rest_transport_factory_create ... ok
+test rest::tests::test_should_retry_subscribe_with_legacy_path ... ok
+test rest::tests::test_rest_transport_factory_protocol ... ok
+test rest::tests::test_rest_transport_new_no_trailing_slash ... ok
+test rest::tests::test_with_root_certificates_pem_factory_create ... ok
+test rest::tests::test_subscribe_to_task_falls_back_to_legacy_rest_path ... ok
+test rest::tests::test_rest_transport_new_strips_trailing_slash ... ok
+test rest::tests::test_with_root_certificates_pem_valid ... ok
+
+test result: ok. 118 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a_grpc-8859d4a4d5e15bc8)
+
+running 31 tests
+test client::tests::test_grpc_transport_connect_failure ... ok
+test client::tests::test_grpc_transport_factory_default ... ok
+test client::tests::test_grpc_transport_factory_protocol ... ok
+test client::tests::test_grpc_transport_from_channel ... ok
+test client::tests::test_normalize_grpc_endpoint_preserves_existing_scheme ... ok
+test client::tests::test_service_params_to_metadata_ascii ... ok
+test client::tests::test_service_params_to_metadata_empty ... ok
+test client::tests::tls_tests::test_new_has_no_tls_config ... ok
+test client::tests::tls_tests::test_server_name_from_url_https ... ok
+test client::tests::tls_tests::test_server_name_from_url_invalid ... ok
+test client::tests::tls_tests::test_server_name_from_url_ip ... ok
+test client::tests::tls_tests::test_server_name_from_url_localhost ... ok
+test client::tests::tls_tests::test_tls_factory_create_fails_on_unreachable ... ok
+test client::tests::tls_tests::test_with_rustls_config_protocol ... ok
+test errors::tests::test_a2a_error_details_are_preserved_in_grpc_status ... ok
+test errors::tests::test_a2a_error_to_status_mapping ... ok
+test errors::tests::test_additional_a2a_error_to_status_mappings ... ok
+test errors::tests::test_failed_precondition_errors_round_trip_with_error_info ... ok
+test errors::tests::test_invalid_argument_errors_round_trip_with_error_info ... ok
+test errors::tests::test_malformed_error_details_fall_back_to_grpc_code ... ok
+test errors::tests::test_message_preserved ... ok
+test errors::tests::test_protocol_error_info_recovers_precise_a2a_code ... ok
+test errors::tests::test_status_to_a2a_error_mapping ... ok
+test errors::tests::test_unknown_code_maps_to_unknown ... ok
+test errors::tests::test_unknown_status_maps_to_internal_error ... ok
+test errors::tests::test_untrusted_error_info_falls_back_to_grpc_code ... ok
+test server::tests::test_extract_service_params_ascii ... ok
+test server::tests::test_extract_service_params_empty ... ok
+test client::tests::test_normalize_grpc_endpoint_adds_http_scheme ... ok
+test client::tests::test_make_request ... ok
+test server::tests::test_grpc_handler_new ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/e2e.rs (/opt/bench/target-quality-a2a-rs/debug/deps/e2e-8dd72e6db0d99f7c)
+
+running 4 tests
+test grpc_transport_accepts_bare_host_port_endpoints ... ok
+test grpc_transport_streaming_and_error_paths ... ok
+test grpc_transport_end_to_end ... ok
+test grpc_transport_treats_zero_page_size_as_unset ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a-ce69bbeabd466c13)
+
+running 85 tests
+test agent_card::tests::test_agent_card_deserializes_missing_skills_as_empty ... ok
+test agent_card::tests::test_agent_card_deserializes_null_skills_as_empty ... ok
+test agent_card::tests::test_agent_card_deserializes_wrapped_security_requirements ... ok
+test agent_card::tests::test_agent_card_deserialize_null_skills_as_default ... ok
+test agent_card::tests::test_agent_interface_new ... ok
+test agent_card::tests::test_agent_capabilities_default ... ok
+test agent_card::tests::test_agent_card_serde ... ok
+test agent_card::tests::test_agent_interface_serde_normalizes_grpc_http_scheme ... ok
+test agent_card::tests::test_agent_card_with_security_schemes ... ok
+test agent_card::tests::test_agent_interface_new_normalizes_grpc_http_scheme ... ok
+test agent_card::tests::test_security_scheme_apikey_serde ... ok
+test agent_card::tests::test_oauth_flows_all_variants ... ok
+test agent_card::tests::test_security_scheme_httpauth_serde ... ok
+test agent_card::tests::test_security_scheme_mtls_serde ... ok
+test agent_card::tests::test_agent_interface_new_preserves_grpc_https_scheme ... ok
+test agent_card::tests::test_oauth_flows_deserialize_unknown_variant_errors ... ok
+test agent_card::tests::test_security_scheme_deserialize_unknown_variant_errors ... ok
+test agent_card::tests::test_security_scheme_oauth2_serde ... ok
+test errordetails::tests::test_bad_request_round_trip ... ok
+test agent_card::tests::test_security_scheme_openidconnect_serde ... ok
+test errordetails::tests::test_deserialize_without_type_defaults_to_struct ... ok
+test errordetails::tests::test_from_struct ... ok
+test errordetails::tests::test_round_trip ... ok
+test errordetails::tests::test_deserialize_typed_detail ... ok
+test errordetails::tests::test_bad_request ... ok
+test errordetails::tests::test_serialize_typed_detail ... ok
+test errors::tests::test_http_status_codes ... ok
+test errors::tests::test_extended_card_not_configured_carries_its_own_code ... ok
+test errors::tests::test_error_display ... ok
+test errors::tests::test_error_constructors ... ok
+test errors::tests::test_http_status_codes_for_remaining_a2a_mappings ... ok
+test errors::tests::test_to_jsonrpc_error ... ok
+test errors::tests::test_precondition_codes_are_client_errors_not_server_faults ... ok
+test errors::tests::test_with_details ... ok
+test event::tests::test_stream_response_artifact_update_serde ... ok
+test errors::tests::test_reason_to_error_code ... ok
+test errors::tests::test_jsonrpc_error_from ... ok
+test errors::tests::test_to_jsonrpc_error_merges_existing_error_info_metadata ... ok
+test event::tests::test_stream_response_status_update_serde ... ok
+test event::tests::test_stream_response_message_serde ... ok
+test event::tests::test_stream_response_unknown_variant ... ok
+test event::tests::test_task_artifact_update_event_full ... ok
+test event::tests::test_stream_response_task_serde ... ok
+test jsonrpc::tests::test_jsonrpc_id_fractional_number ... ok
+test event::tests::test_task_status_update_event_with_metadata ... ok
+test jsonrpc::tests::test_jsonrpc_id_from_i64 ... ok
+test jsonrpc::tests::test_jsonrpc_id_from_string ... ok
+test jsonrpc::tests::test_jsonrpc_error_with_data ... ok
+test jsonrpc::tests::test_jsonrpc_id_from_str ... ok
+test jsonrpc::tests::test_jsonrpc_id_number ... ok
+test jsonrpc::tests::test_jsonrpc_id_invalid_type ... ok
+test jsonrpc::tests::test_jsonrpc_request_no_params ... ok
+test jsonrpc::tests::test_jsonrpc_id_null ... ok
+test jsonrpc::tests::test_jsonrpc_id_string ... ok
+test jsonrpc::tests::test_methods_is_streaming ... ok
+test jsonrpc::tests::test_jsonrpc_response_success ... ok
+test types::tests::test_cancel_task_request_serde ... ok
+test types::tests::test_list_tasks_request_serde ... ok
+test types::tests::test_message_new ... ok
+test jsonrpc::tests::test_jsonrpc_response_error ... ok
+test jsonrpc::tests::test_methods_is_valid ... ok
+test types::tests::test_new_id_functions ... ok
+test types::tests::test_message_serde ... ok
+test types::tests::test_part_all_content_variants_serde ... ok
+test types::tests::test_part_data_serde ... ok
+test types::tests::test_part_raw_serde ... ok
+test types::tests::test_part_text_serde ... ok
+test jsonrpc::tests::test_jsonrpc_request_roundtrip ... ok
+test types::tests::test_part_url_serde ... ok
+test types::tests::test_part_with_metadata_and_media_type ... ok
+test types::tests::test_part_as_text ... ok
+test types::tests::test_role_all_variants_serde ... ok
+test types::tests::test_push_notification_config_serde ... ok
+test types::tests::test_role_default ... ok
+test types::tests::test_send_message_response_message_variant ... ok
+test types::tests::test_role_serde ... ok
+test types::tests::test_send_message_response_message_deserialize ... ok
+test types::tests::test_send_message_request_serde ... ok
+test types::tests::test_send_message_response_serde ... ok
+test types::tests::test_task_state_all_variants_serde ... ok
+test types::tests::test_task_state_default ... ok
+test types::tests::test_subscribe_to_task_request_serde ... ok
+test types::tests::test_task_state_is_terminal ... ok
+test types::tests::test_task_full_serde ... ok
+test types::tests::test_task_state_serde ... ok
+
+test result: ok. 85 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a_pb-8db4d52d11c7b076)
+
+running 63 tests
+test pbconv::tests::test_agent_card_with_security_and_signatures ... ok
+test pbconv::tests::test_agent_extension_roundtrip ... ok
+test pbconv::tests::test_agent_capabilities_with_extensions ... ok
+test pbconv::tests::test_agent_interface_roundtrip ... ok
+test pbconv::tests::test_agent_interface_roundtrip_normalizes_grpc_http_scheme ... ok
+test pbconv::tests::test_agent_skill_with_all_fields ... ok
+test pbconv::tests::test_authentication_info_no_credentials ... ok
+test pbconv::tests::test_authentication_info_roundtrip ... ok
+test pbconv::tests::test_agent_card_signature_with_header ... ok
+test pbconv::tests::test_cancel_task_request_roundtrip ... ok
+test pbconv::tests::test_agent_card_roundtrip ... ok
+test pbconv::tests::test_create_push_notification_config_request_roundtrip ... ok
+test pbconv::tests::test_get_push_notification_config_request_roundtrip ... ok
+test pbconv::tests::test_get_extended_agent_card_request_roundtrip ... ok
+test pbconv::tests::test_from_proto_list_tasks_request_treats_zero_page_size_as_unset ... ok
+test pbconv::tests::test_delete_push_notification_config_request_roundtrip ... ok
+test pbconv::tests::test_get_task_request_roundtrip ... ok
+test pbconv::tests::test_list_tasks_request_roundtrip ... ok
+test pbconv::tests::test_json_value_list_roundtrip ... ok
+test pbconv::tests::test_list_push_notification_configs_response_roundtrip ... ok
+test pbconv::tests::test_list_push_notification_configs_request_roundtrip ... ok
+test pbconv::tests::test_list_tasks_response_roundtrip ... ok
+test pbconv::tests::test_message_roundtrip ... ok
+test pbconv::tests::test_oauth_flows_implicit_roundtrip ... ok
+test pbconv::tests::test_oauth_flows_none ... ok
+test pbconv::tests::test_oauth_flows_password_roundtrip ... ok
+test pbconv::tests::test_part_data_roundtrip ... ok
+test pbconv::tests::test_part_none_content ... ok
+test pbconv::tests::test_part_raw_roundtrip ... ok
+test pbconv::tests::test_part_text_roundtrip ... ok
+test pbconv::tests::test_part_url_roundtrip ... ok
+test pbconv::tests::test_part_with_metadata ... ok
+test pbconv::tests::test_proto_value_none_kind ... ok
+test pbconv::tests::test_oauth_flows_device_code_roundtrip ... ok
+test pbconv::tests::test_push_notification_config_roundtrip ... ok
+test pbconv::tests::test_role_roundtrip ... ok
+test pbconv::tests::test_oauth_flows_authorization_code_roundtrip ... ok
+test pbconv::tests::test_oauth_flows_client_credentials_roundtrip ... ok
+test pbconv::tests::test_security_requirement_roundtrip ... ok
+test pbconv::tests::test_security_scheme_apikey_roundtrip ... ok
+test pbconv::tests::test_security_scheme_none ... ok
+test pbconv::tests::test_security_scheme_mtls_roundtrip ... ok
+test pbconv::tests::test_security_scheme_oauth2_roundtrip ... ok
+test pbconv::tests::test_security_scheme_http_auth_roundtrip ... ok
+test pbconv::tests::test_security_scheme_openid_roundtrip ... ok
+test pbconv::tests::test_send_message_request_roundtrip ... ok
+test pbconv::tests::test_send_message_configuration_defaults ... ok
+test pbconv::tests::test_send_message_request_minimal ... ok
+test pbconv::tests::test_send_message_response_task_roundtrip ... ok
+test pbconv::tests::test_send_message_response_none ... ok
+test pbconv::tests::test_send_message_response_message_roundtrip ... ok
+test pbconv::tests::test_stream_response_none ... ok
+test pbconv::tests::test_stream_response_roundtrip ... ok
+test pbconv::tests::test_stream_response_artifact_update_roundtrip ... ok
+test pbconv::tests::test_stream_response_message_roundtrip ... ok
+test pbconv::tests::test_stream_response_task_roundtrip ... ok
+test pbconv::tests::test_task_state_roundtrip ... ok
+test pbconv::tests::test_struct_roundtrip ... ok
+test pbconv::tests::test_task_status_with_timestamp ... ok
+test pbconv::tests::test_task_with_history ... ok
+test pbconv::tests::test_timestamp_roundtrip ... ok
+test pbconv::tests::test_task_roundtrip ... ok
+test pbconv::tests::test_subscribe_to_task_request_roundtrip ... ok
+
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/protojson.rs (/opt/bench/target-quality-a2a-rs/debug/deps/protojson-64cb1cc764e1e8c9)
+
+running 6 tests
+test agent_card_protojson_deserializes_null_skills_as_empty ... ok
+test stream_response_protojson_roundtrip_serializes_oneof_payloads ... ok
+test send_message_request_protojson_roundtrip ... ok
+test task_protojson_decode_rejects_unknown_enum_values ... ok
+test task_protojson_roundtrip_serializes_protojson_primitives ... ok
+test task_protojson_decode_ignores_unknown_fields ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a_server-8a2eacb41781c0de)
+
+running 186 tests
+test agent_card::tests::test_static_agent_card ... ok
+test executor::tests::test_executor_context_task_info ... ok
+test agent_card::tests::test_agent_card_router_no_origin ... ok
+test agent_card::tests::test_agent_card_router_with_origin ... ok
+test handler::tests::test_active_execution_broadcasts_to_multiple_subscribers ... ok
+test handler::tests::test_active_execution_drops_errors_without_subscribers ... ok
+test agent_card::tests::test_well_known_path ... ok
+test handler::tests::test_active_execution_keeps_snapshot_without_subscribers ... ok
+test handler::tests::test_active_execution_publishes_errors_to_subscribers ... ok
+test handler::tests::test_active_execution_publishes_events_with_snapshot_updates ... ok
+test handler::tests::test_artifacts_do_not_aggregate_across_tasks_in_one_context ... ok
+test handler::tests::test_cancel_task_already_canceled_is_idempotent ... ok
+test handler::tests::test_cancel_task_already_completed ... ok
+test handler::tests::test_cancel_task_failed_and_rejected_are_not_cancelable ... ok
+test handler::tests::test_cancel_task_not_found ... ok
+test handler::tests::test_cancel_task_working ... ok
+test handler::tests::test_capability_gate_precedes_the_not_configured_check ... ok
+test handler::tests::test_configuring_an_extended_card_declares_the_capability ... ok
+test handler::tests::test_extended_agent_card_is_served_when_configured ... ok
+test handler::tests::test_get_task_after_send ... ok
+test handler::tests::test_extended_agent_card_not_configured ... ok
+test handler::tests::test_get_task_applies_history_length ... ok
+test handler::tests::test_get_task_not_found ... ok
+test handler::tests::test_authorizer_rejects_handler_methods ... ok
+test handler::tests::test_list_push_configs_page_size_cap_bounds_a_custom_store ... ok
+test handler::tests::test_list_tasks ... ok
+test handler::tests::test_list_tasks_honours_a_page_size_under_the_cap ... ok
+test handler::tests::test_list_push_configs_invalid_page_token_errors ... ok
+test handler::tests::test_list_tasks_page_size_cap_bounds_a_store_that_honours_it ... ok
+test handler::tests::test_list_tasks_page_size_cap_bounds_a_store_that_ignores_it ... ok
+test handler::tests::test_list_tasks_truncation_keeps_the_store_continuation_token ... ok
+test handler::tests::test_missing_store_still_reports_push_unsupported ... ok
+test handler::tests::test_paging_stores_delegate_everything_except_list ... ok
+test handler::tests::test_push_config_not_supported_without_store ... ok
+test handler::tests::test_list_push_configs_page_size_is_capped ... ok
+test handler::tests::test_resolver_sees_the_caller_params ... ok
+test handler::tests::test_send_message_creates_task ... ok
+test handler::tests::test_builder_order_does_not_change_the_declared_capability ... ok
+test handler::tests::test_push_refused_when_the_card_declares_it_absent ... ok
+test handler::tests::test_send_message_return_immediately_allows_resubscribe ... ok
+test handler::tests::test_send_streaming_message ... ok
+test handler::tests::test_stream_disconnect_preserves_execution_for_resubscription ... ok
+test handler::tests::test_streaming_refused_when_the_card_declares_it_absent ... ok
+test handler::tests::test_subscribe_requires_active_execution ... ok
+test handler::tests::test_push_config_crud_with_store ... ok
+test handler::tests::test_unconfigured_extended_card_reports_its_own_code ... ok
+test handler::tests::test_with_capabilities ... ok
+test handler::tests::test_send_message_request_push_config_delivers_webhooks ... ok
+test handler::tests::test_send_message_stored_push_config_delivers_webhooks ... ok
+test jsonrpc::tests::test_cancel_task_not_found ... ok
+test handler::tests::test_with_push_config_store_enables_push_capability ... ok
+test handler::tests::test_undeclared_capabilities_stay_permissive ... ok
+test jsonrpc::tests::test_delete_push_config ... ok
+test jsonrpc::tests::test_empty_method ... ok
+test jsonrpc::tests::test_get_extended_agent_card ... ok
+test jsonrpc::tests::test_get_push_config ... ok
+test jsonrpc::tests::test_get_task_not_found ... ok
+test jsonrpc::tests::test_invalid_jsonrpc_version ... ok
+test jsonrpc::tests::test_invalid_method ... ok
+test jsonrpc::tests::test_invalid_params ... ok
+test jsonrpc::tests::test_jsonrpc_subscribe_to_task_propagates_headers_as_service_params ... ok
+test jsonrpc::tests::test_jsonrpc_unary_methods_propagate_headers_as_service_params ... ok
+test jsonrpc::tests::test_create_push_config ... ok
+test jsonrpc::tests::test_list_tasks ... ok
+test handler::tests::test_with_push_notifications_defaults_the_capability ... ok
+test jsonrpc::tests::test_send_message ... ok
+test jsonrpc::tests::test_send_message_legacy_method_rejected ... ok
+test jsonrpc::tests::test_send_message_propagates_headers_as_service_params ... ok
+test jsonrpc::tests::test_streaming_invalid_method ... ok
+test jsonrpc::tests::test_streaming_send_message ... ok
+test jsonrpc::tests::test_streaming_send_message_legacy_method_rejected ... ok
+test jsonrpc::tests::test_streaming_send_message_propagates_headers_as_service_params ... ok
+test jsonrpc::tests::test_streaming_subscribe_to_task ... ok
+test jsonrpc::tests::test_unknown_params_fields_are_ignored ... ok
+test jsonrpc::tests::test_request_body_over_the_limit_is_rejected ... ok
+test middleware::tests::test_call_context_new ... ok
+test middleware::tests::test_extract_service_params_basic ... ok
+test middleware::tests::test_extract_service_params_empty ... ok
+test middleware::tests::test_extract_service_params_lowercases_names ... ok
+test middleware::tests::test_extract_service_params_multi_value ... ok
+test middleware::tests::test_extract_service_params_skips_non_ascii_values ... ok
+test middleware::tests::test_intercepted_handler_new ... ok
+test middleware::tests::test_intercepted_handler_with_interceptor ... ok
+test middleware::tests::test_logging_interceptor_after_err ... ok
+test middleware::tests::test_logging_interceptor_after_ok ... ok
+test jsonrpc::tests::test_list_push_configs ... ok
+test middleware::tests::test_noop_interceptor_before ... ok
+test middleware::tests::test_logging_interceptor_before ... ok
+test middleware::tests::test_noop_interceptor_after ... ok
+test pagination::tests::test_absent_and_non_positive_use_the_default ... ok
+test pagination::tests::test_oversized_requests_are_clamped_not_rejected ... ok
+test pagination::tests::test_requested_size_is_honoured_up_to_the_maximum ... ok
+test push::sender::tests::test_default_config ... ok
+test middleware::tests::test_user_authenticated ... ok
+test jsonrpc::tests::test_create_push_config_accepts_flat_config_object ... ok
+test push::sender::tests::test_send_push_connection_refused_no_fail ... ok
+test push::sender::tests::test_handle_error_fail_on_error ... ok
+test push::sender::tests::test_handle_error_ignore ... ok
+test push::sender::tests::test_send_push_connection_refused_fail ... ok
+test push::sender::tests::test_send_push_with_basic_auth ... ok
+test push::sender::tests::test_send_push_rejects_blocked_url_even_without_fail_on_error ... ok
+test push::sender::tests::test_send_push_rejects_crlf_token ... ok
+test push::sender::tests::test_send_push_rejects_crlf_credentials ... ok
+test push::sender::tests::test_validate_push_url_accepts_global_ipv6 ... ok
+test push::sender::tests::test_validate_push_url_accepts_public_urls ... ok
+test push::sender::tests::test_validate_push_url_rejects_alternate_ipv4_spellings ... ok
+test push::sender::tests::test_validate_push_url_rejects_invalid_url ... ok
+test push::sender::tests::test_validate_push_url_rejects_ipv4_mapped_ipv6 ... ok
+test push::sender::tests::test_validate_push_url_rejects_ipv4_multicast ... ok
+test push::sender::tests::test_validate_push_url_rejects_ipv6_restricted_ranges ... ok
+test push::sender::tests::test_validate_push_url_rejects_loopback ... ok
+test push::sender::tests::test_validate_push_url_rejects_non_http_schemes ... ok
+test push::sender::tests::test_validate_push_url_rejects_private_and_link_local ... ok
+test push::sender::tests::test_validate_push_url_rejects_trailing_dot_hosts ... ok
+test push::store::tests::test_delete ... ok
+test push::store::tests::test_delete_all ... ok
+test push::store::tests::test_get_not_found ... ok
+test push::store::tests::test_list ... ok
+test push::store::tests::test_save_and_get ... ok
+test push::store::tests::test_save_can_replace_existing_config_at_cap ... ok
+test push::store::tests::test_save_caps_configs_per_task ... ok
+test push::store::tests::test_save_empty_task_id ... ok
+test push::store::tests::test_save_empty_url ... ok
+test push::store::tests::test_save_with_existing_id ... ok
+test rest::tests::test_cancel_task_legacy_propagates_headers_as_service_params ... ok
+test rest::tests::test_cancel_task_not_found ... ok
+test rest::tests::test_cancel_task_propagates_headers_as_service_params ... ok
+test push::sender::tests::test_send_push_with_unknown_auth_scheme ... ok
+test push::sender::tests::test_sender_new_custom ... ok
+test rest::tests::test_create_push_config_not_supported ... ok
+test rest::tests::test_create_push_config_propagates_headers_as_service_params ... ok
+test rest::tests::test_create_push_config_rejects_mismatched_task_id_in_body ... ok
+test rest::tests::test_delete_push_config ... ok
+test rest::tests::test_delete_push_config_propagates_headers_as_service_params ... ok
+test push::sender::tests::test_sender_new_default ... ok
+test rest::tests::test_get_extended_agent_card ... ok
+test rest::tests::test_get_extended_agent_card_propagates_headers_as_service_params ... ok
+test rest::tests::test_get_push_config_not_found ... ok
+test rest::tests::test_get_push_config_propagates_headers_as_service_params ... ok
+test rest::tests::test_get_task_not_found ... ok
+test rest::tests::test_get_task_propagates_headers_as_service_params ... ok
+test rest::tests::test_get_task_with_history_length ... ok
+test rest::tests::test_create_push_config_accepts_flat_request_body ... ok
+test rest::tests::test_create_push_config_accepts_raw_config_body ... ok
+test rest::tests::test_list_tasks_empty ... ok
+test rest::tests::test_list_tasks_invalid_status_returns_bad_request ... ok
+test rest::tests::test_list_tasks_propagates_headers_as_service_params ... ok
+test rest::tests::test_list_tasks_with_query_params ... ok
+test rest::tests::test_delete_push_config_with_store_returns_ok ... ok
+test rest::tests::test_rest_error_response_merges_error_info_metadata ... ok
+test rest::tests::test_list_push_configs_propagates_headers_as_service_params ... ok
+test rest::tests::test_rest_error_response_preserves_non_error_info_details ... ok
+test rest::tests::test_rest_error_response_status_codes ... ok
+test rest::tests::test_rest_payload_error_response ... ok
+test rest::tests::test_send_message ... ok
+test rest::tests::test_send_message_legacy_alias ... ok
+test rest::tests::test_send_message_propagates_headers_as_service_params ... ok
+test rest::tests::test_stream_message ... ok
+test rest::tests::test_stream_message_propagates_headers_as_service_params ... ok
+test rest::tests::test_subscribe_to_task_legacy_propagates_headers_as_service_params ... ok
+test rest::tests::test_subscribe_to_task_not_found ... ok
+test rest::tests::test_subscribe_to_task_propagates_headers_as_service_params ... ok
+test sse::tests::test_event_ids_are_scoped_to_one_response ... ok
+test sse::tests::test_sse_from_stream_assigns_monotonic_event_ids ... ok
+test sse::tests::test_sse_from_stream_err ... ok
+test sse::tests::test_sse_from_stream_ok ... ok
+test sse::tests::test_sse_jsonrpc_stream_assigns_monotonic_event_ids ... ok
+test sse::tests::test_sse_jsonrpc_stream_err ... ok
+test sse::tests::test_sse_jsonrpc_stream_multiple_events ... ok
+test sse::tests::test_sse_jsonrpc_stream_ok ... ok
+test task_store::inmemory::tests::test_create_and_get ... ok
+test task_store::inmemory::tests::test_create_duplicate ... ok
+test task_store::inmemory::tests::test_get_not_found ... ok
+test task_store::inmemory::tests::test_list_filter_by_context ... ok
+test task_store::inmemory::tests::test_list_filter_by_status ... ok
+test task_store::inmemory::tests::test_list_history_truncation ... ok
+test task_store::inmemory::tests::test_list_invalid_page_token_errors ... ok
+test task_store::inmemory::tests::test_list_negative_history_length_returns_empty_history ... ok
+test task_store::inmemory::tests::test_list_out_of_range_page_token_returns_empty_page ... ok
+test task_store::inmemory::tests::test_list_page_size_is_capped ... ok
+test task_store::inmemory::tests::test_list_pagination ... ok
+test task_store::inmemory::tests::test_list_zero_page_size_uses_default_window ... ok
+test task_store::inmemory::tests::test_update ... ok
+test task_store::inmemory::tests::test_update_not_found ... ok
+test rest::tests::test_request_body_over_the_limit_is_rejected ... ok
+test rest::tests::test_list_push_configs ... ok
+
+test result: ok. 186 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a_slimrpc-8fc765d109529ae2)
+
+running 15 tests
+test client::tests::test_parse_slimrpc_target_invalid ... ok
+test client::tests::test_parse_slimrpc_target_slim_scheme_and_leading_slash ... ok
+test client::tests::test_parse_slimrpc_target_plain_name ... ok
+test client::tests::test_parse_slimrpc_target_scheme ... ok
+test common::tests::test_decode_proto_request_invalid_payload ... ok
+test common::tests::test_context_to_service_params_filters_internal_metadata ... ok
+test common::tests::test_service_params_to_metadata_opt_non_empty ... ok
+test errors::tests::test_a2a_error_to_rpc_error_extended_mapping ... ok
+test common::tests::test_decode_proto_response_invalid_payload ... ok
+test common::tests::test_service_params_to_metadata_opt_empty ... ok
+test common::tests::test_service_params_to_metadata ... ok
+test errors::tests::test_rpc_error_to_a2a_error_mapping ... ok
+test errors::tests::test_rpc_error_to_a2a_error_extended_mapping ... ok
+test server::tests::test_slimrpc_handler_new ... ok
+test errors::tests::test_a2a_error_to_rpc_error_mapping ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/e2e.rs (/opt/bench/target-quality-a2a-rs/debug/deps/e2e-6003015d5da6406a)
+
+running 4 tests
+test slimrpc_transport_reports_malformed_payloads ... ok
+test slimrpc_transport_streaming_and_factory_paths ... ok
+test slimrpc_transport_end_to_end ... ok
+test slimrpc_collaborate_broadcasts_to_every_other_member ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/examples_lib-8da06a1346ddd27b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/helloworld/client.rs (/opt/bench/target-quality-a2a-rs/debug/deps/helloworld_client-e5d2830f67c0eb84)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/helloworld/server.rs (/opt/bench/target-quality-a2a-rs/debug/deps/helloworld_server-f11264a8040f7c48)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/helloworld_tls/client.rs (/opt/bench/target-quality-a2a-rs/debug/deps/helloworld_tls_client-50c02905fd74932c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/helloworld_tls/server.rs (/opt/bench/target-quality-a2a-rs/debug/deps/helloworld_tls_server-8ef622b3064e2b4e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/transports_e2e.rs (/opt/bench/target-quality-a2a-rs/debug/deps/transports_e2e-d76a1caf68d4fbf3)
+
+running 4 tests
+test jsonrpc_transport_end_to_end ... ok
+test rest_transport_end_to_end ... ok
+test jsonrpc_transport_push_delivery_end_to_end ... ok
+test rest_transport_push_delivery_end_to_end ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+   Doc-tests a2acli
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests a2a_client
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests a2a_grpc
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests a2a
+
+running 1 test
+test a2a/src/../README.md - (line 23) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.21s; merged doctests compilation took 0.20s
+   Doc-tests a2a_pb
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests a2a_server
+
+running 1 test
+test a2a-server/src/tls.rs - tls (line 12) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.32s; merged doctests compilation took 0.31s
+   Doc-tests a2a_slimrpc
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests examples_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+EXIT: 0
+END: 2026-09-26T10:04:23Z

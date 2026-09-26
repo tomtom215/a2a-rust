@@ -1,0 +1,1462 @@
+CMD: cargo deny --manifest-path /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.toml --config /opt/bench/results/quality/deny.toml check licenses advisories bans sources
+warning[license-not-encountered]: license was not encountered
+   ┌─ /opt/bench/results/quality/deny.toml:17:50
+   │
+17 │   "Unicode-3.0", "Zlib", "CDLA-Permissive-2.0", "MPL-2.0",
+   │                                                  ━━━━━━━ unmatched license allowance
+
+warning[duplicate]: found 2 duplicate entries for crate 'base64'
+   ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:13:1
+   │  
+13 │ ╭ base64 0.22.1 registry+https://github.com/rust-lang/crates.io-index
+14 │ │ base64 0.23.1 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰───────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ base64 v0.22.1
+     ├── sqlx-core v0.8.6
+     │   ├── sqlx v0.8.6
+     │   │   └── a2a-protocol-server v0.14.0
+     │   │       └── a2a-protocol-sdk v0.14.0
+     │   │           └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+     │   ├── sqlx-postgres v0.8.6
+     │   │   └── sqlx v0.8.6 (*)
+     │   └── sqlx-sqlite v0.8.6
+     │       └── sqlx v0.8.6 (*)
+     ├── sqlx-postgres v0.8.6 (*)
+     └── tonic v0.14.6
+         ├── a2a-protocol-client v0.14.0
+         │   └── a2a-protocol-sdk v0.14.0 (*)
+         ├── a2a-protocol-server v0.14.0 (*)
+         ├── opentelemetry-otlp v0.32.0
+         │   └── a2a-protocol-server v0.14.0 (*)
+         ├── opentelemetry-proto v0.32.0
+         │   └── opentelemetry-otlp v0.32.0 (*)
+         ├── tonic-prost v0.14.6
+         │   ├── a2a-protocol-client v0.14.0 (*)
+         │   ├── a2a-protocol-server v0.14.0 (*)
+         │   └── opentelemetry-proto v0.32.0 (*)
+         └── tonic-types v0.14.6
+             ├── a2a-protocol-client v0.14.0 (*)
+             ├── a2a-protocol-server v0.14.0 (*)
+             └── opentelemetry-otlp v0.32.0 (*)
+   ├ base64 v0.23.1
+     ├── a2a-protocol-client v0.14.0
+     │   └── a2a-protocol-sdk v0.14.0
+     │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+     ├── a2a-protocol-server v0.14.0
+     │   └── a2a-protocol-sdk v0.14.0 (*)
+     └── a2a-protocol-types v0.14.0
+         ├── a2a-protocol-client v0.14.0 (*)
+         ├── a2a-protocol-sdk v0.14.0 (*)
+         └── a2a-protocol-server v0.14.0 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'block-buffer'
+   ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:16:1
+   │  
+16 │ ╭ block-buffer 0.10.4 registry+https://github.com/rust-lang/crates.io-index
+17 │ │ block-buffer 0.12.1 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰─────────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ block-buffer v0.10.4
+     └── digest v0.10.7
+         ├── hmac v0.12.1
+         │   ├── hkdf v0.12.4
+         │   │   └── sqlx-postgres v0.8.6
+         │   │       └── sqlx v0.8.6
+         │   │           └── a2a-protocol-server v0.14.0
+         │   │               └── a2a-protocol-sdk v0.14.0
+         │   │                   └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+         │   └── sqlx-postgres v0.8.6 (*)
+         ├── md-5 v0.10.6
+         │   └── sqlx-postgres v0.8.6 (*)
+         └── sha2 v0.10.9
+             ├── sqlx-core v0.8.6
+             │   ├── sqlx v0.8.6 (*)
+             │   ├── sqlx-postgres v0.8.6 (*)
+             │   └── sqlx-sqlite v0.8.6
+             │       └── sqlx v0.8.6 (*)
+             └── sqlx-postgres v0.8.6 (*)
+   ├ block-buffer v0.12.1
+     └── digest v0.11.3
+         └── sha1 v0.11.0
+             └── tungstenite v0.30.0
+                 └── tokio-tungstenite v0.30.0
+                     ├── a2a-protocol-client v0.14.0
+                     │   └── a2a-protocol-sdk v0.14.0
+                     │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                     └── a2a-protocol-server v0.14.0
+                         └── a2a-protocol-sdk v0.14.0 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'cpufeatures'
+   ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:26:1
+   │  
+26 │ ╭ cpufeatures 0.2.17 registry+https://github.com/rust-lang/crates.io-index
+27 │ │ cpufeatures 0.3.1 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰───────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ cpufeatures v0.2.17
+     └── sha2 v0.10.9
+         ├── sqlx-core v0.8.6
+         │   ├── sqlx v0.8.6
+         │   │   └── a2a-protocol-server v0.14.0
+         │   │       └── a2a-protocol-sdk v0.14.0
+         │   │           └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+         │   ├── sqlx-postgres v0.8.6
+         │   │   └── sqlx v0.8.6 (*)
+         │   └── sqlx-sqlite v0.8.6
+         │       └── sqlx v0.8.6 (*)
+         └── sqlx-postgres v0.8.6 (*)
+   ├ cpufeatures v0.3.1
+     ├── chacha20 v0.10.2
+     │   └── rand v0.10.3
+     │       └── tungstenite v0.30.0
+     │           └── tokio-tungstenite v0.30.0
+     │               ├── a2a-protocol-client v0.14.0
+     │               │   └── a2a-protocol-sdk v0.14.0
+     │               │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+     │               └── a2a-protocol-server v0.14.0
+     │                   └── a2a-protocol-sdk v0.14.0 (*)
+     └── sha1 v0.11.0
+         └── tungstenite v0.30.0 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'crypto-common'
+   ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:32:1
+   │  
+32 │ ╭ crypto-common 0.1.7 registry+https://github.com/rust-lang/crates.io-index
+33 │ │ crypto-common 0.2.2 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰─────────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ crypto-common v0.1.7
+     └── digest v0.10.7
+         ├── hmac v0.12.1
+         │   ├── hkdf v0.12.4
+         │   │   └── sqlx-postgres v0.8.6
+         │   │       └── sqlx v0.8.6
+         │   │           └── a2a-protocol-server v0.14.0
+         │   │               └── a2a-protocol-sdk v0.14.0
+         │   │                   └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+         │   └── sqlx-postgres v0.8.6 (*)
+         ├── md-5 v0.10.6
+         │   └── sqlx-postgres v0.8.6 (*)
+         └── sha2 v0.10.9
+             ├── sqlx-core v0.8.6
+             │   ├── sqlx v0.8.6 (*)
+             │   ├── sqlx-postgres v0.8.6 (*)
+             │   └── sqlx-sqlite v0.8.6
+             │       └── sqlx v0.8.6 (*)
+             └── sqlx-postgres v0.8.6 (*)
+   ├ crypto-common v0.2.2
+     └── digest v0.11.3
+         └── sha1 v0.11.0
+             └── tungstenite v0.30.0
+                 └── tokio-tungstenite v0.30.0
+                     ├── a2a-protocol-client v0.14.0
+                     │   └── a2a-protocol-sdk v0.14.0
+                     │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                     └── a2a-protocol-server v0.14.0
+                         └── a2a-protocol-sdk v0.14.0 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'digest'
+   ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:36:1
+   │  
+36 │ ╭ digest 0.10.7 registry+https://github.com/rust-lang/crates.io-index
+37 │ │ digest 0.11.3 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰───────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ digest v0.10.7
+     ├── hmac v0.12.1
+     │   ├── hkdf v0.12.4
+     │   │   └── sqlx-postgres v0.8.6
+     │   │       └── sqlx v0.8.6
+     │   │           └── a2a-protocol-server v0.14.0
+     │   │               └── a2a-protocol-sdk v0.14.0
+     │   │                   └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+     │   └── sqlx-postgres v0.8.6 (*)
+     ├── md-5 v0.10.6
+     │   └── sqlx-postgres v0.8.6 (*)
+     └── sha2 v0.10.9
+         ├── sqlx-core v0.8.6
+         │   ├── sqlx v0.8.6 (*)
+         │   ├── sqlx-postgres v0.8.6 (*)
+         │   └── sqlx-sqlite v0.8.6
+         │       └── sqlx v0.8.6 (*)
+         └── sqlx-postgres v0.8.6 (*)
+   ├ digest v0.11.3
+     └── sha1 v0.11.0
+         └── tungstenite v0.30.0
+             └── tokio-tungstenite v0.30.0
+                 ├── a2a-protocol-client v0.14.0
+                 │   └── a2a-protocol-sdk v0.14.0
+                 │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                 └── a2a-protocol-server v0.14.0
+                     └── a2a-protocol-sdk v0.14.0 (*)
+
+warning[duplicate]: found 3 duplicate entries for crate 'getrandom'
+   ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:62:1
+   │  
+62 │ ╭ getrandom 0.2.17 registry+https://github.com/rust-lang/crates.io-index
+63 │ │ getrandom 0.3.4 registry+https://github.com/rust-lang/crates.io-index
+64 │ │ getrandom 0.4.3 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰─────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ getrandom v0.2.17
+     ├── rand_core v0.6.4
+     │   ├── rand v0.8.8
+     │   │   └── sqlx-postgres v0.8.6
+     │   │       └── sqlx v0.8.6
+     │   │           └── a2a-protocol-server v0.14.0
+     │   │               └── a2a-protocol-sdk v0.14.0
+     │   │                   └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+     │   └── rand_chacha v0.3.1
+     │       └── rand v0.8.8 (*)
+     └── ring v0.17.14
+         ├── a2a-protocol-server v0.14.0 (*)
+         ├── a2a-protocol-types v0.14.0
+         │   ├── a2a-protocol-client v0.14.0
+         │   │   └── a2a-protocol-sdk v0.14.0 (*)
+         │   ├── a2a-protocol-sdk v0.14.0 (*)
+         │   └── a2a-protocol-server v0.14.0 (*)
+         ├── rustls v0.23.45
+         │   ├── a2a-protocol-client v0.14.0 (*)
+         │   ├── a2a-protocol-server v0.14.0 (*)
+         │   ├── hyper-rustls v0.27.10
+         │   │   ├── a2a-protocol-client v0.14.0 (*)
+         │   │   └── a2a-protocol-server v0.14.0 (*)
+         │   └── tokio-rustls v0.26.5
+         │       ├── hyper-rustls v0.27.10 (*)
+         │       └── tonic v0.14.6
+         │           ├── a2a-protocol-client v0.14.0 (*)
+         │           ├── a2a-protocol-server v0.14.0 (*)
+         │           ├── opentelemetry-otlp v0.32.0
+         │           │   └── a2a-protocol-server v0.14.0 (*)
+         │           ├── opentelemetry-proto v0.32.0
+         │           │   └── opentelemetry-otlp v0.32.0 (*)
+         │           ├── tonic-prost v0.14.6
+         │           │   ├── a2a-protocol-client v0.14.0 (*)
+         │           │   ├── a2a-protocol-server v0.14.0 (*)
+         │           │   └── opentelemetry-proto v0.32.0 (*)
+         │           └── tonic-types v0.14.6
+         │               ├── a2a-protocol-client v0.14.0 (*)
+         │               ├── a2a-protocol-server v0.14.0 (*)
+         │               └── opentelemetry-otlp v0.32.0 (*)
+         └── rustls-webpki v0.103.15
+             └── rustls v0.23.45 (*)
+   ├ getrandom v0.3.4
+     └── rand_core v0.9.5
+         ├── rand v0.9.5
+         │   └── opentelemetry_sdk v0.32.1
+         │       ├── a2a-protocol-server v0.14.0
+         │       │   └── a2a-protocol-sdk v0.14.0
+         │       │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+         │       ├── opentelemetry-otlp v0.32.0
+         │       │   └── a2a-protocol-server v0.14.0 (*)
+         │       └── opentelemetry-proto v0.32.0
+         │           └── opentelemetry-otlp v0.32.0 (*)
+         └── rand_chacha v0.9.0
+             └── rand v0.9.5 (*)
+   ├ getrandom v0.4.3
+     ├── rand v0.10.3
+     │   └── tungstenite v0.30.0
+     │       └── tokio-tungstenite v0.30.0
+     │           ├── a2a-protocol-client v0.14.0
+     │           │   └── a2a-protocol-sdk v0.14.0
+     │           │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+     │           └── a2a-protocol-server v0.14.0
+     │               └── a2a-protocol-sdk v0.14.0 (*)
+     ├── tempfile v3.27.0
+     │   ├── prost-build v0.14.4
+     │   │   ├── (build) a2a-protocol-types v0.14.0
+     │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+     │   │   │   ├── a2a-protocol-sdk v0.14.0 (*)
+     │   │   │   └── a2a-protocol-server v0.14.0 (*)
+     │   │   └── tonic-prost-build v0.14.6
+     │   │       ├── (build) a2a-protocol-client v0.14.0 (*)
+     │   │       └── (build) a2a-protocol-server v0.14.0 (*)
+     │   └── tonic-prost-build v0.14.6 (*)
+     └── uuid v1.26.1
+         ├── a2a-protocol-client v0.14.0 (*)
+         └── a2a-protocol-server v0.14.0 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'hashbrown'
+   ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:66:1
+   │  
+66 │ ╭ hashbrown 0.15.5 registry+https://github.com/rust-lang/crates.io-index
+67 │ │ hashbrown 0.17.1 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰──────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ hashbrown v0.15.5
+     ├── hashlink v0.10.0
+     │   └── sqlx-core v0.8.6
+     │       ├── sqlx v0.8.6
+     │       │   └── a2a-protocol-server v0.14.0
+     │       │       └── a2a-protocol-sdk v0.14.0
+     │       │           └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+     │       ├── sqlx-postgres v0.8.6
+     │       │   └── sqlx v0.8.6 (*)
+     │       └── sqlx-sqlite v0.8.6
+     │           └── sqlx v0.8.6 (*)
+     ├── petgraph v0.8.3
+     │   └── prost-build v0.14.4
+     │       ├── (build) a2a-protocol-types v0.14.0
+     │       │   ├── a2a-protocol-client v0.14.0
+     │       │   │   └── a2a-protocol-sdk v0.14.0 (*)
+     │       │   ├── a2a-protocol-sdk v0.14.0 (*)
+     │       │   └── a2a-protocol-server v0.14.0 (*)
+     │       └── tonic-prost-build v0.14.6
+     │           ├── (build) a2a-protocol-client v0.14.0 (*)
+     │           └── (build) a2a-protocol-server v0.14.0 (*)
+     └── sqlx-core v0.8.6 (*)
+   ├ hashbrown v0.17.1
+     └── indexmap v2.14.2
+         ├── h2 v0.4.19
+         │   ├── hyper v1.11.1
+         │   │   ├── a2a-protocol-client v0.14.0
+         │   │   │   └── a2a-protocol-sdk v0.14.0
+         │   │   │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+         │   │   ├── a2a-protocol-server v0.14.0
+         │   │   │   └── a2a-protocol-sdk v0.14.0 (*)
+         │   │   ├── hyper-rustls v0.27.10
+         │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+         │   │   │   └── a2a-protocol-server v0.14.0 (*)
+         │   │   ├── hyper-timeout v0.5.2
+         │   │   │   └── tonic v0.14.6
+         │   │   │       ├── a2a-protocol-client v0.14.0 (*)
+         │   │   │       ├── a2a-protocol-server v0.14.0 (*)
+         │   │   │       ├── opentelemetry-otlp v0.32.0
+         │   │   │       │   └── a2a-protocol-server v0.14.0 (*)
+         │   │   │       ├── opentelemetry-proto v0.32.0
+         │   │   │       │   └── opentelemetry-otlp v0.32.0 (*)
+         │   │   │       ├── tonic-prost v0.14.6
+         │   │   │       │   ├── a2a-protocol-client v0.14.0 (*)
+         │   │   │       │   ├── a2a-protocol-server v0.14.0 (*)
+         │   │   │       │   └── opentelemetry-proto v0.32.0 (*)
+         │   │   │       └── tonic-types v0.14.6
+         │   │   │           ├── a2a-protocol-client v0.14.0 (*)
+         │   │   │           ├── a2a-protocol-server v0.14.0 (*)
+         │   │   │           └── opentelemetry-otlp v0.32.0 (*)
+         │   │   ├── hyper-util v0.1.21
+         │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+         │   │   │   ├── a2a-protocol-server v0.14.0 (*)
+         │   │   │   ├── axum v0.8.9
+         │   │   │   │   ├── a2a-protocol-server v0.14.0 (*)
+         │   │   │   │   └── tonic v0.14.6 (*)
+         │   │   │   ├── hyper-rustls v0.27.10 (*)
+         │   │   │   ├── hyper-timeout v0.5.2 (*)
+         │   │   │   └── tonic v0.14.6 (*)
+         │   │   └── tonic v0.14.6 (*)
+         │   └── tonic v0.14.6 (*)
+         ├── petgraph v0.8.3
+         │   └── prost-build v0.14.4
+         │       ├── (build) a2a-protocol-types v0.14.0
+         │       │   ├── a2a-protocol-client v0.14.0 (*)
+         │       │   ├── a2a-protocol-sdk v0.14.0 (*)
+         │       │   └── a2a-protocol-server v0.14.0 (*)
+         │       └── tonic-prost-build v0.14.6
+         │           ├── (build) a2a-protocol-client v0.14.0 (*)
+         │           └── (build) a2a-protocol-server v0.14.0 (*)
+         ├── sqlx-core v0.8.6
+         │   ├── sqlx v0.8.6
+         │   │   └── a2a-protocol-server v0.14.0 (*)
+         │   ├── sqlx-postgres v0.8.6
+         │   │   └── sqlx v0.8.6 (*)
+         │   └── sqlx-sqlite v0.8.6
+         │       └── sqlx v0.8.6 (*)
+         └── tower v0.5.3
+             ├── axum v0.8.9 (*)
+             └── tonic v0.14.6 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'r-efi'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:151:1
+    │  
+151 │ ╭ r-efi 5.3.0 registry+https://github.com/rust-lang/crates.io-index
+152 │ │ r-efi 6.0.0 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ r-efi v5.3.0
+      └── getrandom v0.3.4
+          └── rand_core v0.9.5
+              ├── rand v0.9.5
+              │   └── opentelemetry_sdk v0.32.1
+              │       ├── a2a-protocol-server v0.14.0
+              │       │   └── a2a-protocol-sdk v0.14.0
+              │       │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+              │       ├── opentelemetry-otlp v0.32.0
+              │       │   └── a2a-protocol-server v0.14.0 (*)
+              │       └── opentelemetry-proto v0.32.0
+              │           └── opentelemetry-otlp v0.32.0 (*)
+              └── rand_chacha v0.9.0
+                  └── rand v0.9.5 (*)
+    ├ r-efi v6.0.0
+      └── getrandom v0.4.3
+          ├── rand v0.10.3
+          │   └── tungstenite v0.30.0
+          │       └── tokio-tungstenite v0.30.0
+          │           ├── a2a-protocol-client v0.14.0
+          │           │   └── a2a-protocol-sdk v0.14.0
+          │           │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+          │           └── a2a-protocol-server v0.14.0
+          │               └── a2a-protocol-sdk v0.14.0 (*)
+          ├── tempfile v3.27.0
+          │   ├── prost-build v0.14.4
+          │   │   ├── (build) a2a-protocol-types v0.14.0
+          │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+          │   │   │   ├── a2a-protocol-sdk v0.14.0 (*)
+          │   │   │   └── a2a-protocol-server v0.14.0 (*)
+          │   │   └── tonic-prost-build v0.14.6
+          │   │       ├── (build) a2a-protocol-client v0.14.0 (*)
+          │   │       └── (build) a2a-protocol-server v0.14.0 (*)
+          │   └── tonic-prost-build v0.14.6 (*)
+          └── uuid v1.26.1
+              ├── a2a-protocol-client v0.14.0 (*)
+              └── a2a-protocol-server v0.14.0 (*)
+
+warning[duplicate]: found 3 duplicate entries for crate 'rand'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:153:1
+    │  
+153 │ ╭ rand 0.8.8 registry+https://github.com/rust-lang/crates.io-index
+154 │ │ rand 0.9.5 registry+https://github.com/rust-lang/crates.io-index
+155 │ │ rand 0.10.3 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ rand v0.8.8
+      └── sqlx-postgres v0.8.6
+          └── sqlx v0.8.6
+              └── a2a-protocol-server v0.14.0
+                  └── a2a-protocol-sdk v0.14.0
+                      └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ rand v0.9.5
+      └── opentelemetry_sdk v0.32.1
+          ├── a2a-protocol-server v0.14.0
+          │   └── a2a-protocol-sdk v0.14.0
+          │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+          ├── opentelemetry-otlp v0.32.0
+          │   └── a2a-protocol-server v0.14.0 (*)
+          └── opentelemetry-proto v0.32.0
+              └── opentelemetry-otlp v0.32.0 (*)
+    ├ rand v0.10.3
+      └── tungstenite v0.30.0
+          └── tokio-tungstenite v0.30.0
+              ├── a2a-protocol-client v0.14.0
+              │   └── a2a-protocol-sdk v0.14.0
+              │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+              └── a2a-protocol-server v0.14.0
+                  └── a2a-protocol-sdk v0.14.0 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'rand_chacha'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:156:1
+    │  
+156 │ ╭ rand_chacha 0.3.1 registry+https://github.com/rust-lang/crates.io-index
+157 │ │ rand_chacha 0.9.0 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰───────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ rand_chacha v0.3.1
+      └── rand v0.8.8
+          └── sqlx-postgres v0.8.6
+              └── sqlx v0.8.6
+                  └── a2a-protocol-server v0.14.0
+                      └── a2a-protocol-sdk v0.14.0
+                          └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ rand_chacha v0.9.0
+      └── rand v0.9.5
+          └── opentelemetry_sdk v0.32.1
+              ├── a2a-protocol-server v0.14.0
+              │   └── a2a-protocol-sdk v0.14.0
+              │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+              ├── opentelemetry-otlp v0.32.0
+              │   └── a2a-protocol-server v0.14.0 (*)
+              └── opentelemetry-proto v0.32.0
+                  └── opentelemetry-otlp v0.32.0 (*)
+
+warning[duplicate]: found 3 duplicate entries for crate 'rand_core'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:158:1
+    │  
+158 │ ╭ rand_core 0.6.4 registry+https://github.com/rust-lang/crates.io-index
+159 │ │ rand_core 0.9.5 registry+https://github.com/rust-lang/crates.io-index
+160 │ │ rand_core 0.10.1 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰──────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ rand_core v0.6.4
+      ├── rand v0.8.8
+      │   └── sqlx-postgres v0.8.6
+      │       └── sqlx v0.8.6
+      │           └── a2a-protocol-server v0.14.0
+      │               └── a2a-protocol-sdk v0.14.0
+      │                   └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+      └── rand_chacha v0.3.1
+          └── rand v0.8.8 (*)
+    ├ rand_core v0.9.5
+      ├── rand v0.9.5
+      │   └── opentelemetry_sdk v0.32.1
+      │       ├── a2a-protocol-server v0.14.0
+      │       │   └── a2a-protocol-sdk v0.14.0
+      │       │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+      │       ├── opentelemetry-otlp v0.32.0
+      │       │   └── a2a-protocol-server v0.14.0 (*)
+      │       └── opentelemetry-proto v0.32.0
+      │           └── opentelemetry-otlp v0.32.0 (*)
+      └── rand_chacha v0.9.0
+          └── rand v0.9.5 (*)
+    ├ rand_core v0.10.1
+      ├── chacha20 v0.10.2
+      │   └── rand v0.10.3
+      │       └── tungstenite v0.30.0
+      │           └── tokio-tungstenite v0.30.0
+      │               ├── a2a-protocol-client v0.14.0
+      │               │   └── a2a-protocol-sdk v0.14.0
+      │               │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+      │               └── a2a-protocol-server v0.14.0
+      │                   └── a2a-protocol-sdk v0.14.0 (*)
+      ├── getrandom v0.4.3
+      │   ├── rand v0.10.3 (*)
+      │   ├── tempfile v3.27.0
+      │   │   ├── prost-build v0.14.4
+      │   │   │   ├── (build) a2a-protocol-types v0.14.0
+      │   │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+      │   │   │   │   ├── a2a-protocol-sdk v0.14.0 (*)
+      │   │   │   │   └── a2a-protocol-server v0.14.0 (*)
+      │   │   │   └── tonic-prost-build v0.14.6
+      │   │   │       ├── (build) a2a-protocol-client v0.14.0 (*)
+      │   │   │       └── (build) a2a-protocol-server v0.14.0 (*)
+      │   │   └── tonic-prost-build v0.14.6 (*)
+      │   └── uuid v1.26.1
+      │       ├── a2a-protocol-client v0.14.0 (*)
+      │       └── a2a-protocol-server v0.14.0 (*)
+      └── rand v0.10.3 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'redox_syscall'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:161:1
+    │  
+161 │ ╭ redox_syscall 0.5.18 registry+https://github.com/rust-lang/crates.io-index
+162 │ │ redox_syscall 0.9.4 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ redox_syscall v0.5.18
+      └── parking_lot_core v0.9.12
+          └── parking_lot v0.12.5
+              └── futures-intrusive v0.5.0
+                  ├── sqlx-core v0.8.6
+                  │   ├── sqlx v0.8.6
+                  │   │   └── a2a-protocol-server v0.14.0
+                  │   │       └── a2a-protocol-sdk v0.14.0
+                  │   │           └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                  │   ├── sqlx-postgres v0.8.6
+                  │   │   └── sqlx v0.8.6 (*)
+                  │   └── sqlx-sqlite v0.8.6
+                  │       └── sqlx v0.8.6 (*)
+                  └── sqlx-sqlite v0.8.6 (*)
+    ├ redox_syscall v0.9.4
+      └── libredox v0.1.25
+          └── whoami v1.6.1
+              └── sqlx-postgres v0.8.6
+                  └── sqlx v0.8.6
+                      └── a2a-protocol-server v0.14.0
+                          └── a2a-protocol-sdk v0.14.0
+                              └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+
+warning[duplicate]: found 2 duplicate entries for crate 'syn'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:196:1
+    │  
+196 │ ╭ syn 2.0.119 registry+https://github.com/rust-lang/crates.io-index
+197 │ │ syn 3.0.6 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰───────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ syn v2.0.119
+      ├── pin-project-internal v1.1.13
+      │   └── pin-project v1.1.13
+      │       └── tonic v0.14.6
+      │           ├── a2a-protocol-client v0.14.0
+      │           │   └── a2a-protocol-sdk v0.14.0
+      │           │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+      │           ├── a2a-protocol-server v0.14.0
+      │           │   └── a2a-protocol-sdk v0.14.0 (*)
+      │           ├── opentelemetry-otlp v0.32.0
+      │           │   └── a2a-protocol-server v0.14.0 (*)
+      │           ├── opentelemetry-proto v0.32.0
+      │           │   └── opentelemetry-otlp v0.32.0 (*)
+      │           ├── tonic-prost v0.14.6
+      │           │   ├── a2a-protocol-client v0.14.0 (*)
+      │           │   ├── a2a-protocol-server v0.14.0 (*)
+      │           │   └── opentelemetry-proto v0.32.0 (*)
+      │           └── tonic-types v0.14.6
+      │               ├── a2a-protocol-client v0.14.0 (*)
+      │               ├── a2a-protocol-server v0.14.0 (*)
+      │               └── opentelemetry-otlp v0.32.0 (*)
+      ├── prettyplease v0.2.37
+      │   ├── prost-build v0.14.4
+      │   │   ├── (build) a2a-protocol-types v0.14.0
+      │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+      │   │   │   ├── a2a-protocol-sdk v0.14.0 (*)
+      │   │   │   └── a2a-protocol-server v0.14.0 (*)
+      │   │   └── tonic-prost-build v0.14.6
+      │   │       ├── (build) a2a-protocol-client v0.14.0 (*)
+      │   │       └── (build) a2a-protocol-server v0.14.0 (*)
+      │   ├── tonic-build v0.14.6
+      │   │   └── tonic-prost-build v0.14.6 (*)
+      │   └── tonic-prost-build v0.14.6 (*)
+      ├── prost-build v0.14.4 (*)
+      ├── prost-derive v0.14.4
+      │   └── prost v0.14.4
+      │       ├── a2a-protocol-client v0.14.0 (*)
+      │       ├── a2a-protocol-server v0.14.0 (*)
+      │       ├── a2a-protocol-types v0.14.0 (*)
+      │       ├── opentelemetry-otlp v0.32.0 (*)
+      │       ├── opentelemetry-proto v0.32.0 (*)
+      │       ├── prost-build v0.14.4 (*)
+      │       ├── prost-types v0.14.4
+      │       │   ├── a2a-protocol-types v0.14.0 (*)
+      │       │   ├── prost-build v0.14.4 (*)
+      │       │   ├── tonic-prost-build v0.14.6 (*)
+      │       │   └── tonic-types v0.14.6 (*)
+      │       ├── tonic-prost v0.14.6 (*)
+      │       └── tonic-types v0.14.6 (*)
+      ├── tonic-build v0.14.6 (*)
+      ├── tonic-prost-build v0.14.6 (*)
+      └── tracing-attributes v0.1.31
+          └── tracing v0.1.44
+              ├── a2a-protocol-client v0.14.0 (*)
+              ├── a2a-protocol-server v0.14.0 (*)
+              ├── h2 v0.4.19
+              │   ├── hyper v1.11.1
+              │   │   ├── a2a-protocol-client v0.14.0 (*)
+              │   │   ├── a2a-protocol-server v0.14.0 (*)
+              │   │   ├── hyper-rustls v0.27.10
+              │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+              │   │   │   └── a2a-protocol-server v0.14.0 (*)
+              │   │   ├── hyper-timeout v0.5.2
+              │   │   │   └── tonic v0.14.6 (*)
+              │   │   ├── hyper-util v0.1.21
+              │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+              │   │   │   ├── a2a-protocol-server v0.14.0 (*)
+              │   │   │   ├── axum v0.8.9
+              │   │   │   │   ├── a2a-protocol-server v0.14.0 (*)
+              │   │   │   │   └── tonic v0.14.6 (*)
+              │   │   │   ├── hyper-rustls v0.27.10 (*)
+              │   │   │   ├── hyper-timeout v0.5.2 (*)
+              │   │   │   └── tonic v0.14.6 (*)
+              │   │   └── tonic v0.14.6 (*)
+              │   └── tonic v0.14.6 (*)
+              ├── hyper-util v0.1.21 (*)
+              ├── opentelemetry v0.32.0
+              │   ├── a2a-protocol-server v0.14.0 (*)
+              │   ├── opentelemetry-otlp v0.32.0 (*)
+              │   ├── opentelemetry-proto v0.32.0 (*)
+              │   ├── opentelemetry_sdk v0.32.1
+              │   │   ├── a2a-protocol-server v0.14.0 (*)
+              │   │   ├── opentelemetry-otlp v0.32.0 (*)
+              │   │   └── opentelemetry-proto v0.32.0 (*)
+              │   └── tracing-opentelemetry v0.33.0
+              │       └── a2a-protocol-server v0.14.0 (*)
+              ├── sqlx-core v0.8.6
+              │   ├── sqlx v0.8.6
+              │   │   └── a2a-protocol-server v0.14.0 (*)
+              │   ├── sqlx-postgres v0.8.6
+              │   │   └── sqlx v0.8.6 (*)
+              │   └── sqlx-sqlite v0.8.6
+              │       └── sqlx v0.8.6 (*)
+              ├── sqlx-postgres v0.8.6 (*)
+              ├── sqlx-sqlite v0.8.6 (*)
+              ├── tonic v0.14.6 (*)
+              ├── tower v0.5.3
+              │   ├── axum v0.8.9 (*)
+              │   └── tonic v0.14.6 (*)
+              └── tracing-opentelemetry v0.33.0 (*)
+    ├ syn v3.0.6
+      ├── async-trait v0.1.92
+      │   └── tonic v0.14.6
+      │       ├── a2a-protocol-client v0.14.0
+      │       │   └── a2a-protocol-sdk v0.14.0
+      │       │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+      │       ├── a2a-protocol-server v0.14.0
+      │       │   └── a2a-protocol-sdk v0.14.0 (*)
+      │       ├── opentelemetry-otlp v0.32.0
+      │       │   └── a2a-protocol-server v0.14.0 (*)
+      │       ├── opentelemetry-proto v0.32.0
+      │       │   └── opentelemetry-otlp v0.32.0 (*)
+      │       ├── tonic-prost v0.14.6
+      │       │   ├── a2a-protocol-client v0.14.0 (*)
+      │       │   ├── a2a-protocol-server v0.14.0 (*)
+      │       │   └── opentelemetry-proto v0.32.0 (*)
+      │       └── tonic-types v0.14.6
+      │           ├── a2a-protocol-client v0.14.0 (*)
+      │           ├── a2a-protocol-server v0.14.0 (*)
+      │           └── opentelemetry-otlp v0.32.0 (*)
+      ├── displaydoc v0.2.7
+      │   ├── icu_collections v2.3.0
+      │   │   ├── icu_normalizer v2.3.0
+      │   │   │   └── idna_adapter v1.2.2
+      │   │   │       └── idna v1.1.0
+      │   │   │           └── url v2.5.8
+      │   │   │               ├── sqlx-core v0.8.6
+      │   │   │               │   ├── sqlx v0.8.6
+      │   │   │               │   │   └── a2a-protocol-server v0.14.0 (*)
+      │   │   │               │   ├── sqlx-postgres v0.8.6
+      │   │   │               │   │   └── sqlx v0.8.6 (*)
+      │   │   │               │   └── sqlx-sqlite v0.8.6
+      │   │   │               │       └── sqlx v0.8.6 (*)
+      │   │   │               └── sqlx-sqlite v0.8.6 (*)
+      │   │   └── icu_properties v2.3.0
+      │   │       └── idna_adapter v1.2.2 (*)
+      │   ├── icu_locale_core v2.3.0
+      │   │   ├── icu_properties v2.3.0 (*)
+      │   │   └── icu_provider v2.3.1
+      │   │       ├── icu_normalizer v2.3.0 (*)
+      │   │       └── icu_properties v2.3.0 (*)
+      │   ├── icu_properties v2.3.0 (*)
+      │   ├── icu_provider v2.3.1 (*)
+      │   ├── tinystr v0.8.4
+      │   │   └── icu_locale_core v2.3.0 (*)
+      │   └── zerotrie v0.2.5
+      │       ├── icu_properties v2.3.0 (*)
+      │       └── icu_provider v2.3.1 (*)
+      ├── futures-macro v0.3.34
+      │   └── futures-util v0.3.34
+      │       ├── a2a-protocol-client v0.14.0 (*)
+      │       ├── a2a-protocol-server v0.14.0 (*)
+      │       ├── axum v0.8.9
+      │       │   ├── a2a-protocol-server v0.14.0 (*)
+      │       │   └── tonic v0.14.6 (*)
+      │       ├── futures-executor v0.3.34
+      │       │   ├── opentelemetry_sdk v0.32.1
+      │       │   │   ├── a2a-protocol-server v0.14.0 (*)
+      │       │   │   ├── opentelemetry-otlp v0.32.0 (*)
+      │       │   │   └── opentelemetry-proto v0.32.0 (*)
+      │       │   └── sqlx-sqlite v0.8.6 (*)
+      │       ├── hyper-util v0.1.21
+      │       │   ├── a2a-protocol-client v0.14.0 (*)
+      │       │   ├── a2a-protocol-server v0.14.0 (*)
+      │       │   ├── axum v0.8.9 (*)
+      │       │   ├── hyper-rustls v0.27.10
+      │       │   │   ├── a2a-protocol-client v0.14.0 (*)
+      │       │   │   └── a2a-protocol-server v0.14.0 (*)
+      │       │   ├── hyper-timeout v0.5.2
+      │       │   │   └── tonic v0.14.6 (*)
+      │       │   └── tonic v0.14.6 (*)
+      │       ├── js-sys v0.3.106
+      │       │   ├── opentelemetry v0.32.0
+      │       │   │   ├── a2a-protocol-server v0.14.0 (*)
+      │       │   │   ├── opentelemetry-otlp v0.32.0 (*)
+      │       │   │   ├── opentelemetry-proto v0.32.0 (*)
+      │       │   │   ├── opentelemetry_sdk v0.32.1 (*)
+      │       │   │   └── tracing-opentelemetry v0.33.0
+      │       │   │       └── a2a-protocol-server v0.14.0 (*)
+      │       │   ├── tracing-opentelemetry v0.33.0 (*)
+      │       │   └── web-time v1.1.0
+      │       │       └── tracing-opentelemetry v0.33.0 (*)
+      │       ├── opentelemetry_sdk v0.32.1 (*)
+      │       ├── sqlx-core v0.8.6 (*)
+      │       ├── sqlx-postgres v0.8.6 (*)
+      │       ├── sqlx-sqlite v0.8.6 (*)
+      │       ├── tokio-tungstenite v0.30.0
+      │       │   ├── a2a-protocol-client v0.14.0 (*)
+      │       │   └── a2a-protocol-server v0.14.0 (*)
+      │       ├── tokio-util v0.7.19
+      │       │   ├── a2a-protocol-server v0.14.0 (*)
+      │       │   ├── h2 v0.4.19
+      │       │   │   ├── hyper v1.11.1
+      │       │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+      │       │   │   │   ├── a2a-protocol-server v0.14.0 (*)
+      │       │   │   │   ├── hyper-rustls v0.27.10 (*)
+      │       │   │   │   ├── hyper-timeout v0.5.2 (*)
+      │       │   │   │   ├── hyper-util v0.1.21 (*)
+      │       │   │   │   └── tonic v0.14.6 (*)
+      │       │   │   └── tonic v0.14.6 (*)
+      │       │   └── tower v0.5.3
+      │       │       ├── axum v0.8.9 (*)
+      │       │       └── tonic v0.14.6 (*)
+      │       └── tower v0.5.3 (*)
+      ├── serde_derive v1.0.229
+      │   └── serde v1.0.229
+      │       ├── a2a-protocol-client v0.14.0 (*)
+      │       ├── a2a-protocol-server v0.14.0 (*)
+      │       ├── a2a-protocol-types v0.14.0
+      │       │   ├── a2a-protocol-client v0.14.0 (*)
+      │       │   ├── a2a-protocol-sdk v0.14.0 (*)
+      │       │   └── a2a-protocol-server v0.14.0 (*)
+      │       ├── either v1.18.0
+      │       │   ├── itertools v0.14.0
+      │       │   │   ├── prost-build v0.14.4
+      │       │   │   │   ├── (build) a2a-protocol-types v0.14.0 (*)
+      │       │   │   │   └── tonic-prost-build v0.14.6
+      │       │   │   │       ├── (build) a2a-protocol-client v0.14.0 (*)
+      │       │   │   │       └── (build) a2a-protocol-server v0.14.0 (*)
+      │       │   │   └── prost-derive v0.14.4
+      │       │   │       └── prost v0.14.4
+      │       │   │           ├── a2a-protocol-client v0.14.0 (*)
+      │       │   │           ├── a2a-protocol-server v0.14.0 (*)
+      │       │   │           ├── a2a-protocol-types v0.14.0 (*)
+      │       │   │           ├── opentelemetry-otlp v0.32.0 (*)
+      │       │   │           ├── opentelemetry-proto v0.32.0 (*)
+      │       │   │           ├── prost-build v0.14.4 (*)
+      │       │   │           ├── prost-types v0.14.4
+      │       │   │           │   ├── a2a-protocol-types v0.14.0 (*)
+      │       │   │           │   ├── prost-build v0.14.4 (*)
+      │       │   │           │   ├── tonic-prost-build v0.14.6 (*)
+      │       │   │           │   └── tonic-types v0.14.6 (*)
+      │       │   │           ├── tonic-prost v0.14.6 (*)
+      │       │   │           └── tonic-types v0.14.6 (*)
+      │       │   └── sqlx-core v0.8.6 (*)
+      │       ├── serde_urlencoded v0.7.1
+      │       │   ├── axum v0.8.9 (*)
+      │       │   └── sqlx-sqlite v0.8.6 (*)
+      │       ├── smallvec v1.16.2
+      │       │   ├── hyper v1.11.1 (*)
+      │       │   ├── icu_normalizer v2.3.0 (*)
+      │       │   ├── idna v1.1.0 (*)
+      │       │   ├── parking_lot_core v0.9.12
+      │       │   │   └── parking_lot v0.12.5
+      │       │   │       └── futures-intrusive v0.5.0
+      │       │   │           ├── sqlx-core v0.8.6 (*)
+      │       │   │           └── sqlx-sqlite v0.8.6 (*)
+      │       │   ├── sqlx-core v0.8.6 (*)
+      │       │   └── sqlx-postgres v0.8.6 (*)
+      │       ├── sqlx-core v0.8.6 (*)
+      │       ├── sqlx-postgres v0.8.6 (*)
+      │       └── sqlx-sqlite v0.8.6 (*)
+      ├── synstructure v0.14.0
+      │   ├── yoke-derive v0.8.3
+      │   │   └── yoke v0.8.3
+      │   │       ├── icu_collections v2.3.0 (*)
+      │   │       ├── icu_provider v2.3.1 (*)
+      │   │       ├── zerotrie v0.2.5 (*)
+      │   │       └── zerovec v0.11.8
+      │   │           ├── icu_collections v2.3.0 (*)
+      │   │           ├── icu_locale_core v2.3.0 (*)
+      │   │           ├── icu_normalizer v2.3.0 (*)
+      │   │           ├── icu_properties v2.3.0 (*)
+      │   │           ├── icu_provider v2.3.1 (*)
+      │   │           ├── potential_utf v0.1.6
+      │   │           │   └── icu_collections v2.3.0 (*)
+      │   │           └── tinystr v0.8.4 (*)
+      │   └── zerofrom-derive v0.1.8
+      │       └── zerofrom v0.1.8
+      │           ├── icu_collections v2.3.0 (*)
+      │           ├── icu_provider v2.3.1 (*)
+      │           ├── yoke v0.8.3 (*)
+      │           ├── zerotrie v0.2.5 (*)
+      │           └── zerovec v0.11.8 (*)
+      ├── thiserror-impl v2.0.21
+      │   └── thiserror v2.0.21
+      │       ├── opentelemetry v0.32.0 (*)
+      │       ├── opentelemetry-otlp v0.32.0 (*)
+      │       ├── opentelemetry_sdk v0.32.1 (*)
+      │       ├── sqlx-core v0.8.6 (*)
+      │       ├── sqlx-postgres v0.8.6 (*)
+      │       ├── sqlx-sqlite v0.8.6 (*)
+      │       └── tungstenite v0.30.0
+      │           └── tokio-tungstenite v0.30.0 (*)
+      ├── tokio-macros v2.7.2
+      │   └── tokio v1.53.1
+      │       ├── a2a-protocol-client v0.14.0 (*)
+      │       ├── a2a-protocol-server v0.14.0 (*)
+      │       ├── axum v0.8.9 (*)
+      │       ├── h2 v0.4.19 (*)
+      │       ├── hyper v1.11.1 (*)
+      │       ├── hyper-rustls v0.27.10 (*)
+      │       ├── hyper-timeout v0.5.2 (*)
+      │       ├── hyper-util v0.1.21 (*)
+      │       ├── opentelemetry-otlp v0.32.0 (*)
+      │       ├── sqlx-core v0.8.6 (*)
+      │       ├── tokio-rustls v0.26.5
+      │       │   ├── hyper-rustls v0.27.10 (*)
+      │       │   └── tonic v0.14.6 (*)
+      │       ├── tokio-stream v0.1.19
+      │       │   ├── a2a-protocol-client v0.14.0 (*)
+      │       │   ├── a2a-protocol-server v0.14.0 (*)
+      │       │   ├── sqlx-core v0.8.6 (*)
+      │       │   └── tonic v0.14.6 (*)
+      │       ├── tokio-tungstenite v0.30.0 (*)
+      │       ├── tokio-util v0.7.19 (*)
+      │       ├── tonic v0.14.6 (*)
+      │       └── tower v0.5.3 (*)
+      ├── wasm-bindgen-macro-support v0.2.129
+      │   └── wasm-bindgen-macro v0.2.129
+      │       └── wasm-bindgen v0.2.129
+      │           ├── js-sys v0.3.106 (*)
+      │           └── web-time v1.1.0 (*)
+      ├── yoke-derive v0.8.3 (*)
+      ├── zerofrom-derive v0.1.8 (*)
+      └── zerovec-derive v0.11.6
+          └── zerovec v0.11.8 (*)
+
+warning[duplicate]: found 3 duplicate entries for crate 'windows-sys'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:253:1
+    │  
+253 │ ╭ windows-sys 0.48.0 registry+https://github.com/rust-lang/crates.io-index
+254 │ │ windows-sys 0.52.0 registry+https://github.com/rust-lang/crates.io-index
+255 │ │ windows-sys 0.61.2 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows-sys v0.48.0
+      └── etcetera v0.8.0
+          └── sqlx-postgres v0.8.6
+              └── sqlx v0.8.6
+                  └── a2a-protocol-server v0.14.0
+                      └── a2a-protocol-sdk v0.14.0
+                          └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ windows-sys v0.52.0
+      └── ring v0.17.14
+          ├── a2a-protocol-server v0.14.0
+          │   └── a2a-protocol-sdk v0.14.0
+          │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+          ├── a2a-protocol-types v0.14.0
+          │   ├── a2a-protocol-client v0.14.0
+          │   │   └── a2a-protocol-sdk v0.14.0 (*)
+          │   ├── a2a-protocol-sdk v0.14.0 (*)
+          │   └── a2a-protocol-server v0.14.0 (*)
+          ├── rustls v0.23.45
+          │   ├── a2a-protocol-client v0.14.0 (*)
+          │   ├── a2a-protocol-server v0.14.0 (*)
+          │   ├── hyper-rustls v0.27.10
+          │   │   ├── a2a-protocol-client v0.14.0 (*)
+          │   │   └── a2a-protocol-server v0.14.0 (*)
+          │   └── tokio-rustls v0.26.5
+          │       ├── hyper-rustls v0.27.10 (*)
+          │       └── tonic v0.14.6
+          │           ├── a2a-protocol-client v0.14.0 (*)
+          │           ├── a2a-protocol-server v0.14.0 (*)
+          │           ├── opentelemetry-otlp v0.32.0
+          │           │   └── a2a-protocol-server v0.14.0 (*)
+          │           ├── opentelemetry-proto v0.32.0
+          │           │   └── opentelemetry-otlp v0.32.0 (*)
+          │           ├── tonic-prost v0.14.6
+          │           │   ├── a2a-protocol-client v0.14.0 (*)
+          │           │   ├── a2a-protocol-server v0.14.0 (*)
+          │           │   └── opentelemetry-proto v0.32.0 (*)
+          │           └── tonic-types v0.14.6
+          │               ├── a2a-protocol-client v0.14.0 (*)
+          │               ├── a2a-protocol-server v0.14.0 (*)
+          │               └── opentelemetry-otlp v0.32.0 (*)
+          └── rustls-webpki v0.103.15
+              └── rustls v0.23.45 (*)
+    ├ windows-sys v0.61.2
+      ├── errno v0.3.14
+      │   ├── rustix v1.1.5
+      │   │   └── tempfile v3.27.0
+      │   │       ├── prost-build v0.14.4
+      │   │       │   ├── (build) a2a-protocol-types v0.14.0
+      │   │       │   │   ├── a2a-protocol-client v0.14.0
+      │   │       │   │   │   └── a2a-protocol-sdk v0.14.0
+      │   │       │   │   │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+      │   │       │   │   ├── a2a-protocol-sdk v0.14.0 (*)
+      │   │       │   │   └── a2a-protocol-server v0.14.0
+      │   │       │   │       └── a2a-protocol-sdk v0.14.0 (*)
+      │   │       │   └── tonic-prost-build v0.14.6
+      │   │       │       ├── (build) a2a-protocol-client v0.14.0 (*)
+      │   │       │       └── (build) a2a-protocol-server v0.14.0 (*)
+      │   │       └── tonic-prost-build v0.14.6 (*)
+      │   └── signal-hook-registry v1.4.8
+      │       └── tokio v1.53.1
+      │           ├── a2a-protocol-client v0.14.0 (*)
+      │           ├── a2a-protocol-server v0.14.0 (*)
+      │           ├── axum v0.8.9
+      │           │   ├── a2a-protocol-server v0.14.0 (*)
+      │           │   └── tonic v0.14.6
+      │           │       ├── a2a-protocol-client v0.14.0 (*)
+      │           │       ├── a2a-protocol-server v0.14.0 (*)
+      │           │       ├── opentelemetry-otlp v0.32.0
+      │           │       │   └── a2a-protocol-server v0.14.0 (*)
+      │           │       ├── opentelemetry-proto v0.32.0
+      │           │       │   └── opentelemetry-otlp v0.32.0 (*)
+      │           │       ├── tonic-prost v0.14.6
+      │           │       │   ├── a2a-protocol-client v0.14.0 (*)
+      │           │       │   ├── a2a-protocol-server v0.14.0 (*)
+      │           │       │   └── opentelemetry-proto v0.32.0 (*)
+      │           │       └── tonic-types v0.14.6
+      │           │           ├── a2a-protocol-client v0.14.0 (*)
+      │           │           ├── a2a-protocol-server v0.14.0 (*)
+      │           │           └── opentelemetry-otlp v0.32.0 (*)
+      │           ├── h2 v0.4.19
+      │           │   ├── hyper v1.11.1
+      │           │   │   ├── a2a-protocol-client v0.14.0 (*)
+      │           │   │   ├── a2a-protocol-server v0.14.0 (*)
+      │           │   │   ├── hyper-rustls v0.27.10
+      │           │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+      │           │   │   │   └── a2a-protocol-server v0.14.0 (*)
+      │           │   │   ├── hyper-timeout v0.5.2
+      │           │   │   │   └── tonic v0.14.6 (*)
+      │           │   │   ├── hyper-util v0.1.21
+      │           │   │   │   ├── a2a-protocol-client v0.14.0 (*)
+      │           │   │   │   ├── a2a-protocol-server v0.14.0 (*)
+      │           │   │   │   ├── axum v0.8.9 (*)
+      │           │   │   │   ├── hyper-rustls v0.27.10 (*)
+      │           │   │   │   ├── hyper-timeout v0.5.2 (*)
+      │           │   │   │   └── tonic v0.14.6 (*)
+      │           │   │   └── tonic v0.14.6 (*)
+      │           │   └── tonic v0.14.6 (*)
+      │           ├── hyper v1.11.1 (*)
+      │           ├── hyper-rustls v0.27.10 (*)
+      │           ├── hyper-timeout v0.5.2 (*)
+      │           ├── hyper-util v0.1.21 (*)
+      │           ├── opentelemetry-otlp v0.32.0 (*)
+      │           ├── sqlx-core v0.8.6
+      │           │   ├── sqlx v0.8.6
+      │           │   │   └── a2a-protocol-server v0.14.0 (*)
+      │           │   ├── sqlx-postgres v0.8.6
+      │           │   │   └── sqlx v0.8.6 (*)
+      │           │   └── sqlx-sqlite v0.8.6
+      │           │       └── sqlx v0.8.6 (*)
+      │           ├── tokio-rustls v0.26.5
+      │           │   ├── hyper-rustls v0.27.10 (*)
+      │           │   └── tonic v0.14.6 (*)
+      │           ├── tokio-stream v0.1.19
+      │           │   ├── a2a-protocol-client v0.14.0 (*)
+      │           │   ├── a2a-protocol-server v0.14.0 (*)
+      │           │   ├── sqlx-core v0.8.6 (*)
+      │           │   └── tonic v0.14.6 (*)
+      │           ├── tokio-tungstenite v0.30.0
+      │           │   ├── a2a-protocol-client v0.14.0 (*)
+      │           │   └── a2a-protocol-server v0.14.0 (*)
+      │           ├── tokio-util v0.7.19
+      │           │   ├── a2a-protocol-server v0.14.0 (*)
+      │           │   ├── h2 v0.4.19 (*)
+      │           │   └── tower v0.5.3
+      │           │       ├── axum v0.8.9 (*)
+      │           │       └── tonic v0.14.6 (*)
+      │           ├── tonic v0.14.6 (*)
+      │           └── tower v0.5.3 (*)
+      ├── home v0.5.12
+      │   ├── etcetera v0.8.0
+      │   │   └── sqlx-postgres v0.8.6 (*)
+      │   └── sqlx-postgres v0.8.6 (*)
+      ├── mio v1.2.3
+      │   └── tokio v1.53.1 (*)
+      ├── rustix v1.1.5 (*)
+      ├── socket2 v0.6.5
+      │   ├── hyper-util v0.1.21 (*)
+      │   ├── tokio v1.53.1 (*)
+      │   └── tonic v0.14.6 (*)
+      ├── tempfile v3.27.0 (*)
+      └── tokio v1.53.1 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows-targets'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:256:1
+    │  
+256 │ ╭ windows-targets 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+257 │ │ windows-targets 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows-targets v0.48.5
+      └── windows-sys v0.48.0
+          └── etcetera v0.8.0
+              └── sqlx-postgres v0.8.6
+                  └── sqlx v0.8.6
+                      └── a2a-protocol-server v0.14.0
+                          └── a2a-protocol-sdk v0.14.0
+                              └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ windows-targets v0.52.6
+      └── windows-sys v0.52.0
+          └── ring v0.17.14
+              ├── a2a-protocol-server v0.14.0
+              │   └── a2a-protocol-sdk v0.14.0
+              │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+              ├── a2a-protocol-types v0.14.0
+              │   ├── a2a-protocol-client v0.14.0
+              │   │   └── a2a-protocol-sdk v0.14.0 (*)
+              │   ├── a2a-protocol-sdk v0.14.0 (*)
+              │   └── a2a-protocol-server v0.14.0 (*)
+              ├── rustls v0.23.45
+              │   ├── a2a-protocol-client v0.14.0 (*)
+              │   ├── a2a-protocol-server v0.14.0 (*)
+              │   ├── hyper-rustls v0.27.10
+              │   │   ├── a2a-protocol-client v0.14.0 (*)
+              │   │   └── a2a-protocol-server v0.14.0 (*)
+              │   └── tokio-rustls v0.26.5
+              │       ├── hyper-rustls v0.27.10 (*)
+              │       └── tonic v0.14.6
+              │           ├── a2a-protocol-client v0.14.0 (*)
+              │           ├── a2a-protocol-server v0.14.0 (*)
+              │           ├── opentelemetry-otlp v0.32.0
+              │           │   └── a2a-protocol-server v0.14.0 (*)
+              │           ├── opentelemetry-proto v0.32.0
+              │           │   └── opentelemetry-otlp v0.32.0 (*)
+              │           ├── tonic-prost v0.14.6
+              │           │   ├── a2a-protocol-client v0.14.0 (*)
+              │           │   ├── a2a-protocol-server v0.14.0 (*)
+              │           │   └── opentelemetry-proto v0.32.0 (*)
+              │           └── tonic-types v0.14.6
+              │               ├── a2a-protocol-client v0.14.0 (*)
+              │               ├── a2a-protocol-server v0.14.0 (*)
+              │               └── opentelemetry-otlp v0.32.0 (*)
+              └── rustls-webpki v0.103.15
+                  └── rustls v0.23.45 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_aarch64_gnullvm'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:258:1
+    │  
+258 │ ╭ windows_aarch64_gnullvm 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+259 │ │ windows_aarch64_gnullvm 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰────────────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_aarch64_gnullvm v0.48.5
+      └── windows-targets v0.48.5
+          └── windows-sys v0.48.0
+              └── etcetera v0.8.0
+                  └── sqlx-postgres v0.8.6
+                      └── sqlx v0.8.6
+                          └── a2a-protocol-server v0.14.0
+                              └── a2a-protocol-sdk v0.14.0
+                                  └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ windows_aarch64_gnullvm v0.52.6
+      └── windows-targets v0.52.6
+          └── windows-sys v0.52.0
+              └── ring v0.17.14
+                  ├── a2a-protocol-server v0.14.0
+                  │   └── a2a-protocol-sdk v0.14.0
+                  │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                  ├── a2a-protocol-types v0.14.0
+                  │   ├── a2a-protocol-client v0.14.0
+                  │   │   └── a2a-protocol-sdk v0.14.0 (*)
+                  │   ├── a2a-protocol-sdk v0.14.0 (*)
+                  │   └── a2a-protocol-server v0.14.0 (*)
+                  ├── rustls v0.23.45
+                  │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   ├── a2a-protocol-server v0.14.0 (*)
+                  │   ├── hyper-rustls v0.27.10
+                  │   │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   │   └── a2a-protocol-server v0.14.0 (*)
+                  │   └── tokio-rustls v0.26.5
+                  │       ├── hyper-rustls v0.27.10 (*)
+                  │       └── tonic v0.14.6
+                  │           ├── a2a-protocol-client v0.14.0 (*)
+                  │           ├── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-otlp v0.32.0
+                  │           │   └── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-proto v0.32.0
+                  │           │   └── opentelemetry-otlp v0.32.0 (*)
+                  │           ├── tonic-prost v0.14.6
+                  │           │   ├── a2a-protocol-client v0.14.0 (*)
+                  │           │   ├── a2a-protocol-server v0.14.0 (*)
+                  │           │   └── opentelemetry-proto v0.32.0 (*)
+                  │           └── tonic-types v0.14.6
+                  │               ├── a2a-protocol-client v0.14.0 (*)
+                  │               ├── a2a-protocol-server v0.14.0 (*)
+                  │               └── opentelemetry-otlp v0.32.0 (*)
+                  └── rustls-webpki v0.103.15
+                      └── rustls v0.23.45 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_aarch64_msvc'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:260:1
+    │  
+260 │ ╭ windows_aarch64_msvc 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+261 │ │ windows_aarch64_msvc 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_aarch64_msvc v0.48.5
+      └── windows-targets v0.48.5
+          └── windows-sys v0.48.0
+              └── etcetera v0.8.0
+                  └── sqlx-postgres v0.8.6
+                      └── sqlx v0.8.6
+                          └── a2a-protocol-server v0.14.0
+                              └── a2a-protocol-sdk v0.14.0
+                                  └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ windows_aarch64_msvc v0.52.6
+      └── windows-targets v0.52.6
+          └── windows-sys v0.52.0
+              └── ring v0.17.14
+                  ├── a2a-protocol-server v0.14.0
+                  │   └── a2a-protocol-sdk v0.14.0
+                  │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                  ├── a2a-protocol-types v0.14.0
+                  │   ├── a2a-protocol-client v0.14.0
+                  │   │   └── a2a-protocol-sdk v0.14.0 (*)
+                  │   ├── a2a-protocol-sdk v0.14.0 (*)
+                  │   └── a2a-protocol-server v0.14.0 (*)
+                  ├── rustls v0.23.45
+                  │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   ├── a2a-protocol-server v0.14.0 (*)
+                  │   ├── hyper-rustls v0.27.10
+                  │   │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   │   └── a2a-protocol-server v0.14.0 (*)
+                  │   └── tokio-rustls v0.26.5
+                  │       ├── hyper-rustls v0.27.10 (*)
+                  │       └── tonic v0.14.6
+                  │           ├── a2a-protocol-client v0.14.0 (*)
+                  │           ├── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-otlp v0.32.0
+                  │           │   └── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-proto v0.32.0
+                  │           │   └── opentelemetry-otlp v0.32.0 (*)
+                  │           ├── tonic-prost v0.14.6
+                  │           │   ├── a2a-protocol-client v0.14.0 (*)
+                  │           │   ├── a2a-protocol-server v0.14.0 (*)
+                  │           │   └── opentelemetry-proto v0.32.0 (*)
+                  │           └── tonic-types v0.14.6
+                  │               ├── a2a-protocol-client v0.14.0 (*)
+                  │               ├── a2a-protocol-server v0.14.0 (*)
+                  │               └── opentelemetry-otlp v0.32.0 (*)
+                  └── rustls-webpki v0.103.15
+                      └── rustls v0.23.45 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_i686_gnu'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:262:1
+    │  
+262 │ ╭ windows_i686_gnu 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+263 │ │ windows_i686_gnu 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_i686_gnu v0.48.5
+      └── windows-targets v0.48.5
+          └── windows-sys v0.48.0
+              └── etcetera v0.8.0
+                  └── sqlx-postgres v0.8.6
+                      └── sqlx v0.8.6
+                          └── a2a-protocol-server v0.14.0
+                              └── a2a-protocol-sdk v0.14.0
+                                  └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ windows_i686_gnu v0.52.6
+      └── windows-targets v0.52.6
+          └── windows-sys v0.52.0
+              └── ring v0.17.14
+                  ├── a2a-protocol-server v0.14.0
+                  │   └── a2a-protocol-sdk v0.14.0
+                  │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                  ├── a2a-protocol-types v0.14.0
+                  │   ├── a2a-protocol-client v0.14.0
+                  │   │   └── a2a-protocol-sdk v0.14.0 (*)
+                  │   ├── a2a-protocol-sdk v0.14.0 (*)
+                  │   └── a2a-protocol-server v0.14.0 (*)
+                  ├── rustls v0.23.45
+                  │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   ├── a2a-protocol-server v0.14.0 (*)
+                  │   ├── hyper-rustls v0.27.10
+                  │   │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   │   └── a2a-protocol-server v0.14.0 (*)
+                  │   └── tokio-rustls v0.26.5
+                  │       ├── hyper-rustls v0.27.10 (*)
+                  │       └── tonic v0.14.6
+                  │           ├── a2a-protocol-client v0.14.0 (*)
+                  │           ├── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-otlp v0.32.0
+                  │           │   └── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-proto v0.32.0
+                  │           │   └── opentelemetry-otlp v0.32.0 (*)
+                  │           ├── tonic-prost v0.14.6
+                  │           │   ├── a2a-protocol-client v0.14.0 (*)
+                  │           │   ├── a2a-protocol-server v0.14.0 (*)
+                  │           │   └── opentelemetry-proto v0.32.0 (*)
+                  │           └── tonic-types v0.14.6
+                  │               ├── a2a-protocol-client v0.14.0 (*)
+                  │               ├── a2a-protocol-server v0.14.0 (*)
+                  │               └── opentelemetry-otlp v0.32.0 (*)
+                  └── rustls-webpki v0.103.15
+                      └── rustls v0.23.45 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_i686_msvc'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:265:1
+    │  
+265 │ ╭ windows_i686_msvc 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+266 │ │ windows_i686_msvc 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰──────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_i686_msvc v0.48.5
+      └── windows-targets v0.48.5
+          └── windows-sys v0.48.0
+              └── etcetera v0.8.0
+                  └── sqlx-postgres v0.8.6
+                      └── sqlx v0.8.6
+                          └── a2a-protocol-server v0.14.0
+                              └── a2a-protocol-sdk v0.14.0
+                                  └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ windows_i686_msvc v0.52.6
+      └── windows-targets v0.52.6
+          └── windows-sys v0.52.0
+              └── ring v0.17.14
+                  ├── a2a-protocol-server v0.14.0
+                  │   └── a2a-protocol-sdk v0.14.0
+                  │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                  ├── a2a-protocol-types v0.14.0
+                  │   ├── a2a-protocol-client v0.14.0
+                  │   │   └── a2a-protocol-sdk v0.14.0 (*)
+                  │   ├── a2a-protocol-sdk v0.14.0 (*)
+                  │   └── a2a-protocol-server v0.14.0 (*)
+                  ├── rustls v0.23.45
+                  │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   ├── a2a-protocol-server v0.14.0 (*)
+                  │   ├── hyper-rustls v0.27.10
+                  │   │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   │   └── a2a-protocol-server v0.14.0 (*)
+                  │   └── tokio-rustls v0.26.5
+                  │       ├── hyper-rustls v0.27.10 (*)
+                  │       └── tonic v0.14.6
+                  │           ├── a2a-protocol-client v0.14.0 (*)
+                  │           ├── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-otlp v0.32.0
+                  │           │   └── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-proto v0.32.0
+                  │           │   └── opentelemetry-otlp v0.32.0 (*)
+                  │           ├── tonic-prost v0.14.6
+                  │           │   ├── a2a-protocol-client v0.14.0 (*)
+                  │           │   ├── a2a-protocol-server v0.14.0 (*)
+                  │           │   └── opentelemetry-proto v0.32.0 (*)
+                  │           └── tonic-types v0.14.6
+                  │               ├── a2a-protocol-client v0.14.0 (*)
+                  │               ├── a2a-protocol-server v0.14.0 (*)
+                  │               └── opentelemetry-otlp v0.32.0 (*)
+                  └── rustls-webpki v0.103.15
+                      └── rustls v0.23.45 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_x86_64_gnu'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:267:1
+    │  
+267 │ ╭ windows_x86_64_gnu 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+268 │ │ windows_x86_64_gnu 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰───────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_x86_64_gnu v0.48.5
+      └── windows-targets v0.48.5
+          └── windows-sys v0.48.0
+              └── etcetera v0.8.0
+                  └── sqlx-postgres v0.8.6
+                      └── sqlx v0.8.6
+                          └── a2a-protocol-server v0.14.0
+                              └── a2a-protocol-sdk v0.14.0
+                                  └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ windows_x86_64_gnu v0.52.6
+      └── windows-targets v0.52.6
+          └── windows-sys v0.52.0
+              └── ring v0.17.14
+                  ├── a2a-protocol-server v0.14.0
+                  │   └── a2a-protocol-sdk v0.14.0
+                  │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                  ├── a2a-protocol-types v0.14.0
+                  │   ├── a2a-protocol-client v0.14.0
+                  │   │   └── a2a-protocol-sdk v0.14.0 (*)
+                  │   ├── a2a-protocol-sdk v0.14.0 (*)
+                  │   └── a2a-protocol-server v0.14.0 (*)
+                  ├── rustls v0.23.45
+                  │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   ├── a2a-protocol-server v0.14.0 (*)
+                  │   ├── hyper-rustls v0.27.10
+                  │   │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   │   └── a2a-protocol-server v0.14.0 (*)
+                  │   └── tokio-rustls v0.26.5
+                  │       ├── hyper-rustls v0.27.10 (*)
+                  │       └── tonic v0.14.6
+                  │           ├── a2a-protocol-client v0.14.0 (*)
+                  │           ├── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-otlp v0.32.0
+                  │           │   └── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-proto v0.32.0
+                  │           │   └── opentelemetry-otlp v0.32.0 (*)
+                  │           ├── tonic-prost v0.14.6
+                  │           │   ├── a2a-protocol-client v0.14.0 (*)
+                  │           │   ├── a2a-protocol-server v0.14.0 (*)
+                  │           │   └── opentelemetry-proto v0.32.0 (*)
+                  │           └── tonic-types v0.14.6
+                  │               ├── a2a-protocol-client v0.14.0 (*)
+                  │               ├── a2a-protocol-server v0.14.0 (*)
+                  │               └── opentelemetry-otlp v0.32.0 (*)
+                  └── rustls-webpki v0.103.15
+                      └── rustls v0.23.45 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_x86_64_gnullvm'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:269:1
+    │  
+269 │ ╭ windows_x86_64_gnullvm 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+270 │ │ windows_x86_64_gnullvm 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰───────────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_x86_64_gnullvm v0.48.5
+      └── windows-targets v0.48.5
+          └── windows-sys v0.48.0
+              └── etcetera v0.8.0
+                  └── sqlx-postgres v0.8.6
+                      └── sqlx v0.8.6
+                          └── a2a-protocol-server v0.14.0
+                              └── a2a-protocol-sdk v0.14.0
+                                  └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ windows_x86_64_gnullvm v0.52.6
+      └── windows-targets v0.52.6
+          └── windows-sys v0.52.0
+              └── ring v0.17.14
+                  ├── a2a-protocol-server v0.14.0
+                  │   └── a2a-protocol-sdk v0.14.0
+                  │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                  ├── a2a-protocol-types v0.14.0
+                  │   ├── a2a-protocol-client v0.14.0
+                  │   │   └── a2a-protocol-sdk v0.14.0 (*)
+                  │   ├── a2a-protocol-sdk v0.14.0 (*)
+                  │   └── a2a-protocol-server v0.14.0 (*)
+                  ├── rustls v0.23.45
+                  │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   ├── a2a-protocol-server v0.14.0 (*)
+                  │   ├── hyper-rustls v0.27.10
+                  │   │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   │   └── a2a-protocol-server v0.14.0 (*)
+                  │   └── tokio-rustls v0.26.5
+                  │       ├── hyper-rustls v0.27.10 (*)
+                  │       └── tonic v0.14.6
+                  │           ├── a2a-protocol-client v0.14.0 (*)
+                  │           ├── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-otlp v0.32.0
+                  │           │   └── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-proto v0.32.0
+                  │           │   └── opentelemetry-otlp v0.32.0 (*)
+                  │           ├── tonic-prost v0.14.6
+                  │           │   ├── a2a-protocol-client v0.14.0 (*)
+                  │           │   ├── a2a-protocol-server v0.14.0 (*)
+                  │           │   └── opentelemetry-proto v0.32.0 (*)
+                  │           └── tonic-types v0.14.6
+                  │               ├── a2a-protocol-client v0.14.0 (*)
+                  │               ├── a2a-protocol-server v0.14.0 (*)
+                  │               └── opentelemetry-otlp v0.32.0 (*)
+                  └── rustls-webpki v0.103.15
+                      └── rustls v0.23.45 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_x86_64_msvc'
+    ┌─ /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock:271:1
+    │  
+271 │ ╭ windows_x86_64_msvc 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+272 │ │ windows_x86_64_msvc 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰────────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_x86_64_msvc v0.48.5
+      └── windows-targets v0.48.5
+          └── windows-sys v0.48.0
+              └── etcetera v0.8.0
+                  └── sqlx-postgres v0.8.6
+                      └── sqlx v0.8.6
+                          └── a2a-protocol-server v0.14.0
+                              └── a2a-protocol-sdk v0.14.0
+                                  └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+    ├ windows_x86_64_msvc v0.52.6
+      └── windows-targets v0.52.6
+          └── windows-sys v0.52.0
+              └── ring v0.17.14
+                  ├── a2a-protocol-server v0.14.0
+                  │   └── a2a-protocol-sdk v0.14.0
+                  │       └── consumer-a2a-rust-a2a-protocol-sdk-all v0.0.0
+                  ├── a2a-protocol-types v0.14.0
+                  │   ├── a2a-protocol-client v0.14.0
+                  │   │   └── a2a-protocol-sdk v0.14.0 (*)
+                  │   ├── a2a-protocol-sdk v0.14.0 (*)
+                  │   └── a2a-protocol-server v0.14.0 (*)
+                  ├── rustls v0.23.45
+                  │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   ├── a2a-protocol-server v0.14.0 (*)
+                  │   ├── hyper-rustls v0.27.10
+                  │   │   ├── a2a-protocol-client v0.14.0 (*)
+                  │   │   └── a2a-protocol-server v0.14.0 (*)
+                  │   └── tokio-rustls v0.26.5
+                  │       ├── hyper-rustls v0.27.10 (*)
+                  │       └── tonic v0.14.6
+                  │           ├── a2a-protocol-client v0.14.0 (*)
+                  │           ├── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-otlp v0.32.0
+                  │           │   └── a2a-protocol-server v0.14.0 (*)
+                  │           ├── opentelemetry-proto v0.32.0
+                  │           │   └── opentelemetry-otlp v0.32.0 (*)
+                  │           ├── tonic-prost v0.14.6
+                  │           │   ├── a2a-protocol-client v0.14.0 (*)
+                  │           │   ├── a2a-protocol-server v0.14.0 (*)
+                  │           │   └── opentelemetry-proto v0.32.0 (*)
+                  │           └── tonic-types v0.14.6
+                  │               ├── a2a-protocol-client v0.14.0 (*)
+                  │               ├── a2a-protocol-server v0.14.0 (*)
+                  │               └── opentelemetry-otlp v0.32.0 (*)
+                  └── rustls-webpki v0.103.15
+                      └── rustls v0.23.45 (*)
+
+advisories ok, bans ok, licenses ok, sources ok
+EXIT: 0

@@ -1,0 +1,4 @@
+{"server": "a2a-rust", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 9548, "rss_held_kib": 163512, "kib_per_stream": 154.0}
+{"server": "a2a-rs", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 8952, "rss_held_kib": 70776, "kib_per_stream": 61.8}
+{"server": "a2a-rust", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 9708, "rss_held_kib": 164120, "kib_per_stream": 154.4}
+{"server": "a2a-rs", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 8912, "rss_held_kib": 70604, "kib_per_stream": 61.7}

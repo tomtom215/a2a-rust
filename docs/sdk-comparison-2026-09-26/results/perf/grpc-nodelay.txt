@@ -1,0 +1,14 @@
+rust default c=1: 128 rps p50 0.403 p99 44.052 {'OK': 1023, 'Unavailable': 1}
+rust default c=16: 2701 rps p50 1.579 p99 44.938 {'OK': 21596, 'Unavailable': 12}
+rust default c=64: 8263 rps p50 6.908 p99 12.742 {'OK': 66066, 'Unavailable': 53}
+rust nodelay c=1: 2640 rps p50 0.232 p99 0.64 {'OK': 21118, 'Unavailable': 1}
+rust nodelay c=16: 8217 rps p50 1.605 p99 4.523 {'Canceled': 1, 'OK': 65721, 'Unavailable': 14}
+rust nodelay c=64: 8287 rps p50 7.004 p99 12.624 {'OK': 66246, 'Unavailable': 55}
+rs default c=1: 129 rps p50 0.327 p99 43.909 {'OK': 1032, 'Unavailable': 1}
+rs default c=16: 4457 rps p50 1.328 p99 44.365 {'OK': 35646, 'Unavailable': 13}
+rs default c=64: 8672 rps p50 5.677 p99 46.482 {'OK': 69321, 'Unavailable': 59}
+rs nodelay c=1: 3180 rps p50 0.184 p99 0.5 {'OK': 25442, 'Unavailable': 1}
+rs nodelay c=16: 9789 rps p50 1.272 p99 3.741 {'OK': 78302, 'Unavailable': 14}
+rs nodelay c=64: 9557 rps p50 5.651 p99 13.739 {'OK': 76423, 'Unavailable': 49}
+
+[exited with code 1]

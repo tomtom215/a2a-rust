@@ -1,0 +1,13 @@
+test-default EXIT: 0
+test-all-features EXIT: 0
+clippy-default-Dwarnings EXIT: 0
+clippy-default-count EXIT: 0
+clippy-pedantic-count EXIT: 0
+doc-no-deps EXIT: 0
+rustdoc-missing_docs-a2a-protocol-types EXIT: 0
+rustdoc-missing_docs-a2a-protocol-client EXIT: 0
+rustdoc-missing_docs-a2a-protocol-server EXIT: 0
+rustdoc-missing_docs-a2a-protocol-sdk EXIT: 0
+6.0G	/opt/bench/target-quality-a2a-rust
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vda        252G   24G   14G  65% /

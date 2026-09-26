@@ -1,0 +1,29 @@
+# Neutral minimal cargo-deny config used identically for BOTH SDKs (written by the benchmark, not by either project).
+[graph]
+all-features = false   # features come from the consumer crate's Cargo.toml
+no-default-features = false
+
+[advisories]
+version = 2
+yanked = "warn"
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+# Common permissive OSI licenses + MPL-2.0 (weak copyleft; allowed so the run passes, but reported separately in SUMMARY).
+allow = [
+  "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC",
+  "Unicode-3.0", "Zlib", "CDLA-Permissive-2.0", "MPL-2.0",
+]
+[licenses.private]
+ignore = true   # the benchmark's own unpublished consumer crates
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

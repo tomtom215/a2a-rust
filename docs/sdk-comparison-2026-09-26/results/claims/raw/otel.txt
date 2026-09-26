@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.68s
+     Running tests/otel.rs (/opt/bench/claims/target/debug/deps/otel-b6345e5b03a6d0f2)
+
+running 1 test
+test otlp_export_reaches_collector ... force_flush -> Ok(Ok(Ok(())))
+collector got 1 request(s) to ["/opentelemetry.proto.collector.metrics.v1.MetricsService/Export"], 2772 bytes; metric names present: [("a2a.server.requests", true), ("a2a.server.responses", true), ("a2a.server.errors", true), ("a2a.server.latency", true), ("a2a.server.queue_depth", true), ("claims-otel", true)]
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

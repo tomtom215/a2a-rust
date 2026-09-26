@@ -1,0 +1,49 @@
+CMD: (cwd /opt/bench/a2a-rust-src) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rust CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo doc -j 2 --no-deps -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk
+START: 2026-09-26T10:26:01Z
+    Checking libc v0.2.189
+   Compiling syn v3.0.5
+   Compiling cc v1.4.5
+    Checking errno v0.3.14
+    Checking signal-hook-registry v1.4.8
+   Compiling ring v0.17.14
+    Checking mio v1.2.3
+    Checking socket2 v0.6.5
+   Compiling tokio-macros v2.7.2
+    Checking tokio v1.53.1
+   Compiling futures-macro v0.3.34
+   Compiling syn v2.0.119
+   Compiling serde_core v1.0.229
+    Checking futures-task v0.3.34
+    Checking futures-util v0.3.34
+    Checking getrandom v0.2.17
+    Checking tracing-core v0.1.36
+    Checking indexmap v2.14.2
+   Compiling tracing-attributes v0.1.31
+    Checking tokio-util v0.7.19
+    Checking tracing v0.1.44
+   Compiling rustls v0.23.45
+   Compiling serde v1.0.229
+    Checking h2 v0.4.19
+    Checking rustls-webpki v0.103.15
+   Compiling serde_derive v1.0.229
+    Checking futures-channel v0.3.34
+    Checking smallvec v1.16.0
+   Compiling a2a-protocol-types v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-types)
+    Checking memchr v2.8.3
+    Checking serde_json v1.0.151
+    Checking hyper v1.11.1
+    Checking hyper-util v0.1.20
+    Checking tokio-rustls v0.26.5
+    Checking getrandom v0.4.3
+    Checking uuid v1.26.1
+    Checking hyper-rustls v0.27.9
+   Compiling a2a-protocol-client v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-client)
+   Compiling a2a-protocol-server v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-server)
+ Documenting a2a-protocol-types v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-types)
+ Documenting a2a-protocol-server v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-server)
+ Documenting a2a-protocol-client v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-client)
+ Documenting a2a-protocol-sdk v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-sdk)
+    Finished `dev` profile [unoptimized] target(s) in 16.64s
+   Generated /opt/bench/target-quality-a2a-rust/doc/a2a_protocol_client/index.html and 3 other files
+EXIT: 0
+END: 2026-09-26T10:26:18Z

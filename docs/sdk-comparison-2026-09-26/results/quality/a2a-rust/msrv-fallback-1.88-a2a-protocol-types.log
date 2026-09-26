@@ -1,0 +1,15 @@
+CMD: (cwd /opt/bench/msrv-lock/a2a-rust) CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.88 check -j 2 --locked -p a2a-protocol-types
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.26
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling syn v3.0.6
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling a2a-protocol-types v0.14.0 (/opt/bench/msrv-lock/a2a-rust/crates/a2a-protocol-types)
+    Checking itoa v1.0.18
+    Checking memchr v2.8.3
+   Compiling serde_derive v1.0.229
+    Finished `dev` profile [unoptimized] target(s) in 5.62s
+EXIT: 0

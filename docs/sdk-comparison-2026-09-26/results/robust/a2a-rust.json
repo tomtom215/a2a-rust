@@ -1,0 +1,101 @@
+[
+ {
+  "probe": "R00_baseline",
+  "server": "a2a-rust",
+  "alive_after": true,
+  "alive_ms": 3.2,
+  "rss_kib": 9064
+ },
+ {
+  "statuses": {
+   "64": 200,
+   "256": 200,
+   "1024": 200,
+   "4096": "EXC URLError: <urlopen error [Errno 32] Broken pipe>",
+   "16384": "EXC URLError: <urlopen error [Errno 32] Broken pipe>"
+  },
+  "probe": "R01_message_size_ladder_KiB",
+  "server": "a2a-rust",
+  "alive_after": true,
+  "alive_ms": 0.5,
+  "rss_kib": 22172
+ },
+ {
+  "sent_MiB": 0,
+  "send_err": "BrokenPipeError",
+  "status_line": "HTTP/1.1 200 OK",
+  "peak_rss_kib_during": 0,
+  "secs": 0.0,
+  "probe": "R02_256MiB_body",
+  "server": "a2a-rust",
+  "alive_after": true,
+  "alive_ms": 0.5,
+  "rss_kib": 22180
+ },
+ {
+  "status": 200,
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error: recursion limit exceeded at line 1 column 268\"",
+  "probe": "R03_nested_depth_100k",
+  "server": "a2a-rust",
+  "alive_after": true,
+  "alive_ms": 0.5,
+  "rss_kib": 22608
+ },
+ {
+  "status": 200,
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error: invalid unicode code point at line 1 column 12",
+  "probe": "R04_invalid_utf8",
+  "server": "a2a-rust",
+  "alive_after": true,
+  "alive_ms": 0.5,
+  "rss_kib": 22616
+ },
+ {
+  "opened": 200,
+  "normal_request_during": [
+   true,
+   3.7
+  ],
+  "closed_by_server_after_s": 0,
+  "probe": "R05_slowloris_200",
+  "server": "a2a-rust",
+  "alive_after": true,
+  "alive_ms": 0.9,
+  "rss_kib": 23560
+ },
+ {
+  "opened": 200,
+  "closed_by_server_within_s": 40,
+  "closed": 0,
+  "probe": "R06_idle_connections_200",
+  "server": "a2a-rust",
+  "alive_after": true,
+  "alive_ms": 1.0,
+  "rss_kib": 23572
+ },
+ {
+  "opened": 1000,
+  "streams_with_data": 1000,
+  "rss_while_held_kib": 168956,
+  "normal_request_while_held": [
+   true,
+   1.0
+  ],
+  "probe": "R07_1000_streams_then_disconnect",
+  "server": "a2a-rust",
+  "alive_after": true,
+  "alive_ms": 2.0,
+  "rss_kib": 169084
+ },
+ {
+  "tasks": 20000,
+  "rss_before_kib": 169084,
+  "rss_after_kib": 194872,
+  "secs": 10.8,
+  "probe": "R08_20k_tasks_rss",
+  "server": "a2a-rust",
+  "alive_after": true,
+  "alive_ms": 0.8,
+  "rss_kib": 194872
+ }
+]

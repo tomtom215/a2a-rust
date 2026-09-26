@@ -1,0 +1,2 @@
+wrote task 6ac18dab-509e-4084-a003-bc366fa4458c state=Completed
+new process read task 6ac18dab-509e-4084-a003-bc366fa4458c: state=Completed text=Some("Hello, pg!")

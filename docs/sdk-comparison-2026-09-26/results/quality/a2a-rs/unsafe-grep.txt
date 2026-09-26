@@ -1,0 +1,8 @@
+CRATE a2a-lf-0.3.1 files=7 unsafe_total=0 {}
+CRATE a2a-client-lf-0.2.5 files=10 unsafe_total=0 {}
+CRATE a2a-server-lf-0.4.4 files=16 unsafe_total=0 {}
+MATCH build.rs:95: [block] unsafe {
+CRATE a2a-pb-0.2.1 files=6 unsafe_total=1 {'block': 1}
+CRATE a2a-grpc-0.3.7 files=4 unsafe_total=0 {}
+CRATE a2a-slimrpc-0.2.9 files=5 unsafe_total=0 {}
+TOTAL 1

@@ -1,0 +1,25 @@
+consumer | uniq name+ver (incl. SDK crates, excl. consumer root) | uniq names | SDK-own crates | third-party name+ver | duplicate-version names
+a2a-rs-a2a-client-lf-all | 153 | 151 | 3 | 150 | 2
+a2a-rs-a2a-client-lf-def | 145 | 143 | 3 | 142 | 2
+a2a-rs-a2a-grpc-all | 166 | 163 | 5 | 161 | 3
+a2a-rs-a2a-grpc-def | 158 | 155 | 5 | 153 | 3
+a2a-rs-a2a-lf-all | 22 | 22 | 1 | 21 | 0
+a2a-rs-a2a-lf-def | 22 | 22 | 1 | 21 | 0
+a2a-rs-a2a-pb-all | 82 | 80 | 2 | 80 | 2
+a2a-rs-a2a-pb-def | 82 | 80 | 2 | 80 | 2
+a2a-rs-a2a-server-lf-all | 158 | 155 | 3 | 155 | 3
+a2a-rs-a2a-server-lf-def | 150 | 147 | 3 | 147 | 3
+a2a-rs-a2a-slimrpc-all | 372 | 348 | 5 | 367 | 24
+a2a-rs-a2a-slimrpc-def | 372 | 348 | 5 | 367 | 24
+a2a-rs-combo-all | 161 | 158 | 4 | 157 | 3
+a2a-rs-combo-def | 153 | 150 | 4 | 149 | 3
+a2a-rust-a2a-protocol-client-all | 109 | 106 | 2 | 107 | 3
+a2a-rust-a2a-protocol-client-def | 64 | 62 | 2 | 62 | 2
+a2a-rust-a2a-protocol-sdk-all | 208 | 194 | 4 | 204 | 14
+a2a-rust-a2a-protocol-sdk-def | 70 | 68 | 4 | 66 | 2
+a2a-rust-a2a-protocol-server-all | 206 | 192 | 2 | 204 | 14
+a2a-rust-a2a-protocol-server-def | 56 | 55 | 2 | 54 | 1
+a2a-rust-a2a-protocol-types-all | 31 | 30 | 1 | 30 | 1
+a2a-rust-a2a-protocol-types-def | 12 | 12 | 1 | 11 | 0
+a2a-rust-combo-all | 207 | 193 | 3 | 204 | 14
+a2a-rust-combo-def | 69 | 67 | 3 | 66 | 2

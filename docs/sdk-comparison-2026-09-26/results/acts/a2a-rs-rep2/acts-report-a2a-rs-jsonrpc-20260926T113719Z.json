@@ -1,0 +1,2190 @@
+{
+  "acts_version": "1.0",
+  "spec_version": "1.0",
+  "generated_at": "2026-09-26T11:33:53.488038Z",
+  "sdk": {
+    "name": "a2a-rs",
+    "version": "unknown",
+    "language": "rust"
+  },
+  "transport": "jsonrpc",
+  "environment": {
+    "python": "3.11.15",
+    "platform": "Linux-6.18.44-fc-v37-x86_64-with-glibc2.39",
+    "runner": "a2a-itk"
+  },
+  "summary": {
+    "total": 101,
+    "passed": 72,
+    "failed": 25,
+    "skipped": 4,
+    "errors": 0,
+    "duration_ms": 105907,
+    "by_level": {
+      "must": {
+        "total": 59,
+        "passed": 41,
+        "failed": 14,
+        "skipped": 4,
+        "errors": 0
+      },
+      "should": {
+        "total": 29,
+        "passed": 22,
+        "failed": 7,
+        "skipped": 0,
+        "errors": 0
+      },
+      "may": {
+        "total": 13,
+        "passed": 9,
+        "failed": 4,
+        "skipped": 0,
+        "errors": 0
+      }
+    }
+  },
+  "suites": [
+    {
+      "id": "discovery",
+      "name": "Agent Card Discovery",
+      "tests": [
+        {
+          "id": "CARD-DISC-001",
+          "name": "Agent card is discoverable",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "step-1",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        },
+        {
+          "id": "CARD-DISC-002",
+          "name": "Agent card contains supported interfaces",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "step-1",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CARD-DISC-003",
+          "name": "Agent card contains capabilities",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "step-1",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        },
+        {
+          "id": "CARD-DISC-004",
+          "name": "Agent card contains skills",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "step-1",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CARD-DISC-005",
+          "name": "Agent card contains default input and output modes",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "step-1",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CARD-DISC-006",
+          "name": "Agent card protocolVersion matches spec version",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "step-1",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CARD-CACHE-001",
+          "name": "Agent card caching headers",
+          "level": "should",
+          "result": "fail",
+          "duration_ms": 1,
+          "failure": {
+            "message": "headers matched none of the 2 alternatives",
+            "step_id": "step-1",
+            "expected": "[{'Cache-Control': {'type': 'string'}}, {'ETag': {'type': 'string'}}]",
+            "actual": "{'content-type': 'application/json', 'access-control-allow-origin': '*', 'content-length': '708', 'date': 'Sat, 26 Sep 2026 11:32:24 GMT'}",
+            "assertion_path": "headers"
+          },
+          "steps": [
+            {
+              "id": "step-1",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "headers matched none of the 2 alternatives",
+                "step_id": "step-1",
+                "expected": "[{'Cache-Control': {'type': 'string'}}, {'ETag': {'type': 'string'}}]",
+                "actual": "{'content-type': 'application/json', 'access-control-allow-origin': '*', 'content-length': '708', 'date': 'Sat, 26 Sep 2026 11:32:24 GMT'}",
+                "assertion_path": "headers"
+              }
+            }
+          ]
+        },
+        {
+          "id": "CARD-SCHEMA-001",
+          "name": "Agent card validates against schema",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "step-1",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CARD-EXT-001",
+          "name": "Extended agent card",
+          "level": "may",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "step-1",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CARD-DISC-007",
+          "name": "Agent card declares all supported protocols",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "step-1",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core-operations",
+      "name": "Core A2A operations",
+      "tests": [
+        {
+          "id": "CORE-SEND-001",
+          "name": "SendMessage returns a completed task",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-SEND-002",
+          "name": "SendMessage to a terminal task returns error",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 2,
+          "failure": {
+            "message": "expected an error, but the call succeeded",
+            "step_id": "resend",
+            "expected": "an error",
+            "actual": "HTTP 200"
+          },
+          "steps": [
+            {
+              "id": "setup",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "resend",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "expected an error, but the call succeeded",
+                "step_id": "resend",
+                "expected": "an error",
+                "actual": "HTTP 200"
+              }
+            }
+          ]
+        },
+        {
+          "id": "CORE-SEND-003",
+          "name": "SendMessage returns a message response (no task)",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-GET-001",
+          "name": "GetTask returns current state of existing task",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "get",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-GET-002",
+          "name": "GetTask with historyLength 0 omits history",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "get",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-CANCEL-001",
+          "name": "CancelTask returns updated state",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "start",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "cancel",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-CANCEL-002",
+          "name": "CancelTask on terminal task returns error",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "setup",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "cancel",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-FAIL-001",
+          "name": "Task completes with failed state",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-SEND-004",
+          "name": "SendMessage rejects unsupported content type",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 1,
+          "failure": {
+            "message": "error.error_type should equal ContentTypeNotSupportedError, got InvalidRequestError",
+            "step_id": "send",
+            "expected": "ContentTypeNotSupportedError",
+            "actual": "InvalidRequestError",
+            "assertion_path": "error.error_type"
+          },
+          "steps": [
+            {
+              "id": "send",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "error.error_type should equal ContentTypeNotSupportedError, got InvalidRequestError",
+                "step_id": "send",
+                "expected": "ContentTypeNotSupportedError",
+                "actual": "InvalidRequestError",
+                "assertion_path": "error.error_type"
+              }
+            }
+          ]
+        },
+        {
+          "id": "CORE-LIST-001",
+          "name": "ListTasks returns tasks for a context",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "list",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-LIST-002",
+          "name": "ListTasks with includeArtifacts false omits artifacts",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "list",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-LIST-003",
+          "name": "ListTasks response includes nextPageToken",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 2,
+          "failure": {
+            "message": "body.nextPageToken is missing, so it cannot be of type string",
+            "step_id": "list",
+            "expected": "string",
+            "actual": "<missing>",
+            "assertion_path": "body.nextPageToken"
+          },
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "list",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "body.nextPageToken is missing, so it cannot be of type string",
+                "step_id": "list",
+                "expected": "string",
+                "actual": "<missing>",
+                "assertion_path": "body.nextPageToken"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "history",
+      "name": "Task History",
+      "tests": [
+        {
+          "id": "CORE-HIST-001",
+          "name": "GetTask historyLength=0 returns no history",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "get",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-HIST-002",
+          "name": "History count does not exceed historyLength limit",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 4,
+          "steps": [
+            {
+              "id": "turn1",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "turn2",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "turn3",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "get",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-HIST-003",
+          "name": "SendMessage historyLength=0 returns no history",
+          "level": "should",
+          "result": "fail",
+          "duration_ms": 1,
+          "failure": {
+            "message": "body.task.history matched none of the 2 alternatives",
+            "step_id": "send",
+            "expected": "[{'absent': True}, {'type': 'array', 'count': 0}]",
+            "actual": "[{'messageId': '150748f3-37b2-4a49-bda2-8ddf8acf667a', 'parts': [{'text': 'tck-complete-task send history zero'}], 'role': 'ROLE_USER'}]",
+            "assertion_path": "body.task.history"
+          },
+          "steps": [
+            {
+              "id": "send",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "body.task.history matched none of the 2 alternatives",
+                "step_id": "send",
+                "expected": "[{'absent': True}, {'type': 'array', 'count': 0}]",
+                "actual": "[{'messageId': '150748f3-37b2-4a49-bda2-8ddf8acf667a', 'parts': [{'text': 'tck-complete-task send history zero'}], 'role': 'ROLE_USER'}]",
+                "assertion_path": "body.task.history"
+              }
+            }
+          ]
+        },
+        {
+          "id": "CORE-HIST-004",
+          "name": "GetTask may return persisted history",
+          "level": "may",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "get",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-HIST-005",
+          "name": "History messages are returned in chronological order",
+          "level": "should",
+          "result": "fail",
+          "duration_ms": 4,
+          "failure": {
+            "message": "body.history should have length >= 3, got [{'messageId': '2a26cfe3-d998-41f3-a7e5-5da983cd09b2', 'parts': [{'text': 'tck-multi-turn chronological first'}], 'role': 'ROLE_USER'}]",
+            "step_id": "get",
+            "expected": "3",
+            "actual": "[{'messageId': '2a26cfe3-d998-41f3-a7e5-5da983cd09b2', 'parts': [{'text': 'tck-multi-turn chronological first'}], 'role': 'ROLE_USER'}]",
+            "assertion_path": "body.history"
+          },
+          "steps": [
+            {
+              "id": "turn1",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "turn2",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "turn3",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "get",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "body.history should have length >= 3, got [{'messageId': '2a26cfe3-d998-41f3-a7e5-5da983cd09b2', 'parts': [{'text': 'tck-multi-turn chronological first'}], 'role': 'ROLE_USER'}]",
+                "step_id": "get",
+                "expected": "3",
+                "actual": "[{'messageId': '2a26cfe3-d998-41f3-a7e5-5da983cd09b2', 'parts': [{'text': 'tck-multi-turn chronological first'}], 'role': 'ROLE_USER'}]",
+                "assertion_path": "body.history"
+              }
+            }
+          ]
+        },
+        {
+          "id": "CORE-HIST-006",
+          "name": "History content matches sent messages",
+          "level": "should",
+          "result": "fail",
+          "duration_ms": 4,
+          "failure": {
+            "message": "body.history should have length >= 2, got [{'messageId': 'daf436fa-40e4-4051-a675-2f8acbe66079', 'parts': [{'text': 'tck-multi-turn first msg'}], 'role': 'ROLE_USER'}]",
+            "step_id": "get",
+            "expected": "2",
+            "actual": "[{'messageId': 'daf436fa-40e4-4051-a675-2f8acbe66079', 'parts': [{'text': 'tck-multi-turn first msg'}], 'role': 'ROLE_USER'}]",
+            "assertion_path": "body.history"
+          },
+          "steps": [
+            {
+              "id": "turn1",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "turn2",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "turn3",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "get",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "body.history should have length >= 2, got [{'messageId': 'daf436fa-40e4-4051-a675-2f8acbe66079', 'parts': [{'text': 'tck-multi-turn first msg'}], 'role': 'ROLE_USER'}]",
+                "step_id": "get",
+                "expected": "2",
+                "actual": "[{'messageId': 'daf436fa-40e4-4051-a675-2f8acbe66079', 'parts': [{'text': 'tck-multi-turn first msg'}], 'role': 'ROLE_USER'}]",
+                "assertion_path": "body.history"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "multi-turn",
+      "name": "Multi-turn Conversations",
+      "tests": [
+        {
+          "id": "CORE-MULTI-001",
+          "name": "Multi-turn with INPUT_REQUIRED",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 3,
+          "steps": [
+            {
+              "id": "turn1",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "turn2",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "turn3",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-MULTI-005",
+          "name": "SendMessage with only taskId infers contextId",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "turn1",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "turn2",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-MULTI-006",
+          "name": "SendMessage with taskId and wrong contextId returns error",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 2,
+          "failure": {
+            "message": "expected an error, but the call succeeded",
+            "step_id": "turn2",
+            "expected": "an error",
+            "actual": "HTTP 200"
+          },
+          "steps": [
+            {
+              "id": "turn1",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "turn2",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "expected an error, but the call succeeded",
+                "step_id": "turn2",
+                "expected": "an error",
+                "actual": "HTTP 200"
+              }
+            }
+          ]
+        },
+        {
+          "id": "CORE-MULTI-003",
+          "name": "Mismatched contextId and taskId is rejected",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 4,
+          "failure": {
+            "message": "expected an error, but the call succeeded",
+            "step_id": "mismatch",
+            "expected": "an error",
+            "actual": "HTTP 200"
+          },
+          "steps": [
+            {
+              "id": "first",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "second",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "mismatch",
+              "result": "fail",
+              "duration_ms": 2,
+              "failure": {
+                "message": "expected an error, but the call succeeded",
+                "step_id": "mismatch",
+                "expected": "an error",
+                "actual": "HTTP 200"
+              }
+            }
+          ]
+        },
+        {
+          "id": "CORE-CTX-001",
+          "name": "Client-provided contextId is preserved or rejected",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "streaming",
+      "name": "Streaming operations",
+      "tests": [
+        {
+          "id": "STREAM-SSE-001",
+          "name": "SendStreamingMessage produces events ending in terminal state",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 43,
+          "steps": [
+            {
+              "id": "stream",
+              "result": "pass",
+              "duration_ms": 43
+            }
+          ]
+        },
+        {
+          "id": "STREAM-SSE-002",
+          "name": "Stream includes at least one artifact update",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 43,
+          "steps": [
+            {
+              "id": "stream",
+              "result": "pass",
+              "duration_ms": 43
+            }
+          ]
+        },
+        {
+          "id": "STREAM-SSE-003",
+          "name": "Chunked streaming delivers multiple artifact events",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 44,
+          "steps": [
+            {
+              "id": "stream",
+              "result": "pass",
+              "duration_ms": 44
+            }
+          ]
+        },
+        {
+          "id": "STREAM-SUB-001",
+          "name": "SubscribeToTask receives updates for existing task",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1003,
+          "steps": [
+            {
+              "id": "start",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "subscribe",
+              "result": "pass",
+              "duration_ms": 1001
+            }
+          ]
+        },
+        {
+          "id": "STREAM-SUB-002",
+          "name": "Subscribe stream terminates at terminal state",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 44,
+          "steps": [
+            {
+              "id": "stream",
+              "result": "pass",
+              "duration_ms": 44
+            }
+          ]
+        },
+        {
+          "id": "STREAM-SUB-003",
+          "name": "Subscribe to terminal task returns UnsupportedOperationError",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 3,
+          "failure": {
+            "message": "error.error_type should equal UnsupportedOperationError, got TaskNotFoundError",
+            "step_id": "subscribe",
+            "expected": "UnsupportedOperationError",
+            "actual": "TaskNotFoundError",
+            "assertion_path": "error.error_type"
+          },
+          "steps": [
+            {
+              "id": "setup",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "subscribe",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "error.error_type should equal UnsupportedOperationError, got TaskNotFoundError",
+                "step_id": "subscribe",
+                "expected": "UnsupportedOperationError",
+                "actual": "TaskNotFoundError",
+                "assertion_path": "error.error_type"
+              }
+            }
+          ]
+        },
+        {
+          "id": "STREAM-SSE-004",
+          "name": "First event on subscribe is current task state",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1004,
+          "steps": [
+            {
+              "id": "start",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "subscribe",
+              "result": "pass",
+              "duration_ms": 1003
+            }
+          ]
+        },
+        {
+          "id": "STREAM-MSG-001",
+          "name": "Streaming message-only response",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 44,
+          "steps": [
+            {
+              "id": "stream",
+              "result": "pass",
+              "duration_ms": 44
+            }
+          ]
+        },
+        {
+          "id": "STREAM-MULTI-001",
+          "name": "Multiple concurrent streams receive same events",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1005,
+          "steps": [
+            {
+              "id": "start",
+              "result": "pass",
+              "duration_ms": 4
+            },
+            {
+              "id": "subscribe",
+              "result": "pass",
+              "duration_ms": 1001
+            }
+          ]
+        },
+        {
+          "id": "STREAM-MULTI-002",
+          "name": "Closing one stream doesn't affect others",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1003,
+          "steps": [
+            {
+              "id": "start",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "subscribe",
+              "result": "pass",
+              "duration_ms": 1001
+            }
+          ]
+        },
+        {
+          "id": "STREAM-RESUB-001",
+          "name": "Resubscribe after disconnect",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1004,
+          "steps": [
+            {
+              "id": "start",
+              "result": "pass",
+              "duration_ms": 2
+            },
+            {
+              "id": "interrupted",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "resubscribe",
+              "result": "pass",
+              "duration_ms": 1000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "polling",
+      "name": "Polling and Long-Running Tasks",
+      "tests": [
+        {
+          "id": "CORE-EXEC-001",
+          "name": "Long-running task with returnImmediately and polling",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2009,
+          "steps": [
+            {
+              "id": "start",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "poll",
+              "result": "pass",
+              "duration_ms": 2005
+            },
+            {
+              "id": "verify",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-EXEC-002",
+          "name": "Polling shows progress through working state",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 2009,
+          "steps": [
+            {
+              "id": "start",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "wait-for-working",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "poll-to-terminal",
+              "result": "pass",
+              "duration_ms": 2005
+            },
+            {
+              "id": "verify",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "error-handling",
+      "name": "Error Handling",
+      "tests": [
+        {
+          "id": "CORE-ERR-001",
+          "name": "GetTask with non-existent ID returns TaskNotFoundError",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "get-missing",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-ERR-002",
+          "name": "CancelTask on non-existent task returns TaskNotFoundError",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "cancel-missing",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-ERR-003",
+          "name": "CancelTask on completed task returns TaskNotCancelableError",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "setup-completed-task",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "cancel-completed-task",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-ERR-004",
+          "name": "SendMessage to terminal task returns UnsupportedOperationError",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 2,
+          "failure": {
+            "message": "expected an error, but the call succeeded",
+            "step_id": "resend-terminal-task",
+            "expected": "an error",
+            "actual": "HTTP 200"
+          },
+          "steps": [
+            {
+              "id": "create-terminal-task",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "resend-terminal-task",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "expected an error, but the call succeeded",
+                "step_id": "resend-terminal-task",
+                "expected": "an error",
+                "actual": "HTTP 200"
+              }
+            }
+          ]
+        },
+        {
+          "id": "JSONRPC-ERR-001",
+          "name": "Unknown method returns MethodNotFoundError",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "bad-method",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "JSONRPC-ERR-002",
+          "name": "Invalid JSON returns ParseError",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 1,
+          "failure": {
+            "message": "status should equal 200, got 400",
+            "step_id": "bad-json",
+            "expected": "200",
+            "actual": "400",
+            "assertion_path": "status"
+          },
+          "steps": [
+            {
+              "id": "bad-json",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "status should equal 200, got 400",
+                "step_id": "bad-json",
+                "expected": "200",
+                "actual": "400",
+                "assertion_path": "status"
+              }
+            }
+          ]
+        },
+        {
+          "id": "CORE-ERR-005",
+          "name": "Error responses include actionable message",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "get-missing-actionable",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-ERR-006",
+          "name": "Malformed request returns InvalidRequestError",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 1,
+          "failure": {
+            "message": "status should equal 200, got 422",
+            "step_id": "malformed-jsonrpc",
+            "expected": "200",
+            "actual": "422",
+            "assertion_path": "status"
+          },
+          "steps": [
+            {
+              "id": "malformed-jsonrpc",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "status should equal 200, got 422",
+                "step_id": "malformed-jsonrpc",
+                "expected": "200",
+                "actual": "422",
+                "assertion_path": "status"
+              }
+            }
+          ]
+        },
+        {
+          "id": "CORE-CAP-001",
+          "name": "Push not supported returns PushNotificationNotSupportedError",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 4,
+          "configuration": "ITK_ACTS_REDUCED_CAPABILITIES",
+          "steps": [
+            {
+              "id": "create-task",
+              "result": "pass",
+              "duration_ms": 3
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-CAP-002",
+          "name": "Streaming not supported returns UnsupportedOperationError",
+          "level": "should",
+          "result": "fail",
+          "duration_ms": 43,
+          "configuration": "ITK_ACTS_REDUCED_CAPABILITIES",
+          "failure": {
+            "message": "expected an error, but the stream opened and produced 2 event(s)",
+            "step_id": "stream",
+            "expected": "an error",
+            "actual": "2 event(s)"
+          },
+          "steps": [
+            {
+              "id": "stream",
+              "result": "fail",
+              "duration_ms": 42,
+              "failure": {
+                "message": "expected an error, but the stream opened and produced 2 event(s)",
+                "step_id": "stream",
+                "expected": "an error",
+                "actual": "2 event(s)"
+              }
+            }
+          ]
+        },
+        {
+          "id": "CORE-ERR-007",
+          "name": "Error details contain structured error info",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "get-missing-structured",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-ERR-008",
+          "name": "Error details include @type field",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send-missing-task",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "CORE-ERR-009",
+          "name": "Error response should not distinguish missing vs unauthorized",
+          "level": "should",
+          "result": "fail",
+          "duration_ms": 2,
+          "failure": {
+            "message": "expected an error, but the call succeeded",
+            "step_id": "get-missing",
+            "expected": "an error",
+            "actual": "HTTP 200"
+          },
+          "steps": [
+            {
+              "id": "get-unauthorized",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "get-missing",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "expected an error, but the call succeeded",
+                "step_id": "get-missing",
+                "expected": "an error",
+                "actual": "HTTP 200"
+              }
+            }
+          ]
+        },
+        {
+          "id": "JSONRPC-ERR-003",
+          "name": "JSON-RPC error details include google.rpc.ErrorInfo",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 1,
+          "failure": {
+            "message": "body.error.message is missing, so it cannot be of type string",
+            "step_id": "get-missing-error-info",
+            "expected": "string",
+            "actual": "<missing>",
+            "assertion_path": "body.error.message"
+          },
+          "steps": [
+            {
+              "id": "get-missing-error-info",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "body.error.message is missing, so it cannot be of type string",
+                "step_id": "get-missing-error-info",
+                "expected": "string",
+                "actual": "<missing>",
+                "assertion_path": "body.error.message"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "auth-security",
+      "name": "Authentication and Security",
+      "tests": [
+        {
+          "id": "SEC-AUTH-001",
+          "name": "Server rejects invalid or missing auth credentials",
+          "level": "must",
+          "result": "skip",
+          "duration_ms": 0,
+          "skip_reason": "agent card authentication=False, needs True"
+        },
+        {
+          "id": "SEC-AUTH-002",
+          "name": "Server returns authorization error for insufficient permissions",
+          "level": "must",
+          "result": "skip",
+          "duration_ms": 0,
+          "skip_reason": "agent card authentication=False, needs True"
+        },
+        {
+          "id": "SEC-AUTH-003",
+          "name": "Server does not reveal unauthorized resource existence",
+          "level": "must",
+          "result": "skip",
+          "duration_ms": 0,
+          "skip_reason": "agent card authentication=False, needs True"
+        },
+        {
+          "id": "SEC-AUTH-004",
+          "name": "Server authenticates every incoming request",
+          "level": "must",
+          "result": "skip",
+          "duration_ms": 0,
+          "skip_reason": "agent card authentication=False, needs True"
+        },
+        {
+          "id": "SEC-AUTH-005",
+          "name": "In-task auth transitions to AUTH_REQUIRED state",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "SEC-PUSH-001",
+          "name": "Push notification webhook includes auth credentials",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 10124,
+          "failure": {
+            "message": "the SUT delivered 0 notification(s) for task 01a0dd7d-0919-7f00-b8d7-b9df26644552 in 10000ms; the test needs 1",
+            "step_id": "delivery-carries-the-credential",
+            "expected": 1,
+            "actual": 0,
+            "assertion_path": "webhook.min_count"
+          },
+          "steps": [
+            {
+              "id": "create-task",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "delivery-carries-the-credential",
+              "result": "fail",
+              "duration_ms": 10121,
+              "failure": {
+                "message": "the SUT delivered 0 notification(s) for task 01a0dd7d-0919-7f00-b8d7-b9df26644552 in 10000ms; the test needs 1",
+                "step_id": "delivery-carries-the-credential",
+                "expected": 1,
+                "actual": 0,
+                "assertion_path": "webhook.min_count"
+              }
+            }
+          ]
+        },
+        {
+          "id": "SEC-PUSH-002",
+          "name": "Client validates push notification webhook authenticity",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 10125,
+          "failure": {
+            "message": "the SUT delivered 0 notification(s) for task 01a0dd7d-30a6-70b0-87e9-24f411006365 in 10000ms; the test needs 1",
+            "step_id": "delivery-carries-the-configured-credential",
+            "expected": 1,
+            "actual": 0,
+            "assertion_path": "webhook.min_count"
+          },
+          "steps": [
+            {
+              "id": "create-task",
+              "result": "pass",
+              "duration_ms": 2
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "delivery-carries-the-configured-credential",
+              "result": "fail",
+              "duration_ms": 10121,
+              "failure": {
+                "message": "the SUT delivered 0 notification(s) for task 01a0dd7d-30a6-70b0-87e9-24f411006365 in 10000ms; the test needs 1",
+                "step_id": "delivery-carries-the-configured-credential",
+                "expected": 1,
+                "actual": 0,
+                "assertion_path": "webhook.min_count"
+              }
+            }
+          ]
+        },
+        {
+          "id": "SEC-EXTCARD-003",
+          "name": "Missing extended-card support returns specified error",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "configuration": "ITK_ACTS_REDUCED_CAPABILITIES",
+          "steps": [
+            {
+              "id": "get-extended-card",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "version-negotiation",
+      "name": "Version Negotiation",
+      "tests": [
+        {
+          "id": "VER-NEG-001",
+          "name": "Unsupported A2A-Version returns VersionNotSupportedError",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 2,
+          "failure": {
+            "message": "body.error.code should equal -32009, got -32600",
+            "step_id": "send-unsupported-version",
+            "expected": "-32009",
+            "actual": "-32600",
+            "assertion_path": "body.error.code"
+          },
+          "steps": [
+            {
+              "id": "send-unsupported-version",
+              "result": "fail",
+              "duration_ms": 2,
+              "failure": {
+                "message": "body.error.code should equal -32009, got -32600",
+                "step_id": "send-unsupported-version",
+                "expected": "-32009",
+                "actual": "-32600",
+                "assertion_path": "body.error.code"
+              }
+            }
+          ]
+        },
+        {
+          "id": "VER-NEG-002",
+          "name": "Missing A2A-Version is treated as 0.3",
+          "level": "should",
+          "result": "fail",
+          "duration_ms": 1,
+          "failure": {
+            "message": "body.error.code should be one of [-32009, -32601], got -32600",
+            "step_id": "send-without-version",
+            "expected": "[-32009, -32601]",
+            "actual": "-32600",
+            "assertion_path": "body.error.code"
+          },
+          "steps": [
+            {
+              "id": "send-without-version",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "body.error.code should be one of [-32009, -32601], got -32600",
+                "step_id": "send-without-version",
+                "expected": "[-32009, -32601]",
+                "actual": "-32600",
+                "assertion_path": "body.error.code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wire-format",
+      "name": "Wire Format Compliance",
+      "tests": [
+        {
+          "id": "DM-FMT-001",
+          "name": "Wire format uses camelCase field names",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send-raw",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "DM-FMT-002",
+          "name": "Enum values use prefixed format",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "check-role",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "check-state",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "DM-FMT-003",
+          "name": "Default and empty values are omitted from wire",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "data-types",
+      "name": "Artifact Data Types",
+      "tests": [
+        {
+          "id": "DM-ART-001",
+          "name": "Text artifact",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "DM-ART-002",
+          "name": "Data artifact (structured JSON)",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "DM-ART-003",
+          "name": "File artifact (inline)",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "DM-ART-004",
+          "name": "File URL artifact",
+          "level": "may",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "DM-SERIAL-001",
+          "name": "Timestamps are ISO 8601 UTC",
+          "level": "must",
+          "result": "fail",
+          "duration_ms": 1,
+          "failure": {
+            "message": "body.task.status.timestamp is missing, so it cannot match regex ^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+            "step_id": "send",
+            "expected": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+            "actual": "<missing>",
+            "assertion_path": "body.task.status.timestamp"
+          },
+          "steps": [
+            {
+              "id": "send",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "body.task.status.timestamp is missing, so it cannot match regex ^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+                "step_id": "send",
+                "expected": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+                "actual": "<missing>",
+                "assertion_path": "body.task.status.timestamp"
+              }
+            }
+          ]
+        },
+        {
+          "id": "DM-SERIAL-002",
+          "name": "Response validates against A2A schema",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "DM-EXTRA-001",
+          "name": "Extra fields accepted (tolerance)",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send-extra-field",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "push-notifications",
+      "name": "Push Notification Configuration",
+      "tests": [
+        {
+          "id": "PUSH-CFG-001",
+          "name": "Set push notification config",
+          "level": "may",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "create",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "PUSH-CFG-002",
+          "name": "Get push notification config",
+          "level": "may",
+          "result": "pass",
+          "duration_ms": 3,
+          "steps": [
+            {
+              "id": "create",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "get-config",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "PUSH-CFG-003",
+          "name": "Delete push notification config",
+          "level": "may",
+          "result": "pass",
+          "duration_ms": 3,
+          "steps": [
+            {
+              "id": "create",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "delete-config",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "PUSH-CFG-004",
+          "name": "Push config on unsupported server returns PushNotificationNotSupportedError",
+          "level": "may",
+          "result": "pass",
+          "duration_ms": 3,
+          "configuration": "ITK_ACTS_REDUCED_CAPABILITIES",
+          "steps": [
+            {
+              "id": "create",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "PUSH-LIST-001",
+          "name": "List push configs",
+          "level": "may",
+          "result": "pass",
+          "duration_ms": 3,
+          "steps": [
+            {
+              "id": "create",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "list-configs",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "PUSH-ERR-001",
+          "name": "Get nonexistent push config returns error",
+          "level": "may",
+          "result": "fail",
+          "duration_ms": 2,
+          "failure": {
+            "message": "error.error_type should equal TaskNotFoundError, got PushNotificationNotSupportedError",
+            "step_id": "get-config",
+            "expected": "TaskNotFoundError",
+            "actual": "PushNotificationNotSupportedError",
+            "assertion_path": "error.error_type"
+          },
+          "steps": [
+            {
+              "id": "create",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "get-config",
+              "result": "fail",
+              "duration_ms": 1,
+              "failure": {
+                "message": "error.error_type should equal TaskNotFoundError, got PushNotificationNotSupportedError",
+                "step_id": "get-config",
+                "expected": "TaskNotFoundError",
+                "actual": "PushNotificationNotSupportedError",
+                "assertion_path": "error.error_type"
+              }
+            }
+          ]
+        },
+        {
+          "id": "PUSH-IDEM-001",
+          "name": "Delete push config is idempotent",
+          "level": "may",
+          "result": "pass",
+          "duration_ms": 4,
+          "steps": [
+            {
+              "id": "create",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "delete-config",
+              "result": "pass",
+              "duration_ms": 0
+            },
+            {
+              "id": "delete-config-again",
+              "result": "pass",
+              "duration_ms": 0
+            }
+          ]
+        },
+        {
+          "id": "PUSH-DELIV-001",
+          "name": "Push delivery includes auth",
+          "level": "may",
+          "result": "fail",
+          "duration_ms": 10127,
+          "failure": {
+            "message": "the SUT delivered 0 notification(s) for task 01a0dd7d-5858-7911-aa34-f7a4f5311a27 in 10000ms; the test needs 1",
+            "step_id": "delivered-with-credentials",
+            "expected": 1,
+            "actual": 0,
+            "assertion_path": "webhook.min_count"
+          },
+          "steps": [
+            {
+              "id": "create",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "delivered-with-credentials",
+              "result": "fail",
+              "duration_ms": 10125,
+              "failure": {
+                "message": "the SUT delivered 0 notification(s) for task 01a0dd7d-5858-7911-aa34-f7a4f5311a27 in 10000ms; the test needs 1",
+                "step_id": "delivered-with-credentials",
+                "expected": 1,
+                "actual": 0,
+                "assertion_path": "webhook.min_count"
+              }
+            }
+          ]
+        },
+        {
+          "id": "PUSH-DELIV-002",
+          "name": "Push delivery is at-least-once",
+          "level": "may",
+          "result": "fail",
+          "duration_ms": 10121,
+          "failure": {
+            "message": "the SUT delivered 0 notification(s) for task 01a0dd7d-7fe9-7961-ba80-0cd66ceb8936 in 10000ms; the test needs 1",
+            "step_id": "delivered-at-least-once",
+            "expected": 1,
+            "actual": 0,
+            "assertion_path": "webhook.min_count"
+          },
+          "steps": [
+            {
+              "id": "create",
+              "result": "pass",
+              "duration_ms": 2
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "delivered-at-least-once",
+              "result": "fail",
+              "duration_ms": 10118,
+              "failure": {
+                "message": "the SUT delivered 0 notification(s) for task 01a0dd7d-7fe9-7961-ba80-0cd66ceb8936 in 10000ms; the test needs 1",
+                "step_id": "delivered-at-least-once",
+                "expected": 1,
+                "actual": 0,
+                "assertion_path": "webhook.min_count"
+              }
+            }
+          ]
+        },
+        {
+          "id": "PUSH-DELIV-003",
+          "name": "Push payload format correct",
+          "level": "may",
+          "result": "fail",
+          "duration_ms": 10130,
+          "failure": {
+            "message": "the SUT delivered 0 notification(s) for task 01a0dd7d-a772-77d1-9d4f-4ce8eca43390 in 10000ms; the test needs 1",
+            "step_id": "delivered-payload-is-a2a-shaped",
+            "expected": 1,
+            "actual": 0,
+            "assertion_path": "webhook.min_count"
+          },
+          "steps": [
+            {
+              "id": "create",
+              "result": "pass",
+              "duration_ms": 2
+            },
+            {
+              "id": "set-config",
+              "result": "pass",
+              "duration_ms": 1
+            },
+            {
+              "id": "delivered-payload-is-a2a-shaped",
+              "result": "fail",
+              "duration_ms": 10126,
+              "failure": {
+                "message": "the SUT delivered 0 notification(s) for task 01a0dd7d-a772-77d1-9d4f-4ce8eca43390 in 10000ms; the test needs 1",
+                "step_id": "delivered-payload-is-a2a-shaped",
+                "expected": 1,
+                "actual": 0,
+                "assertion_path": "webhook.min_count"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "jsonrpc-transport",
+      "name": "JSON-RPC transport bindings",
+      "tests": [
+        {
+          "id": "JSONRPC-ENV-001",
+          "name": "Response has valid JSON-RPC 2.0 envelope",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "send-raw",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        },
+        {
+          "id": "JSONRPC-CT-001",
+          "name": "Response Content-Type is application/json",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 1,
+          "steps": [
+            {
+              "id": "send-raw",
+              "result": "pass",
+              "duration_ms": 1
+            }
+          ]
+        },
+        {
+          "id": "JSONRPC-SSE-001",
+          "name": "SSE streaming events have JSON-RPC envelope",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 42,
+          "steps": [
+            {
+              "id": "stream-raw",
+              "result": "pass",
+              "duration_ms": 42
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "client-parsing",
+      "name": "Client Parsing (Golden Responses)",
+      "tests": [
+        {
+          "id": "CLIENT-PARSE-001",
+          "name": "Parse SendMessage response with completed task",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "parse",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        },
+        {
+          "id": "CLIENT-PARSE-002",
+          "name": "Parse SendMessage response with message (no task)",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "parse",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        },
+        {
+          "id": "CLIENT-PARSE-003",
+          "name": "Parse GetTask response",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "parse",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        },
+        {
+          "id": "CLIENT-PARSE-004",
+          "name": "Parse error response",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "parse",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        },
+        {
+          "id": "CLIENT-PARSE-005",
+          "name": "Parse task with INPUT_REQUIRED state",
+          "level": "must",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "parse",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        },
+        {
+          "id": "CLIENT-PARSE-006",
+          "name": "Parse task with mixed artifact types",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "parse",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        },
+        {
+          "id": "CLIENT-AUTH-001",
+          "name": "Client replaces cached public card with extended card",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 5,
+          "steps": [
+            {
+              "id": "parse-public-card",
+              "result": "pass",
+              "duration_ms": 2
+            },
+            {
+              "id": "parse-extended-card",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        },
+        {
+          "id": "CLIENT-CAP-001",
+          "name": "Client checks Agent Card before using optional capabilities",
+          "level": "should",
+          "result": "pass",
+          "duration_ms": 2,
+          "steps": [
+            {
+              "id": "parse-card",
+              "result": "pass",
+              "duration_ms": 2
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

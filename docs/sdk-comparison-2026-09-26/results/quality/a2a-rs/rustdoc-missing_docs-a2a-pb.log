@@ -1,0 +1,692 @@
+CMD: (cwd /opt/bench/a2a-rs) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rs CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo rustdoc -j 2 -p a2a-pb -- -W missing_docs
+START: 2026-09-26T10:08:18Z
+   Compiling syn v2.0.117
+   Compiling libc v0.2.185
+   Compiling getrandom v0.4.2
+   Compiling tempfile v3.27.0
+    Checking futures-task v0.3.34
+    Checking futures-util v0.3.34
+    Checking futures-channel v0.3.34
+   Compiling prettyplease v0.2.37
+    Checking sync_wrapper v1.0.2
+    Checking axum-core v0.5.6
+   Compiling prost-derive v0.14.4
+   Compiling tokio-macros v2.7.0
+    Checking tokio v1.53.1
+   Compiling prost v0.14.4
+   Compiling tracing-attributes v0.1.31
+    Checking tracing v0.1.44
+   Compiling prost-types v0.14.4
+   Compiling prost-build v0.14.3
+    Checking tokio-util v0.7.18
+    Checking h2 v0.4.19
+   Compiling pbjson-build v0.9.0
+   Compiling serde_derive v1.0.228
+    Checking hyper v1.11.1
+    Checking hyper-util v0.1.20
+    Checking tower v0.5.3
+    Checking serde v1.0.228
+   Compiling pin-project-internal v1.1.11
+   Compiling tonic-build v0.14.5
+   Compiling syn v3.0.5
+    Checking axum v0.8.9
+    Checking chrono v0.4.45
+   Compiling async-trait v0.1.92
+    Checking pin-project v1.1.11
+   Compiling tonic-prost-build v0.14.5
+    Checking hyper-timeout v0.5.2
+   Compiling pbjson-types v0.9.0
+    Checking tokio-stream v0.1.19
+   Compiling thiserror-impl v2.0.18
+    Checking tonic v0.14.6
+    Checking thiserror v2.0.18
+   Compiling a2a-pb v0.2.1 (/opt/bench/a2a-rs/a2a-pb)
+    Checking pbjson v0.9.0
+    Checking a2a-lf v0.3.1 (/opt/bench/a2a-rs/a2a)
+    Checking tonic-prost v0.14.5
+ Documenting a2a-pb v0.2.1 (/opt/bench/a2a-rs/a2a-pb)
+warning: missing documentation for the crate
+  --> a2a-pb/src/lib.rs:3:1
+   |
+ 3 | / /// Generated protobuf types for the A2A v1 protocol.
+ 4 | | pub mod proto {
+ 5 | |     include!("gen/lf.a2a.v1.rs");
+...  |
+23 | | pub use proto::*;
+   | |_________________^
+   |
+   = note: requested on the command line with `-W missing-docs`
+
+warning: missing documentation for a module
+  --> a2a-pb/src/lib.rs:21:1
+   |
+21 | pub mod protojson_conv;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-pb/src/gen/lf.a2a.v1.rs:88:5
+   |
+88 |     pub content: ::core::option::Option<part::Content>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-pb/src/gen/lf.a2a.v1.rs:429:5
+    |
+429 |     pub scheme: ::core::option::Option<security_scheme::Scheme>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-pb/src/gen/lf.a2a.v1.rs:516:5
+    |
+516 |     pub flow: ::core::option::Option<o_auth_flows::Flow>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an enum
+  --> a2a-pb/src/gen/lf.a2a.v1.rs:93:5
+   |
+93 |     pub enum Content {
+   |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an enum
+   --> a2a-pb/src/gen/lf.a2a.v1.rs:434:5
+    |
+434 |     pub enum Scheme {
+    |     ^^^^^^^^^^^^^^^
+
+warning: missing documentation for an enum
+   --> a2a-pb/src/gen/lf.a2a.v1.rs:521:5
+    |
+521 |     pub enum Flow {
+    |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> /opt/bench/target-quality-a2a-rs/debug/build/a2a-pb-08715a87d7186a45/out/lf.a2a.v1.rs:88:5
+   |
+88 |     pub content: ::core::option::Option<part::Content>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> /opt/bench/target-quality-a2a-rs/debug/build/a2a-pb-08715a87d7186a45/out/lf.a2a.v1.rs:429:5
+    |
+429 |     pub scheme: ::core::option::Option<security_scheme::Scheme>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> /opt/bench/target-quality-a2a-rs/debug/build/a2a-pb-08715a87d7186a45/out/lf.a2a.v1.rs:516:5
+    |
+516 |     pub flow: ::core::option::Option<o_auth_flows::Flow>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an enum
+  --> /opt/bench/target-quality-a2a-rs/debug/build/a2a-pb-08715a87d7186a45/out/lf.a2a.v1.rs:93:5
+   |
+93 |     pub enum Content {
+   |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an enum
+   --> /opt/bench/target-quality-a2a-rs/debug/build/a2a-pb-08715a87d7186a45/out/lf.a2a.v1.rs:434:5
+    |
+434 |     pub enum Scheme {
+    |     ^^^^^^^^^^^^^^^
+
+warning: missing documentation for an enum
+   --> /opt/bench/target-quality-a2a-rs/debug/build/a2a-pb-08715a87d7186a45/out/lf.a2a.v1.rs:521:5
+    |
+521 |     pub enum Flow {
+    |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:122:1
+    |
+122 | pub fn to_proto_role(r: &Role) -> i32 {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:130:1
+    |
+130 | pub fn from_proto_role(v: i32) -> Role {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:142:1
+    |
+142 | pub fn to_proto_task_state(s: &TaskState) -> i32 {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:156:1
+    |
+156 | pub fn from_proto_task_state(v: i32) -> TaskState {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:174:1
+    |
+174 | pub fn to_proto_part(p: &Part) -> proto::Part {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:189:1
+    |
+189 | pub fn from_proto_part(p: &proto::Part) -> Part {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:209:1
+    |
+209 | pub fn to_proto_message(m: &Message) -> proto::Message {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:222:1
+    |
+222 | pub fn from_proto_message(m: &proto::Message) -> Message {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:247:1
+    |
+247 | pub fn to_proto_task_status(s: &TaskStatus) -> proto::TaskStatus {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:255:1
+    |
+255 | pub fn from_proto_task_status(s: &proto::TaskStatus) -> TaskStatus {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:267:1
+    |
+267 | pub fn to_proto_artifact(a: &Artifact) -> proto::Artifact {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:278:1
+    |
+278 | pub fn from_proto_artifact(a: &proto::Artifact) -> Artifact {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:297:1
+    |
+297 | pub fn to_proto_task(t: &Task) -> proto::Task {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:316:1
+    |
+316 | pub fn from_proto_task(t: &proto::Task) -> Task {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:347:1
+    |
+347 | pub fn to_proto_authentication_info(a: &AuthenticationInfo) -> proto::AuthenticationInfo {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:354:1
+    |
+354 | pub fn from_proto_authentication_info(a: &proto::AuthenticationInfo) -> AuthenticationInfo {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:365:1
+    |
+365 | / pub fn to_proto_task_push_notification_config(
+366 | |     c: &TaskPushNotificationConfig,
+367 | | ) -> proto::TaskPushNotificationConfig {
+    | |______________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:378:1
+    |
+378 | / pub fn from_proto_task_push_notification_config(
+379 | |     c: &proto::TaskPushNotificationConfig,
+380 | | ) -> TaskPushNotificationConfig {
+    | |_______________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:398:1
+    |
+398 | / pub fn to_proto_send_message_configuration(
+399 | |     c: &SendMessageConfiguration,
+400 | | ) -> proto::SendMessageConfiguration {
+    | |____________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:412:1
+    |
+412 | / pub fn from_proto_send_message_configuration(
+413 | |     c: &proto::SendMessageConfiguration,
+414 | | ) -> SendMessageConfiguration {
+    | |_____________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:438:1
+    |
+438 | pub fn to_proto_send_message_request(r: &SendMessageRequest) -> proto::SendMessageRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:450:1
+    |
+450 | pub fn from_proto_send_message_request(r: &proto::SendMessageRequest) -> SendMessageRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:466:1
+    |
+466 | pub fn to_proto_get_task_request(r: &GetTaskRequest) -> proto::GetTaskRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:474:1
+    |
+474 | pub fn from_proto_get_task_request(r: &proto::GetTaskRequest) -> GetTaskRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:482:1
+    |
+482 | pub fn to_proto_list_tasks_request(r: &ListTasksRequest) -> proto::ListTasksRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:495:1
+    |
+495 | pub fn from_proto_list_tasks_request(r: &proto::ListTasksRequest) -> ListTasksRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:515:1
+    |
+515 | pub fn to_proto_list_tasks_response(r: &ListTasksResponse) -> proto::ListTasksResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:524:1
+    |
+524 | pub fn from_proto_list_tasks_response(r: &proto::ListTasksResponse) -> ListTasksResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:533:1
+    |
+533 | pub fn to_proto_cancel_task_request(r: &CancelTaskRequest) -> proto::CancelTaskRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:541:1
+    |
+541 | pub fn from_proto_cancel_task_request(r: &proto::CancelTaskRequest) -> CancelTaskRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:549:1
+    |
+549 | / pub fn to_proto_subscribe_to_task_request(
+550 | |     r: &SubscribeToTaskRequest,
+551 | | ) -> proto::SubscribeToTaskRequest {
+    | |__________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:558:1
+    |
+558 | / pub fn from_proto_subscribe_to_task_request(
+559 | |     r: &proto::SubscribeToTaskRequest,
+560 | | ) -> SubscribeToTaskRequest {
+    | |___________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:567:1
+    |
+567 | / pub fn to_proto_get_extended_agent_card_request(
+568 | |     r: &GetExtendedAgentCardRequest,
+569 | | ) -> proto::GetExtendedAgentCardRequest {
+    | |_______________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:575:1
+    |
+575 | / pub fn from_proto_get_extended_agent_card_request(
+576 | |     r: &proto::GetExtendedAgentCardRequest,
+577 | | ) -> GetExtendedAgentCardRequest {
+    | |________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:587:1
+    |
+587 | / pub fn to_proto_get_task_push_notification_config_request(
+588 | |     r: &GetTaskPushNotificationConfigRequest,
+589 | | ) -> proto::GetTaskPushNotificationConfigRequest {
+    | |________________________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:597:1
+    |
+597 | / pub fn from_proto_get_task_push_notification_config_request(
+598 | |     r: &proto::GetTaskPushNotificationConfigRequest,
+599 | | ) -> GetTaskPushNotificationConfigRequest {
+    | |_________________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:607:1
+    |
+607 | / pub fn to_proto_delete_task_push_notification_config_request(
+608 | |     r: &DeleteTaskPushNotificationConfigRequest,
+609 | | ) -> proto::DeleteTaskPushNotificationConfigRequest {
+    | |___________________________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:617:1
+    |
+617 | / pub fn from_proto_delete_task_push_notification_config_request(
+618 | |     r: &proto::DeleteTaskPushNotificationConfigRequest,
+619 | | ) -> DeleteTaskPushNotificationConfigRequest {
+    | |____________________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:627:1
+    |
+627 | / pub fn to_proto_list_task_push_notification_configs_request(
+628 | |     r: &ListTaskPushNotificationConfigsRequest,
+629 | | ) -> proto::ListTaskPushNotificationConfigsRequest {
+    | |__________________________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:638:1
+    |
+638 | / pub fn from_proto_list_task_push_notification_configs_request(
+639 | |     r: &proto::ListTaskPushNotificationConfigsRequest,
+640 | | ) -> ListTaskPushNotificationConfigsRequest {
+    | |___________________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:653:1
+    |
+653 | / pub fn to_proto_list_task_push_notification_configs_response(
+654 | |     r: &ListTaskPushNotificationConfigsResponse,
+655 | | ) -> proto::ListTaskPushNotificationConfigsResponse {
+    | |___________________________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:666:1
+    |
+666 | / pub fn from_proto_list_task_push_notification_configs_response(
+667 | |     r: &proto::ListTaskPushNotificationConfigsResponse,
+668 | | ) -> ListTaskPushNotificationConfigsResponse {
+    | |____________________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:683:1
+    |
+683 | pub fn to_proto_send_message_response(r: &SendMessageResponse) -> proto::SendMessageResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:695:1
+    |
+695 | / pub fn from_proto_send_message_response(
+696 | |     r: &proto::SendMessageResponse,
+697 | | ) -> Option<SendMessageResponse> {
+    | |________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:713:1
+    |
+713 | / pub fn to_proto_task_status_update_event(
+714 | |     e: &TaskStatusUpdateEvent,
+715 | | ) -> proto::TaskStatusUpdateEvent {
+    | |_________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:724:1
+    |
+724 | / pub fn from_proto_task_status_update_event(
+725 | |     e: &proto::TaskStatusUpdateEvent,
+726 | | ) -> TaskStatusUpdateEvent {
+    | |__________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:743:1
+    |
+743 | / pub fn to_proto_task_artifact_update_event(
+744 | |     e: &TaskArtifactUpdateEvent,
+745 | | ) -> proto::TaskArtifactUpdateEvent {
+    | |___________________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:756:1
+    |
+756 | / pub fn from_proto_task_artifact_update_event(
+757 | |     e: &proto::TaskArtifactUpdateEvent,
+758 | | ) -> TaskArtifactUpdateEvent {
+    | |____________________________^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:780:1
+    |
+780 | pub fn to_proto_stream_response(r: &StreamResponse) -> proto::StreamResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:796:1
+    |
+796 | pub fn from_proto_stream_response(r: &proto::StreamResponse) -> Option<StreamResponse> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:818:1
+    |
+818 | pub fn to_proto_agent_interface(i: &AgentInterface) -> proto::AgentInterface {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:827:1
+    |
+827 | pub fn from_proto_agent_interface(i: &proto::AgentInterface) -> AgentInterface {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:834:1
+    |
+834 | pub fn to_proto_agent_provider(p: &AgentProvider) -> proto::AgentProvider {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:841:1
+    |
+841 | pub fn from_proto_agent_provider(p: &proto::AgentProvider) -> AgentProvider {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:848:1
+    |
+848 | pub fn to_proto_agent_extension(e: &AgentExtension) -> proto::AgentExtension {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:857:1
+    |
+857 | pub fn from_proto_agent_extension(e: &proto::AgentExtension) -> AgentExtension {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:866:1
+    |
+866 | pub fn to_proto_agent_capabilities(c: &AgentCapabilities) -> proto::AgentCapabilities {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:879:1
+    |
+879 | pub fn from_proto_agent_capabilities(c: &proto::AgentCapabilities) -> AgentCapabilities {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:897:1
+    |
+897 | pub fn to_proto_agent_skill(s: &AgentSkill) -> proto::AgentSkill {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:914:1
+    |
+914 | pub fn from_proto_agent_skill(s: &proto::AgentSkill) -> AgentSkill {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:948:1
+    |
+948 | pub fn to_proto_agent_card_signature(s: &AgentCardSignature) -> proto::AgentCardSignature {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:956:1
+    |
+956 | pub fn from_proto_agent_card_signature(s: &proto::AgentCardSignature) -> AgentCardSignature {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+   --> a2a-pb/src/pbconv.rs:968:1
+    |
+968 | pub fn to_proto_security_scheme(s: &SecurityScheme) -> proto::SecurityScheme {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+    --> a2a-pb/src/pbconv.rs:1008:1
+     |
+1008 | pub fn from_proto_security_scheme(s: &proto::SecurityScheme) -> Option<SecurityScheme> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+    --> a2a-pb/src/pbconv.rs:1058:1
+     |
+1058 | pub fn to_proto_security_requirement(r: &SecurityRequirement) -> proto::SecurityRequirement {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+    --> a2a-pb/src/pbconv.rs:1067:1
+     |
+1067 | pub fn from_proto_security_requirement(r: &proto::SecurityRequirement) -> SecurityRequirement {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+    --> a2a-pb/src/pbconv.rs:1079:1
+     |
+1079 | pub fn to_proto_oauth_flows(f: &OAuthFlows) -> proto::OAuthFlows {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+    --> a2a-pb/src/pbconv.rs:1124:1
+     |
+1124 | pub fn from_proto_oauth_flows(f: &proto::OAuthFlows) -> Option<OAuthFlows> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+    --> a2a-pb/src/pbconv.rs:1172:1
+     |
+1172 | pub fn to_proto_agent_card(c: &AgentCard) -> proto::AgentCard {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+    --> a2a-pb/src/pbconv.rs:1211:1
+     |
+1211 | pub fn from_proto_agent_card(c: &proto::AgentCard) -> AgentCard {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+    --> a2a-pb/src/pbconv.rs:1269:1
+     |
+1269 | / pub fn to_proto_create_task_push_notification_config_request(
+1270 | |     r: &TaskPushNotificationConfig,
+1271 | | ) -> proto::TaskPushNotificationConfig {
+     | |______________________________________^
+
+warning: missing documentation for a function
+    --> a2a-pb/src/pbconv.rs:1275:1
+     |
+1275 | / pub fn from_proto_create_task_push_notification_config_request(
+1276 | |     r: &proto::TaskPushNotificationConfig,
+1277 | | ) -> TaskPushNotificationConfig {
+     | |_______________________________^
+
+warning: missing documentation for an enum
+  --> a2a-pb/src/protojson_conv.rs:17:1
+   |
+17 | pub enum ProtoJsonPayloadError {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a-pb/src/protojson_conv.rs:18:5
+   |
+18 |     Json(serde_json::Error),
+   |     ^^^^
+
+warning: missing documentation for a variant
+  --> a2a-pb/src/protojson_conv.rs:19:5
+   |
+19 |     Decode(prost::DecodeError),
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> a2a-pb/src/protojson_conv.rs:20:5
+   |
+20 |     MissingPayload(&'static str),
+   |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a trait
+  --> a2a-pb/src/protojson_conv.rs:37:1
+   |
+37 | pub trait ProtoJsonPayload: Sized {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated type
+  --> a2a-pb/src/protojson_conv.rs:38:5
+   |
+38 |     type Proto: Message + Default;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated type
+  --> a2a-pb/src/protojson_conv.rs:39:5
+   |
+39 |     type ProtoJson: Message + Default + Serialize + DeserializeOwned;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-pb/src/protojson_conv.rs:41:5
+   |
+41 |     fn to_proto(value: &Self) -> Self::Proto;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-pb/src/protojson_conv.rs:42:5
+   |
+42 |     fn try_from_proto(value: &Self::Proto) -> Result<Self, ProtoJsonPayloadError>;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+  --> a2a-pb/src/protojson_conv.rs:45:1
+   |
+45 | pub fn to_value<T: ProtoJsonPayload>(value: &T) -> Result<Value, ProtoJsonPayloadError> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+  --> a2a-pb/src/protojson_conv.rs:51:1
+   |
+51 | pub fn from_value<T: ProtoJsonPayload>(value: Value) -> Result<T, ProtoJsonPayloadError> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a function
+  --> a2a-pb/src/protojson_conv.rs:58:1
+   |
+58 | pub fn from_str<T: ProtoJsonPayload>(value: &str) -> Result<T, ProtoJsonPayloadError> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `a2a-pb` (lib doc) generated 98 warnings
+    Finished `dev` profile [unoptimized] target(s) in 16.93s
+   Generated /opt/bench/target-quality-a2a-rs/doc/a2a_pb/index.html
+EXIT: 0
+END: 2026-09-26T10:08:35Z

@@ -1,0 +1,940 @@
+CMD: cargo audit --file /opt/bench/fresh-lock/a2a-rust/Cargo.lock
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1271 security advisories (from /root/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning /opt/bench/fresh-lock/a2a-rust/Cargo.lock for vulnerabilities (520 crate dependencies)
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+error: couldn't check if the package is yanked: registry: status code '503 Service Unavailable': the status code is invalid for this protocol
+Caused by:
+  -> status code '503 Service Unavailable': the status code is invalid for this protocol
+Crate:     rsa
+Version:   0.9.10
+Title:     Marvin Attack: potential key recovery through timing sidechannels
+Date:      2023-11-22
+ID:        RUSTSEC-2023-0071
+URL:       https://rustsec.org/advisories/RUSTSEC-2023-0071
+Severity:  5.9 (medium)
+Solution:  No fixed upgrade is available!
+
+Crate:     paste
+Version:   1.0.15
+Warning:   unmaintained
+Title:     paste - no longer maintained
+Date:      2024-10-07
+ID:        RUSTSEC-2024-0436
+URL:       https://rustsec.org/advisories/RUSTSEC-2024-0436
+
+error: 1 vulnerability found!
+warning: 1 allowed warning found
+EXIT: 1

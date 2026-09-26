@@ -1,0 +1,16 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.90s
+     Running tests/misc.rs (/opt/bench/claims/target/debug/deps/misc-8f3acbf2413f3f52)
+
+running 3 tests
+test client_interceptor_and_stream_on_complete_timing ... server saw request ids via client CallInterceptor: [Some("from-client-interceptor")]
+stream lasted 2.008583577s; on_complete already fired right after first event: true; events=["before:SendMessage:rid=Some(\"from-client-interceptor\")", "after:SendMessage", "complete:SendMessage:Succeeded", "before:SendStreamingMessage:rid=Some(\"from-client-interceptor\")", "after:SendStreamingMessage", "complete:SendStreamingMessage:Succeeded"]
+ok
+test rest_traversal_query_limit_and_input_modes ... path traversal %2e%2e -> 400; 5000-byte query -> 414; image/png part vs card text/plain -> 400 {"error":{"code":400,"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"CONTENT_TYPE_NOT_SUPPORTED"}],"message
+ok
+test state_validation_and_ergonomics ... can_transition_to: Working->Completed=true Completed->Working=false Submitted->Working=true Failed->Completed=false
+executor: emitting Working after Completed -> Ok(())
+server: returned state=Completed, stored state=Completed
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.23s
+

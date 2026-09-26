@@ -1,0 +1,26 @@
+CMD: (cwd /opt/bench/a2a-rust-src) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rust CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo clippy -j 2 --workspace --all-targets
+START: 2026-09-26T10:24:31Z
+   Compiling a2a-protocol-types v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-types)
+   Compiling a2a-protocol-server v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-server)
+   Compiling a2a-protocol-client v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-client)
+   Compiling a2a-tck v0.2.0 (/opt/bench/a2a-rust-src/tck)
+    Checking a2a-example-harness v0.0.0 (/opt/bench/a2a-rust-src/examples/harness)
+    Checking a2a-cli v0.0.0 (/opt/bench/a2a-rust-src/tools/a2a-cli)
+    Checking a2a-protocol-sdk v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-sdk)
+    Checking a2a-benchmarks v0.0.0 (/opt/bench/a2a-rust-src/benches)
+    Checking a2a-book-tests v0.0.0 (/opt/bench/a2a-rust-src/book-tests)
+    Checking deploy-agent v0.0.0 (/opt/bench/a2a-rust-src/examples/deploy-agent)
+    Checking hello-agent v0.0.0 (/opt/bench/a2a-rust-src/examples/hello-agent)
+    Checking echo-agent v0.0.0 (/opt/bench/a2a-rust-src/examples/echo-agent)
+    Checking agent-team v0.0.0 (/opt/bench/a2a-rust-src/examples/agent-team)
+    Checking mcp-a2a-agent v0.0.0 (/opt/bench/a2a-rust-src/examples/mcp-agent)
+    Checking resilient-agent v0.0.0 (/opt/bench/a2a-rust-src/examples/resilient-agent)
+    Checking genai-a2a-agent v0.0.0 (/opt/bench/a2a-rust-src/examples/genai-agent)
+    Checking multi-lang-team v0.0.0 (/opt/bench/a2a-rust-src/examples/multi-lang-team)
+    Checking a2a-tck-sut v0.0.0 (/opt/bench/a2a-rust-src/tck/sut)
+    Checking rig-a2a-agent v0.0.0 (/opt/bench/a2a-rust-src/examples/rig-agent)
+    Checking a2a-mcp-bridge v0.0.0 (/opt/bench/a2a-rust-src/examples/mcp-bridge)
+    Checking incident-response v0.0.0 (/opt/bench/a2a-rust-src/examples/incident-response)
+    Finished `dev` profile [unoptimized] target(s) in 44.11s
+EXIT: 0
+END: 2026-09-26T10:25:16Z

@@ -11,14 +11,38 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-24 — `claude/keen-noether-q73ekn` merged as
-`0b7e87c2` (#143); the drop-path findings N21–N32, N16 and N18 are on
-`claude/peaceful-ptolemy-noka5b`.
+Last updated 2026-09-26 — `claude/peaceful-ptolemy-noka5b` merged as
+`10f3435` (#144) and released as 0.14.0; the SDK comparison against a2a-rs is
+on `claude/clever-curie-wbfxzc` (see "SDK comparison" below).
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
 will rot again; `git log -1 --format='%ci %s' -- docs/handoff.md` is the
 authority, and takes a second.
+
+## SDK comparison, 2026-09-26 — what the next session should do first
+
+[`docs/sdk-comparison-2026-09-26/`](sdk-comparison-2026-09-26/README.md)
+compares 0.14.0 with a2a-rs's latest releases. Both were built from crates.io,
+tested with a real model, graded by ACTS, run through a cross-SDK interop
+matrix, and put through a claims audit. Its §4 is a ranked list of our
+findings, O-1 to O-12. None of them has been fixed; the branch changes only
+documentation. In order:
+
+1. **O-1 (interop).** Our client sends `"params": null` on
+   `GetExtendedAgentCard`, and a2a-rs's server rejects it. This is the only
+   failing cell in 204 interop checks.
+2. **O-2.** `GrpcDispatcher::serve_with_listener` does not set `TCP_NODELAY`:
+   p99 is 44 ms, and throughput at concurrency 1 is 20× lower.
+3. **The four claims-audit failures.** F1 is axum card caching, F2 is REST
+   `/ready`, F3 is the path tenant resolver and F4 is the signing key format.
+   Each has a failing test in `claims-suite/` to turn into a regression test.
+4. **O-6 and O-7 (README and doc overstatements).** Add them to the claims
+   ledger rather than silently rewording them, as the ledger's method
+   requires.
+
+The harness runs only on a prepared machine (see its README). Re-run it after
+fixing O-1 and O-2 to confirm them.
 
 ## 0.12.1 — released 2026-09-17
 
@@ -107,7 +131,8 @@ the *content* merge.
 | `claude/pensive-allen-socw7b` | merged, still present | **Merged as `fa2e901` via [#141](https://github.com/tomtom215/a2a-rust/pull/141) on 2026-09-23.** The adopter audit and phase 1 of its fixes; see its section below. Safe to delete. |
 | `claude/determined-galileo-rywiyj` | merged, still present | **Merged as `8a54d7e9` via [#142](https://github.com/tomtom215/a2a-rust/pull/142) on 2026-09-23.** The adopter audit's open work after phase 1; see its section below. Safe to delete. |
 | `claude/keen-noether-q73ekn` | merged, still present | **Merged as `0b7e87c2` via [#143](https://github.com/tomtom215/a2a-rust/pull/143).** The audit's gate gaps (escape classes 1, 6, 7, 8, 9), then phase 2 of observability. Safe to delete. |
-| `claude/peaceful-ptolemy-noka5b` | open — no PR yet | **Destined for `main`.** N21 (the maintainer chose the admission side), the adopter's four reports, the claims ledger, and the drop-path hunt (N24–N32, N16, N18). See its section below. |
+| `claude/peaceful-ptolemy-noka5b` | merged, still present | **Merged as `10f3435` via [#144](https://github.com/tomtom215/a2a-rust/pull/144); released as 0.14.0 on 2026-09-26.** N21 (the maintainer chose the admission side), the adopter's four reports, the claims ledger, and the drop-path hunt (N24–N32, N16, N18). See its section below. Safe to delete. |
+| `claude/clever-curie-wbfxzc` | open — no PR yet | **Destined for `main`.** Documentation only: the measured comparison with a2a-rs in `docs/sdk-comparison-2026-09-26/`, its harness, and this file. No crate code changed. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on

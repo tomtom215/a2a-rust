@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name = "quickstart"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+a2a-protocol-sdk = "=0.14.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+# Standalone: not a member of the repository workspace.
+[workspace]

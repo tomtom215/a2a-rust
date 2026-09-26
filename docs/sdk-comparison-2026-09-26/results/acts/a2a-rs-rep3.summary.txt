@@ -1,0 +1,98 @@
+WARNING acts_runner: With ITK_ACTS_AUTH set, the card declares no securitySchemes, securityRequirements; an agent honouring this must publish at least one security scheme and one security requirement (A2A §7.3), so SEC-AUTH-001, SEC-AUTH-002, SEC-AUTH-003, SEC-AUTH-004 stay skipped.
+WARNING acts_runner: With ITK_ACTS_AUTH set, the card declares no securitySchemes, securityRequirements; an agent honouring this must publish at least one security scheme and one security requirement (A2A §7.3), so SEC-AUTH-003 stay skipped.
+WARNING acts_runner: With ITK_ACTS_AUTH set, the card declares no securitySchemes, securityRequirements; an agent honouring this must publish at least one security scheme and one security requirement (A2A §7.3), so SEC-AUTH-003, SEC-AUTH-006 stay skipped.
+ACTS a2a-rs / jsonrpc — 101 tests in 102834ms
+  MUST   41/55 passed (14 failed, 4 skipped)
+  SHOULD 22/29 passed (7 failed)
+  MAY    9/13 passed (4 failed)
+  => NOT CONFORMANT
+    CARD-CACHE-001: headers matched none of the 2 alternatives
+    CORE-SEND-002: expected an error, but the call succeeded
+    CORE-SEND-004: error.error_type should equal ContentTypeNotSupportedError, got InvalidRequestError
+    CORE-LIST-003: body.nextPageToken is missing, so it cannot be of type string
+    CORE-HIST-003: body.task.history matched none of the 2 alternatives
+    CORE-HIST-005: body.history should have length >= 3, got [{'messageId': 'ace69f26-c21f-4cfc-8873-598ee480ea4c', 'parts': [{'text': 'tck-multi-turn chronological first'}], 'role': 'ROLE_USER'}]
+    CORE-HIST-006: body.history should have length >= 2, got [{'messageId': '53bcdbc1-c640-45e6-af98-6e4298a076bf', 'parts': [{'text': 'tck-multi-turn first msg'}], 'role': 'ROLE_USER'}]
+    CORE-MULTI-006: expected an error, but the call succeeded
+    CORE-MULTI-003: expected an error, but the call succeeded
+    STREAM-SUB-003: error.error_type should equal UnsupportedOperationError, got TaskNotFoundError
+    CORE-ERR-004: expected an error, but the call succeeded
+    JSONRPC-ERR-002: status should equal 200, got 400
+    CORE-ERR-006: status should equal 200, got 422
+    CORE-CAP-002: expected an error, but the stream opened and produced 2 event(s)
+    CORE-ERR-009: expected an error, but the call succeeded
+    JSONRPC-ERR-003: body.error.message is missing, so it cannot be of type string
+    SEC-PUSH-001: the SUT delivered 0 notification(s) for task 01a0dd82-b69d-7701-8759-667bbd7680c0 in 10000ms; the test needs 1
+    SEC-PUSH-002: the SUT delivered 0 notification(s) for task 01a0dd82-de24-75e1-8d8c-aa0e17367443 in 10000ms; the test needs 1
+    VER-NEG-001: body.error.code should equal -32009, got -32600
+    VER-NEG-002: body.error.code should be one of [-32009, -32601], got -32600
+    DM-SERIAL-001: body.task.status.timestamp is missing, so it cannot match regex ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$
+    PUSH-ERR-001: error.error_type should equal TaskNotFoundError, got PushNotificationNotSupportedError
+    PUSH-DELIV-001: the SUT delivered 0 notification(s) for task 01a0dd83-05d0-78b2-8d4d-edd532791985 in 10000ms; the test needs 1
+    PUSH-DELIV-002: the SUT delivered 0 notification(s) for task 01a0dd83-2d54-7393-9ac9-ff2787a99dc4 in 10000ms; the test needs 1
+    PUSH-DELIV-003: the SUT delivered 0 notification(s) for task 01a0dd83-54dc-74c1-b102-42e161dbd16f in 10000ms; the test needs 1
+
+ACTS a2a-rs / grpc — 88 tests in 102597ms
+  MUST   37/46 passed (9 failed, 1 skipped)
+  SHOULD 23/28 passed (5 failed)
+  MAY    9/13 passed (4 failed)
+  => NOT CONFORMANT
+    CARD-CACHE-001: headers matched none of the 2 alternatives
+    CORE-SEND-002: expected an error, but the call succeeded
+    CORE-SEND-004: error.error_type is missing — the SUT returned ErrorInfo.reason 'INVALID_REQUEST', which is not an A2A error name
+    CORE-HIST-003: body.task.history matched none of the 2 alternatives
+    CORE-HIST-005: body.history should have length >= 3, got [{'messageId': 'c9cb1806-c806-4e87-8d89-2c25f95ca18a', 'role': 'ROLE_USER', 'parts': [{'text': 'tck-multi-turn chronological first'}]}]
+    CORE-HIST-006: body.history should have length >= 2, got [{'messageId': '0b7cea2e-0cac-46cd-b69f-c6f2067a7104', 'role': 'ROLE_USER', 'parts': [{'text': 'tck-multi-turn first msg'}]}]
+    CORE-MULTI-006: expected an error, but the call succeeded
+    CORE-MULTI-003: expected an error, but the call succeeded
+    STREAM-SUB-003: error.error_type should equal UnsupportedOperationError, got TaskNotFoundError
+    CORE-ERR-004: expected an error, but the call succeeded
+    CORE-CAP-002: expected an error, but the stream opened and produced 2 event(s)
+    SEC-PUSH-001: the SUT delivered 0 notification(s) for task 01a0dd84-4996-7e72-9066-6bbc33b17a89 in 10000ms; the test needs 1
+    SEC-PUSH-002: the SUT delivered 0 notification(s) for task 01a0dd84-711f-7c33-a617-7261e93d6ec6 in 10000ms; the test needs 1
+    DM-SERIAL-001: body.task.status.timestamp is missing, so it cannot match regex ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$
+    PUSH-ERR-001: error.error_type should equal TaskNotFoundError, got PushNotificationNotSupportedError
+    PUSH-DELIV-001: the SUT delivered 0 notification(s) for task 01a0dd84-9969-7940-acc6-e5aea917bf28 in 10000ms; the test needs 1
+    PUSH-DELIV-002: the SUT delivered 0 notification(s) for task 01a0dd84-c0ee-71b3-a9be-964991756e9e in 10000ms; the test needs 1
+    PUSH-DELIV-003: the SUT delivered 0 notification(s) for task 01a0dd84-e874-7ff1-8d55-de4c3bfae79b in 10000ms; the test needs 1
+
+ACTS a2a-rs / rest — 92 tests in 102226ms
+  MUST   35/48 passed (13 failed, 1 skipped)
+  SHOULD 23/29 passed (6 failed, 1 skipped)
+  MAY    9/13 passed (4 failed)
+  => NOT CONFORMANT
+    CARD-CACHE-001: headers matched none of the 2 alternatives
+    CORE-SEND-002: expected an error, but the call succeeded
+    CORE-SEND-004: error.error_type is missing — the SUT returned ErrorInfo.reason 'INVALID_REQUEST', which is not an A2A error name
+    CORE-LIST-003: body.nextPageToken is missing, so it cannot be of type string
+    CORE-HIST-003: body.task.history matched none of the 2 alternatives
+    CORE-HIST-005: body.history should have length >= 3, got [{'messageId': '4f34a4f0-8ba8-427d-a076-e1f97032a948', 'parts': [{'text': 'tck-multi-turn chronological first'}], 'role': 'ROLE_USER'}]
+    CORE-HIST-006: body.history should have length >= 2, got [{'messageId': 'e5ef3fb5-c615-46be-8e50-e3329c6029c6', 'parts': [{'text': 'tck-multi-turn first msg'}], 'role': 'ROLE_USER'}]
+    CORE-MULTI-006: expected an error, but the call succeeded
+    CORE-MULTI-003: expected an error, but the call succeeded
+    STREAM-SUB-003: error.error_type should equal UnsupportedOperationError, got TaskNotFoundError
+    CORE-ERR-004: expected an error, but the call succeeded
+    CORE-CAP-002: expected an error, but the stream opened and produced 2 event(s)
+    SEC-PUSH-001: the SUT delivered 0 notification(s) for task 01a0dd85-daf2-73e1-a296-53b383dfdfc8 in 10000ms; the test needs 1
+    SEC-PUSH-002: the SUT delivered 0 notification(s) for task 01a0dd86-0273-7280-86de-e9a83f8dbdba in 10000ms; the test needs 1
+    SEC-EXTCARD-001: status should be one of [401, 403], got 200
+    SEC-EXTCARD-002: status should be one of [401, 403], got 200
+    SEC-EXTCARD-004: status should be one of [401, 403], got 200
+    DM-SERIAL-001: body.task.status.timestamp is missing, so it cannot match regex ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$
+    PUSH-ERR-001: error.error_type should equal TaskNotFoundError, got PushNotificationNotSupportedError
+    PUSH-DELIV-001: the SUT delivered 0 notification(s) for task 01a0dd86-2a22-7cd3-812d-f21b6e91c330 in 10000ms; the test needs 1
+    PUSH-DELIV-002: the SUT delivered 0 notification(s) for task 01a0dd86-51a8-70a0-ae29-75cb46d694d8 in 10000ms; the test needs 1
+    PUSH-DELIV-003: the SUT delivered 0 notification(s) for task 01a0dd86-7936-7790-afd6-3a2ccbece955 in 10000ms; the test needs 1
+    REST-CT-001: headers.Content-Type should start with application/a2a+json, got application/json
+
+========================================================
+ACROSS 3 BINDING(S)
+========================================================
+  111 test(s) in all, each scored on the binding(s) it targets
+  jsonrpc   72/101 passed   must 41/55   25 failed, 0 error(s)   NOT CONFORMANT
+  grpc       69/88 passed   must 37/46   18 failed, 0 error(s)   NOT CONFORMANT
+  rest       67/92 passed   must 35/48   23 failed, 0 error(s)   NOT CONFORMANT
+  => NOT CONFORMANT overall
+report: /opt/bench/results/acts/a2a-rs-rep3/acts-report-a2a-rs-jsonrpc-20260926T114331Z.json
+report: /opt/bench/results/acts/a2a-rs-rep3/acts-report-a2a-rs-grpc-20260926T114331Z.json
+report: /opt/bench/results/acts/a2a-rs-rep3/acts-report-a2a-rs-rest-20260926T114331Z.json

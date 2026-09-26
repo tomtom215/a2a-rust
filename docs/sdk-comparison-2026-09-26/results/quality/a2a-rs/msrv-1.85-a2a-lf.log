@@ -1,0 +1,27 @@
+CMD: (cwd /opt/bench/a2a-rs) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rs/msrv cargo +1.85 check -j 2 --locked -p a2a-lf
+rustc 1.85.1 (4eb161250 2025-03-15)
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.45
+   Compiling serde_core v1.0.228
+   Compiling libc v0.2.185
+   Compiling autocfg v1.5.0
+   Compiling syn v2.0.117
+   Compiling num-traits v0.2.19
+   Compiling getrandom v0.4.2
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+   Compiling serde_derive v1.0.228
+    Checking cfg-if v1.0.4
+   Compiling thiserror v2.0.18
+   Compiling serde_json v1.0.151
+   Compiling thiserror-impl v2.0.18
+    Checking memchr v2.8.0
+    Checking iana-time-zone v0.1.65
+    Checking itoa v1.0.18
+    Checking chrono v0.4.45
+    Checking uuid v1.23.0
+    Checking base64 v0.23.1
+    Checking a2a-lf v0.3.1 (/opt/bench/a2a-rs/a2a)
+    Finished `dev` profile [unoptimized] target(s) in 6.99s
+EXIT: 0

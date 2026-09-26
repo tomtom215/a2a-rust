@@ -1,0 +1,8 @@
+CMD: (cwd /opt/bench/msrv-lock/a2a-rust) CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.88 check -j 2 --locked -p a2a-protocol-sdk
+    Checking tokio-rustls v0.26.5
+   Compiling a2a-protocol-server v0.14.0 (/opt/bench/msrv-lock/a2a-rust/crates/a2a-protocol-server)
+   Compiling a2a-protocol-client v0.14.0 (/opt/bench/msrv-lock/a2a-rust/crates/a2a-protocol-client)
+    Checking hyper-rustls v0.27.10
+    Checking a2a-protocol-sdk v0.14.0 (/opt/bench/msrv-lock/a2a-rust/crates/a2a-protocol-sdk)
+    Finished `dev` profile [unoptimized] target(s) in 2.51s
+EXIT: 0

@@ -1,0 +1,15 @@
+CMD: (cwd /opt/bench/msrv-lock/a2a-rs) CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.85 check -j 2 --locked -p a2a-slimrpc
+ Downloading crates ...
+  Downloaded globset v0.4.19
+error: rustc 1.85.1 is not supported by the following packages:
+  cel@0.14.5 requires rustc 1.86.0
+  spiffe@0.12.0 requires rustc 1.88
+  time@0.3.55 requires rustc 1.88.0
+  time-core@0.1.9 requires rustc 1.88.0
+  time-core@0.1.9 requires rustc 1.88.0
+  time-macros@0.2.32 requires rustc 1.88.0
+Either upgrade rustc or select compatible dependency versions with
+`cargo update <name>@<current-ver> --precise <compatible-ver>`
+where `<compatible-ver>` is the latest version supporting rustc 1.85.1
+
+EXIT: 101

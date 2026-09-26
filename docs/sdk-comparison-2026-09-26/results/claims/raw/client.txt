@@ -1,0 +1,31 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.49s
+     Running tests/client.rs (/opt/bench/claims/target/debug/deps/client-87209ad90aa02b37)
+
+running 6 tests
+test axum_a2a_router_integration ... axum: send ok, streamed artifacts=3, get=Completed, custom=custom-ok, /health=200 OK, /ready={"status":"ready"}, stream-open=true
+ok
+test idempotency_client_retry_after_ambiguous_failure ... keyed send after dropped response: ok=true posts=2 executions=1 err=None
+unkeyed send after dropped response: ok=false posts=1 executions=1 err=Some(HttpClient("client error (SendRequest)"))
+ok
+test idempotency_server_dedupe_and_card ... in-memory: advertised=true t1=2d42be23-9f3c-4bad-b2a4-ddf051e60995 t2=2d42be23-9f3c-4bad-b2a4-ddf051e60995 same=true new-msgid-same-key -> Err(Protocol(A2aError { code: InvalidParams, message: "idempotency key is already held by message `mid-1`. A retry resends the identical message, so a different message id means the key was reused across two distinct sends. Returning the first task here would answer a message that was never sent.", data: None, auth_rejection: None })); different key -> 1483e2a4-32ed-4230-b59a-857e2d635ef4 ; executions=2
+sqlite: advertised=true t1=9aa22517-3ab8-487f-9564-5645f3e28565 t2=9aa22517-3ab8-487f-9564-5645f3e28565 same=true new-msgid-same-key -> Err(Protocol(A2aError { code: InvalidParams, message: "idempotency key is already held by message `mid-1`. A retry resends the identical message, so a different message id means the key was reused across two distinct sends. Returning the first task here would answer a message that was never sent.", data: None, auth_rejection: None })); different key -> 76de1077-55d6-4008-bd1e-41aa2581ace9 ; executions=2
+ok
+test retry_policy_matrix ... send 503,503,200: hits=3 result=Ok(())
+send 400: hits=1 result=Err("unexpected HTTP status 400: {}")
+send 429,200: hits=2 result=Ok(())
+send 502,200: hits=1 result=Err("unexpected HTTP status 502: {}")
+send 504,200: hits=1 result=Err("unexpected HTTP status 504: {}")
+get 502,200: hits=2 result=Err("serialization error: missing field `id`")
+get 503,200: hits=2 result=Err("serialization error: missing field `id`")
+get 504,200: hits=2 result=Err("serialization error: missing field `id`")
+get 500,200: hits=1 result=Err("unexpected HTTP status 500: {}")
+get 503x5: hits=4 result=Err("unexpected HTTP status 503: {}")
+ok
+test tls_grpc_private_ca ... gRPC over TLS (private CA via with_grpc_tls_config): Some("Hello, tls!")
+ok
+test tls_https_jsonrpc_selfsigned ... reqwest(trusting self-signed) over https -> 404 Not Found
+SDK client (default roots) -> https self-signed: Err("HTTP client error: client error (Connect)")
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.72s
+

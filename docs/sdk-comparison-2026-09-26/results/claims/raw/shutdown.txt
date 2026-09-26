@@ -1,0 +1,37 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.61s
+     Running tests/shutdown.rs (/opt/bench/claims/target/debug/deps/shutdown-f6be822aeae4a89b)
+
+running 3 tests
+test graceful_shutdown_http ... connect after shutdown signal: refused
+serve_with_shutdown returned after 5.004063325s
+ServeReport = ServeReport {
+    accepted: 3,
+    drained: false,
+    abandoned: 1,
+    tasks: Some(
+        InFlightReport {
+            completed: 1,
+            cancelled: 2,
+            still_running: 1,
+            finished: false,
+        },
+    ),
+}
+handler.shutdown() -> ShutdownReport { queues_force_destroyed: 1, executor_cleanup_completed: true } graceful=false
+client result: ("sleep:800", Ok((200, "TASK_STATE_COMPLETED")))
+client result: ("sleep:20000", Ok((200, "TASK_STATE_CANCELED")))
+client result: ("hang:8000", Ok((200, "TASK_STATE_COMPLETED")))
+executor: finished=2 cancels_observed=1
+ok
+test server_bind_max_connections ... third connection while 2 held: NOT SERVED (waiting)
+after releasing one: Ok("HTTP/1.1 404 Not Found")
+report: ServeReport { accepted: 4, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 0, cancelled: 0, still_running: 0, finished: true }) }
+ok
+test ws_and_grpc_serve_with_shutdown ... ws: serve_with_shutdown returned after 5.002607986s: ServeReport { accepted: 1, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 0, cancelled: 1, still_running: 0, finished: true }) }
+ws: in-flight client result: task state Canceled; executor cancels observed=1
+grpc: serve_with_shutdown returned after 5.003662805s: ServeReport { accepted: 1, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 0, cancelled: 1, still_running: 0, finished: true }) }
+grpc: in-flight client result: task state Canceled; executor cancels observed=1
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.83s
+

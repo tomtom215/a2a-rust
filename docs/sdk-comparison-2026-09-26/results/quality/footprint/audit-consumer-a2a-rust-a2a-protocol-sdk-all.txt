@@ -1,0 +1,16 @@
+CMD: cargo audit --file /opt/bench/consumers/a2a-rust-a2a-protocol-sdk-all/Cargo.lock
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1271 security advisories (from /root/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning a2a-rust-a2a-protocol-sdk-all/Cargo.lock for vulnerabilities (305 crate dependencies)
+Crate:     rsa
+Version:   0.9.10
+Title:     Marvin Attack: potential key recovery through timing sidechannels
+Date:      2023-11-22
+ID:        RUSTSEC-2023-0071
+URL:       https://rustsec.org/advisories/RUSTSEC-2023-0071
+Severity:  5.9 (medium)
+Solution:  No fixed upgrade is available!
+
+error: 1 vulnerability found!
+EXIT: 1

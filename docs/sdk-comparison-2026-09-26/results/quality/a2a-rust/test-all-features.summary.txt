@@ -1,0 +1,308 @@
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a_benchmarks-ed3526356eea63b8)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a_book_tests-01b9da3cf605814f)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a-2fd67ee816f04da5)
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/e2e-d1f80b25b51d4744)
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a_example_harness-3fccf95d37011657)
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running unittests src/bin/go_sdk_interop.rs (/opt/bench/target-quality-a2a-rust/debug/deps/go_sdk_interop-87f0e19255fbb189)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a_mcp_bridge-44322b449bb5592c)
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+     Running unittests src/bin/demo.rs (/opt/bench/target-quality-a2a-rust/debug/deps/bridge_demo-e129c05de7938eef)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a_protocol_client-39978c7866b02512)
+test result: ok. 552 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.09s
+     Running tests/bearer_token_invalidation.rs (/opt/bench/target-quality-a2a-rust/debug/deps/bearer_token_invalidation-e17afb33bd8f6f56)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/client_error_into_a2a_error.rs (/opt/bench/target-quality-a2a-rust/debug/deps/client_error_into_a2a_error-06e430f33bcbf757)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/client_method_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/client_method_tests-0b456be54321920a)
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/client_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/client_tests-390961b7c61d017e)
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/coverage_gap_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/coverage_gap_tests-a05632fbf5f74816)
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/discovery_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/discovery_tests-10aaf94c6e70d1a2)
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/empty_result_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/empty_result_tests-d0151337f9fac824)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/extended_card_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/extended_card_tests-e5fdfbc3f4726556)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/grpc_auth_status_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/grpc_auth_status_tests-e9139b8765b53dc7)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/grpc_tls_apply_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/grpc_tls_apply_tests-90cc00f2d92c013f)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running tests/grpc_unary_success_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/grpc_unary_success_tests-784eac007fcf4c7c)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/hostile_server_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/hostile_server_tests-4fb16a72d78b7421)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.01s
+     Running tests/jsonrpc_stream_refusal_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/jsonrpc_stream_refusal_tests-b5f047282cee24c3)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/rest_stream_error_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/rest_stream_error_tests-e3731df692bbc25d)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/rest_streaming_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/rest_streaming_tests-cae52b3f077fd380)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/resume_e2e_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/resume_e2e_tests-8aeba9e40c84d19f)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.02s
+     Running tests/scripted_peer_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/scripted_peer_tests-cb58d5bf23cf11bb)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.24s
+     Running tests/sse_edge_case_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/sse_edge_case_tests-de1c982648a69416)
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/stream_event_size_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/stream_event_size_tests-b998867f74c31a7a)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/stream_liveness_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/stream_liveness_tests-30598cf6183345cd)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.54s
+     Running tests/stream_termination_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/stream_termination_tests-70cd26b2e9b7dde5)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/tenant_round_trip_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/tenant_round_trip_tests-1dcaefa654da6998)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/tls_integration_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/tls_integration_tests-ebd3fc8f7698cecd)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+     Running tests/token_endpoint_errors.rs (/opt/bench/target-quality-a2a-rust/debug/deps/token_endpoint_errors-e984a5ad8b387b62)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/trace_propagation_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/trace_propagation_e2e-b39394e7d807432c)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/ws_transport_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/ws_transport_tests-f59d3d101a04a71a)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a_protocol_sdk-1c9a7012335acfe5)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/auth_rejection_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/auth_rejection_e2e-08fc6e591d621602)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/book_defaults.rs (/opt/bench/target-quality-a2a-rust/debug/deps/book_defaults-a8c780a95f4a4a2b)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/graceful_shutdown_bindings.rs (/opt/bench/target-quality-a2a-rust/debug/deps/graceful_shutdown_bindings-fd917170c576483b)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+     Running tests/grpc_address_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/grpc_address_e2e-47ee0059358e2297)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+     Running tests/grpc_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/grpc_e2e-c6bea39e5634dc6a)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running tests/grpc_server_tls_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/grpc_server_tls_e2e-35876402bce7a4c3)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+     Running tests/grpc_server_tls_provider_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/grpc_server_tls_provider_e2e-6a1ba055a5375855)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/grpc_tls_provider_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/grpc_tls_provider_e2e-70a7d58e1ad438c7)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/observability_e2e/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/observability_e2e-230677668de6712f)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/reexport_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/reexport_tests-c339e6093f6768f0)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/swarm_binding_grpc.rs (/opt/bench/target-quality-a2a-rust/debug/deps/swarm_binding_grpc-fc6db62252c4afb2)
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a_protocol_server-3598f025abdb05fd)
+test result: ok. 1374 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 12.08s
+     Running tests/audit_tests/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/audit_tests-00675949f1997203)
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+     Running tests/auth_jwt_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/auth_jwt_e2e-f3cf5c7a6ad84ab0)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/auth_rejection_status.rs (/opt/bench/target-quality-a2a-rust/debug/deps/auth_rejection_status-d63ac9b4d862a6da)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/auth_required_state_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/auth_required_state_tests-4913572eecc72fb9)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/axum_adapter_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/axum_adapter_tests-c34968e3abb19f56)
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+     Running tests/cross_replica_cancel/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/cross_replica_cancel-2604b4363b6b8b42)
+test result: ok. 4 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/dispatch_edge_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/dispatch_edge_tests-3ca4cdfb12ba38e8)
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/dispatch_rest_coverage.rs (/opt/bench/target-quality-a2a-rust/debug/deps/dispatch_rest_coverage-b99977f8f50f0b52)
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/dispatch_tests/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/dispatch_tests-c318b65226d252d1)
+test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/dynamic_handler_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/dynamic_handler_tests-18ed3d425c2603fc)
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/edge_case_tests/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/edge_case_tests-b46bf7ed1f8172c2)
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+     Running tests/event_log_tests/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/event_log_tests-e248eaea42b93416)
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.44s
+     Running tests/event_processing_tests/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/event_processing_tests-179f4bf69f4fc2bf)
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/event_queue_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/event_queue_tests-55e72a5e97f61e05)
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/failure_class_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/failure_class_tests-73583ef63cdddac8)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/graceful_shutdown_bindings/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/graceful_shutdown_bindings-9c1a8139172aa64a)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+     Running tests/graceful_shutdown_tasks.rs (/opt/bench/target-quality-a2a-rust/debug/deps/graceful_shutdown_tasks-b629aa885e84d120)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+     Running tests/grpc_dispatch_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/grpc_dispatch_tests-30dfea47ca4faddb)
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+     Running tests/grpc_tls_provider.rs (/opt/bench/target-quality-a2a-rust/debug/deps/grpc_tls_provider-cd66c94bd2794d87)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/handler_tests/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/handler_tests-9c994af89b26168e)
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/hardening_tests/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/hardening_tests-01c3c7b061704d54)
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+     Running tests/hot_reload_warn_once.rs (/opt/bench/target-quality-a2a-rust/debug/deps/hot_reload_warn_once-efce884c51d5358a)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+     Running tests/http_json_error_parity.rs (/opt/bench/target-quality-a2a-rust/debug/deps/http_json_error_parity-844c76548770ccc9)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/inbound_trace_policy.rs (/opt/bench/target-quality-a2a-rust/debug/deps/inbound_trace_policy-9845aca6b9c0f264)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/inline_push_config_guard.rs (/opt/bench/target-quality-a2a-rust/debug/deps/inline_push_config_guard-d0405b803ad8dd28)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.00s
+     Running tests/inline_push_config_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/inline_push_config_tests-11b02917173a2254)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/interceptor_on_complete.rs (/opt/bench/target-quality-a2a-rust/debug/deps/interceptor_on_complete-76eab06304be2317)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/interceptor_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/interceptor_tests-7ee9bc5a9041337f)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/jsonrpc_dispatch_coverage_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/jsonrpc_dispatch_coverage_tests-587ada79066f88d6)
+test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.04s
+     Running tests/jsonrpc_edge_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/jsonrpc_edge_tests-565db684facc9eaa)
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/jwks_fetch_budget.rs (/opt/bench/target-quality-a2a-rust/debug/deps/jwks_fetch_budget-f262e04139670acc)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.01s
+     Running tests/jwks_https_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/jwks_https_e2e-2c499f71a57a3cc4)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/method_routing_completeness.rs (/opt/bench/target-quality-a2a-rust/debug/deps/method_routing_completeness-5874127f26a5e06b)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/metrics_handle_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/metrics_handle_tests-9465bbeaa2d4e740)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/multi_replica.rs (/opt/bench/target-quality-a2a-rust/debug/deps/multi_replica-af2eaaec9c78f6e1)
+test result: ok. 0 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/otel_pipeline_default_endpoint.rs (/opt/bench/target-quality-a2a-rust/debug/deps/otel_pipeline_default_endpoint-f5a09e97f35ab743)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/otel_pipeline_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/otel_pipeline_tests-63101341645e820a)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.00s
+     Running tests/postgres_store_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/postgres_store_tests-e60f266edcf1e14e)
+test result: ok. 0 passed; 0 failed; 65 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/proto3_empty_ids.rs (/opt/bench/target-quality-a2a-rust/debug/deps/proto3_empty_ids-1dea11261a21bca5)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/push_config_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/push_config_tests-2187c407cf2a7018)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/push_log_redaction.rs (/opt/bench/target-quality-a2a-rust/debug/deps/push_log_redaction-5dcdce7931fc6e3f)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/push_sender_https_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/push_sender_https_e2e-d85e1a8efe28de42)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.01s
+     Running tests/push_sender_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/push_sender_tests-6d876311e8c6261f)
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.01s
+     Running tests/request_context_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/request_context_tests-b7c03526455865ca)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/rest_edge_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/rest_edge_tests-9129864068046c49)
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+     Running tests/rest_tenant_binding_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/rest_tenant_binding_tests-db0c2b72a92e6d4b)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/send_sync_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/send_sync_tests-736931c41befe10b)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/serve_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/serve_tests-e84be6c05695833f)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/shutdown_in_flight_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/shutdown_in_flight_tests-1834d6d719a4f77b)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running tests/soak.rs (/opt/bench/target-quality-a2a-rust/debug/deps/soak-5809f0e126495e80)
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/soak_multi_replica.rs (/opt/bench/target-quality-a2a-rust/debug/deps/soak_multi_replica-2c54e8664ffbb74e)
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/sqlite_store_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/sqlite_store_tests-5f83e1b4a4f42ad7)
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/sse_format_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/sse_format_tests-1cfb9222e72e4b24)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/sse_resumption_e2e.rs (/opt/bench/target-quality-a2a-rust/debug/deps/sse_resumption_e2e-2d715264ebaf08d2)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+     Running tests/state_validation_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/state_validation_tests-a5105b58d5b9dff6)
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/store_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/store_tests-d16b43f4fc86c3f9)
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/streaming_error_envelope_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/streaming_error_envelope_tests-93f0fdbbcb0dea67)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/streaming_prestream_errors.rs (/opt/bench/target-quality-a2a-rust/debug/deps/streaming_prestream_errors-43055b4e55f2d3a2)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/streaming_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/streaming_tests-04416a1bcf4b00fa)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/stress_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/stress_tests-77f22ebb83bcf395)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.24s
+     Running tests/sustained_load_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/sustained_load_tests-6601054e2f917a3f)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.11s
+     Running tests/swarm_scale/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/swarm_scale-03132175a33d3e79)
+test result: ok. 0 passed; 0 failed; 16 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/tenant_sqlite_push_config_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/tenant_sqlite_push_config_tests-d3b2eee4e0464572)
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/tenant_sqlite_store_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/tenant_sqlite_store_tests-2b4b14d2780a2e4b)
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+     Running tests/tenant_store_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/tenant_store_tests-ed694038bdcbc8f5)
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/terminal_state_store.rs (/opt/bench/target-quality-a2a-rust/debug/deps/terminal_state_store-3dcef44d3a5edf89)
+test result: ok. 10 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.60s
+     Running tests/validation_edge_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/validation_edge_tests-395b39f889ff316a)
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/websocket_slow_reader.rs (/opt/bench/target-quality-a2a-rust/debug/deps/websocket_slow_reader-7a781b87a1f19b1f)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.77s
+     Running tests/websocket_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/websocket_tests-dbcedaa082c6de64)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a_protocol_types-1f4a13427cfccf31)
+test result: ok. 441 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+     Running tests/corpus_json.rs (/opt/bench/target-quality-a2a-rust/debug/deps/corpus_json-2731bd702aa961c0)
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/coverage_gap_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/coverage_gap_tests-4c1fb34ead2ad123)
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/interop_a2a_go_security.rs (/opt/bench/target-quality-a2a-rust/debug/deps/interop_a2a_go_security-77a0530e52d3c106)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/proptest_proto_convert.rs (/opt/bench/target-quality-a2a-rust/debug/deps/proptest_proto_convert-a9ae296293350849)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+     Running tests/proptest_types.rs (/opt/bench/target-quality-a2a-rust/debug/deps/proptest_types-9bbd4760026d0fe3)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+     Running tests/proto_field_alias.rs (/opt/bench/target-quality-a2a-rust/debug/deps/proto_field_alias-585a1c67d4f4194d)
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/proto_golden_fixtures.rs (/opt/bench/target-quality-a2a-rust/debug/deps/proto_golden_fixtures-ca01ca3e072d5526)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/proto_schema_sync.rs (/opt/bench/target-quality-a2a-rust/debug/deps/proto_schema_sync-2253fe239c7ade7a)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/rfc8785_vectors.rs (/opt/bench/target-quality-a2a-rust/debug/deps/rfc8785_vectors-2cf81d875d5e04f0)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/serde_edge_cases.rs (/opt/bench/target-quality-a2a-rust/debug/deps/serde_edge_cases-dabb219d4c06d077)
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/signing_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/signing_tests-770da57b9f7460ef)
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/state_transition_tests.rs (/opt/bench/target-quality-a2a-rust/debug/deps/state_transition_tests-3f2f5be20a727530)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/tck_wire_format.rs (/opt/bench/target-quality-a2a-rust/debug/deps/tck_wire_format-1027d8c97864641e)
+test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/tracestate_truncation.rs (/opt/bench/target-quality-a2a-rust/debug/deps/tracestate_truncation-a9e28fca262ed4cd)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a_tck-7aaf44d5b51b88ed)
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/a2a_tck_sut-79d69da30d1f3443)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/agent_team-2d33290b74b4d89a)
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/deploy_agent-bc9bc4719d6c4aa5)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/echo_agent-7bf8200e8579576b)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/genai_a2a_agent-0b7d724b2e516d47)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/hello_agent-8956e0bf54818500)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/incident_response-4e53cd0f3cb8bc08)
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/mcp_a2a_agent-8e9f266151f1ee8e)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/bin/tool_server.rs (/opt/bench/target-quality-a2a-rust/debug/deps/mcp_tool_server-7c1e74be0f6262b9)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/child_process.rs (/opt/bench/target-quality-a2a-rust/debug/deps/child_process-48f74fdd52b70248)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/multi_lang_team-3c9278563eeeb2bb)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/rust-worker.rs (/opt/bench/target-quality-a2a-rust/debug/deps/rust_worker-ca9948dd3f607f1a)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/resilient_agent-2c2d885d480be1c6)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rust/debug/deps/rig_a2a_agent-b18a8925e74aadf9)
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a_benchmarks
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a_book_tests
+test result: ok. 216 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.09s
+   Doc-tests a2a_example_harness
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a_protocol_client
+test result: ok. 22 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a_protocol_sdk
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a_protocol_server
+test result: ok. 47 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 0.01s
+   Doc-tests a2a_protocol_types
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s

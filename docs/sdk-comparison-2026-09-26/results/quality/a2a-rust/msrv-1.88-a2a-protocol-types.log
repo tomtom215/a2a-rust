@@ -1,0 +1,16 @@
+CMD: (cwd /opt/bench/a2a-rust-src) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rust/msrv cargo +1.88 check -j 2 --locked -p a2a-protocol-types
+rustc 1.88.0 (6b00bc388 2025-06-23)
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling syn v3.0.5
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling serde_derive v1.0.229
+    Checking memchr v2.8.3
+    Checking itoa v1.0.18
+   Compiling a2a-protocol-types v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-types)
+    Finished `dev` profile [unoptimized] target(s) in 5.55s
+EXIT: 0

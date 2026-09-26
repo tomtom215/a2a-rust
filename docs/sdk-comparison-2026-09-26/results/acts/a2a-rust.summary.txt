@@ -1,0 +1,31 @@
+ACTS a2a-rust / jsonrpc — 101 tests in 106599ms
+  MUST   59/59 passed
+  SHOULD 29/29 passed
+  MAY    13/13 passed
+  => CONFORMANT
+
+ACTS a2a-rust / grpc — 88 tests in 21872ms
+  MUST   47/47 passed
+  SHOULD 28/28 passed
+  MAY    13/13 passed
+  => CONFORMANT
+
+ACTS a2a-rust / rest — 92 tests in 18935ms
+  MUST   49/49 passed
+  SHOULD 29/30 passed (1 failed)
+  MAY    13/13 passed
+  => CONFORMANT
+    REST-CT-001: headers.Content-Type should start with application/a2a+json, got application/json
+
+========================================================
+ACROSS 3 BINDING(S)
+========================================================
+  111 test(s) in all, each scored on the binding(s) it targets
+  jsonrpc  101/101 passed   must 59/59   0 failed, 0 error(s)   ok
+  grpc       88/88 passed   must 47/47   0 failed, 0 error(s)   ok
+  rest       91/92 passed   must 49/49   1 failed, 0 error(s)   ok
+  => CONFORMANT overall
+report: /opt/bench/results/acts/a2a-rust/acts-report-a2a-rust-jsonrpc-20260926T100229Z.json
+report: /opt/bench/results/acts/a2a-rust/acts-report-a2a-rust-grpc-20260926T100229Z.json
+report: /opt/bench/results/acts/a2a-rust/acts-report-a2a-rust-rest-20260926T100229Z.json
+EXIT=0

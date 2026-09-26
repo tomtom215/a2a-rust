@@ -1,0 +1,30 @@
+rustls v0.23.43
+├── a2a-client-lf v0.2.5 (/opt/bench/a2a-rs/a2a-client)
+│   ├── a2a-cli v0.2.1 (/opt/bench/a2a-rs/a2acli)
+│   ├── a2a-grpc v0.3.7 (/opt/bench/a2a-rs/a2a-grpc)
+│   │   └── examples v0.1.0 (/opt/bench/a2a-rs/examples)
+│   ├── a2a-slimrpc v0.2.9 (/opt/bench/a2a-rs/a2a-slimrpc)
+│   └── examples v0.1.0 (/opt/bench/a2a-rs/examples)
+├── a2a-grpc v0.3.7 (/opt/bench/a2a-rs/a2a-grpc) (*)
+├── a2a-server-lf v0.4.4 (/opt/bench/a2a-rs/a2a-server)
+│   ├── a2a-grpc v0.3.7 (/opt/bench/a2a-rs/a2a-grpc) (*)
+│   ├── a2a-slimrpc v0.2.9 (/opt/bench/a2a-rs/a2a-slimrpc)
+│   └── examples v0.1.0 (/opt/bench/a2a-rs/examples)
+├── agntcy-slim-config v0.16.0
+│   ├── agntcy-slim-controller v0.13.0
+│   │   └── agntcy-slim-service v0.12.10
+│   │       ├── a2a-slimrpc v0.2.9 (/opt/bench/a2a-rs/a2a-slimrpc)
+│   │       └── agntcy-slim-rpc v2.3.0
+│   │           └── a2a-slimrpc v0.2.9 (/opt/bench/a2a-rs/a2a-slimrpc)
+│   ├── agntcy-slim-datapath v0.18.6
+│   │   ├── a2a-slimrpc v0.2.9 (/opt/bench/a2a-rs/a2a-slimrpc)
+│   │   ├── agntcy-slim-controller v0.13.0 (*)
+│   │   ├── agntcy-slim-rpc v2.3.0 (*)
+│   │   ├── agntcy-slim-service v0.12.10 (*)
+│   │   └── agntcy-slim-session v0.7.10
+│   │       ├── agntcy-slim-controller v0.13.0 (*)
+│   │       ├── agntcy-slim-rpc v2.3.0 (*)
+│   │       └── agntcy-slim-service v0.12.10 (*)
+│   ├── agntcy-slim-proto v0.6.0
+│   │   ├── agntcy-slim-controller v0.13.0 (*)
+│   │   └── agntcy-slim-datapath v0.18.6 (*)

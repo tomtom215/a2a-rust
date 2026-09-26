@@ -1,0 +1,18 @@
+    Updating crates.io index
+     Locking 560 packages to latest compatible versions
+      Adding agntcy-slim-auth v0.15.4 (available: v0.16.0)
+      Adding agntcy-slim-config v0.16.1 (available: v0.16.2)
+      Adding agntcy-slim-controller v0.13.0 (available: v0.13.1)
+      Adding agntcy-slim-datapath v0.18.7 (available: v0.18.8)
+      Adding agntcy-slim-mls v0.3.10 (available: v0.3.11)
+      Adding agntcy-slim-proto v0.6.1 (available: v0.6.2)
+      Adding agntcy-slim-rpc v2.3.0 (available: v2.3.3)
+      Adding agntcy-slim-service v0.12.10 (available: v0.12.11)
+      Adding agntcy-slim-session v0.7.10 (available: v0.7.11)
+      Adding agntcy-slim-tracing v0.4.20 (available: v0.4.21)
+      Adding aws-lc-rs v1.16.2 (available: v1.18.1)
+      Adding aws-lc-sys v0.39.0 (available: v0.39.1)
+      Adding crypto-common v0.1.6 (available: v0.1.7)
+      Adding matchit v0.8.4 (available: v0.8.6)
+      Adding rustls v0.23.43 (available: v0.23.45)
+      Adding rustls-webpki v0.103.13 (available: v0.103.15)

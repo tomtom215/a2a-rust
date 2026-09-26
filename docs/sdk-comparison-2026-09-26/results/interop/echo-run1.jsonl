@@ -1,0 +1,204 @@
+{"binding": "JSONRPC", "check": "C01_card", "detail": "chosen=JSONRPC", "driver": "a2a-rust-client", "ms": 2.518855, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 1.0405010000000001, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(2.838839) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 2.8522339999999997, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 0.275466, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C05_list_tasks", "detail": "n=2", "driver": "a2a-rust-client", "ms": 0.235856, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C06_send_nonblocking", "detail": "state=Submitted", "driver": "a2a-rust-client", "ms": 0.257301, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C07_push_create", "detail": "id=Some(\"b4659a38-56f2-4360-86fd-52526fbb788b\")", "driver": "a2a-rust-client", "ms": 0.399652, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C08_push_get", "detail": "url=http://127.0.0.1:36687/hook", "driver": "a2a-rust-client", "ms": 1.3228199999999999, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rust-client", "ms": 0.23500300000000002, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rust-client", "ms": 0.21499400000000002, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rust-client", "ms": 0.5920409999999999, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rust-client", "ms": 0.014735999999999999, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"60c69de1-b4e7-4c1a-b1e3-5b144e5b64fd\\\",\\\"contextId\\\":\\\"ece2105e-5ab9-4ce1-bb77-6d36d60f94b7\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rust-client", "ms": 101.95895300000001, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rust-client", "ms": 0.712188, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rust-client", "ms": 0.222464, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C16_err_not_found", "detail": "protocol error: [-32001] Task not found: no-such-task", "driver": "a2a-rust-client", "ms": 0.216241, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C17_err_not_cancelable", "detail": "protocol error: [-32002] Task cannot be canceled: a9e61fbb-045c-49e8-aa22-37f3f07cc12d", "driver": "a2a-rust-client", "ms": 0.148788, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C01_card", "detail": "chosen=HTTP+JSON", "driver": "a2a-rust-client", "ms": 0.878991, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 1.084156, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(2.19907) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 2.217539, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 0.424534, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C05_list_tasks", "detail": "n=5", "driver": "a2a-rust-client", "ms": 0.19908900000000002, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C06_send_nonblocking", "detail": "state=Submitted", "driver": "a2a-rust-client", "ms": 0.26520200000000005, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C07_push_create", "detail": "id=Some(\"3fa833cb-3eb7-4e87-95ac-85d54ef56ea6\")", "driver": "a2a-rust-client", "ms": 0.460922, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C08_push_get", "detail": "url=http://127.0.0.1:44663/hook", "driver": "a2a-rust-client", "ms": 0.316652, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rust-client", "ms": 0.235109, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rust-client", "ms": 0.252253, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rust-client", "ms": 0.601843, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rust-client", "ms": 0.012107, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"786c893a-5d4a-4793-bcf9-6d7bd2331953\\\",\\\"contextId\\\":\\\"465de0ef-97a3-479d-a461-d78b8a41e1a9\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rust-client", "ms": 0.007709000000000001, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rust-client", "ms": 0.305413, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rust-client", "ms": 0.158949, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C16_err_not_found", "detail": "protocol error: [-32001] Task not found: no-such-task", "driver": "a2a-rust-client", "ms": 0.13258399999999998, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C17_err_not_cancelable", "detail": "protocol error: [-32002] Task cannot be canceled: af439f5b-4531-41bd-8d9a-f455802b00f4", "driver": "a2a-rust-client", "ms": 0.13117700000000002, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C01_card", "detail": "chosen=GRPC", "driver": "a2a-rust-client", "ms": 4.669122000000001, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 0.794018, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(46.70434100000001) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 46.718214, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 0.473072, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C05_list_tasks", "detail": "n=8", "driver": "a2a-rust-client", "ms": 47.662236, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C06_send_nonblocking", "detail": "state=Submitted", "driver": "a2a-rust-client", "ms": 0.470946, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C07_push_create", "detail": "id=Some(\"0298c4a1-03cd-4592-950a-c405655629a3\")", "driver": "a2a-rust-client", "ms": 0.6437930000000001, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C08_push_get", "detail": "url=http://127.0.0.1:40195/hook", "driver": "a2a-rust-client", "ms": 0.306825, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rust-client", "ms": 0.36510200000000004, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rust-client", "ms": 44.510725, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rust-client", "ms": 0.8517429999999999, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rust-client", "ms": 43.310855000000004, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"7a889fc5-0b64-4149-abef-5cbff9520a6d\\\",\\\"contextId\\\":\\\"023f714d-ce8e-4a6e-b3b2-2c6dd0e150c2\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rust-client", "ms": 0.009333000000000001, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rust-client", "ms": 0.81087, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rust-client", "ms": 43.044719, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C16_err_not_found", "detail": "protocol error: [-32001] Task not found: no-such-task", "driver": "a2a-rust-client", "ms": 0.28164900000000004, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C17_err_not_cancelable", "detail": "protocol error: [-32002] Task cannot be canceled: ffedce96-a9d3-4d94-b1f8-366a635fbac0", "driver": "a2a-rust-client", "ms": 0.147305, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C01_card", "detail": "chosen=JSONRPC", "driver": "a2a-rs-client", "ms": 3.5132179999999997, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 1.3720780000000001, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(0.5899650000000001) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.650707, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.256018, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C05_list_tasks", "detail": "n=11", "driver": "a2a-rs-client", "ms": 0.35994, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C06_send_nonblocking", "detail": "state=Submitted", "driver": "a2a-rs-client", "ms": 0.343574, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C07_push_create", "detail": "id=Some(\"5381a5f8-491c-4bc6-a709-f70a41854e86\")", "driver": "a2a-rs-client", "ms": 0.47008, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C08_push_get", "detail": "url=http://127.0.0.1:43819/hook", "driver": "a2a-rs-client", "ms": 0.173046, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rs-client", "ms": 0.113997, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rs-client", "ms": 0.200738, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rs-client", "ms": 0.546369, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rs-client", "ms": 0.23259, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"f641f2e7-db38-4b16-8b36-281052ce47ad\\\",\\\"contextId\\\":\\\"97a23de8-3e7a-4890-b5e9-652b31b4bd4b\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rs-client", "ms": 0.007839, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rs-client", "ms": 0.354423, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rs-client", "ms": 0.178459, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C16_err_not_found", "detail": "code=-32001 Task not found: no-such-task", "driver": "a2a-rs-client", "ms": 0.152998, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C17_err_not_cancelable", "detail": "code=-32002 Task cannot be canceled: 5a415010-85cc-423f-8ffc-0337cd7c15cd", "driver": "a2a-rs-client", "ms": 0.120897, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C01_card", "detail": "chosen=HTTP+JSON", "driver": "a2a-rs-client", "ms": 4.549786, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.7367520000000001, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(0.465396) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.499654, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.157531, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C05_list_tasks", "detail": "n=14", "driver": "a2a-rs-client", "ms": 0.42146, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C06_send_nonblocking", "detail": "state=Submitted", "driver": "a2a-rs-client", "ms": 0.30408300000000005, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C07_push_create", "detail": "id=Some(\"14fa2fcd-52c2-4c95-a712-abf4a8013e9c\")", "driver": "a2a-rs-client", "ms": 0.44603200000000004, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C08_push_get", "detail": "url=http://127.0.0.1:34361/hook", "driver": "a2a-rs-client", "ms": 0.160251, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rs-client", "ms": 0.113252, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rs-client", "ms": 0.25999900000000004, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rs-client", "ms": 0.554944, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rs-client", "ms": 0.034474000000000005, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"5b1a48ea-2ef1-4397-b55a-2a8891758ddd\\\",\\\"contextId\\\":\\\"d2846dd9-f8ad-4b1c-9c3b-c99a5d27b6e3\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rs-client", "ms": 0.006888999999999999, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rs-client", "ms": 0.32960999999999996, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rs-client", "ms": 0.16595600000000002, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C16_err_not_found", "detail": "code=-32001 Task not found: no-such-task", "driver": "a2a-rs-client", "ms": 0.191112, "ok": true, "server": "a2a-rust"}
+{"binding": "HTTP+JSON", "check": "C17_err_not_cancelable", "detail": "code=-32002 Task cannot be canceled: 359f45ee-9612-4764-8092-53d6ba8676d4", "driver": "a2a-rs-client", "ms": 0.1883, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C01_card", "detail": "chosen=GRPC", "driver": "a2a-rs-client", "ms": 3.455291, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.666744, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(41.966323) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 41.980788999999994, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.46513899999999997, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C05_list_tasks", "detail": "n=17", "driver": "a2a-rs-client", "ms": 43.470096, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C06_send_nonblocking", "detail": "state=Submitted", "driver": "a2a-rs-client", "ms": 0.6477959999999999, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C07_push_create", "detail": "id=Some(\"0930605c-bd91-4e1d-9e2c-1b7e911791fc\")", "driver": "a2a-rs-client", "ms": 0.593102, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C08_push_get", "detail": "url=http://127.0.0.1:43111/hook", "driver": "a2a-rs-client", "ms": 0.402084, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rs-client", "ms": 0.320662, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rs-client", "ms": 0.37976600000000005, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rs-client", "ms": 0.569753, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rs-client", "ms": 0.008094, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"d0ea3c02-6df1-4d56-afc8-8266e32bb901\\\",\\\"contextId\\\":\\\"2d716a71-3e52-4071-a383-91b71545ba04\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rs-client", "ms": 0.0121, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rs-client", "ms": 0.5143679999999999, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rs-client", "ms": 46.200062, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C16_err_not_found", "detail": "code=-32001 Task not found: no-such-task", "driver": "a2a-rs-client", "ms": 0.6526299999999999, "ok": true, "server": "a2a-rust"}
+{"binding": "GRPC", "check": "C17_err_not_cancelable", "detail": "code=-32002 Task cannot be canceled: 33f06a01-77f0-48a8-aa41-aec2312bbd43", "driver": "a2a-rs-client", "ms": 0.413661, "ok": true, "server": "a2a-rust"}
+{"binding": "JSONRPC", "check": "C01_card", "detail": "chosen=JSONRPC", "driver": "a2a-rust-client", "ms": 3.7477270000000003, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 0.804586, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(50.03171) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 50.045608, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 0.46238399999999996, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C05_list_tasks", "detail": "n=2", "driver": "a2a-rust-client", "ms": 0.349721, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C06_send_nonblocking", "detail": "state=Working", "driver": "a2a-rust-client", "ms": 0.322235, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C07_push_create", "detail": "id=Some(\"01a0dd2a-0c7c-76a2-a877-fe60d4d75453\")", "driver": "a2a-rust-client", "ms": 0.449339, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C08_push_get", "detail": "url=http://127.0.0.1:45459/hook", "driver": "a2a-rust-client", "ms": 0.17929299999999998, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rust-client", "ms": 0.200765, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rust-client", "ms": 0.250792, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rust-client", "ms": 0.962126, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rust-client", "ms": 39.229045, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"01a0dd2a-0bb2-72c2-b184-5301f5fece1b\\\",\\\"contextId\\\":\\\"01a0dd2a-0bb2-72c2-b184-5302e1867828\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rust-client", "ms": 0.010312, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rust-client", "ms": 0.603959, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C15_extended_card", "detail": "protocol error: [-32700] invalid params: ProtoJSON error: invalid type: null, expected struct lf.a2a.v1.GetExtendedAgentCardRequest", "driver": "a2a-rust-client", "ms": 0.286109, "ok": false, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C16_err_not_found", "detail": "protocol error: [-32001] task not found: no-such-task", "driver": "a2a-rust-client", "ms": 0.205939, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C17_err_not_cancelable", "detail": "protocol error: [-32002] task cannot be canceled: 01a0dd2a-0b7f-77bd-bf55-f3265782264e", "driver": "a2a-rust-client", "ms": 0.159095, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C01_card", "detail": "chosen=HTTP+JSON", "driver": "a2a-rust-client", "ms": 0.892113, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 0.597982, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(45.10895) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 45.120369000000004, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 0.364012, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C05_list_tasks", "detail": "n=5", "driver": "a2a-rust-client", "ms": 0.27576, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C06_send_nonblocking", "detail": "state=Working", "driver": "a2a-rust-client", "ms": 0.28112, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C07_push_create", "detail": "id=Some(\"01a0dd2a-0dac-7376-aa91-8ef477ed9482\")", "driver": "a2a-rust-client", "ms": 0.524767, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C08_push_get", "detail": "url=http://127.0.0.1:35179/hook", "driver": "a2a-rust-client", "ms": 0.175579, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rust-client", "ms": 0.109937, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rust-client", "ms": 0.27177100000000004, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rust-client", "ms": 1.7437150000000001, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rust-client", "ms": 38.481559, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"01a0dd2a-0ce2-76d1-952e-7e06b3280ed4\\\",\\\"contextId\\\":\\\"01a0dd2a-0ce2-76d1-952e-7e07a879bdbb\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rust-client", "ms": 0.012726, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rust-client", "ms": 0.405939, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rust-client", "ms": 0.633403, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C16_err_not_found", "detail": "protocol error: [-32001] task not found: no-such-task", "driver": "a2a-rust-client", "ms": 0.231792, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C17_err_not_cancelable", "detail": "protocol error: [-32002] task cannot be canceled: 01a0dd2a-0cb4-7110-8cd1-37a149127ae0", "driver": "a2a-rust-client", "ms": 0.249763, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C01_card", "detail": "chosen=GRPC", "driver": "a2a-rust-client", "ms": 3.415278, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 0.820529, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(42.765551) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 42.777367, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rust-client", "ms": 0.550355, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C05_list_tasks", "detail": "n=8", "driver": "a2a-rust-client", "ms": 43.447849, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C06_send_nonblocking", "detail": "state=Working", "driver": "a2a-rust-client", "ms": 0.537741, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C07_push_create", "detail": "id=Some(\"01a0dd2a-0f03-708e-9667-643d9c8e58b8\")", "driver": "a2a-rust-client", "ms": 0.59451, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C08_push_get", "detail": "url=http://127.0.0.1:42757/hook", "driver": "a2a-rust-client", "ms": 0.300569, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rust-client", "ms": 0.490489, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rust-client", "ms": 0.322343, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rust-client", "ms": 0.823166, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rust-client", "ms": 0.049925, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"01a0dd2a-0e3a-7484-a345-068cac42422f\\\",\\\"contextId\\\":\\\"01a0dd2a-0e3a-7484-a345-068dbeef1910\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rust-client", "ms": 0.008141, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rust-client", "ms": 0.5207350000000001, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rust-client", "ms": 0.308027, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C16_err_not_found", "detail": "protocol error: [-32001] task not found: no-such-task", "driver": "a2a-rust-client", "ms": 0.19639700000000002, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C17_err_not_cancelable", "detail": "protocol error: [-32002] task cannot be canceled: 01a0dd2a-0de2-7245-b8c6-e1c898ac87e7", "driver": "a2a-rust-client", "ms": 0.272284, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C01_card", "detail": "chosen=JSONRPC", "driver": "a2a-rs-client", "ms": 8.209983000000001, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.8316899999999999, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(41.196726000000005) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 41.279568000000005, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.307263, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C05_list_tasks", "detail": "n=11", "driver": "a2a-rs-client", "ms": 0.42378499999999997, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C06_send_nonblocking", "detail": "state=Working", "driver": "a2a-rs-client", "ms": 0.41896799999999995, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C07_push_create", "detail": "id=Some(\"01a0dd2a-1011-7027-95a4-62bb61f9131b\")", "driver": "a2a-rs-client", "ms": 0.50536, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C08_push_get", "detail": "url=http://127.0.0.1:42717/hook", "driver": "a2a-rs-client", "ms": 0.160423, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rs-client", "ms": 0.111667, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rs-client", "ms": 0.205737, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rs-client", "ms": 1.022609, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rs-client", "ms": 39.103474, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"01a0dd2a-0f46-7396-bc3a-3b3c295ef735\\\",\\\"contextId\\\":\\\"01a0dd2a-0f46-7396-bc3a-3b3dd5a8286e\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rs-client", "ms": 0.009024, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rs-client", "ms": 0.673345, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rs-client", "ms": 0.341129, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C16_err_not_found", "detail": "code=-32001 task not found: no-such-task", "driver": "a2a-rs-client", "ms": 0.203985, "ok": true, "server": "a2a-rs"}
+{"binding": "JSONRPC", "check": "C17_err_not_cancelable", "detail": "code=-32002 task cannot be canceled: 01a0dd2a-0f1c-70d3-a18f-793b71808d45", "driver": "a2a-rs-client", "ms": 0.15598700000000001, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C01_card", "detail": "chosen=HTTP+JSON", "driver": "a2a-rs-client", "ms": 2.9467999999999996, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.70338, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(48.183112) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 48.276832999999996, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.372403, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C05_list_tasks", "detail": "n=14", "driver": "a2a-rs-client", "ms": 0.500729, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C06_send_nonblocking", "detail": "state=Working", "driver": "a2a-rs-client", "ms": 0.366029, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C07_push_create", "detail": "id=Some(\"01a0dd2a-1141-7168-b472-298e664f86bb\")", "driver": "a2a-rs-client", "ms": 0.6060409999999999, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C08_push_get", "detail": "url=http://127.0.0.1:38955/hook", "driver": "a2a-rs-client", "ms": 0.254635, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rs-client", "ms": 0.259416, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rs-client", "ms": 0.239223, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rs-client", "ms": 1.682801, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rs-client", "ms": 41.766165, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"01a0dd2a-1077-761a-9fe4-9cf37b622ca3\\\",\\\"contextId\\\":\\\"01a0dd2a-1077-761a-9fe4-9cf4e0cf2ac8\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rs-client", "ms": 0.011993, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rs-client", "ms": 0.315133, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rs-client", "ms": 0.187361, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C16_err_not_found", "detail": "code=-32001 task not found: no-such-task", "driver": "a2a-rs-client", "ms": 0.20197400000000001, "ok": true, "server": "a2a-rs"}
+{"binding": "HTTP+JSON", "check": "C17_err_not_cancelable", "detail": "code=-32002 task cannot be canceled: 01a0dd2a-1045-749b-aa7a-2c0184fb7bb2", "driver": "a2a-rs-client", "ms": 0.198299, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C01_card", "detail": "chosen=GRPC", "driver": "a2a-rs-client", "ms": 3.904437, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C02_send", "detail": "state=Completed text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.7690429999999999, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C03_stream", "detail": "artifact_events=1 first_artifact_ms=Some(41.410203) last_chunk=true final=Some(Completed) err=None text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 41.426657, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C04_get_task", "detail": "state=Completed stored_text=\"Echo: What is the capital of France?\"", "driver": "a2a-rs-client", "ms": 0.49009800000000003, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C05_list_tasks", "detail": "n=17", "driver": "a2a-rs-client", "ms": 43.496672, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C06_send_nonblocking", "detail": "state=Working", "driver": "a2a-rs-client", "ms": 0.431193, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C07_push_create", "detail": "id=Some(\"01a0dd2a-129b-714a-abee-c8354b1f0a54\")", "driver": "a2a-rs-client", "ms": 0.6400359999999999, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C08_push_get", "detail": "url=http://127.0.0.1:44987/hook", "driver": "a2a-rs-client", "ms": 0.385389, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C09_push_list", "detail": "n=1", "driver": "a2a-rs-client", "ms": 0.238347, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C10_subscribe", "detail": "first=task", "driver": "a2a-rs-client", "ms": 0.250894, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C11_cancel", "detail": "state=Canceled", "driver": "a2a-rs-client", "ms": 0.931075, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C12_subscribe_sees_cancel", "detail": "saw_canceled=true ended=true", "driver": "a2a-rs-client", "ms": 40.533101, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C13_push_delivered", "detail": "posts=1 sample=Some(\"{\\\"statusUpdate\\\":{\\\"taskId\\\":\\\"01a0dd2a-11d2-7104-9e59-639deb68f11a\\\",\\\"contextId\\\":\\\"01a0dd2a-11d2-7104-9e59-639e7edd035f\\\",\\\"status\\\":{\\\"state\\\":\\\"TASK_STATE_CANCELED\\\",\\\"tim\")", "driver": "a2a-rs-client", "ms": 0.009467999999999999, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C14_push_delete", "detail": "del=None after=Ok(0)", "driver": "a2a-rs-client", "ms": 0.635547, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C15_extended_card", "detail": "name=bench-agent", "driver": "a2a-rs-client", "ms": 0.21403, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C16_err_not_found", "detail": "code=-32001 task not found: no-such-task", "driver": "a2a-rs-client", "ms": 0.210587, "ok": true, "server": "a2a-rs"}
+{"binding": "GRPC", "check": "C17_err_not_cancelable", "detail": "code=-32002 task cannot be canceled: 01a0dd2a-117c-7117-833c-9c6fe6a7ca2b", "driver": "a2a-rs-client", "ms": 0.194436, "ok": true, "server": "a2a-rs"}

@@ -1,0 +1,16 @@
+CMD: (cwd /opt/bench/a2a-rust-src) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rust/msrv cargo +1.88 check -j 2 --locked -p a2a-protocol-server
+rustc 1.88.0 (6b00bc388 2025-06-23)
+    Checking errno v0.3.14
+   Compiling futures-macro v0.3.34
+    Checking signal-hook-registry v1.4.8
+    Checking futures-task v0.3.34
+    Checking tokio v1.53.1
+    Checking futures-util v0.3.34
+   Compiling a2a-protocol-server v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-server)
+   Compiling mutants v0.0.4
+    Checking tokio-util v0.7.19
+    Checking h2 v0.4.19
+    Checking hyper v1.11.1
+    Checking hyper-util v0.1.20
+    Finished `dev` profile [unoptimized] target(s) in 8.03s
+EXIT: 0

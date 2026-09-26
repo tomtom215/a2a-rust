@@ -1,0 +1,27 @@
+CMD: (cwd /opt/bench/a2a-rs) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rs/msrv cargo +1.85 check -j 2 --locked -p a2a-slimrpc
+rustc 1.85.1 (4eb161250 2025-03-15)
+error: rustc 1.85.1 is not supported by the following packages:
+  cel@0.14.3 requires rustc 1.86.0
+  globset@0.4.20 requires rustc 1.88
+  icu_collections@2.2.0 requires rustc 1.86
+  icu_locale_core@2.2.0 requires rustc 1.86
+  icu_normalizer@2.2.0 requires rustc 1.86
+  icu_normalizer_data@2.2.0 requires rustc 1.86
+  icu_normalizer_data@2.2.0 requires rustc 1.86
+  icu_normalizer_data@2.2.0 requires rustc 1.86
+  icu_properties@2.2.0 requires rustc 1.86
+  icu_properties_data@2.2.0 requires rustc 1.86
+  icu_properties_data@2.2.0 requires rustc 1.86
+  icu_properties_data@2.2.0 requires rustc 1.86
+  icu_provider@2.2.0 requires rustc 1.86
+  spiffe@0.12.0 requires rustc 1.88
+  time@0.3.47 requires rustc 1.88.0
+  time-core@0.1.8 requires rustc 1.88.0
+  time-core@0.1.8 requires rustc 1.88.0
+  time-macros@0.2.27 requires rustc 1.88.0
+  tonic@0.14.6 requires rustc 1.88
+Either upgrade rustc or select compatible dependency versions with
+`cargo update <name>@<current-ver> --precise <compatible-ver>`
+where `<compatible-ver>` is the latest version supporting rustc 1.85.1
+
+EXIT: 101

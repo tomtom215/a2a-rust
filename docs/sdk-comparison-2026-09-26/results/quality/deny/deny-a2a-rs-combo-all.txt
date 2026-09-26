@@ -1,0 +1,517 @@
+CMD: cargo deny --manifest-path /opt/bench/consumers/a2a-rs-combo-all/Cargo.toml --config /opt/bench/results/quality/deny.toml check licenses advisories bans sources
+warning[license-not-encountered]: license was not encountered
+   ┌─ /opt/bench/results/quality/deny.toml:16:59
+   │
+16 │   "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC",
+   │                                                           ━━━━━━━━━━━━ unmatched license allowance
+
+warning[license-not-encountered]: license was not encountered
+   ┌─ /opt/bench/results/quality/deny.toml:17:50
+   │
+17 │   "Unicode-3.0", "Zlib", "CDLA-Permissive-2.0", "MPL-2.0",
+   │                                                  ━━━━━━━ unmatched license allowance
+
+warning[duplicate]: found 2 duplicate entries for crate 'base64'
+   ┌─ /opt/bench/consumers/a2a-rs-combo-all/Cargo.lock:18:1
+   │  
+18 │ ╭ base64 0.22.1 registry+https://github.com/rust-lang/crates.io-index
+19 │ │ base64 0.23.1 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰───────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ base64 v0.22.1
+     ├── pbjson v0.9.0
+     │   ├── a2a-pb v0.2.1
+     │   │   ├── a2a-client-lf v0.2.5
+     │   │   │   └── consumer-a2a-rs-combo-all v0.0.0
+     │   │   └── a2a-server-lf v0.4.4
+     │   │       └── consumer-a2a-rs-combo-all v0.0.0 (*)
+     │   └── pbjson-types v0.9.0
+     │       └── a2a-pb v0.2.1 (*)
+     └── tonic v0.14.6
+         ├── a2a-pb v0.2.1 (*)
+         └── tonic-prost v0.14.6
+             └── a2a-pb v0.2.1 (*)
+   ├ base64 v0.23.1
+     ├── a2a-lf v0.3.1
+     │   ├── a2a-client-lf v0.2.5
+     │   │   └── consumer-a2a-rs-combo-all v0.0.0
+     │   ├── a2a-pb v0.2.1
+     │   │   ├── a2a-client-lf v0.2.5 (*)
+     │   │   └── a2a-server-lf v0.4.4
+     │   │       └── consumer-a2a-rs-combo-all v0.0.0 (*)
+     │   ├── a2a-server-lf v0.4.4 (*)
+     │   └── consumer-a2a-rs-combo-all v0.0.0 (*)
+     ├── hyper-util v0.1.21
+     │   ├── axum v0.8.9
+     │   │   ├── a2a-server-lf v0.4.4 (*)
+     │   │   └── tonic v0.14.6
+     │   │       ├── a2a-pb v0.2.1 (*)
+     │   │       └── tonic-prost v0.14.6
+     │   │           └── a2a-pb v0.2.1 (*)
+     │   ├── axum-server v0.8.0
+     │   │   └── a2a-server-lf v0.4.4 (*)
+     │   ├── hyper-rustls v0.27.10
+     │   │   └── reqwest v0.13.5
+     │   │       ├── a2a-client-lf v0.2.5 (*)
+     │   │       └── a2a-server-lf v0.4.4 (*)
+     │   ├── hyper-timeout v0.5.2
+     │   │   └── tonic v0.14.6 (*)
+     │   ├── hyper-tls v0.6.0
+     │   │   └── reqwest v0.13.5 (*)
+     │   ├── reqwest v0.13.5 (*)
+     │   └── tonic v0.14.6 (*)
+     └── reqwest v0.13.5 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'core-foundation'
+   ┌─ /opt/bench/consumers/a2a-rs-combo-all/Cargo.lock:29:1
+   │  
+29 │ ╭ core-foundation 0.9.4 registry+https://github.com/rust-lang/crates.io-index
+30 │ │ core-foundation 0.10.1 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰────────────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ core-foundation v0.9.4
+     └── system-configuration v0.7.0
+         └── hyper-util v0.1.21
+             ├── axum v0.8.9
+             │   ├── a2a-server-lf v0.4.4
+             │   │   └── consumer-a2a-rs-combo-all v0.0.0
+             │   └── tonic v0.14.6
+             │       ├── a2a-pb v0.2.1
+             │       │   ├── a2a-client-lf v0.2.5
+             │       │   │   └── consumer-a2a-rs-combo-all v0.0.0 (*)
+             │       │   └── a2a-server-lf v0.4.4 (*)
+             │       └── tonic-prost v0.14.6
+             │           └── a2a-pb v0.2.1 (*)
+             ├── axum-server v0.8.0
+             │   └── a2a-server-lf v0.4.4 (*)
+             ├── hyper-rustls v0.27.10
+             │   └── reqwest v0.13.5
+             │       ├── a2a-client-lf v0.2.5 (*)
+             │       └── a2a-server-lf v0.4.4 (*)
+             ├── hyper-timeout v0.5.2
+             │   └── tonic v0.14.6 (*)
+             ├── hyper-tls v0.6.0
+             │   └── reqwest v0.13.5 (*)
+             ├── reqwest v0.13.5 (*)
+             └── tonic v0.14.6 (*)
+   ├ core-foundation v0.10.1
+     ├── rustls-platform-verifier v0.7.1
+     │   └── reqwest v0.13.5
+     │       ├── a2a-client-lf v0.2.5
+     │       │   └── consumer-a2a-rs-combo-all v0.0.0
+     │       └── a2a-server-lf v0.4.4
+     │           └── consumer-a2a-rs-combo-all v0.0.0 (*)
+     └── security-framework v3.7.0
+         ├── native-tls v0.2.18
+         │   ├── hyper-tls v0.6.0
+         │   │   └── reqwest v0.13.5 (*)
+         │   ├── reqwest v0.13.5 (*)
+         │   └── tokio-native-tls v0.3.1
+         │       ├── hyper-tls v0.6.0 (*)
+         │       └── reqwest v0.13.5 (*)
+         ├── rustls-native-certs v0.8.4
+         │   └── rustls-platform-verifier v0.7.1 (*)
+         └── rustls-platform-verifier v0.7.1 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'hashbrown'
+   ┌─ /opt/bench/consumers/a2a-rs-combo-all/Cargo.lock:60:1
+   │  
+60 │ ╭ hashbrown 0.15.5 registry+https://github.com/rust-lang/crates.io-index
+61 │ │ hashbrown 0.17.1 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰──────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ hashbrown v0.15.5
+     └── petgraph v0.8.3
+         └── prost-build v0.14.4
+             ├── (build) pbjson-types v0.9.0
+             │   └── a2a-pb v0.2.1
+             │       ├── a2a-client-lf v0.2.5
+             │       │   └── consumer-a2a-rs-combo-all v0.0.0
+             │       └── a2a-server-lf v0.4.4
+             │           └── consumer-a2a-rs-combo-all v0.0.0 (*)
+             └── tonic-prost-build v0.14.6
+                 └── (build) a2a-pb v0.2.1 (*)
+   ├ hashbrown v0.17.1
+     └── indexmap v2.14.2
+         ├── h2 v0.4.19
+         │   ├── hyper v1.11.1
+         │   │   ├── a2a-server-lf v0.4.4
+         │   │   │   └── consumer-a2a-rs-combo-all v0.0.0
+         │   │   ├── axum v0.8.9
+         │   │   │   ├── a2a-server-lf v0.4.4 (*)
+         │   │   │   └── tonic v0.14.6
+         │   │   │       ├── a2a-pb v0.2.1
+         │   │   │       │   ├── a2a-client-lf v0.2.5
+         │   │   │       │   │   └── consumer-a2a-rs-combo-all v0.0.0 (*)
+         │   │   │       │   └── a2a-server-lf v0.4.4 (*)
+         │   │   │       └── tonic-prost v0.14.6
+         │   │   │           └── a2a-pb v0.2.1 (*)
+         │   │   ├── axum-server v0.8.0
+         │   │   │   └── a2a-server-lf v0.4.4 (*)
+         │   │   ├── hyper-rustls v0.27.10
+         │   │   │   └── reqwest v0.13.5
+         │   │   │       ├── a2a-client-lf v0.2.5 (*)
+         │   │   │       └── a2a-server-lf v0.4.4 (*)
+         │   │   ├── hyper-timeout v0.5.2
+         │   │   │   └── tonic v0.14.6 (*)
+         │   │   ├── hyper-tls v0.6.0
+         │   │   │   └── reqwest v0.13.5 (*)
+         │   │   ├── hyper-util v0.1.21
+         │   │   │   ├── axum v0.8.9 (*)
+         │   │   │   ├── axum-server v0.8.0 (*)
+         │   │   │   ├── hyper-rustls v0.27.10 (*)
+         │   │   │   ├── hyper-timeout v0.5.2 (*)
+         │   │   │   ├── hyper-tls v0.6.0 (*)
+         │   │   │   ├── reqwest v0.13.5 (*)
+         │   │   │   └── tonic v0.14.6 (*)
+         │   │   ├── reqwest v0.13.5 (*)
+         │   │   └── tonic v0.14.6 (*)
+         │   ├── reqwest v0.13.5 (*)
+         │   └── tonic v0.14.6 (*)
+         ├── petgraph v0.8.3
+         │   └── prost-build v0.14.4
+         │       ├── (build) pbjson-types v0.9.0
+         │       │   └── a2a-pb v0.2.1 (*)
+         │       └── tonic-prost-build v0.14.6
+         │           └── (build) a2a-pb v0.2.1 (*)
+         └── tower v0.5.3
+             ├── a2a-server-lf v0.4.4 (*)
+             ├── axum v0.8.9 (*)
+             ├── reqwest v0.13.5 (*)
+             ├── tonic v0.14.6 (*)
+             └── tower-http v0.6.11
+                 └── reqwest v0.13.5 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'syn'
+    ┌─ /opt/bench/consumers/a2a-rs-combo-all/Cargo.lock:179:1
+    │  
+179 │ ╭ syn 2.0.119 registry+https://github.com/rust-lang/crates.io-index
+180 │ │ syn 3.0.6 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰───────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ syn v2.0.119
+      ├── auto_impl v1.3.0
+      │   └── a2a-client-lf v0.2.5
+      │       └── consumer-a2a-rs-combo-all v0.0.0
+      ├── axum-macros v0.5.1
+      │   └── axum v0.8.9
+      │       ├── a2a-server-lf v0.4.4
+      │       │   └── consumer-a2a-rs-combo-all v0.0.0 (*)
+      │       └── tonic v0.14.6
+      │           ├── a2a-pb v0.2.1
+      │           │   ├── a2a-client-lf v0.2.5 (*)
+      │           │   └── a2a-server-lf v0.4.4 (*)
+      │           └── tonic-prost v0.14.6
+      │               └── a2a-pb v0.2.1 (*)
+      ├── jni-macros v0.22.4
+      │   └── jni v0.22.4
+      │       └── rustls-platform-verifier v0.7.1
+      │           └── reqwest v0.13.5
+      │               ├── a2a-client-lf v0.2.5 (*)
+      │               └── a2a-server-lf v0.4.4 (*)
+      ├── jni-sys-macros v0.4.1
+      │   └── jni-sys v0.4.1
+      │       └── jni v0.22.4 (*)
+      ├── openssl-macros v0.1.1
+      │   └── openssl v0.10.81
+      │       └── native-tls v0.2.18
+      │           ├── hyper-tls v0.6.0
+      │           │   └── reqwest v0.13.5 (*)
+      │           ├── reqwest v0.13.5 (*)
+      │           └── tokio-native-tls v0.3.1
+      │               ├── hyper-tls v0.6.0 (*)
+      │               └── reqwest v0.13.5 (*)
+      ├── pin-project-internal v1.1.13
+      │   └── pin-project v1.1.13
+      │       └── tonic v0.14.6 (*)
+      ├── prettyplease v0.2.37
+      │   ├── prost-build v0.14.4
+      │   │   ├── (build) pbjson-types v0.9.0
+      │   │   │   └── a2a-pb v0.2.1 (*)
+      │   │   └── tonic-prost-build v0.14.6
+      │   │       └── (build) a2a-pb v0.2.1 (*)
+      │   ├── tonic-build v0.14.6
+      │   │   └── tonic-prost-build v0.14.6 (*)
+      │   └── tonic-prost-build v0.14.6 (*)
+      ├── prost-build v0.14.4 (*)
+      ├── prost-derive v0.14.4
+      │   └── prost v0.14.4
+      │       ├── a2a-pb v0.2.1 (*)
+      │       ├── pbjson-build v0.9.0
+      │       │   ├── (build) a2a-pb v0.2.1 (*)
+      │       │   └── (build) pbjson-types v0.9.0 (*)
+      │       ├── pbjson-types v0.9.0 (*)
+      │       ├── prost-build v0.14.4 (*)
+      │       ├── prost-types v0.14.4
+      │       │   ├── a2a-pb v0.2.1 (*)
+      │       │   ├── pbjson-build v0.9.0 (*)
+      │       │   ├── prost-build v0.14.4 (*)
+      │       │   └── tonic-prost-build v0.14.6 (*)
+      │       └── tonic-prost v0.14.6 (*)
+      ├── tonic-build v0.14.6 (*)
+      ├── tonic-prost-build v0.14.6 (*)
+      ├── tracing-attributes v0.1.31
+      │   └── tracing v0.1.44
+      │       ├── a2a-client-lf v0.2.5 (*)
+      │       ├── a2a-server-lf v0.4.4 (*)
+      │       ├── axum v0.8.9 (*)
+      │       ├── axum-core v0.5.6
+      │       │   └── axum v0.8.9 (*)
+      │       ├── h2 v0.4.19
+      │       │   ├── hyper v1.11.1
+      │       │   │   ├── a2a-server-lf v0.4.4 (*)
+      │       │   │   ├── axum v0.8.9 (*)
+      │       │   │   ├── axum-server v0.8.0
+      │       │   │   │   └── a2a-server-lf v0.4.4 (*)
+      │       │   │   ├── hyper-rustls v0.27.10
+      │       │   │   │   └── reqwest v0.13.5 (*)
+      │       │   │   ├── hyper-timeout v0.5.2
+      │       │   │   │   └── tonic v0.14.6 (*)
+      │       │   │   ├── hyper-tls v0.6.0 (*)
+      │       │   │   ├── hyper-util v0.1.21
+      │       │   │   │   ├── axum v0.8.9 (*)
+      │       │   │   │   ├── axum-server v0.8.0 (*)
+      │       │   │   │   ├── hyper-rustls v0.27.10 (*)
+      │       │   │   │   ├── hyper-timeout v0.5.2 (*)
+      │       │   │   │   ├── hyper-tls v0.6.0 (*)
+      │       │   │   │   ├── reqwest v0.13.5 (*)
+      │       │   │   │   └── tonic v0.14.6 (*)
+      │       │   │   ├── reqwest v0.13.5 (*)
+      │       │   │   └── tonic v0.14.6 (*)
+      │       │   ├── reqwest v0.13.5 (*)
+      │       │   └── tonic v0.14.6 (*)
+      │       ├── hyper-util v0.1.21 (*)
+      │       ├── tonic v0.14.6 (*)
+      │       └── tower v0.5.3
+      │           ├── a2a-server-lf v0.4.4 (*)
+      │           ├── axum v0.8.9 (*)
+      │           ├── reqwest v0.13.5 (*)
+      │           ├── tonic v0.14.6 (*)
+      │           └── tower-http v0.6.11
+      │               └── reqwest v0.13.5 (*)
+      ├── windows-implement v0.60.2
+      │   └── windows-core v0.62.2
+      │       └── iana-time-zone v0.1.65
+      │           └── chrono v0.4.45
+      │               ├── a2a-lf v0.3.1
+      │               │   ├── a2a-client-lf v0.2.5 (*)
+      │               │   ├── a2a-pb v0.2.1 (*)
+      │               │   ├── a2a-server-lf v0.4.4 (*)
+      │               │   └── consumer-a2a-rs-combo-all v0.0.0 (*)
+      │               ├── a2a-pb v0.2.1 (*)
+      │               ├── a2a-server-lf v0.4.4 (*)
+      │               └── pbjson-types v0.9.0 (*)
+      └── windows-interface v0.59.3
+          └── windows-core v0.62.2 (*)
+    ├ syn v3.0.6
+      ├── async-trait v0.1.92
+      │   ├── a2a-client-lf v0.2.5
+      │   │   └── consumer-a2a-rs-combo-all v0.0.0
+      │   ├── a2a-server-lf v0.4.4
+      │   │   └── consumer-a2a-rs-combo-all v0.0.0 (*)
+      │   └── tonic v0.14.6
+      │       ├── a2a-pb v0.2.1
+      │       │   ├── a2a-client-lf v0.2.5 (*)
+      │       │   └── a2a-server-lf v0.4.4 (*)
+      │       └── tonic-prost v0.14.6
+      │           └── a2a-pb v0.2.1 (*)
+      ├── displaydoc v0.2.7
+      │   ├── icu_collections v2.3.0
+      │   │   ├── icu_normalizer v2.3.0
+      │   │   │   └── idna_adapter v1.2.2
+      │   │   │       └── idna v1.1.0
+      │   │   │           └── url v2.5.8
+      │   │   │               ├── reqwest v0.13.5
+      │   │   │               │   ├── a2a-client-lf v0.2.5 (*)
+      │   │   │               │   └── a2a-server-lf v0.4.4 (*)
+      │   │   │               └── tower-http v0.6.11
+      │   │   │                   └── reqwest v0.13.5 (*)
+      │   │   └── icu_properties v2.3.0
+      │   │       └── idna_adapter v1.2.2 (*)
+      │   ├── icu_locale_core v2.3.0
+      │   │   ├── icu_properties v2.3.0 (*)
+      │   │   └── icu_provider v2.3.1
+      │   │       ├── icu_normalizer v2.3.0 (*)
+      │   │       └── icu_properties v2.3.0 (*)
+      │   ├── icu_properties v2.3.0 (*)
+      │   ├── icu_provider v2.3.1 (*)
+      │   ├── tinystr v0.8.4
+      │   │   └── icu_locale_core v2.3.0 (*)
+      │   └── zerotrie v0.2.5
+      │       ├── icu_properties v2.3.0 (*)
+      │       └── icu_provider v2.3.1 (*)
+      ├── futures-macro v0.3.34
+      │   └── futures-util v0.3.34
+      │       ├── axum v0.8.9
+      │       │   ├── a2a-server-lf v0.4.4 (*)
+      │       │   └── tonic v0.14.6 (*)
+      │       ├── futures v0.3.34
+      │       │   ├── a2a-client-lf v0.2.5 (*)
+      │       │   └── a2a-server-lf v0.4.4 (*)
+      │       ├── futures-executor v0.3.34
+      │       │   └── futures v0.3.34 (*)
+      │       ├── hyper-util v0.1.21
+      │       │   ├── axum v0.8.9 (*)
+      │       │   ├── axum-server v0.8.0
+      │       │   │   └── a2a-server-lf v0.4.4 (*)
+      │       │   ├── hyper-rustls v0.27.10
+      │       │   │   └── reqwest v0.13.5 (*)
+      │       │   ├── hyper-timeout v0.5.2
+      │       │   │   └── tonic v0.14.6 (*)
+      │       │   ├── hyper-tls v0.6.0
+      │       │   │   └── reqwest v0.13.5 (*)
+      │       │   ├── reqwest v0.13.5 (*)
+      │       │   └── tonic v0.14.6 (*)
+      │       ├── js-sys v0.3.106
+      │       │   ├── chrono v0.4.45
+      │       │   │   ├── a2a-lf v0.3.1
+      │       │   │   │   ├── a2a-client-lf v0.2.5 (*)
+      │       │   │   │   ├── a2a-pb v0.2.1 (*)
+      │       │   │   │   ├── a2a-server-lf v0.4.4 (*)
+      │       │   │   │   └── consumer-a2a-rs-combo-all v0.0.0 (*)
+      │       │   │   ├── a2a-pb v0.2.1 (*)
+      │       │   │   ├── a2a-server-lf v0.4.4 (*)
+      │       │   │   └── pbjson-types v0.9.0
+      │       │   │       └── a2a-pb v0.2.1 (*)
+      │       │   ├── iana-time-zone v0.1.65
+      │       │   │   └── chrono v0.4.45 (*)
+      │       │   ├── reqwest v0.13.5 (*)
+      │       │   ├── wasm-bindgen-futures v0.4.79
+      │       │   │   ├── reqwest v0.13.5 (*)
+      │       │   │   └── wasm-streams v0.5.0
+      │       │   │       └── reqwest v0.13.5 (*)
+      │       │   ├── wasm-streams v0.5.0 (*)
+      │       │   └── web-sys v0.3.106
+      │       │       ├── reqwest v0.13.5 (*)
+      │       │       └── wasm-streams v0.5.0 (*)
+      │       ├── reqwest v0.13.5 (*)
+      │       ├── tower v0.5.3
+      │       │   ├── a2a-server-lf v0.4.4 (*)
+      │       │   ├── axum v0.8.9 (*)
+      │       │   ├── reqwest v0.13.5 (*)
+      │       │   ├── tonic v0.14.6 (*)
+      │       │   └── tower-http v0.6.11 (*)
+      │       ├── tower-http v0.6.11 (*)
+      │       └── wasm-streams v0.5.0 (*)
+      ├── serde_derive v1.0.229
+      │   └── serde v1.0.229
+      │       ├── a2a-client-lf v0.2.5 (*)
+      │       ├── a2a-lf v0.3.1 (*)
+      │       ├── a2a-pb v0.2.1 (*)
+      │       ├── a2a-server-lf v0.4.4 (*)
+      │       ├── chrono v0.4.45 (*)
+      │       ├── pbjson v0.9.0
+      │       │   ├── a2a-pb v0.2.1 (*)
+      │       │   └── pbjson-types v0.9.0 (*)
+      │       ├── pbjson-types v0.9.0 (*)
+      │       ├── reqwest v0.13.5 (*)
+      │       └── serde_urlencoded v0.7.1
+      │           ├── axum v0.8.9 (*)
+      │           └── reqwest v0.13.5 (*)
+      ├── synstructure v0.14.0
+      │   ├── yoke-derive v0.8.3
+      │   │   └── yoke v0.8.3
+      │   │       ├── icu_collections v2.3.0 (*)
+      │   │       ├── icu_provider v2.3.1 (*)
+      │   │       ├── zerotrie v0.2.5 (*)
+      │   │       └── zerovec v0.11.8
+      │   │           ├── icu_collections v2.3.0 (*)
+      │   │           ├── icu_locale_core v2.3.0 (*)
+      │   │           ├── icu_normalizer v2.3.0 (*)
+      │   │           ├── icu_properties v2.3.0 (*)
+      │   │           ├── icu_provider v2.3.1 (*)
+      │   │           ├── potential_utf v0.1.6
+      │   │           │   └── icu_collections v2.3.0 (*)
+      │   │           └── tinystr v0.8.4 (*)
+      │   └── zerofrom-derive v0.1.8
+      │       └── zerofrom v0.1.8
+      │           ├── icu_collections v2.3.0 (*)
+      │           ├── icu_provider v2.3.1 (*)
+      │           ├── yoke v0.8.3 (*)
+      │           ├── zerotrie v0.2.5 (*)
+      │           └── zerovec v0.11.8 (*)
+      ├── thiserror-impl v2.0.21
+      │   └── thiserror v2.0.21
+      │       ├── a2a-lf v0.3.1 (*)
+      │       └── jni v0.22.4
+      │           └── rustls-platform-verifier v0.7.1
+      │               └── reqwest v0.13.5 (*)
+      ├── tokio-macros v2.7.2
+      │   └── tokio v1.53.1
+      │       ├── a2a-client-lf v0.2.5 (*)
+      │       ├── a2a-server-lf v0.4.4 (*)
+      │       ├── axum v0.8.9 (*)
+      │       ├── axum-server v0.8.0 (*)
+      │       ├── fs-err v3.3.1
+      │       │   └── axum-server v0.8.0 (*)
+      │       ├── h2 v0.4.19
+      │       │   ├── hyper v1.11.1
+      │       │   │   ├── a2a-server-lf v0.4.4 (*)
+      │       │   │   ├── axum v0.8.9 (*)
+      │       │   │   ├── axum-server v0.8.0 (*)
+      │       │   │   ├── hyper-rustls v0.27.10 (*)
+      │       │   │   ├── hyper-timeout v0.5.2 (*)
+      │       │   │   ├── hyper-tls v0.6.0 (*)
+      │       │   │   ├── hyper-util v0.1.21 (*)
+      │       │   │   ├── reqwest v0.13.5 (*)
+      │       │   │   └── tonic v0.14.6 (*)
+      │       │   ├── reqwest v0.13.5 (*)
+      │       │   └── tonic v0.14.6 (*)
+      │       ├── hyper v1.11.1 (*)
+      │       ├── hyper-rustls v0.27.10 (*)
+      │       ├── hyper-timeout v0.5.2 (*)
+      │       ├── hyper-tls v0.6.0 (*)
+      │       ├── hyper-util v0.1.21 (*)
+      │       ├── reqwest v0.13.5 (*)
+      │       ├── tokio-native-tls v0.3.1
+      │       │   ├── hyper-tls v0.6.0 (*)
+      │       │   └── reqwest v0.13.5 (*)
+      │       ├── tokio-rustls v0.26.5
+      │       │   ├── axum-server v0.8.0 (*)
+      │       │   ├── hyper-rustls v0.27.10 (*)
+      │       │   └── reqwest v0.13.5 (*)
+      │       ├── tokio-stream v0.1.19
+      │       │   ├── a2a-client-lf v0.2.5 (*)
+      │       │   ├── a2a-server-lf v0.4.4 (*)
+      │       │   └── tonic v0.14.6 (*)
+      │       ├── tokio-util v0.7.19
+      │       │   ├── h2 v0.4.19 (*)
+      │       │   ├── reqwest v0.13.5 (*)
+      │       │   └── tower v0.5.3 (*)
+      │       ├── tonic v0.14.6 (*)
+      │       ├── tower v0.5.3 (*)
+      │       └── wasm-bindgen-futures v0.4.79 (*)
+      ├── wasm-bindgen-macro-support v0.2.129
+      │   └── wasm-bindgen-macro v0.2.129
+      │       └── wasm-bindgen v0.2.129
+      │           ├── chrono v0.4.45 (*)
+      │           ├── iana-time-zone v0.1.65 (*)
+      │           ├── js-sys v0.3.106 (*)
+      │           ├── reqwest v0.13.5 (*)
+      │           ├── wasm-bindgen-futures v0.4.79 (*)
+      │           ├── wasm-streams v0.5.0 (*)
+      │           └── web-sys v0.3.106 (*)
+      ├── yoke-derive v0.8.3 (*)
+      ├── zerofrom-derive v0.1.8 (*)
+      └── zerovec-derive v0.11.6
+          └── zerovec v0.11.8 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'tower-http'
+    ┌─ /opt/bench/consumers/a2a-rs-combo-all/Cargo.lock:200:1
+    │  
+200 │ ╭ tower-http 0.6.11 registry+https://github.com/rust-lang/crates.io-index
+201 │ │ tower-http 0.7.1 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰──────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ tower-http v0.6.11
+      └── reqwest v0.13.5
+          ├── a2a-client-lf v0.2.5
+          │   └── consumer-a2a-rs-combo-all v0.0.0
+          └── a2a-server-lf v0.4.4
+              └── consumer-a2a-rs-combo-all v0.0.0 (*)
+    ├ tower-http v0.7.1
+      └── a2a-server-lf v0.4.4
+          └── consumer-a2a-rs-combo-all v0.0.0
+
+advisories ok, bans ok, licenses ok, sources ok
+EXIT: 0

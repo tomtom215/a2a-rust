@@ -1,0 +1,34 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.66s
+     Running tests/stores_hardening.rs (/opt/bench/claims/target/debug/deps/stores_hardening-2f75758127d80f0a)
+
+running 1 test
+test body_limit_content_type_cors ... body limit 2 KiB: JSON-RPC 4 KB body -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: request body too large: 4149 bytes exceeds 2048 byte limit"}}
+body limit 2 KiB: REST 4 KB body -> 413
+default limit (4 MiB): JSON-RPC 5 MiB body -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: request body too large: 5243029 bytes exceeds 4194304 byte limit"}}
+Content-Type text/plain: JSON-RPC -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32005,"message":"unsupported Content-Type: text/plain; expected application/json or application/a2a+json","data":[{"
+Content-Type text/plain: REST -> 400 Bad Request
+NO Content-Type header: JSON-RPC -> 200 {"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Task not found: x","data":[{"@type":"type.
+CORS preflight -> 204 [
+    "access-control-allow-origin: https://app.example",
+    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+    "access-control-allow-headers: content-type, authorization, a2a-version, a2a-extensions, last-event-id, x-a2a-notification-token",
+    "access-control-max-age: 86400",
+]
+CORS actual response ACAO: Some("https://app.example")
+no CORS configured: preflight -> 204 No Content ACAO=None
+
+thread 'body_limit_content_type_cors' (22756) panicked at tests/stores_hardening.rs:232:5:
+assertion `left == right` failed
+  left: 400
+ right: 415
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    body_limit_content_type_cors
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.19s
+
+error: test failed, to rerun pass `--test stores_hardening`

@@ -1,0 +1,217 @@
+consumer-a2a-rs-a2a-pb-def v0.0.0 (/opt/bench/consumers/a2a-rs-a2a-pb-def)
+a2a-pb v0.2.1
+a2a-lf v0.3.1
+base64 v0.23.1
+chrono v0.4.45
+iana-time-zone v0.1.65
+num-traits v0.2.19
+serde v1.0.229
+serde_core v1.0.229
+serde_derive v1.0.229 (proc-macro)
+proc-macro2 v1.0.107
+unicode-ident v1.0.26
+quote v1.0.47
+proc-macro2 v1.0.107 (*)
+syn v3.0.6
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+unicode-ident v1.0.26
+serde v1.0.229 (*)
+serde_json v1.0.151
+itoa v1.0.18
+memchr v2.8.3
+serde_core v1.0.229
+zmij v1.0.23
+thiserror v2.0.21
+thiserror-impl v2.0.21 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+uuid v1.26.1
+getrandom v0.4.3
+cfg-if v1.0.5
+libc v0.2.189
+chrono v0.4.45 (*)
+pbjson v0.9.0
+base64 v0.22.1
+serde v1.0.229 (*)
+pbjson-types v0.9.0
+bytes v1.12.1
+chrono v0.4.45 (*)
+pbjson v0.9.0 (*)
+prost v0.14.4
+bytes v1.12.1
+prost-derive v0.14.4 (proc-macro)
+anyhow v1.0.104
+itertools v0.14.0
+either v1.18.0
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+unicode-ident v1.0.26
+serde v1.0.229 (*)
+prost v0.14.4 (*)
+prost-types v0.14.4
+prost v0.14.4 (*)
+serde v1.0.229 (*)
+serde_json v1.0.151 (*)
+tonic v0.14.6
+async-trait v0.1.92 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+axum v0.8.9
+axum-core v0.5.6
+bytes v1.12.1
+futures-core v0.3.34
+http v1.5.0
+bytes v1.12.1
+itoa v1.0.18
+http-body v1.1.0
+bytes v1.12.1
+http v1.5.0 (*)
+http-body-util v0.1.5
+bytes v1.12.1
+futures-core v0.3.34
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+pin-project-lite v0.2.17
+mime v0.3.17
+pin-project-lite v0.2.17
+sync_wrapper v1.0.2
+tower-layer v0.3.3
+tower-service v0.3.3
+bytes v1.12.1
+futures-util v0.3.34
+futures-core v0.3.34
+futures-task v0.3.34
+pin-project-lite v0.2.17
+slab v0.4.12
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+http-body-util v0.1.5 (*)
+itoa v1.0.18
+matchit v0.8.4
+memchr v2.8.3
+mime v0.3.17
+percent-encoding v2.3.2
+pin-project-lite v0.2.17
+serde_core v1.0.229
+sync_wrapper v1.0.2
+tower v0.5.3
+futures-core v0.3.34
+futures-util v0.3.34 (*)
+indexmap v2.14.2
+equivalent v1.0.2
+hashbrown v0.17.1
+pin-project-lite v0.2.17
+slab v0.4.12
+sync_wrapper v1.0.2
+tokio v1.53.1
+bytes v1.12.1
+libc v0.2.189
+mio v1.2.3
+libc v0.2.189
+pin-project-lite v0.2.17
+socket2 v0.6.5
+libc v0.2.189
+tokio-macros v2.7.2 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+tokio-util v0.7.19
+bytes v1.12.1
+futures-core v0.3.34
+futures-sink v0.3.34
+libc v0.2.189
+pin-project-lite v0.2.17
+tokio v1.53.1 (*)
+tower-layer v0.3.3
+tower-service v0.3.3
+tracing v0.1.44
+pin-project-lite v0.2.17
+tracing-attributes v0.1.31 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119 (*)
+tracing-core v0.1.36
+once_cell v1.21.4
+tower-layer v0.3.3
+tower-service v0.3.3
+base64 v0.22.1
+bytes v1.12.1
+h2 v0.4.19
+atomic-waker v1.1.2
+bytes v1.12.1
+fnv v1.0.7
+futures-core v0.3.34
+futures-sink v0.3.34
+http v1.5.0 (*)
+indexmap v2.14.2 (*)
+slab v0.4.12
+tokio v1.53.1 (*)
+tokio-util v0.7.19 (*)
+tracing v0.1.44 (*)
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+http-body-util v0.1.5 (*)
+hyper v1.11.1
+atomic-waker v1.1.2
+bytes v1.12.1
+futures-channel v0.3.34
+futures-core v0.3.34
+futures-core v0.3.34
+h2 v0.4.19 (*)
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+httparse v1.10.1
+httpdate v1.0.3
+itoa v1.0.18
+pin-project-lite v0.2.17
+smallvec v1.16.2
+tokio v1.53.1 (*)
+want v0.3.1
+try-lock v0.2.5
+hyper-timeout v0.5.2
+hyper v1.11.1 (*)
+hyper-util v0.1.21
+bytes v1.12.1
+futures-channel v0.3.34 (*)
+futures-util v0.3.34 (*)
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+httparse v1.10.1
+hyper v1.11.1 (*)
+libc v0.2.189
+pin-project-lite v0.2.17
+socket2 v0.6.5 (*)
+tokio v1.53.1 (*)
+tower-service v0.3.3
+tracing v0.1.44 (*)
+pin-project-lite v0.2.17
+tokio v1.53.1 (*)
+tower-service v0.3.3
+hyper-util v0.1.21 (*)
+percent-encoding v2.3.2
+pin-project v1.1.13
+pin-project-internal v1.1.13 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119 (*)
+socket2 v0.6.5 (*)
+sync_wrapper v1.0.2
+tokio v1.53.1 (*)
+tokio-stream v0.1.19
+futures-core v0.3.34
+pin-project-lite v0.2.17
+tokio v1.53.1 (*)
+tower v0.5.3 (*)
+tower-layer v0.3.3
+tower-service v0.3.3
+tracing v0.1.44 (*)
+tonic-prost v0.14.6
+bytes v1.12.1
+prost v0.14.4 (*)
+tonic v0.14.6 (*)

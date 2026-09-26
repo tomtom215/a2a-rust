@@ -1,0 +1,13 @@
+# diff -r (excluding Cargo.toml, Cargo.toml.orig, .cargo_vcs_info.json, Cargo.lock) : crates/a2a-server-lf-0.4.4 vs /opt/bench/a2a-rs/a2a-server
+{
+  "git": {
+    "sha1": "ab76562be065ccfcfa53f702a459373f0d79c66f"
+  },
+  "path_in_vcs": "a2a-server"
+}
+## files in .crate:
+18
+## Cargo.toml.orig vs git Cargo.toml:
+identical
+## src/ files in git not in crate:
+RESULT: missing=0 differs=0

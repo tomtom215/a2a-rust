@@ -1,0 +1,10 @@
+    Updating crates.io index
+     Locking 499 packages to latest Rust 1.88 compatible versions
+      Adding generic-array v0.14.7 (available: v0.14.9)
+      Adding matchit v0.8.4 (available: v0.8.6)
+      Adding opentelemetry v0.32.0 (available: v0.33.0)
+      Adding opentelemetry-otlp v0.32.0 (available: v0.33.0)
+      Adding opentelemetry_sdk v0.32.1 (available: v0.33.0)
+      Adding ordered-float v5.4.0 (available: v5.5.0, requires Rust 1.90)
+      Adding sqlx v0.8.6 (available: v0.9.0, requires Rust 1.94.0)
+      Adding tracing-opentelemetry v0.33.0 (available: v0.34.0)

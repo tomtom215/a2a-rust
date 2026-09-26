@@ -1,0 +1,18 @@
+=== cargo-audit
+    Finished `release` profile [optimized] target(s) in 6m 21s
+  Installing /root/.cargo/bin/cargo-audit
+   Installed package `cargo-audit v0.22.2` (executable `cargo-audit`)
+=== cargo-deny
+    Finished `release` profile [optimized] target(s) in 3m 11s
+  Installing /root/.cargo/bin/cargo-deny
+   Installed package `cargo-deny v0.20.2` (executable `cargo-deny`)
+=== tokei
+    Finished `release` profile [optimized] target(s) in 1m 52s
+  Installing /root/.cargo/bin/tokei
+   Installed package `tokei v15.0.0` (executable `tokei`)
+=== cargo-geiger
+
+
+warning: build failed, waiting for other jobs to finish...
+error: failed to compile `cargo-geiger v0.13.0`, intermediate artifacts can be found at `/tmp/cargo-installLHJHby`.
+To reuse those artifacts with a future compilation, set the environment variable `CARGO_TARGET_DIR` to that path.

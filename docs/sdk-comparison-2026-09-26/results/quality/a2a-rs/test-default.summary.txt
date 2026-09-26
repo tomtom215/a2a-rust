@@ -1,0 +1,52 @@
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2acli-ecef21c344b8fb9e)
+test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.31s
+     Running unittests src/main.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2acli-afd4351d879a0b92)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/e2e.rs (/opt/bench/target-quality-a2a-rs/debug/deps/e2e-1e14d3bc8452ad2e)
+test result: ok. 74 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.96s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a_client-0b9183cee3ee2792)
+test result: ok. 118 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a_grpc-8859d4a4d5e15bc8)
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/e2e.rs (/opt/bench/target-quality-a2a-rs/debug/deps/e2e-8dd72e6db0d99f7c)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a-ce69bbeabd466c13)
+test result: ok. 85 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a_pb-8db4d52d11c7b076)
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/protojson.rs (/opt/bench/target-quality-a2a-rs/debug/deps/protojson-64cb1cc764e1e8c9)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a_server-8a2eacb41781c0de)
+test result: ok. 186 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/a2a_slimrpc-8fc765d109529ae2)
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/e2e.rs (/opt/bench/target-quality-a2a-rs/debug/deps/e2e-6003015d5da6406a)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+     Running unittests src/lib.rs (/opt/bench/target-quality-a2a-rs/debug/deps/examples_lib-8da06a1346ddd27b)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/helloworld/client.rs (/opt/bench/target-quality-a2a-rs/debug/deps/helloworld_client-e5d2830f67c0eb84)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/helloworld/server.rs (/opt/bench/target-quality-a2a-rs/debug/deps/helloworld_server-f11264a8040f7c48)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/helloworld_tls/client.rs (/opt/bench/target-quality-a2a-rs/debug/deps/helloworld_tls_client-50c02905fd74932c)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/helloworld_tls/server.rs (/opt/bench/target-quality-a2a-rs/debug/deps/helloworld_tls_server-8ef622b3064e2b4e)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/transports_e2e.rs (/opt/bench/target-quality-a2a-rs/debug/deps/transports_e2e-d76a1caf68d4fbf3)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+   Doc-tests a2acli
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a_client
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a_grpc
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a_pb
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a_server
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests a2a_slimrpc
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests examples_lib
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

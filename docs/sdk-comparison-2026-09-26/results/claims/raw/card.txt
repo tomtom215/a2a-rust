@@ -1,0 +1,40 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.11s
+     Running tests/card.rs (/opt/bench/claims/target/debug/deps/card-fac2cd1004266ffa)
+
+running 4 tests
+test card_hot_reload_poll_and_sighup ... dynamic handler: unchanged card, If-Modified-Since=Sat, 26 Sep 2026 10:18:57 GMT -> 200; new Last-Modified=Some("Sat, 26 Sep 2026 10:18:59 GMT")
+dynamic handler: unchanged card, If-None-Match -> 304
+poll reload observed: true
+sighup reload observed: true
+ok
+test card_http_caching_per_surface ... resolve_agent_card OK: name=card-agent extensions=Some(["https://a2a-rust.com/extensions/idempotency/v1", "https://a2a-rust.com/extensions/failure/v1"])
+JsonRpcDispatcher: status=200 etag=Some("W/\"b73d3ede6d227249\"") last-modified=Some("Sat, 26 Sep 2026 10:19:00 GMT") cache-control=Some("public, max-age=3600")
+JsonRpcDispatcher: If-None-Match -> 304 body_len=0
+JsonRpcDispatcher: If-Modified-Since(own value) -> 304
+RestDispatcher: status=200 etag=Some("W/\"b73d3ede6d227249\"") last-modified=Some("Sat, 26 Sep 2026 10:19:00 GMT") cache-control=Some("public, max-age=3600")
+RestDispatcher: If-None-Match -> 304 body_len=0
+RestDispatcher: If-Modified-Since(own value) -> 304
+A2aRouter(axum): status=200 etag=None last-modified=None cache-control=None
+FAILURES: ["A2aRouter(axum): no ETag header"]
+
+thread 'card_http_caching_per_surface' (7409) panicked at tests/card.rs:89:5:
+caching claim failures: ["A2aRouter(axum): no ETag header"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test card_signing_roundtrip_over_wire ... build() with card signed before extensions declared -> is_err=true
+verify fetched card with DER SPKI (as documented): Err(A2aError { code: InternalError, message: "signature verification failed", data: None, auth_rejection: None })
+verify fetched card with raw SEC1 point (undocumented): Ok(())
+verify tampered card: is_err=true
+verify with wrong key: is_err=true
+ok
+test dispatcher_card_is_static ... dispatcher-served description after hot.update(): "v1"
+ok
+
+failures:
+
+failures:
+    card_http_caching_per_surface
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.11s
+
+error: test failed, to rerun pass `--test card`

@@ -1,0 +1,51 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.48s
+     Running tests/stores_hardening.rs (/opt/bench/claims/target/debug/deps/stores_hardening-2f75758127d80f0a)
+
+running 5 tests
+test body_limit_content_type_cors ... body limit 2 KiB: JSON-RPC 4 KB body -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: request body too large: 4149 bytes exceeds 2048 byte limit"}}
+body limit 2 KiB: REST 4 KB body -> 413
+default limit (4 MiB): JSON-RPC 5 MiB body -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: request body too large: 5243029 bytes exceeds 4194304 byte limit"}}
+Content-Type text/plain: JSON-RPC -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32005,"message":"unsupported Content-Type: text/plain; expected application/json or application/a2a+json","data":[{"
+Content-Type text/plain: REST -> 400 Bad Request
+NO Content-Type header: JSON-RPC -> 200 {"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Task not found: x","data":[{"@type":"type.
+CORS preflight -> 204 [
+    "access-control-allow-origin: https://app.example",
+    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+    "access-control-allow-headers: content-type, authorization, a2a-version, a2a-extensions, last-event-id, x-a2a-notification-token",
+    "access-control-max-age: 86400",
+]
+CORS actual response ACAO: Some("https://app.example")
+no CORS configured: preflight -> 204 No Content ACAO=None
+ok
+test executor_timeout_default_and_custom ... builder default: executor_timeout: Some(3600s)
+with_executor_timeout(1s), hang:5000 -> state=Failed after 1.004654978s reason=Some("[-32603] executor timed out after 1s") finished_count=0
+without_executor_timeout: executor_timeout: None
+ok
+test health_and_ready_per_surface ... store DOWN: JsonRpcDispatcher GET /health -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by t
+store DOWN: JsonRpcDispatcher GET /ready -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by t
+store DOWN: RestDispatcher GET /health -> 200 {"status":"ok"}
+store DOWN: RestDispatcher GET /ready -> 200 {"status":"ok"}
+store DOWN: A2aRouter GET /health -> 200 {"status":"ok"}
+store DOWN: A2aRouter GET /ready -> 503 {"reason":"internal_error","status":"not_ready"}
+FAILURES: ["JsonRpcDispatcher /ready=200 with store down (expected 503)", "RestDispatcher /ready=200 with store down (expected 503)"]
+
+thread 'health_and_ready_per_surface' (23439) panicked at tests/stores_hardening.rs:157:5:
+["JsonRpcDispatcher /ready=200 with store down (expected 503)", "RestDispatcher /ready=200 with store down (expected 503)"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test sqlite_persists_across_restart ... after restart: state=Completed text=Some("Hello, persist!") history_len=Some(1) listed=1
+ok
+test task_eviction_ttl_capacity_pagination ... TTL 1s, 2.2s later, no writes: get_found=true list_len=1
+after a write: old task found=false
+capacity 3 after 6 sends: list_len=3
+pagination: page1=2 token="1790418362512:19" page2=1
+ok
+
+failures:
+
+failures:
+    health_and_ready_per_surface
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.48s
+
+error: test failed, to rerun pass `--test stores_hardening`

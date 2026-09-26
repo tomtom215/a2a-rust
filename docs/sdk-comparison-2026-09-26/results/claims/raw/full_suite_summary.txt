@@ -1,0 +1,69 @@
+     Running unittests src/lib.rs (/opt/bench/claims/target/debug/deps/claims_suite-b1bed1a12aad635e)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/auth.rs (/opt/bench/claims/target/debug/deps/auth-f9f4f32f5d11f8d1)
+test api_key ... ok
+test bearer_static ... ok
+test jwt_hs256 ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+     Running tests/card.rs (/opt/bench/claims/target/debug/deps/card-360ab7cc60c2d862)
+test card_hot_reload_poll_and_sighup ... ok
+test card_http_caching_per_surface ... FAILED
+test card_signing_roundtrip_over_wire ... ok
+test dispatcher_card_is_static ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s
+     Running tests/client.rs (/opt/bench/claims/target/debug/deps/client-2d3dee491903bd62)
+test axum_a2a_router_integration ... ok
+test idempotency_client_retry_after_ambiguous_failure ... ok
+test idempotency_server_dedupe_and_card ... ok
+test retry_policy_matrix ... ok
+test tls_grpc_private_ca ... ok
+test tls_https_jsonrpc_selfsigned ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.72s
+     Running tests/interceptors.rs (/opt/bench/claims/target/debug/deps/interceptors-fcb696d02bbc5fc1)
+test metrics_callbacks_fire ... ok
+test on_complete_success_failure_disconnect ... ok
+test rate_limit_interceptor ... ok
+test rate_limit_per_caller_with_labelled_auth ... ok
+test request_id_into_request_context_all_bindings ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.96s
+     Running tests/misc.rs (/opt/bench/claims/target/debug/deps/misc-8f3acbf2413f3f52)
+test client_interceptor_and_stream_on_complete_timing ... ok
+test rest_traversal_query_limit_and_input_modes ... ok
+test state_validation_and_ergonomics ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.23s
+     Running tests/otel.rs (/opt/bench/claims/target/debug/deps/otel-b6345e5b03a6d0f2)
+test otlp_export_reaches_collector ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/push.rs (/opt/bench/claims/target/debug/deps/push-07b293babfad69ec)
+test push_to_https_webhook ... ok
+test push_to_local_webhook ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.02s
+     Running tests/shutdown.rs (/opt/bench/claims/target/debug/deps/shutdown-495a7f7114211f40)
+test graceful_shutdown_http ... ok
+test server_bind_max_connections ... ok
+test ws_and_grpc_serve_with_shutdown ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.83s
+     Running tests/signing_isolate.rs (/opt/bench/claims/target/debug/deps/signing_isolate-8c620b73f8e54b91)
+test isolate ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/stores_hardening.rs (/opt/bench/claims/target/debug/deps/stores_hardening-a82a8e80ac65b8d6)
+test body_limit_content_type_cors ... ok
+test executor_timeout_default_and_custom ... ok
+test health_and_ready_per_surface ... FAILED
+test sqlite_persists_across_restart ... ok
+test task_eviction_ttl_capacity_pagination ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.44s
+     Running tests/tenancy.rs (/opt/bench/claims/target/debug/deps/tenancy-086090c31342618a)
+test bearer_resolver_isolates ... ok
+test header_resolver_with_default_store ... ok
+test header_resolver_with_tenant_aware_store_isolates ... ok
+test path_resolver_over_rest ... FAILED
+test per_tenant_max_concurrent_tasks ... ok
+test rest_tenant_path_without_resolver ... ok
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.54s
+     Running tests/transports.rs (/opt/bench/claims/target/debug/deps/transports-020b81d98859f5e2)
+test quad_transport_client_and_server ... ok
+test sse_last_event_id_resumption ... ok
+test sse_multi_subscriber ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.39s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

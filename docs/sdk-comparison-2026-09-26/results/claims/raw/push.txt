@@ -1,0 +1,19 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.01s
+     Running tests/push.rs (/opt/bench/claims/target/debug/deps/push-ed5006a8cbf7e3b7)
+
+running 2 tests
+test push_to_https_webhook ... https webhook: set_push_config -> Ok(())
+https webhook received 2 POST(s)
+ok
+test push_to_local_webhook ... default HttpPushSender, loopback webhook: set_push_config -> Err("protocol error: [-32602] webhook URL targets private/loopback address: 127.0.0.1")
+allow_private_urls: set_push_config -> Ok(())
+webhook received 2 POST(s)
+  content-type=Some("application/a2a+json") x-a2a-notification-token=Some("tok-123") a2a-notification-token=Some("tok-123") authorization=Some("Bearer webhook-secret") body={"artifactUpdate":{"taskId":"8c9636d2-f846-45ba-b26f-ca84969f520a","contextId":"beb1da3b-78f6-409c-859a-f198fcc92168","artifact":{"artifactI
+  content-type=Some("application/a2a+json") x-a2a-notification-token=Some("tok-123") a2a-notification-token=Some("tok-123") authorization=Some("Bearer webhook-secret") body={"statusUpdate":{"taskId":"8c9636d2-f846-45ba-b26f-ca84969f520a","contextId":"beb1da3b-78f6-409c-859a-f198fcc92168","status":{"state":"TASK_
+metrics on_push_delivery outcomes: ["delivered", "delivered"]
+CRLF in credentials: set_push_config -> Ok(())
+X-Evil header observed at webhook: false
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.02s
+

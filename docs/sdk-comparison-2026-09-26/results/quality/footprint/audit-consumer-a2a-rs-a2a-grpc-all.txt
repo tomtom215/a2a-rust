@@ -1,0 +1,6 @@
+CMD: cargo audit --file /opt/bench/consumers/a2a-rs-a2a-grpc-all/Cargo.lock
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1271 security advisories (from /root/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning a2a-rs-a2a-grpc-all/Cargo.lock for vulnerabilities (275 crate dependencies)
+EXIT: 0

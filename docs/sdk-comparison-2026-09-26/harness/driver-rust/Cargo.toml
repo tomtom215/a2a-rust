@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name = "driver-rust"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+a2a-protocol-sdk = { version = "=0.14.0", features = ["grpc"] }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+
+# Standalone: not a member of the repository workspace.
+[workspace]

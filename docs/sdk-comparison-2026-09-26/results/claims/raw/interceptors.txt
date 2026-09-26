@@ -1,0 +1,112 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.13s
+     Running tests/interceptors.rs (/opt/bench/claims/target/debug/deps/interceptors-ad2a4e5f89c23de5)
+
+running 5 tests
+test metrics_callbacks_fire ... metrics callbacks: {
+    "on_request:SendStreamingMessage": 1,
+    "on_queue_depth_change": 4,
+    "on_latency": 3,
+    "on_error": 1,
+    "on_request:GetTask": 1,
+    "on_connection_pool_stats": 7,
+    "on_rpc_call": 3,
+    "on_response": 2,
+    "on_request": 3,
+    "on_request:SendMessage": 1,
+}
+ok
+test on_complete_success_failure_disconnect ... executor-failure send body: {"jsonrpc":"2.0","id":1,"result":{"task":{"contextId":"754adb19-55bc-40e5-8450-67736cb028e4","id":"489565bb-76f5-4a55-80f4-526382f7a225","status":{"message":{"contextId":"754adb19-55bc-40e5-8450-67736
+events after success/failure: [
+    "before:SendMessage:rid=Some(\"rid-123\")",
+    "after:SendMessage",
+    "complete:SendMessage:Succeeded",
+    "before:SendMessage:rid=None",
+    "after:SendMessage",
+    "complete:SendMessage:Succeeded",
+    "before:GetTask:rid=None",
+    "complete:GetTask:Failed",
+]
+events after disconnect (1s later): [
+    "before:SendMessage:rid=None",
+    "complete:SendMessage:Cancelled",
+]
+events after executor would have finished (4s): [
+    "before:SendMessage:rid=None",
+    "complete:SendMessage:Cancelled",
+]
+executor finished count: 2
+streaming disconnect events: [
+    "before:SendStreamingMessage:rid=None",
+    "after:SendStreamingMessage",
+    "complete:SendStreamingMessage:Succeeded",
+]
+ok
+test rate_limit_interceptor ... JSON-RPC (limit 3/60s): [
+    (
+        200,
+        Number(-32001),
+        String("Task not found: x"),
+        None,
+    ),
+    (
+        200,
+        Number(-32001),
+        String("Task not found: x"),
+        None,
+    ),
+    (
+        200,
+        Number(-32001),
+        String("Task not found: x"),
+        None,
+    ),
+    (
+        200,
+        Number(-32603),
+        String("rate limit exceeded: 3 requests per 60 seconds"),
+        None,
+    ),
+    (
+        200,
+        Number(-32603),
+        String("rate limit exceeded: 3 requests per 60 seconds"),
+        None,
+    ),
+]
+REST (separate counter? same handler): [
+    (
+        500,
+        None,
+        "{\"error\":{\"code\":500,\"message\":\"rate limit exceeded: 3 requests per 60 seconds\",\"status\":\"INTERNAL\"}}",
+    ),
+    (
+        500,
+        None,
+        "{\"error\":{\"code\":500,\"message\":\"rate limit exceeded: 3 requests per 60 seconds\",\"status\":\"INTERNAL\"}}",
+    ),
+    (
+        500,
+        None,
+        "{\"error\":{\"code\":500,\"message\":\"rate limit exceeded: 3 requests per 60 seconds\",\"status\":\"INTERNAL\"}}",
+    ),
+    (
+        500,
+        None,
+        "{\"error\":{\"code\":500,\"message\":\"rate limit exceeded: 3 requests per 60 seconds\",\"status\":\"INTERNAL\"}}",
+    ),
+    (
+        500,
+        None,
+        "{\"error\":{\"code\":500,\"message\":\"rate limit exceeded: 3 requests per 60 seconds\",\"status\":\"INTERNAL\"}}",
+    ),
+]
+SDK client error when limited: Protocol(A2aError { code: InternalError, message: "rate limit exceeded: 3 requests per 60 seconds", data: None, auth_rejection: None })
+REST statuses: [500, 500, 500, 500, 500]
+ok
+test rate_limit_per_caller_with_labelled_auth ... alice limited per call: [false, false, true]; bob first call limited: false
+ok
+test request_id_into_request_context_all_bindings ... RequestContext.request_id seen by executor: [Some("jr-1"), Some("rest-1")]
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.97s
+

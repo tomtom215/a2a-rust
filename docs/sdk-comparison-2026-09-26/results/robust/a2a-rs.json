@@ -1,0 +1,101 @@
+[
+ {
+  "probe": "R00_baseline",
+  "server": "a2a-rs",
+  "alive_after": true,
+  "alive_ms": 5.1,
+  "rss_kib": 9244
+ },
+ {
+  "statuses": {
+   "64": 200,
+   "256": 200,
+   "1024": 200,
+   "4096": 200,
+   "16384": "EXC URLError: <urlopen error [Errno 32] Broken pipe>"
+  },
+  "probe": "R01_message_size_ladder_KiB",
+  "server": "a2a-rs",
+  "alive_after": true,
+  "alive_ms": 2.7,
+  "rss_kib": 72784
+ },
+ {
+  "sent_MiB": 11,
+  "send_err": "BrokenPipeError",
+  "status_line": "HTTP/1.1 413 Payload Too Large",
+  "peak_rss_kib_during": 0,
+  "secs": 0.01,
+  "probe": "R02_256MiB_body",
+  "server": "a2a-rs",
+  "alive_after": true,
+  "alive_ms": 2.9,
+  "rss_kib": 80556
+ },
+ {
+  "status": 400,
+  "body": "Failed to parse the request body as JSON: params.metadata.x[0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][",
+  "probe": "R03_nested_depth_100k",
+  "server": "a2a-rs",
+  "alive_after": true,
+  "alive_ms": 0.4,
+  "rss_kib": 80604
+ },
+ {
+  "status": 400,
+  "body": "Failed to parse the request body as JSON: params.message.parts[0].text: invalid unicode code point at line 1 column 124",
+  "probe": "R04_invalid_utf8",
+  "server": "a2a-rs",
+  "alive_after": true,
+  "alive_ms": 0.4,
+  "rss_kib": 80604
+ },
+ {
+  "opened": 200,
+  "normal_request_during": [
+   true,
+   0.8
+  ],
+  "closed_by_server_after_s": 0,
+  "probe": "R05_slowloris_200",
+  "server": "a2a-rs",
+  "alive_after": true,
+  "alive_ms": 1.7,
+  "rss_kib": 84340
+ },
+ {
+  "opened": 200,
+  "closed_by_server_within_s": 40,
+  "closed": 0,
+  "probe": "R06_idle_connections_200",
+  "server": "a2a-rs",
+  "alive_after": true,
+  "alive_ms": 2.2,
+  "rss_kib": 84340
+ },
+ {
+  "opened": 1000,
+  "streams_with_data": 1000,
+  "rss_while_held_kib": 113924,
+  "normal_request_while_held": [
+   true,
+   1.3
+  ],
+  "probe": "R07_1000_streams_then_disconnect",
+  "server": "a2a-rs",
+  "alive_after": true,
+  "alive_ms": 1.0,
+  "rss_kib": 113988
+ },
+ {
+  "tasks": 20000,
+  "rss_before_kib": 113988,
+  "rss_after_kib": 138984,
+  "secs": 10.0,
+  "probe": "R08_20k_tasks_rss",
+  "server": "a2a-rs",
+  "alive_after": true,
+  "alive_ms": 0.6,
+  "rss_kib": 138984
+ }
+]

@@ -1,0 +1,8 @@
+chacha20 v0.10.1
+└── chacha20 feature "rng"
+    └── rand v0.10.2
+        ├── rand feature "alloc"
+        │   └── rand feature "std"
+        │       ├── rand feature "default"
+        │       │   └── uuid v1.23.0
+        │       │       ├── uuid feature "default"

@@ -1,0 +1,10 @@
+a2a-lf-0.3.1                   src_lines=  3226 cfg_test_lines~=  1346 (42%) cfg_test_files=0
+a2a-client-lf-0.2.5            src_lines=  4749 cfg_test_lines~=  2744 (58%) cfg_test_files=0
+a2a-server-lf-0.4.4            src_lines=  7738 cfg_test_lines~=  5032 (65%) cfg_test_files=0
+a2a-pb-0.2.1                   src_lines=  4645 cfg_test_lines~=   985 (21%) cfg_test_files=0
+a2a-grpc-0.3.7                 src_lines=  1219 cfg_test_lines~=   524 (43%) cfg_test_files=0
+a2a-slimrpc-0.2.9              src_lines=  1135 cfg_test_lines~=   229 (20%) cfg_test_files=0
+a2a-protocol-types-0.14.0      src_lines= 15866 cfg_test_lines~=  7006 (44%) cfg_test_files=4
+a2a-protocol-client-0.14.0     src_lines= 23164 cfg_test_lines~= 11945 (52%) cfg_test_files=6
+a2a-protocol-server-0.14.0     src_lines= 75105 cfg_test_lines~= 36396 (48%) cfg_test_files=31
+a2a-protocol-sdk-0.14.0        src_lines=   116 cfg_test_lines~=     0 (0%) cfg_test_files=0

@@ -1,0 +1,428 @@
+CMD: (cwd /opt/bench/a2a-rs) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rs CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo rustdoc -j 2 -p a2a-client-lf -- -W missing_docs
+START: 2026-09-26T10:07:30Z
+    Checking mio v1.2.0
+   Compiling serde_core v1.0.228
+    Checking tracing-core v0.1.36
+    Checking tokio v1.53.1
+    Checking hashbrown v0.17.0
+    Checking indexmap v2.14.0
+    Checking tracing v0.1.44
+   Compiling aws-lc-sys v0.39.0
+    Checking tokio-util v0.7.18
+   Compiling displaydoc v0.2.5
+   Compiling prettyplease v0.2.37
+   Compiling regex-syntax v0.8.10
+   Compiling regex-automata v0.4.18
+    Checking zeroize v1.9.0
+   Compiling aws-lc-rs v1.16.2
+    Checking h2 v0.4.19
+   Compiling regex v1.12.3
+    Checking tinystr v0.8.3
+   Compiling prost-build v0.14.3
+    Checking hyper v1.11.1
+    Checking icu_locale_core v2.2.0
+    Checking serde v1.0.228
+    Checking rustls-pki-types v1.14.0
+    Checking zerotrie v0.2.4
+    Checking hyper-util v0.1.20
+    Checking icu_collections v2.2.0
+    Checking icu_provider v2.2.0
+    Checking tower v0.5.3
+    Checking subtle v2.6.1
+    Checking log v0.4.29
+    Checking icu_properties v2.2.0
+    Checking icu_normalizer v2.2.0
+    Checking axum-core v0.5.6
+   Compiling tonic-build v0.14.5
+    Checking axum v0.8.9
+    Checking chrono v0.4.45
+   Compiling tonic-prost-build v0.14.5
+    Checking serde_json v1.0.151
+    Checking idna_adapter v1.2.1
+   Compiling pbjson-types v0.9.0
+    Checking hyper-timeout v0.5.2
+    Checking tokio-stream v0.1.19
+    Checking getrandom v0.4.2
+    Checking rustls-native-certs v0.8.3
+    Checking tonic v0.14.6
+    Checking uuid v1.23.0
+    Checking idna v1.1.0
+   Compiling a2a-pb v0.2.1 (/opt/bench/a2a-rs/a2a-pb)
+    Checking pbjson v0.9.0
+    Checking a2a-lf v0.3.1 (/opt/bench/a2a-rs/a2a)
+    Checking tower-http v0.6.8
+    Checking serde_urlencoded v0.7.1
+    Checking url v2.5.8
+    Checking tonic-prost v0.14.5
+    Checking futures-executor v0.3.34
+    Checking futures v0.3.34
+   Compiling rustls v0.23.43
+    Checking rustls-webpki v0.103.13
+    Checking tokio-rustls v0.26.4
+    Checking rustls-platform-verifier v0.7.0
+    Checking hyper-rustls v0.27.8
+    Checking reqwest v0.13.4
+ Documenting a2a-client-lf v0.2.5 (/opt/bench/a2a-rs/a2a-client)
+warning: missing documentation for the crate
+   --> a2a-client/src/lib.rs:5:1
+    |
+  5 | / #[cfg(feature = "fuzzing")]
+  6 | | #[doc(hidden)]
+  7 | | pub mod fuzz_support {
+  8 | |     use a2a::{A2AError, StreamResponse};
+...   |
+135 | | }
+    | |_^
+    |
+    = note: requested on the command line with `-W missing-docs`
+
+warning: missing documentation for a module
+  --> a2a-client/src/lib.rs:22:1
+   |
+22 | pub mod agent_card;
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a-client/src/lib.rs:23:1
+   |
+23 | pub mod auth;
+   | ^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a-client/src/lib.rs:24:1
+   |
+24 | pub mod client;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a-client/src/lib.rs:25:1
+   |
+25 | pub mod factory;
+   | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a-client/src/lib.rs:26:1
+   |
+26 | pub mod jsonrpc;
+   | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a-client/src/lib.rs:27:1
+   |
+27 | pub mod middleware;
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a-client/src/lib.rs:29:1
+   |
+29 | pub mod rest;
+   | ^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a-client/src/lib.rs:30:1
+   |
+30 | pub mod transport;
+   | ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-client/src/agent_card.rs:12:5
+   |
+12 |     pub fn new(client: Option<Client>) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-client/src/auth.rs:24:5
+   |
+24 |     pub fn new() -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> a2a-client/src/auth.rs:30:5
+   |
+30 |     pub fn set(&self, scheme: &str, credential: &str) {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-client/src/client.rs:22:5
+   |
+22 |     pub fn new(transport: T) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> a2a-client/src/client.rs:33:5
+   |
+33 |     pub fn with_interceptors(mut self, interceptors: Vec<Arc<dyn CallInterceptor>>) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:113:5
+    |
+113 | /     pub async fn send_message(
+114 | |         &self,
+115 | |         req: &SendMessageRequest,
+116 | |     ) -> Result<SendMessageResponse, A2AError> {
+    | |______________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:123:5
+    |
+123 | /     pub async fn send_streaming_message(
+124 | |         &self,
+125 | |         req: &SendMessageRequest,
+126 | |     ) -> Result<BoxStream<'static, Result<StreamResponse, A2AError>>, A2AError> {
+    | |_______________________________________________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:134:5
+    |
+134 |     pub async fn get_task(&self, req: &GetTaskRequest) -> Result<Task, A2AError> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:141:5
+    |
+141 |     pub async fn list_tasks(&self, req: &ListTasksRequest) -> Result<ListTasksResponse, A2AError> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:148:5
+    |
+148 |     pub async fn cancel_task(&self, req: &CancelTaskRequest) -> Result<Task, A2AError> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:155:5
+    |
+155 | /     pub async fn subscribe_to_task(
+156 | |         &self,
+157 | |         req: &SubscribeToTaskRequest,
+158 | |     ) -> Result<BoxStream<'static, Result<StreamResponse, A2AError>>, A2AError> {
+    | |_______________________________________________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:165:5
+    |
+165 | /     pub async fn create_push_config(
+166 | |         &self,
+167 | |         req: &TaskPushNotificationConfig,
+168 | |     ) -> Result<TaskPushNotificationConfig, A2AError> {
+    | |_____________________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:175:5
+    |
+175 | /     pub async fn get_push_config(
+176 | |         &self,
+177 | |         req: &GetTaskPushNotificationConfigRequest,
+178 | |     ) -> Result<TaskPushNotificationConfig, A2AError> {
+    | |_____________________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:185:5
+    |
+185 | /     pub async fn list_push_configs(
+186 | |         &self,
+187 | |         req: &ListTaskPushNotificationConfigsRequest,
+188 | |     ) -> Result<ListTaskPushNotificationConfigsResponse, A2AError> {
+    | |__________________________________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:195:5
+    |
+195 | /     pub async fn delete_push_config(
+196 | |         &self,
+197 | |         req: &DeleteTaskPushNotificationConfigRequest,
+198 | |     ) -> Result<(), A2AError> {
+    | |_____________________________^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:205:5
+    |
+205 | /     pub async fn get_extended_agent_card(
+206 | |         &self,
+207 | |         req: &GetExtendedAgentCardRequest,
+208 | |     ) -> Result<AgentCard, A2AError> {
+    | |____________________________________^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:216:5
+    |
+216 |     pub async fn destroy(&self) -> Result<(), A2AError> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a-client/src/client.rs:224:5
+    |
+224 | /     async fn send_text(
+225 | |         &self,
+226 | |         text: impl Into<String> + Send,
+227 | |     ) -> Result<SendMessageResponse, A2AError>;
+    | |_______________________________________________^
+
+warning: missing documentation for an associated function
+   --> a2a-client/src/jsonrpc.rs:559:5
+    |
+559 |     pub fn new(client: Option<Client>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a-client/src/jsonrpc.rs:571:5
+    |
+571 |     pub fn with_root_certificates_pem(pem: &[u8]) -> Result<Self, A2AError> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a-client/src/rest.rs:444:5
+    |
+444 |     pub fn new(client: Option<Client>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a-client/src/rest.rs:456:5
+    |
+456 |     pub fn with_root_certificates_pem(pem: &[u8]) -> Result<Self, A2AError> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a type alias
+ --> a2a-client/src/transport.rs:9:1
+  |
+9 | pub type ServiceParams = HashMap<String, Vec<String>>;
+  | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:21:5
+   |
+21 | /     async fn send_message(
+22 | |         &self,
+23 | |         params: &ServiceParams,
+24 | |         req: &SendMessageRequest,
+25 | |     ) -> Result<SendMessageResponse, A2AError>;
+   | |_______________________________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:27:5
+   |
+27 | /     async fn send_streaming_message(
+28 | |         &self,
+29 | |         params: &ServiceParams,
+30 | |         req: &SendMessageRequest,
+31 | |     ) -> Result<BoxStream<'static, Result<StreamResponse, A2AError>>, A2AError>;
+   | |________________________________________________________________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:33:5
+   |
+33 | /     async fn get_task(
+34 | |         &self,
+35 | |         params: &ServiceParams,
+36 | |         req: &GetTaskRequest,
+37 | |     ) -> Result<Task, A2AError>;
+   | |________________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:39:5
+   |
+39 | /     async fn list_tasks(
+40 | |         &self,
+41 | |         params: &ServiceParams,
+42 | |         req: &ListTasksRequest,
+43 | |     ) -> Result<ListTasksResponse, A2AError>;
+   | |_____________________________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:45:5
+   |
+45 | /     async fn cancel_task(
+46 | |         &self,
+47 | |         params: &ServiceParams,
+48 | |         req: &CancelTaskRequest,
+49 | |     ) -> Result<Task, A2AError>;
+   | |________________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:51:5
+   |
+51 | /     async fn subscribe_to_task(
+52 | |         &self,
+53 | |         params: &ServiceParams,
+54 | |         req: &SubscribeToTaskRequest,
+55 | |     ) -> Result<BoxStream<'static, Result<StreamResponse, A2AError>>, A2AError>;
+   | |________________________________________________________________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:57:5
+   |
+57 | /     async fn create_push_config(
+58 | |         &self,
+59 | |         params: &ServiceParams,
+60 | |         req: &TaskPushNotificationConfig,
+61 | |     ) -> Result<TaskPushNotificationConfig, A2AError>;
+   | |______________________________________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:63:5
+   |
+63 | /     async fn get_push_config(
+64 | |         &self,
+65 | |         params: &ServiceParams,
+66 | |         req: &GetTaskPushNotificationConfigRequest,
+67 | |     ) -> Result<TaskPushNotificationConfig, A2AError>;
+   | |______________________________________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:69:5
+   |
+69 | /     async fn list_push_configs(
+70 | |         &self,
+71 | |         params: &ServiceParams,
+72 | |         req: &ListTaskPushNotificationConfigsRequest,
+73 | |     ) -> Result<ListTaskPushNotificationConfigsResponse, A2AError>;
+   | |___________________________________________________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:75:5
+   |
+75 | /     async fn delete_push_config(
+76 | |         &self,
+77 | |         params: &ServiceParams,
+78 | |         req: &DeleteTaskPushNotificationConfigRequest,
+79 | |     ) -> Result<(), A2AError>;
+   | |______________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:81:5
+   |
+81 | /     async fn get_extended_agent_card(
+82 | |         &self,
+83 | |         params: &ServiceParams,
+84 | |         req: &GetExtendedAgentCardRequest,
+85 | |     ) -> Result<AgentCard, A2AError>;
+   | |_____________________________________^
+
+warning: missing documentation for a method
+  --> a2a-client/src/transport.rs:87:5
+   |
+87 |     async fn destroy(&self) -> Result<(), A2AError>;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `auto_impl` is both a crate and an attribute macro
+  --> a2a-client/src/transport.rs:17:7
+   |
+17 | /// [`auto_impl`], enabling `A2AClient<Box<dyn Transport>>` for runtime-selected transports.
+   |       ^^^^^^^^^ ambiguous link
+   |
+   = note: `#[warn(rustdoc::broken_intra_doc_links)]` on by default
+help: to link to the crate, prefix with `mod@`
+   |
+17 | /// [`mod@auto_impl`], enabling `A2AClient<Box<dyn Transport>>` for runtime-selected transports.
+   |       ++++
+help: to link to the attribute macro, prefix with `macro@`
+   |
+17 | /// [`macro@auto_impl`], enabling `A2AClient<Box<dyn Transport>>` for runtime-selected transports.
+   |       ++++++
+
+warning: `a2a-client-lf` (lib doc) generated 45 warnings
+    Finished `dev` profile [unoptimized] target(s) in 38.92s
+   Generated /opt/bench/target-quality-a2a-rs/doc/a2a_client/index.html
+EXIT: 0
+END: 2026-09-26T10:08:08Z

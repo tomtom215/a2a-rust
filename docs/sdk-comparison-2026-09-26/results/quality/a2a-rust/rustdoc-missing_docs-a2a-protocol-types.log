@@ -1,0 +1,12 @@
+CMD: (cwd /opt/bench/a2a-rust-src) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rust CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo rustdoc -j 2 -p a2a-protocol-types -- -W missing_docs
+START: 2026-09-26T10:26:18Z
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling syn v3.0.5
+   Compiling serde_derive v1.0.229
+    Checking serde v1.0.229
+ Documenting a2a-protocol-types v0.14.0 (/opt/bench/a2a-rust-src/crates/a2a-protocol-types)
+    Finished `dev` profile [unoptimized] target(s) in 4.45s
+   Generated /opt/bench/target-quality-a2a-rust/doc/a2a_protocol_types/index.html
+EXIT: 0
+END: 2026-09-26T10:26:22Z

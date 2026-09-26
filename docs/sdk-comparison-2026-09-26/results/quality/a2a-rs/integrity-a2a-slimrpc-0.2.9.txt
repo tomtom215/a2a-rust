@@ -1,0 +1,13 @@
+# diff -r (excluding Cargo.toml, Cargo.toml.orig, .cargo_vcs_info.json, Cargo.lock) : crates/a2a-slimrpc-0.2.9 vs /opt/bench/a2a-rs/a2a-slimrpc
+{
+  "git": {
+    "sha1": "365d056784ca67466f9767728b5ac3be31ea19a8"
+  },
+  "path_in_vcs": "a2a-slimrpc"
+}
+## files in .crate:
+8
+## Cargo.toml.orig vs git Cargo.toml:
+identical
+## src/ files in git not in crate:
+RESULT: missing=0 differs=0

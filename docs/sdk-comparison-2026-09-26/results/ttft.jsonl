@@ -1,0 +1,5 @@
+{"path": "direct", "n": 24, "ttft_ms_median": 128.01371049999943, "ttft_ms_min": 114.20045399972878, "ttft_ms_max": 333.7555860007342, "total_ms_median": 343.186332499954, "total_ms_min": 204.84794599997258, "total_ms_max": 527.096096000605}
+{"path": "a2a-rust", "n": 24, "ttft_ms_median": 135.29931699986264, "ttft_ms_min": 126.08923799962213, "ttft_ms_max": 158.79706599935162, "total_ms_median": 332.9658930001642, "total_ms_min": 214.13563700025406, "total_ms_max": 440.08502999986376}
+{"path": "a2a-rs", "n": 24, "ttft_ms_median": 135.93568800024514, "ttft_ms_min": 127.26152000050206, "ttft_ms_max": 206.8276350000815, "total_ms_median": 341.74589550002565, "total_ms_min": 234.84913799984497, "total_ms_max": 424.23195599985775}
+{"identical_text_all_three_paths": "24/24", "sample": "The capital of France is Paris."}
+EXIT=0

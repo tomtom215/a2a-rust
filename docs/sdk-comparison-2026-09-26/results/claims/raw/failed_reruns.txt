@@ -1,0 +1,117 @@
+=== run 1: --test card card_http_caching_per_surface
+JsonRpcDispatcher: If-None-Match -> 304 body_len=0
+JsonRpcDispatcher: If-Modified-Since(own value) -> 304
+RestDispatcher: If-None-Match -> 304 body_len=0
+RestDispatcher: If-Modified-Since(own value) -> 304
+FAILURES: ["A2aRouter(axum): no ETag header"]
+thread 'card_http_caching_per_surface' (30342) panicked at tests/card.rs:89:5:
+card_http_caching_per_surface --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.11s
+=== run 1: --test tenancy path_resolver_over_rest
+PathSegmentTenantResolver(1) POST /tenants/acme/message:send -> 400 {"error":{"code":400,"message":"request tenant 'acme' does not match the authenticated tenant","status":"INVALID_ARGUMENT"}}
+thread 'path_resolver_over_rest' (30730) panicked at tests/tenancy.rs:124:5:
+path_resolver_over_rest --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+=== run 1: --test stores_hardening health_and_ready_per_surface
+store DOWN: JsonRpcDispatcher GET /health -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by t
+store DOWN: JsonRpcDispatcher GET /ready -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by t
+store DOWN: RestDispatcher GET /health -> 200 {"status":"ok"}
+store DOWN: RestDispatcher GET /ready -> 200 {"status":"ok"}
+store DOWN: A2aRouter GET /health -> 200 {"status":"ok"}
+store DOWN: A2aRouter GET /ready -> 503 {"reason":"internal_error","status":"not_ready"}
+FAILURES: ["JsonRpcDispatcher /ready=200 with store down (expected 503)", "RestDispatcher /ready=200 with store down (expected 503)"]
+thread 'health_and_ready_per_surface' (31203) panicked at tests/stores_hardening.rs:157:5:
+health_and_ready_per_surface --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.02s
+=== run 1: --test signing_isolate isolate
+ascii, no extensions: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+ascii, declared extensions: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+non-ascii desc: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+wire ascii verify: Err(A2aError { code: InternalError, message: "signature verification failed", data: None, auth_rejection: None })
+RESULT a=false b=false c=false wire=false
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== run 1: --test card card_signing_roundtrip_over_wire
+build() with card signed before extensions declared -> is_err=true
+verify fetched card with DER SPKI (as documented): Err(A2aError { code: InternalError, message: "signature verification failed", data: None, auth_rejection: None })
+verify fetched card with raw SEC1 point (undocumented): Ok(())
+verify tampered card: is_err=true
+verify with wrong key: is_err=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+=== run 2: --test card card_http_caching_per_surface
+JsonRpcDispatcher: If-None-Match -> 304 body_len=0
+JsonRpcDispatcher: If-Modified-Since(own value) -> 304
+RestDispatcher: If-None-Match -> 304 body_len=0
+RestDispatcher: If-Modified-Since(own value) -> 304
+FAILURES: ["A2aRouter(axum): no ETag header"]
+thread 'card_http_caching_per_surface' (31551) panicked at tests/card.rs:89:5:
+card_http_caching_per_surface --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.11s
+=== run 2: --test tenancy path_resolver_over_rest
+PathSegmentTenantResolver(1) POST /tenants/acme/message:send -> 400 {"error":{"code":400,"message":"request tenant 'acme' does not match the authenticated tenant","status":"INVALID_ARGUMENT"}}
+thread 'path_resolver_over_rest' (31580) panicked at tests/tenancy.rs:124:5:
+path_resolver_over_rest --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+=== run 2: --test stores_hardening health_and_ready_per_surface
+store DOWN: JsonRpcDispatcher GET /health -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by t
+store DOWN: JsonRpcDispatcher GET /ready -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by t
+store DOWN: RestDispatcher GET /health -> 200 {"status":"ok"}
+store DOWN: RestDispatcher GET /ready -> 200 {"status":"ok"}
+store DOWN: A2aRouter GET /health -> 200 {"status":"ok"}
+store DOWN: A2aRouter GET /ready -> 503 {"reason":"internal_error","status":"not_ready"}
+FAILURES: ["JsonRpcDispatcher /ready=200 with store down (expected 503)", "RestDispatcher /ready=200 with store down (expected 503)"]
+thread 'health_and_ready_per_surface' (31595) panicked at tests/stores_hardening.rs:157:5:
+health_and_ready_per_surface --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.01s
+=== run 2: --test signing_isolate isolate
+ascii, no extensions: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+ascii, declared extensions: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+non-ascii desc: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+wire ascii verify: Err(A2aError { code: InternalError, message: "signature verification failed", data: None, auth_rejection: None })
+RESULT a=false b=false c=false wire=false
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== run 2: --test card card_signing_roundtrip_over_wire
+build() with card signed before extensions declared -> is_err=true
+verify fetched card with DER SPKI (as documented): Err(A2aError { code: InternalError, message: "signature verification failed", data: None, auth_rejection: None })
+verify fetched card with raw SEC1 point (undocumented): Ok(())
+verify tampered card: is_err=true
+verify with wrong key: is_err=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.01s
+=== run 3: --test card card_http_caching_per_surface
+JsonRpcDispatcher: If-None-Match -> 304 body_len=0
+JsonRpcDispatcher: If-Modified-Since(own value) -> 304
+RestDispatcher: If-None-Match -> 304 body_len=0
+RestDispatcher: If-Modified-Since(own value) -> 304
+FAILURES: ["A2aRouter(axum): no ETag header"]
+thread 'card_http_caching_per_surface' (31650) panicked at tests/card.rs:89:5:
+card_http_caching_per_surface --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.11s
+=== run 3: --test tenancy path_resolver_over_rest
+PathSegmentTenantResolver(1) POST /tenants/acme/message:send -> 400 {"error":{"code":400,"message":"request tenant 'acme' does not match the authenticated tenant","status":"INVALID_ARGUMENT"}}
+thread 'path_resolver_over_rest' (31665) panicked at tests/tenancy.rs:124:5:
+path_resolver_over_rest --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+=== run 3: --test stores_hardening health_and_ready_per_surface
+store DOWN: JsonRpcDispatcher GET /health -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by t
+store DOWN: JsonRpcDispatcher GET /ready -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by t
+store DOWN: RestDispatcher GET /health -> 200 {"status":"ok"}
+store DOWN: RestDispatcher GET /ready -> 200 {"status":"ok"}
+store DOWN: A2aRouter GET /health -> 200 {"status":"ok"}
+store DOWN: A2aRouter GET /ready -> 503 {"reason":"internal_error","status":"not_ready"}
+FAILURES: ["JsonRpcDispatcher /ready=200 with store down (expected 503)", "RestDispatcher /ready=200 with store down (expected 503)"]
+thread 'health_and_ready_per_surface' (31693) panicked at tests/stores_hardening.rs:157:5:
+health_and_ready_per_surface --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.01s
+=== run 3: --test signing_isolate isolate
+ascii, no extensions: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+ascii, declared extensions: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+non-ascii desc: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+wire ascii verify: Err(A2aError { code: InternalError, message: "signature verification failed", data: None, auth_rejection: None })
+RESULT a=false b=false c=false wire=false
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+=== run 3: --test card card_signing_roundtrip_over_wire
+build() with card signed before extensions declared -> is_err=true
+verify fetched card with DER SPKI (as documented): Err(A2aError { code: InternalError, message: "signature verification failed", data: None, auth_rejection: None })
+verify fetched card with raw SEC1 point (undocumented): Ok(())
+verify tampered card: is_err=true
+verify with wrong key: is_err=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.01s

@@ -1,0 +1,481 @@
+CMD: (cwd /opt/bench/a2a-rs) CARGO_TARGET_DIR=/opt/bench/target-quality-a2a-rs CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo rustdoc -j 2 -p a2a-server-lf -- -W missing_docs
+START: 2026-09-26T10:08:08Z
+   Compiling serde_core v1.0.228
+    Checking tracing v0.1.44
+    Checking h2 v0.4.19
+    Checking serde v1.0.228
+   Compiling serde_json v1.0.151
+    Checking tower v0.5.3
+    Checking hyper v1.11.1
+    Checking serde_urlencoded v0.7.1
+    Checking axum-core v0.5.6
+    Checking hyper-util v0.1.20
+    Checking serde_path_to_error v0.1.20
+    Checking chrono v0.4.45
+    Checking axum v0.8.9
+    Checking hyper-timeout v0.5.2
+    Checking pbjson v0.9.0
+    Checking a2a-lf v0.3.1 (/opt/bench/a2a-rs/a2a)
+    Checking tower-http v0.6.8
+    Checking pbjson-types v0.9.0
+    Checking tonic v0.14.6
+    Checking fs-err v3.3.0
+    Checking hyper-rustls v0.27.8
+    Checking either v1.15.0
+    Checking axum-server v0.8.0
+    Checking tonic-prost v0.14.5
+    Checking a2a-pb v0.2.1 (/opt/bench/a2a-rs/a2a-pb)
+    Checking reqwest v0.13.4
+ Documenting a2a-server-lf v0.4.4 (/opt/bench/a2a-rs/a2a-server)
+warning: missing documentation for the crate
+   --> a2a-server/src/lib.rs:3:1
+    |
+  3 | / pub mod agent_card;
+  4 | | pub mod executor;
+  5 | | pub mod handler;
+  6 | | pub mod jsonrpc;
+...   |
+199 | | }
+    | |_^
+    |
+    = note: requested on the command line with `-W missing-docs`
+
+warning: missing documentation for a module
+ --> a2a-server/src/lib.rs:3:1
+  |
+3 | pub mod agent_card;
+  | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+ --> a2a-server/src/lib.rs:4:1
+  |
+4 | pub mod executor;
+  | ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+ --> a2a-server/src/lib.rs:5:1
+  |
+5 | pub mod handler;
+  | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+ --> a2a-server/src/lib.rs:6:1
+  |
+6 | pub mod jsonrpc;
+  | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+ --> a2a-server/src/lib.rs:7:1
+  |
+7 | pub mod middleware;
+  | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+ --> a2a-server/src/lib.rs:9:1
+  |
+9 | pub mod push;
+  | ^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a-server/src/lib.rs:10:1
+   |
+10 | pub mod rest;
+   | ^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a-server/src/lib.rs:11:1
+   |
+11 | pub mod sse;
+   | ^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> a2a-server/src/lib.rs:12:1
+   |
+12 | pub mod task_store;
+   | ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> a2a-server/src/agent_card.rs:18:5
+   |
+18 |     fn card(&self) -> AgentCard;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-server/src/agent_card.rs:27:5
+   |
+27 |     pub fn new(card: AgentCard) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> a2a-server/src/executor.rs:31:5
+   |
+31 |     pub fn task_info(&self) -> (TaskId, String) {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:368:5
+    |
+368 | /     async fn send_message(
+369 | |         &self,
+370 | |         params: &ServiceParams,
+371 | |         req: SendMessageRequest,
+372 | |     ) -> Result<SendMessageResponse, A2AError>;
+    | |_______________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:374:5
+    |
+374 | /     async fn send_streaming_message(
+375 | |         &self,
+376 | |         params: &ServiceParams,
+377 | |         req: SendMessageRequest,
+378 | |     ) -> Result<BoxStream<'static, Result<StreamResponse, A2AError>>, A2AError>;
+    | |________________________________________________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:380:5
+    |
+380 | /     async fn get_task(&self, params: &ServiceParams, req: GetTaskRequest)
+381 | |     -> Result<Task, A2AError>;
+    | |______________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:383:5
+    |
+383 | /     async fn list_tasks(
+384 | |         &self,
+385 | |         params: &ServiceParams,
+386 | |         req: ListTasksRequest,
+387 | |     ) -> Result<ListTasksResponse, A2AError>;
+    | |_____________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:389:5
+    |
+389 | /     async fn cancel_task(
+390 | |         &self,
+391 | |         params: &ServiceParams,
+392 | |         req: CancelTaskRequest,
+393 | |     ) -> Result<Task, A2AError>;
+    | |________________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:395:5
+    |
+395 | /     async fn subscribe_to_task(
+396 | |         &self,
+397 | |         params: &ServiceParams,
+398 | |         req: SubscribeToTaskRequest,
+399 | |     ) -> Result<BoxStream<'static, Result<StreamResponse, A2AError>>, A2AError>;
+    | |________________________________________________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:401:5
+    |
+401 | /     async fn create_push_config(
+402 | |         &self,
+403 | |         params: &ServiceParams,
+404 | |         req: TaskPushNotificationConfig,
+405 | |     ) -> Result<TaskPushNotificationConfig, A2AError>;
+    | |______________________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:407:5
+    |
+407 | /     async fn get_push_config(
+408 | |         &self,
+409 | |         params: &ServiceParams,
+410 | |         req: GetTaskPushNotificationConfigRequest,
+411 | |     ) -> Result<TaskPushNotificationConfig, A2AError>;
+    | |______________________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:413:5
+    |
+413 | /     async fn list_push_configs(
+414 | |         &self,
+415 | |         params: &ServiceParams,
+416 | |         req: ListTaskPushNotificationConfigsRequest,
+417 | |     ) -> Result<ListTaskPushNotificationConfigsResponse, A2AError>;
+    | |___________________________________________________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:419:5
+    |
+419 | /     async fn delete_push_config(
+420 | |         &self,
+421 | |         params: &ServiceParams,
+422 | |         req: DeleteTaskPushNotificationConfigRequest,
+423 | |     ) -> Result<(), A2AError>;
+    | |______________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:425:5
+    |
+425 | /     async fn get_extended_agent_card(
+426 | |         &self,
+427 | |         params: &ServiceParams,
+428 | |         req: GetExtendedAgentCardRequest,
+429 | |     ) -> Result<AgentCard, A2AError>;
+    | |_____________________________________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:439:5
+    |
+439 |     fn authorize(&self, params: &ServiceParams, task_id: Option<&str>) -> Result<(), A2AError>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:473:5
+    |
+473 |     fn resolve(&self, params: &ServiceParams) -> Result<AgentCard, A2AError>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> a2a-server/src/handler.rs:486:5
+    |
+486 |     pub fn new(executor: impl crate::AgentExecutor, task_store: impl crate::TaskStore) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:533:5
+    |
+533 | /     pub fn with_push_config_store(
+534 | |         mut self,
+535 | |         push_config_store: impl crate::PushConfigStore,
+536 | |     ) -> Self {
+    | |_____________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:546:5
+    |
+546 | /     pub fn with_push_notifications(
+547 | |         mut self,
+548 | |         push_config_store: impl crate::PushConfigStore,
+549 | |         push_sender: crate::HttpPushSender,
+550 | |     ) -> Self {
+    | |_____________^
+
+warning: missing documentation for a method
+   --> a2a-server/src/handler.rs:557:5
+    |
+557 |     pub fn with_capabilities(mut self, capabilities: AgentCapabilities) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/jsonrpc.rs:22:5
+   |
+22 |     pub handler: Arc<H>,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/middleware.rs:33:5
+   |
+33 |     pub name: String,
+   |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/middleware.rs:34:5
+   |
+34 |     pub authenticated: bool,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/middleware.rs:35:5
+   |
+35 |     pub attributes: HashMap<String, Value>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-server/src/middleware.rs:39:5
+   |
+39 |     pub fn authenticated(name: impl Into<String>) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/middleware.rs:50:5
+   |
+50 |     pub method: String,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/middleware.rs:51:5
+   |
+51 |     pub service_params: ServiceParams,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/middleware.rs:52:5
+   |
+52 |     pub tenant: Option<String>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/middleware.rs:53:5
+   |
+53 |     pub user: Option<User>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-server/src/middleware.rs:57:5
+   |
+57 |     pub fn new(method: impl Into<String>, params: ServiceParams) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> a2a-server/src/middleware.rs:68:1
+   |
+68 | #[async_trait]
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/middleware.rs:87:5
+   |
+87 |     pub handler: H,
+   |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/middleware.rs:88:5
+   |
+88 |     pub interceptors: Vec<Box<dyn CallInterceptor>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-server/src/middleware.rs:92:5
+   |
+92 |     pub fn new(handler: H) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> a2a-server/src/middleware.rs:99:5
+   |
+99 |     pub fn with_interceptor(mut self, interceptor: impl CallInterceptor) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-server/src/push/sender.rs:39:5
+   |
+39 |     pub fn new(config: Option<HttpPushSenderConfig>) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-server/src/push/store.rs:46:5
+   |
+46 |     pub fn new() -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/rest.rs:48:5
+   |
+48 |     pub handler: Arc<H>,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a-server/src/rest.rs:157:1
+    |
+157 | pub struct GetTaskQuery {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-server/src/rest.rs:159:5
+    |
+159 |     pub history_length: Option<i32>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a-server/src/rest.rs:194:1
+    |
+194 | pub struct ListTasksQuery {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-server/src/rest.rs:196:5
+    |
+196 |     pub context_id: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-server/src/rest.rs:198:5
+    |
+198 |     pub status: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-server/src/rest.rs:200:5
+    |
+200 |     pub page_size: Option<i32>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-server/src/rest.rs:202:5
+    |
+202 |     pub page_token: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-server/src/rest.rs:204:5
+    |
+204 |     pub history_length: Option<i32>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-server/src/rest.rs:207:5
+    |
+207 |     pub status_timestamp_after: Option<DateTime<Utc>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-server/src/rest.rs:210:5
+    |
+210 |     pub include_artifacts: Option<bool>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> a2a-server/src/rest.rs:307:1
+    |
+307 | pub struct ListPushConfigsQuery {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-server/src/rest.rs:309:5
+    |
+309 |     pub page_size: Option<i32>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> a2a-server/src/rest.rs:312:5
+    |
+312 |     pub page_token: Option<String>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> a2a-server/src/task_store/inmemory.rs:23:5
+   |
+23 |     pub fn new() -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/task_store/store.rs:12:5
+   |
+12 |     pub task: Task,
+   |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> a2a-server/src/task_store/store.rs:13:5
+   |
+13 |     pub version: TaskVersion,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unresolved link to `TaskStore::list`
+   --> a2a-server/src/handler.rs:792:11
+    |
+792 |     /// [`TaskStore::list`].
+    |           ^^^^^^^^^^^^^^^ no item named `TaskStore` in scope
+    |
+    = note: `#[warn(rustdoc::broken_intra_doc_links)]` on by default
+
+warning: `a2a-server-lf` (lib doc) generated 65 warnings
+    Finished `dev` profile [unoptimized] target(s) in 9.51s
+   Generated /opt/bench/target-quality-a2a-rs/doc/a2a_server/index.html
+EXIT: 0
+END: 2026-09-26T10:08:18Z

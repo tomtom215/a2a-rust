@@ -1,0 +1,27 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running tests/transports.rs (/opt/bench/claims/target/debug/deps/transports-cff6f4b513eead89)
+
+running 3 tests
+test quad_transport_client_and_server ... JSONRPC: states=[Working, Completed] artifacts=["greeting"]
+JSONRPC: cancel -> Canceled
+JSONRPC: OK
+REST: states=[Working, Completed] artifacts=["greeting"]
+REST: cancel -> Canceled
+REST: OK
+WEBSOCKET: states=[Working, Completed] artifacts=["greeting"]
+WEBSOCKET: cancel -> Canceled
+WEBSOCKET: OK
+GRPC: states=[Working, Completed] artifacts=["greeting"]
+GRPC: cancel -> Canceled
+GRPC: OK
+ok
+test sse_last_event_id_resumption ... task=cf518faf-1d5a-4956-b8b1-05904c7efab6 first=["chunk-0", "chunk-1", "chunk-2"] last_event_id=Some("4")
+resumed: ["chunk-3", "chunk-4", "chunk-5", "chunk-6", "chunk-7", "Completed"]
+ok
+test sse_multi_subscriber ... subscriber 1: ["TaskSnapshot", "chunk-0", "chunk-1", "chunk-2", "chunk-3", "chunk-4", "chunk-5", "Completed"]
+subscriber 0: ["TaskSnapshot", "chunk-0", "chunk-1", "chunk-2", "chunk-3", "chunk-4", "chunk-5", "Completed"]
+originator artifacts: ["chunk-0", "chunk-1", "chunk-2", "chunk-3", "chunk-4", "chunk-5"]
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.33s
+

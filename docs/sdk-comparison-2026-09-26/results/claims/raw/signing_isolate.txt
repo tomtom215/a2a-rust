@@ -1,0 +1,16 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.40s
+     Running tests/signing_isolate.rs (/opt/bench/claims/target/debug/deps/signing_isolate-8801b0584a872f92)
+
+running 1 test
+ascii, no extensions: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+ascii, declared extensions: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+non-ascii desc: local_verify=false serde_roundtrip_verify=false canonical_bytes_equal_after_roundtrip=true
+served JSON: {"name":"card-agent","description":"v1","version":"1.0.0","supportedInterfaces":[{"url":"http://127.0.0.1:7550","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"defaultInputModes":[],"defaultOutputModes":[],"skills":[],"capabilities":{"extensions":[{"uri":"https://a2a-rust.com/extensions/idempotency/v1"},{"uri":"https://a2a-rust.com/extensions/failure/v1"}]},"signatures":[{"protected":"eyJhbGciOiJFUzI1NiIsImtpZCI6ImsifQ","signature":"88TKL7sdoTbPGcDIdvl_npFuHj1ilHMiUUtYdksWIaRyXJtGS8Q7F5D2OfPGlg4yIC7HqR4OUGXfzm1FJdRriA"}]}
+signed canonical : {"capabilities":{"extensions":[{"uri":"https://a2a-rust.com/extensions/idempotency/v1"},{"uri":"https://a2a-rust.com/extensions/failure/v1"}]},"defaultInputModes":[],"defaultOutputModes":[],"description":"v1","name":"card-agent","skills":[],"supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7550"}],"version":"1.0.0"}
+fetched canonical: {"capabilities":{"extensions":[{"uri":"https://a2a-rust.com/extensions/idempotency/v1"},{"uri":"https://a2a-rust.com/extensions/failure/v1"}]},"defaultInputModes":[],"defaultOutputModes":[],"description":"v1","name":"card-agent","skills":[],"supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7550"}],"version":"1.0.0"}
+wire ascii verify: Err(A2aError { code: InternalError, message: "signature verification failed", data: None, auth_rejection: None })
+RESULT a=false b=false c=false wire=false
+test isolate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

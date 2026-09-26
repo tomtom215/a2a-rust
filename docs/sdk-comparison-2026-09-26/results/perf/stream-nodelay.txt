@@ -1,0 +1,5 @@
+# oha -z 8s, JSON-RPC SendStreamingMessage (echo), a2a-rs agent, server CPUs 0-1, oha CPUs 2-3
+a2a-rs default stream c=1: 23 rps p50 43.996 ms {'200': 183}
+a2a-rs default stream c=16: 366 rps p50 44.0 ms {'200': 2912}
+a2a-rs nodelay stream c=1: 7009 rps p50 0.136 ms {'200': 56097}
+a2a-rs nodelay stream c=16: 10267 rps p50 1.516 ms {'200': 82134}

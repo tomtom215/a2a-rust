@@ -1,0 +1,50 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.40s
+     Running tests/auth.rs (/opt/bench/claims/target/debug/deps/auth-f9f4f32f5d11f8d1)
+
+running 3 tests
+test api_key ... apikey/no-cred JSON-RPC: 401 www-authenticate=Some("ApiKey header=\"x-api-key\"") body={"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"authentication required"}}
+apikey/no-cred REST: 401 www-authenticate=Some("ApiKey header=\"x-api-key\"") body={"error":{"code":401,"message":"authentication required","status":"UNAUTHENTICATED"}}
+apikey/no-cred gRPC: ["< HTTP/2 200", "< grpc-status: 16", "< grpc-message: authentication%20required"]
+apikey/no-cred WebSocket: Protocol(A2aError { code: InvalidRequest, message: "authentication required", data: None, auth_rejection: None })
+apikey/wrong JSON-RPC: 401 www-authenticate=Some("ApiKey header=\"x-api-key\"") body={"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"authentication required"}}
+apikey/wrong REST: 401 www-authenticate=Some("ApiKey header=\"x-api-key\"") body={"error":{"code":401,"message":"authentication required","status":"UNAUTHENTICATED"}}
+apikey/wrong gRPC: ["< HTTP/2 200", "< grpc-status: 16", "< grpc-message: authentication%20required"]
+apikey/wrong WebSocket: Protocol(A2aError { code: InvalidRequest, message: "authentication required", data: None, auth_rejection: None })
+apikey/good JSON-RPC: 200 www-authenticate=None body={"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Task not found: x","data":[{"@type":"type.googleapis
+apikey/good REST: 404 www-authenticate=None body={"error":{"code":404,"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org
+apikey/good gRPC: ["< HTTP/2 200", "< grpc-status: 5", "< grpc-message: Task%20not%20found:%20", "< grpc-status-details-bin: CAUSEFRhc2sgbm90IGZvdW5kOiAaTgoodHlwZS5nb29nbGVhcGlzLmNvbS9nb29nbGUucnBjLkVycm9ySW5mbxIiCg5UQVNLX05PVF9GT1VORBIQYTJhLXByb3RvY29sLm9yZw"]
+apikey/good WebSocket: Protocol(A2aError { code: TaskNotFound, message: "Task not found: x", data: None, auth_rejection: None })
+ok
+test bearer_static ... bearer/no-cred JSON-RPC: 401 www-authenticate=Some("Bearer realm=\"a2a\"") body={"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"authentication required"}}
+bearer/no-cred REST: 401 www-authenticate=Some("Bearer realm=\"a2a\"") body={"error":{"code":401,"message":"authentication required","status":"UNAUTHENTICATED"}}
+bearer/no-cred gRPC: ["< HTTP/2 200", "< grpc-status: 16", "< grpc-message: authentication%20required"]
+bearer/no-cred WebSocket: Protocol(A2aError { code: InvalidRequest, message: "authentication required", data: None, auth_rejection: None })
+bearer/wrong JSON-RPC: 401 www-authenticate=Some("Bearer realm=\"a2a\"") body={"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"authentication required"}}
+bearer/wrong REST: 401 www-authenticate=Some("Bearer realm=\"a2a\"") body={"error":{"code":401,"message":"authentication required","status":"UNAUTHENTICATED"}}
+bearer/wrong gRPC: ["< HTTP/2 200", "< grpc-status: 16", "< grpc-message: authentication%20required"]
+bearer/wrong WebSocket: Protocol(A2aError { code: InvalidRequest, message: "authentication required", data: None, auth_rejection: None })
+bearer/good JSON-RPC: 200 www-authenticate=None body={"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Task not found: x","data":[{"@type":"type.googleapis
+bearer/good REST: 404 www-authenticate=None body={"error":{"code":404,"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org
+bearer/good gRPC: ["< HTTP/2 200", "< grpc-status: 5", "< grpc-message: Task%20not%20found:%20", "< grpc-status-details-bin: CAUSEFRhc2sgbm90IGZvdW5kOiAaTgoodHlwZS5nb29nbGVhcGlzLmNvbS9nb29nbGUucnBjLkVycm9ySW5mbxIiCg5UQVNLX05PVF9GT1VORBIQYTJhLXByb3RvY29sLm9yZw"]
+bearer/good WebSocket: Protocol(A2aError { code: TaskNotFound, message: "Task not found: x", data: None, auth_rejection: None })
+ok
+test jwt_hs256 ... jwt/no-cred JSON-RPC: 401 www-authenticate=Some("Bearer realm=\"a2a\"") body={"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"authentication required"}}
+jwt/no-cred REST: 401 www-authenticate=Some("Bearer realm=\"a2a\"") body={"error":{"code":401,"message":"authentication required","status":"UNAUTHENTICATED"}}
+jwt/no-cred gRPC: ["< HTTP/2 200", "< grpc-status: 16", "< grpc-message: authentication%20required"]
+jwt/no-cred WebSocket: Protocol(A2aError { code: InvalidRequest, message: "authentication required", data: None, auth_rejection: None })
+jwt/expired JSON-RPC: 401 www-authenticate=Some("Bearer realm=\"a2a\"") body={"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"authentication required"}}
+jwt/expired REST: 401 www-authenticate=Some("Bearer realm=\"a2a\"") body={"error":{"code":401,"message":"authentication required","status":"UNAUTHENTICATED"}}
+jwt/expired gRPC: ["< HTTP/2 200", "< grpc-status: 16", "< grpc-message: authentication%20required"]
+jwt/expired WebSocket: Protocol(A2aError { code: InvalidRequest, message: "authentication required", data: None, auth_rejection: None })
+jwt/wrong-key JSON-RPC: 401 www-authenticate=Some("Bearer realm=\"a2a\"") body={"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"authentication required"}}
+jwt/wrong-key REST: 401 www-authenticate=Some("Bearer realm=\"a2a\"") body={"error":{"code":401,"message":"authentication required","status":"UNAUTHENTICATED"}}
+jwt/wrong-key gRPC: ["< HTTP/2 200", "< grpc-status: 16", "< grpc-message: authentication%20required"]
+jwt/wrong-key WebSocket: Protocol(A2aError { code: InvalidRequest, message: "authentication required", data: None, auth_rejection: None })
+jwt/good JSON-RPC: 200 www-authenticate=None body={"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Task not found: x","data":[{"@type":"type.googleapis
+jwt/good REST: 404 www-authenticate=None body={"error":{"code":404,"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org
+jwt/good gRPC: ["< HTTP/2 200", "< grpc-status: 5", "< grpc-message: Task%20not%20found:%20", "< grpc-status-details-bin: CAUSEFRhc2sgbm90IGZvdW5kOiAaTgoodHlwZS5nb29nbGVhcGlzLmNvbS9nb29nbGUucnBjLkVycm9ySW5mbxIiCg5UQVNLX05PVF9GT1VORBIQYTJhLXByb3RvY29sLm9yZw"]
+jwt/good WebSocket: Protocol(A2aError { code: TaskNotFound, message: "Task not found: x", data: None, auth_rejection: None })
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+

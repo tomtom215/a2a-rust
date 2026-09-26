@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name = "claims-pg"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+a2a-protocol-sdk = { version = "=0.14.0", features = ["postgres"] }
+tokio = { version = "1", features = ["full"] }
+
+# Standalone: not a member of the repository workspace.
+[workspace]
