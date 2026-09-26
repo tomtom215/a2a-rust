@@ -1,0 +1,30 @@
+=== a_omitted
+REQ: POST http://127.0.0.1:7651/  
+BODY: {"jsonrpc":"2.0","id":1,"method":"GetExtendedAgentCard"}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":1,"result":{"name":"java-EXTENDED","description":"d","supportedInterfaces":[{"url":"http://127.0.0.1:7651","protocolBinding":"JSONRPC","tenant":"","protocolVersion":"1.0"}],"version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"extensions":[],"extendedAgentCard":true},"securitySchemes":{},"securityRequirements":[],"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"s","name":"s","description":"s","tags":["t"],"examples":[],"inputModes":[],"outputModes":[],"securityRequirements":[]}],"signatures":[]}}
+
+=== b_null
+REQ: POST http://127.0.0.1:7651/  
+BODY: {"jsonrpc":"2.0","id":2,"method":"GetExtendedAgentCard","params":null}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":2,"result":{"name":"java-EXTENDED","description":"d","supportedInterfaces":[{"url":"http://127.0.0.1:7651","protocolBinding":"JSONRPC","tenant":"","protocolVersion":"1.0"}],"version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"extensions":[],"extendedAgentCard":true},"securitySchemes":{},"securityRequirements":[],"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"s","name":"s","description":"s","tags":["t"],"examples":[],"inputModes":[],"outputModes":[],"securityRequirements":[]}],"signatures":[]}}
+
+=== c_empty_obj
+REQ: POST http://127.0.0.1:7651/  
+BODY: {"jsonrpc":"2.0","id":3,"method":"GetExtendedAgentCard","params":{}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":3,"result":{"name":"java-EXTENDED","description":"d","supportedInterfaces":[{"url":"http://127.0.0.1:7651","protocolBinding":"JSONRPC","tenant":"","protocolVersion":"1.0"}],"version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"extensions":[],"extendedAgentCard":true},"securitySchemes":{},"securityRequirements":[],"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"s","name":"s","description":"s","tags":["t"],"examples":[],"inputModes":[],"outputModes":[],"securityRequirements":[]}],"signatures":[]}}
+
+=== d_empty_arr
+REQ: POST http://127.0.0.1:7651/  
+BODY: {"jsonrpc":"2.0","id":4,"method":"GetExtendedAgentCard","params":[]}
+HTTP 200
+RESP: {"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid request content: Expect message object but got: []. Please verify the request matches the expected schema for this method.","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"INVALID_REQUEST","domain":"a2a-protocol.org","metadata":{}}]}}
+
+=== e_tenant
+REQ: POST http://127.0.0.1:7651/  
+BODY: {"jsonrpc":"2.0","id":5,"method":"GetExtendedAgentCard","params":{"tenant":""}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":5,"result":{"name":"java-EXTENDED","description":"d","supportedInterfaces":[{"url":"http://127.0.0.1:7651","protocolBinding":"JSONRPC","tenant":"","protocolVersion":"1.0"}],"version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"extensions":[],"extendedAgentCard":true},"securitySchemes":{},"securityRequirements":[],"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"s","name":"s","description":"s","tags":["t"],"examples":[],"inputModes":[],"outputModes":[],"securityRequirements":[]}],"signatures":[]}}
+

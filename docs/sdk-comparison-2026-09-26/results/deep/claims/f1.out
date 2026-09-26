@@ -1,0 +1,9 @@
+test f1_dynamic_last_modified ... F1 dynamic: first lm=Sat, 26 Sep 2026 12:17:07 GMT etag=W/"44ec61a8512ff804"; IMS=<first lm> 1.1s later -> 200 OK lm=Sat, 26 Sep 2026 12:17:08 GMT etag=W/"44ec61a8512ff804"
+F1 static: IMS=own lm -> 304 Not Modified; IMS=Fri, 31 Dec 2100 23:59:59 GMT (after lm) -> 200 OK
+test f1_router_vs_dispatchers ... F1 JsonRpcDispatcher: GET -> 200 etag=Some("W/\"16654ae07521d610\"") last-modified=Some("Sat, 26 Sep 2026 12:17:08 GMT") cache-control=Some("public, max-age=3600")
+F1 JsonRpcDispatcher: If-None-Match W/"16654ae07521d610" -> 304 body_len=0
+F1 RestDispatcher: GET -> 200 etag=Some("W/\"16654ae07521d610\"") last-modified=Some("Sat, 26 Sep 2026 12:17:08 GMT") cache-control=Some("public, max-age=3600")
+F1 RestDispatcher: If-None-Match W/"16654ae07521d610" -> 304 body_len=0
+F1 A2aRouter: GET -> 200 etag=None last-modified=None cache-control=None
+F1 A2aRouter: If-None-Match W/"16654ae07521d610" -> 200 body_len=648
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.21s

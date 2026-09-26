@@ -1,0 +1,99 @@
+diff --git a/crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs b/crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs
+index 076443fb..a7b41b77 100644
+--- a/crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs
++++ b/crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs
+@@ -120,6 +120,22 @@ impl JsonRpcDispatcher {
+             return resp;
+         }
+ 
++        // Liveness / readiness, answered as the REST dispatcher answers them:
++        // without this a GET probe reached the JSON-RPC parser and got
++        // HTTP 200 with a JSON-RPC error body, which an HTTP probe reads as
++        // healthy.
++        if req.method() == "GET" && matches!(req.uri().path(), "/health" | "/ready") {
++            let mut resp = if req.uri().path() == "/ready" {
++                crate::dispatch::rest::ready_response(&self.handler).await
++            } else {
++                crate::dispatch::rest::liveness_response()
++            };
++            if let Some(ref cors) = self.cors {
++                cors.apply_headers(&mut resp);
++            }
++            return resp;
++        }
++
+         // Capture the raw A2A-Extensions request header before the request is
+         // consumed, so the activated set can be echoed on the response
+         // (official-SDK convention; lets clients see which requested
+diff --git a/crates/a2a-protocol-server/src/dispatch/rest/mod.rs b/crates/a2a-protocol-server/src/dispatch/rest/mod.rs
+index cf6c6321..3b060218 100644
+--- a/crates/a2a-protocol-server/src/dispatch/rest/mod.rs
++++ b/crates/a2a-protocol-server/src/dispatch/rest/mod.rs
+@@ -16,7 +16,7 @@ mod response;
+ // The axum adapter answers errors through these, so the two HTTP+JSON
+ // dispatchers send one error shape (audit N37).
+ pub(crate) use error_response::{error_json_response, server_error_to_response};
+-pub(crate) use response::json_ok_response;
++pub(crate) use response::{health_response as liveness_response, json_ok_response, ready_response};
+ 
+ use std::collections::HashMap;
+ use std::convert::Infallible;
+@@ -118,7 +118,11 @@ impl RestDispatcher {
+ 
+         // Health check endpoint.
+         if method == "GET" && (path == "/health" || path == "/ready") {
+-            let mut resp = health_response();
++            let mut resp = if path == "/ready" {
++                ready_response(&self.handler).await
++            } else {
++                health_response()
++            };
+             if let Some(ref cors) = self.cors {
+                 cors.apply_headers(&mut resp);
+             }
+diff --git a/crates/a2a-protocol-server/src/dispatch/rest/response.rs b/crates/a2a-protocol-server/src/dispatch/rest/response.rs
+index b2581c31..ee057556 100644
+--- a/crates/a2a-protocol-server/src/dispatch/rest/response.rs
++++ b/crates/a2a-protocol-server/src/dispatch/rest/response.rs
+@@ -43,11 +43,27 @@ pub(super) fn internal_error_response() -> hyper::Response<BoxBody<Bytes, Infall
+ }
+ 
+ /// Returns a health check response.
+-pub(super) fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
++pub fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
+     let body = br#"{"status":"ok"}"#;
+     build_json_response(200, body.to_vec())
+ }
+ 
++/// Readiness: probes the task store, as `A2aRouter`'s `/ready` does.
++/// `200 {"status":"ready"}` or `503 {"status":"not_ready","reason":<label>}`.
++pub async fn ready_response(
++    handler: &crate::handler::RequestHandler,
++) -> hyper::Response<BoxBody<Bytes, Infallible>> {
++    match handler.task_store_health().await {
++        Ok(()) => build_json_response(200, br#"{"status":"ready"}"#.to_vec()),
++        Err(e) => build_json_response(
++            503,
++            serde_json::json!({"status": "not_ready", "reason": e.metric_label()})
++                .to_string()
++                .into_bytes(),
++        ),
++    }
++}
++
+ /// Builds a JSON HTTP response with the given status and body.
+ ///
+ /// `application/json`, a deliberate deviation from §11.1, which says
+diff --git a/crates/a2a-protocol-server/tests/dispatch_edge_tests.rs b/crates/a2a-protocol-server/tests/dispatch_edge_tests.rs
+index 9d704a74..d4f41012 100644
+--- a/crates/a2a-protocol-server/tests/dispatch_edge_tests.rs
++++ b/crates/a2a-protocol-server/tests/dispatch_edge_tests.rs
+@@ -130,7 +130,7 @@ async fn rest_ready_check() {
+     let addr = start_rest_server(make_handler()).await;
+     let (status, body) = http_request(addr, "GET", "/ready", None, None).await;
+     assert_eq!(status, 200);
+-    assert!(body.contains("ok"));
++    assert!(body.contains("ready"));
+ }
+ 
+ #[tokio::test]

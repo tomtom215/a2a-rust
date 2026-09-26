@@ -1,0 +1,6 @@
+P1 (a) a2a tls::build_https_client_with_config(tls_config_with_extra_roots(CA)) GET card -> 200 OK (649 bytes)
+P1 (b) ClientBuilder::new(https).build() send_message -> Err("HTTP client error: client error (Connect)")
+P1 (b') REST binding send_message -> Err("HTTP client error: client error (Connect)")
+P1 (c) with SSL_CERT_FILE=<CA pem> -> Err("HTTP client error: client error (Connect)")
+P1 (d) resolve_agent_card(https private CA) -> Err("HTTP client error: client error (Connect)")
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s

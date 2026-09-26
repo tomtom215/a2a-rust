@@ -1,0 +1,11 @@
+test router_vs_rest_parity ... OTHER RestDispatcher POST /tenants/acme/message:send -> 200
+OTHER RestDispatcher POST /acme/message:send -> 200
+OTHER RestDispatcher GET card -> 200 access-control-allow-origin=Some("*")
+OTHER RestDispatcher GET /tasks with 9000-byte query -> 414
+OTHER A2aRouter POST /tenants/acme/message:send -> 404
+OTHER A2aRouter POST /acme/message:send -> 404
+OTHER A2aRouter GET card -> 200 access-control-allow-origin=None
+OTHER A2aRouter GET /tasks with 9000-byte query -> 200
+test without_tls_is_not_enforced ... OTHER without_tls().build() on https:// -> is_ok=true
+OTHER without_tls() send to closed https port -> HTTP client error: client error (Connect)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s

@@ -7,11 +7,16 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Clone, Default)]
-pub struct Received(pub Arc<Mutex<Vec<String>>>);
+pub struct Received(pub Arc<Mutex<Vec<String>>>, pub Arc<Mutex<Vec<String>>>);
 
 impl Received {
     pub fn bodies(&self) -> Vec<String> {
         self.0.lock().unwrap().clone()
+    }
+    /// Lower-cased request heads (request line + headers), one per POST.
+    #[allow(dead_code)]
+    pub fn heads(&self) -> Vec<String> {
+        self.1.lock().unwrap().clone()
     }
 }
 
@@ -37,6 +42,7 @@ pub async fn start() -> (String, Received) {
                         .unwrap_or(0);
                     if buf.len() >= h + 4 + len {
                         let body = String::from_utf8_lossy(&buf[h + 4..h + 4 + len]).to_string();
+                        r3.1.lock().unwrap().push(head.clone());
                         r3.0.lock().unwrap().push(body);
                         let _ = s.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n").await;
                         return;

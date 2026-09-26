@@ -12,6 +12,7 @@ a2a-protocol-sdk = { version = "=0.14.0", features = ["grpc"] }
 tokio = { version = "1", features = ["full"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
+futures = "0.3"
 
 # Standalone: not a member of the repository workspace.
 [workspace]

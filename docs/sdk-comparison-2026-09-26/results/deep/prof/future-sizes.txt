@@ -1,0 +1,9 @@
+a2a-rs send_message future (outer, boxed by async_trait): 16 bytes
+a2a-rs send_message future (inner heap allocation): 4368 bytes
+a2a-rs StreamResponse: 360 bytes
+a2a-rust on_send_message future: 12048 bytes
+a2a-rust StreamResponse: 344 bytes
+a2a-rust JsonRpcDispatcher::dispatch future: 584 bytes
+  (/ -> HTTP 200)
+a2a-rust RestDispatcher::dispatch future: 704 bytes
+  (/message:send -> HTTP 200)

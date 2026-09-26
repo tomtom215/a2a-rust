@@ -15,6 +15,7 @@
 
 #[path = "../../common/llm.rs"]
 mod llm;
+mod deep;
 
 use a2a::event::StreamResponse;
 use a2a::*;
@@ -73,6 +74,9 @@ impl AgentExecutor for Bench {
                     _ => None,
                 }))
                 .unwrap_or_default();
+            if deep::handle(&ctx, &tx, &text).await {
+                return;
+            }
             if tx.send(Ok(status(&tid, &cid, TaskState::Working, None))).await.is_err() {
                 return;
             }
@@ -142,7 +146,7 @@ async fn main() {
         provider: None,
         capabilities: caps.clone(),
         skills: vec![],
-        default_input_modes: vec!["text/plain".into()],
+        default_input_modes: ["text/plain", "application/json", "image/png", "application/octet-stream"].map(String::from).to_vec(),
         default_output_modes: vec!["text/plain".into()],
         supported_interfaces: vec![
             AgentInterface::new(format!("http://127.0.0.1:{hp}/jsonrpc"), TRANSPORT_PROTOCOL_JSONRPC),

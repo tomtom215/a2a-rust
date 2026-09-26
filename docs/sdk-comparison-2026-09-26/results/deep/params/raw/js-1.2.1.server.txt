@@ -1,0 +1,30 @@
+=== a_omitted
+REQ: POST http://127.0.0.1:7641/  -H Authorization: Bearer probe
+BODY: {"jsonrpc":"2.0","id":1,"method":"GetExtendedAgentCard"}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":1,"result":{"name":"js-EXTENDED","description":"d","supportedInterfaces":[{"url":"http://127.0.0.1:7641/","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"extendedAgentCard":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"s","name":"s","description":"s","tags":["t"]}]}}
+
+=== b_null
+REQ: POST http://127.0.0.1:7641/  -H Authorization: Bearer probe
+BODY: {"jsonrpc":"2.0","id":2,"method":"GetExtendedAgentCard","params":null}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":2,"result":{"name":"js-EXTENDED","description":"d","supportedInterfaces":[{"url":"http://127.0.0.1:7641/","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"extendedAgentCard":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"s","name":"s","description":"s","tags":["t"]}]}}
+
+=== c_empty_obj
+REQ: POST http://127.0.0.1:7641/  -H Authorization: Bearer probe
+BODY: {"jsonrpc":"2.0","id":3,"method":"GetExtendedAgentCard","params":{}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":3,"result":{"name":"js-EXTENDED","description":"d","supportedInterfaces":[{"url":"http://127.0.0.1:7641/","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"extendedAgentCard":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"s","name":"s","description":"s","tags":["t"]}]}}
+
+=== d_empty_arr
+REQ: POST http://127.0.0.1:7641/  -H Authorization: Bearer probe
+BODY: {"jsonrpc":"2.0","id":4,"method":"GetExtendedAgentCard","params":[]}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":4,"result":{"name":"js-EXTENDED","description":"d","supportedInterfaces":[{"url":"http://127.0.0.1:7641/","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"extendedAgentCard":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"s","name":"s","description":"s","tags":["t"]}]}}
+
+=== e_tenant
+REQ: POST http://127.0.0.1:7641/  -H Authorization: Bearer probe
+BODY: {"jsonrpc":"2.0","id":5,"method":"GetExtendedAgentCard","params":{"tenant":""}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":5,"result":{"name":"js-EXTENDED","description":"d","supportedInterfaces":[{"url":"http://127.0.0.1:7641/","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"extendedAgentCard":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"s","name":"s","description":"s","tags":["t"]}]}}
+

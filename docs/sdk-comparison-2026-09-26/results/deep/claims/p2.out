@@ -1,0 +1,6 @@
+P2 caller A JSON-RPC #0 -> HTTP 200 retry-after=None code=null msg=null
+P2 caller A JSON-RPC #1 -> HTTP 200 retry-after=None code=null msg=null
+P2 caller A JSON-RPC #2 -> HTTP 200 retry-after=None code=-32603 msg="rate limit exceeded: 2 requests per 60 seconds"
+P2 caller B (first request ever) REST -> HTTP 500 retry-after=None body={"error":{"code":500,"message":"rate limit exceeded: 2 requests per 60 seconds","status":"INTERNAL"}}
+P2 SDK client error: Protocol(A2aError { code: InternalError, message: "rate limit exceeded: 2 requests per 60 seconds", data: None, auth_rejection: None })
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s

@@ -1,0 +1,24 @@
+GET /.well-known/agent-card.json
+  host: 127.0.0.1:7693
+  connection: keep-alive
+  A2A-Version: 1.0
+  accept: */*
+  accept-language: *
+  sec-fetch-mode: cors
+  user-agent: node
+  accept-encoding: gzip, deflate
+BODY: ''
+
+POST /
+  host: 127.0.0.1:7693
+  connection: keep-alive
+  A2A-Version: 1.0
+  Content-Type: application/json
+  Accept: application/json
+  accept-language: *
+  sec-fetch-mode: cors
+  user-agent: node
+  accept-encoding: gzip, deflate
+  content-length: 68
+BODY: '{"jsonrpc":"2.0","method":"GetExtendedAgentCard","params":{},"id":1}'
+

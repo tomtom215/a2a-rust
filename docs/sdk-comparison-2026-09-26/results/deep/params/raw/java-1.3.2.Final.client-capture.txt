@@ -1,0 +1,20 @@
+GET /.well-known/agent-card.json
+  Connection: Upgrade, HTTP2-Settings
+  Host: 127.0.0.1:7694
+  HTTP2-Settings: AAEAAEAAAAIAAAAAAAMAAAAAAAQBAAAAAAUAAEAAAAYABgAA
+  Upgrade: h2c
+  User-Agent: Java-http-client/21.0.10
+  Content-Type: application/json
+BODY: ''
+
+POST /
+  Connection: Upgrade, HTTP2-Settings
+  Content-Length: 116
+  Host: 127.0.0.1:7694
+  HTTP2-Settings: AAEAAEAAAAIAAAAAAAMAAAAAAAQBAAAAAAUAAEAAAAYABgAA
+  Upgrade: h2c
+  User-Agent: Java-http-client/21.0.10
+  A2A-Version: 1.0
+  Content-Type: application/json
+BODY: '{"jsonrpc":"2.0","id":"aa01fdbc-d63e-487e-b319-b72e14ec7db2","method":"GetExtendedAgentCard","params":{"tenant":""}}'
+

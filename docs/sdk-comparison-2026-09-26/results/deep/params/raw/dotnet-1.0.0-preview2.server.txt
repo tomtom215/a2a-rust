@@ -1,0 +1,30 @@
+=== a_omitted
+REQ: POST http://127.0.0.1:7661/  
+BODY: {"jsonrpc":"2.0","id":1,"method":"GetExtendedAgentCard"}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid parameters"}}
+
+=== b_null
+REQ: POST http://127.0.0.1:7661/  
+BODY: {"jsonrpc":"2.0","id":2,"method":"GetExtendedAgentCard","params":null}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":2,"error":{"code":-32602,"message":"Invalid parameters"}}
+
+=== c_empty_obj
+REQ: POST http://127.0.0.1:7661/  
+BODY: {"jsonrpc":"2.0","id":3,"method":"GetExtendedAgentCard","params":{}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":3,"result":{"name":"dotnet-EXTENDED","description":"d","version":"1.0.0","supportedInterfaces":[{"url":"http://127.0.0.1:7661/","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"capabilities":{"extendedAgentCard":true},"skills":[{"id":"s","name":"s","description":"s","tags":["t"]}],"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"]}}
+
+=== d_empty_arr
+REQ: POST http://127.0.0.1:7661/  
+BODY: {"jsonrpc":"2.0","id":4,"method":"GetExtendedAgentCard","params":[]}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":"4","error":{"code":-32602,"message":"Invalid JSON-RPC request: 'params' field must be an object or null."}}
+
+=== e_tenant
+REQ: POST http://127.0.0.1:7661/  
+BODY: {"jsonrpc":"2.0","id":5,"method":"GetExtendedAgentCard","params":{"tenant":""}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":5,"result":{"name":"dotnet-EXTENDED","description":"d","version":"1.0.0","supportedInterfaces":[{"url":"http://127.0.0.1:7661/","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"capabilities":{"extendedAgentCard":true},"skills":[{"id":"s","name":"s","description":"s","tags":["t"]}],"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"]}}
+

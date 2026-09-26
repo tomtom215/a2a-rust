@@ -1,0 +1,9 @@
+F2 JsonRpcDispatcher GET /health (dead store) -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by this server; expected '1.0' (send the A2A-Version header)","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"VERSION_NOT_SUPPORTED"}]}}
+F2 JsonRpcDispatcher GET /ready (dead store) -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by this server; expected '1.0' (send the A2A-Version header)","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"VERSION_NOT_SUPPORTED"}]}}
+F2 JsonRpcDispatcher GET /ready with A2A-Version:1.0 -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: EOF while parsing a value at line 1 column 0"}}
+F2 JsonRpcDispatcher GET /no/such/path with A2A-Version:1.0 -> 200 {"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: EOF while parsing a value at line 1 column 0"}}
+F2 RestDispatcher GET /health (dead store) -> 200 {"status":"ok"}
+F2 RestDispatcher GET /ready (dead store) -> 200 {"status":"ok"}
+F2 A2aRouter GET /health (dead store) -> 200 {"status":"ok"}
+F2 A2aRouter GET /ready (dead store) -> 503 {"reason":"internal_error","status":"not_ready"}
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s

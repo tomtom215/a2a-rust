@@ -14,6 +14,7 @@
 
 #[path = "../../common/llm.rs"]
 mod llm;
+mod deep;
 
 use a2a_protocol_sdk::prelude::*;
 use a2a_protocol_sdk::server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
@@ -38,8 +39,13 @@ impl AgentExecutor for Bench {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let emit = EventEmitter::new(ctx, queue);
-            emit.status(TaskState::Working).await?;
             let text = ctx.message.text().unwrap_or("").to_string();
+
+            // Before WORKING, exactly as agent-rs: `msg:` must not create a task.
+            if let Some(r) = deep::handle(ctx, queue, &emit, &text).await {
+                return r;
+            }
+            emit.status(TaskState::Working).await?;
 
             if text.starts_with("wait:") {
                 ctx.cancellation_token.cancelled().await;
@@ -96,14 +102,21 @@ async fn main() -> std::io::Result<()> {
         AgentInterface::jsonrpc(format!("http://127.0.0.1:{jp}")),
     )
     .with_description("Benchmark agent (a2a-rust)")
-    .with_input_modes(["text/plain"])
+    .with_input_modes(["text/plain", "application/json", "image/png", "application/octet-stream"])
     .with_output_modes(["text/plain"])
     .with_interface(AgentInterface::rest(format!("http://127.0.0.1:{rp}")))
     .with_interface(AgentInterface::grpc(format!("http://127.0.0.1:{gp}")))
     .with_capabilities(caps);
 
     let handler = Arc::new(
-        RequestHandlerBuilder::new(Bench { llm })
+        {
+            // Harness-only knob for the memory investigation; unset in every headline run.
+            let b = RequestHandlerBuilder::new(Bench { llm });
+            match std::env::var("QUEUE_CAP").ok().and_then(|v| v.parse().ok()) {
+                Some(c) => b.with_event_queue_capacity(c),
+                None => b,
+            }
+        }
             .with_agent_card(card)
             .with_push_config_store(InMemoryPushConfigStore::new())
             .with_push_sender(HttpPushSender::new().allow_private_urls())

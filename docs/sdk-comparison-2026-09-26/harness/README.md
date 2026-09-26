@@ -58,3 +58,25 @@ every headline run; §3.6 of the report explains why it exists.
   - `a2a-rust-acts` (this repository) at `10f3435`
 
 None of these are vendored in this repository; install them first.
+
+## Deep-dive additions
+
+These scripts produce [`../deep-dive.md`](../deep-dive.md):
+
+| Piece | What it does |
+|---|---|
+| `agent-*/src/deep.rs` | The extended behaviour contract, identical for both agents: `ask:`, `fail:`, `msg:`, `parts:`, `slow:`. |
+| `driver-*/src/bin/deep_*.rs` | The tier-2 checks D01–D15, check for check on both sides. |
+| `run_deep.sh <out.jsonl>` | Runs the tier-2 matrix: both clients × both servers × 3 bindings. |
+| `capture_proxy.py` | Logging reverse proxy for JSON-RPC, REST and SSE traffic. It rewrites agent-card URLs so that clients discover the proxy. |
+| `run_capture.sh <dir>` | Runs every check, for each client/server pair, through the proxy. |
+| `analyze_wire.py <logs>` | Audits the captured traffic against the spec. |
+| `profiling/` | Callgrind (`profile_one.sh`, `callers.py`), perf (`perf_one.sh`) and the two A/B load tests (`ab.sh`, `ab_cap.sh`). These scripts expect the `$BENCH=/opt/bench` layout and the line-table builds described in the report. |
+| `futsize/{ours,theirs}` | Print handler future and `StreamResponse` sizes for each published SDK. |
+| `sdk-params-matrix/` | The servers and clients for the seven-SDK `GetExtendedAgentCard` params probe. The .NET SDK was installed with Microsoft's `dotnet-install.sh`, which is not vendored here. |
+
+Two harness-only switches exist on `agent-rust`, and both are unset in every
+headline run:
+- `QUEUE_CAP` sets the event-queue capacity, used for the memory
+  investigation;
+- `NODELAY` enables `TCP_NODELAY`, as described earlier.

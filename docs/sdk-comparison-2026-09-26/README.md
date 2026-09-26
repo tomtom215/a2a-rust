@@ -21,7 +21,12 @@ command in [`harness/`](harness/) that reproduces it.
      real model in the loop, and on every repeat run (§3.2).
    - The one failure is ours. Our client sends `"params": null` on
      `GetExtendedAgentCard`; JSON-RPC 2.0 forbids that, and a2a-rs's server
-     rejects it.
+     rejects it. So do the Python and .NET servers
+     ([`deep-dive.md`](deep-dive.md) §1.1).
+   - A second tier of 15 checks covers multi-turn, typed parts, pagination,
+     mid-stream cancel, concurrency and push auth. It passes on the core paths
+     in all 12 cells, and it found three more defects on our side, six on
+     a2a-rs's and one shared (`deep-dive.md` §1.2).
 2. **Official conformance (ACTS).** The grader is the A2A project's own corpus,
    `a2a-itk` `429945f`, and each project's own ITK agent is the system under
    test.
@@ -43,12 +48,16 @@ command in [`harness/`](harness/) that reproduces it.
      a2a-rs listener made it faster than ours there too.
    - Our own gRPC `serve_with_listener` lacks that option, which costs a 44 ms
      tail latency.
+   - The CPU gap has no single hot spot, and the memory gap is our default
+     queue capacity. Both are explained and measured in `deep-dive.md` §3.
 5. **Our feature promises mostly hold.**
    - Of the 42 README feature rows, **27 are verified** end-to-end against the
      published 0.14.0 crates, **7 partial**, **4 failed** and 4 not tested
      (§3.7, [`claims-audit.md`](claims-audit.md)).
    - The four failures are real, reproducible defects in features we
-     advertise.
+     advertise. Each is root-caused, with a verified patch, in `deep-dive.md`
+     §2. One of them (F3) is security-relevant, and its details are withheld
+     pending a private advisory.
 6. **a2a-rs leads on everything code cannot change:**
    - 10 external reverse dependencies on crates.io against our 1, a stale optional one;
    - 10 human commit authors against 1;
@@ -372,6 +381,9 @@ crates. With only one small dependent, this is probably automated traffic
 rather than use. That is CONJECTURED; this report did not investigate it.
 
 ## 4. Findings for a2a-rust, in priority order
+
+The deep dive adds O-13 to O-18 and updates several rows below
+([`deep-dive.md`](deep-dive.md) §4).
 
 | ID | Severity | Finding | Where |
 |---|---|---|---|

@@ -1,0 +1,1008 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 46K of event 'task-clock:ppp'
+# Event count (approx.): 23370679500
+#
+# Overhead  Symbol                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+# ........  ...................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+#
+     7.92%  [k] _raw_spin_unlock_irqrestore
+     6.68%  [.] __memmove_avx512_unaligned_erms
+     6.45%  [.] _int_malloc
+     6.08%  [k] finish_task_switch.isra.0
+     5.05%  [.] cfree@GLIBC_2.2.5
+     4.25%  [.] malloc_consolidate
+     3.54%  [k] _raw_spin_unlock_irq
+     3.24%  [.] <alloc::vec::Vec<T> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<T,I>>::from_iter
+     3.16%  [.] malloc
+     3.02%  [.] _int_free
+     1.26%  [.] unlink_chunk.isra.0
+     0.92%  [.] <tokio::sync::batch_semaphore::Acquire as core::future::future::Future>::poll
+     0.85%  [.] __memcmp_evex_movbe
+     0.84%  [.] _ZN19a2a_protocol_server7handler9messaging62_$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$15on_send_message28_$u7b$$u7b$closure$u7d$$u7d$17he74a080791688c9cE.llvm.9686839136372301439
+     0.80%  [.] tokio::sync::broadcast::channel
+     0.76%  [.] _ZN71_$LT$core..hash..sip..Hasher$LT$S$GT$$u20$as$u20$core..hash..Hasher$GT$5write17h634e2bce4072c1f7E.llvm.2084221121107654806
+     0.74%  [.] _int_free_merge_chunk
+     0.66%  [.] _ZN19a2a_protocol_server7handler9messaging62_$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$11commit_task28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17hc8bb9ebacc1d7d66E.llvm.9611214990820818791
+     0.65%  [.] tokio::sync::batch_semaphore::Semaphore::release
+     0.63%  [.] <tokio::task::task_local::TaskLocalFuture<T,F> as core::future::future::Future>::poll
+     0.58%  [.] a2a_protocol_server::store::task_store::in_memory::StoreData::update_status
+     0.57%  [.] <core::pin::Pin<P> as core::future::future::Future>::poll
+     0.57%  [.] _ZN5tokio4sync15batch_semaphore9Semaphore18add_permits_locked17h77c10671286a41caE.llvm.16715028704940858140
+     0.56%  [.] _ZN5tokio7runtime4task4list19OwnedTasks$LT$S$GT$10bind_inner17h8dcae781b649b474E.llvm.2483497782379729484
+     0.56%  [.] a2a_protocol_server::handler::event_processing::sync_collector::SyncCollector::fold::_$u7b$$u7b$closure$u7d$$u7d$::ha2d43bb8df7a0ced
+     0.56%  [.] alloc::sync::Arc<T,A>::drop_slow
+     0.54%  [.] hyper::proto::h1::dispatch::Dispatcher<D,Bs,I,T>::poll_write
+     0.51%  [.] tokio::runtime::scheduler::multi_thread::worker::Context::run
+     0.50%  [.] a2a_protocol_server::store::task_store::in_memory::StoreData::insert
+     0.49%  [k] do_syscall_64
+     0.49%  [.] 0x0000000000000896
+     0.44%  [.] a2a_protocol_server::handler::messaging::_$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$::validate_and_commit::_$u7b$$u7b$closure$u7d$$u7d$::hf9007dc9042c7d39
+     0.42%  [.] std::sys::pal::unix::time::Timespec::sub_timespec
+     0.40%  [.] <alloc::string::String as core::clone::Clone>::clone
+     0.36%  [.] core::hash::BuildHasher::hash_one
+     0.35%  [.] a2a_protocol_server::dispatch::jsonrpc::JsonRpcDispatcher::dispatch::_$u7b$$u7b$closure$u7d$$u7d$::h4087b47ee4227a5c
+     0.34%  [.] _RNvCs1Y7DaGC1cwg_7___rustc11___rdl_alloc
+     0.34%  [.] realloc
+     0.34%  [.] std::time::Instant::saturating_duration_since
+     0.33%  [.] <tokio::task::task_local::TaskLocalFuture<T,F> as core::future::future::Future>::poll
+     0.32%  [.] <hyper::server::conn::http1::Connection<I,S> as core::future::future::Future>::poll
+     0.31%  [.] tokio::runtime::scheduler::multi_thread::worker::Context::run_task
+     0.28%  [.] _$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$::append_event::_$u7b$$u7b$closure$u7d$$u7d$::h92bbee68b09e53d4
+     0.27%  [.] <tokio::task::task_local::TaskLocalFuture<T,F> as core::future::future::Future>::poll
+     0.27%  [.] tokio::runtime::scheduler::multi_thread::worker::<impl tokio::runtime::scheduler::multi_thread::handle::Handle>::schedule_local
+     0.27%  [.] _ZN5tokio4sync9broadcast17Receiver$LT$T$GT$8recv_ref17h158139bc28d4b881E.llvm.2483497782379729484
+     0.26%  [.] _ZN19a2a_protocol_server5serve5serve28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h91958edd86ef49d5E.llvm.15026523771346743209
+     0.25%  [.] _ZN4core3ptr61drop_in_place$LT$a2a_protocol_types..message..PartContent$GT$17h33a64f022e4be742E.llvm.2084221121107654806
+     0.25%  [.] tokio::sync::rwlock::RwLock$LT$T$GT$::write::_$u7b$$u7b$closure$u7d$$u7d$::h4ee2cca7851f0839
+     0.25%  [k] crng_make_state
+     0.24%  [.] a2a_protocol_types::events::_::<impl serde_core::ser::Serialize for a2a_protocol_types::events::StreamResponse>::serialize
+     0.24%  [.] a2a_protocol_server::store::task_store::in_memory::eviction::<impl a2a_protocol_server::store::task_store::in_memory::InMemoryTaskStore>::evict
+     0.22%  [.] _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17h59b10e87ce5a8aa1E.llvm.2084221121107654806
+     0.21%  [.] tokio::util::sharded_list::ShardedList<L>::remove
+     0.21%  [.] clock_gettime@@GLIBC_2.17
+     0.21%  [.] a2a_protocol_server::store::task_store::in_memory::StoreData::refusal
+     0.20%  [.] tokio::runtime::scheduler::multi_thread::queue::Steal<T>::steal_into
+     0.20%  [.] tokio::runtime::task::harness::Harness<T,S>::poll
+     0.20%  [.] a2a_protocol_server::store::task_store::in_memory::StoreData::remove
+     0.20%  [k] futex_hash
+     0.20%  [.] tokio::runtime::task::core::Core<T,S>::poll
+     0.20%  [.] _$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$::save::_$u7b$$u7b$closure$u7d$$u7d$::h91aeeda5604219ab
+     0.19%  [.] tokio::sync::broadcast::Sender<T>::send
+     0.19%  [.] __lll_lock_wake_private
+     0.19%  [.] alloc::collections::btree::map::entry::VacantEntry<K,V,A>::insert_entry
+     0.19%  [.] _$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$::save_appending_history::_$u7b$$u7b$closure$u7d$$u7d$::h34b4f009e786e3e3
+     0.18%  [.] _RNvCs1Y7DaGC1cwg_7___rustc12___rust_alloc
+     0.18%  [.] __lll_lock_wait_private
+     0.18%  [.] tokio::runtime::task::state::State::transition_to_idle
+     0.18%  [.] <alloc::vec::Vec<T,A> as core::clone::Clone>::clone
+     0.18%  [.] __GI___libc_write
+     0.18%  [.] _ZN4core3ptr63drop_in_place$LT$a2a_protocol_types..events..StreamResponse$GT$17hcf1372b0d8bd20f4E.llvm.11943696331921308346
+     0.18%  [.] serde_json::value::de::<impl serde_core::de::Deserializer for serde_json::map::Map<alloc::string::String,serde_json::value::Value>>::deserialize_any
+     0.18%  [.] <a2a_protocol_server::rpc_span::Call<F,C,T> as core::future::future::Future>::poll
+     0.18%  [.] _ZN4core3ptr57drop_in_place$LT$a2a_protocol_types..message..Message$GT$17hce002557224b1a48E.llvm.2084221121107654806
+     0.17%  [.] _$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$::get::_$u7b$$u7b$closure$u7d$$u7d$::hf025f23ffd186ffb
+     0.17%  [.] _ZN157_$LT$a2a_protocol_server..streaming..event_queue..in_memory..InMemoryQueueWriter$u20$as$u20$a2a_protocol_server..streaming..event_queue..EventQueueWriter$GT$5write28_$u7b$$u7b$closure$u7d$$u7d$17h0e1a9964bb8e2e42E.llvm.604543823841902506
+     0.16%  [.] _mid_memalign.isra.0
+     0.16%  [k] handle_softirqs
+     0.16%  [.] tokio::runtime::task::state::State::transition_to_notified_by_val
+     0.16%  [.] _ZN4core3ops8function6FnOnce9call_once17h1137bc0b8209a568E.llvm.13754032472229041610
+     0.15%  [.] <hyper::proto::h1::role::Server as hyper::proto::h1::Http1Transaction>::encode
+     0.15%  [.] <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop>::drop
+     0.15%  [.] <hyper::proto::h1::role::Server as hyper::proto::h1::Http1Transaction>::parse
+     0.15%  [.] __ieee754_pow_fma
+     0.15%  [.] serde_json::ser::format_escaped_str
+     0.15%  [.] tokio::runtime::task::state::State::transition_to_running
+     0.15%  [.] tokio_util::sync::cancellation_token::tree_node::increase_handle_refcount
+     0.14%  [.] _RNvCs1Y7DaGC1cwg_7___rustc35___rust_no_alloc_shim_is_unstable_v2
+     0.14%  [.] tokio::runtime::task::harness::Harness<T,S>::poll
+     0.14%  [.] _ZN10serde_json5value3ser81_$LT$impl$u20$serde_core..ser..Serialize$u20$for$u20$serde_json..value..Value$GT$9serialize17h37e0c6f7abe07f60E.llvm.13152994734194126511
+     0.13%  [.] _$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$::save_status_delta::_$u7b$$u7b$closure$u7d$$u7d$::h290e077de2258dff
+     0.13%  [.] a2a_protocol_server::handler::locks::_$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$::keyed_lock::_$u7b$$u7b$closure$u7d$$u7d$::heb15792f753ed81c
+     0.13%  [.] alloc::collections::btree::map::entry::VacantEntry<K,V,A>::insert_entry
+     0.13%  [k] fdget_pos
+     0.13%  [.] tokio_util::sync::cancellation_token::tree_node::decrease_handle_refcount
+     0.13%  [.] alloc::fmt::format::format_inner
+     0.13%  [.] <core::str::pattern::CharSearcher as core::str::pattern::Searcher>::next_match
+     0.13%  [k] x64_sys_call
+     0.12%  [.] core::fmt::write
+     0.12%  [.] <serde_json::value::de::<impl serde_core::de::Deserialize for serde_json::value::Value>::deserialize::ValueVisitor as serde_core::de::Visitor>::visit_map
+     0.12%  [.] _ZN10serde_json5value2de82_$LT$impl$u20$serde_core..de..Deserialize$u20$for$u20$serde_json..value..Value$GT$11deserialize17hb92456ef21e96256E.llvm.13142751603280149231
+     0.12%  [.] _ZN157_$LT$a2a_protocol_server..streaming..event_queue..in_memory..InMemoryQueueReader$u20$as$u20$a2a_protocol_server..streaming..event_queue..EventQueueReader$GT$4read28_$u7b$$u7b$closure$u7d$$u7d$17h3d9c6fd3975cb055E.llvm.604543823841902506
+     0.12%  [.] __GI___pthread_disable_asynccancel
+     0.12%  [.] tokio::runtime::context::with_scheduler
+     0.12%  [.] <alloc::string::String as core::fmt::Write>::write_str
+     0.12%  [.] _$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$::list::_$u7b$$u7b$closure$u7d$$u7d$::h42437cb393419d77
+     0.12%  [.] alloc::collections::btree::remove::<impl alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::Leaf>,alloc::collections::btree::node::marker::KV>>::remove_leaf_kv
+     0.12%  [k] futex_wake
+     0.12%  [.] _ZN4core3ops8function6FnOnce9call_once17h742c20a7ba39d3daE.llvm.13142751603280149231
+     0.11%  [.] <hyper_util::server::conn::auto::Connection<I,S,E> as core::future::future::Future>::poll
+     0.11%  [k] tcp_sendmsg_locked
+     0.11%  [.] _$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$::last_event_seq::_$u7b$$u7b$closure$u7d$$u7d$::h80584837ecb9f4b7
+     0.11%  [.] core::str::converts::from_utf8
+     0.11%  [.] tokio::runtime::io::scheduled_io::ScheduledIo::poll_readiness
+     0.11%  [.] a2a_protocol_server::handler::event_processing::sync_collector::SyncCollector::spawn_push_delivery
+     0.11%  [.] tokio::runtime::task::core::Trailer::set_waker
+     0.11%  [.] _RNvCs1Y7DaGC1cwg_7___rustc14___rust_dealloc
+     0.11%  [.] a2a_protocol_server::handler::event_processing::background::record_event::_$u7b$$u7b$closure$u7d$$u7d$::hc9d2c07c516bc3d6
+     0.11%  [k] fdget
+     0.10%  [k] _copy_to_iter
+     0.10%  [.] http::header::name::StandardHeader::from_bytes
+     0.10%  [.] _ZN4core3ptr45drop_in_place$LT$serde_json..value..Value$GT$17hbac6c5199ed13c29E.llvm.2084221121107654806
+     0.10%  [.] a2a_protocol_server::dispatch::jsonrpc::response::extract_headers
+     0.10%  [.] a2a_protocol_server::handler::messaging::execute::<impl a2a_protocol_server::handler::RequestHandler>::spawn_executor
+     0.10%  [k] skb_release_data
+     0.10%  [k] skb_defer_free_flush
+     0.10%  [.] tokio::runtime::task::core::TaskIdGuard::enter
+     0.10%  [.] tokio_util::sync::cancellation_token::tree_node::decrease_handle_refcount::_$u7b$$u7b$closure$u7d$$u7d$::h0e8822b202ccf47e
+     0.10%  [.] <serde_json::ser::Compound<W,F> as serde_core::ser::SerializeStruct>::serialize_field
+     0.10%  [.] _ZN96_$LT$alloc..collections..btree..map..BTreeMap$LT$K$C$V$C$A$GT$$u20$as$u20$core..clone..Clone$GT$5clone13clone_subtree17h6aa842ac5bd91594E.llvm.2084221121107654806
+     0.10%  [k] __skb_datagram_iter
+     0.10%  [.] tokio::runtime::task::waker::clone_waker
+     0.10%  [.] <alloc::vec::Vec<T,A> as core::clone::Clone>::clone
+     0.10%  [k] __inet_lookup_established
+     0.10%  [.] tokio::sync::rwlock::RwLock$LT$T$GT$::read::_$u7b$$u7b$closure$u7d$$u7d$::h7416043ae946b677
+     0.09%  [.] <tokio::runtime::task::core::TaskIdGuard as core::ops::drop::Drop>::drop
+     0.09%  [.] _ZN69_$LT$a2a_protocol_types..task..Task$u20$as$u20$core..clone..Clone$GT$5clone17hd355c13d4febbbc0E.llvm.2483497782379729484
+     0.09%  [.] core::fmt::num::imp::<impl u64>::_fmt_inner
+     0.09%  [.] http::header::name::HeaderName::from_bytes
+     0.09%  [k] __schedule
+     0.09%  [.] a2a_protocol_types::parse_iso8601_to_unix_millis
+     0.09%  [.] _$LT$a2a_protocol_server..handler..messaging..terminal..TerminalTracking$u20$as$u20$a2a_protocol_server..streaming..event_queue..EventQueueWriter$GT$::write::_$u7b$$u7b$closure$u7d$$u7d$::hf2a6e9187e7e6a9a
+     0.09%  [k] ep_poll
+     0.09%  [.] bytes::bytes_mut::shared_v_drop
+     0.09%  [.] tokio::runtime::task::waker::wake_by_val
+     0.08%  [.] <hashbrown::raw::RawTable<T,A> as core::clone::Clone>::clone
+     0.08%  [.] _$LT$agent_rust..Bench$u20$as$u20$a2a_protocol_server..executor..AgentExecutor$GT$::execute::_$u7b$$u7b$closure$u7d$$u7d$::h3674af25429e846e
+     0.08%  [.] _ZN5tokio7runtime9scheduler12multi_thread4park8Unparker6unpark17h6a8b0a98e449c95cE.llvm.8499131161119049251
+     0.08%  [.] __GI___getrandom
+     0.08%  [k] __netif_receive_skb_one_core
+     0.08%  [.] alloc::collections::btree::map::BTreeMap<K,V,A>::insert
+     0.08%  [.] a2a_protocol_types::utc_now_iso8601
+     0.08%  [.] core::fmt::num::imp::<impl core::fmt::Display for usize>::fmt
+     0.08%  [k] selinux_file_permission
+     0.08%  [.] serde_json::value::de::<impl serde_core::de::Deserializer for serde_json::map::Map<alloc::string::String,serde_json::value::Value>>::deserialize_any
+     0.08%  [k] __rcu_read_unlock
+     0.08%  [.] http::response::Builder::and_then
+     0.08%  [.] tokio::runtime::scheduler::multi_thread::worker::Context::park_internal
+     0.08%  [k] vfs_writev
+     0.07%  [.] __GI___writev
+     0.07%  [.] alloc::collections::vec_deque::VecDeque<T,A>::binary_search_by
+     0.07%  [k] futex_wait_setup
+     0.07%  [.] httparse::parse_headers_iter_uninit
+     0.07%  [.] <serde_json::read::SliceRead as serde_json::read::Read>::parse_str
+     0.07%  [.] a2a_protocol_server::handler::event_processing::sync_collector::SyncCollector::unless_superseded::_$u7b$$u7b$closure$u7d$$u7d$::h59a59dd369de69ef
+     0.07%  [.] serde_json::value::de::<impl serde_core::de::Deserializer for serde_json::map::Map<alloc::string::String,serde_json::value::Value>>::deserialize_any
+     0.07%  [k] sock_has_perm
+     0.07%  [k] tcp_rcv_established
+     0.07%  [.] _int_realloc
+     0.07%  [k] avc_lookup
+     0.07%  [.] tokio::process::imp::orphan::OrphanQueueImpl<T>::reap_orphans
+     0.07%  [.] hashbrown::rustc_entry::<impl hashbrown::map::HashMap<K,V,S,A>>::rustc_entry
+     0.07%  [.] http::header::map::HeaderMap<T>::try_append2
+     0.07%  [.] a2a_protocol_types::message::_::<impl serde_core::ser::Serialize for a2a_protocol_types::message::Part>::serialize
+     0.07%  [.] core::ptr::drop_in_place<a2a_protocol_server::handler::messaging::commit_guard::CommitGuard>
+     0.07%  [.] epoll_wait
+     0.07%  [k] fput
+     0.07%  [k] ip_rcv
+     0.07%  [.] tokio::runtime::io::registration::Registration::poll_ready
+     0.06%  [.] __libc_recv
+     0.06%  [.] core::fmt::Formatter::pad_integral
+     0.06%  [k] tcp_clean_rtx_queue
+     0.06%  [.] tokio::runtime::scheduler::Handle::current
+     0.06%  [.] <hyper::proto::h1::dispatch::Server<S,hyper::body::incoming::Incoming> as hyper::proto::h1::dispatch::Dispatch>::recv_msg
+     0.06%  [.] bytes::bytes_mut::shared_v_clone
+     0.06%  [k] sock_poll
+     0.06%  [.] tokio::runtime::scheduler::multi_thread::handle::<impl tokio::runtime::task::Schedule for alloc::sync::Arc<tokio::runtime::scheduler::multi_thread::handle::Handle>>::release
+     0.06%  [.] <a2a_protocol_server::serve::connections::InFlight as core::ops::drop::Drop>::drop
+     0.06%  [k] __alloc_skb
+     0.06%  [k] __virt_addr_valid
+     0.06%  [.] a2a_protocol_server::rpc_span::ServerSpan::open
+     0.06%  [.] alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::Leaf>,alloc::collections::btree::node::marker::Edge>::insert_recursing
+     0.06%  [.] core::str::<impl str>::trim_matches
+     0.06%  [.] hashbrown::map::HashMap<K,V,S,A>::insert
+     0.06%  [k] tcp_recvmsg_locked
+     0.06%  [.] tokio_util::sync::cancellation_token::tree_node::child_node
+     0.06%  [.] <tokio::task::task_local::TaskLocalFuture<T,F> as core::future::future::Future>::poll
+     0.06%  [.] __GI___pthread_enable_asynccancel
+     0.06%  [k] __raw_callee_save___pv_queued_spin_unlock
+     0.06%  [k] schedule
+     0.06%  [.] _ZN81_$LT$a2a_protocol_types..events..StreamResponse$u20$as$u20$core..clone..Clone$GT$5clone17haa8721b850032581E.llvm.2483497782379729484
+     0.06%  [k] check_heap_object
+     0.06%  [.] hyper::proto::h1::io::Buffered<T,B>::poll_flush
+     0.06%  [k] skb_clone
+     0.06%  [.] tokio::runtime::time::<impl tokio::runtime::time::handle::Handle>::process_at_time
+     0.06%  [.] tokio::sync::rwlock::RwLock$LT$T$GT$::read::_$u7b$$u7b$closure$u7d$$u7d$::h9baee95ec9fcf2b9
+     0.05%  [.] <tokio::sync::broadcast::Recv<T> as core::future::future::Future>::poll
+     0.05%  [.] _ZN4core3ptr59drop_in_place$LT$a2a_protocol_types..artifact..Artifact$GT$17hdb8169230c22c8a1E.llvm.2084221121107654806
+     0.05%  [.] a2a_protocol_types::artifact::_::<impl serde_core::ser::Serialize for a2a_protocol_types::artifact::Artifact>::serialize
+     0.05%  [.] alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::Leaf>,alloc::collections::btree::node::marker::Edge>::insert_recursing
+     0.05%  [k] ep_item_poll.isra.0
+     0.05%  [k] read_tsc
+     0.05%  [.] std::sys::pal::unix::time::Timespec::now
+     0.05%  [k] tcp_v4_rcv
+     0.05%  [.] tokio::io::poll_evented::PollEvented<E>::poll_read
+     0.05%  [.] tokio::runtime::task::state::State::drop_join_handle_fast
+     0.05%  [.] <a2a_protocol_types::events::StreamResponse as core::clone::Clone>::clone
+     0.05%  [.] <hyper::common::buf::BufList<T> as bytes::buf::buf_impl::Buf>::advance
+     0.05%  [k] _copy_from_iter
+     0.05%  [.] a2a_protocol_types::task::_::<impl serde_core::ser::Serialize for a2a_protocol_types::task::Task>::serialize
+     0.05%  [.] hashbrown::raw::RawTable<T,A>::remove_entry
+     0.05%  [k] ip_local_deliver
+     0.05%  [.] serde_json::read::SliceRead::skip_to_escape
+     0.05%  [.] tokio::runtime::scheduler::multi_thread::handle::Handle::bind_new_task
+     0.05%  [.] <serde_json::ser::Compound<W,F> as serde_core::ser::SerializeStruct>::serialize_field
+     0.05%  [.] _ZN5tokio7runtime2io6driver6Driver4turn17h3482d82da1339854E.llvm.5286350278050688420
+     0.05%  [.] _ZN5tokio7runtime4time6Driver13park_internal17h4f97ed95874b67b5E.llvm.2854303451917696825
+     0.05%  [.] a2a_protocol_server::executor_helpers::EventEmitter::status::_$u7b$$u7b$closure$u7d$$u7d$::h185c457fb4e9fbb1
+     0.05%  [.] a2a_protocol_server::handler::event_processing::sync_collector::<impl a2a_protocol_server::handler::RequestHandler>::sync_collector
+     0.05%  [.] a2a_protocol_types::message::Message::text
+     0.05%  [.] hashbrown::raw::RawTable<T,A>::remove_entry
+     0.05%  [.] serde_core::ser::SerializeMap::serialize_entry
+     0.05%  [.] tokio::runtime::task::core::Core<T,S>::poll
+     0.05%  [.] tokio::task::spawn::spawn
+     0.05%  [k] __get_user_8
+     0.05%  [.] hashbrown::raw::RawTable<T,A>::remove_entry
+     0.05%  [k] ip_protocol_deliver_rcu
+     0.05%  [.] tokio::runtime::task::harness::Harness<T,S>::try_read_output
+     0.05%  [.] tokio::runtime::task::raw::poll
+     0.05%  [.] 0x0000000000000879
+     0.04%  [.] _RNvCs1Y7DaGC1cwg_7___rustc13___rdl_dealloc
+     0.04%  [k] __futex_wait
+     0.04%  [k] __mod_timer
+     0.04%  [k] __netif_receive_skb
+     0.04%  [k] __tcp_transmit_skb
+     0.04%  [k] _raw_spin_lock
+     0.04%  [.] a2a_protocol_server::handler::messaging::decisions::shape_response_history
+     0.04%  [.] bytes::bytes_mut::BytesMut::split_to
+     0.04%  [k] futex_unqueue
+     0.04%  [k] futex_wake_mark
+     0.04%  [.] hyper::common::date::update
+     0.04%  [k] kmem_cache_alloc_node_noprof
+     0.04%  [k] sock_write_iter
+     0.04%  [.] __posix_memalign
+     0.04%  [.] _int_free_maybe_consolidate
+     0.04%  [.] a2a_protocol_server::dispatch::jsonrpc::response::parse_params
+     0.04%  [.] atomic_waker::AtomicWaker::register
+     0.04%  [.] hyper::proto::h1::io::WriteBuf<B>::buffer
+     0.04%  [k] kmem_cache_free
+     0.04%  [.] tokio::runtime::driver::IoHandle::unpark
+     0.04%  [.] tokio::runtime::task::core::Core<T,S>::poll
+     0.04%  [k] vfs_write
+     0.04%  [.] <std::time::Instant as core::ops::arith::Add<core::time::Duration>>::add
+     0.04%  [.] <tokio::sync::batch_semaphore::Acquire as core::ops::drop::Drop>::drop
+     0.04%  [.] _ZN4core3ptr54drop_in_place$LT$a2a_protocol_types..message..Part$GT$17h911a7d103b4dc79dE.llvm.2084221121107654806
+     0.04%  [.] __libc_calloc
+     0.04%  [k] __pv_queued_spin_lock_slowpath
+     0.04%  [.] __vdso_clock_gettime
+     0.04%  [.] a2a_protocol_server::dispatch::jsonrpc::response::json_response
+     0.04%  [.] core::ptr::drop_in_place<a2a_protocol_server::handler::messaging::execute::CleanupGuard>
+     0.04%  [k] futex_do_wait
+     0.04%  [k] futex_ref_get
+     0.04%  [.] hashbrown::rustc_entry::<impl hashbrown::map::HashMap<K,V,S,A>>::rustc_entry
+     0.04%  [k] process_backlog
+     0.04%  [.] serde_core::ser::Serializer::collect_seq
+     0.04%  [.] tokio::task::spawn::spawn
+     0.04%  [.] tracing::span::Span::current
+     0.04%  [.] <<a2a_protocol_types::message::Part as serde_core::de::Deserialize>::deserialize::PartVisitor as serde_core::de::Visitor>::visit_map
+     0.04%  [.] _ZN141_$LT$a2a_protocol_server..push..config_store..InMemoryPushConfigStore$u20$as$u20$a2a_protocol_server..push..config_store..PushConfigStore$GT$4list28_$u7b$$u7b$closure$u7d$$u7d$17h9eb318074608813dE.llvm.13142751603280149231
+     0.04%  [k] __x64_sys_writev
+     0.04%  [k] futex_hash_put
+     0.04%  [.] http::header::map::hash_elem_using
+     0.04%  [.] http::header::name::HdrName::from_bytes
+     0.04%  [.] httparse::Request::parse_with_config_and_uninit_headers
+     0.04%  [k] sk_filter_trim_cap
+     0.04%  [.] tokio::runtime::scheduler::multi_thread::handle::<impl tokio::runtime::task::Schedule for alloc::sync::Arc<tokio::runtime::scheduler::multi_thread::handle::Handle>>::schedule
+     0.04%  [.] tokio::runtime::task::raw::schedule
+     0.04%  [.] tokio::sync::rwlock::RwLock$LT$T$GT$::write::_$u7b$$u7b$closure$u7d$$u7d$::h074f5680be5059ce
+     0.04%  [.] <alloc::collections::vec_deque::iter::Iter<T> as core::iter::traits::iterator::Iterator>::fold
+     0.04%  [.] <hyper::proto::h1::io::WriteBuf<B> as bytes::buf::buf_impl::Buf>::chunks_vectored
+     0.04%  [.] <serde_json::value::ser::SerializeMap as serde_core::ser::SerializeStruct>::end
+     0.04%  [.] _ZN15futures_channel4mpsc17Receiver$LT$T$GT$12next_message17hb9058a148847b6acE.llvm.869415707084962208
+     0.04%  [.] _ZN5hyper5proto2h14conn5State14try_keep_alive17he7e08b8c1ad812bfE.llvm.14316498086895694392
+     0.04%  [k] __futex_hash
+     0.04%  [.] a2a_protocol_server::store::task_store::in_memory::eviction::_$LT$impl$u20$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$GT$::maybe_evict::_$u7b$$u7b$closure$u7d$$u7d$::h24af82fac71c3199
+     0.04%  [k] get_random_bytes_user
+     0.04%  [k] ip_rcv_finish_core
+     0.04%  [k] kfree
+     0.04%  [k] ksys_write
+     0.04%  [k] sched_balance_update_blocked_averages
+     0.04%  [k] tcp_rcv_space_adjust
+     0.04%  [.] tokio::runtime::task::waker::wake_by_ref
+     0.04%  [.] tokio::sync::rwlock::RwLock$LT$T$GT$::read::_$u7b$$u7b$closure$u7d$$u7d$::h70f1e142368af7da
+     0.04%  [.] tokio_util::sync::cancellation_token::tree_node::cancel
+     0.03%  [.] <&std::os::unix::net::stream::UnixStream as std::io::Write>::write_vectored
+     0.03%  [.] <a2a_protocol_types::artifact::Artifact as core::clone::Clone>::clone
+     0.03%  [.] _ZN4core3ptr629drop_in_place$LT$tokio_util..task..task_tracker..TrackedFuture$LT$tracing..instrument..Instrumented$LT$tokio..task..task_local..TaskLocalFuture$LT$bool$C$a2a_protocol_server..store..tenant..context..TenantContext..scope$LT$a2a_protocol_server..handler..messaging..respond..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..respond_blocking..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$C$core..result..Result$LT$a2a_protocol_server..handler..event_processing..sync_collector..Collected$C$a2a_protocol_server..error..ServerError$GT$$C$alloc..string..String$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$$GT$$GT$17h54423bb13fc736fdE.llvm.8812090457334452211
+     0.03%  [.] a2a_protocol_server::executor_helpers::EventEmitter::artifact::_$u7b$$u7b$closure$u7d$$u7d$::h54c8ca2493e0a433
+     0.03%  [.] a2a_protocol_server::serve::connections::InFlight::start
+     0.03%  [.] a2a_protocol_types::jsonrpc::JsonRpcRequestId::to_response_id
+     0.03%  [.] core::fmt::Formatter::pad
+     0.03%  [k] ip_finish_output2
+     0.03%  [k] mutex_lock
+     0.03%  [k] net_rx_action
+     0.03%  [k] rseq_update_cpu_node_id
+     0.03%  [.] serde_json::value::de::visit_array
+     0.03%  [k] sock_put
+     0.03%  [.] std::time::Instant::now
+     0.03%  [.] tokio::runtime::io::scheduled_io::ScheduledIo::wake
+     0.03%  [.] tokio::runtime::scheduler::multi_thread::worker::<impl tokio::runtime::scheduler::multi_thread::handle::Handle>::transition_worker_from_searching
+     0.03%  [.] <alloc::string::String as core::fmt::Write>::write_char
+     0.03%  [.] <alloc::string::String as core::fmt::Write>::write_str
+     0.03%  [.] <hyper::proto::h1::role::Server as hyper::proto::h1::Http1Transaction>::update_date
+     0.03%  [.] <tokio::task::coop::RestoreOnPending as core::ops::drop::Drop>::drop
+     0.03%  [.] _RNvCs1Y7DaGC1cwg_7___rustc13___rdl_realloc
+     0.03%  [.] _ZN4core3ptr52drop_in_place$LT$hyper..body..incoming..Incoming$GT$17hd559a15443f9d768E.llvm.9611214990820818791
+     0.03%  [.] _ZN4core3ptr62drop_in_place$LT$a2a_protocol_server..rpc_span..ServerSpan$GT$17h26180c0df8f8569bE.llvm.13754032472229041610
+     0.03%  [.] _ZN4core3ptr96drop_in_place$LT$a2a_protocol_server..handler..event_processing..sync_collector..SyncPushJob$GT$17h44cc6a5e39b3ebcdE.llvm.9686839136372301439
+     0.03%  [k] __x64_sys_futex
+     0.03%  [.] a2a_protocol_server::handler::helpers::build_call_context
+     0.03%  [.] a2a_protocol_types::idempotency::key_of
+     0.03%  [.] core::str::iter::SplitInternal<P>::next
+     0.03%  [.] http::header::name::parse_hdr
+     0.03%  [.] http::method::Method::from_bytes
+     0.03%  [k] skb_attempt_defer_free
+     0.03%  [k] tcp_current_mss
+     0.03%  [.] tokio::runtime::task::raw::poll
+     0.03%  [.] <a2a_protocol_server::store::task_store::in_memory::InMemoryTaskStore as a2a_protocol_server::store::task_store::TaskStore>::save_status_delta
+     0.03%  [.] <a2a_protocol_types::jsonrpc::JsonRpcRequestId as core::convert::From<serde_json::value::Value>>::from
+     0.03%  [.] <a2a_protocol_types::message::_::<impl serde_core::de::Deserialize for a2a_protocol_types::message::Message>::deserialize::__FieldVisitor as serde_core::de::Visitor>::visit_str
+     0.03%  [.] _ZN4core3ptr416drop_in_place$LT$tokio_util..task..task_tracker..TrackedFuture$LT$tracing..instrument..Instrumented$LT$tokio..task..task_local..TaskLocalFuture$LT$bool$C$a2a_protocol_server..store..tenant..context..TenantContext..scope$LT$a2a_protocol_server..handler..event_processing..sync_collector..SyncPushJob..run..$u7b$$u7b$closure$u7d$$u7d$$C$$LP$$RP$$C$alloc..string..String$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$$GT$$GT$17h4ca6f670f04ed0a3E.llvm.8812090457334452211
+     0.03%  [k] __dev_queue_xmit
+     0.03%  [k] __put_user_nocheck_8
+     0.03%  [.] a2a_protocol_server::handler::messaging::validation::<impl a2a_protocol_server::handler::RequestHandler>::validate_send_params
+     0.03%  [.] a2a_protocol_server::rpc_span::ServerSpan::finish
+     0.03%  [.] a2a_protocol_server::rpc_span::names::a2a_method
+     0.03%  [.] alloc::collections::btree::remove::<impl alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::LeafOrInternal>,alloc::collections::btree::node::marker::KV>>::remove_kv_tracking
+     0.03%  [.] alloc::sync::Arc<T,A>::drop_slow
+     0.03%  [.] core::hash::BuildHasher::hash_one
+     0.03%  [.] core::ptr::drop_in_place$LT$$LT$a2a_protocol_server..handler..messaging..terminal..TerminalTracking$u20$as$u20$a2a_protocol_server..streaming..event_queue..EventQueueWriter$GT$..write..$u7b$$u7b$closure$u7d$$u7d$$GT$::hcecbef3ea401dae9
+     0.03%  [.] core::ptr::drop_in_place<a2a_protocol_types::jsonrpc::JsonRpcRequest>
+     0.03%  [k] do_futex
+     0.03%  [.] hashbrown::map::HashMap<K,V,S,A>::insert
+     0.03%  [.] http::header::map::HeaderMap<T>::try_reserve_one
+     0.03%  [.] http::header::name::StandardHeader::as_str
+     0.03%  [.] hyper::proto::h1::io::Buffered<T,B>::poll_read_from_io
+     0.03%  [k] tcp_ack
+     0.03%  [.] tokio::runtime::io::registration::Registration::poll_io
+     0.03%  [.] <core::pin::Pin<P> as core::future::future::Future>::poll
+     0.03%  [.] _ZN4core3ptr212drop_in_place$LT$$LT$a2a_protocol_server..streaming..event_queue..in_memory..InMemoryQueueReader$u20$as$u20$a2a_protocol_server..streaming..event_queue..EventQueueReader$GT$..read..$u7b$$u7b$closure$u7d$$u7d$$GT$17he205ace7d98fc233E.llvm.604543823841902506
+     0.03%  [.] _ZN4core3ptr98drop_in_place$LT$a2a_protocol_server..handler..event_processing..sync_collector..SyncCollector$GT$17h95fab8f86b17ddafE.llvm.9686839136372301439
+     0.03%  [.] _ZN5tokio4sync9broadcast15Shared$LT$T$GT$9notify_rx17h240132e871e7fd41E.llvm.2483497782379729484
+     0.03%  [k] __rcu_read_lock
+     0.03%  [k] __slab_free
+     0.03%  [.] _int_memalign
+     0.03%  [.] alloc::sync::Arc<T,A>::drop_slow
+     0.03%  [.] bytes::bytes::promotable_even_drop
+     0.03%  [k] futex_q_lock
+     0.03%  [k] futex_wait
+     0.03%  [.] hyper::proto::h1::io::ReadStrategy::record
+     0.03%  [k] tcp_v4_do_rcv
+     0.03%  [.] tokio::runtime::task::raw::poll
+     0.03%  [.] tokio_util::sync::cancellation_token::tree_node::is_cancelled
+     0.03%  [.] 0x00000000000008cc
+     0.03%  [.] <&mio::net::tcp::stream::TcpStream as std::io::Write>::write_vectored
+     0.03%  [.] <&std::fs::File as std::io::Write>::write
+     0.03%  [.] <&std::os::unix::net::stream::UnixStream as std::io::Read>::read
+     0.03%  [.] <a2a_protocol_types::artifact::ArtifactId as core::convert::From<&str>>::from
+     0.03%  [.] <bytes::bytes::Bytes as core::convert::From<alloc::vec::Vec<u8>>>::from
+     0.03%  [.] <serde_core::de::impls::<impl serde_core::de::Deserialize for alloc::vec::Vec<T>>::deserialize::VecVisitor<T> as serde_core::de::Visitor>::visit_seq
+     0.03%  [.] <tokio::net::tcp::stream::TcpStream as tokio::io::async_write::AsyncWrite>::poll_write_vectored
+     0.03%  [.] _ZN80_$LT$serde_json..de..MapAccess$LT$R$GT$$u20$as$u20$serde_core..de..MapAccess$GT$13next_key_seed12has_next_key17h90d094f9bc553e7aE.llvm.13142751603280149231
+     0.03%  [k] _raw_spin_lock_bh
+     0.03%  [.] a2a_protocol_server::interceptor::completion::InterceptedCall::before::_$u7b$$u7b$closure$u7d$$u7d$::h2c59680fe956323c
+     0.03%  [.] alloc::raw_vec::RawVecInner<A>::finish_grow
+     0.03%  [.] bytes::bytes::Bytes::copy_from_slice
+     0.03%  [.] core::ptr::drop_in_place<alloc::vec::Vec<a2a_protocol_types::message::Part>>
+     0.03%  [.] core::ptr::drop_in_place<futures_channel::mpsc::Sender<core::result::Result<bytes::bytes::Bytes,hyper::error::Error>>>
+     0.03%  [.] core::ptr::drop_in_place<http::uri::Uri>
+     0.03%  [.] core::ptr::drop_in_place<hyper::body::incoming::Sender>
+     0.03%  [.] futures_channel::mpsc::channel
+     0.03%  [.] hashbrown::map::HashMap<K,V,S,A>::insert
+     0.03%  [.] hashbrown::map::HashMap<K,V,S,A>::retain
+     0.03%  [.] http::header::name::StandardHeader::as_str
+     0.03%  [.] httparse::simd::avx2::match_uri_vectored
+     0.03%  [k] rb_first
+     0.03%  [.] std::time::SystemTime::duration_since
+     0.03%  [k] tcp_push
+     0.03%  [.] tokio::runtime::scheduler::multi_thread::handle::Handle::bind_new_task
+     0.03%  [.] tokio::runtime::task::state::State::transition_to_complete
+     0.03%  [.] tokio::task::spawn::spawn
+     0.02%  [.] <alloc::vec::Vec<T> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<T,I>>::from_iter
+     0.02%  [.] <hyper::body::incoming::Incoming as http_body::Body>::poll_frame
+     0.02%  [.] <hyper_util::common::rewind::Rewind<T> as hyper::rt::io::Read>::poll_read
+     0.02%  [.] <std::time::Instant as core::ops::arith::Sub>::sub
+     0.02%  [.] <tokio::sync::broadcast::Receiver<T> as core::ops::drop::Drop>::drop
+     0.02%  [.] <u64 as itoa::Unsigned>::fmt
+     0.02%  [.] <uuid::rng::imp::RngImp as uuid::rng::Rng>::u128
+     0.02%  [.] _ZN4core3ptr264drop_in_place$LT$tokio..time..timeout..Timeout$LT$core..pin..Pin$LT$alloc..boxed..Box$LT$dyn$u20$core..future..future..Future$u2b$Output$u20$$u3d$$u20$core..result..Result$LT$$LP$$RP$$C$a2a_protocol_types..error..A2aError$GT$$u2b$core..marker..Send$GT$$GT$$GT$$GT$17h7dcbb110583870eeE.llvm.9686839136372301439
+     0.02%  [.] _ZN4core3ptr463drop_in_place$LT$tokio_util..task..task_tracker..TrackedFuture$LT$tracing..instrument..Instrumented$LT$tokio..task..task_local..TaskLocalFuture$LT$bool$C$a2a_protocol_server..store..tenant..context..TenantContext..scope$LT$a2a_protocol_server..handler..messaging..execute..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..spawn_executor..$u7b$$u7b$closure$u7d$$u7d$$C$$LP$$RP$$C$alloc..string..String$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$$GT$$GT$17h76bac903e32f7f3eE.llvm.8812090457334452211
+     0.02%  [.] _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17h4da2fed8c113d474E.llvm.2084221121107654806
+     0.02%  [.] __floattidf
+     0.02%  [k] __x64_sys_write
+     0.02%  [.] a2a_protocol_types::task::_::<impl serde_core::ser::Serialize for a2a_protocol_types::task::TaskStatus>::serialize
+     0.02%  [.] alloc::collections::btree::map::entry::OccupiedEntry<K,V,A>::remove_kv
+     0.02%  [.] alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_left
+     0.02%  [.] core::fmt::Formatter::pad_integral::write_prefix
+     0.02%  [k] do_writev
+     0.02%  [k] exit_to_user_mode_loop
+     0.02%  [.] futures_channel::mpsc::BoundedSenderInner<T>::try_send
+     0.02%  [.] hyper::proto::h1::conn::Conn<I,B,T>::poll_read_keep_alive
+     0.02%  [k] ktime_get
+     0.02%  [k] netlbl_enabled
+     0.02%  [.] serde_core::ser::SerializeMap::serialize_entry
+     0.02%  [.] serde_json::value::de::<impl serde_core::de::Deserializer for serde_json::map::Map<alloc::string::String,serde_json::value::Value>>::deserialize_any
+     0.02%  [k] skb_clone_tx_timestamp
+     0.02%  [k] skb_page_frag_refill
+     0.02%  [k] sock_def_readable
+     0.02%  [.] std::time::SystemTime::now
+     0.02%  [k] tcp_write_xmit
+     0.02%  [.] <a2a_protocol_server::dispatch::jsonrpc::JsonRpcDispatcher as a2a_protocol_server::serve::Dispatcher>::dispatch
+     0.02%  [.] <a2a_protocol_server::store::task_store::in_memory::InMemoryTaskStore as a2a_protocol_server::store::task_store::TaskStore>::last_event_seq
+     0.02%  [.] <serde_json::de::MapAccess<R> as serde_core::de::MapAccess>::next_key_seed
+     0.02%  [.] _ZN5bytes5bytes11shared_drop17h9c61ff5fe5e154c6E.llvm.10983277264658936910
+     0.02%  [.] a2a_protocol_server::store::tenant::context::TenantContext::current
+     0.02%  [.] a2a_protocol_types::artifact::_::<impl serde_core::ser::Serialize for a2a_protocol_types::artifact::Artifact>::serialize
+     0.02%  [.] a2a_protocol_types::responses::_::<impl serde_core::ser::Serialize for a2a_protocol_types::responses::SendMessageResponse>::serialize
+     0.02%  [k] bbr_update_model
+     0.02%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..commit_task..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$::h60feee9270a7c7e0
+     0.02%  [.] core::ptr::drop_in_place<a2a_protocol_types::task::TaskStatus>
+     0.02%  [k] do_softirq.part.0
+     0.02%  [k] ep_send_events
+     0.02%  [.] futures_channel::mpsc::queue::Queue<T>::pop_spin
+     0.02%  [.] http::header::map::HeaderMap<T>::try_append2
+     0.02%  [.] http::response::Builder::and_then
+     0.02%  [.] hyper::body::incoming::Incoming::new_channel
+     0.02%  [.] hyper::headers::te_is_trailers
+     0.02%  [.] hyper::proto::h1::decode::Decoder::decode
+     0.02%  [k] kfree_skbmem
+     0.02%  [k] loopback_xmit
+     0.02%  [.] parking_lot::raw_mutex::RawMutex::lock_slow
+     0.02%  [k] schedule_hrtimeout_range_clock
+     0.02%  [.] serde_core::ser::Serializer::collect_seq
+     0.02%  [.] tokio::runtime::scheduler::multi_thread::handle::Handle::bind_new_task
+     0.02%  [.] tokio::sync::rwlock::RwLock$LT$T$GT$::read::_$u7b$$u7b$closure$u7d$$u7d$::h9baee95ec9fcf2b9
+     0.02%  [.] <a2a_protocol_server::handler::messaging::commit_guard::CommitGuard as core::ops::drop::Drop>::drop
+     0.02%  [.] <a2a_protocol_server::handler::messaging::terminal::TerminalTracking as a2a_protocol_server::streaming::event_queue::EventQueueWriter>::write
+     0.02%  [.] <a2a_protocol_server::push::config_store::InMemoryPushConfigStore as a2a_protocol_server::push::config_store::PushConfigStore>::list
+     0.02%  [.] <a2a_protocol_server::store::task_store::in_memory::InMemoryTaskStore as a2a_protocol_server::store::task_store::TaskStore>::append_event
+     0.02%  [.] <a2a_protocol_server::store::task_store::in_memory::InMemoryTaskStore as a2a_protocol_server::store::task_store::TaskStore>::list
+     0.02%  [.] <core::fmt::Formatter as core::fmt::Write>::write_str
+     0.02%  [.] <http_body_util::full::Full<D> as http_body::Body>::size_hint
+     0.02%  [.] _ZN4core3ptr508drop_in_place$LT$core..option..Option$LT$a2a_protocol_server..store..tenant..context..TenantContext..scope$LT$a2a_protocol_server..handler..messaging..respond..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..respond_blocking..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$C$core..result..Result$LT$a2a_protocol_server..handler..event_processing..sync_collector..Collected$C$a2a_protocol_server..error..ServerError$GT$$C$alloc..string..String$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17hab1a078aa1313020E.llvm.16684841707856143315
+     0.02%  [.] _ZN4core3ptr51drop_in_place$LT$a2a_protocol_types..task..Task$GT$17h550d79e1e282141fE.llvm.2483497782379729484
+     0.02%  [.] _ZN4core3ptr776drop_in_place$LT$alloc..boxed..Box$LT$tokio..runtime..task..core..Cell$LT$tokio_util..task..task_tracker..TrackedFuture$LT$tracing..instrument..Instrumented$LT$tokio..task..task_local..TaskLocalFuture$LT$bool$C$a2a_protocol_server..store..tenant..context..TenantContext..scope$LT$a2a_protocol_server..handler..messaging..respond..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..respond_blocking..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$C$core..result..Result$LT$a2a_protocol_server..handler..event_processing..sync_collector..Collected$C$a2a_protocol_server..error..ServerError$GT$$C$alloc..string..String$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$$GT$$C$alloc..sync..Arc$LT$tokio..runtime..scheduler..multi_thread..handle..Handle$GT$$GT$$GT$$GT$17h6e58c2ee805c3d26E.llvm.4009247214790493386
+     0.02%  [.] __pow_finite@GLIBC_2.15@plt
+     0.02%  [k] __x64_sys_epoll_wait
+     0.02%  [k] _copy_from_user
+     0.02%  [.] a2a_protocol_server::handler::RequestHandler::tenant_limits
+     0.02%  [.] alloc::collections::vec_deque::VecDeque<T,A>::grow
+     0.02%  [.] bytes::bytes_mut::BytesMut::reserve_inner
+     0.02%  [.] core::num::<impl i64>::from_ascii_radix
+     0.02%  [k] eventfd_poll
+     0.02%  [k] futex_q_unlock
+     0.02%  [.] http::response::Parts::new
+     0.02%  [.] http::uri::Uri::from_shared
+     0.02%  [.] httparse::ParserConfig::parse_request_with_uninit_headers
+     0.02%  [.] httparse::simd::avx2::match_header_value_vectored
+     0.02%  [.] hyper::headers::content_length_parse
+     0.02%  [.] hyper::proto::h1::conn::Conn<I,B,T>::poll_read_head
+     0.02%  [k] inet_sendmsg
+     0.02%  [k] ip_output
+     0.02%  [.] mio::poll::Poll::poll
+     0.02%  [.] serde_json::value::de::<impl serde_core::de::Deserializer for serde_json::map::Map<alloc::string::String,serde_json::value::Value>>::deserialize_any
+     0.02%  [k] tcp_check_space
+     0.02%  [.] 0x00000000000008ba
+     0.02%  [.] <<<a2a_protocol_types::message::Part as serde_core::de::Deserialize>::deserialize::Field as serde_core::de::Deserialize>::deserialize::FieldVisitor as serde_core::de::Visitor>::visit_str
+     0.02%  [.] <alloc::collections::vec_deque::VecDeque<T,A> as core::ops::drop::Drop>::drop
+     0.02%  [.] <futures_channel::mpsc::Receiver<T> as futures_core::stream::Stream>::poll_next
+     0.02%  [.] <serde_json::number::Number as serde_core::ser::Serialize>::serialize
+     0.02%  [.] <serde_json::value::de::MapDeserializer as serde_core::de::MapAccess>::next_key_seed
+     0.02%  [.] <serde_json::value::de::SeqDeserializer as serde_core::de::SeqAccess>::next_element_seed
+     0.02%  [.] <serde_json::value::de::SeqDeserializer as serde_core::de::SeqAccess>::size_hint
+     0.02%  [.] _ZN4core3ptr45drop_in_place$LT$serde_json..value..Value$GT$17hbac6c5199ed13c29E.llvm.11943696331921308346
+     0.02%  [k] __netif_receive_skb_core.constprop.0
+     0.02%  [k] __x64_sys_getrandom
+     0.02%  [.] a2a_protocol_server::metrics::Metrics::on_request
+     0.02%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..dispatch..jsonrpc..JsonRpcDispatcher..dispatch..$u7b$$u7b$closure$u7d$$u7d$$GT$::ha3662c2cbac2fd4b
+     0.02%  [k] do_user_addr_fault
+     0.02%  [.] hashbrown::map::HashMap<K,V,S,A>::insert
+     0.02%  [.] http::header::map::hash_elem_using
+     0.02%  [.] http::request::Parts::new
+     0.02%  [.] mio::sys::unix::waker::Waker::wake
+     0.02%  [.] std::time::Instant::elapsed
+     0.02%  [.] std::time::SystemTime::checked_add
+     0.02%  [k] tcp_poll
+     0.02%  [k] tcp_update_skb_after_send
+     0.02%  [.] tokio::runtime::task::harness::can_read_output
+     0.02%  [.] tokio::runtime::task::raw::schedule
+     0.02%  [.] tracing::instrument::_::<impl core::ops::drop::Drop for tracing::instrument::Instrumented<T>>::drop
+     0.02%  [.] tracing::instrument::_::<impl core::ops::drop::Drop for tracing::instrument::Instrumented<T>>::drop
+     0.01%  [.] <a2a_protocol_server::call_context::CallContext as core::clone::Clone>::clone
+     0.01%  [.] <alloc::vec::Vec<T,A> as core::clone::Clone>::clone
+     0.01%  [.] <alloc::vec::Vec<T> as alloc::vec::spec_from_iter::SpecFromIter<T,I>>::from_iter
+     0.01%  [.] <core::future::poll_fn::PollFn<F> as core::future::future::Future>::poll
+     0.01%  [.] <futures_channel::mpsc::Receiver<T> as core::ops::drop::Drop>::drop
+     0.01%  [.] <serde_json::value::ser::SerializeMap as serde_core::ser::SerializeMap>::end
+     0.01%  [.] <serde_json::value::ser::Serializer as serde_core::ser::Serializer>::serialize_seq
+     0.01%  [.] _ZN4core3ptr49drop_in_place$LT$http..header..map..HeaderMap$GT$17h26edf427c17d5026E.llvm.4900510630582450936
+     0.01%  [.] _ZN4core3ptr63drop_in_place$LT$a2a_protocol_types..events..StreamResponse$GT$17hcf1372b0d8bd20f4E.llvm.2084221121107654806
+     0.01%  [.] _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17he42c55580cbe3f2fE.llvm.2222194435386578367
+     0.01%  [.] _ZN84_$LT$http_body_util..util..BufList$LT$T$GT$$u20$as$u20$bytes..buf..buf_impl..Buf$GT$13copy_to_bytes17hf45e7ddd1e96be0fE.llvm.13563398596778639093
+     0.01%  [k] __ip_queue_xmit
+     0.01%  [k] __list_del_entry_valid_or_report
+     0.01%  [k] __put_user_nocheck_4
+     0.01%  [k] __rseq_handle_notify_resume
+     0.01%  [.] a2a_protocol_server::handler::RequestHandler::resolve_tenant::_$u7b$$u7b$closure$u7d$$u7d$::hd9fa1184e8c723d6
+     0.01%  [.] a2a_protocol_server::interceptor::ServerInterceptorChain::run_after::_$u7b$$u7b$closure$u7d$$u7d$::h117f544d1e7f771c
+     0.01%  [.] alloc::collections::vec_deque::VecDeque<T,A>::insert
+     0.01%  [.] alloc::raw_vec::RawVec<T,A>::grow_one
+     0.01%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..dispatch..jsonrpc..JsonRpcDispatcher..dispatch_inner..$u7b$$u7b$closure$u7d$$u7d$$GT$::hf30810dd5bfc8d13
+     0.01%  [.] core::str::<impl str>::trim_matches
+     0.01%  [k] do_epoll_wait
+     0.01%  [.] http::header::map::HeaderMap<T>::try_reserve
+     0.01%  [.] httparse::simd::runtime::match_uri_vectored
+     0.01%  [.] hyper::body::incoming::Sender::poll_ready
+     0.01%  [.] hyper::proto::h1::conn::Conn<I,B,T>::write_head
+     0.01%  [.] hyper::proto::h1::io::Buffered<T,B>::parse
+     0.01%  [k] nf_hook_slow
+     0.01%  [k] selinux_parse_skb.constprop.0
+     0.01%  [.] serde_json::de::from_slice
+     0.01%  [k] tcp_queue_rcv
+     0.01%  [k] tcp_skb_entail
+     0.01%  [k] tcp_wfree
+     0.01%  [.] tokio::runtime::task::harness::Harness<T,S>::drop_join_handle_slow
+     0.01%  [.] tokio::time::sleep::Sleep::new_timeout
+     0.01%  [.] uuid::fmt::<impl core::fmt::Display for uuid::Uuid>::fmt
+     0.01%  [.] uuid::v4::<impl uuid::Uuid>::new_v4
+     0.01%  [k] wake_up_q
+     0.01%  [.] 0x0000000000000841
+     0.01%  [.] <&mio::net::tcp::stream::TcpStream as std::io::Read>::read
+     0.01%  [.] <a2a_protocol_server::interceptor::completion::InterceptedCall as core::ops::drop::Drop>::drop
+     0.01%  [.] <a2a_protocol_server::store::task_store::in_memory::InMemoryTaskStore as a2a_protocol_server::store::task_store::TaskStore>::get
+     0.01%  [.] <a2a_protocol_types::jsonrpc::JsonRpcRequestId as serde_core::de::Deserialize>::deserialize
+     0.01%  [.] <a2a_protocol_types::message::_::<impl serde_core::de::Deserialize for a2a_protocol_types::message::MessageRole>::deserialize::__FieldVisitor as serde_core::de::Visitor>::visit_str
+     0.01%  [.] <alloc::collections::btree::map::BTreeMap<K,V,A> as core::ops::drop::Drop>::drop
+     0.01%  [.] <alloc::collections::vec_deque::VecDeque<T,A> as core::ops::drop::Drop>::drop
+     0.01%  [.] <alloc::vec::Vec<T,A> as core::ops::drop::Drop>::drop
+     0.01%  [.] <http_body_util::full::Full<D> as http_body::Body>::is_end_stream
+     0.01%  [.] <hyper::common::watch::Sender as core::ops::drop::Drop>::drop
+     0.01%  [.] <tokio::runtime::task::join::JoinHandle<T> as core::future::future::Future>::poll
+     0.01%  [.] <tokio_util::sync::cancellation_token::CancellationToken as core::clone::Clone>::clone
+     0.01%  [.] _ZN10serde_core3ser12SerializeMap15serialize_entry17hd7ee947ec5bc239cE.llvm.13152994734194126511
+     0.01%  [.] _ZN4core3ptr41drop_in_place$LT$http..request..Parts$GT$17h268cb6cc30dad267E.llvm.9611214990820818791
+     0.01%  [.] _ZN4core3ptr67drop_in_place$LT$a2a_protocol_server..call_context..CallContext$GT$17he9c35b7247b8f033E.llvm.9686839136372301439
+     0.01%  [.] _ZN4core3ptr84drop_in_place$LT$http_body_util..collected..Collected$LT$bytes..bytes..Bytes$GT$$GT$17h38b0356c45c8033dE.llvm.13563398596778639093
+     0.01%  [.] _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17h27f3026fe85f0145E.llvm.2084221121107654806
+     0.01%  [.] _ZN5tokio7runtime4time5wheel5Wheel15next_expiration17hd4d6293bcf280dfbE.llvm.5286350278050688420
+     0.01%  [.] _ZN5tokio7runtime6signal6Driver7process17hd809552132dc08a2E.llvm.6494834433141566466
+     0.01%  [.] _ZN75_$LT$a2a_protocol_types..message..Message$u20$as$u20$core..clone..Clone$GT$5clone17h116d73605af1b09aE.llvm.2483497782379729484
+     0.01%  [.] _ZN77_$LT$a2a_protocol_types..artifact..Artifact$u20$as$u20$core..clone..Clone$GT$5clone17h9cc0ff975b839906E.llvm.2483497782379729484
+     0.01%  [k] __ip_local_out
+     0.01%  [k] __local_bh_enable_ip
+     0.01%  [k] __tcp_select_window
+     0.01%  [k] _find_next_bit
+     0.01%  [.] a2a_protocol_server::call_context::CallContext::with_http_headers
+     0.01%  [.] alloc::raw_vec::RawVec<T,A>::grow_one
+     0.01%  [.] alloc::raw_vec::RawVec<T,A>::grow_one
+     0.01%  [.] core::ptr::drop_in_place$LT$$LT$agent_rust..Bench$u20$as$u20$a2a_protocol_server..executor..AgentExecutor$GT$..execute..$u7b$$u7b$closure$u7d$$u7d$$GT$::hfc3246d401a4b551
+     0.01%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..continuation..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..resolve_task_id..$u7b$$u7b$closure$u7d$$u7d$$GT$::h14c5bccf3681dd3a
+     0.01%  [.] core::ptr::drop_in_place<a2a_protocol_server::serve::connections::InFlight>
+     0.01%  [.] core::ptr::drop_in_place<a2a_protocol_types::responses::SendMessageResponse>
+     0.01%  [k] eth_type_trans
+     0.01%  [k] futex_setup_timer
+     0.01%  [.] futures_core::task::__internal::atomic_waker::AtomicWaker::wake
+     0.01%  [.] http::header::map::hash_elem_using
+     0.01%  [.] http_body_util::collected::Collected<B>::to_bytes
+     0.01%  [.] hyper::common::date::extend
+     0.01%  [.] hyper::proto::h1::conn::Conn<I,B,T>::poll_read_body
+     0.01%  [.] hyper::proto::h1::io::WriteBuf<B>::can_buffer
+     0.01%  [k] ip_rcv_core
+     0.01%  [k] ip_send_check
+     0.01%  [k] neigh_hh_output
+     0.01%  [.] pow@@GLIBC_2.29
+     0.01%  [k] release_sock
+     0.01%  [k] selinux_socket_recvmsg
+     0.01%  [.] serde_json::value::de::visit_array
+     0.01%  [k] tcp_data_ready
+     0.01%  [k] tcp_event_data_recv
+     0.01%  [k] tcp_event_new_data_sent
+     0.01%  [k] tcp_grow_window
+     0.01%  [k] tcp_stream_memory_free
+     0.01%  [k] tcp_tso_segs
+     0.01%  [.] tokio::runtime::task::core::Core<T,S>::poll
+     0.01%  [.] tokio::runtime::task::new_task
+     0.01%  [.] tokio::runtime::task::raw::poll
+     0.01%  [.] tokio::runtime::task::state::State::ref_dec
+     0.01%  [.] tokio::runtime::task::state::State::transition_to_join_handle_dropped
+     0.01%  [.] tokio::runtime::task::waker::drop_waker
+     0.01%  [.] <a2a_protocol_server::store::task_store::in_memory::InMemoryTaskStore as a2a_protocol_server::store::task_store::TaskStore>::supports_event_log
+     0.01%  [.] <alloc::collections::vec_deque::VecDeque<T,A> as core::ops::drop::Drop>::drop
+     0.01%  [.] <alloc::string::String as core::fmt::Display>::fmt
+     0.01%  [.] <alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop
+     0.01%  [.] <http_body_util::full::Full<D> as http_body::Body>::poll_frame
+     0.01%  [.] <hyper_util::rt::tokio::TokioIo<T> as hyper::rt::io::Read>::poll_read
+     0.01%  [.] <serde_json::value::ser::SerializeMap as serde_core::ser::SerializeStruct>::serialize_field
+     0.01%  [.] <tokio::net::tcp::stream::TcpStream as tokio::io::async_read::AsyncRead>::poll_read
+     0.01%  [.] _RNvCs1Y7DaGC1cwg_7___rustc14___rust_realloc
+     0.01%  [.] _ZN4core3ptr141drop_in_place$LT$core..option..Option$LT$a2a_protocol_server..dispatch..jsonrpc..JsonRpcDispatcher..call..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h964b5dc25a006cc5E.llvm.9686839136372301439
+     0.01%  [.] _ZN4core3ptr96drop_in_place$LT$a2a_protocol_server..streaming..event_queue..in_memory..InMemoryQueueReader$GT$17he060bae4ff1af958E.llvm.9686839136372301439
+     0.01%  [.] _ZN4core3str4iter22SplitInternal$LT$P$GT$4next17h47deeb433ffaae43E.llvm.2084221121107654806
+     0.01%  [.] _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$7reserve21do_reserve_and_handle17he9b2d26a11b40637E.llvm.2084221121107654806
+     0.01%  [.] _ZN5hyper5proto2h14conn21Conn$LT$I$C$B$C$T$GT$12maybe_notify17h93316eb781cfe5f8E.llvm.14316498086895694392
+     0.01%  [.] _ZN87_$LT$T$u20$as$u20$alloc..slice..$LT$impl$u20$$u5b$T$u5d$$GT$..to_vec_in..ConvertVec$GT$6to_vec17h0811f7674f8ae450E.llvm.2084221121107654806
+     0.01%  [k] __check_object_size.part.0
+     0.01%  [k] __copy_skb_header
+     0.01%  [k] __file_has_perm
+     0.01%  [k] __ip_finish_output
+     0.01%  [k] __put_user_8
+     0.01%  [k] __sk_dst_check
+     0.01%  [k] __sk_mem_reduce_allocated
+     0.01%  [k] __usecs_to_jiffies
+     0.01%  [k] _find_first_bit
+     0.01%  [.] a2a_protocol_server::dispatch::jsonrpc::response::success_response_bytes
+     0.01%  [.] a2a_protocol_server::handler::helpers::parse_extensions_header
+     0.01%  [.] a2a_protocol_server::metrics::Metrics::on_latency
+     0.01%  [.] a2a_protocol_server::rpc_span::ServerSpan::run
+     0.01%  [.] a2a_protocol_types::days_from_civil
+     0.01%  [.] a2a_protocol_types::jsonrpc::_::<impl serde_core::ser::Serialize for a2a_protocol_types::jsonrpc::JsonRpcSuccessResponse<T>>::serialize
+     0.01%  [.] alloc::sync::Arc<T,A>::drop_slow
+     0.01%  [.] atomic_waker::AtomicWaker::wake
+     0.01%  [k] bbr_min_tso_segs
+     0.01%  [.] bytes::bytes::static_drop
+     0.01%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..dispatch..jsonrpc..JsonRpcDispatcher..dispatch_single_request_http..$u7b$$u7b$closure$u7d$$u7d$$GT$::h16fe758c6f9f4455
+     0.01%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..commit_task..$u7b$$u7b$closure$u7d$$u7d$$GT$::h2fe37fe6476e3119
+     0.01%  [.] core::ptr::drop_in_place<a2a_protocol_server::handler::shutdown::in_flight::InFlight>
+     0.01%  [.] core::ptr::drop_in_place<a2a_protocol_types::events::StreamResponse>
+     0.01%  [.] core::ptr::drop_in_place<http_body_util::full::Full<bytes::bytes::Bytes>>
+     0.01%  [.] core::ptr::drop_in_place<serde_json::value::Value>
+     0.01%  [k] get_futex_key
+     0.01%  [.] http::header::map::HeaderMap<T>::try_reserve_one
+     0.01%  [.] http_body_util::collected::Collected<B>::push_frame
+     0.01%  [k] ip_local_deliver_finish
+     0.01%  [k] nsecs_to_jiffies
+     0.01%  [k] rseq_get_rseq_cs.isra.0
+     0.01%  [k] selinux_sock_rcv_skb_compat
+     0.01%  [k] selinux_xfrm_postroute_last
+     0.01%  [.] serde_json::value::de::<impl serde_core::de::Deserializer for serde_json::value::Value>::deserialize_struct
+     0.01%  [k] slab_update_freelist.isra.0
+     0.01%  [k] sock_rfree
+     0.01%  [k] tcp_established_options
+     0.01%  [k] tcp_rate_skb_sent
+     0.01%  [k] tcp_rearm_rto
+     0.01%  [k] tcp_schedule_loss_probe.part.0
+     0.01%  [k] tcp_sendmsg
+     0.01%  [.] tokio::runtime::scheduler::multi_thread::handle::<impl tokio::runtime::task::Schedule for alloc::sync::Arc<tokio::runtime::scheduler::multi_thread::handle::Handle>>::yield_now
+     0.01%  [.] tokio::runtime::task::core::Core<T,S>::set_stage
+     0.01%  [.] tokio::runtime::task::harness::Harness<T,S>::drop_join_handle_slow
+     0.01%  [.] tokio::runtime::task::new_task
+     0.01%  [.] tokio::runtime::time::wheel::level::Level::next_expiration
+     0.01%  [.] tokio::sync::notify::NotifyGuard::notify_waiters
+     0.01%  [.] tokio::task::coop::Budget::has_remaining
+     0.01%  [k] wake_q_add_safe
+     0.01%  [.] 0x00000000000008a4
+     0.01%  [.] 0x00000000000008c4
+     0.01%  [.] <a2a_protocol_server::handler::messaging::execute::CleanupGuard as core::ops::drop::Drop>::drop
+     0.01%  [.] <a2a_protocol_server::push::sender::HttpPushSender as a2a_protocol_server::push::sender::PushSender>::max_delivery_duration
+     0.01%  [.] <alloc::collections::btree::map::IntoIter<K,V,A> as core::ops::drop::Drop>::drop
+     0.01%  [.] <bytes::bytes::Bytes as bytes::buf::buf_impl::Buf>::copy_to_bytes
+     0.01%  [.] <hyper::proto::h1::encode::EncodedBuf<B> as bytes::buf::buf_impl::Buf>::advance
+     0.01%  [.] <serde_json::value::de::KeyClassifier as serde_core::de::DeserializeSeed>::deserialize
+     0.01%  [.] <serde_json::value::de::VariantDeserializer as serde_core::de::VariantAccess>::unit_variant
+     0.01%  [.] <tokio_util::sync::cancellation_token::CancellationToken as core::default::Default>::default
+     0.01%  [.] _ZN4core3ptr1003drop_in_place$LT$a2a_protocol_server..rpc_span..Call$LT$a2a_protocol_server..dispatch..jsonrpc..JsonRpcDispatcher..call..$u7b$$u7b$closure$u7d$$u7d$$C$a2a_protocol_server..rpc_span..ServerSpan..run_with$LT$alloc..vec..Vec$LT$u8$GT$$C$a2a_protocol_server..error..ServerError$C$a2a_protocol_server..dispatch..jsonrpc..JsonRpcDispatcher..call..$u7b$$u7b$closure$u7d$$u7d$$C$core..result..Result$LT$alloc..vec..Vec$LT$u8$GT$$C$a2a_protocol_server..error..ServerError$GT$$C$a2a_protocol_server..rpc_span..ServerSpan..run$LT$alloc..vec..Vec$LT$u8$GT$$C$a2a_protocol_server..error..ServerError$C$a2a_protocol_server..dispatch..jsonrpc..JsonRpcDispatcher..call..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$$C$a2a_protocol_server..rpc_span..ServerSpan..run$LT$alloc..vec..Vec$LT$u8$GT$$C$a2a_protocol_server..error..ServerError$C$a2a_protocol_server..dispatch..jsonrpc..JsonRpcDispatcher..call..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h18920d1daacfdb63E
+     0.01%  [.] _ZN4core3ptr174drop_in_place$LT$a2a_protocol_server..interceptor..completion..InterceptedCall..finish$LT$a2a_protocol_server..handler..SendMessageResult$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17hf881fa5129d6f797E.llvm.9686839136372301439
+     0.01%  [.] _ZN4core3ptr202drop_in_place$LT$tokio..task..task_local..TaskLocalFuture$LT$alloc..string..String$C$a2a_protocol_server..handler..event_processing..sync_collector..SyncPushJob..run..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17hc8c9957628652f3aE.llvm.9686839136372301439
+     0.01%  [.] _ZN4core3ptr295drop_in_place$LT$core..option..Option$LT$a2a_protocol_server..store..tenant..context..TenantContext..scope$LT$a2a_protocol_server..handler..event_processing..sync_collector..SyncPushJob..run..$u7b$$u7b$closure$u7d$$u7d$$C$$LP$$RP$$C$alloc..string..String$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h82a7eabbdc13fae4E.llvm.16684841707856143315
+     0.01%  [.] _ZN4core3ptr51drop_in_place$LT$a2a_protocol_types..task..Task$GT$17h550d79e1e282141fE.llvm.9686839136372301439
+     0.01%  [.] _ZN4core3ptr563drop_in_place$LT$alloc..boxed..Box$LT$tokio..runtime..task..core..Cell$LT$tokio_util..task..task_tracker..TrackedFuture$LT$tracing..instrument..Instrumented$LT$tokio..task..task_local..TaskLocalFuture$LT$bool$C$a2a_protocol_server..store..tenant..context..TenantContext..scope$LT$a2a_protocol_server..handler..event_processing..sync_collector..SyncPushJob..run..$u7b$$u7b$closure$u7d$$u7d$$C$$LP$$RP$$C$alloc..string..String$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$$GT$$C$alloc..sync..Arc$LT$tokio..runtime..scheduler..multi_thread..handle..Handle$GT$$GT$$GT$$GT$17h78a8adc5270b7737E.llvm.4009247214790493386
+     0.01%  [.] _ZN9hashbrown3raw13RawTableInner22fallible_with_capacity17hb96acf0171060184E.llvm.11834487664102171885
+     0.01%  [k] __import_iovec
+     0.01%  [k] __inet_lookup_skb
+     0.01%  [k] _raw_spin_unlock
+     0.01%  [.] a2a_protocol_server::dispatch::validate_version_header
+     0.01%  [.] a2a_protocol_server::handler::input_modes::<impl a2a_protocol_server::handler::RequestHandler>::ensure_input_modes_supported
+     0.01%  [.] a2a_protocol_server::handler::messaging::create::build_initial_task
+     0.01%  [.] a2a_protocol_types::artifact::Artifact::validate
+     0.01%  [.] a2a_protocol_types::task::_::<impl serde_core::ser::Serialize for a2a_protocol_types::task::TaskState>::serialize
+     0.01%  [.] alloc::raw_vec::RawVec<T,A>::grow_one
+     0.01%  [.] alloc::sync::Arc<T,A>::drop_slow
+     0.01%  [.] alloc::vec::Vec<T,A>::into_boxed_slice
+     0.01%  [k] avc_has_perm_noaudit
+     0.01%  [k] bbr_main
+     0.01%  [k] blkcg_maybe_throttle_current
+     0.01%  [.] bytes::bytes::static_drop
+     0.01%  [k] copy_iovec_from_user
+     0.01%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..eviction..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..register_cancellation_token..$u7b$$u7b$closure$u7d$$u7d$$GT$::h676bd527832c88a3
+     0.01%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..respond..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..respond_blocking..$u7b$$u7b$closure$u7d$$u7d$$GT$::h9dcf314930a00611
+     0.01%  [.] core::ptr::drop_in_place$LT$agent_rust..deep..handle..$u7b$$u7b$closure$u7d$$u7d$$GT$::h70a6302b3e5faa62
+     0.01%  [.] core::ptr::drop_in_place<a2a_protocol_server::request_context::RequestContext>
+     0.01%  [.] core::str::<impl str>::split_once
+     0.01%  [k] do_iter_readv_writev
+     0.01%  [.] hashbrown::raw::RawTable<T,A>::remove_entry
+     0.01%  [.] hyper::body::incoming::Sender::try_send_data
+     0.01%  [.] hyper::proto::h1::conn::Conn<I,B,T>::write_body_and_end
+     0.01%  [k] ip_finish_output
+     0.01%  [k] ip_skb_dst_mtu
+     0.01%  [k] ipv4_dst_check
+     0.01%  [k] ipv4_mtu
+     0.01%  [k] lock_timer_base
+     0.01%  [k] raw_local_deliver
+     0.01%  [.] serde_core::de::impls::<impl serde_core::de::Deserialize for core::option::Option<T>>::deserialize
+     0.01%  [.] serde_json::value::de::<impl serde_core::de::Deserializer for serde_json::value::Value>::deserialize_str
+     0.01%  [k] tcp_mtu_probe
+     0.01%  [k] tcp_rate_check_app_limited
+     0.01%  [k] tcp_rtt_estimator
+     0.01%  [.] tokio::runtime::task::harness::Harness<T,S>::poll
+     0.01%  [.] tokio::runtime::task::harness::Harness<T,S>::poll
+     0.01%  [.] tokio::runtime::task::new_task
+     0.01%  [.] tokio::runtime::task::raw::RawTask::drop_join_handle_slow
+     0.01%  [.] tokio::runtime::task::state::State::transition_to_terminal
+     0.01%  [.] tokio::runtime::task_hooks::TaskHooks::spawn
+     0.01%  [.] tokio::sync::notify::Notify::notify_waiters
+     0.01%  [.] tokio::task::task_local::_::<impl core::ops::drop::Drop for tokio::task::task_local::TaskLocalFuture<T,F>>::drop
+     0.01%  [.] tokio::task::task_local::_::<impl core::ops::drop::Drop for tokio::task::task_local::TaskLocalFuture<T,F>>::drop
+     0.01%  [.] tokio::task::task_local::_::<impl core::ops::drop::Drop for tokio::task::task_local::TaskLocalFuture<T,F>>::drop
+     0.01%  [.] tracing::instrument::_::<impl core::ops::drop::Drop for tracing::instrument::Instrumented<T>>::drop
+     0.01%  [.] 0x0000000000000847
+     0.01%  [.] 0x0000000000000886
+     0.01%  [.] 0x00000000000008af
+     0.01%  [.] <a2a_protocol_server::store::task_store::in_memory::InMemoryTaskStore as a2a_protocol_server::store::task_store::TaskStore>::save
+     0.01%  [.] <alloc::collections::btree::map::Iter<K,V> as core::iter::traits::iterator::Iterator>::next
+     0.01%  [.] <http_body_util::combinators::collect::Collect<T> as core::future::future::Future>::poll
+     0.01%  [.] <serde_json::value::ser::SerializeMap as serde_core::ser::SerializeStruct>::serialize_field
+     0.01%  [.] <tokio::task::coop::Coop<F> as core::future::future::Future>::poll
+     0.01%  [.] <tokio_util::sync::cancellation_token::CancellationToken as core::ops::drop::Drop>::drop
+     0.01%  [.] _ZN12tracing_core10subscriber10Subscriber12current_span17h31207235983a4bbaE.llvm.16501372721041489423
+     0.01%  [.] _ZN4core3ptr141drop_in_place$LT$core..option..Option$LT$a2a_protocol_server..dispatch..jsonrpc..JsonRpcDispatcher..call..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h964b5dc25a006cc5E.llvm.16684841707856143315
+     0.01%  [.] _ZN4core3ptr270drop_in_place$LT$tokio..task..task_local..TaskLocalFuture$LT$alloc..string..String$C$a2a_protocol_server..handler..messaging..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..on_send_message..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17hdd126cffa1e13691E.llvm.9686839136372301439
+     0.01%  [.] _ZN4core3ptr49drop_in_place$LT$http..header..map..HeaderMap$GT$17hc5b4dce18be11461E.llvm.9611214990820818791
+     0.01%  [.] _ZN4core3ptr63drop_in_place$LT$a2a_protocol_types..events..StreamResponse$GT$17hcf1372b0d8bd20f4E.llvm.2483497782379729484
+     0.01%  [.] _ZN4core3ptr64drop_in_place$LT$a2a_protocol_types..params..ListTasksParams$GT$17h303da3a7819cba3eE.llvm.9686839136372301439
+     0.01%  [.] _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17he99c823e71c203a0E.llvm.4357532244952456671
+     0.01%  [.] _ZN5bytes5bytes11static_drop17h01654f42c330a669E.llvm.10983277264658936910
+     0.01%  [.] _ZN5tokio7runtime4task7harness20Harness$LT$T$C$S$GT$8complete17h59dceb37da4eeedfE.llvm.4009247214790493386
+     0.01%  [k] __free_frozen_pages
+     0.01%  [.] __memset_avx512_unaligned_erms
+     0.01%  [k] __napi_poll
+     0.01%  [k] __raw_spin_lock_irqsave
+     0.01%  [k] __sys_recvfrom
+     0.01%  [k] _raw_spin_lock_irq
+     0.01%  [k] _raw_spin_trylock
+     0.01%  [.] a2a_protocol_server::call_context::CallContext::new
+     0.01%  [.] a2a_protocol_server::handler::capability::<impl a2a_protocol_server::handler::RequestHandler>::activated_extensions_header_value
+     0.01%  [.] a2a_protocol_server::handler::capability::<impl a2a_protocol_server::handler::RequestHandler>::ensure_required_extensions
+     0.01%  [.] a2a_protocol_server::handler::messaging::validation::check_metadata_size
+     0.01%  [.] a2a_protocol_server::metrics::Metrics::on_queue_depth_change
+     0.01%  [.] a2a_protocol_types::task::TaskStatus::with_timestamp
+     0.01%  [.] alloc::raw_vec::RawVec<T,A>::grow_one
+     0.01%  [.] alloc::sync::Arc<T,A>::drop_slow
+     0.01%  [.] alloc::sync::Arc<T,A>::drop_slow
+     0.01%  [.] alloc::sync::Arc<T,A>::drop_slow
+     0.01%  [k] bbr_set_pacing_rate
+     0.01%  [.] bytes::bytes::Bytes::slice_ref
+     0.01%  [.] bytes::bytes_mut::BytesMut::advance_unchecked
+     0.01%  [.] core::ptr::drop_in_place$LT$$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$..read_events..$u7b$$u7b$closure$u7d$$u7d$$GT$::hb73e7f7f7b933c85
+     0.01%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..event_processing..sync_collector..SyncCollector..process_event..$u7b$$u7b$closure$u7d$$u7d$$GT$::h05e421cd3456b44d
+     0.01%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..create..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..persist_initial_task..$u7b$$u7b$closure$u7d$$u7d$$GT$::ha6e5158b2fccd828
+     0.01%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..create..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..register_inline_push_config..$u7b$$u7b$closure$u7d$$u7d$$GT$::hf3dbab914fa6bf6c
+     0.01%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..eviction..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..confirm_aged_candidates..$u7b$$u7b$closure$u7d$$u7d$$GT$::ha0434640e9361b8a
+     0.01%  [.] core::ptr::drop_in_place<tokio::time::timeout::Timeout<http_body_util::combinators::collect::Collect<http_body_util::limited::Limited<hyper::body::incoming::Incoming>>>>
+     0.01%  [k] enqueue_to_backlog
+     0.01%  [.] http::header::map::HeaderMap<T>::get_all
+     0.01%  [.] httparse::parse_version
+     0.01%  [k] inet_ehashfn
+     0.01%  [k] ip_local_out
+     0.01%  [k] netif_skb_features
+     0.01%  [k] security_sock_rcv_skb
+     0.01%  [k] selinux_ip_output
+     0.01%  [k] selinux_ip_postroute
+     0.01%  [.] serde_json::value::de::<impl serde_core::de::Deserializer for serde_json::value::Value>::deserialize_struct
+     0.01%  [k] skb_csum_hwoffload_help
+     0.01%  [k] tcp_rack_advance
+     0.01%  [k] tcp_rate_skb_delivered
+     0.01%  [k] tcp_recvmsg
+     0.01%  [.] tokio::runtime::scheduler::multi_thread::worker::<impl tokio::runtime::scheduler::multi_thread::handle::Handle>::schedule_option_task_without_yield
+     0.01%  [.] tokio::runtime::task::core::Core<T,S>::set_stage
+     0.01%  [.] tokio::runtime::task::raw::drop_join_handle_slow
+     0.01%  [.] tokio::runtime::task::state::State::unset_waker_after_complete
+     0.01%  [.] 0x0000000000000840
+     0.01%  [.] 0x0000000000000910
+     0.00%  [.] <a2a_protocol_server::store::task_store::in_memory::InMemoryTaskStore as a2a_protocol_server::store::task_store::TaskStore>::save_appending_history
+     0.00%  [.] <agent_rust::Bench as a2a_protocol_server::executor::AgentExecutor>::execute
+     0.00%  [.] <http::header::map::Drain<T> as core::ops::drop::Drop>::drop
+     0.00%  [.] <tokio::time::instant::Instant as core::ops::arith::Add<core::time::Duration>>::add
+     0.00%  [.] _ZN102_$LT$core..iter..adapters..map..Map$LT$I$C$F$GT$$u20$as$u20$core..iter..traits..iterator..Iterator$GT$4next17h6dcc88ff44f17129E.llvm.2084221121107654806
+     0.00%  [.] _ZN4core3ptr177drop_in_place$LT$a2a_protocol_server..handler..messaging..execute..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..spawn_executor..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0d7da2889778f99bE.llvm.9686839136372301439
+     0.00%  [.] _ZN4core3ptr213drop_in_place$LT$$LT$a2a_protocol_server..streaming..event_queue..in_memory..InMemoryQueueWriter$u20$as$u20$a2a_protocol_server..streaming..event_queue..EventQueueWriter$GT$..write..$u7b$$u7b$closure$u7d$$u7d$$GT$17hc29293b08e7667d6E.llvm.604543823841902506
+     0.00%  [.] _ZN4core3ptr280drop_in_place$LT$tokio..task..task_local..TaskLocalFuture$LT$alloc..string..String$C$a2a_protocol_server..handler..messaging..respond..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..respond_blocking..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h958e321c89e1583cE.llvm.9686839136372301439
+     0.00%  [.] _ZN4core3ptr35drop_in_place$LT$http..uri..Uri$GT$17h70c5d2cd3b858acfE.llvm.9611214990820818791
+     0.00%  [.] _ZN4core3ptr57drop_in_place$LT$a2a_protocol_types..message..Message$GT$17hce002557224b1a48E.llvm.9686839136372301439
+     0.00%  [.] _ZN4core3ptr610drop_in_place$LT$alloc..boxed..Box$LT$tokio..runtime..task..core..Cell$LT$tokio_util..task..task_tracker..TrackedFuture$LT$tracing..instrument..Instrumented$LT$tokio..task..task_local..TaskLocalFuture$LT$bool$C$a2a_protocol_server..store..tenant..context..TenantContext..scope$LT$a2a_protocol_server..handler..messaging..execute..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..spawn_executor..$u7b$$u7b$closure$u7d$$u7d$$C$$LP$$RP$$C$alloc..string..String$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$$GT$$C$alloc..sync..Arc$LT$tokio..runtime..scheduler..multi_thread..handle..Handle$GT$$GT$$GT$$GT$17hdce9d01404008b07E.llvm.4009247214790493386
+     0.00%  [.] _ZN4uuid3fmt13format_simple17hf92e2f1983d65653E.llvm.15021772105861184675
+     0.00%  [k] __folio_put
+     0.00%  [k] __futex_unqueue
+     0.00%  [k] __list_add_valid_or_report
+     0.00%  [k] __tcp_ack_snd_check
+     0.00%  [k] __tcp_cleanup_rbuf
+     0.00%  [k] __x64_sys_recvfrom
+     0.00%  [.] a2a_protocol_server::metrics::Metrics::on_rpc_call
+     0.00%  [.] a2a_protocol_server::rpc_span::in_current_span
+     0.00%  [.] a2a_protocol_types::message::_::<impl serde_core::de::Deserialize for a2a_protocol_types::message::MessageRole>::deserialize
+     0.00%  [.] alloc::alloc::exchange_malloc
+     0.00%  [.] alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_right
+     0.00%  [.] alloc::raw_vec::RawVecInner<A>::reserve::do_reserve_and_handle
+     0.00%  [.] alloc::vec::Vec<T,A>::push
+     0.00%  [k] bbr_lt_bw_sampling
+     0.00%  [k] bbr_quantization_budget
+     0.00%  [k] bpf_fd_pass
+     0.00%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..executor_helpers..EventEmitter..artifact..$u7b$$u7b$closure$u7d$$u7d$$GT$::h8f556f25e69fd3de
+     0.00%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..concurrency..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..acquire_tenant_slot..$u7b$$u7b$closure$u7d$$u7d$$GT$::h6917b99c9c4a4f0f
+     0.00%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..helpers..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..find_task_by_context..$u7b$$u7b$closure$u7d$$u7d$$GT$::h75c575cb0ed583ad
+     0.00%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..validate_and_commit..$u7b$$u7b$closure$u7d$$u7d$$GT$::he77f9dd50a44e7b1
+     0.00%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..serve..connections..Requests..dispatch$LT$a2a_protocol_server..dispatch..rest..RestDispatcher$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$::h0d5b07fe5d6ff236
+     0.00%  [.] core::ptr::drop_in_place<a2a_protocol_types::artifact::Artifact>
+     0.00%  [.] core::ptr::drop_in_place<a2a_protocol_types::artifact::Artifact>
+     0.00%  [.] core::ptr::drop_in_place<core::option::Option<a2a_protocol_server::handler::CancellationEntry>>
+     0.00%  [.] core::ptr::drop_in_place<core::option::Option<http::method::Method>>
+     0.00%  [.] core::ptr::drop_in_place<core::option::Option<tokio::runtime::Timer>>
+     0.00%  [.] core::str::pattern::Pattern::strip_suffix_of
+     0.00%  [k] dev_hard_start_xmit
+     0.00%  [k] do_anonymous_page
+     0.00%  [.] futures_channel::oneshot::channel
+     0.00%  [.] hashbrown::raw::RawTable<T,A>::reserve_rehash
+     0.00%  [.] http::extensions::Extensions::remove
+     0.00%  [.] hyper::proto::h1::encode::Encoder::encode_and_end
+     0.00%  [k] import_ubuf
+     0.00%  [k] ip_queue_xmit
+     0.00%  [k] jiffies_to_usecs
+     0.00%  [k] mutex_unlock
+     0.00%  [k] plist_add
+     0.00%  [k] raw_v4_input
+     0.00%  [k] rw_verify_area
+     0.00%  [k] schedule_hrtimeout_range
+     0.00%  [k] selinux_socket_sock_rcv_skb
+     0.00%  [.] serde_json::de::Deserializer<R>::parse_integer
+     0.00%  [k] skb_copy_datagram_iter
+     0.00%  [k] skb_network_protocol
+     0.00%  [k] sock_recvmsg
+     0.00%  [k] tcp_chrono_stop
+     0.00%  [k] tcp_mstamp_refresh
+     0.00%  [k] tcp_newly_delivered
+     0.00%  [k] tcp_rate_gen
+     0.00%  [k] tcp_rbtree_insert
+     0.00%  [k] tcp_rearm_rto.part.0
+     0.00%  [k] tcp_send_mss
+     0.00%  [k] tcp_small_queue_check.isra.0
+     0.00%  [k] tcp_v4_fill_cb
+     0.00%  [.] tokio::runtime::scheduler::multi_thread::worker::<impl tokio::runtime::scheduler::multi_thread::handle::Handle>::notify_if_work_pending
+     0.00%  [.] tokio::runtime::task::raw::try_read_output
+     0.00%  [.] tokio::task::task_local::LocalKey<T>::sync_scope
+     0.00%  [.] tokio::task::task_local::_::<impl core::ops::drop::Drop for tokio::task::task_local::TaskLocalFuture<T,F>>::drop
+     0.00%  [.] tokio::task::task_local::_::<impl core::ops::drop::Drop for tokio::task::task_local::TaskLocalFuture<T,F>>::drop
+     0.00%  [.] tokio::task::task_local::_::<impl core::ops::drop::Drop for tokio::task::task_local::TaskLocalFuture<T,F>>::drop
+     0.00%  [.] tokio::task::task_local::_::<impl core::ops::drop::Drop for tokio::task::task_local::TaskLocalFuture<T,F>>::drop
+     0.00%  [.] tokio::time::instant::Instant::now
+     0.00%  [.] tracing::instrument::_::<impl core::ops::drop::Drop for tracing::instrument::Instrumented<T>>::drop
+     0.00%  [k] try_to_wake_up
+     0.00%  [k] validate_xmit_skb.isra.0
+     0.00%  [k] xmit_one.constprop.0
+     0.00%  [.] 0x0000000000000858
+     0.00%  [.] 0x000000000000085d
+     0.00%  [.] 0x0000000000000868
+     0.00%  [.] 0x0000000000000893
+     0.00%  [.] 0x000000000000089c
+     0.00%  [.] 0x000000000000089f
+     0.00%  [.] 0x00000000000008fe
+     0.00%  [.] 0x0000000000000920
+     0.00%  [.] <alloc::string::String as core::fmt::Write>::write_str
+     0.00%  [.] <alloc::vec::Vec<T,A> as core::clone::Clone>::clone
+     0.00%  [.] <alloc::vec::Vec<T,A> as core::ops::drop::Drop>::drop
+     0.00%  [.] <alloc::vec::Vec<T,A> as core::ops::drop::Drop>::drop
+     0.00%  [.] <alloc::vec::Vec<T,A> as core::ops::drop::Drop>::drop
+     0.00%  [.] <alloc::vec::into_iter::IntoIter<T,A> as core::ops::drop::Drop>::drop
+     0.00%  [.] <hyper::proto::h1::io::Buffered<T,B> as hyper::proto::h1::io::MemRead>::read_mem
+     0.00%  [.] <serde_json::value::de::EnumDeserializer as serde_core::de::EnumAccess>::variant_seed
+     0.00%  [.] <str as core::fmt::Display>::fmt
+     0.00%  [.] <tokio::util::wake_list::WakeList as core::ops::drop::Drop>::drop
+     0.00%  [.] _RNvCs1Y7DaGC1cwg_7___rustc19___rust_alloc_zeroed
+     0.00%  [.] _ZN15futures_channel4mpsc27BoundedSenderInner$LT$T$GT$13poll_unparked17h9edf1f38a517b67dE.llvm.869415707084962208
+     0.00%  [.] _ZN4core3ptr130drop_in_place$LT$a2a_protocol_server..handler..event_processing..sync_collector..SyncPushJob..run..$u7b$$u7b$closure$u7d$$u7d$$GT$17hf6c950eaa690b3daE.llvm.9686839136372301439
+     0.00%  [.] _ZN4core3ptr143drop_in_place$LT$a2a_protocol_server..handler..event_processing..sync_collector..SyncCollector..collect_events..$u7b$$u7b$closure$u7d$$u7d$$GT$17h3940dd1347f10cb9E.llvm.9686839136372301439
+     0.00%  [.] _ZN4core3ptr143drop_in_place$LT$core..result..Result$LT$a2a_protocol_server..streaming..event_queue..StreamEvent$C$a2a_protocol_types..error..A2aError$GT$$GT$17h2149bcd7baaa62feE.llvm.2483497782379729484
+     0.00%  [.] _ZN4core3ptr169drop_in_place$LT$a2a_protocol_server..handler..messaging..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..on_send_message..$u7b$$u7b$closure$u7d$$u7d$$GT$17ha4f23f2fd5973a00E.llvm.9686839136372301439
+     0.00%  [.] _ZN4core3ptr201drop_in_place$LT$a2a_protocol_server..handler..messaging..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..send_message_inner..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0b126890354df80eE.llvm.9686839136372301439
+     0.00%  [.] _ZN4core3ptr342drop_in_place$LT$core..option..Option$LT$a2a_protocol_server..store..tenant..context..TenantContext..scope$LT$a2a_protocol_server..handler..messaging..execute..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..spawn_executor..$u7b$$u7b$closure$u7d$$u7d$$C$$LP$$RP$$C$alloc..string..String$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17hfbab37245ca5e811E.llvm.16684841707856143315
+     0.00%  [.] _ZN5alloc11collections9vec_deque21VecDeque$LT$T$C$A$GT$9wrap_copy17hc2e2351f66a2a7a8E.llvm.11943696331921308346
+     0.00%  [.] _ZN5tokio7runtime4task7harness20Harness$LT$T$C$S$GT$8complete17h4e0ea08c6ad524f6E.llvm.4009247214790493386
+     0.00%  [.] _ZN5tokio7runtime4task7harness20Harness$LT$T$C$S$GT$8complete17h562548a39a7d864aE.llvm.4009247214790493386
+     0.00%  [k] __alloc_frozen_pages_noprof
+     0.00%  [k] __check_object_size
+     0.00%  [k] __mem_cgroup_uncharge
+     0.00%  [k] __vmf_anon_prepare
+     0.00%  [k] __wake_up_sync_key
+     0.00%  [k] _raw_spin_rq_lock_irqsave
+     0.00%  [.] a2a_protocol_server::rpc_span::in_executor_span
+     0.00%  [.] alloc::collections::vec_deque::VecDeque<T,A>::grow
+     0.00%  [.] alloc::fmt::format
+     0.00%  [.] alloc::sync::Arc<T,A>::drop_slow
+     0.00%  [.] alloc::vec::in_place_collect::<impl alloc::vec::spec_from_iter::SpecFromIter<T,I> for alloc::vec::Vec<T>>::from_iter
+     0.00%  [k] alloc_pages_noprof
+     0.00%  [k] avc_has_perm
+     0.00%  [k] bbr_cwnd_event
+     0.00%  [.] core::ptr::drop_in_place$LT$$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$..get..$u7b$$u7b$closure$u7d$$u7d$$GT$::he6532654f53fe12a
+     0.00%  [.] core::ptr::drop_in_place$LT$$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$..save..$u7b$$u7b$closure$u7d$$u7d$$GT$::h9ff3c93283b6ba4a
+     0.00%  [.] core::ptr::drop_in_place$LT$$LT$a2a_protocol_server..store..task_store..in_memory..InMemoryTaskStore$u20$as$u20$a2a_protocol_server..store..task_store..TaskStore$GT$..save_status_delta..$u7b$$u7b$closure$u7d$$u7d$$GT$::h41741af05ab8c1e2
+     0.00%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..admission..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..reject_in_flight_send..$u7b$$u7b$closure$u7d$$u7d$$GT$::haa756c68e9195525
+     0.00%  [.] core::ptr::drop_in_place$LT$a2a_protocol_server..handler..messaging..idempotency..$LT$impl$u20$a2a_protocol_server..handler..RequestHandler$GT$..claim_send_key..$u7b$$u7b$closure$u7d$$u7d$$GT$::hbe8e7e79bcdaa041
+     0.00%  [.] core::ptr::drop_in_place$LT$core..option..Option$LT$a2a_protocol_server..serve..service$LT$a2a_protocol_server..dispatch..jsonrpc..JsonRpcDispatcher$GT$..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$::h5b2690105e497f23
+     0.00%  [.] core::ptr::drop_in_place<core::option::Option<tokio::runtime::Timer>>
+     0.00%  [k] dst_release
+     0.00%  [k] ep_start_scan
+     0.00%  [k] eventfd_write
+     0.00%  [.] futures_channel::mpsc::queue::Queue<T>::pop_spin
+     0.00%  [.] hashbrown::raw::RawTable<T,A>::reserve_rehash
+     0.00%  [.] hyper::proto::h1::dispatch::SenderDropGuard::set
+     0.00%  [k] inet_send_prepare
+     0.00%  [k] inode_has_perm
+     0.00%  [k] irqentry_exit_to_user_mode
+     0.00%  [k] is_vmalloc_addr
+     0.00%  [k] kmalloc_reserve
+     0.00%  [k] lock_sock_nested
+     0.00%  [k] memcg1_commit_charge
+     0.00%  [.] mio::waker::Waker::wake
+     0.00%  [k] napi_consume_skb
+     0.00%  [k] netdev_core_pick_tx
+     0.00%  [k] plist_del
+     0.00%  [k] prep_new_page
+     0.00%  [k] rb_erase
+     0.00%  [k] rmqueue_pcplist
+     0.00%  [k] run_timer_softirq
+     0.00%  [k] sched_balance_domains
+     0.00%  [k] sched_balance_softirq
+     0.00%  [k] security_file_permission
+     0.00%  [k] security_socket_recvmsg
+     0.00%  [k] selinux_ip_postroute_compat
+     0.00%  [k] selinux_xfrm_sock_rcv_skb
+     0.00%  [.] serde_json::value::de::<impl serde_core::de::Deserializer for serde_json::value::Value>::deserialize_struct
+     0.00%  [k] sk_forced_mem_schedule
+     0.00%  [k] sk_free
+     0.00%  [k] sk_reset_timer
+     0.00%  [k] skb_do_copy_data_nocache
+     0.00%  [k] skb_push
+     0.00%  [k] smp_call_function_many_cond
+     0.00%  [.] std::sys::sync::mutex::futex::Mutex::lock_contended
+     0.00%  [k] tcp_data_queue
+     0.00%  [k] tcp_delack_max
+     0.00%  [k] tcp_inbound_hash
+     0.00%  [k] tcp_measure_rcv_mss
+     0.00%  [k] tcp_options_write.isra.0
+     0.00%  [k] tcp_schedule_loss_probe
+     0.00%  [k] tcp_send_delayed_ack
+     0.00%  [k] tcp_stream_alloc_skb
+     0.00%  [.] tokio::runtime::scheduler::multi_thread::worker::<impl tokio::runtime::scheduler::multi_thread::handle::Handle>::notify_parked_local
+     0.00%  [.] tokio::runtime::task::core::Core<T,S>::set_stage
+     0.00%  [.] tokio::runtime::task::raw::drop_join_handle_slow
+     0.00%  [.] tokio::sync::mutex::Mutex$LT$T$GT$::lock::_$u7b$$u7b$closure$u7d$$u7d$::h6530a8f1567448e5
+     0.00%  [.] tokio::task::task_local::_::<impl core::ops::drop::Drop for tokio::task::task_local::TaskLocalFuture<T,F>>::drop
+     0.00%  [.] tokio::time::instant::Instant::checked_add
+     0.00%  [.] tokio::util::wake_list::WakeList::wake_all
+     0.00%  [.] tokio_util::sync::cancellation_token::CancellationToken::cancel
+     0.00%  [.] tokio_util::sync::cancellation_token::CancellationToken::child_token
+     0.00%  [.] tracing::span::Span::in_scope
+     0.00%  [k] try_charge_memcg
+     0.00%  [k] virtqueue_get_buf
+     0.00%  [k] zap_present_ptes.constprop.0
+     0.00%  [.] 0x000000000000088a
+     0.00%  [.] 0x00000000000008cf
+     0.00%  [.] 0x00000000000008d2
+     0.00%  [.] 0x000000000000090c
+     0.00%  [.] 0x0000000000000917
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

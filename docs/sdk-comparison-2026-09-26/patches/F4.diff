@@ -1,0 +1,81 @@
+diff --git a/crates/a2a-protocol-types/src/signing.rs b/crates/a2a-protocol-types/src/signing.rs
+index f39e2842..21a390b1 100644
+--- a/crates/a2a-protocol-types/src/signing.rs
++++ b/crates/a2a-protocol-types/src/signing.rs
+@@ -396,6 +396,13 @@ pub fn signature_header(sig: &AgentCardSignature) -> A2aResult<SignatureHeader>
+ 
+ // ── JWS Verification ────────────────────────────────────────────────────────
+ 
++/// DER header of a P-256 `SubjectPublicKeyInfo` (`id-ecPublicKey`,
++/// `prime256v1`, 66-byte BIT STRING); the uncompressed point follows it.
++const P256_SPKI_PREFIX: [u8; 26] = [
++    0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a,
++    0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
++];
++
+ /// Verifies an [`AgentCardSignature`] against an [`AgentCard`] using the
+ /// given public key.
+ ///
+@@ -447,8 +454,11 @@ pub fn signature_header(sig: &AgentCardSignature) -> A2aResult<SignatureHeader>
+ ///
+ /// * `card` — The agent card that was signed.
+ /// * `sig` — The signature to verify.
+-/// * `public_key_der` — DER-encoded public key (`SubjectPublicKeyInfo`),
+-///   already established by the caller to be currently valid.
++/// * `public_key_der` — the P-256 public key, either DER-encoded
++///   (`SubjectPublicKeyInfo`, e.g. `openssl pkey -pubout -outform DER`) or
++///   as the raw 65-byte uncompressed point `0x04 || X || Y` (what ring's
++///   `KeyPair::public_key()` and a JWK's `x`/`y` give), already established
++///   by the caller to be currently valid.
+ ///
+ /// # Errors
+ ///
+@@ -476,9 +486,11 @@ pub fn verify_agent_card(
+         return Err(A2aError::internal(format!("unsupported algorithm: {alg}")));
+     }
+ 
+-    // Verify with ES256.
+-    let public_key =
+-        signature::UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_FIXED, public_key_der);
++    // Verify with ES256. ring takes the raw point, so unwrap a P-256 SPKI.
++    let point = public_key_der
++        .strip_prefix(&P256_SPKI_PREFIX[..])
++        .unwrap_or(public_key_der);
++    let public_key = signature::UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_FIXED, point);
+     public_key
+         .verify(signing_input.as_bytes(), &sig_bytes)
+         .map_err(|_| A2aError::internal("signature verification failed"))
+diff --git a/crates/a2a-protocol-types/tests/signing_tests.rs b/crates/a2a-protocol-types/tests/signing_tests.rs
+index 92bece17..f6bd2f47 100644
+--- a/crates/a2a-protocol-types/tests/signing_tests.rs
++++ b/crates/a2a-protocol-types/tests/signing_tests.rs
+@@ -470,3 +470,29 @@ fn verify_rejects_modified_protected_header() {
+         "verification must fail when protected header is modified"
+     );
+ }
++
++// ── deep-claims F4: the documented key format (DER SubjectPublicKeyInfo) ────
++//
++// Fixture made with OpenSSL 3.0.13, independently of ring:
++//   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform DER -out k.der
++//   openssl pkcs8 -topk8 -nocrypt -inform DER -in k.der -outform DER   # PKCS#8
++//   openssl pkey -inform DER -in k.der -pubout -outform DER           # SPKI
++const F4_PKCS8_HEX: &str = "308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b02010104208b6e12af3b4d5b9db27aba7cd6376dd2fa7826f37479fa69fa044166887109f1a14403420004f274f10f617575549e7b5579f8479bfcdf001bacc53e97478efe8952ebd7c7ae2de28d2136a730a5fe9d9b9eab692f11cd93c39809e18fc2f3e3aaeeb8554808";
++const F4_SPKI_HEX: &str = "3059301306072a8648ce3d020106082a8648ce3d03010703420004f274f10f617575549e7b5579f8479bfcdf001bacc53e97478efe8952ebd7c7ae2de28d2136a730a5fe9d9b9eab692f11cd93c39809e18fc2f3e3aaeeb8554808";
++
++fn f4_hex(s: &str) -> Vec<u8> {
++    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
++}
++
++#[test]
++fn verify_accepts_the_documented_spki_der_key() {
++    let card = minimal_card();
++    let spki = f4_hex(F4_SPKI_HEX);
++    let sig = sign_agent_card(&card, &f4_hex(F4_PKCS8_HEX), Some("openssl")).unwrap();
++    verify_agent_card(&card, &sig, &spki).expect("SPKI DER, as the rustdoc documents, must verify");
++    // The raw point keeps working, and tampering is still caught with SPKI.
++    verify_agent_card(&card, &sig, &spki[26..]).unwrap();
++    let mut tampered = card.clone();
++    tampered.name = "Evil".into();
++    assert!(verify_agent_card(&tampered, &sig, &spki).is_err());
++}

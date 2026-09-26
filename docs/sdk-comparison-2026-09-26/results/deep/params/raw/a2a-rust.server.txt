@@ -1,0 +1,30 @@
+=== a_omitted
+REQ: POST http://127.0.0.1:7601/  
+BODY: {"jsonrpc":"2.0","id":1,"method":"GetExtendedAgentCard"}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":1,"result":{"capabilities":{"extendedAgentCard":true,"extensions":[{"description":"Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.","required":false,"uri":"https://a2a-rust.com/extensions/idempotency/v1"},{"description":"A failed task says why in a form a caller can match on, rather than only in prose.","required":false,"uri":"https://a2a-rust.com/extensions/failure/v1"}],"pushNotifications":true,"streaming":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"description":"Benchmark agent (a2a-rust)","name":"bench-agent","skills":[],"supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7601"},{"protocolBinding":"HTTP+JSON","protocolVersion":"1.0","url":"http://127.0.0.1:7602"},{"protocolBinding":"GRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7603"}],"version":"1.0.0"}}
+
+=== b_null
+REQ: POST http://127.0.0.1:7601/  
+BODY: {"jsonrpc":"2.0","id":2,"method":"GetExtendedAgentCard","params":null}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":2,"result":{"capabilities":{"extendedAgentCard":true,"extensions":[{"description":"Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.","required":false,"uri":"https://a2a-rust.com/extensions/idempotency/v1"},{"description":"A failed task says why in a form a caller can match on, rather than only in prose.","required":false,"uri":"https://a2a-rust.com/extensions/failure/v1"}],"pushNotifications":true,"streaming":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"description":"Benchmark agent (a2a-rust)","name":"bench-agent","skills":[],"supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7601"},{"protocolBinding":"HTTP+JSON","protocolVersion":"1.0","url":"http://127.0.0.1:7602"},{"protocolBinding":"GRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7603"}],"version":"1.0.0"}}
+
+=== c_empty_obj
+REQ: POST http://127.0.0.1:7601/  
+BODY: {"jsonrpc":"2.0","id":3,"method":"GetExtendedAgentCard","params":{}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":3,"result":{"capabilities":{"extendedAgentCard":true,"extensions":[{"description":"Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.","required":false,"uri":"https://a2a-rust.com/extensions/idempotency/v1"},{"description":"A failed task says why in a form a caller can match on, rather than only in prose.","required":false,"uri":"https://a2a-rust.com/extensions/failure/v1"}],"pushNotifications":true,"streaming":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"description":"Benchmark agent (a2a-rust)","name":"bench-agent","skills":[],"supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7601"},{"protocolBinding":"HTTP+JSON","protocolVersion":"1.0","url":"http://127.0.0.1:7602"},{"protocolBinding":"GRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7603"}],"version":"1.0.0"}}
+
+=== d_empty_arr
+REQ: POST http://127.0.0.1:7601/  
+BODY: {"jsonrpc":"2.0","id":4,"method":"GetExtendedAgentCard","params":[]}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":4,"result":{"capabilities":{"extendedAgentCard":true,"extensions":[{"description":"Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.","required":false,"uri":"https://a2a-rust.com/extensions/idempotency/v1"},{"description":"A failed task says why in a form a caller can match on, rather than only in prose.","required":false,"uri":"https://a2a-rust.com/extensions/failure/v1"}],"pushNotifications":true,"streaming":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"description":"Benchmark agent (a2a-rust)","name":"bench-agent","skills":[],"supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7601"},{"protocolBinding":"HTTP+JSON","protocolVersion":"1.0","url":"http://127.0.0.1:7602"},{"protocolBinding":"GRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7603"}],"version":"1.0.0"}}
+
+=== e_tenant
+REQ: POST http://127.0.0.1:7601/  
+BODY: {"jsonrpc":"2.0","id":5,"method":"GetExtendedAgentCard","params":{"tenant":""}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":5,"result":{"capabilities":{"extendedAgentCard":true,"extensions":[{"description":"Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.","required":false,"uri":"https://a2a-rust.com/extensions/idempotency/v1"},{"description":"A failed task says why in a form a caller can match on, rather than only in prose.","required":false,"uri":"https://a2a-rust.com/extensions/failure/v1"}],"pushNotifications":true,"streaming":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"description":"Benchmark agent (a2a-rust)","name":"bench-agent","skills":[],"supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7601"},{"protocolBinding":"HTTP+JSON","protocolVersion":"1.0","url":"http://127.0.0.1:7602"},{"protocolBinding":"GRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7603"}],"version":"1.0.0"}}
+

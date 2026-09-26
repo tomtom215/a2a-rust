@@ -1,0 +1,275 @@
+diff --git a/crates/a2a-protocol-client/src/builder/mod.rs b/crates/a2a-protocol-client/src/builder/mod.rs
+index deac5060..fcb2e85d 100644
+--- a/crates/a2a-protocol-client/src/builder/mod.rs
++++ b/crates/a2a-protocol-client/src/builder/mod.rs
+@@ -441,6 +441,16 @@ impl ClientBuilder {
+         self
+     }
+ 
++    /// Uses `tls` for the JSON-RPC and REST transports' HTTPS connections —
++    /// e.g. [`tls_config_with_extra_roots`](crate::tls::tls_config_with_extra_roots)
++    /// to trust a private CA. (gRPC: see `with_grpc_tls_config`.)
++    #[cfg(feature = "tls-rustls")]
++    #[must_use]
++    pub fn with_tls_config(mut self, tls: rustls::ClientConfig) -> Self {
++        self.config.tls_client_config = Some(tls);
++        self
++    }
++
+     /// Disables TLS (plain HTTP only).
+     #[must_use]
+     pub const fn without_tls(mut self) -> Self {
+diff --git a/crates/a2a-protocol-client/src/builder/transport_factory.rs b/crates/a2a-protocol-client/src/builder/transport_factory.rs
+index 53e53d59..1f1e4c74 100644
+--- a/crates/a2a-protocol-client/src/builder/transport_factory.rs
++++ b/crates/a2a-protocol-client/src/builder/transport_factory.rs
+@@ -211,24 +211,36 @@ fn http_transport(
+     endpoint: &str,
+ ) -> ClientResult<Box<dyn Transport>> {
+     match canonical_binding(binding) {
+-        Some(BINDING_JSONRPC) => Ok(Box::new(
+-            JsonRpcTransport::with_all_timeouts(
++        Some(BINDING_JSONRPC) => {
++            let t = JsonRpcTransport::with_all_timeouts(
+                 endpoint,
+                 config.request_timeout,
+                 config.stream_connect_timeout,
+                 config.connection_timeout,
+             )?
+-            .with_max_response_size(config.max_response_size),
+-        )),
+-        Some(BINDING_HTTP_JSON) => Ok(Box::new(
+-            RestTransport::with_all_timeouts(
++            .with_max_response_size(config.max_response_size);
++            #[cfg(feature = "tls-rustls")]
++            let t = match &config.tls_client_config {
++                Some(tls) => t.with_tls_config(tls.clone(), config.connection_timeout),
++                None => t,
++            };
++            Ok(Box::new(t))
++        }
++        Some(BINDING_HTTP_JSON) => {
++            let t = RestTransport::with_all_timeouts(
+                 endpoint,
+                 config.request_timeout,
+                 config.stream_connect_timeout,
+                 config.connection_timeout,
+             )?
+-            .with_max_response_size(config.max_response_size),
+-        )),
++            .with_max_response_size(config.max_response_size);
++            #[cfg(feature = "tls-rustls")]
++            let t = match &config.tls_client_config {
++                Some(tls) => t.with_tls_config(tls.clone(), config.connection_timeout),
++                None => t,
++            };
++            Ok(Box::new(t))
++        }
+         Some(BINDING_GRPC) => Err(ClientError::Transport(GRPC_NOT_SYNC.into())),
+         _ => Err(ClientError::Transport(format!(
+             "unknown protocol binding: {binding}"
+diff --git a/crates/a2a-protocol-client/src/config.rs b/crates/a2a-protocol-client/src/config.rs
+index db3c08c1..c67a0e2c 100644
+--- a/crates/a2a-protocol-client/src/config.rs
++++ b/crates/a2a-protocol-client/src/config.rs
+@@ -226,6 +226,12 @@ pub struct ClientConfig {
+     /// TLS configuration.
+     pub tls: TlsConfig,
+ 
++    /// A custom rustls configuration for the JSON-RPC and REST transports —
++    /// e.g. [`tls_config_with_extra_roots`](crate::tls::tls_config_with_extra_roots)
++    /// for a private CA. `None` uses the bundled Mozilla roots.
++    #[cfg(feature = "tls-rustls")]
++    pub tls_client_config: Option<rustls::ClientConfig>,
++
+     /// Default tenant identifier for multi-tenancy.
+     ///
+     /// When set, this tenant is included in all requests unless overridden
+@@ -252,6 +258,8 @@ impl ClientConfig {
+             max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
+             max_event_size: crate::streaming::DEFAULT_MAX_EVENT_SIZE,
+             tls: TlsConfig::Disabled,
++            #[cfg(feature = "tls-rustls")]
++            tls_client_config: None,
+             tenant: None,
+         }
+     }
+@@ -272,6 +280,8 @@ impl Default for ClientConfig {
+             max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
+             max_event_size: crate::streaming::DEFAULT_MAX_EVENT_SIZE,
+             tls: TlsConfig::default(),
++            #[cfg(feature = "tls-rustls")]
++            tls_client_config: None,
+             tenant: None,
+         }
+     }
+diff --git a/crates/a2a-protocol-client/src/tls.rs b/crates/a2a-protocol-client/src/tls.rs
+index 381c59a2..4ece44cc 100644
+--- a/crates/a2a-protocol-client/src/tls.rs
++++ b/crates/a2a-protocol-client/src/tls.rs
+@@ -13,7 +13,7 @@
+ //!
+ //! For enterprise/internal PKI, use [`tls_config_with_extra_roots`] to create
+ //! a [`rustls::ClientConfig`] with additional trust anchors, then pass it to
+-//! the client builder.
++//! [`ClientBuilder::with_tls_config`](crate::ClientBuilder::with_tls_config).
+ 
+ use std::sync::Arc;
+ use std::time::Duration;
+diff --git a/crates/a2a-protocol-client/src/transport/jsonrpc.rs b/crates/a2a-protocol-client/src/transport/jsonrpc.rs
+index 039ba799..7ab41378 100644
+--- a/crates/a2a-protocol-client/src/transport/jsonrpc.rs
++++ b/crates/a2a-protocol-client/src/transport/jsonrpc.rs
+@@ -153,11 +153,26 @@ impl JsonRpcTransport {
+         })
+     }
+ 
+-    /// Sets the maximum size in bytes of a buffered (non-streaming) response
+-    /// body. Responses exceeding the cap fail with a non-retryable transport
+-    /// error instead of being buffered without bound.
++    /// Replaces the TLS configuration, e.g. with
++    /// [`tls_config_with_extra_roots`](crate::tls::tls_config_with_extra_roots)
++    /// to trust a private CA.
+     ///
+-    /// Defaults to 32 MiB.
++    /// (`with_max_response_size`: responses exceeding the cap fail with a
++    /// non-retryable transport error; defaults to 32 MiB.)
++    #[cfg(feature = "tls-rustls")]
++    #[must_use]
++    pub fn with_tls_config(
++        mut self,
++        tls: rustls::ClientConfig,
++        connection_timeout: Duration,
++    ) -> Self {
++        Arc::make_mut(&mut self.inner).client =
++            crate::tls::build_https_client_with_connect_timeout(tls, connection_timeout);
++        self
++    }
++
++    /// Sets the maximum size in bytes of a buffered (non-streaming) response
++    /// body; see the note above.
+     #[must_use]
+     pub fn with_max_response_size(mut self, max_bytes: usize) -> Self {
+         Arc::make_mut(&mut self.inner).max_response_size = max_bytes;
+diff --git a/crates/a2a-protocol-client/src/transport/rest/mod.rs b/crates/a2a-protocol-client/src/transport/rest/mod.rs
+index 1c000526..fdd723b0 100644
+--- a/crates/a2a-protocol-client/src/transport/rest/mod.rs
++++ b/crates/a2a-protocol-client/src/transport/rest/mod.rs
+@@ -179,11 +179,26 @@ impl RestTransport {
+         })
+     }
+ 
+-    /// Sets the maximum size in bytes of a buffered (non-streaming) response
+-    /// body. Responses exceeding the cap fail with a non-retryable transport
+-    /// error instead of being buffered without bound.
++    /// Replaces the TLS configuration, e.g. with
++    /// [`tls_config_with_extra_roots`](crate::tls::tls_config_with_extra_roots)
++    /// to trust a private CA.
+     ///
+-    /// Defaults to 32 MiB.
++    /// (`with_max_response_size`: responses exceeding the cap fail with a
++    /// non-retryable transport error; defaults to 32 MiB.)
++    #[cfg(feature = "tls-rustls")]
++    #[must_use]
++    pub fn with_tls_config(
++        mut self,
++        tls: rustls::ClientConfig,
++        connection_timeout: Duration,
++    ) -> Self {
++        Arc::make_mut(&mut self.inner).client =
++            crate::tls::build_https_client_with_connect_timeout(tls, connection_timeout);
++        self
++    }
++
++    /// Sets the maximum size in bytes of a buffered (non-streaming) response
++    /// body; see the note above.
+     #[must_use]
+     pub fn with_max_response_size(mut self, max_bytes: usize) -> Self {
+         Arc::make_mut(&mut self.inner).max_response_size = max_bytes;
+diff --git a/crates/a2a-protocol-client/tests/deep_private_ca.rs b/crates/a2a-protocol-client/tests/deep_private_ca.rs
+new file mode 100644
+index 00000000..965d70d6
+--- /dev/null
++++ b/crates/a2a-protocol-client/tests/deep_private_ca.rs
+@@ -0,0 +1,81 @@
++// deep-claims P1 regression (scratch copy only): the JSON-RPC and REST
++// transports must be able to trust a private CA. Ports 7790-7799.
++#![cfg(feature = "tls-rustls")]
++
++use std::convert::Infallible;
++use std::sync::Arc;
++
++use a2a_protocol_client::ClientBuilder;
++use a2a_protocol_client::tls::tls_config_with_extra_roots;
++use a2a_protocol_server::{JsonRpcDispatcher, RequestHandlerBuilder, RestDispatcher};
++use a2a_protocol_types::error::ErrorCode;
++use a2a_protocol_types::params::TaskQueryParams;
++
++struct Noop;
++a2a_protocol_server::agent_executor!(Noop, |_ctx, _q| async { Ok(()) });
++
++fn port() -> u16 {
++    (7790..7800)
++        .find(|p| std::net::TcpListener::bind(("127.0.0.1", *p)).is_ok())
++        .expect("free port in 7790..7800")
++}
++
++async fn serve_tls(rest: bool) -> (u16, rustls_pki_types::CertificateDer<'static>) {
++    let mut ca_p = rcgen::CertificateParams::new(vec![]).unwrap();
++    ca_p.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
++    let ca_key = rcgen::KeyPair::generate().unwrap();
++    let ca = ca_p.self_signed(&ca_key).unwrap();
++    let issuer = rcgen::Issuer::new(ca_p, ca_key);
++    let leaf_key = rcgen::KeyPair::generate().unwrap();
++    let leaf = rcgen::CertificateParams::new(vec!["localhost".into()]).unwrap().signed_by(&leaf_key, &issuer).unwrap();
++    let cfg = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
++        .with_safe_default_protocol_versions()
++        .unwrap()
++        .with_no_client_auth()
++        .with_single_cert(
++            vec![leaf.der().clone()],
++            rustls_pki_types::PrivateKeyDer::Pkcs8(leaf_key.serialize_der().into()),
++        )
++        .unwrap();
++    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(cfg));
++    let h = Arc::new(RequestHandlerBuilder::new(Noop).build().unwrap());
++    let (j, r) = (Arc::new(JsonRpcDispatcher::new(h.clone())), Arc::new(RestDispatcher::new(h)));
++    let p = port();
++    let l = tokio::net::TcpListener::bind(("127.0.0.1", p)).await.unwrap();
++    tokio::spawn(async move {
++        loop {
++            let (s, _) = l.accept().await.unwrap();
++            let (acc, j, r) = (acceptor.clone(), j.clone(), r.clone());
++            tokio::spawn(async move {
++                let Ok(tls) = acc.accept(s).await else { return };
++                let svc = hyper::service::service_fn(move |req| {
++                    let (j, r) = (j.clone(), r.clone());
++                    async move {
++                        Ok::<_, Infallible>(if rest { r.dispatch(req).await } else { j.dispatch(req).await })
++                    }
++                });
++                let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
++                    .serve_connection(hyper_util::rt::TokioIo::new(tls), svc)
++                    .await;
++            });
++        }
++    });
++    (p, ca.der().clone())
++}
++
++#[tokio::test]
++async fn jsonrpc_and_rest_clients_trust_a_private_ca() {
++    for (rest, binding) in [(false, "JSONRPC"), (true, "HTTP+JSON")] {
++        let (p, ca) = serve_tls(rest).await;
++        let client = ClientBuilder::new(format!("https://localhost:{p}"))
++            .with_protocol_binding(binding)
++            .with_tls_config(tls_config_with_extra_roots(vec![ca]))
++            .build()
++            .unwrap();
++        // Reaching the server at all proves the TLS handshake succeeded: the
++        // unknown task comes back as the server's TaskNotFound.
++        let err = client.get_task(TaskQueryParams::new("no-such-task")).await.unwrap_err();
++        let a2a: a2a_protocol_types::error::A2aError = err.into();
++        assert_eq!(a2a.code, ErrorCode::TaskNotFound, "{binding}: {a2a:?}");
++    }
++}

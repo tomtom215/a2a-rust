@@ -1,0 +1,196 @@
+diff --git a/crates/a2a-protocol-server/tests/deep_regressions.rs b/crates/a2a-protocol-server/tests/deep_regressions.rs
+new file mode 100644
+index 00000000..fabf4f8d
+--- /dev/null
++++ b/crates/a2a-protocol-server/tests/deep_regressions.rs
+@@ -0,0 +1,190 @@
++// Regression tests for deep-claims F1, F2, P2 (scratch copy only; not upstream).
++// Loopback ports 7760-7799 only.
++#![cfg(feature = "axum")]
++
++use std::future::Future;
++use std::pin::Pin;
++use std::sync::atomic::{AtomicU16, Ordering};
++use std::sync::{Arc, Mutex};
++use std::time::Duration;
++
++use bytes::Bytes;
++use http_body_util::{BodyExt, Full};
++use hyper_util::client::legacy::Client;
++use hyper_util::rt::TokioExecutor;
++
++use a2a_protocol_server::{
++    A2aRouter, AgentCardProducer, DynamicAgentCardHandler, EventEmitter, InMemoryTaskStore,
++    JsonRpcDispatcher, RateLimitConfig, RateLimitInterceptor,
++    RequestHandlerBuilder, RestDispatcher, TaskStore,
++    serve_with_addr,
++};
++use a2a_protocol_server::executor::AgentExecutor;
++use a2a_protocol_server::request_context::RequestContext;
++use a2a_protocol_server::streaming::EventQueueWriter;
++use a2a_protocol_types::agent_card::{AgentCard, AgentInterface};
++use a2a_protocol_types::error::{A2aError, A2aResult};
++use a2a_protocol_types::params::ListTasksParams;
++use a2a_protocol_types::responses::TaskListResponse;
++use a2a_protocol_types::task::{Task, TaskId, TaskState};
++
++static NEXT: AtomicU16 = AtomicU16::new(0);
++fn port() -> u16 {
++    for _ in 0..40 {
++        let p = 7760 + NEXT.fetch_add(1, Ordering::SeqCst) % 40;
++        if std::net::TcpListener::bind(("127.0.0.1", p)).is_ok() {
++            return p;
++        }
++    }
++    panic!("no free port in 7760..7800");
++}
++
++#[derive(Clone, Default)]
++struct Echo(Arc<Mutex<Vec<Option<String>>>>);
++impl AgentExecutor for Echo {
++    fn execute<'a>(
++        &'a self,
++        ctx: &'a RequestContext,
++        queue: &'a dyn EventQueueWriter,
++    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
++        Box::pin(async move {
++            self.0.lock().unwrap().push(ctx.tenant().map(str::to_owned));
++            EventEmitter::new(ctx, queue).status(TaskState::Completed).await
++        })
++    }
++}
++
++struct DeadStore(InMemoryTaskStore);
++type F<'a, T> = Pin<Box<dyn Future<Output = A2aResult<T>> + Send + 'a>>;
++impl TaskStore for DeadStore {
++    fn save<'a>(&'a self, t: &'a Task) -> F<'a, ()> { self.0.save(t) }
++    fn get<'a>(&'a self, id: &'a TaskId) -> F<'a, Option<Task>> { self.0.get(id) }
++    fn list<'a>(&'a self, p: &'a ListTasksParams) -> F<'a, TaskListResponse> { self.0.list(p) }
++    fn insert_if_absent<'a>(&'a self, t: &'a Task) -> F<'a, bool> { self.0.insert_if_absent(t) }
++    fn delete<'a>(&'a self, id: &'a TaskId) -> F<'a, ()> { self.0.delete(id) }
++    fn count<'a>(&'a self) -> F<'a, u64> { Box::pin(async { Err(A2aError::internal("db down")) }) }
++}
++
++fn card() -> AgentCard {
++    AgentCard::new("deep", "1.0.0", AgentInterface::jsonrpc("http://127.0.0.1:1"))
++}
++
++async fn req(
++    method: &str,
++    url: &str,
++    hdrs: &[(&str, &str)],
++    body: Option<serde_json::Value>,
++) -> (u16, hyper::HeaderMap, String) {
++    let c = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
++    let mut b = hyper::Request::builder().method(method).uri(url);
++    for (k, v) in hdrs {
++        b = b.header(*k, *v);
++    }
++    let body = match body {
++        Some(v) => {
++            b = b.header("content-type", "application/json");
++            Full::new(Bytes::from(v.to_string()))
++        }
++        None => Full::new(Bytes::new()),
++    };
++    let r = c.request(b.body(body).unwrap()).await.unwrap();
++    let (s, h) = (r.status().as_u16(), r.headers().clone());
++    let b = r.into_body().collect().await.unwrap().to_bytes();
++    (s, h, String::from_utf8_lossy(&b).into_owned())
++}
++
++fn send_body(id: &str) -> serde_json::Value {
++    serde_json::json!({"message":{"messageId":id,"role":"ROLE_USER","parts":[{"text":"hi"}]}})
++}
++
++const V: (&str, &str) = ("a2a-version", "1.0");
++
++// ── F1 ──────────────────────────────────────────────────────────────────────
++
++#[tokio::test]
++async fn f1_a2a_router_card_supports_conditional_get() {
++    let h = Arc::new(RequestHandlerBuilder::new(Echo::default()).with_agent_card(card()).build().unwrap());
++    let p = port();
++    let l = tokio::net::TcpListener::bind(("127.0.0.1", p)).await.unwrap();
++    let app = A2aRouter::new(h).into_router();
++    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
++    let url = format!("http://127.0.0.1:{p}/.well-known/agent-card.json");
++    let (s, hd, _) = req("GET", &url, &[], None).await;
++    assert_eq!(s, 200);
++    let etag = hd.get("etag").expect("A2aRouter card must carry an ETag").to_str().unwrap().to_owned();
++    assert!(hd.contains_key("last-modified"));
++    assert!(hd.contains_key("cache-control"));
++    let (s, _, b) = req("GET", &url, &[("if-none-match", &etag)], None).await;
++    assert_eq!((s, b.len()), (304, 0));
++}
++
++struct Fixed(AgentCard);
++impl AgentCardProducer for Fixed {
++    fn produce<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<AgentCard>> + Send + 'a>> {
++        Box::pin(async move { Ok(self.0.clone()) })
++    }
++}
++
++#[tokio::test]
++async fn f1_dynamic_handler_last_modified_is_stable_for_unchanged_card() {
++    let dh = DynamicAgentCardHandler::new(Fixed(card()));
++    let mk = |ims: Option<&str>| {
++        let mut b = hyper::Request::builder().uri("/.well-known/agent-card.json");
++        if let Some(v) = ims {
++            b = b.header("if-modified-since", v);
++        }
++        b.body(Full::new(Bytes::new())).unwrap()
++    };
++    let r1 = dh.handle(&mk(None)).await;
++    let lm1 = r1.headers()["last-modified"].to_str().unwrap().to_owned();
++    tokio::time::sleep(Duration::from_millis(1100)).await;
++    let r2 = dh.handle(&mk(Some(&lm1))).await;
++    assert_eq!(r2.status(), 304, "unchanged card must revalidate via If-Modified-Since");
++    assert_eq!(r2.headers()["last-modified"].to_str().unwrap(), lm1);
++}
++
++// ── F2 ──────────────────────────────────────────────────────────────────────
++
++#[tokio::test]
++async fn f2_ready_probes_the_store_on_rest_and_jsonrpc() {
++    let h = Arc::new(
++        RequestHandlerBuilder::new(Echo::default())
++            .with_task_store(DeadStore(InMemoryTaskStore::new()))
++            .build()
++            .unwrap(),
++    );
++    let (pr, pj) = (port(), port());
++    serve_with_addr(("127.0.0.1", pr), RestDispatcher::new(h.clone())).await.unwrap();
++    serve_with_addr(("127.0.0.1", pj), JsonRpcDispatcher::new(h)).await.unwrap();
++    for p in [pr, pj] {
++        let (s, _, b) = req("GET", &format!("http://127.0.0.1:{p}/health"), &[], None).await;
++        assert_eq!(s, 200, "liveness stays constant: {b}");
++        let (s, _, b) = req("GET", &format!("http://127.0.0.1:{p}/ready"), &[], None).await;
++        assert_eq!(s, 503, "readiness must fail when the store is down: {b}");
++        assert!(b.contains("not_ready"), "{b}");
++    }
++}
++
++// ── P2 ──────────────────────────────────────────────────────────────────────
++
++#[tokio::test]
++async fn p2_rate_limit_refusal_is_429_with_retry_after() {
++    let h = Arc::new(
++        RequestHandlerBuilder::new(Echo::default())
++            .with_interceptor(RateLimitInterceptor::new(RateLimitConfig::default().with_requests_per_window(1).with_window_secs(60)).unwrap())
++            .build()
++            .unwrap(),
++    );
++    let (pr, pj) = (port(), port());
++    serve_with_addr(("127.0.0.1", pr), RestDispatcher::new(h.clone())).await.unwrap();
++    serve_with_addr(("127.0.0.1", pj), JsonRpcDispatcher::new(h)).await.unwrap();
++    let (s, _, _) = req("POST", &format!("http://127.0.0.1:{pr}/message:send"), &[V], Some(send_body("r1"))).await;
++    assert_eq!(s, 200);
++    let (s, hd, b) = req("POST", &format!("http://127.0.0.1:{pr}/message:send"), &[V], Some(send_body("r2"))).await;
++    assert_eq!(s, 429, "REST: {b}");
++    assert!(hd.contains_key("retry-after"));
++    let rpc = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"SendMessage","params":send_body("r3")});
++    let (s, hd, b) = req("POST", &format!("http://127.0.0.1:{pj}/"), &[V], Some(rpc)).await;
++    assert_eq!(s, 429, "JSON-RPC: {b}");
++    assert!(hd.contains_key("retry-after"));
++}

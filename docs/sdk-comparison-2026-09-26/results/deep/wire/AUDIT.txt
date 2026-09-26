@@ -1,0 +1,38 @@
+== client-rs--server-rs.jsonl  requests: {'jsonrpc': 73, 'rest': 73}
+  S-CT: 64 occurrence(s), 12 distinct
+     x48  POST /rest/message:send application/json
+     x4  GET /rest/tasks application/json
+     x2  GET /rest/tasks/01a0ddab-b14c-7076-860c-93e8890c4674/pushNotificationConfigs application/json
+     x2  GET /rest/tasks/01a0ddab-b36a-73ca-9cb4-2922998e7420 application/json
+     x1  GET /rest/tasks/01a0ddab-b13a-712e-ba1e-1cbdf81bbba1 application/json
+     x1  POST /rest/tasks/01a0ddab-b14c-7076-860c-93e8890c4674/pushNotificationConfigs application/json
+== client-rs--server-rust.jsonl  requests: {'jsonrpc': 73, 'rest': 74}
+  C-ROUTE: 1 occurrence(s), 1 distinct
+     x1  GET /tasks/a0fb687a-7cd5-4ca8-885a-7126bfb2481d/subscribe
+  S-CT: 63 occurrence(s), 13 distinct
+     x46  POST /message:send application/json
+     x4  GET /tasks application/json
+     x2  GET /tasks/ae922378-6a76-4cd4-bcbc-07063051d555/pushNotificationConfigs application/json
+     x2  GET /tasks/ef1be288-0537-4c8e-a7eb-68cac78ecfff application/json
+     x1  GET /tasks/d26d2e74-a436-434d-b680-f79796d50f7e application/json
+     x1  POST /tasks/ae922378-6a76-4cd4-bcbc-07063051d555/pushNotificationConfigs application/json
+== client-rust--server-rs.jsonl  requests: {'jsonrpc': 73, 'rest': 73}
+  C-PAR: 1 occurrence(s), 1 distinct
+     x1  GetExtendedAgentCard: params=null
+  S-CT: 64 occurrence(s), 12 distinct
+     x48  POST /rest/message:send application/json
+     x4  GET /rest/tasks application/json
+     x2  GET /rest/tasks/01a0ddab-8a64-7619-a2c0-fc1ab0ffecc6/pushNotificationConfigs application/json
+     x2  GET /rest/tasks/01a0ddab-8c99-7214-9abc-bc7628745579 application/json
+     x1  GET /rest/tasks/01a0ddab-8a59-725f-bc59-46f6ac1cfadb application/json
+     x1  POST /rest/tasks/01a0ddab-8a64-7619-a2c0-fc1ab0ffecc6/pushNotificationConfigs application/json
+== client-rust--server-rust.jsonl  requests: {'jsonrpc': 73, 'rest': 73}
+  C-PAR: 1 occurrence(s), 1 distinct
+     x1  GetExtendedAgentCard: params=null
+  S-CT: 63 occurrence(s), 13 distinct
+     x46  POST /message:send application/json
+     x4  GET /tasks application/json
+     x2  GET /tasks/597f18a6-4e7a-442b-8223-8ed90dc9e046/pushNotificationConfigs application/json
+     x2  GET /tasks/dddb9690-cadf-4049-8b67-4ef0c8b77cb5 application/json
+     x1  GET /tasks/13a1980f-ac0f-4c5f-9cf1-b18b96846bf7 application/json
+     x1  POST /tasks/597f18a6-4e7a-442b-8223-8ed90dc9e046/pushNotificationConfigs application/json

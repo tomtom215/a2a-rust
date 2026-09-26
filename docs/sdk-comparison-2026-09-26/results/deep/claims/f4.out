@@ -1,0 +1,11 @@
+ --> tests/f4_verify_key.rs:2:5
+  |
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+F4 spki.len=91 raw.len=65 raw[0]=0x04 spki ends with raw: true
+F4 verify(card, sig, SPKI DER)   -> Err(A2aError { code: InternalError, message: "signature verification failed", data: None, auth_rejection: None })
+F4 verify(card, sig, raw point)  -> Ok(())
+F4 verify(tampered, sig, raw)    -> is_err=true
+F4 verify(card, sig, other raw)  -> is_err=true
+F4 verify(card, sig, spki[26..]) -> Ok(())
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

@@ -1,0 +1,30 @@
+=== a_omitted
+REQ: POST http://127.0.0.1:7631/  
+BODY: {"jsonrpc":"2.0","id":1,"method":"GetExtendedAgentCard"}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":1,"error":{"code":-32700,"message":"parse error: unexpected end of JSON input","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","metadata":{"timestamp":"2026-09-26T12:16:30Z"},"reason":"PARSE_ERROR"}]}}
+
+=== b_null
+REQ: POST http://127.0.0.1:7631/  
+BODY: {"jsonrpc":"2.0","id":2,"method":"GetExtendedAgentCard","params":null}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":2,"result":{"supportedInterfaces":[{"url":"http://127.0.0.1:7631/","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"capabilities":{"pushNotifications":false,"streaming":false,"extendedAgentCard":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"description":"d","name":"go-EXTENDED","skills":[{"description":"s","id":"s","name":"s","tags":["t"]}],"version":"1.0.0"}}
+
+=== c_empty_obj
+REQ: POST http://127.0.0.1:7631/  
+BODY: {"jsonrpc":"2.0","id":3,"method":"GetExtendedAgentCard","params":{}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":3,"result":{"supportedInterfaces":[{"url":"http://127.0.0.1:7631/","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"capabilities":{"pushNotifications":false,"streaming":false,"extendedAgentCard":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"description":"d","name":"go-EXTENDED","skills":[{"description":"s","id":"s","name":"s","tags":["t"]}],"version":"1.0.0"}}
+
+=== d_empty_arr
+REQ: POST http://127.0.0.1:7631/  
+BODY: {"jsonrpc":"2.0","id":4,"method":"GetExtendedAgentCard","params":[]}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":4,"error":{"code":-32602,"message":"invalid params: json: cannot unmarshal array into Go value of type a2a.GetExtendedAgentCardRequest","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","metadata":{"timestamp":"2026-09-26T12:16:30Z"},"reason":"INVALID_PARAMS"}]}}
+
+=== e_tenant
+REQ: POST http://127.0.0.1:7631/  
+BODY: {"jsonrpc":"2.0","id":5,"method":"GetExtendedAgentCard","params":{"tenant":""}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":5,"result":{"supportedInterfaces":[{"url":"http://127.0.0.1:7631/","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"capabilities":{"pushNotifications":false,"streaming":false,"extendedAgentCard":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"description":"d","name":"go-EXTENDED","skills":[{"description":"s","id":"s","name":"s","tags":["t"]}],"version":"1.0.0"}}
+

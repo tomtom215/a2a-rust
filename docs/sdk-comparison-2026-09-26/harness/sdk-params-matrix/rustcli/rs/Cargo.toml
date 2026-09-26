@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name = "cli-rs"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[dependencies]
+a2a = { package = "a2a-lf", version = "=0.3.1" }
+a2a-client = { package = "a2a-client-lf", version = "=0.2.5" }
+tokio = { version = "1", features = ["full"] }
+[workspace]

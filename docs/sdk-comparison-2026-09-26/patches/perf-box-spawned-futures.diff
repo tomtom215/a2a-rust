@@ -1,0 +1,40 @@
+diff --git a/crates/a2a-protocol-server/src/handler/event_processing/background/mod.rs b/crates/a2a-protocol-server/src/handler/event_processing/background/mod.rs
+index 53e5fe26..185f9a87 100644
+--- a/crates/a2a-protocol-server/src/handler/event_processing/background/mod.rs
++++ b/crates/a2a-protocol-server/src/handler/event_processing/background/mod.rs
+@@ -76,7 +76,7 @@ impl RequestHandler {
+             .background()
+             .spawn(crate::rpc_span::in_child_span(
+                 "a2a.process_events",
+-                crate::store::tenant::TenantContext::scope(tenant, async move {
++                crate::store::tenant::TenantContext::scope(tenant, Box::pin(async move {
+                     let super::ProcessorLinks { cancel, gate } = links;
+                     // Closes the gate however this task ends — including by panic —
+                     // so no writer waits out its timeout on a processor that is gone.
+@@ -178,7 +178,7 @@ impl RequestHandler {
+                             }
+                         }
+                     }
+-                }),
++                })),
+             ));
+     }
+ }
+diff --git a/crates/a2a-protocol-server/src/handler/messaging/respond.rs b/crates/a2a-protocol-server/src/handler/messaging/respond.rs
+index e5d7eef3..1a350dc3 100644
+--- a/crates/a2a-protocol-server/src/handler/messaging/respond.rs
++++ b/crates/a2a-protocol-server/src/handler/messaging/respond.rs
+@@ -167,11 +167,11 @@ impl RequestHandler {
+             .in_flight
+             .background()
+             .spawn(crate::rpc_span::in_current_span(
+-                crate::store::tenant::TenantContext::scope(tenant, async move {
++                crate::store::tenant::TenantContext::scope(tenant, Box::pin(async move {
+                     collector
+                         .collect_events(reader, task.id, executor_handle)
+                         .await
+-                }),
++                })),
+             ));
+         let collected = collection.await.map_err(|e| {
+             crate::error::ServerError::Internal(format!("event collection ended abnormally: {e}"))

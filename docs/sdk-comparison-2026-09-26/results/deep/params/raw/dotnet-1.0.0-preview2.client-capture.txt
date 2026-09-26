@@ -1,0 +1,7 @@
+POST /
+  Host: 127.0.0.1:7695
+  A2A-Version: 1.0
+  Transfer-Encoding: chunked
+  Content-Type: application/json
+BODY: '{"jsonrpc":"2.0","id":"9f5180d9-a892-4fc0-962b-c3b55c4d7e43","method":"GetExtendedAgentCard","params":{}}'
+

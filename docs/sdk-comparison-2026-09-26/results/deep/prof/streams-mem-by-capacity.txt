@@ -1,0 +1,8 @@
+cap=default rep=1 {"server": "a2a-rust", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 9556, "rss_held_kib": 163816, "kib_per_stream": 154.3}
+cap=default rep=2 {"server": "a2a-rust", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 9392, "rss_held_kib": 163308, "kib_per_stream": 153.9}
+cap=128 rep=1 {"server": "a2a-rust", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 9500, "rss_held_kib": 115572, "kib_per_stream": 106.1}
+cap=128 rep=2 {"server": "a2a-rust", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 9428, "rss_held_kib": 115252, "kib_per_stream": 105.8}
+cap=32 rep=1 {"server": "a2a-rust", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 9376, "rss_held_kib": 79056, "kib_per_stream": 69.7}
+cap=32 rep=2 {"server": "a2a-rust", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 9396, "rss_held_kib": 79104, "kib_per_stream": 69.7}
+cap=8 rep=1 {"server": "a2a-rust", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 9216, "rss_held_kib": 70376, "kib_per_stream": 61.2}
+cap=8 rep=2 {"server": "a2a-rust", "streams": 1000, "streams_with_data": 1000, "rss_base_kib": 9344, "rss_held_kib": 70144, "kib_per_stream": 60.8}

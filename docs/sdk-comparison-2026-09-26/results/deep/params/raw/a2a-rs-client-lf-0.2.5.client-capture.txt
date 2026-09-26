@@ -1,0 +1,13 @@
+GET /.well-known/agent-card.json
+  accept: */*
+  host: 127.0.0.1:7697
+BODY: ''
+
+POST /
+  a2a-version: 1.0
+  content-type: application/json
+  accept: */*
+  host: 127.0.0.1:7697
+  content-length: 105
+BODY: '{"jsonrpc":"2.0","id":"01a0ddae-cc4d-7784-96e0-196132131852","method":"GetExtendedAgentCard","params":{}}'
+

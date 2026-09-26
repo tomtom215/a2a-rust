@@ -1,0 +1,30 @@
+=== a_omitted
+REQ: POST http://127.0.0.1:7611/jsonrpc  
+BODY: {"jsonrpc":"2.0","id":1,"method":"GetExtendedAgentCard"}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":1,"error":{"code":-32700,"message":"invalid params: ProtoJSON error: invalid type: null, expected struct lf.a2a.v1.GetExtendedAgentCardRequest","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","metadata":{"timestamp":"2026-09-26T12:14:16.771926903+00:00"},"reason":"PARSE_ERROR"}]}}
+
+=== b_null
+REQ: POST http://127.0.0.1:7611/jsonrpc  
+BODY: {"jsonrpc":"2.0","id":2,"method":"GetExtendedAgentCard","params":null}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":2,"error":{"code":-32700,"message":"invalid params: ProtoJSON error: invalid type: null, expected struct lf.a2a.v1.GetExtendedAgentCardRequest","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","metadata":{"timestamp":"2026-09-26T12:14:16.778885363+00:00"},"reason":"PARSE_ERROR"}]}}
+
+=== c_empty_obj
+REQ: POST http://127.0.0.1:7611/jsonrpc  
+BODY: {"jsonrpc":"2.0","id":3,"method":"GetExtendedAgentCard","params":{}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":3,"result":{"capabilities":{"extendedAgentCard":true,"pushNotifications":true,"streaming":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"description":"Benchmark agent (a2a-rs)","name":"bench-agent","supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7611/jsonrpc"},{"protocolBinding":"HTTP+JSON","protocolVersion":"1.0","url":"http://127.0.0.1:7611/rest"},{"protocolBinding":"GRPC","protocolVersion":"1.0","url":"127.0.0.1:7613"}],"version":"1.0.0"}}
+
+=== d_empty_arr
+REQ: POST http://127.0.0.1:7611/jsonrpc  
+BODY: {"jsonrpc":"2.0","id":4,"method":"GetExtendedAgentCard","params":[]}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":4,"error":{"code":-32700,"message":"invalid params: ProtoJSON error: invalid type: sequence, expected struct lf.a2a.v1.GetExtendedAgentCardRequest","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","metadata":{"timestamp":"2026-09-26T12:14:16.792583936+00:00"},"reason":"PARSE_ERROR"}]}}
+
+=== e_tenant
+REQ: POST http://127.0.0.1:7611/jsonrpc  
+BODY: {"jsonrpc":"2.0","id":5,"method":"GetExtendedAgentCard","params":{"tenant":""}}
+HTTP 200
+RESP: {"jsonrpc":"2.0","id":5,"result":{"capabilities":{"extendedAgentCard":true,"pushNotifications":true,"streaming":true},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"description":"Benchmark agent (a2a-rs)","name":"bench-agent","supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"http://127.0.0.1:7611/jsonrpc"},{"protocolBinding":"HTTP+JSON","protocolVersion":"1.0","url":"http://127.0.0.1:7611/rest"},{"protocolBinding":"GRPC","protocolVersion":"1.0","url":"127.0.0.1:7613"}],"version":"1.0.0"}}
+

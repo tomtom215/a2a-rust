@@ -1,0 +1,170 @@
+diff --git a/crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs b/crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs
+index 1efa5996..89fa0b05 100644
+--- a/crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs
++++ b/crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs
+@@ -164,7 +164,9 @@ pub(super) fn error_response(
+     // A refused credential answers 401/403 over HTTP, the body unchanged
+     // (N36): JSON-RPC runs over HTTP, and a client refreshes a token on the
+     // status, not on a -32600 it cannot tell from a malformed request.
+-    let status = if err.auth_rejection().is_some() {
++    // A throttling refusal likewise answers 429 + Retry-After (RFC 6585 §4),
++    // so HTTP-level clients and proxies can back off.
++    let status = if err.auth_rejection().is_some() || err.retry_after().is_some() {
+         err.http_status()
+     } else {
+         200
+@@ -173,6 +175,7 @@ pub(super) fn error_response(
+         Ok(body) => {
+             let mut resp = json_response(status, body);
+             crate::dispatch::add_auth_challenge(resp.headers_mut(), err);
++            crate::dispatch::add_retry_after(resp.headers_mut(), err);
+             resp
+         }
+         Err(e) => internal_serialization_error(id, &e),
+diff --git a/crates/a2a-protocol-server/src/dispatch/mod.rs b/crates/a2a-protocol-server/src/dispatch/mod.rs
+index 3139c31e..f0f491fa 100644
+--- a/crates/a2a-protocol-server/src/dispatch/mod.rs
++++ b/crates/a2a-protocol-server/src/dispatch/mod.rs
+@@ -262,6 +262,13 @@ pub(crate) fn validate_version_header(
+ /// Adds the `WWW-Authenticate` challenge a `401` for `err` must carry
+ /// (RFC 9110 §15.5.2; audit N36). Every HTTP binding answers a refused
+ /// credential through this, so none can send a `401` without one.
++/// Adds `Retry-After` (RFC 9110 §10.2.3) to a throttling refusal's response.
++pub(crate) fn add_retry_after(headers: &mut hyper::HeaderMap, err: &crate::error::ServerError) {
++    if let Some(secs) = err.retry_after() {
++        headers.insert(hyper::header::RETRY_AFTER, hyper::header::HeaderValue::from(secs));
++    }
++}
++
+ pub(crate) fn add_auth_challenge(headers: &mut hyper::HeaderMap, err: &crate::error::ServerError) {
+     let Some(challenge) = err.challenge() else {
+         return;
+diff --git a/crates/a2a-protocol-server/src/dispatch/rest/error_response.rs b/crates/a2a-protocol-server/src/dispatch/rest/error_response.rs
+index 52f346f7..1b29e711 100644
+--- a/crates/a2a-protocol-server/src/dispatch/rest/error_response.rs
++++ b/crates/a2a-protocol-server/src/dispatch/rest/error_response.rs
+@@ -92,6 +92,7 @@ pub fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<By
+         |body| {
+             let mut resp = build_json_response(status, body);
+             crate::dispatch::add_auth_challenge(resp.headers_mut(), err);
++            crate::dispatch::add_retry_after(resp.headers_mut(), err);
+             resp
+         },
+     )
+diff --git a/crates/a2a-protocol-server/src/error/mod.rs b/crates/a2a-protocol-server/src/error/mod.rs
+index 29ce0173..b068a146 100644
+--- a/crates/a2a-protocol-server/src/error/mod.rs
++++ b/crates/a2a-protocol-server/src/error/mod.rs
+@@ -160,6 +160,9 @@ impl ServerError {
+                 _ => 403,
+             };
+         }
++        if self.retry_after().is_some() {
++            return 429;
++        }
+         match self {
+             Self::PayloadTooLarge(_) => 413,
+             Self::Overloaded(_) => 503,
+@@ -178,6 +181,16 @@ impl ServerError {
+         }
+     }
+ 
++    /// Seconds a throttled caller should wait, when this error is a
++    /// throttling refusal (e.g. from `RateLimitInterceptor`).
++    #[must_use]
++    pub(crate) const fn retry_after(&self) -> Option<u64> {
++        match self {
++            Self::Protocol(e) => e.retry_after(),
++            _ => None,
++        }
++    }
++
+     /// The canonical status name (`google.rpc.Code`) the HTTP bindings put in
+     /// an AIP-193 error body's `status`, agreeing with
+     /// [`http_status`](Self::http_status) and the gRPC dispatcher's code.
+@@ -186,6 +199,7 @@ impl ServerError {
+         match self.auth_rejection().map(AuthRejection::kind) {
+             Some(AuthRejectionKind::Unauthenticated) => "UNAUTHENTICATED",
+             Some(_) => "PERMISSION_DENIED",
++            None if self.retry_after().is_some() => "RESOURCE_EXHAUSTED",
+             None => self.to_a2a_error().code.grpc_status(),
+         }
+     }
+diff --git a/crates/a2a-protocol-server/src/rate_limit/window.rs b/crates/a2a-protocol-server/src/rate_limit/window.rs
+index e8f30464..9f1f0803 100644
+--- a/crates/a2a-protocol-server/src/rate_limit/window.rs
++++ b/crates/a2a-protocol-server/src/rate_limit/window.rs
+@@ -70,7 +70,8 @@ impl RateLimitInterceptor {
+             return Err(A2aError::internal(format!(
+                 "rate limit exceeded: {limit} requests per {} seconds",
+                 self.config.window_secs
+-            )));
++            ))
++            .with_retry_after(self.config.window_secs));
+         }
+         Ok(())
+     }
+@@ -157,7 +158,8 @@ impl RateLimitInterceptor {
+             return Err(A2aError::internal(format!(
+                 "rate limit exceeded: {limit} requests per {} seconds",
+                 self.config.window_secs
+-            )));
++            ))
++            .with_retry_after(self.config.window_secs));
+         }
+         Ok(())
+     }
+diff --git a/crates/a2a-protocol-types/src/error.rs b/crates/a2a-protocol-types/src/error.rs
+index 33c31c30..efc3b9ef 100644
+--- a/crates/a2a-protocol-types/src/error.rs
++++ b/crates/a2a-protocol-types/src/error.rs
+@@ -306,6 +306,11 @@ pub struct A2aError {
+     /// binding answers it with its own status instead.
+     #[serde(skip)]
+     auth_rejection: Option<AuthRejection>,
++    /// Set when this error is a throttling refusal; see
++    /// [`retry_after`](Self::retry_after). Not on the wire: HTTP bindings
++    /// answer it with `429` and a `Retry-After` header instead.
++    #[serde(skip)]
++    retry_after: Option<u64>,
+ }
+ 
+ impl A2aError {
+@@ -327,6 +332,7 @@ impl A2aError {
+             message: message.into(),
+             data: None,
+             auth_rejection: None,
++            retry_after: None,
+         }
+     }
+ 
+@@ -338,6 +344,7 @@ impl A2aError {
+             message: message.into(),
+             data: Some(data),
+             auth_rejection: None,
++            retry_after: None,
+         }
+     }
+ 
+@@ -378,6 +385,21 @@ impl A2aError {
+         self.auth_rejection.as_ref()
+     }
+ 
++    /// Marks this error as a throttling refusal the caller may retry after
++    /// `secs` seconds (HTTP `429` + `Retry-After`).
++    #[must_use]
++    pub const fn with_retry_after(mut self, secs: u64) -> Self {
++        self.retry_after = Some(secs);
++        self
++    }
++
++    /// Seconds after which a throttled request may be retried, if this error
++    /// is a throttling refusal. Never read from the wire.
++    #[must_use]
++    pub const fn retry_after(&self) -> Option<u64> {
++        self.retry_after
++    }
++
+     /// Creates a "Task not found" error for the given task ID string.
+     #[must_use]
+     pub fn task_not_found(task_id: impl fmt::Display) -> Self {

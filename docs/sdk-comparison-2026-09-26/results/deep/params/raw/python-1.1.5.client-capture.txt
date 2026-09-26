@@ -1,0 +1,19 @@
+GET /.well-known/agent-card.json
+  Host: 127.0.0.1:7691
+  Accept: */*
+  Accept-Encoding: gzip, deflate
+  Connection: keep-alive
+  User-Agent: python-httpx/0.28.1
+BODY: ''
+
+POST /
+  Host: 127.0.0.1:7691
+  Accept: */*
+  Accept-Encoding: gzip, deflate
+  Connection: keep-alive
+  User-Agent: python-httpx/0.28.1
+  A2A-Version: 1.0
+  Content-Length: 105
+  Content-Type: application/json
+BODY: '{"method":"GetExtendedAgentCard","params":{},"id":"4ed2c48d-03c1-4406-a1de-098a31a007c7","jsonrpc":"2.0"}'
+

@@ -1,0 +1,111 @@
+diff --git a/crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs b/crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs
+index 446f25c9..e54bbfc0 100644
+--- a/crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs
++++ b/crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs
+@@ -38,6 +38,9 @@ pub trait AgentCardProducer: Send + Sync + 'static {
+ pub struct DynamicAgentCardHandler<P> {
+     producer: P,
+     cache_config: CacheConfig,
++    /// `(etag, last_modified)` of the last card served: `Last-Modified`
++    /// advances only when the card's content (its `ETag`) changes.
++    last_seen: std::sync::Mutex<(String, String)>,
+ }
+ 
+ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
+@@ -47,6 +50,7 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
+         Self {
+             producer,
+             cache_config: CacheConfig::default(),
++            last_seen: std::sync::Mutex::new((String::new(), String::new())),
+         }
+     }
+ 
+@@ -57,6 +61,19 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
+         self
+     }
+ 
++    /// The `Last-Modified` value for a card whose `ETag` is `etag`: the time
++    /// this handler first served that content, not the time of this request.
++    fn last_modified_for(&self, etag: &str) -> String {
++        let mut seen = self
++            .last_seen
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner);
++        if seen.0 != etag {
++            *seen = (etag.to_owned(), format_http_date(std::time::SystemTime::now()));
++        }
++        seen.1.clone()
++    }
++
+     /// Handles an agent card request with conditional caching support.
+     ///
+     /// Serializes the produced card, computes an `ETag`, and checks
+@@ -83,7 +100,7 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
+             Ok(card) => match serde_json::to_vec(&card) {
+                 Ok(json) => {
+                     let etag = make_etag(&json);
+-                    let last_modified = format_http_date(std::time::SystemTime::now());
++                    let last_modified = self.last_modified_for(&etag);
+ 
+                     let not_modified = is_not_modified(
+                         if_none_match.as_deref(),
+@@ -124,7 +141,7 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
+             Ok(card) => match serde_json::to_vec(&card) {
+                 Ok(json) => {
+                     let etag = make_etag(&json);
+-                    let last_modified = format_http_date(std::time::SystemTime::now());
++                    let last_modified = self.last_modified_for(&etag);
+                     hyper::Response::builder()
+                         .status(200)
+                         .header("content-type", "application/json")
+diff --git a/crates/a2a-protocol-server/src/dispatch/axum_adapter.rs b/crates/a2a-protocol-server/src/dispatch/axum_adapter.rs
+index 75ad2387..3fe51187 100644
+--- a/crates/a2a-protocol-server/src/dispatch/axum_adapter.rs
++++ b/crates/a2a-protocol-server/src/dispatch/axum_adapter.rs
+@@ -144,6 +144,14 @@ impl A2aRouter {
+         // (2 MiB) and silently ignores `max_request_body_size`, so the knob that
+         // works on the JSON-RPC/REST dispatchers would be a no-op here.
+         let max_body = self.config.max_request_body_size;
++        // Same handler the JSON-RPC and REST dispatchers use, so the card gets
++        // ETag / Last-Modified / Cache-Control and conditional 304s here too.
++        let card_handler = Arc::new(
++            self.handler
++                .agent_card
++                .as_ref()
++                .and_then(|card| crate::agent_card::StaticAgentCardHandler::new(card).ok()),
++        );
+         let state = A2aState {
+             handler: self.handler,
+             config: Arc::new(self.config),
+@@ -163,7 +171,13 @@ impl A2aRouter {
+             // Extended card
+             .route("/extendedAgentCard", get(handle_extended_card))
+             // Agent card discovery
+-            .route("/.well-known/agent-card.json", get(handle_agent_card))
++            .route(
++                "/.well-known/agent-card.json",
++                get(move |req: axum::extract::Request| {
++                    let card_handler = Arc::clone(&card_handler);
++                    async move { handle_agent_card(card_handler.as_ref().as_ref(), &req) }
++                }),
++            )
+             // Health check
+             .route("/health", get(handle_health))
+             .route("/ready", get(handle_ready))
+@@ -515,10 +529,13 @@ async fn handle_extended_card(
+     .await
+ }
+ 
+-async fn handle_agent_card(State(state): State<A2aState>) -> axum::response::Response {
+-    state.handler.agent_card.as_ref().map_or_else(
++fn handle_agent_card(
++    card_handler: Option<&crate::agent_card::StaticAgentCardHandler>,
++    req: &axum::extract::Request,
++) -> axum::response::Response {
++    card_handler.map_or_else(
+         || plain_error(404, "agent card not configured"),
+-        |card| axum::Json(card).into_response(),
++        |h| h.handle(req).map(Body::new),
+     )
+ }
+ 
