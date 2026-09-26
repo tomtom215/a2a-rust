@@ -1959,6 +1959,45 @@ async fn a_live_token_alone_refuses_a_resend() {
     );
 }
 
+/// The other side of the test above: a token already cancelled (its
+/// executor was told to stop, and cleanup has not yet removed the entry) is
+/// not an executor in flight, so a continuation is admitted.
+#[tokio::test]
+async fn a_cancelled_token_alone_does_not_refuse_a_resend() {
+    let handler = make_handler();
+    let task_id = TaskId::new("cancelled-token-only");
+    handler
+        .task_store
+        .save(&Task {
+            id: task_id.clone(),
+            context_id: ContextId::new("ctx-cancelled-token"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        })
+        .await
+        .unwrap();
+    let token = tokio_util::sync::CancellationToken::new();
+    token.cancel();
+    handler.cancellation_tokens.write().await.insert(
+        task_id.clone(),
+        CancellationEntry {
+            turn: std::sync::Arc::default(),
+            token,
+            created_at: Instant::now(),
+        },
+    );
+
+    let mut resend = make_params(Some("ctx-cancelled-token"));
+    resend.message.task_id = Some(task_id.clone());
+    let result = handler.on_send_message(resend, false, None).await;
+    assert!(
+        result.is_ok(),
+        "a cancelled token is not an executor in flight, got {result:?}"
+    );
+}
+
 /// SPEC §3.4.3: a message carrying only a `taskId` continues that task in
 /// the task's own context. A constant context in its place would find no
 /// stored task there and refuse the continuation as a cross-context send.

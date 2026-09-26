@@ -32,7 +32,7 @@ pub(super) fn stamp_status(event: &mut StreamResponse) {
 #[cfg(test)]
 mod tests {
     use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-    use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+    use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
     use super::stamp_status;
 
@@ -48,6 +48,7 @@ mod tests {
     fn timestamp(event: &StreamResponse) -> Option<&str> {
         match event {
             StreamResponse::StatusUpdate(u) => u.status.timestamp.as_deref(),
+            StreamResponse::Task(t) => t.status.timestamp.as_deref(),
             _ => None,
         }
     }
@@ -71,5 +72,23 @@ mod tests {
         let mut event = update(status);
         stamp_status(&mut event);
         assert_eq!(timestamp(&event), Some("2026-01-02T03:04:05Z"));
+    }
+
+    #[test]
+    fn a_task_snapshot_without_a_timestamp_is_stamped() {
+        let mut event = StreamResponse::Task(Task {
+            id: TaskId::new("t"),
+            context_id: ContextId::new("c"),
+            status: TaskStatus::new(TaskState::Submitted),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        });
+        stamp_status(&mut event);
+        let ts = timestamp(&event).expect("stamped");
+        assert!(
+            a2a_protocol_types::parse_iso8601_to_unix_millis(ts).is_some(),
+            "{ts} parses"
+        );
     }
 }

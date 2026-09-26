@@ -828,8 +828,12 @@ three bindings under the full and minimal profiles. The cause is the suite,
 not N34: the requirement declares no `expected_error`, so it demands that an
 unsupported media type be accepted. It is baselined, with the evidence in
 `docs/official-tck-findings.md` §22. The tally to quote is now 87 of 114
-passing and 5 failing (README, ROADMAP, conformance history). The fix touches
-no packaged file; the manifest was regenerated after it.
+passing and 5 failing (README, ROADMAP, conformance history). The in-diff
+mutation run on the same head found three surviving mutants, one each in
+`status_stamp.rs`, `dispatch/grpc/helpers.rs` and `messaging/admission.rs`;
+each now has a test that fails under its mutation. Those are packaged
+files, so the 0.14.0 notes were touched in the same commit and the manifest
+regenerated after it.
 
 **What the next session should do first:** check CI on the branch head,
 then the `swarm_scale`

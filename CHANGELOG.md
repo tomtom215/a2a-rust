@@ -804,6 +804,18 @@ someone scanning for such changes would look.
   incremental state CI never builds and nearly filled a 38 GB allowance.
   `prove_gates_fail.sh` already turned it off; its comment saying CI did not
   is corrected.
+- **Three mutants the release PR's in-diff mutation run found surviving
+  are now caught by tests**: stamping a task snapshot's status timestamp
+  (N35; only status updates were tested), the gRPC `PERMISSION_DENIED`
+  mapping for a refused credential (N36; its tests lived in the SDK crate,
+  which the server crate's mutation run does not execute), and admitting a
+  send when the task's only token is already cancelled (N21). Tests only;
+  no behaviour changed.
+- **The official TCK's `CORE-SEND-003` is baselined** as a defect in the
+  suite: it declares no expected error, so it demands that a message part
+  with an unsupported media type be accepted, and it began failing when N34
+  started answering the `ContentTypeNotSupportedError` §3.1.1 requires.
+  Evidence in `docs/official-tck-findings.md` §22.
 
 ### Correction, 2026-09-24: claims that were not true when published
 
