@@ -187,7 +187,11 @@ impl RestDispatcher {
         let tenant = tenant.as_deref();
 
         // Extract HTTP headers BEFORE consuming the request body.
-        let headers = extract_headers(req.headers());
+        let mut headers = extract_headers(req.headers());
+        // What `PathSegmentTenantResolver` reads; a real header cannot carry
+        // this name, so a client cannot supply it (the WebSocket dispatcher
+        // inserts it the same way).
+        headers.insert(":path".to_owned(), path.clone());
 
         // Boxed on clippy's own recommendation: the dispatch future is ~16 KiB,
         // and moving that much state around on the stack per request costs

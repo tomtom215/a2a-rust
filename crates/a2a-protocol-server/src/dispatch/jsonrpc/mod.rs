@@ -194,7 +194,10 @@ impl JsonRpcDispatcher {
         }
 
         // Extract HTTP headers BEFORE consuming the body.
-        let headers = extract_headers(req.headers());
+        let mut headers = extract_headers(req.headers());
+        // What `PathSegmentTenantResolver` reads; a real header cannot carry
+        // this name, so a client cannot supply it.
+        headers.insert(":path".to_owned(), req.uri().path().to_owned());
 
         // Read body with size limit (default 4 MiB).
         let body_bytes = match read_body_limited(
