@@ -16,9 +16,9 @@
 //! # Setup
 //!
 //! ```bash
-//! # Hosted provider:
+//! # Hosted provider (GENAI_MODEL picks it; the default is the local model):
 //! export OPENAI_API_KEY=sk-...
-//! cargo run -p genai-a2a-agent
+//! GENAI_MODEL=gpt-4o-mini cargo run -p genai-a2a-agent
 //!
 //! # Fully local (Ollama or llama-server on :11434), no key needed:
 //! GENAI_MODEL=qwen3.5:0.8b cargo run -p genai-a2a-agent

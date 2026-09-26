@@ -2,11 +2,12 @@
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 # This crate is deliberately NOT a member of the root workspace, and it has its
-# own Cargo.lock. `agntcy-slim-rpc` brings 379 transitive dependencies —
-# including `aws-lc-sys`, a native C crypto build — against 12 for
-# `a2a-protocol-types` at its defaults and 188 for `a2a-protocol-server` at all
-# features — normal edges only, as `cargo tree --edges normal` counts them; add
-# build-dependencies and the server reading is 222. None
+# own Cargo.lock. `agntcy-slim-rpc` brings 359 transitive dependencies —
+# including `aws-lc-sys`, a native C crypto build — against 11 for
+# `a2a-protocol-types` at its defaults and 206 for `a2a-protocol-server` at all
+# features — normal edges only, as `cargo tree --edges normal` counts them,
+# deduplicated by name and version, 2026-09-25; add build-dependencies and the
+# server reading is 240. None
 # of that belongs in the lockfile, the `deny.toml` allow-list, or the audit
 # surface of the four published crates, which do not depend on this one.
 #
@@ -18,7 +19,7 @@
 
 [package]
 name         = "a2a-protocol-slimrpc"
-version      = "0.5.0"
+version      = "0.6.0"
 edition      = "2024"
 rust-version = "1.88"
 license      = "Apache-2.0"
@@ -38,7 +39,7 @@ categories   = ["network-programming", "api-bindings"]
 # this binding exists to be adopted by third parties.
 #
 # What independence does NOT buy, and the reason the SDK requirement below is a
-# tight `0.13` rather than a range: `a2a-protocol-server` and
+# tight `0.14` rather than a range: `a2a-protocol-server` and
 # `a2a-protocol-types` are *public* dependencies. `SlimRpcServer::builder`
 # takes `Arc<RequestHandler>` and `agent_interface()` returns an
 # `AgentInterface`, so a caller must be using the same SDK version this crate
@@ -56,9 +57,9 @@ publish = true
 # `version` alongside `path` is what makes this publishable: cargo uses the path
 # for local development and rewrites it to the version requirement in the
 # packaged manifest.
-a2a-protocol-types  = { version = "0.13", path = "../../crates/a2a-protocol-types", features = ["proto"] }
-a2a-protocol-client = { version = "0.13", path = "../../crates/a2a-protocol-client", default-features = false }
-a2a-protocol-server = { version = "0.13", path = "../../crates/a2a-protocol-server", default-features = false }
+a2a-protocol-types  = { version = "0.14", path = "../../crates/a2a-protocol-types", features = ["proto"] }
+a2a-protocol-client = { version = "0.14", path = "../../crates/a2a-protocol-client", default-features = false }
+a2a-protocol-server = { version = "0.14", path = "../../crates/a2a-protocol-server", default-features = false }
 
 # SLIM. `slim_rpc` is the RPC layer; the others supply the App/Service/Name
 # types its constructors take.

@@ -18,12 +18,23 @@ Demonstrates how to wrap a [genai](https://crates.io/crates/genai) multi-provide
 ## Running
 
 ```bash
+# GENAI_MODEL defaults to qwen3.5:0.8b, which runs locally (see below), so
+# name a hosted model to use a hosted key:
 export OPENAI_API_KEY=sk-...
-cargo run -p genai-a2a-agent
+GENAI_MODEL=gpt-4o-mini cargo run -p genai-a2a-agent
 
 # Use a different model:
 GENAI_MODEL=claude-sonnet-4-20250514 cargo run -p genai-a2a-agent
 ```
+
+Without `A2A_BIND_ADDR`, `cargo run` is a self-driving demo, not a server: it
+starts the agent on all four bindings, drives every A2A method over each,
+prints `LLM leg: EXERCISED` or `LLM leg: NOT EXERCISED`, and exits. In that
+demo a provider error is answered with a *labelled* mechanical fallback
+(`[no model reachable — mechanical fallback, not an LLM answer]`), so the
+protocol mechanics stay visible with no model at all. Set `A2A_BIND_ADDR` to
+serve instead — JSON-RPC on that address, where a provider error fails the
+task unless `A2A_ALLOW_FALLBACK=1` turns the fallback back on.
 
 ## How it works
 
@@ -37,7 +48,8 @@ A2A Client ──→ A2A Server (JSON-RPC)
               2. Transition to Working
               3. Call genai::Client for LLM completion
               4. Success → artifact + Completed
-                 LLM error → TASK_STATE_FAILED
+                 LLM error → TASK_STATE_FAILED when serving
+                             (labelled fallback artifact in the demo)
 ```
 
 ## Fully local, no API key
@@ -49,8 +61,8 @@ on `:11434` — which is also what llama.cpp's `llama-server` speaks:
 GENAI_MODEL=qwen3.5:0.8b cargo run -p genai-a2a-agent
 ```
 
-The agent serves a discovery card, supports push-config CRUD, honors
-`A2A_BIND_ADDR` for a fixed port, and passes the in-repo TCK: 21/21 graded
+Served with `A2A_BIND_ADDR`, the agent publishes a discovery card, supports
+push-config CRUD, and passes the in-repo TCK: 21/21 graded
 checks, 1 not applicable, on the JSON-RPC binding. `tck.yml`'s
 `tck-example-agents` job re-runs that grade on every push and pull request,
 with no model configured — the TCK grades protocol conformance, and none of it

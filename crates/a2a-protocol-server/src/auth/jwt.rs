@@ -47,7 +47,7 @@ use ring::signature;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 
-use super::{AuthenticatedPrincipal, auth_rejected, extract_bearer};
+use super::{AuthenticatedPrincipal, BEARER_CHALLENGE, auth_rejected, extract_bearer};
 use crate::call_context::CallContext;
 use crate::interceptor::ServerInterceptor;
 
@@ -671,14 +671,14 @@ impl JwtAuthInterceptor {
         let header = ctx
             .http_headers()
             .get("authorization")
-            .ok_or_else(auth_rejected)?;
-        let token = extract_bearer(header).ok_or_else(auth_rejected)?;
+            .ok_or_else(|| auth_rejected(BEARER_CHALLENGE))?;
+        let token = extract_bearer(header).ok_or_else(|| auth_rejected(BEARER_CHALLENGE))?;
 
         match &self.keys {
             KeySource::Static(jwks) => self
                 .validator
                 .validate(token, jwks)
-                .map_err(|_| auth_rejected()),
+                .map_err(|_| auth_rejected(BEARER_CHALLENGE)),
             KeySource::Remote(remote) => {
                 let jwks = remote.get(false).await?;
                 match self.validator.validate(token, &jwks) {
@@ -688,9 +688,9 @@ impl JwtAuthInterceptor {
                         let fresh = remote.get(true).await?;
                         self.validator
                             .validate(token, &fresh)
-                            .map_err(|_| auth_rejected())
+                            .map_err(|_| auth_rejected(BEARER_CHALLENGE))
                     }
-                    Err(ValidateOutcome::Rejected) => Err(auth_rejected()),
+                    Err(ValidateOutcome::Rejected) => Err(auth_rejected(BEARER_CHALLENGE)),
                 }
             }
         }

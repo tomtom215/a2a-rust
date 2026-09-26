@@ -126,9 +126,10 @@ three conditions:
    settled inside an unrelated PR.
 
    *Decided 2026-09-10.* `a2a-protocol-server` depends on `mutants`
-   (`>=0.0.4, <0.1`) and carries exactly three `#[mutants::skip]` attributes:
+   (`>=0.0.4, <0.1`) and carried three `#[mutants::skip]` attributes:
    `TenantLimits::builder`, `PerTenantConfig::builder` and
-   `SseBodyWriter::close`, each with its equivalence argument in a comment
+   `SseBodyWriter::close` (a fourth, `TerminalTracking::close`, was added
+   2026-09-22), each with its equivalence argument in a comment
    above the attribute (the argument is recorded in `ROADMAP.md`, "Mutants no
    test can kill"). The supply-chain review that the deferral asked for:
    `mutants` 0.0.4 is MIT, declares **zero** dependencies (crates.io

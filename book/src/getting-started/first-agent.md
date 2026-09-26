@@ -15,7 +15,7 @@ Add dependencies to `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.13"
+a2a-protocol-sdk = "0.14"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 ```
@@ -94,7 +94,7 @@ fn make_agent_card(url: &str) -> AgentCard {
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
             protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
+            protocol_version: a2a_protocol_sdk::types::A2A_VERSION.into(),
             tenant: None,
         }],
         default_input_modes: vec!["text/plain".into()],

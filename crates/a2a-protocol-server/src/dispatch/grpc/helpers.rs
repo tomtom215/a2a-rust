@@ -85,6 +85,13 @@ fn grpc_code(err: &ServerError, a2a_code: a2a_protocol_types::error::ErrorCode) 
     if matches!(err, ServerError::Overloaded(_)) {
         return tonic::Code::ResourceExhausted;
     }
+    // A refused credential has its own codes (N36); `status_name` is the
+    // one place that names them.
+    match err.status_name() {
+        "UNAUTHENTICATED" => return tonic::Code::Unauthenticated,
+        "PERMISSION_DENIED" => return tonic::Code::PermissionDenied,
+        _ => {}
+    }
     // Derived from §5.4's table rather than restating it. This was a second
     // copy of the mapping, and when §5.4 moved `PushNotificationNotSupported`,
     // `UnsupportedOperation` and `VersionNotSupported` off `UNIMPLEMENTED`,
@@ -176,6 +183,32 @@ mod tests {
     fn internal_error_maps_to_internal() {
         let status = server_error_to_status(&ServerError::Internal("oops".into()));
         assert_eq!(status.code(), tonic::Code::Internal);
+    }
+
+    // ADR 0014 (N36): a refused credential answers its own gRPC codes, not the
+    // `INVALID_ARGUMENT` its A2A code maps to under §5.4.
+    #[test]
+    fn a_missing_credential_maps_to_unauthenticated() {
+        let err = ServerError::Protocol(a2a_protocol_types::error::A2aError::unauthenticated(
+            "no token", "Bearer",
+        ));
+        assert_eq!(
+            server_error_to_status(&err).code(),
+            tonic::Code::Unauthenticated
+        );
+        assert_eq!(grpc_status_name(&err), "UNAUTHENTICATED");
+    }
+
+    #[test]
+    fn a_refused_permission_maps_to_permission_denied() {
+        let err = ServerError::Protocol(a2a_protocol_types::error::A2aError::permission_denied(
+            "not permitted",
+        ));
+        assert_eq!(
+            server_error_to_status(&err).code(),
+            tonic::Code::PermissionDenied
+        );
+        assert_eq!(grpc_status_name(&err), "PERMISSION_DENIED");
     }
 
     // §10.6: A2A-specific errors carry google.rpc.ErrorInfo in status.details.

@@ -88,9 +88,16 @@ git checkout -b release/vX.Y.Z main
 # the release. Find them all with:
 #     git grep -n 'a2a-protocol-\(types\|client\|server\|sdk\)\s*=' -- crates
 #
-# Then refresh BOTH lockfiles, which carry the crate versions:
-#     cargo metadata --format-version 1 >/dev/null          # root workspace
-#     (cd bindings/a2a-protocol-slimrpc && cargo metadata --format-version 1 >/dev/null)
+# Then refresh every tracked lockfile — all four carry the crate versions:
+#     for d in . bindings/a2a-protocol-slimrpc itk fuzz; do
+#       (cd "$d" && cargo metadata --format-version 1 >/dev/null)
+#     done
+#     ./scripts/check_lockfiles.sh     # the same check CI runs
+# This said "BOTH" and named two until 2026-09-24, by which point
+# itk/Cargo.lock pinned 0.11.0 against 0.13.0 manifests and the upstream
+# a2a-itk harness (which builds with --locked) could not build our agent. It
+# then said "THREE" for a day, until the 0.14.0 bump found fuzz/Cargo.lock
+# stale as well; the loop and the check leave no count to go wrong.
 
 # On a MINOR release, the dependency snippets in prose move too — every
 # `a2a-protocol-* = "X.Y"` a reader is told to copy, in the root README, the
@@ -223,7 +230,7 @@ mentioned (`docs/adopter-audit-2026-09-22.md`, N7). Four checks in
 |---|---|
 | `Nothing is left under [Unreleased] in the tagged tree` | any entry under `## [Unreleased]`; the placeholder `Nothing yet.` is allowed |
 | `The tag is the release-preparation commit` | any file packaged into the four crates (their directories, and the root `Cargo.toml` they inherit from) that differs between the tag and the last commit that edited the release's own `## [X.Y.Z]` section — apart from the crates' version strings and pins |
-| `Breaking releases keep the STABILITY.md cadence` | a `### Breaking Changes` section in a patch release, or in a second release in the same calendar month as another breaking one |
+| `Breaking releases keep the STABILITY.md cadence` | a `### Breaking Changes` section in a patch release, or in a second release in the same calendar month as another breaking one, unless that release's section declares `**Cadence exception:** <reason>` (STABILITY.md §3) |
 | `Packaged crates were built from the tagged commit` (package job) | a `.crate` whose `.cargo_vcs_info.json` names another commit, or a dirty tree |
 
 What that asks of the process: **write the release notes last.** Anything that

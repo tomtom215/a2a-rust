@@ -46,7 +46,7 @@ serde      = { version = ">=1.0.200, <2", features = ["derive"] }
 serde_json = { version = ">=1.0.115, <2" }
 
 # Async runtime
-tokio = { version = ">=1.38, <2", features = ["rt", "net", "io-util", "sync", "time", "macros"] }
+tokio = { version = ">=1.44.2, <2", features = ["rt", "net", "io-util", "sync", "time", "macros"] }
 
 # HTTP stack
 hyper          = { version = ">=1.4, <2",   features = ["client", "server", "http1", "http2"] }
@@ -78,11 +78,11 @@ tokio-stream       = { version = "0.1" }
 protoc-bin-vendored = { version = "3" }
 # RFC 3339 timestamp parsing/formatting for the protobuf conversion layer
 # (google.protobuf.Timestamp ⇄ ISO 8601 strings). Optional, `proto` feature only.
-time = { version = "0.3", default-features = false, features = ["parsing", "formatting"] }
+time = { version = "0.3.47", default-features = false, features = ["parsing", "formatting"] }
 
 # SQLite (optional — behind `sqlite` feature flag)
 [workspace.dependencies.sqlx]
-version = "0.8"
+version = "0.8.1"
 default-features = false
 features = ["runtime-tokio", "sqlite"]
 

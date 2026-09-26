@@ -2,7 +2,8 @@
 
 Three cooperating A2A agents that triage a production incident on your
 laptop — the hands-on answer to *"how is an agent different from a prompt
-wrapped around an API call?"* This is the recommended first example.
+wrapped around an API call?"* It is the recommended first multi-agent
+example; if you are new to A2A, start with the [Hello Agent](./hello-agent.md).
 
 ```bash
 cargo run -p incident-response          # narrated three-act demo

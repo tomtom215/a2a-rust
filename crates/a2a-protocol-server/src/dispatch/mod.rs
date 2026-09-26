@@ -70,8 +70,8 @@ pub struct DispatchConfig {
     pub sse_channel_capacity: usize,
     /// Maximum number of requests allowed in a JSON-RPC batch. Default: 100.
     ///
-    /// Batches exceeding this limit are rejected with a parse error before
-    /// any individual request is dispatched.
+    /// Batches exceeding this limit, like an empty one, are answered Invalid
+    /// Request (-32600) before any individual request is dispatched.
     pub max_batch_size: usize,
     /// Whether data-plane requests must carry an `A2A-Version` header.
     /// Default: `true`.
@@ -257,6 +257,23 @@ pub(crate) fn validate_version_header(
     Err(a2a_protocol_types::error::A2aError::version_not_supported(
         format!("unsupported A2A version: {v}; this server supports 1.x"),
     ))
+}
+
+/// Adds the `WWW-Authenticate` challenge a `401` for `err` must carry
+/// (RFC 9110 §15.5.2; audit N36). Every HTTP binding answers a refused
+/// credential through this, so none can send a `401` without one.
+pub(crate) fn add_auth_challenge(headers: &mut hyper::HeaderMap, err: &crate::error::ServerError) {
+    let Some(challenge) = err.challenge() else {
+        return;
+    };
+    // A challenge an interceptor built with bytes a header cannot carry
+    // still gets a `401` with a challenge — the bare scheme-less `Bearer` —
+    // rather than none at all, and the malformed one is logged.
+    let value = hyper::header::HeaderValue::from_str(challenge).unwrap_or_else(|_| {
+        trace_warn!(%challenge, "auth challenge is not a valid header value; sending `Bearer`");
+        hyper::header::HeaderValue::from_static("Bearer")
+    });
+    headers.insert(hyper::header::WWW_AUTHENTICATE, value);
 }
 
 #[cfg(test)]

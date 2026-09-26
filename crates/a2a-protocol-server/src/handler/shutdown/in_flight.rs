@@ -30,7 +30,9 @@ use tokio_util::task::TaskTracker;
 use super::super::RequestHandler;
 
 /// The handler's record of the work it has spawned.
-#[derive(Debug, Default)]
+// `Clone` shares the token and both trackers: a clone spawns onto, and is
+// shut down with, the handler it was taken from.
+#[derive(Debug, Default, Clone)]
 pub struct InFlight {
     /// Parent of every task's cancellation token.
     shutdown: CancellationToken,

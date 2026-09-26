@@ -264,7 +264,14 @@ async fn poll_watcher_loop(
     interval: Duration,
     baseline: Option<SystemTime>,
 ) {
-    let mut last_mtime = baseline;
+    // The mtime of the card now installed. Advanced only by a reload that
+    // worked: a failed one is retried at the next poll, because on a
+    // filesystem with coarse timestamps the fixed file can carry the very
+    // mtime the failure was recorded under, and was then never loaded (N32).
+    let mut loaded = baseline;
+    // The mtime of the last failed attempt, so a file that stays broken is
+    // reported once rather than at every poll.
+    let mut failed: Option<Option<SystemTime>> = None;
     let mut tick = tokio::time::interval(interval);
     // The first tick completes immediately; consume it so we don't reload on
     // startup (the caller already loaded the initial card).
@@ -273,18 +280,27 @@ async fn poll_watcher_loop(
     loop {
         tick.tick().await;
         let current_mtime = file_mtime_async(&path).await;
-        if current_mtime != last_mtime {
-            last_mtime = current_mtime;
-            if let Err(e) = reload_from_file_async(&handler, &path).await {
-                // Log the error but keep polling. The file may be temporarily
-                // unavailable during an atomic rename-based deploy.
-                #[cfg(feature = "tracing")]
-                tracing::warn!(
-                    path = %path.display(),
-                    error = %e,
-                    "hot-reload: failed to reload agent card",
-                );
+        if current_mtime == loaded {
+            continue;
+        }
+        match reload_from_file_async(&handler, &path).await {
+            Ok(()) => {
+                loaded = current_mtime;
+                failed = None;
+            }
+            Err(e) => {
+                // Keep polling: the file may be mid-write, or briefly absent
+                // during an atomic rename-based deploy.
+                if failed != Some(current_mtime) {
+                    #[cfg(feature = "tracing")]
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "hot-reload: failed to reload agent card",
+                    );
+                }
                 let _ = e;
+                failed = Some(current_mtime);
             }
         }
     }
@@ -789,6 +805,58 @@ mod tests {
         handle.abort();
 
         // Cleanup.
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// A card that failed to parse is retried, even when the fix carries the
+    /// same mtime. The watcher recorded the mtime whether or not the reload
+    /// worked, so on a filesystem with coarse timestamps (one or two seconds
+    /// on HFS+, FAT and some NFS mounts) a poll that caught a half-written
+    /// file, and a final write inside the same granule, left the old card
+    /// in place until the next edit.
+    #[tokio::test]
+    async fn a_card_that_failed_to_parse_is_retried_at_the_same_mtime() {
+        let dir = std::env::temp_dir().join(format!("a2a_poll_retry_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("agent_card.json");
+        let initial = minimal_agent_card();
+        std::fs::write(&file, serde_json::to_string(&initial).unwrap()).unwrap();
+        // One timestamp for both writes below: what a coarse clock gives two
+        // writes inside one granule.
+        let granule = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let stamp = |path: &Path| {
+            std::fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(granule)
+                .unwrap();
+        };
+
+        let handler = HotReloadAgentCardHandler::new(initial);
+        let handle = handler.spawn_poll_watcher(&file, Duration::from_millis(20));
+
+        // A half-written card, seen by the watcher.
+        std::fs::write(&file, "{\"name\": \"half").unwrap();
+        stamp(&file);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // The finished card, in the same granule.
+        let mut updated = minimal_agent_card();
+        updated.name = "Finished".into();
+        std::fs::write(&file, serde_json::to_string(&updated).unwrap()).unwrap();
+        stamp(&file);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while handler.current().name != "Finished" {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a card that failed to parse was never retried at the same mtime"
+            );
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        handle.abort();
         let _ = std::fs::remove_file(&file);
         let _ = std::fs::remove_dir(&dir);
     }

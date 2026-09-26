@@ -124,7 +124,7 @@ config.authentication = Some(AuthenticationInfo {
 });
 ```
 
-The server includes these credentials in the `Authorization` header when POSTing to the webhook.
+For scheme `Bearer` or `Basic` (any case) the server sends `Authorization: <Scheme> <credentials>` when POSTing to the webhook; other schemes, or a scheme with no credentials, produce no header.
 
 ## Receiving Push Notifications
 

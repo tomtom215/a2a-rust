@@ -181,6 +181,16 @@ apply_ci_env() {
             print key "=" val
         }
     ' "$CI_YML")
+    # Not in ci.yml's `env:`, but set in every CI job all the same: the two
+    # actions each job starts with both export CARGO_INCREMENTAL=0
+    # (dtolnay/rust-toolchain when unset, Swatinem/rust-cache always; read at
+    # their pinned SHAs on 2026-09-24). Without it a --full run kept 16 GB of
+    # incremental state CI never builds — 24 GB of target/debug by the
+    # fortieth gate, against the 17 GB this script's header measured — and
+    # left 454 MB free on a 38 GB allowance.
+    if [ -z "${CARGO_INCREMENTAL-}" ]; then
+        export CARGO_INCREMENTAL=0
+    fi
 }
 
 # Fails if a tier names a command CI no longer runs.

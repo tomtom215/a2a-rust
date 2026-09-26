@@ -28,7 +28,7 @@
 //! |---|---|
 //! | [`on_send_message`] | `SendMessage`, `SendStreamingMessage` |
 //! | [`on_get_task`], [`on_list_tasks`], [`on_cancel_task`] | `GetTask`, `ListTasks`, `CancelTask` |
-//! | [`on_resubscribe`] | `TaskSubscription` |
+//! | [`on_resubscribe`] | `SubscribeToTask` |
 //! | [`on_get_extended_agent_card`] | `GetExtendedAgentCard` |
 //! | [`on_set_push_config`], [`on_get_push_config`], [`on_list_push_configs`], [`on_delete_push_config`] | Push-config CRUD |
 //!
@@ -190,7 +190,7 @@ pub use handler::{
     HandlerLimits, InFlightReport, InboundTracePolicy, RequestHandler, SendMessageResult,
     ShutdownReport,
 };
-pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
+pub use interceptor::{CallOutcome, ServerInterceptor, ServerInterceptorChain};
 pub use metrics::{ConnectionPoolStats, Metrics, RpcCall};
 #[cfg(feature = "otel")]
 pub use otel::OtelMetrics;
@@ -207,6 +207,11 @@ pub use store::{
     InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,
     TenantStoreConfig,
 };
+/// The type of [`RequestContext::cancellation_token`], re-exported so an
+/// executor can name it — to store it, or create one in a test — without its
+/// own `tokio-util` dependency at a version that must match this crate's
+/// (N16).
+pub use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "sqlite")]
 pub use push::{SqlitePushConfigStore, TenantAwareSqlitePushConfigStore};

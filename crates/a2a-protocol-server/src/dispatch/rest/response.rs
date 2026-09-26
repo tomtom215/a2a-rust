@@ -13,8 +13,6 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 
-use crate::error::ServerError;
-
 /// Extracts HTTP headers into a `HashMap<String, String>` with lowercased keys.
 pub(super) fn extract_headers(headers: &hyper::HeaderMap) -> HashMap<String, String> {
     let mut map = HashMap::with_capacity(headers.len());
@@ -26,7 +24,7 @@ pub(super) fn extract_headers(headers: &hyper::HeaderMap) -> HashMap<String, Str
     map
 }
 
-pub(super) fn json_ok_response<T: serde::Serialize>(
+pub fn json_ok_response<T: serde::Serialize>(
     value: &T,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     match serde_json::to_vec(value) {
@@ -38,67 +36,10 @@ pub(super) fn json_ok_response<T: serde::Serialize>(
     }
 }
 
-/// Builds an AIP-193 compliant error response.
-///
-/// Per Section 11.6, HTTP error responses use the format:
-/// ```json
-/// {"error": {"code": 404, "status": "NOT_FOUND", "message": "...", "details": [...]}}
-/// ```
-pub(super) fn error_json_response(
-    status: u16,
-    message: &str,
-) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let body = serde_json::json!({
-        "error": {
-            "code": status,
-            "message": message
-        }
-    });
-    serde_json::to_vec(&body).map_or_else(
-        |_| internal_error_response(),
-        |bytes| build_json_response(status, bytes),
-    )
-}
-
 /// Fallback when serialization itself fails.
 pub(super) fn internal_error_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
     let body = br#"{"error":{"code":500,"message":"internal serialization error"}}"#;
     build_json_response(500, body.to_vec())
-}
-
-pub(super) fn not_found_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    error_json_response(404, "not found")
-}
-
-/// Converts a [`ServerError`] to an AIP-193 error response with proper status codes.
-///
-/// Per Section 5.4 and 11.6, each A2A error type maps to a specific HTTP status.
-pub(super) fn server_error_to_response(
-    err: &ServerError,
-) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let a2a_err = err.to_a2a_error();
-    // Not `a2a_err.code.http_status()`: that answers 400 for a body over the
-    // limit and 500 for an overload, where this binding's other dispatcher
-    // answers 413 and 503 (audit N20).
-    let status = err.http_status();
-    let grpc_status = a2a_err.code.grpc_status();
-    let details = a2a_err.error_info_data(None);
-
-    let mut error_obj = serde_json::json!({
-        "error": {
-            "code": status,
-            "status": grpc_status,
-            "message": a2a_err.message
-        }
-    });
-    if !details.is_null() {
-        error_obj["error"]["details"] = details;
-    }
-
-    serde_json::to_vec(&error_obj).map_or_else(
-        |_| internal_error_response(),
-        |body| build_json_response(status, body),
-    )
 }
 
 /// Returns a health check response.
@@ -108,14 +49,24 @@ pub(super) fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
 }
 
 /// Builds a JSON HTTP response with the given status and body.
+///
+/// `application/json`, a deliberate deviation from §11.1, which says
+/// `application/a2a+json` SHOULD be used for requests and responses (this
+/// comment cited §11.1 for `application/json` until 2026-09-25, from the
+/// 2026-03-31 specification snapshot, which said so). The official Go SDK's
+/// client (a2a-go v2.5.0, `internal/rest.FromRESTError`) decodes an error
+/// body only when its Content-Type starts with `application/json`: labelled
+/// `application/a2a+json`, every HTTP+JSON error reached it as a bare
+/// "server error", which `go_sdk_interop.sh` caught. a2a-go's server and the
+/// official Rust SDK's send `application/json` too. ACTS REST-CT-001 (a
+/// SHOULD) fails for this reason. The A2A media type stays accepted on
+/// ingress.
 pub(super) fn build_json_response(
     status: u16,
     body: Vec<u8>,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     hyper::Response::builder()
         .status(status)
-        // §11.1: the REST binding emits application/json; the registered
-        // a2a+json media type remains accepted on ingress.
         .header("content-type", a2a_protocol_types::JSON_CONTENT_TYPE)
         .header(
             a2a_protocol_types::A2A_VERSION_HEADER,
@@ -222,37 +173,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn error_json_response_status_and_body() {
-        let resp = error_json_response(400, "bad request");
-        assert_eq!(resp.status().as_u16(), 400);
-        let body = resp.into_body().collect().await.unwrap().to_bytes();
-        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        // AIP-193 format: {"error": {"code": 400, "message": "bad request"}}
-        assert_eq!(val["error"]["message"], "bad request");
-        assert_eq!(val["error"]["code"], 400);
-    }
-
-    #[tokio::test]
-    async fn error_json_response_has_a2a_content_type() {
-        let resp = error_json_response(404, "not found");
-        assert_eq!(
-            resp.headers()
-                .get("content-type")
-                .and_then(|v| v.to_str().ok()),
-            Some(a2a_protocol_types::JSON_CONTENT_TYPE),
-        );
-    }
-
-    #[tokio::test]
-    async fn not_found_response_is_404() {
-        let resp = not_found_response();
-        assert_eq!(resp.status().as_u16(), 404);
-        let body = resp.into_body().collect().await.unwrap().to_bytes();
-        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(val["error"]["message"], "not found");
-    }
-
-    #[tokio::test]
     async fn internal_error_response_is_500() {
         let resp = internal_error_response();
         assert_eq!(resp.status().as_u16(), 500);
@@ -280,48 +200,6 @@ mod tests {
     }
 
     // ── server_error_to_response status mapping ──────────────────────────
-
-    #[tokio::test]
-    async fn server_error_task_not_found_maps_to_404() {
-        let err = ServerError::TaskNotFound("t1".into());
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 404);
-    }
-
-    #[tokio::test]
-    async fn server_error_method_not_found_maps_to_404() {
-        let err = ServerError::MethodNotFound("foo".into());
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 404);
-    }
-
-    #[tokio::test]
-    async fn server_error_task_not_cancelable_maps_to_400() {
-        let err = ServerError::TaskNotCancelable("t1".into());
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 400);
-    }
-
-    #[tokio::test]
-    async fn server_error_invalid_params_maps_to_400() {
-        let err = ServerError::InvalidParams("bad".into());
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 400);
-    }
-
-    #[tokio::test]
-    async fn server_error_push_not_supported_maps_to_400() {
-        let err = ServerError::PushNotSupported;
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 400);
-    }
-
-    #[tokio::test]
-    async fn server_error_internal_maps_to_500() {
-        let err = ServerError::Internal("oops".into());
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 500);
-    }
 
     // ── inject_field_if_missing ──────────────────────────────────────────
 
@@ -358,26 +236,6 @@ mod tests {
         );
     }
 
-    /// Covers line 45 (`error_json_response` fallback — normally unreachable
-    /// since `serde_json::json`! always serializes).
-    /// Test that `error_json_response` always produces correct status and body.
-    #[tokio::test]
-    async fn error_json_response_various_statuses() {
-        for status in [400, 403, 404, 422, 500, 503] {
-            let resp = error_json_response(status, &format!("error {status}"));
-            assert_eq!(resp.status().as_u16(), status);
-        }
-    }
-
-    /// Covers line 73 (`server_error_to_response` serialization — normally always succeeds).
-    /// Covers `ServerError::Serialization` variant mapping to 400.
-    #[tokio::test]
-    async fn server_error_serialization_maps_to_400() {
-        let err = ServerError::Serialization(serde_json::from_str::<()>("bad").unwrap_err());
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 400);
-    }
-
     /// Covers lines 100-103 (`build_json_response` fallback — should never trigger
     /// with valid header names but covers the `unwrap_or_else` path).
     #[tokio::test]
@@ -399,71 +257,6 @@ mod tests {
         let val = serde_json::json!("string value");
         let result = inject_field_if_missing(val.clone(), "taskId", "task-1");
         assert_eq!(result, val);
-    }
-
-    /// Covers `server_error_to_response` with Http, Transport, `PayloadTooLarge` variants (line 69).
-    #[tokio::test]
-    async fn server_error_transport_maps_to_500() {
-        let err = ServerError::Transport("transport broke".into());
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 500);
-    }
-
-    /// Was `..._maps_to_400`, pinning the divergence audit N20 records: this
-    /// dispatcher's own body-limit check answers 413, as does the axum
-    /// adapter, and this path answered 400 for the same condition.
-    #[tokio::test]
-    async fn server_error_payload_too_large_maps_to_413() {
-        let err = ServerError::PayloadTooLarge("too big".into());
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 413);
-    }
-
-    /// An overload is the retryable 503, not a 500 (audit N20).
-    #[tokio::test]
-    async fn server_error_overloaded_maps_to_503() {
-        let err = ServerError::Overloaded("at capacity".into());
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 503);
-    }
-
-    #[tokio::test]
-    async fn server_error_http_client_maps_to_500() {
-        let err = ServerError::HttpClient("connection refused".into());
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 500);
-    }
-
-    /// Covers the `InvalidStateTransition` variant through `server_error_to_response`.
-    #[tokio::test]
-    async fn server_error_invalid_state_transition_maps_to_400() {
-        use a2a_protocol_types::task::TaskState;
-        let err = ServerError::InvalidStateTransition {
-            task_id: "t1".into(),
-            from: TaskState::Completed,
-            to: TaskState::Working,
-        };
-        let resp = server_error_to_response(&err);
-        // InvalidStateTransition → InvalidParams → 400
-        assert_eq!(resp.status().as_u16(), 400);
-    }
-
-    /// Covers line 73: `server_error_to_response` serialization fallback.
-    /// Covers the Protocol variant through `server_error_to_response`.
-    #[tokio::test]
-    async fn server_error_protocol_maps_to_500() {
-        let err = ServerError::Protocol(a2a_protocol_types::error::A2aError::internal("proto err"));
-        let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 500);
-        let body = resp.into_body().collect().await.unwrap().to_bytes();
-        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        // AIP-193 format: {"error": {"message": "..."}}
-        assert!(
-            val["error"]["message"]
-                .as_str()
-                .unwrap_or("")
-                .contains("proto err")
-        );
     }
 
     /// Covers line 97: `build_json_response` `unwrap_or_else` fallback.

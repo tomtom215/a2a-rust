@@ -65,7 +65,7 @@
 //! Requires the `websocket` feature flag:
 //!
 //! ```toml
-//! a2a-protocol-client = { version = "0.13", features = ["websocket"] }
+//! a2a-protocol-client = { version = "0.14", features = ["websocket"] }
 //! ```
 
 use std::collections::HashMap;
@@ -327,8 +327,30 @@ impl WebSocketTransportConfig {
 /// transport does not leak a task or a socket. A stream keeps the connection
 /// open for as long as it is held, as streams on the HTTP and gRPC bindings
 /// outlive their client.
+///
+/// A connection that drops is replaced on the next call: the transport
+/// reconnects to the same endpoint, with the same configuration and bounded
+/// by the same `connect_timeout`, rather than refusing every later call
+/// (audit N18). A call in flight when the socket dropped fails as retryable,
+/// and a retry of it reconnects. Streams already open keep the connection
+/// they were opened on, and end when it does.
 pub struct WebSocketTransport {
-    inner: Arc<Inner>,
+    endpoint: String,
+    config: WebSocketTransportConfig,
+    /// The current connection. Replaced, never mutated, so a request or a
+    /// stream holding the `Arc` it was given is unaffected by a reconnect.
+    current: std::sync::Mutex<Arc<Inner>>,
+    /// Held while reconnecting, so concurrent calls that find the
+    /// connection dead reconnect once between them.
+    ///
+    /// `AssertUnwindSafe` keeps the transport `RefUnwindSafe`, as it was in
+    /// 0.13.0; a Tokio mutex alone is not, and losing the trait is an API
+    /// break (`cargo semver-checks`, `auto_trait_impl_removed`). The
+    /// assertion is true: the lock guards `()`, so no state can be left half
+    /// updated by a panic, and a Tokio mutex is released on unwind rather
+    /// than poisoned — a reconnect that panics leaves the next caller free
+    /// to reconnect.
+    reconnecting: std::panic::AssertUnwindSafe<tokio::sync::Mutex<()>>,
 }
 
 struct Inner {
@@ -342,7 +364,6 @@ struct Inner {
     /// failed). New requests fail immediately instead of waiting out their
     /// full timeout against a connection that can no longer answer.
     closed: Arc<AtomicBool>,
-    endpoint: String,
     request_timeout: Duration,
     /// See [`WebSocketTransportConfig::max_pending_requests`].
     max_pending_requests: usize,
@@ -420,14 +441,64 @@ impl WebSocketTransport {
     /// # Errors
     ///
     /// Returns [`ClientError::Transport`] if the WebSocket handshake fails.
-    #[allow(clippy::too_many_lines)]
     pub async fn connect_with_config(
         endpoint: impl Into<String>,
         config: WebSocketTransportConfig,
     ) -> ClientResult<Self> {
         let endpoint = endpoint.into();
         validate_ws_url(&endpoint)?;
+        let first = open(&endpoint, &config).await?;
+        Ok(Self {
+            endpoint,
+            config,
+            current: std::sync::Mutex::new(Arc::new(first)),
+            reconnecting: std::panic::AssertUnwindSafe(tokio::sync::Mutex::new(())),
+        })
+    }
 
+    /// Returns the endpoint URL this transport is connected to.
+    #[must_use]
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    /// The current connection, as it stands.
+    fn current(&self) -> Arc<Inner> {
+        Arc::clone(
+            &self
+                .current
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    /// The current connection, reconnecting first if it is known dead.
+    async fn connection(&self) -> ClientResult<Arc<Inner>> {
+        let inner = self.current();
+        if !inner.closed.load(Ordering::Acquire) {
+            return Ok(inner);
+        }
+        let _one_at_a_time = self.reconnecting.lock().await;
+        // Another call may have reconnected while this one waited.
+        let inner = self.current();
+        if !inner.closed.load(Ordering::Acquire) {
+            return Ok(inner);
+        }
+        trace_info!(endpoint = %self.endpoint, "WebSocket connection closed; reconnecting");
+        let fresh = Arc::new(open(&self.endpoint, &self.config).await?);
+        *self
+            .current
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::clone(&fresh);
+        Ok(fresh)
+    }
+}
+
+/// Opens one WebSocket connection and starts its reader and writer tasks.
+#[allow(clippy::too_many_lines)]
+async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult<Inner> {
+    let endpoint = endpoint.to_owned();
+    {
         // FIX(C3): Build a tungstenite request with extra headers injected into
         // the HTTP upgrade handshake. This ensures auth headers from interceptors
         // are sent during connection establishment.
@@ -531,7 +602,7 @@ impl WebSocketTransport {
             let refused = loop {
                 match ws_reader.next().await {
                     Some(Ok(WsMessage::Text(text))) => {
-                        route_frame(&pending_for_reader, text.as_str()).await;
+                        route_frame(&pending_for_reader, text.as_str());
                     }
                     Some(Ok(WsMessage::Close(_))) | None => break None,
                     Some(Err(e)) => break refusal(&e),
@@ -542,27 +613,20 @@ impl WebSocketTransport {
             fail_all_pending(&pending_for_reader, &closed_for_reader, refused.as_deref());
         });
 
-        Ok(Self {
-            inner: Arc::new(Inner {
-                write_tx,
-                pending,
-                closed,
-                endpoint,
-                request_timeout: config.request_timeout,
-                max_pending_requests: config.max_pending_requests,
-                reader_handle,
-                writer_handle,
-                trace_drop_warned: AtomicBool::new(false),
-            }),
+        Ok(Inner {
+            write_tx,
+            pending,
+            closed,
+            request_timeout: config.request_timeout,
+            max_pending_requests: config.max_pending_requests,
+            reader_handle,
+            writer_handle,
+            trace_drop_warned: AtomicBool::new(false),
         })
     }
+}
 
-    /// Returns the endpoint URL this transport is connected to.
-    #[must_use]
-    pub fn endpoint(&self) -> &str {
-        &self.inner.endpoint
-    }
-
+impl WebSocketTransport {
     /// Sends a JSON-RPC request and reads a single response.
     async fn execute_request(
         &self,
@@ -570,9 +634,9 @@ impl WebSocketTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<serde_json::Value> {
-        self.check_open()?;
-        warn_dropped_per_request_headers(method, extra_headers, &self.inner.trace_drop_warned);
-        trace_info!(method, endpoint = %self.inner.endpoint, "sending WebSocket JSON-RPC request");
+        let inner = self.connection().await?;
+        warn_dropped_per_request_headers(method, extra_headers, &inner.trace_drop_warned);
+        trace_info!(method, endpoint = %self.endpoint, "sending WebSocket JSON-RPC request");
 
         let rpc_req = build_rpc_request(method, params);
         let request_id = rpc_req
@@ -590,19 +654,19 @@ impl WebSocketTransport {
         // caller's future being dropped mid-await. The timeout branch used to
         // carry the only explicit removal; cancellation ran none of it.
         let _entry = PendingGuard::register(
-            &self.inner.pending,
-            self.inner.max_pending_requests,
+            &inner.pending,
+            inner.max_pending_requests,
             request_id.clone(),
             PendingRequest::Unary(tx),
         )?;
 
-        self.inner
+        inner
             .write_tx
             .send(WriteCommand { text: body })
             .await
             .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
 
-        let response_text = match tokio::time::timeout(self.inner.request_timeout, rx).await {
+        let response_text = match tokio::time::timeout(inner.request_timeout, rx).await {
             Ok(received) => received
                 .map_err(|_| ClientError::Transport("WebSocket reader task closed".into()))??,
             Err(_elapsed) => {
@@ -634,14 +698,6 @@ impl WebSocketTransport {
         }
     }
 
-    /// Fails fast when the connection is known dead.
-    fn check_open(&self) -> ClientResult<()> {
-        if self.inner.closed.load(Ordering::Acquire) {
-            return Err(ClientError::Transport("WebSocket connection closed".into()));
-        }
-        Ok(())
-    }
-
     /// Sends a JSON-RPC request and returns a stream of responses.
     async fn execute_streaming_request(
         &self,
@@ -649,9 +705,9 @@ impl WebSocketTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<EventStream> {
-        self.check_open()?;
-        warn_dropped_per_request_headers(method, extra_headers, &self.inner.trace_drop_warned);
-        trace_info!(method, endpoint = %self.inner.endpoint, "opening WebSocket stream");
+        let inner = self.connection().await?;
+        warn_dropped_per_request_headers(method, extra_headers, &inner.trace_drop_warned);
+        trace_info!(method, endpoint = %self.endpoint, "opening WebSocket stream");
 
         let rpc_req = build_rpc_request(method, params);
         let request_id = rpc_req
@@ -672,13 +728,13 @@ impl WebSocketTransport {
         // server that answers nothing leaves the consumer to time out and walk
         // away, and that path removed nothing at all.
         let entry = PendingGuard::register(
-            &self.inner.pending,
-            self.inner.max_pending_requests,
+            &inner.pending,
+            inner.max_pending_requests,
             request_id,
             PendingRequest::Streaming(tx),
         )?;
 
-        self.inner
+        inner
             .write_tx
             .send(WriteCommand { text: body })
             .await
@@ -694,8 +750,8 @@ impl WebSocketTransport {
         // the reader; with the entry (and so the sender) still held, a stream
         // whose transport was dropped went silent instead of ending.
         Ok(EventStream::new(rx)
-            .with_first_event_timeout(self.inner.request_timeout)
-            .holding((entry, Arc::clone(&self.inner))))
+            .with_first_event_timeout(inner.request_timeout)
+            .holding((entry, inner)))
     }
 }
 
@@ -722,8 +778,8 @@ impl Transport for WebSocketTransport {
 impl std::fmt::Debug for WebSocketTransport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WebSocketTransport")
-            .field("endpoint", &self.inner.endpoint)
-            .finish()
+            .field("endpoint", &self.endpoint)
+            .finish_non_exhaustive()
     }
 }
 
@@ -876,7 +932,7 @@ fn connect_error(e: tokio_tungstenite::tungstenite::Error) -> ClientError {
 ///
 /// Extracts the JSON-RPC ID from the frame and looks up the corresponding
 /// pending request in the shared map.
-async fn route_frame(pending: &PendingMap, text: &str) {
+fn route_frame(pending: &PendingMap, text: &str) {
     // Try to extract the JSON-RPC ID to route the response.
     let Some(request_id) = extract_jsonrpc_id(text) else {
         // If we can't extract an ID, this might be a notification or malformed
@@ -916,14 +972,29 @@ async fn route_frame(pending: &PendingMap, text: &str) {
     }
 
     // Guard released. Wrap as an SSE data line for the existing EventStream SSE
-    // parser and deliver; a slow/stalled consumer blocks only this send now.
+    // parser and deliver — without waiting. This task is the socket's only
+    // reader, so awaiting room in one stream's channel stopped it reading
+    // every other frame: a stream the caller had not read yet held back a
+    // unary answer behind it until that call timed out (N29). A WebSocket
+    // multiplexes calls with no flow control of its own, so an unread
+    // stream's frames are either buffered or shed; the buffer is bounded, and
+    // what overflows it is shed the way the server sheds a lagging reader —
+    // the stream gets a `stream_lagged` error and ends, never a silent gap,
+    // and the caller can resubscribe. The last slot is kept for that error.
+    if streaming_tx.capacity() <= 1 {
+        let _ = streaming_tx.try_send(Err(ClientError::Protocol(
+            a2a_protocol_types::error::A2aError::stream_lagged(1),
+        )));
+        lock_pending(pending).remove(&request_id);
+        return;
+    }
     let sse_line = format!("data: {text}\n\n");
     if streaming_tx
-        .send(Ok(hyper::body::Bytes::from(sse_line)))
-        .await
+        .try_send(Ok(hyper::body::Bytes::from(sse_line)))
         .is_err()
     {
-        // Consumer dropped — remove the pending entry.
+        // Consumer dropped — remove the pending entry. (Not full: this task
+        // is the only sender, and it checked the capacity above.)
         lock_pending(pending).remove(&request_id);
         return;
     }
@@ -939,7 +1010,7 @@ async fn route_frame(pending: &PendingMap, text: &str) {
 }
 
 /// Extracts the JSON-RPC `id` field from a JSON text frame.
-fn extract_jsonrpc_id(text: &str) -> Option<String> {
+pub(crate) fn extract_jsonrpc_id(text: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(text).ok()?;
     match v.get("id") {
         Some(serde_json::Value::String(s)) => Some(s.clone()),
@@ -1072,6 +1143,18 @@ fn validate_ws_url(url: &str) -> ClientResult<()> {
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+/// The auto traits `WebSocketTransport` had in 0.13.0. Losing one is an API
+/// break a downstream `catch_unwind` or thread-spawn notices at compile time;
+/// the N18 reconnect lock dropped `RefUnwindSafe` until it was wrapped.
+#[cfg(test)]
+const _: () = {
+    const fn assert_auto_traits<
+        T: Send + Sync + Unpin + std::panic::UnwindSafe + std::panic::RefUnwindSafe,
+    >() {
+    }
+    assert_auto_traits::<WebSocketTransport>();
+};
 
 #[cfg(test)]
 mod tests {
@@ -1466,7 +1549,7 @@ mod tests {
         );
 
         assert!(
-            lock_pending(&transport.inner.pending).is_empty(),
+            lock_pending(&transport.current().pending).is_empty(),
             "pending map must not retain timed-out requests"
         );
     }
@@ -1516,7 +1599,7 @@ mod tests {
         // The writer task registers nothing now, but give the runtime a turn
         // anyway so a failure here can never be read as "the test looked early".
         tokio::time::sleep(Duration::from_millis(100)).await;
-        let leaked = lock_pending(&transport.inner.pending).len();
+        let leaked = lock_pending(&transport.current().pending).len();
         assert_eq!(
             leaked, 0,
             "5 cancelled requests left {leaked} pending entries"
@@ -1556,7 +1639,7 @@ mod tests {
         }
 
         tokio::time::sleep(Duration::from_millis(100)).await;
-        let leaked = lock_pending(&transport.inner.pending).len();
+        let leaked = lock_pending(&transport.current().pending).len();
         assert_eq!(
             leaked, 0,
             "5 abandoned streams left {leaked} pending entries"
@@ -1590,14 +1673,14 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(
-            lock_pending(&transport.inner.pending).len(),
+            lock_pending(&transport.current().pending).len(),
             1,
             "a stream still held by its consumer must stay routable"
         );
         drop(stream);
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert_eq!(
-            lock_pending(&transport.inner.pending).len(),
+            lock_pending(&transport.current().pending).len(),
             0,
             "and must release the entry once the consumer lets go"
         );
@@ -1826,15 +1909,19 @@ mod tests {
             start.elapsed()
         );
 
-        // The transport is now known dead: subsequent requests fail
-        // immediately instead of queuing against a dead socket.
+        // A later request reconnects rather than being refused (audit N18;
+        // it used to fail at once with a non-retryable `Transport` error).
+        // This server cuts every connection after one request, so it fails
+        // again — promptly, and as retryable.
+        let start = std::time::Instant::now();
         let err = transport
             .send_request("GetTask", serde_json::json!({"id": "t2"}), &HashMap::new())
             .await
-            .expect_err("dead transport must reject new requests");
+            .expect_err("the server cuts the new connection too");
         assert!(
-            matches!(err, ClientError::Transport(_)),
-            "expected transport error, got: {err:?}"
+            err.is_retryable() && start.elapsed() < Duration::from_secs(10),
+            "expected a prompt retryable error, got {err:?} after {:?}",
+            start.elapsed()
         );
     }
 

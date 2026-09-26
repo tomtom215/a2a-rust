@@ -49,6 +49,11 @@
 // here rather than the prose being bent to satisfy a renderer nobody uses.
 #![allow(clippy::doc_lazy_continuation)]
 
+// The repository README's Quick Start: the first code a new user copies,
+// and the page this crate exists because of (see the module docs above).
+#[doc = include_str!("../../README.md")]
+pub mod page_readme {}
+
 // Registered even though all three of its Rust blocks are `ignore`d — the page
 // explains why, and registering it means a block that stops being ignored is
 // compiled rather than silently skipped.

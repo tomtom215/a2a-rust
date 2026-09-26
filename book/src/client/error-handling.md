@@ -170,7 +170,7 @@ match client.send_message(params).await {
 # }
 ```
 
-Retryable errors include: `Http`, `HttpClient`, `Timeout`, `IncompleteStream`, and `UnexpectedStatus` with codes 429, 502, 503, or 504. gRPC `DeadlineExceeded` and `Cancelled` errors also map to `Timeout` (retryable), and `Unavailable` maps to `HttpClient` (retryable).
+Retryable errors include: `Http`, `HttpClient`, `Timeout`, `IncompleteStream`, `TooManyPendingRequests`, and `UnexpectedStatus` with codes 429, 502, 503, or 504. Over gRPC, `DeadlineExceeded` maps to `Timeout`, and `Unavailable` or a response truncated before its `grpc-status` maps to `HttpClient` (all retryable). `ResourceExhausted` maps to `UnexpectedStatus { status: 429 }` (retryable), and `Unauthenticated`/`PermissionDenied` map to `UnexpectedStatus` 401/403 (not retryable). A peer's `Cancelled` is a non-retryable `Protocol` error.
 
 Retry backoff uses full jitter (0.5–1.0× randomization) to prevent thundering-herd storms when multiple clients experience the same failure simultaneously.
 
@@ -189,7 +189,7 @@ use a2a_protocol_sdk::server::ServerError;
 
 ### Don't Panic
 
-a2a-rust never panics on caller input or I/O failure — every fallible operation returns `Result`. (The only `expect` calls in the libraries assert internal invariants, such as propagating lock poisoning, that callers cannot trigger.) Follow the same pattern in your executors:
+a2a-rust reports failures as `Result`, not panics: every fallible operation returns one, and a CI gate freezes the `unwrap`, `expect`, `panic!`, `unreachable!` and `todo!` sites in library code. The 13 `expect` calls it allows each assert an internal invariant, such as propagating lock poisoning, that callers cannot trigger. The gate does not see arithmetic overflow or slice indexing, so treat "never panics" as the aim it is rather than a proven property. Follow the same pattern in your executors:
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
@@ -281,6 +281,11 @@ For streaming, handle errors per-event:
 while let Some(event) = stream.next().await {
     match event {
         Ok(ev) => { /* process event */ }
+        Err(e) if e.is_stream_lagged() => {
+            // This reader fell behind and was cut off; the task is unaffected.
+            eprintln!("dropped {:?} events; resubscribe to continue", e.dropped_event_count());
+            break;
+        }
         Err(e) => {
             eprintln!("Stream error: {e}");
             // Decide: retry via resubscribe, or give up
@@ -290,6 +295,13 @@ while let Some(event) = stream.next().await {
 }
 # }
 ```
+
+A reader that falls too far behind is cut off — over SSE when it lags the
+server's broadcast queue, over WebSocket once 64 frames are waiting unread —
+with an error that answers `is_stream_lagged()`. Resubscribe
+(`subscribe_to_task_from` with the stream's `last_event_id()` over SSE, or
+`subscribe_to_task`) to continue; see
+[Streaming Responses](./streaming.md#how-a-stream-ends).
 
 ## Next Steps
 

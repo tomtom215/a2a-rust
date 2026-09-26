@@ -3,8 +3,8 @@
 
 # Upgrading Between Minor Versions
 
-As of 2026-09-20, with 0.13.0 prepared. The newest minor boundary this page
-covers is 0.12 → 0.13, whose breaking section is `## [0.13.0]` in
+As of 2026-09-26, with 0.14.0 prepared. The newest minor boundary this page
+covers is 0.13 → 0.14, whose breaking section is `## [0.14.0]` in
 [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
 (0.12.1 is a patch and breaks nothing, so it has no section of its own here.)
 
@@ -120,10 +120,10 @@ compile error:
 - A struct that is *not* `#[non_exhaustive]` breaks any literal that names
   every field the moment a field is added. A literal that ends in
   `..Default::default()` keeps compiling, and so does the `with_*` form.
-  `HandlerLimits`, `WebSocketTransportConfig`, `TaskStoreConfig` and
-  `CorsConfig` are in this group as of 0.12, as are `GrpcConfig`,
-  `DispatchConfig` and `RateLimitConfig`; STABILITY.md §4 lists converting
-  them as roadmap work for a future breaking minor.
+  Since 0.12 no configuration struct is in this group: STABILITY.md §4 lists
+  the seventeen that carry the attribute (`RetentionPolicy` joined them in
+  0.13). What remains here is most of the spec's wire types in
+  `a2a-protocol-types`, which are deliberately built with literals.
 
 So the habit that costs nothing today and saves a compile error later: build
 configuration with `Default::default()` and `with_*` setters, and never with
@@ -134,13 +134,222 @@ Enums follow the same rule: `ClientError`, and the protocol enums that can
 grow with the specification, are `#[non_exhaustive]`, so a `match` on one
 already carries a wildcard arm and a new variant does not break it.
 
+## 0.13 → 0.14
+
+0.14.0 makes a failure read the same on every binding, and a refused credential
+answer the status a client acts on. CHANGELOG.md lists seven breaking items and
+ten behaviour changes; the SLIMRPC binding's, the last, has its own section at
+the end.
+None of them is a compile error: the first two change what a build contains,
+and the rest change what a `match` on an error, a status check or a gateway
+rule sees, which only a test, a peer or a run notices.
+
+### `tracing` is a default feature
+
+Of `a2a-protocol-client`, `a2a-protocol-server` and `a2a-protocol-sdk` (ADR
+0013). A default build used to compile every log call to nothing, so an agent
+logged nothing whatever subscriber it installed. With no subscriber the cost is
+a level check per call site. Nothing to do for most builds. To keep the old,
+silent build, depend with `default-features = false`, and on the client or SDK
+add back `features = ["tls-rustls"]` if you dial `https://`.
+
+### `default-features = false` on the SDK removes rustls
+
+The SDK used to take the client with the client's own defaults, so rustls stayed
+in an SDK built without default features. A build that did that and still
+reached `https://` agents was relying on the defect:
+
+```toml
+a2a-protocol-sdk = { version = "0.14", default-features = false, features = ["tls-rustls"] }
+```
+
+### A peer that goes away reads the same on every binding
+
+The same event — a connection or stream ending before its final event — used to
+be a retryable `Http` error on JSON-RPC and HTTP+JSON, a non-retryable
+`Transport("WebSocket connection closed")` on WebSocket, and a non-retryable
+`Protocol(InternalError)` on gRPC. Now, on WebSocket and gRPC as on the HTTP
+bindings, a stream cut off ends with `ClientError::IncompleteStream`, a unary
+call in flight fails with `HttpClient`, and a WebSocket handshake refused with an
+HTTP status is `UnexpectedStatus`. A frame over the size cap, or one that breaks
+the protocol, stays a non-retryable `Transport` error.
+
+```text
+// 0.13
+Err(ClientError::Transport(_)) => reconnect(),               // WebSocket drop
+Err(ClientError::Protocol(e)) if e.code == ErrorCode::InternalError => resume(), // gRPC cut
+```
+
+Match the new variants, or ask `is_retryable()`, which is true for both:
+
+```rust
+use a2a_protocol_client::ClientError;
+
+fn peer_went_away(err: &ClientError) -> bool {
+    matches!(err, ClientError::IncompleteStream { .. } | ClientError::HttpClient(_))
+}
+```
+
+### gRPC `UNAUTHENTICATED` and `PERMISSION_DENIED` are `401` and `403`
+
+Over the gRPC transport and the SLIMRPC binding's client they are now
+`ClientError::UnexpectedStatus { status: 401, .. }` and `{ status: 403, .. }`,
+the shapes JSON-RPC and REST already reported; they were
+`Protocol(InvalidParams)` on gRPC and `Protocol(InternalError)` on SLIMRPC.
+`BearerAuthInterceptor` now drops a token a gRPC agent refused. A peer's
+`CANCELLED` is a non-retryable `Protocol` error rather than a retryable
+`Timeout`, so a retry policy stops re-sending a call the peer abandoned.
+
+```rust
+use a2a_protocol_client::ClientError;
+
+fn credential_refused(err: &ClientError) -> bool {
+    // was: ClientError::Protocol(e) if e.code == ErrorCode::InvalidParams
+    matches!(err, ClientError::UnexpectedStatus { status: 401 | 403, .. })
+}
+```
+
+### `ClientBuilder::from_card` refuses a card with no interface for protocol major 1
+
+It used to accept such a card with a warning and fail at the first call with
+whatever the wire produced — a v0.3 endpoint answers `-32601 method not found`.
+The error now lists what the card offers. Versions are read leniently: empty,
+`v1.0` and `1-preview` all count as major 1. If a peer's card is wrong but the
+endpoint speaks 1.0, build from the URL with `ClientBuilder::new`.
+
+### Graceful shutdown ends in-flight tasks before it drains connections
+
+`Server::serve_with_shutdown` used to drain first, and an open SSE stream does
+not close until its task ends, so the drain waited out its 15 s and delegated
+tasks outlived the process. The order is now: stop accepting; let tasks finish
+for up to `ServeConfig::completion_grace` (5 s); cancel the rest and give their
+executors `task_grace` (10 s) to cancel what they delegated and write a terminal
+event; then drain (`drain_timeout`, 15 s). The trade: a task that outlives the
+completion window is now cancelled where it used to get the whole drain window.
+If your tasks need longer:
+
+```rust
+use std::time::Duration;
+use a2a_protocol_server::ServeConfig;
+
+let config = ServeConfig::default().with_completion_grace(Duration::from_secs(30));
+# let _ = config;
+```
+
+The gRPC and WebSocket dispatchers gain their own `serve_with_shutdown` with the
+same three setters.
+
+### Shipped `TaskStore`s refuse to move a terminal task to another state
+
+Atomically with the write, answering `UnsupportedOperation` with a
+`TerminalStateConflict` in its data
+(`a2a_protocol_server::store::TerminalStateConflict::from_error` recognises it).
+Code that reopened a finished task through a shipped store gets that error; send
+the follow-up as a new task instead. A custom store is not covered unless it
+applies `store::refuses_write` inside its writes.
+
+### Behaviour changes
+
+No type or signature changed for these; each changes what a caller observes.
+
+- **A refused credential answers `401`/`403`, not `400`** (ADR 0014). The auth
+  interceptors used to answer every refusal as `InvalidRequest`: `400` on both
+  HTTP bindings, `INVALID_ARGUMENT` on gRPC. A missing or wrong credential now
+  answers `401` with a `WWW-Authenticate` challenge (`Bearer realm="a2a"`, or
+  `ApiKey header="x-api-key"`, naming the configured header), and gRPC
+  `UNAUTHENTICATED`; the AIP-193 body's `status` says `UNAUTHENTICATED`. JSON-RPC
+  answers the same `401` with its body unchanged (`-32600`); a batch stays `200`.
+  WebSocket, which has no status per call, sends the body alone. Update any
+  client, test or alert that matched `400` for an auth failure. A custom
+  authenticating interceptor gets the same statuses by returning:
+
+  ```rust
+  use a2a_protocol_types::AuthRejectionKind;
+  use a2a_protocol_types::error::A2aError;
+
+  let err = A2aError::unauthenticated("authentication required", "Bearer realm=\"a2a\"");
+  assert_eq!(
+      err.auth_rejection().map(|r| r.kind()),
+      Some(AuthRejectionKind::Unauthenticated)
+  );
+  let _forbidden = A2aError::permission_denied("not permitted");
+  ```
+
+- **A message part whose `mediaType` the card does not declare is refused**
+  with `ContentTypeNotSupportedError` (-32005 over JSON-RPC, HTTP `400` over
+  HTTP+JSON), on `SendMessage` and `SendStreamingMessage`, when the card
+  declares input modes — `defaultInputModes` or any skill's `inputModes`. Parts
+  without a `mediaType` are not checked. Declare every type the agent accepts,
+  or keep the old behaviour while the card is corrected:
+
+  ```rust
+  use a2a_protocol_server::RequestHandlerBuilder;
+
+  fn lenient(builder: RequestHandlerBuilder) -> RequestHandlerBuilder {
+      builder.allow_undeclared_input_modes()
+  }
+  ```
+
+- **The axum adapter's error bodies are AIP-193**, as `RestDispatcher`'s are:
+  `{"error": {"code", "status", "message", "details"}}` instead of
+  `{"error": "<text>"}`. A client that read `error` as a string reads
+  `error.message`.
+- **The axum adapter's successful responses carry `A2A-Version`**, as its
+  errors already did. HTTP+JSON responses stay `application/json` on purpose:
+  the official Go SDK's client cannot read an error labelled
+  `application/a2a+json`.
+- **JSON that is not a JSON-RPC Request object is answered `-32600` (Invalid
+  Request), not `-32700` (Parse error)**, over JSON-RPC and WebSocket: a body
+  with no `method`, a bare value such as `1`, an empty batch `[]`, a batch item
+  that is not a request. A client that matched `-32700` for these sees `-32600`.
+  (Listed under **Fixed** in the changelog.)
+- **Every task status carries a timestamp.** The event queue stamps any status
+  update or task snapshot the executor left without one; a timestamp the
+  executor set is kept. The stamp counts toward `max_event_size`, so an event
+  within a few dozen bytes of the limit may now be refused. (Listed under
+  **Fixed**.)
+- **A continuation sent the moment a task reaches `input-required` is admitted**
+  instead of refused as "already being processed" while the executor that
+  parked it is still returning; admission waits up to
+  `HandlerLimits::executor_drain_timeout` (5 s) for it.
+- **An idle `SubscribeToTask` stream over SSE ends at
+  `HandlerLimits::subscribe_max_idle`** (5 min). It used to stay open as long as
+  its client did. Resubscribe, or raise the bound with `with_subscribe_max_idle`.
+- **A WebSocket request whose connection ends is cancelled** on the server,
+  as a request on the HTTP bindings already was when its client disconnected.
+- **WebSocket client: a stream the caller reads more slowly than the agent
+  writes ends with a `stream_lagged` error** once 64 frames are waiting
+  (`ClientError::is_stream_lagged`); resubscribe to continue. It used to be
+  held back, which stalled every other call on the socket.
+- **WebSocket client: a call on a `WebSocketTransport` whose socket dropped
+  reconnects** to the same endpoint with the same configuration, instead of
+  failing with a non-retryable `Transport` error. Streams already open keep the
+  connection they were opened on.
+
+Two changes to interceptors are additive but worth reading:
+`ServerInterceptor::after` now runs once the response exists, so a failing one
+no longer orphans a send's task (listed under **Fixed**), and the new, defaulted `on_complete(ctx, outcome)` is
+called on every call whose `before` ran — with `CallOutcome::Succeeded`,
+`Failed(&ServerError)` or `Cancelled` — which is where to release something
+`before` acquired, since `after` runs only on success.
+
+### SLIMRPC binding: a refused credential answers `UNAUTHENTICATED` / `PERMISSION_DENIED`
+
+`bindings/a2a-protocol-slimrpc`'s server sent `INVALID_ARGUMENT` for a credential
+an interceptor refused, as the gRPC dispatcher did before ADR 0014, so a
+client's `BearerAuthInterceptor` never dropped a revoked token there. It now
+answers `UNAUTHENTICATED` for `A2aError::unauthenticated` and `PERMISSION_DENIED`
+for `A2aError::permission_denied`, which this SDK's client reads as `401` and
+`403`. An ordinary `InvalidRequest` keeps `INVALID_ARGUMENT`.
+
 ## 0.12 → 0.13
 
 0.13.0 makes the event log the record and spends it on stream resumption.
-Eight breaking items. The first is the one most code will meet; the third is
+Nine breaking items. The first is the one most code will meet; the third is
 a rename you fix at the read site; the last five were found by an audit after
 the first three were written down, and four of them are attributes or types
-that only bite a `match` or a literal.
+that only bite a `match` or a literal. The ninth shipped in 0.13.0 but was
+listed under `[Unreleased]` until 2026-09-23; its section is the last below.
 
 ### `RequestContext` is `#[non_exhaustive]`, and gains `call_context`
 
@@ -366,6 +575,27 @@ history, where every empty id collides with every other.
 No code change is needed unless you were sending empty or very long message
 ids. If you generate them, `uuid::Uuid::new_v4().to_string()` is what the
 examples use.
+
+### `RetentionPolicy` and `PurgeReport` are `#[non_exhaustive]`
+
+The ninth item. `RetentionPolicy` was missed by 0.12's conversion of the
+configuration structs, and `PurgeReport` is marked for the same reason: both
+gain fields (`idempotency_key_max_age`, `idempotency_keys_deleted`) that would
+otherwise have broken a literal. It shipped in 0.13.0, but the changelog listed
+it under `[Unreleased]` until 2026-09-23, so the 0.13.0 release notes do not
+mention it.
+
+Build a policy with `new` and the setters, and read a report's fields rather
+than destructuring it without `..`:
+
+```rust
+use std::time::Duration;
+use a2a_protocol_server::store::RetentionPolicy;
+
+let policy = RetentionPolicy::new(Duration::from_secs(7 * 24 * 3600))
+    .with_batch_size(500);
+# let _ = policy;
+```
 
 ### Also in 0.13, not breaking
 
@@ -751,7 +981,8 @@ async fn stop(handler: &RequestHandler) {
 }
 ```
 
-`queues_force_destroyed` is always `0` for `shutdown()`, which does not wait;
+Until 0.14, `queues_force_destroyed` was always `0` for `shutdown()`, whatever
+it cut off; it now counts the live queues it destroyed.
 `executor_cleanup_completed == false` means the `on_shutdown` hook was
 abandoned, not that it failed — it may still be running.
 
@@ -802,7 +1033,7 @@ unchanged for everyone already on it.
 
 `RequestHandlerBuilder::with_event_queue_write_timeout` and
 `EventQueueManager::with_write_timeout`, deprecated no-ops since 0.7.
-Event-queue writes never block — the queue is a broadcast channel, and a slow
+Event-queue writes to the broadcast side never block — a slow
 streaming consumer receives an explicit lag error on its reader rather than
 exerting backpressure on the executor — so neither setter ever did anything.
 
@@ -824,11 +1055,11 @@ fn sized(builder: RequestHandlerBuilder) -> RequestHandlerBuilder {
 }
 ```
 
-Said plainly, as the changelog says it: the two public setters are gone, but
-`DEFAULT_WRITE_TIMEOUT` is still exported and the value is still threaded
-into a dead field on `InMemoryQueueWriter`, because changing that
-constructor's arity would have been an unadvertised break on top of the
-advertised one.
+The two public setters are gone. `DEFAULT_WRITE_TIMEOUT` (5 s) is still
+exported — 0.8 kept it, and a then-dead field on `InMemoryQueueWriter`, rather
+than change that constructor's arity — and since 0.10 it is enforced: a write
+that cannot reach the persistence channel within it fails with an error naming
+the stalled processor.
 
 ### The bare `a2a-notification-token` header leaves the default CORS allow-list
 

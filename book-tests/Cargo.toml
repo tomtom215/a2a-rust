@@ -79,9 +79,8 @@ sqlx       = { workspace = true, features = ["postgres"] }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
 uuid       = { workspace = true }
 # The production page's health route answers with the dispatchers' own body
-# type; its executor cancels its own work with the `CancellationToken` that
-# `RequestContext` carries (a `tokio-util` type the server does not
-# re-export); and its logging setup reads `RUST_LOG` with `env-filter`.
+# type, and its logging setup reads `RUST_LOG` with `env-filter`. Its
+# executor's `CancellationToken` comes from the server's re-export (N16), so
+# no `tokio-util` dependency is needed here any more.
 http-body-util     = { workspace = true }
-tokio-util         = { version = ">=0.7, <0.8" }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }

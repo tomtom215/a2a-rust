@@ -14,8 +14,8 @@ url: "https://a2a-rust.com"
 license: Apache-2.0
 # Latest published release (crates.io / GitHub release tag). Bumped as part
 # of the release-prep commit; release.yml validates it matches the tag.
-version: "0.13.0"
-date-released: "2026-09-20"
+version: "0.14.0"
+date-released: "2026-09-26"
 keywords:
   - a2a
   - agent2agent
@@ -26,6 +26,6 @@ keywords:
   - json-rpc
   - grpc
 abstract: >-
-  A complete Rust implementation of the Agent2Agent (A2A) protocol v1.0,
-  providing types, server framework, and client library for building
-  interoperable AI agent systems.
+  A Rust implementation of the Agent2Agent (A2A) protocol v1.0 — types,
+  server framework and client library, all eleven methods over four
+  bindings — for building interoperable AI agent systems.

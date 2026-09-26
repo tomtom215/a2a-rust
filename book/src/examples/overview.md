@@ -6,19 +6,22 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
-| [Hello Agent](./hello-agent.md) | **Smallest complete agent** — 37 lines, one dependency, no feature flags | None | Beginner |
+| [Hello Agent](./hello-agent.md) | **Smallest complete agent** — 28 lines of code above its tests, the SDK plus `tokio`, no SDK feature flags | None | Beginner |
+| [Deploy Agent](./deploy-agent.md) | The hello agent made shippable — env config, `/healthz` and `/readyz`, `SIGTERM` draining, a container and a Kubernetes manifest | None | Beginner |
 | [Incident-Response Team](./incident-response.md) | Multi-turn input-required, delegation, streaming, cancellation | None (optional local model) | Intermediate |
-| [Echo Agent](./echo-agent.md) | Minimal echo agent with JSON-RPC + REST servers and 6 client demos | None | Beginner |
-| [Agent Team](./agent-team.md) | 4-agent team with 81+ E2E tests exercising every SDK feature | None | Advanced |
-| [Genai Agent](./genai-agent.md) | LLM-powered agent using genai (OpenAI, Anthropic, Gemini, Ollama, etc.) | API key | Intermediate |
+| [Echo Agent](./echo-agent.md) | Every A2A method over all four bindings, with a coverage matrix that fails the run on a gap | None | Beginner |
+| [Agent Team](./agent-team.md) | 4-agent team with 102 E2E tests on its default feature set (the dogfood CI job runs them) | None | Advanced |
+| [Genai Agent](./genai-agent.md) | LLM-powered agent using genai (OpenAI, Anthropic, Gemini, Ollama, etc.) | A local model server, or an API key | Intermediate |
 | [Rig Agent](./rig-agent.md) | Real rig-core agent behind A2A — hosted or fully local, no mock | None (local server works keyless) | Intermediate |
-| [Multi-Language Team](./multi-lang-team.md) | Rust coordinator delegating to Python, JS, Go, and Java A2A agents | Worker agents | Advanced |
+| [MCP Agent](./mcp-agent.md) | An agent whose tools come from an MCP server it discovers at startup | None (optional tool-capable local model) | Intermediate |
+| [A2A → MCP Bridge](./mcp-bridge.md) | Exposes a remote A2A agent as an MCP server | None | Intermediate |
+| [Multi-Language Team](./multi-lang-team.md) | Rust coordinator delegating to Python, JS, Go, Java and Rust A2A agents | Worker agents | Advanced |
 
 ## Where to Start
 
 - **New to A2A?** Start with the [Hello Agent](./hello-agent.md) — the entire agent fits on one screen. Then read the [Echo Agent](./echo-agent.md) for the complete request lifecycle across four bindings.
 
-- **Evaluating the SDK?** Run the [Agent Team](./agent-team.md) — it exercises every SDK feature with 81+ automated tests and prints a pass/fail report.
+- **Evaluating the SDK?** Run the [Agent Team](./agent-team.md) — it runs 102 automated end-to-end tests across the SDK's features and prints a pass/fail report.
 
 - **Integrating an LLM?** See the [Genai Agent](./genai-agent.md) or [Rig Agent](./rig-agent.md) for patterns that bridge LLM frameworks with A2A's `AgentExecutor` trait.
 
@@ -26,7 +29,7 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 ## Common Pattern
 
-All examples follow the same three-step integration pattern:
+Every example that serves A2A follows the same three-step integration pattern:
 
 ```rust,no_run
 use a2a_protocol_sdk::prelude::*;

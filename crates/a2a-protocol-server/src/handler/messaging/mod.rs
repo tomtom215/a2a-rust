@@ -35,6 +35,7 @@ use super::helpers::build_call_context;
 use super::{RequestHandler, SendMessageResult};
 
 mod admission;
+mod commit_guard;
 mod continuation;
 mod create;
 mod decisions;
@@ -165,34 +166,49 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<SendMessageResult> {
         let call_ctx = build_call_context(method_name, headers, self.inbound_trace_policy);
-        self.interceptors.run_before(&call_ctx).await?;
-        // SPEC §3.3.4: reject clients that do not declare support for
-        // extensions the agent card marks required.
-        self.ensure_required_extensions(&call_ctx)?;
+        let mut call = self.interceptors.begin(&call_ctx);
+        let result = async {
+            call.before().await?;
+            // SPEC §3.3.4: reject clients that do not declare support for
+            // extensions the agent card marks required.
+            self.ensure_required_extensions(&call_ctx)?;
 
-        let (mode, committed) = self
-            .validate_and_commit(params, streaming, &call_ctx)
-            .await?;
+            let (mode, committed) = self
+                .validate_and_commit(params, streaming, &call_ctx)
+                .await?;
 
-        self.interceptors.run_after(&call_ctx).await?;
-
-        match committed {
-            // Boxed: a replay is the cold path, and inlining it here grows
-            // the future every ordinary send carries.
-            Committed::Replay(task) => {
-                Box::pin(self.respond_replay(*task, streaming, mode.response_history_length)).await
-            }
-            Committed::Started(started) => {
-                if mode.use_background {
-                    Ok(self
-                        .respond_in_background(*started, streaming, mode.response_history_length)
-                        .await)
-                } else {
-                    self.respond_blocking(*started, mode.response_history_length)
+            // `after` runs in `call.finish`, once the response exists, not
+            // before: the executor is already running by now, and until the response path has attached
+            // the background processor (or run the blocking collection) nothing
+            // persists its events. Running `after` first meant an `after` error
+            // dropped the send there, and a task the agent went on to complete
+            // stayed `submitted` in the store (N28).
+            let response = match committed {
+                // Boxed: a replay is the cold path, and inlining it here grows
+                // the future every ordinary send carries.
+                Committed::Replay(task) => {
+                    Box::pin(self.respond_replay(*task, streaming, mode.response_history_length))
                         .await
                 }
-            }
+                Committed::Started(started) => {
+                    if mode.use_background {
+                        Ok(self
+                            .respond_in_background(
+                                *started,
+                                streaming,
+                                mode.response_history_length,
+                            )
+                            .await)
+                    } else {
+                        self.respond_blocking(*started, mode.response_history_length)
+                            .await
+                    }
+                }
+            }?;
+            Ok(response)
         }
+        .await;
+        call.finish(result).await
     }
 
     /// Takes the tenant's concurrency slot, validates the request, and
@@ -282,6 +298,15 @@ impl RequestHandler {
             idempotency::SendKey::Claimed(key) => Some(key),
             idempotency::SendKey::Absent => None,
         };
+        // Released on drop until the commit returns (N26): see `commit_guard`.
+        let mut guard = commit_guard::CommitGuard::new(
+            task_id.clone(),
+            self.event_queue_manager.clone(),
+            std::sync::Arc::clone(&self.cancellation_tokens),
+            std::sync::Arc::clone(&self.task_store),
+            claimed_key.clone(),
+        );
+        let guard_ref = &mut guard;
 
         // Boxed: this block holds the whole creation path's locals, and
         // inlining it here puts the JSON-RPC and REST dispatch futures over
@@ -319,8 +344,11 @@ impl RequestHandler {
             // first, then the token, then the row.
             let (writer, reader, persistence_rx) =
                 self.lease_event_queue(&task_id, use_background).await?;
-            self.register_cancellation_token(&task_id, ctx.cancellation_token.clone())
+            guard_ref.leased();
+            let turn = self
+                .register_cancellation_token(&task_id, ctx.cancellation_token.clone())
                 .await;
+            guard_ref.registered(&turn);
             self.persist_initial_task(&task).await?;
 
             // Boxed, and with every local confined to the helper, so this cold
@@ -342,7 +370,7 @@ impl RequestHandler {
 
             let cancel = ctx.cancellation_token.clone();
             let gate = writer.terminal_gate();
-            let executor_handle = self.spawn_executor(ctx, writer, tenant_slot);
+            let executor_handle = self.spawn_executor(ctx, writer, tenant_slot, turn);
             Ok(Started {
                 task,
                 reader,
@@ -353,6 +381,7 @@ impl RequestHandler {
             })
         })
         .await;
+        guard.disarm();
 
         match started {
             Ok(started) => Ok(Committed::Started(Box::new(started))),

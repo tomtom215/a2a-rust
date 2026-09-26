@@ -11,9 +11,9 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-24 — `claude/determined-galileo-rywiyj` merged as
-`8a54d7e9` (#142); the gate gaps and phase 2 are on
-`claude/keen-noether-q73ekn`.
+Last updated 2026-09-24 — `claude/keen-noether-q73ekn` merged as
+`0b7e87c2` (#143); the drop-path findings N21–N32, N16 and N18 are on
+`claude/peaceful-ptolemy-noka5b`.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -106,7 +106,8 @@ the *content* merge.
 | `claude/optimistic-bell-680i9p` | merged, still present | **Merged as `391f0df` via [#138](https://github.com/tomtom215/a2a-rust/pull/138).** It began as documentation corrections on top of 0.13.0 and is now substantially code: six audit fixes and the regression tests three of them shipped without, W3C Trace Context conformance, event-log durability, `InboundTracePolicy`, and two new CI gates. See its section below. |
 | `claude/pensive-allen-socw7b` | merged, still present | **Merged as `fa2e901` via [#141](https://github.com/tomtom215/a2a-rust/pull/141) on 2026-09-23.** The adopter audit and phase 1 of its fixes; see its section below. Safe to delete. |
 | `claude/determined-galileo-rywiyj` | merged, still present | **Merged as `8a54d7e9` via [#142](https://github.com/tomtom215/a2a-rust/pull/142) on 2026-09-23.** The adopter audit's open work after phase 1; see its section below. Safe to delete. |
-| `claude/keen-noether-q73ekn` | open — see note | **Destined for `main`.** The audit's gate gaps (escape classes 1, 6, 7, 8, 9), then phase 2 of observability. No head SHA, for the reason the sections below give — this file lives on the branch it would record. |
+| `claude/keen-noether-q73ekn` | merged, still present | **Merged as `0b7e87c2` via [#143](https://github.com/tomtom215/a2a-rust/pull/143).** The audit's gate gaps (escape classes 1, 6, 7, 8, 9), then phase 2 of observability. Safe to delete. |
+| `claude/peaceful-ptolemy-noka5b` | open — no PR yet | **Destined for `main`.** N21 (the maintainer chose the admission side), the adopter's four reports, the claims ledger, and the drop-path hunt (N24–N32, N16, N18). See its section below. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -536,11 +537,10 @@ crates. The fixes after `cb5d81d3` were checked by the targeted runs
 their commit messages describe, not by a second full preflight; the pull
 request's CI is the record for them.
 
-**Open, from this branch:** N21, a continuation refused as in flight — a
-design choice for the maintainer, and the reason `swarm_scale` can fail the
-mutation baseline on a busy host; N16, N18; the HTTP+JSON residual above,
+**Open, from this branch:** N21, N16 and N18 were closed on
+`claude/peaceful-ptolemy-noka5b`; the HTTP+JSON residual above,
 unattributed below the bench's noise; `connection_timeout`, still measured
-by no test; the cargo-mutants patch, meant for upstream.
+by no test; the cargo-mutants patch (kept here, not upstreamed — see `scripts/cargo-mutants/README.md`).
 
 **Lessons, each of which cost something:**
 
@@ -600,6 +600,248 @@ ADR 0013's option 5 (`init_telemetry`, OTLP traces; O3, O12), stream
 duration and active streams (O6), the task-outcome metric (E5, with O11's
 remainder), the client side (O8, O9), connection statistics for the gRPC
 and WebSocket listeners (O10) — then OW11 and phase 3.
+
+## `claude/peaceful-ptolemy-noka5b` — from "passes CI" to evidence
+
+Started 2026-09-24 from `0b7e87c2` (#143 merged). Order of work: a baseline
+on clean `main`; N21, on the side the maintainer chose (admission waits,
+bounded); the v0.13.0 adopter's four reports; a claims audit of every
+public statement from 0.6.0 on (`docs/claims-ledger-2026-09-24.md`); then a
+hunt through drop and cancellation paths, which found eight more defects,
+all present on `main`. Every finding has an entry in
+`docs/adopter-audit-2026-09-22.md` and a regression test.
+
+**Baseline on `main` (`0b7e87c2`), measured before any change here:**
+`scripts/preflight.sh --full` 73 of 73 PASS, "All gates passed."; `cargo
+deny check` exit 0 for the workspace and for the binding; a2a-tck `263b9cf`
+— full profile 84 PASS, 4 FAIL; minimal 63 PASS, 3 FAIL; CORE-CAP-004
+passes; every gate exits 0. **Not run on `main`:** nightly clippy and
+tests, `cargo semver-checks`, `prove_gates_fail.sh`.
+
+| N | What | Severity |
+|---|---|---|
+| N21 | a continuation refused while a parked turn's executor returns | Medium |
+| N24 | the manifests admitted versions under RustSec advisories (adopter #4) | Medium |
+| N25 | an idle SSE subscription never ended: each keep-alive reset its bound | Medium |
+| N26 | a send dropped mid-commit wedged its task | High |
+| N27 | a blocking send whose client left: the task stayed `working` | High |
+| N28 | a failing `after` hook orphaned the running task | Medium |
+| N29 | one unread WebSocket stream stalled every call on its socket | Medium |
+| N30 | a WebSocket peer that stopped reading was never closed and kept its slot | Medium |
+| N31 | a cancelled gRPC stream kept its subscription while the task was quiet | Low |
+| N32 | the card poll watcher skipped a fixed card after a failed parse | Low |
+| N33 | JSON that is not a Request object answered -32700, not -32600 | Low |
+| N34 | a part in a media type the card does not declare reached the executor | Medium |
+| N35 | task statuses served without a timestamp | Low |
+| N36 | a refused credential answered `400`; the client never dropped a revoked token | Medium |
+| N37 | the axum adapter's errors were not AIP-193 | Low |
+| N38 | the axum adapter's successes carried no `A2A-Version`; `application/json` kept by choice | Low |
+| N16 | missing constructors; `CancellationToken` re-exported | Low (API) |
+| N18 | `WebSocketTransport` now reconnects, single-flight | Low (client) |
+
+The adopter's reports: #1 (old cargo, misleading error) reproduced — cargo
+1.80.1 and 1.84.1 fail, 1.85.0 resolves; the cause is edition 2024, not
+resolver 3 — and the README says so. #2 (short git rev) did not reproduce on
+cargo 1.88, 1.96 or 1.98. #3 is the CHANGELOG's new "Behaviour Changes"
+heading. #4 is N24, and `scripts/check_advisory_floors.py` is a new CI gate
+for it; on `main` it exits 1 with 13 requirement/advisory pairs.
+
+The binding's RUSTSEC-2026-0285 waiver was re-checked and is still blocked:
+`slim-auth` 0.16.0 reaches `aws-lc-rs =1.16.3` through
+`mls-rs-crypto-awslc` 0.25, and `slim-rpc` 2.3.3 requires `slim-auth ^0.16`
+while the binding pins 0.15.
+
+**Lessons:**
+
+- **The drop path is where the bugs were.** N25–N31 are each a future
+  dropped at an await its author did not treat as a stopping point. N26–N28
+  rest on the premise that hyper drops a request's future when the client
+  disconnects; `tests/interceptor_on_complete.rs` now pins it for JSON-RPC
+  and HTTP+JSON on a real socket. gRPC and WebSocket reach the same handler
+  methods but have no disconnect test of their own.
+- **A test that sleeps between turns hides the race it should catch.**
+  `a_continuation_keeps_what_earlier_turns_wrote` slept 50 ms, which is why
+  N21 showed only on a busy host. The new tests wait on conditions.
+- **preflight's disk estimate was stale.** CI runs with
+  `CARGO_INCREMENTAL=0`, which `dtolnay/rust-toolchain` sets. Locally,
+  incremental state grew to 16 GB in one baseline. preflight now sets the
+  same variable.
+- **A private field can break the public API.** N18's reconnect lock, a
+  `tokio::sync::Mutex<()>`, made `WebSocketTransport` stop being
+  `RefUnwindSafe`; `cargo semver-checks` caught it (exit 100,
+  `auto_trait_impl_removed`) where no test or lint did. The field is now
+  `AssertUnwindSafe` — true, since it guards `()` — and a compile-time
+  assertion pins the type's auto traits.
+- **A manual build left behind fills the disk under the next gate.**
+  `package_binding.py`, run by hand, left 6.8 GB in
+  `bindings/a2a-protocol-slimrpc/target`, which nothing cleans. Full
+  preflight #10 then failed two gates (exit 1 and 101) with ~24 GB of
+  build output against a ~25 GB allowance; a full disk is the likely
+  cause, not a confirmed one — the log was lost to a container restart
+  before its errors were read. Delete a manual build's target directory
+  before starting the next long run, and read `df` first.
+- **The `pkill -f` lesson above did not stick.** It killed its own shell
+  at least three more times on this branch. Stop helpers by PID, found with
+  `ps -eo pid,args | awk '$3 ~ /name/'`; a pattern like
+  `pgrep -f "name[.]sh"` does not match its own command line.
+- **A release gate's healthy fixture can be the version, not the gate.**
+  `prove_workflow_gates_fail.py` tagged its healthy release at the
+  version the crates declare; bumping to 0.14.0 before release prep made
+  that a release with no notes, and two probes went INCONCLUSIVE. Both
+  release fixtures now key off the newest dated CHANGELOG heading
+  (`37320002`).
+- **A spec SHOULD is not the only reader of the wire.** N38's switch to
+  the spec's media type passed every test here and ACTS, and broke the
+  official Go client; only the cross-SDK interop gate caught it. Run
+  `go_sdk_interop.sh` before pushing any change to HTTP+JSON headers.
+- **Re-run the static gates after the last change, not before it.** The
+  first branch preflight failed four gates, all introduced by this branch's
+  own later edits: a file over the length limit, an API-reference row, a
+  field dead without `tracing`, and an example that timed out because a
+  local model server was contending for CPU.
+
+**ACTS, the official conformance suite** (a2aproject/a2a-itk `429945f6`,
+`run_acts.py --mount itk --transport all`). N33–N38 are what it found in
+the SDK. The rest of the gap to the official Rust SDK's agent, which was
+CONFORMANT on the same suite when ours scored 85/75/74 per binding, was the
+ITK agent: the `tck-*` behaviours, the client-parse fixture, and the
+reduced-capability and auth passes (`itk/src/acts_modes.rs`, whose guard
+refuses through the SDK's own `BearerTokenAuthInterceptor` and
+`A2aError::permission_denied`, so the auth tests grade what an adopter
+gets). At `9496d1b1`: JSON-RPC 101/101, gRPC 88/88, HTTP+JSON 91/92, every
+MUST passing, CONFORMANT overall; the one failure was REST-CT-001 (a
+SHOULD: `application/a2a+json` on HTTP+JSON responses, §11.1). I first
+recorded it as ACTS contradicting the spec; §11.1 says otherwise, and the
+code had cited the 2026-03-31 snapshot. `dfc69ed2` switched to the A2A
+media type and ACTS went to 92/92, but CI's `go_sdk_interop.sh` failed:
+a2a-go's client reads HTTP+JSON errors only under `application/json`. The
+switch was reverted and the deviation documented (N38 in the audit); the
+official Rust SDK fails REST-CT-001 the same way. So REST-CT-001 fails by
+choice until a2a-go accepts both. Build the ITK
+and run ACTS with the workspace `target/` cleared: the two together do not
+fit the disk (see Lessons).
+
+`ServerInterceptor::on_complete` and `CallOutcome` were added at the
+maintainer's request: one call per interceptor whose `before` ran, with
+`Succeeded`, `Failed(&ServerError)` or `Cancelled`, and no effect on the
+response. Every `RequestHandler` method runs its body between
+`interceptors.begin(&call_ctx)`, `call.before()` and `call.finish(result)`
+(`src/interceptor/completion.rs`), and all four bindings reach the ten
+handler methods and nothing else (read, not tested, for gRPC and
+WebSocket). Three mutations of the guard (no drop path, decrement after
+the await, count `before` only on success) each fail at least one of the
+new tests.
+
+A first version took the body as an argument, `intercept(ctx, body)`, and
+workspace clippy failed `large_futures` on every send path at about 30 KB:
+an `async fn` stores its argument and again the future it awaits. Measured,
+then designed around; the module comment records it. The unit and
+integration tests had passed on that version; only clippy caught it, so
+run clippy before calling a change on the send path done.
+
+**Open, from this branch:**
+
+- task #16, CI: pin the official suites, a lightweight daily canary, an
+  ACTS gate against a baseline, and spec/proto drift detection — the last
+  is what N38 (and the push sender's Content-Type before it) needed. The
+  ACTS gate must key on `run_acts.py`'s exit status (MUST-only, §12.7) or
+  baseline REST-CT-001, which fails by choice (conformance history,
+  "Deliberate deviations");
+- N38's media type: recorded as a deliberate deviation in
+  `book/src/reference/conformance-history.md`. The maintainer chose not to
+  report a2a-go's `application/json`-only error decoding upstream for now
+  (2026-09-25); revisit when a2a-go changes, using `go_sdk_interop.sh`;
+- close Dependabot's #128: genai 0.6.5 landed on this branch with
+  `deny.toml`'s first advisory ignore (RUSTSEC-2024-0436, `paste`), the
+  maintainer's choice on 2026-09-25; 0.7.0-beta.24 was checked and still
+  depends on `paste`. Drop the ignore when genai drops `paste`;
+
+- WS3 — genai, rig and mcp over every binding with the real model, and why
+  a WebSocket `SendMessage` timed out while a model server was busy;
+- extended fuzz runs, including the new `client_peer_input` target;
+- a flake hunt under CPU load;
+- `swarm_scale` under load, `main` against this branch, for N21;
+- in-diff mutation runs;
+- WS4 measurements against `docs/readiness-bar.md`, which defines the bar
+  and records no measurements yet;
+- WS5, a clean-`CARGO_HOME` walkthrough of the new Quick Start against
+  crates.io 0.13;
+- nightly clippy and tests, `cargo semver-checks`, and `prove_gates_fail.sh`
+  on this branch;
+
+Carried over, unchanged: `connection_timeout` is measured by no test; the
+HTTP+JSON telemetry residual; phase 2's remainder (ADR 0013), OW11 and
+phase 3.
+
+**Release:** the next release is 0.14.0 (`[Unreleased]` carries
+`### Breaking Changes` from #141–#143), and `release.yml`'s cadence check
+refuses a second breaking minor in the calendar month of 0.13.0
+(2026-09-20): the earliest tag date is 2026-10-01. The crates are already
+at 0.14.0 on this branch (`fd028712`, the maintainer's choice): N36 needs a
+types API that `cargo package` could not find in the published 0.13.0.
+Until the tag, `cargo semver-checks` reads 0.13 → 0.14 as allowed to break.
+Release prep (notes, CITATION, SECURITY, ROADMAP, the provenance manifest
+last) is still a second pull request (`RELEASING.md`).
+
+**Verification of record, at `9496d1b1`:** GitHub CI green, 21 of 21 jobs,
+including `Test (1.88, macos-latest)`, which had failed at `37320002` on a
+graceful-drain test that slept instead of waiting for its request
+(`ff63be5a`). The last full local preflight, at `fd028712`, passed 74 of
+75 gates; the 75th was `prove_workflow_gates_fail.py`, fixed and re-run
+alone in `37320002`. After that, CI at `20a6d817` failed two jobs: the
+Go interop (N38's switch, reverted) and `Test (stable, windows-latest)`,
+where `the_task_store_stays_bounded_under_sustained_load` failed its own
+precondition because a slow runner sent too few requests in its fixed
+window; the load loop now has a request floor. Neither fix has had a full
+preflight; see the commit for what ran.
+
+**Documentation audit, 2026-09-25.** Six read-only agents audited every
+book page, the root, crate and binding READMEs, and `book/static`, each
+finding with source evidence; each then applied its own verified fixes
+within its pages, and the root README was reviewed by hand. It found one
+code defect, fixed with a test that fails without it: the SLIMRPC binding's
+server still answered a refused credential `INVALID_ARGUMENT` (N36's
+residue). The largest gaps were an `upgrading.md` with no 0.13 → 0.14
+section, a push-delivery label table that described `timeout_truncated` as
+`skipped`, pages saying the executor timeout and `tracing` were off by
+default, lag described as a silent gap (the stream ends), and benchmark
+prose contradicting its own tables (fixed in `generate_book_page.sh`).
+Verified after: `a2a-book-tests` 216 passed (every book and README block),
+agent-team 102/102, workspace clippy, rustdoc `-D warnings`, 22 script
+gates, the book built with mdBook 0.4.40 and `seo_postprocess.py --check`
+clean on 65 pages, and the changed pages rendered and read.
+
+**0.14.0 is prepared on this branch (2026-09-26), in one pull request.**
+The maintainer chose to fold release prep into the content PR rather than a
+second one, and to ship inside September under a declared cadence exception
+(its wording is the maintainer's). The prep commit dates the CHANGELOG and
+moves CITATION.cff, SECURITY.md, ROADMAP.md and the book's changelog; the
+provenance manifest is regenerated in the commit after it. Both must stay
+last: a later change to a packaged file needs the 0.14.0 notes touched after
+it, and any change at all needs the manifest regenerated last. Merge with a
+merge commit (as #143), tag `v0.14.0` (annotated) on it the same day, since
+the docs site deploys from `main` and tells readers to install 0.14. Then
+publish the SLIMRPC binding 0.6.0 by hand (`RELEASING.md`, "SLIMRPC").
+
+The first Official TCK run on the PR (#144) failed on `CORE-SEND-003`, on all
+three bindings under the full and minimal profiles. The cause is the suite,
+not N34: the requirement declares no `expected_error`, so it demands that an
+unsupported media type be accepted. It is baselined, with the evidence in
+`docs/official-tck-findings.md` §22. The tally to quote is now 87 of 114
+passing and 5 failing (README, ROADMAP, conformance history). The in-diff
+mutation run on the same head found surviving mutants in
+`status_stamp.rs`, `dispatch/grpc/helpers.rs` (two arms),
+`messaging/admission.rs`, `dispatch/rest/error_response.rs` (eight
+arms of `canonical_status_name`) and `agent_card/hot_reload.rs`; each now
+has a test that fails under its mutation. The default
+`ServerInterceptor::on_complete` survivor is equivalent and is skipped
+with an ADR 0006 note. Those are packaged
+files, so the 0.14.0 notes were touched in the same commit and the manifest
+regenerated after it.
+
+**What the next session should do first:** check CI on the branch head,
+then the `swarm_scale`
+comparison for N21 and WS3.
 
 ## In flight outside this repository
 

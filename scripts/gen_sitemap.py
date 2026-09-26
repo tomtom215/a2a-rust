@@ -88,6 +88,12 @@ def parse_summary():
                 indent, path = lm.group(1), lm.group(2)
                 depth = len(indent) // 4  # SUMMARY indents sub-pages by 4 spaces
                 url = path[:-3] + ".html"  # foo/bar.md -> foo/bar.html
+                # mdBook copies the first chapter to index.html, so the
+                # introduction is the site root under a second URL; its
+                # canonical is the root (seo_postprocess.py), and a sitemap
+                # lists canonical URLs only.
+                if url == "introduction.html":
+                    continue
                 current.append((url, depth))
     if current:
         sections.append((current_title, current))

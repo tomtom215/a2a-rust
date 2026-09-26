@@ -306,60 +306,64 @@ impl RequestHandler {
             Box::pin(async {
                 let call_ctx =
                     build_call_context("SubscribeToTask", headers, self.inbound_trace_policy);
-                self.interceptors.run_before(&call_ctx).await?;
-                // SPEC §3.3.4: reject clients that do not declare support for
-                // extensions the agent card marks required.
-                self.ensure_required_extensions(&call_ctx)?;
+                let mut call = self.interceptors.begin(&call_ctx);
+                let result = async {
+                    call.before().await?;
+                    // SPEC §3.3.4: reject clients that do not declare support for
+                    // extensions the agent card marks required.
+                    self.ensure_required_extensions(&call_ctx)?;
 
-                // SPEC §3.3.4: SubscribeToTask is a streaming operation and is only
-                // permitted when the configured agent card advertises
-                // `capabilities.streaming == true`. (No-op when no card is configured.)
-                self.ensure_streaming_supported()?;
+                    // SPEC §3.3.4: SubscribeToTask is a streaming operation and is only
+                    // permitted when the configured agent card advertises
+                    // `capabilities.streaming == true`. (No-op when no card is configured.)
+                    self.ensure_streaming_supported()?;
 
-                let task_id = TaskId::new(&params.id);
+                    let task_id = TaskId::new(&params.id);
 
-                // Verify the task exists.
-                let task = self
-                    .task_store
-                    .get(&task_id)
-                    .await?
-                    .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+                    // Verify the task exists.
+                    let task = self
+                        .task_store
+                        .get(&task_id)
+                        .await?
+                        .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
-                // SPEC §3.1.6: Subscribing to a task in a terminal state is an
-                // unsupported operation — the task will never produce new events.
-                if task.status.state.is_terminal() {
-                    return Err(ServerError::UnsupportedOperation(format!(
-                        "task {} is in terminal state '{}' and cannot be subscribed to",
-                        task_id, task.status.state
-                    )));
+                    // SPEC §3.1.6: Subscribing to a task in a terminal state is an
+                    // unsupported operation — the task will never produce new events.
+                    if task.status.state.is_terminal() {
+                        return Err(ServerError::UnsupportedOperation(format!(
+                            "task {} is in terminal state '{}' and cannot be subscribed to",
+                            task_id, task.status.state
+                        )));
+                    }
+
+                    // SPEC: The first event in a SubscribeToTask stream MUST be a Task
+                    // snapshot representing the current state (Go #231, JS #323).
+                    let snapshot = a2a_protocol_types::events::StreamResponse::Task(task);
+                    let mut reader = self
+                        .event_queue_manager
+                        .subscribe_with_snapshot(&task_id, snapshot.clone())
+                        .await
+                        // No live event queue for a non-terminal task — the executor
+                        // for the previous turn has exited (its queue dies with it),
+                        // or the process restarted. Either way the task itself is not
+                        // finished, so §3.1.6 says the stream must stay open; start
+                        // from the snapshot and let the reattach hook below wait for
+                        // the next turn's queue.
+                        .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(snapshot))
+                        .with_reattach(self.subscribe_reattach_hook(task_id.clone()));
+
+                    // Resumption. A client that was disconnected sends back the
+                    // `id:` of the last frame it saw; the log is replayed from
+                    // exactly there, after the snapshot and before the live
+                    // stream, so the client sees what it missed rather than a
+                    // fold it cannot interpret.
+                    self.replay_missed_events(&mut reader, &task_id, headers)
+                        .await;
+
+                    Ok(reader)
                 }
-
-                // SPEC: The first event in a SubscribeToTask stream MUST be a Task
-                // snapshot representing the current state (Go #231, JS #323).
-                let snapshot = a2a_protocol_types::events::StreamResponse::Task(task);
-                let mut reader = self
-                    .event_queue_manager
-                    .subscribe_with_snapshot(&task_id, snapshot.clone())
-                    .await
-                    // No live event queue for a non-terminal task — the executor
-                    // for the previous turn has exited (its queue dies with it),
-                    // or the process restarted. Either way the task itself is not
-                    // finished, so §3.1.6 says the stream must stay open; start
-                    // from the snapshot and let the reattach hook below wait for
-                    // the next turn's queue.
-                    .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(snapshot))
-                    .with_reattach(self.subscribe_reattach_hook(task_id.clone()));
-
-                // Resumption. A client that was disconnected sends back the
-                // `id:` of the last frame it saw; the log is replayed from
-                // exactly there, after the snapshot and before the live
-                // stream, so the client sees what it missed rather than a
-                // fold it cannot interpret.
-                self.replay_missed_events(&mut reader, &task_id, headers)
-                    .await;
-
-                self.interceptors.run_after(&call_ctx).await?;
-                Ok(reader)
+                .await;
+                call.finish(result).await
             }),
         )
         .await;
@@ -568,6 +572,68 @@ mod tests {
         let ended = tokio::time::timeout(std::time::Duration::from_secs(5), reader.read())
             .await
             .expect("the idle bound must end the stream rather than hang");
+        assert!(ended.is_none(), "expected clean EOF, got: {ended:?}");
+    }
+
+    /// The idle bound holds when `read()` is cancelled and called again,
+    /// which is what the SSE writer does at every keep-alive: it races
+    /// `read()` against the keep-alive timer in a `select!` and drops the
+    /// losing future. The bound used to live in the future the reattach
+    /// hook returns, so each keep-alive started it again, and with the
+    /// defaults — a 30 s keep-alive, a 300 s bound — a subscription to a
+    /// parked task never ended.
+    #[tokio::test]
+    async fn the_idle_bound_survives_a_read_cancelled_by_a_keep_alive() {
+        use crate::streaming::event_queue::EventQueueReader as _;
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+        let max_idle = std::time::Duration::from_millis(100);
+        let keep_alive = std::time::Duration::from_millis(30);
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(
+                crate::handler::HandlerLimits::default()
+                    .with_subscribe_reattach_interval(std::time::Duration::from_millis(5))
+                    .with_subscribe_max_idle(max_idle),
+            )
+            .build()
+            .unwrap();
+        handler
+            .task_store
+            .save(&Task {
+                id: TaskId::new("t-parked"),
+                context_id: ContextId::new("ctx-1"),
+                status: TaskStatus::new(TaskState::InputRequired),
+                history: None,
+                artifacts: None,
+                metadata: None,
+            })
+            .await
+            .unwrap();
+        let mut reader = handler
+            .on_resubscribe(
+                TaskIdParams {
+                    tenant: None,
+                    id: "t-parked".to_owned(),
+                },
+                None,
+            )
+            .await
+            .expect("resubscribe must succeed");
+        let _snapshot = reader.read().await.expect("snapshot");
+
+        let started = tokio::time::Instant::now();
+        let ended = loop {
+            // The keep-alive tick: shorter than the bound, as the defaults are.
+            if let Ok(event) = tokio::time::timeout(keep_alive, reader.read()).await {
+                break event;
+            }
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(5),
+                "a {max_idle:?} idle bound had not ended the stream after {:?} \
+                 of reads cancelled every {keep_alive:?}",
+                started.elapsed()
+            );
+        };
         assert!(ended.is_none(), "expected clean EOF, got: {ended:?}");
     }
 

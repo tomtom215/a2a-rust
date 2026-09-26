@@ -22,6 +22,12 @@ data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"TAS
 
 Each `data:` line is a complete JSON object. Events are separated by blank lines.
 
+Shown in the HTTP+JSON form, trimmed to the update events; over JSON-RPC each
+`data:` is a JSON-RPC success response whose `result` is this object. This
+repository's server also sends the task's `Task` snapshot first, and precedes
+each frame with `event: message` and, for agent-emitted events, an `id:` line
+(see [Resuming from where you left off](#resuming-from-where-you-left-off)).
+
 ## Stream Event Types
 
 Four types of events can appear in a stream:
@@ -68,7 +74,7 @@ When `append: true`, the server merges the event into the existing artifact with
 the same ID:
 
 - **Parts** are appended to the existing artifact's parts list
-- **Metadata** is deep-merged: new keys override existing keys
+- **Metadata** is merged key by key at the top level: new keys override existing keys
 - If no artifact with the matching ID exists, a new artifact is created
 
 ### Task
@@ -164,12 +170,12 @@ The event queue uses `tokio::sync::broadcast` channels for fan-out to multiple s
 | Queue capacity | 256 events | Broadcast channel ring buffer size |
 | Max event size | 16 MiB | Rejects oversized events |
 
-With broadcast channels, writes never block on readers — if a reader is too slow, it receives a `Lagged` notification and skips missed events. The task store is the source of truth; SSE is best-effort notification. The one write that waits is the terminal one, on the store rather than on readers (see [The terminal frame is the stored one](#the-terminal-frame-is-the-stored-one)).
+With broadcast channels, writes never block on readers. A reader that falls more than the queue capacity behind is cut off: its stream ends with one `event: error` frame carrying the `streamLagged` signal (`ClientError::is_stream_lagged()` on the client). It gets a contiguous prefix and an announced end, never a silent gap, and resubscribing (with `Last-Event-ID` to replay) continues it. The task store is the source of truth; SSE is best-effort notification. The one write that waits is the terminal one, on the store rather than on readers (see [The terminal frame is the stored one](#the-terminal-frame-is-the-stored-one)).
 
 > **High-volume streams:** For tasks producing >250 events, increase the queue
 > capacity to match expected peak volume. The default capacity of 256 is sufficient
-> for most use cases, but high-volume streams beyond that will experience
-> increased per-event cost due to broadcast buffer pressure.
+> for most use cases, but high-volume streams beyond that risk cutting off slower
+> readers with `streamLagged`.
 
 Configure these via the builder:
 
@@ -227,12 +233,16 @@ while let Some(event) = stream.next().await {
 # }
 ```
 
+An error that answers `e.is_stream_lagged()` means this reader was cut off for
+falling behind; the task is unaffected, so resubscribe rather than give up (see
+[Streaming Responses](../client/streaming.md#how-a-stream-ends)).
+
 ### Client Protections
 
 The SSE parser includes safety limits:
 
 - **16 MiB event cap** — An oversized event, or a line that never ends, is refused with an error rather than buffered (`with_max_event_size`)
-- **30-second connect timeout** — Fails fast on unreachable servers
+- **30-second stream connect timeout** — Bounds waiting for the stream's response headers (TCP connect itself is `with_connection_timeout`, 10 seconds)
 - **First-event timeout** — A stream that is accepted but silent before its first data times out after 5 minutes by default (`with_stream_first_event_timeout`; separate from the 30-second connect timeout), on every transport
 - **Idle timeout** — After the first frame, a stream that receives nothing at all (keep-alive comments count) for 5 minutes by default ends with `ClientError::Timeout`; resubscribe to continue
 - **Partial line buffering** — Handles TCP frame boundaries correctly (CRLF, LF, and bare-CR line endings per the SSE spec)
@@ -246,7 +256,7 @@ params, streaming not advertised) or partway through (an executor failure, the
 **Before the stream starts**, the error is not SSE:
 
 - over JSON-RPC it is a plain `application/json` JSON-RPC error response,
-  HTTP 200;
+  HTTP 200 (a refused credential answers HTTP 401/403 instead);
 - over HTTP+JSON it is an HTTP error status with a `google.rpc.Status` body.
 
 The official conformance kit (a2aproject/a2a-tck) requires the JSON-RPC shape,
@@ -288,14 +298,15 @@ let mut stream = client
 The server creates a new broadcast subscriber and immediately emits a `Task`
 snapshot as the first event, allowing the client to recover the current state.
 Multiple SSE connections can be active simultaneously for the same task — each
-receives all events published after it subscribes. If a reader falls behind, it
-receives a `Lagged` notification and skips missed events rather than blocking
-other readers or the writer.
+receives all events published after it subscribes. If a reader falls behind by
+more than the queue capacity, its stream ends with a `streamLagged` error frame
+rather than blocking other readers or the writer; resubscribe with
+`subscribe_to_task_from` to continue.
 
 > **Terminal tasks:** Subscribing to a task in a terminal state
 > (`Completed`, `Failed`, `Canceled`, `Rejected`) returns an
-> `UnsupportedOperation` error immediately. No events are streamed; on
-> JSON-RPC the error is the response's single SSE frame (see
+> `UnsupportedOperation` error immediately. No stream is opened: on JSON-RPC
+> the answer is a plain `application/json` error response (see
 > [Errors on the wire](#errors-on-the-wire)).
 
 ### Resuming from where you left off
@@ -317,7 +328,7 @@ Every frame carrying an event the agent emitted therefore also carries an SSE
 ```text
 id: 7
 event: message
-data: {"kind":"status-update", ...}
+data: {"statusUpdate":{"taskId":"task-abc", ...}}
 ```
 
 Send the last one you saw back as `Last-Event-ID` on the resubscribe, and the
@@ -325,7 +336,7 @@ server replays the log from exactly there — after the snapshot, before the
 live stream:
 
 ```text
-GET /v1/tasks/task-abc:subscribe
+POST /tasks/task-abc:subscribe
 Last-Event-ID: 7
 ```
 

@@ -38,101 +38,104 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("CancelTask", headers, self.inbound_trace_policy);
-            self.interceptors.run_before(&call_ctx).await?;
-            // SPEC §3.3.4: reject clients that do not declare support for
-            // extensions the agent card marks required.
-            self.ensure_required_extensions(&call_ctx)?;
+            let mut call = self.interceptors.begin(&call_ctx);
+            let result = async {
+                call.before().await?;
+                // SPEC §3.3.4: reject clients that do not declare support for
+                // extensions the agent card marks required.
+                self.ensure_required_extensions(&call_ctx)?;
 
-            let task_id = TaskId::new(&params.id);
-            let task = self
-                .task_store
-                .get(&task_id)
-                .await?
-                .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+                let task_id = TaskId::new(&params.id);
+                let task = self
+                    .task_store
+                    .get(&task_id)
+                    .await?
+                    .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
-            if task.status.state.is_terminal() {
-                return Err(ServerError::TaskNotCancelable(task_id));
-            }
-
-            // Signal the cancellation token so the executor can observe the cancellation.
-            {
-                let tokens = self.cancellation_tokens.read().await;
-                if let Some(entry) = tokens.get(&task_id) {
-                    entry.token.cancel();
+                if task.status.state.is_terminal() {
+                    return Err(ServerError::TaskNotCancelable(task_id));
                 }
+
+                // Signal the cancellation token so the executor can observe the cancellation.
+                {
+                    let tokens = self.cancellation_tokens.read().await;
+                    if let Some(entry) = tokens.get(&task_id) {
+                        entry.token.cancel();
+                    }
+                }
+
+                // Build a request context for the cancel call.
+                let ctx = RequestContext::new(
+                    a2a_protocol_types::message::Message {
+                        id: a2a_protocol_types::message::MessageId::new(
+                            uuid::Uuid::new_v4().to_string(),
+                        ),
+                        role: a2a_protocol_types::message::MessageRole::User,
+                        parts: vec![],
+                        task_id: Some(task_id.clone()),
+                        context_id: Some(task.context_id.clone()),
+                        reference_task_ids: None,
+                        extensions: None,
+                        metadata: None,
+                    },
+                    task_id.clone(),
+                    task.context_id.0.clone(),
+                )
+                // The cancel's own call context, not the send's: an executor
+                // refusing a cancel needs to know who is asking to cancel.
+                .with_call_context(call_ctx.clone());
+
+                // Use a non-registering writer: if a live queue exists (an in-flight
+                // streaming task) the cancel event reaches its subscribers;
+                // otherwise a throwaway writer is used. `get_or_create` here would
+                // INSERT a queue for a task whose executor has already exited (e.g.
+                // an input-required task), and nothing on the cancel path ever
+                // destroys it — a permanent map + concurrency-slot leak keyed by a
+                // client-reachable task id.
+                let writer = self.event_queue_manager.writer_for_cancel(&task_id).await;
+                self.executor.cancel(&ctx, writer.as_ref()).await?;
+
+                // Re-read the task to narrow the TOCTOU window: if the background
+                // processor completed/failed the task between our initial check and
+                // now, we must not overwrite the terminal state with Canceled. A
+                // re-read of Canceled is NOT that race — it means the cancel event
+                // the executor just emitted already persisted, i.e. success.
+                let current = self
+                    .task_store
+                    .get(&task_id)
+                    .await?
+                    .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+                if current.status.state == a2a_protocol_types::task::TaskState::Canceled {
+                    return Ok(current);
+                }
+                if current.status.state.is_terminal() {
+                    return Err(ServerError::TaskNotCancelable(task_id));
+                }
+
+                let mut updated = current;
+                updated.status = TaskStatus::with_timestamp(TaskState::Canceled);
+                // The re-read above narrows the window; this closes it. The store
+                // refuses to move a terminal task (`store::terminal`), so a task
+                // that finished between the re-read and this write — on this
+                // replica or another — keeps its state, and the caller is told
+                // the truth: it was not cancelable.
+                if let Err(e) = self.task_store.save(&updated).await {
+                    return Err(match crate::store::TerminalStateConflict::from_error(&e) {
+                        Some(_) => ServerError::TaskNotCancelable(task_id),
+                        None => e.into(),
+                    });
+                }
+                // Re-read to return the authoritative final state.
+                let final_task = self
+                    .task_store
+                    .get(&task_id)
+                    .await?
+                    .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+
+                Ok(final_task)
             }
-
-            // Build a request context for the cancel call.
-            let ctx = RequestContext::new(
-                a2a_protocol_types::message::Message {
-                    id: a2a_protocol_types::message::MessageId::new(
-                        uuid::Uuid::new_v4().to_string(),
-                    ),
-                    role: a2a_protocol_types::message::MessageRole::User,
-                    parts: vec![],
-                    task_id: Some(task_id.clone()),
-                    context_id: Some(task.context_id.clone()),
-                    reference_task_ids: None,
-                    extensions: None,
-                    metadata: None,
-                },
-                task_id.clone(),
-                task.context_id.0.clone(),
-            )
-            // The cancel's own call context, not the send's: an executor
-            // refusing a cancel needs to know who is asking to cancel.
-            .with_call_context(call_ctx.clone());
-
-            // Use a non-registering writer: if a live queue exists (an in-flight
-            // streaming task) the cancel event reaches its subscribers;
-            // otherwise a throwaway writer is used. `get_or_create` here would
-            // INSERT a queue for a task whose executor has already exited (e.g.
-            // an input-required task), and nothing on the cancel path ever
-            // destroys it — a permanent map + concurrency-slot leak keyed by a
-            // client-reachable task id.
-            let writer = self.event_queue_manager.writer_for_cancel(&task_id).await;
-            self.executor.cancel(&ctx, writer.as_ref()).await?;
-
-            // Re-read the task to narrow the TOCTOU window: if the background
-            // processor completed/failed the task between our initial check and
-            // now, we must not overwrite the terminal state with Canceled. A
-            // re-read of Canceled is NOT that race — it means the cancel event
-            // the executor just emitted already persisted, i.e. success.
-            let current = self
-                .task_store
-                .get(&task_id)
-                .await?
-                .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
-            if current.status.state == a2a_protocol_types::task::TaskState::Canceled {
-                self.interceptors.run_after(&call_ctx).await?;
-                return Ok(current);
-            }
-            if current.status.state.is_terminal() {
-                return Err(ServerError::TaskNotCancelable(task_id));
-            }
-
-            let mut updated = current;
-            updated.status = TaskStatus::with_timestamp(TaskState::Canceled);
-            // The re-read above narrows the window; this closes it. The store
-            // refuses to move a terminal task (`store::terminal`), so a task
-            // that finished between the re-read and this write — on this
-            // replica or another — keeps its state, and the caller is told
-            // the truth: it was not cancelable.
-            if let Err(e) = self.task_store.save(&updated).await {
-                return Err(match crate::store::TerminalStateConflict::from_error(&e) {
-                    Some(_) => ServerError::TaskNotCancelable(task_id),
-                    None => e.into(),
-                });
-            }
-            // Re-read to return the authoritative final state.
-            let final_task = self
-                .task_store
-                .get(&task_id)
-                .await?
-                .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
-
-            self.interceptors.run_after(&call_ctx).await?;
-            Ok(final_task)
+            .await;
+            call.finish(result).await
         })
         .await;
 

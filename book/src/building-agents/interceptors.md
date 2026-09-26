@@ -31,7 +31,7 @@ impl ServerInterceptor for LoggingInterceptor {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            println!("Response: {}", ctx.method());
+            println!("Answered: {}", ctx.method());
             Ok(())
         })
     }
@@ -70,6 +70,62 @@ Interceptors execute in the order they're added:
 Request → Auth → Logging → RateLimit → Handler → RateLimit → Logging → Auth → Response
 ```
 
+### Seeing every outcome: `on_complete`
+
+`after` runs only when the call succeeds, and an error it returns replaces
+the response. For work that must happen however the call ends — releasing
+what `before` acquired, closing an audit record, counting failures by
+caller — override `on_complete`. It is called once per call, in reverse
+order, on every interceptor whose `before` ran, with how the call ended:
+
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+use a2a_protocol_sdk::server::{CallContext, CallOutcome, ServerInterceptor};
+
+struct AuditInterceptor;
+
+impl ServerInterceptor for AuditInterceptor {
+    fn before<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn on_complete<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+        outcome: CallOutcome<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            match outcome {
+                CallOutcome::Succeeded => println!("{}: ok", ctx.method()),
+                CallOutcome::Failed(e) => println!("{}: {}", ctx.method(), e.metric_label()),
+                CallOutcome::Cancelled => println!("{}: client went away", ctx.method()),
+                _ => {}
+            }
+        })
+    }
+}
+```
+
+`Failed` carries the error the caller is sent, whether a `before` hook, the
+handler or an `after` hook produced it. `Cancelled` means the call's future
+was dropped unanswered — the client disconnected, or a timeout above the
+handler gave up — and the hook then runs in a task of its own. It returns
+nothing, so it cannot change the response. For `SendStreamingMessage` and
+`SubscribeToTask` the call ends when the stream is established, not when it
+closes. The trait method's documentation states the full contract.
+
 ### Example: Authentication
 
 For a fixed set of API keys or bearer tokens, use the built-in
@@ -85,7 +141,6 @@ authenticates:
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_sdk::server::CallContext;
 # use a2a_protocol_sdk::server::ServerInterceptor;
-# use a2a_protocol_sdk::types::error::ErrorCode;
 # fn verify_session(_token: &str) -> Option<String> { None }
 /// Accepts a request whose bearer token `verify_session` maps to a caller.
 struct SessionAuthInterceptor;
@@ -102,7 +157,8 @@ impl ServerInterceptor for SessionAuthInterceptor {
                 .and_then(|h| h.strip_prefix("Bearer "))
                 .and_then(verify_session)
                 .ok_or_else(|| {
-                    A2aError::new(ErrorCode::InvalidRequest, "authentication required")
+                    // 401 + WWW-Authenticate on HTTP, UNAUTHENTICATED on gRPC (ADR 0014).
+                    A2aError::unauthenticated("authentication required", "Bearer realm=\"a2a\"")
                 })?;
             // Rate limiting and executors (`ctx.caller_identity()`) key on this.
             ctx.set_caller_identity(caller);
@@ -124,6 +180,10 @@ impl ServerInterceptor for SessionAuthInterceptor {
     }
 }
 ```
+
+Refuse an authenticated caller who lacks permission with
+`A2aError::permission_denied(message)` (`403` / `PERMISSION_DENIED`). Any other
+error keeps its usual status, so a client never learns to refresh its token.
 
 ## Client Interceptors
 
@@ -264,18 +324,26 @@ let handler = RequestHandlerBuilder::new(my_executor)
 # }
 ```
 
-Caller keys are derived from `CallContext::caller_identity()` (set by auth
-interceptors) or `"anonymous"`. The `X-Forwarded-For` header is only consulted
+Caller keys are derived from `CallContext::caller_identity()`, or
+`"anonymous"`. `JwtAuthInterceptor` sets the identity from the token's `sub`.
+`BearerTokenAuthInterceptor::new` and `ApiKeyAuthInterceptor::new` do not, so
+every valid caller shares one bucket; use
+`BearerTokenAuthInterceptor::with_labelled_tokens([(token, "caller-a"), …])` or
+`ApiKeyAuthInterceptor::with_labelled_keys(…)` for per-caller limits. The
+`X-Forwarded-For` header is only consulted
 when `trusted_proxy_hops` is set to the number of trusted reverse proxies in
 front of the server — the header is client-controlled, so it is ignored by
 default. The bucket map is bounded by `max_buckets` (default 10,000).
 
 > **Note:** `CallContext` fields are read-only (accessed via methods like
-> `ctx.method()`, `ctx.caller_identity()`, `ctx.http_headers()`). This
-> prevents interceptors from mutating security-critical context mid-request.
+> `ctx.method()`, `ctx.caller_identity()`, `ctx.http_headers()`), with one
+> write-once exception: `set_caller_identity`, which the first authenticating
+> interceptor sets and nothing can then overwrite. This prevents interceptors
+> from mutating security-critical context mid-request.
 
-For advanced
-use cases (sliding windows, distributed counters), implement a custom
+For limits shared across replicas, pass a `RateLimitCounter` to
+`RateLimitInterceptor::with_shared_counter` (`PostgresRateLimitCounter` ships
+under the `postgres` feature). For sliding windows, implement a custom
 `ServerInterceptor` or use a reverse proxy.
 
 ## Interceptor Chain

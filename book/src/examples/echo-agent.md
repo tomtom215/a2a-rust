@@ -1,6 +1,8 @@
 # Echo Agent
 
-The simplest possible A2A agent — echoes incoming messages back as artifacts. This is the best starting point for understanding the SDK.
+Every A2A method over every binding, from one echo executor, with a coverage
+matrix that fails the run if a cell is missing. Read it after the
+[Hello Agent](./hello-agent.md), which is the smaller starting point.
 
 **Source:** [`examples/echo-agent/`](https://github.com/tomtom215/a2a-rust/tree/main/examples/echo-agent)
 
@@ -9,11 +11,11 @@ The simplest possible A2A agent — echoes incoming messages back as artifacts. 
 | Feature | How |
 |---------|-----|
 | **AgentExecutor** | Implements the trait with Working → Artifact → Completed lifecycle |
-| **JSON-RPC transport** | Server via `JsonRpcDispatcher`, client via `ClientBuilder` |
-| **REST transport** | Server via `RestDispatcher`, client via `ClientBuilder::with_protocol_binding("REST")` |
-| **Streaming (SSE)** | `stream_message()` consumes `StatusUpdate` and `ArtifactUpdate` events |
+| **Four bindings, one handler** | `JsonRpcDispatcher`, `RestDispatcher`, `GrpcDispatcher` and `WebSocketDispatcher` all serve the same `RequestHandler` |
+| **Clients per binding** | `ClientBuilder` for JSON-RPC, `with_protocol_binding("HTTP+JSON")` for HTTP+JSON, and `with_custom_transport` with `GrpcTransport` / `WebSocketTransport` |
+| **Every method** | The eleven A2A methods, driven over each binding |
 | **Agent card discovery** | `resolve_agent_card()` fetches `/.well-known/agent-card.json` at runtime |
-| **Task retrieval** | `get_task()` retrieves a completed task by ID |
+| **Counter-tests** | A second agent advertising no optional capabilities, whose refusals are checked |
 | **Pre-bind pattern** | Listeners are bound before the handler is built so agent card URLs are correct |
 
 ## Running
@@ -27,14 +29,16 @@ RUST_LOG=debug cargo run -p echo-agent --features tracing
 
 ## Demo walkthrough
 
-The example runs 6 demos in sequence:
+The run has four parts, in order:
 
-1. **Synchronous SendMessage (JSON-RPC)** — sends a message, waits for the complete task
-2. **Streaming SendMessage (JSON-RPC)** — receives real-time SSE events as the agent works
-3. **Synchronous SendMessage (REST)** — same operation over the REST transport
-4. **Streaming SendMessage (REST)** — SSE streaming over REST
-5. **Agent Card Discovery** — fetches `/.well-known/agent-card.json` and inspects capabilities
-6. **GetTask** — retrieves the task created in Demo 1 by its ID
+1. **Discovery** — the card is fetched once; it describes every binding.
+2. **A sweep per binding** — JSON-RPC, HTTP+JSON, gRPC and WebSocket in turn,
+   each driving every A2A method, push configs pointed at a local webhook sink.
+3. **Counter-tests** — calls a second, capability-less agent must refuse.
+4. **The coverage matrix** — one row per method, one column per binding.
+
+Exit codes: `0` complete, `1` a call or counter-test failed, `2` the matrix
+has a gap.
 
 ## Server-only mode
 

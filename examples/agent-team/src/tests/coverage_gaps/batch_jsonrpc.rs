@@ -138,7 +138,10 @@ pub async fn test_batch_multi_request(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 63: Empty batch `[]` returns a JSON-RPC parse error.
+/// Test 63: Empty batch `[]` is answered Invalid Request (-32600).
+///
+/// JSON-RPC 2.0 answers its own `[]` example -32600; this server did until
+/// audit N33 answered it -32700, and the test accepted either.
 pub async fn test_batch_empty(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     match post_raw(&ctx.analyzer_url, "[]").await {
@@ -146,8 +149,7 @@ pub async fn test_batch_empty(ctx: &TestContext) -> TestResult {
             let v: serde_json::Value = serde_json::from_str(&resp_body).unwrap_or_default();
             let is_error = v.get("error").is_some();
             let error_code = v["error"]["code"].as_i64().unwrap_or(0);
-            // JSON-RPC parse error = -32700, or invalid request = -32600
-            if is_error && (error_code == -32700 || error_code == -32600) {
+            if is_error && error_code == -32600 {
                 TestResult::pass(
                     "batch-empty",
                     start.elapsed().as_millis(),
@@ -158,7 +160,7 @@ pub async fn test_batch_empty(ctx: &TestContext) -> TestResult {
                     "batch-empty",
                     start.elapsed().as_millis(),
                     &format!(
-                        "expected JSON-RPC error code -32700 or -32600, got: code={error_code}, body={}",
+                        "expected JSON-RPC error code -32600, got: code={error_code}, body={}",
                         &resp_body[..resp_body.len().min(100)]
                     ),
                 )

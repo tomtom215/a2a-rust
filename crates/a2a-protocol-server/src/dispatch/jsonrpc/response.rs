@@ -161,8 +161,20 @@ pub(super) fn error_response(
         error.data = Some(data);
     }
     let resp = JsonRpcErrorResponse::new(id.clone(), error);
+    // A refused credential answers 401/403 over HTTP, the body unchanged
+    // (N36): JSON-RPC runs over HTTP, and a client refreshes a token on the
+    // status, not on a -32600 it cannot tell from a malformed request.
+    let status = if err.auth_rejection().is_some() {
+        err.http_status()
+    } else {
+        200
+    };
     match serde_json::to_vec(&resp) {
-        Ok(body) => json_response(200, body),
+        Ok(body) => {
+            let mut resp = json_response(status, body);
+            crate::dispatch::add_auth_challenge(resp.headers_mut(), err);
+            resp
+        }
         Err(e) => internal_serialization_error(id, &e),
     }
 }
@@ -176,6 +188,25 @@ pub(super) fn parse_error_response(
         JsonRpcError::new(
             a2a_protocol_types::error::ErrorCode::ParseError.as_i32(),
             format!("Parse error: {message}"),
+        ),
+    );
+    match serde_json::to_vec(&resp) {
+        Ok(body) => json_response(200, body),
+        Err(e) => internal_serialization_error(id, &e),
+    }
+}
+
+/// JSON-RPC 2.0 Invalid Request (-32600): the body is JSON but not a valid
+/// Request object.
+pub(super) fn invalid_request_response(
+    id: JsonRpcId,
+    message: &str,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    let resp = JsonRpcErrorResponse::new(
+        id.clone(),
+        JsonRpcError::new(
+            a2a_protocol_types::error::ErrorCode::InvalidRequest.as_i32(),
+            format!("Invalid Request: {message}"),
         ),
     );
     match serde_json::to_vec(&resp) {

@@ -267,7 +267,7 @@ queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     metadata: None,
 })).await?;
 
-// Final chunk — parts are appended, metadata is deep-merged
+// Final chunk — parts are appended, metadata is merged key by key
 queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     task_id: ctx.task_id.clone(),
     context_id: ContextId::new(ctx.context_id.clone()),
@@ -282,7 +282,7 @@ queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
 
 When `append=true`, the server finds the existing artifact by ID and:
 1. Appends the new parts to the existing parts list
-2. Deep-merges metadata (new keys override existing keys)
+2. Merges metadata key by key at the top level (new keys override existing keys)
 
 If no artifact with the ID exists, it is created as a new artifact.
 

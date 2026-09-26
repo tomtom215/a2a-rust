@@ -80,6 +80,16 @@ requirement it corrects.
 2. **Batch.** Breaking changes are collected and shipped together, at most
    one breaking minor per calendar month, rather than one per change. A fix
    that does not break anything ships whenever it is ready.
+
+   **Exception: fixes that cannot wait.** When a release carries a fix for a
+   defect adopters are hitting now — data loss, a wedged task, a security or
+   interoperability failure — and the fix needs a breaking change, it may
+   ship inside the same month. Its `CHANGELOG.md` section then says so in a
+   line of its own, `**Cadence exception:** <why it cannot wait>`, which the
+   GitHub release notes carry. The release workflow accepts a same-month
+   breaking release only with that line and a reason, so the exception is a
+   stated decision rather than a skipped check. It relaxes the calendar only:
+   a breaking change still never ships in a patch release (§2).
 3. **Label.** Every breaking change is listed in `CHANGELOG.md` under a
    `### Breaking Changes` heading for that release, with the migration in the same
    entry. The GitHub release notes are extracted from that section.

@@ -39,7 +39,12 @@ cargo run -p agent-team --no-default-features --features sqlite      # +2 SQLite
 cargo run -p agent-team --no-default-features --features axum,sqlite # the two above, +1 combined test
 cargo run -p agent-team --no-default-features --features signing     # +1 JWS signing test
 cargo run -p agent-team --no-default-features --features otel        # +1 OpenTelemetry test
+cargo run -p agent-team --no-default-features --features websocket,grpc  # +2 WebSocket, +3 gRPC, and +2 surface results
 ```
+
+The 87 plus those per-feature figures is 100. The last 2 of the 102 are the method ×
+binding surface matrix, which runs against a separate agent serving all four
+bindings and so needs `websocket` and `grpc` together.
 
 ## Test categories
 

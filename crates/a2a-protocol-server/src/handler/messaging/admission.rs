@@ -39,23 +39,54 @@ impl RequestHandler {
     /// unique id. Must be called under the per-context lock so it is atomic
     /// with the token insert that follows.
     ///
+    /// One in-flight executor is waited for rather than refused: one whose
+    /// latest state parked the task at `input-required` or `auth-required`
+    /// (N21). The client has been told to answer, and may do so before the
+    /// executor's future has returned and released its token — a blocking
+    /// response returns on the interrupted state, and a stream delivers it,
+    /// without waiting for that. Refusing that continuation with "wait for
+    /// input-required" contradicted the state the client had just been sent.
+    /// The wait is bounded by
+    /// [`executor_drain_timeout`](crate::handler::HandlerLimits::executor_drain_timeout);
+    /// an executor still running past it is refused exactly as before, so
+    /// two executors never run for one task.
+    ///
     /// # Errors
     ///
     /// [`ServerError::UnsupportedOperation`] while the task's executor runs.
     pub(super) async fn reject_in_flight_send(&self, task_id: &TaskId) -> ServerResult<()> {
-        let blocked = self
-            .cancellation_tokens
-            .read()
-            .await
-            .get(task_id)
-            .is_some_and(second_send_blocked);
-        if blocked {
-            return Err(ServerError::UnsupportedOperation(format!(
-                "task {task_id} is already being processed; \
-                         wait for it to reach input-required or a terminal state before sending again"
-            )));
+        let parked_turn = {
+            let tokens = self.cancellation_tokens.read().await;
+            match tokens.get(task_id) {
+                Some(entry) if second_send_blocked(entry) => {
+                    entry.turn.is_parked().then(|| Arc::clone(&entry.turn))
+                }
+                _ => return Ok(()),
+            }
+        };
+        if let Some(turn) = parked_turn {
+            // The executor releases its queue and token, then cancels
+            // `finished`. A timeout falls through to the re-check, which
+            // refuses if the executor is still there.
+            let _ = tokio::time::timeout(
+                self.limits.executor_drain_timeout,
+                turn.finished.cancelled(),
+            )
+            .await;
+            let still_blocked = self
+                .cancellation_tokens
+                .read()
+                .await
+                .get(task_id)
+                .is_some_and(second_send_blocked);
+            if !still_blocked {
+                return Ok(());
+            }
         }
-        Ok(())
+        Err(ServerError::UnsupportedOperation(format!(
+            "task {task_id} is already being processed; \
+                     wait for it to reach input-required or a terminal state before sending again"
+        )))
     }
 
     /// Leases the task's event queue, which must happen before any other

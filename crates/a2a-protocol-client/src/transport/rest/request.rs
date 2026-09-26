@@ -237,7 +237,7 @@ fn decode_success_body(method: &str, body_bytes: &[u8]) -> ClientResult<serde_js
 /// The exact A2A code is recovered from the `google.rpc.ErrorInfo` detail's
 /// `reason`; bodies without a recognizable A2A reason return `None` so the
 /// caller can fall back to the raw HTTP status.
-pub(super) fn parse_aip193_error(body: &[u8]) -> Option<a2a_protocol_types::A2aError> {
+pub fn parse_aip193_error(body: &[u8]) -> Option<a2a_protocol_types::A2aError> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
     let error = value.get("error")?;
     let message = error.get("message")?.as_str()?.to_owned();

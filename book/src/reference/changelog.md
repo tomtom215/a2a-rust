@@ -30,9 +30,13 @@ Creating a release through the GitHub web UI produces a lightweight tag.
 
 The [release workflow](https://github.com/tomtom215/a2a-rust/blob/main/.github/workflows/release.yml) automatically:
 
-1. Validates the tag against crate versions, CHANGELOG.md, CITATION.cff, and SECURITY.md
+1. Validates the tag — annotated; on the release-preparation commit; nothing
+   left under `[Unreleased]`; breaking releases within STABILITY.md's cadence —
+   against crate versions, CHANGELOG.md, CITATION.cff, SECURITY.md and the
+   provenance manifest
 2. Runs the full CI suite and security audit
-3. Packages all crates with SLSA build provenance
+3. Packages all crates with SLSA build provenance, and checks each `.crate` was
+   built from the tagged commit in a clean tree
 4. Creates a GitHub release with notes extracted from CHANGELOG.md
 5. Publishes crates to crates.io in dependency order (behind a manually
    approved `crates-io` environment)
@@ -46,6 +50,50 @@ a2a-protocol-types → a2a-protocol-server → a2a-protocol-client → a2a-proto
 Topological order over **all** dependency edges: server precedes client
 because the client has a versioned dev-dependency on the server, which
 `cargo publish` resolves against the crates.io index.
+
+## v0.14.0 (2026-09-26)
+
+A minor release of fixes, most of them found by an audit of drop and
+cancellation paths and by the A2A project's two official conformance suites.
+Carries seven breaking changes and ten behaviour changes. It ships in the
+same calendar month as 0.13.0 under a declared cadence exception
+([STABILITY.md](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md)
+§3), because the fixes can't wait. Full detail in
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
+
+- **Tasks no longer wedge when a client goes away.** A send dropped mid-commit
+  used to leave its task stuck; a blocking send whose client left left it
+  `working`; a failing `after` hook orphaned it. Each now reaches a recorded
+  state.
+- **A refused credential answers the status a client acts on**: HTTP `401`
+  with `WWW-Authenticate`, or `403`, and gRPC and SLIMRPC `UNAUTHENTICATED` or
+  `PERMISSION_DENIED`, instead of `400` everywhere
+  ([ADR 0014](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0014-auth-rejection-status.md)).
+  This SDK's client drops a revoked token on it.
+- **Conformance fixes from the official suites**: message parts in media types
+  the card does not declare are refused (opt out with
+  `allow_undeclared_input_modes()`), JSON that is not a JSON-RPC request is
+  `-32600`, and every task status carries a timestamp. Against ACTS every MUST
+  passes on JSON-RPC, gRPC and HTTP+JSON; its one failure is a SHOULD this SDK
+  deliberately does not follow (see
+  [Conformance History](./conformance-history.md#deliberate-deviations)).
+- **WebSocket is as robust as the HTTP bindings**: the client reconnects after
+  a dropped socket, a slow reader no longer stalls other calls on the
+  connection, and the server closes a peer that stops reading.
+- **`ServerInterceptor::on_complete`** runs once per call with its outcome, so
+  cleanup survives errors and disconnects; **spans for every inbound call** on
+  every binding, and `tracing` on by default.
+- **The published manifests no longer admit dependency versions with a RustSec
+  advisory**, and a CI gate keeps it that way.
+- **Breaking:** seven items. `tracing` is a default feature;
+  `default-features = false` on the SDK removes rustls; a dropped peer reads
+  the same on every binding; gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED` are
+  `UnexpectedStatus` 401/403 and a peer's `CANCELLED` is not retried;
+  `ClientBuilder::from_card` refuses a card with no A2A 1.x interface; graceful
+  shutdown ends in-flight tasks before it drains; and the shipped `TaskStore`s
+  refuse to move a terminal task to another state. See
+  [Upgrading Between Minor Versions](./upgrading.md), which has a migration
+  for each, and for the ten behaviour changes.
 
 ## v0.13.0 (2026-09-20)
 
@@ -91,8 +139,8 @@ correction at the top of CHANGELOG.md's 0.13.0 section. Full detail in
   instead of parsing English out of a message.
 - **A conformance harness for `AgentExecutor`**, behind the `conformance`
   feature: thirteen checks an implementation can run against itself.
-- **Breaking:** eight items. `RequestContext`, `IdempotencyClaim` and
-  `KeyError` are `#[non_exhaustive]`; `EventQueueReader::read` yields a
+- **Breaking:** nine items. `RequestContext`, `IdempotencyClaim`, `KeyError`,
+  `RetentionPolicy` and `PurgeReport` are `#[non_exhaustive]`; `EventQueueReader::read` yields a
   `StreamEvent` carrying the log position; `FailureClass::ALL` is a slice
   rather than a fixed-size array; `PurgeReport::journal_orphans_deleted` is
   now `orphan_rows_deleted`; `build()` refuses a signed agent card it would

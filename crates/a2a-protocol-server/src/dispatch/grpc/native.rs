@@ -73,7 +73,17 @@ fn reader_to_native_stream(
     let (tx, rx) = mpsc::channel(capacity);
     tokio::spawn(async move {
         loop {
-            match reader.read().await {
+            // Also watch for the client going away: a send is the only other
+            // place that notices, and a quiet task sends nothing, so this
+            // reader — and its place on the task's queue — outlived a
+            // cancelled stream for as long as the task stayed quiet (N31).
+            // Safe to drop `read()` here: it is cancel-safe (N25).
+            let next = tokio::select! {
+                biased;
+                () = tx.closed() => break,
+                next = reader.read() => next,
+            };
+            match next {
                 Some(Ok(event)) => {
                     let item = apb::StreamResponse::try_from(event.event).map_err(bad_response);
                     let is_err = item.is_err();
@@ -347,6 +357,37 @@ mod tests {
     use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
     use a2a_protocol_types::responses::SendMessageResponse;
     use a2a_protocol_types::task::{ContextId, TaskId};
+
+    /// A client that cancels a stream while the task is quiet releases the
+    /// server's subscription at once. The forwarder used to notice only at
+    /// its next send, so a stream on a task that emitted nothing more kept
+    /// its reader — and its place on the task's queue — for as long as the
+    /// task stayed quiet.
+    #[tokio::test]
+    async fn a_cancelled_stream_releases_its_reader_while_the_task_is_quiet() {
+        use crate::streaming::EventQueueWriter as _;
+        let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
+        let stream = reader_to_native_stream(reader, 8);
+        // The forwarder is now waiting on a quiet queue; the client goes away.
+        tokio::task::yield_now().await;
+        drop(stream);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let event = a2a_protocol_types::events::StreamResponse::StatusUpdate(
+            a2a_protocol_types::events::TaskStatusUpdateEvent {
+                task_id: TaskId::new("t"),
+                context_id: ContextId::new("c"),
+                status: a2a_protocol_types::task::TaskStatus::new(
+                    a2a_protocol_types::task::TaskState::Working,
+                ),
+                metadata: None,
+            },
+        );
+        assert!(
+            writer.write(event).await.is_err(),
+            "a reader for a cancelled gRPC stream was still attached to the queue"
+        );
+    }
 
     #[test]
     fn bad_request_maps_to_invalid_argument() {

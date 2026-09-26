@@ -273,7 +273,12 @@ stores (`tests/cross_replica_cancel/`).
   executor that stores or creates one needs its own `tokio-util` dependency
   at a compatible version. VALIDATED while converting the book: the pages
   now build both with literals, and `book-tests` depends on `tokio-util` for
-  the third. Open.
+  the third. **[Fixed on `claude/peaceful-ptolemy-noka5b`: `Task::new`,
+  `TaskQueryParams::new` with `with_history_length` and `with_tenant`, and
+  `a2a_protocol_server::CancellationToken` (so `a2a_protocol_sdk::server::`
+  too); `book-tests` dropped its `tokio-util` dependency. Neither struct was
+  made `#[non_exhaustive]`, which would break every literal now; that is a
+  choice for a breaking release]**
 - **N17 — `deny.toml` allows a licence no dependency carries** (Low,
   hygiene). `cargo deny check` on `main` passes with a warning that the
   `Unicode-DFS-2016` allowance matches no crate. An allowance with nothing
@@ -301,8 +306,15 @@ stores (`tests/cross_replica_cancel/`).
   reconnect from the stored URL and config, bounded like the first connect;
   E3's circuit breaker would sit in front of it. Until then
   `a_call_on_a_dropped_websocket_is_refused_as_final` pins the refusal as
-  non-retryable, so a retry loop stops instead of spinning. Open; the
-  CHANGELOG's N13 entry says so.
+  non-retryable, so a retry loop stops instead of spinning. **[Fixed on
+  `claude/peaceful-ptolemy-noka5b`: the transport keeps its endpoint and
+  configuration and replaces a dead connection on the next call — one
+  reconnect for concurrent callers, bounded by `connect_timeout`; requests
+  and streams hold the connection they started on, so a reconnect cannot
+  silence one (N22). `a_transport_reconnects_after_its_server_restarts`
+  (server stopped and restarted on the same port) and
+  `a_call_after_a_dropped_websocket_reconnects` (which replaces the test
+  that pinned the refusal) both fail against the previous transport]**
 - **N19 — the WebSocket dispatcher's documentation claims the v0.3 method
   aliases** (Low, docs; found while adding spans to it). The
   `process_ws_message` doc comment and `book/src/building-agents/dispatchers.md`
@@ -349,7 +361,19 @@ stores (`tests/cross_replica_cancel/`).
   host; a busy CI runner may see it. The fix is a design choice — have the
   blocking response wait, bounded, for the executor to return, or let
   admission accept a continuation of a task whose recorded state is already
-  interrupted — and is left for the maintainer. Open.
+  interrupted — and is left for the maintainer. **[Fixed on
+  `claude/peaceful-ptolemy-noka5b`: the maintainer chose the admission side.
+  The executor's writer marks its turn *parked* when the latest state it
+  writes is `input-required` or `auth-required` — before the event reaches
+  the queue, so no reader sees the state first — and admission waits, up to
+  `executor_drain_timeout`, for a parked turn's executor to finish rather
+  than refusing. A send into a task whose executor has not parked it is
+  still refused at once, and past the bound the refusal is unchanged, so two
+  executors never run for one task. `an_immediate_answer_to_input_required_is_admitted`
+  and `a_streaming_answer_to_input_required_is_admitted` fail on `main`
+  (`0b7e87c`) with the refusal above and pass with the fix. Their executor
+  lingers 300 ms after parking, which reproduces the race on an idle host;
+  the reproduction above needed four busy loops]**
 - **N22 — a WebSocket stream goes silent when its client is dropped**
   (Medium, client behaviour; found when `prove_gates_fail.sh` graded
   `cargo test --workspace --all-features` PRE-BROKEN on this branch). Dropping
@@ -377,6 +401,240 @@ stores (`tests/cross_replica_cancel/`).
   slow but blind. VALIDATED: a test that rewrites the file before the
   watcher's task first runs fails on the old code every time and passes
   with the fix. **[Fixed: the baseline is read in `spawn_poll_watcher`]**
+- **N24 — the published manifests admitted dependency versions under
+  RustSec advisories** (Medium, supply chain; reported by an adopter on
+  0.12.1 as "`cargo update -p a2a-protocol-client` does not advance rustls").
+  `cargo deny` reads this repository's lockfile; a consumer's cargo keeps
+  whatever its own lockfile holds as long as our requirement admits it, so
+  a fix that moved only our lockfile never reached them. On `main`
+  (`0b7e87c`) the normal and build dependencies of the four published
+  crates admitted affected, published versions under seven advisories:
+  `rustls` `>=0.23, <0.24` (RUSTSEC-2024-0336, RUSTSEC-2024-0399,
+  RUSTSEC-2026-0285), `ring` `0.17` (RUSTSEC-2025-0009), `bytes` `1`
+  (RUSTSEC-2026-0007), `sqlx` `0.8` (RUSTSEC-2024-0363), `time` `0.3`
+  (RUSTSEC-2026-0009) and `tokio` `>=1.38, <2` (RUSTSEC-2025-0023,
+  unsound) — thirteen requirement/advisory pairs. VALIDATED by
+  `scripts/check_advisory_floors.py` against the RustSec database at
+  `66105a54` and the crates.io version lists, 2026-09-24: exit 1 with those
+  thirteen on `main`, exit 0 with the new floors. **[Fixed: floors raised to
+  the patched versions, each within the 1.88 MSRV; both lockfiles already
+  satisfied them. The script is a CI gate, and `prove_gates_fail.sh`
+  injects the 0.13.0 rustls requirement back]**
+- **N25 — an idle `SubscribeToTask` over SSE never ended** (Medium, server
+  behaviour; found by the drop-path audit, then reproduced). The bound
+  `subscribe_max_idle` (300 s) was measured inside the future the reattach
+  hook returns, and that future lived only inside one `read()` call. The SSE
+  writer races `read()` against its keep-alive timer (30 s) and drops the
+  loser, so every keep-alive discarded the hook's future and the next
+  `read()` started the bound again. A subscription to a task parked at
+  `input-required` held its connection and polled the store every
+  `subscribe_reattach_interval` for as long as the client stayed. VALIDATED:
+  `the_idle_bound_survives_a_read_cancelled_by_a_keep_alive`, which cancels
+  `read()` every 30 ms against a 100 ms bound, fails on `main` at its 5 s
+  limit and passes with the fix; `resubscribe_gives_up_after_the_idle_bound`
+  never cancelled a read, which is why it passed. **[Fixed: the reader keeps
+  the pending hook future, so `read()` is cancel-safe and the bound runs
+  from the first close. Held in a `Mutex` to keep `InMemoryQueueReader`
+  `Sync`]**
+- **N26 — a send dropped mid-commit wedged its task** (High, server
+  behaviour; found by the drop-path audit, then reproduced). hyper drops a
+  request's future when its client goes away. Between claiming an
+  idempotency key and spawning the executor the send path holds the queue
+  lease, the cancellation token and the key, and only an `Err` released
+  them. A drop — a client timing out during a slow store write — released
+  nothing: every later continuation of that task was refused as "already
+  being processed" for the life of the process, the queue counted against
+  `max_concurrent_queues` permanently, and a keyed retry waited on a task
+  that would never exist. VALIDATED: `a_send_dropped_mid_commit_releases_what_it_took`
+  holds the history write open, aborts the send, and fails on `main` with
+  "a dropped send left its cancellation token registered".
+  **[Fixed: `CommitGuard` releases exactly what the send took — the lease if
+  it was taken, the token only if the entry is still this send's turn, the
+  key — when the commit future is dropped, and is disarmed when the commit
+  returns. `a_send_dropped_while_waiting_leaves_the_running_turn_cancelable`
+  fails when the guard removes any token under the id, and
+  `a_send_dropped_mid_commit_releases_its_idempotency_key` fails with the
+  guard disabled. Residual: if the drop lands after the task row is
+  written — possible only while an inline push config is being registered,
+  the one await between that write and the spawn — the row stays as written
+  with no executor]**
+- **N27 — a blocking send whose client went away left its task `working`
+  for good** (High, server behaviour; found by the drop-path audit, then
+  reproduced). A blocking `SendMessage` has no background processor: the
+  collector running in the request's future is the only thing persisting
+  the executor's events. hyper drops that future when the client goes away
+  — a client timeout on a slow model call is enough — after which the
+  executor's writes fail for want of a reader, its own failure report fails
+  the same way, and the stored task keeps the last state persisted before
+  the drop. No push notification for the rest of the task is sent either.
+  VALIDATED: `a_blocking_send_dropped_mid_work_still_records_the_outcome`
+  drops a blocking send 50 ms into a 200 ms task and fails on `main` with
+  the store at `working`. **[Fixed: the collection runs on a task of its
+  own on the handler's background tracker, holding owned clones of the
+  seven handler fields it uses (`SyncCollector`), in the call's span and
+  tenant; the request awaits it, so a dropped request stops only the
+  waiting]**
+- **N28 — an interceptor's failing `after` hook orphaned the task it ran
+  after** (Medium, server behaviour; found by the drop-path audit, then
+  reproduced). The send path ran `run_after` once the executor was spawned
+  but before the response path attached anything to persist its events; an
+  `after` error — or a client dropping the request while `after` awaited —
+  dropped the committed send there. The caller got an error for a task
+  that ran, and the store kept it at `submitted`. VALIDATED:
+  `a_failing_after_hook_does_not_orphan_the_running_task` fails on `main`
+  with the store at `submitted`. Found beside it: `ServerInterceptor::after`
+  was documented as "called even if the handler returned an error"; no
+  method calls it on an error, and the book's interceptor chapter already
+  said so. **[Fixed: `after` runs once the send's response exists; the
+  trait documentation now says what every method does. Whether `after`
+  *should* also run on errors is a design question left open]**
+- **N29 — one unread WebSocket stream stalled every call on its socket**
+  (Medium, client behaviour; found by the drop-path audit, then
+  reproduced). `WebSocketTransport` has one reader task per socket, and it
+  awaited room in a stream's bounded channel (64 frames) before reading the
+  next frame. A caller that opened a stream and then made any other call
+  before reading it — `GetTask`, `CancelTask` — got no answer once the agent
+  had sent more than 64 events: the answer sat unread behind them until the
+  call timed out. The comment above the send said a stalled consumer
+  "blocks only this send". VALIDATED:
+  `an_unread_stream_does_not_stall_a_unary_call_on_the_same_socket` (300
+  events, unread) times out its `ListTasks` after 10 s on `main`.
+  **[Fixed: the reader never waits on a stream. A WebSocket multiplexes
+  calls with no flow control, so an unread stream's frames are buffered or
+  shed; the buffer stays 64, and what overflows it ends that stream with a
+  `stream_lagged` error — the server's own treatment of a lagging reader,
+  and one the caller can resubscribe from. Trade: a consumer that reads, but
+  more slowly than the agent writes, used to be backpressured without loss
+  (at the cost of every other call on the socket) and is now told it
+  lagged]**
+- **N30 — a WebSocket peer that stopped reading mid-stream was never
+  closed, and kept its connection slot** (Medium, server behaviour; found
+  by the drop-path audit, then reproduced). `with_idle_timeout` documents
+  that it closes "a client that has stopped reading its socket". Against
+  one being streamed to, three waits defeated it: the stream's send blocked
+  on the full socket while holding the sink lock; the keepalive waited for
+  that lock to send its ping, so the idle check never ran again; and once
+  the read loop ended, the closing handshake took the same lock. VALIDATED:
+  `a_peer_that_stops_reading_mid_stream_is_closed_by_the_idle_bound`
+  (`tests/websocket_slow_reader.rs`; `max_connections(1)`, a 1 s idle
+  bound, a peer with a 4 KiB receive buffer and a 12 MB stream) fails on
+  `main`: a second client is not served. **[Fixed: the ping never waits for
+  the lock or past the budget; request tasks are cancelled when the peer is
+  gone (closed, errored or idle — not on shutdown, which lets them finish);
+  the closing handshake is bounded at 1 s. Each part was removed in turn
+  and the test failed each time. Behaviour change: a request in flight when
+  its peer's connection ends is dropped, as an HTTP request is when its
+  client goes away — safe now that N26–N28 are fixed]**
+- **N31 — a cancelled gRPC stream kept its subscription while the task was
+  quiet** (Low, server behaviour; found by the drop-path audit, then
+  reproduced). The task forwarding a queue reader into a gRPC response
+  noticed the client going away only when its next send failed; on a task
+  that emitted nothing more, the reader and its place on the task's queue
+  stayed for as long as the task was quiet (bounded at `subscribe_max_idle`
+  for a parked subscription only since N25). VALIDATED:
+  `a_cancelled_stream_releases_its_reader_while_the_task_is_quiet` fails on
+  `main`: a write after the stream was dropped still found a reader.
+  **[Fixed: the forwarder also waits on the channel closing. On WebSocket
+  the same wait is covered by N30's cancellation; the SSE writer notices at
+  its next keep-alive, which is bounded]**
+- **N32 — the card poll watcher could skip a fixed card after a failed
+  parse** (Low, server behaviour; found by the drop-path audit, then
+  reproduced). The watcher recorded a file's mtime whether or not the
+  reload worked. On a filesystem with coarse timestamps (one to two
+  seconds on HFS+, FAT, some NFS), a poll that caught a half-written card
+  and a final write inside the same granule left the old card in place
+  until the next edit — N23's family, one step later. VALIDATED:
+  `a_card_that_failed_to_parse_is_retried_at_the_same_mtime` stamps both
+  writes with one mtime and fails on `main` at its 10 s deadline. **[Fixed:
+  the recorded mtime advances only on a successful reload, and a file that
+  stays broken is logged once per mtime rather than at every poll]**
+- **N33 — JSON that is not a Request object was answered Parse error**
+  (Low, server wire behaviour, JSON-RPC and WebSocket; found by the ACTS
+  conformance suite, a2a-itk `429945f6`, CORE-ERR-006, a MUST). Every body
+  that failed to deserialize as a `JsonRpcRequest` was answered -32700,
+  including valid JSON with no `method`, a bare `1`, `[]` and `[1]`, which
+  JSON-RPC 2.0 §5.1 and its examples answer -32600. VALIDATED: four HTTP
+  tests in `jsonrpc_edge_tests.rs` and one WebSocket test in
+  `websocket_tests.rs` fail on the unfixed dispatchers; a body that is not
+  JSON stays -32700 and is tested too. **[Fixed: the dispatchers parse to
+  a JSON value first, and only a failure there is -32700]**
+- **N34 — a part in a media type the card does not declare reached the
+  executor** (Medium, server behaviour; found by the ACTS conformance suite,
+  CORE-SEND-004, a MUST). Spec §3.1.1 lists `ContentTypeNotSupportedError`
+  for "a Media Type provided in the request's message parts [that] is not
+  supported by the agent"; nothing here checked. The maintainer chose
+  enforcement by default with an opt-out (2026-09-25), since an agent
+  whose card under-declares would otherwise start refusing traffic with no
+  way back. VALIDATED: seven unit tests in `handler/input_modes.rs` through
+  the builder. **[Fixed: parts with an explicit `mediaType` are checked
+  against `defaultInputModes` and every skill's `inputModes`;
+  `allow_undeclared_input_modes()` opts out]**
+- **N35 — task statuses were served without a timestamp** (Low, server
+  wire behaviour; found by the ACTS conformance suite, DM-SERIAL-001, a
+  MUST). `EventEmitter::status` used `TaskStatus::new`, whose own doc says
+  to prefer `with_timestamp` in production, so any agent using the helper —
+  or writing `TaskStatus::new` itself — produced statuses `ListTasks` could
+  not order by time (§3.1.4). VALIDATED by ACTS on the ITK agent, which
+  builds its statuses with `TaskStatus::new`. **[Fixed: the event queue
+  stamps an empty status timestamp on write; two unit tests in
+  `streaming/event_queue/status_stamp.rs`]**
+- **N36 — a refused credential answered `400`, so this SDK's client never
+  dropped a revoked token** (Medium, server behaviour; found by the ACTS
+  conformance suite, SEC-AUTH-006 and SEC-EXTCARD-001/002/004, then traced to
+  the client). ADR 0010 mapped every refusal to `InvalidRequest` and sent
+  `401` needs to a gateway. The client's `BearerAuthInterceptor` invalidates
+  a token on `401` only, so against this server a revoked or rotated token
+  was re-sent until the provider's cache expired. VALIDATED:
+  `a2a-protocol-sdk/tests/auth_rejection_e2e.rs` fails on JSON-RPC,
+  HTTP+JSON and gRPC with the old mapping and passes with the new; five
+  status tests in `a2a-protocol-server/tests/auth_rejection_status.rs` fail
+  and pass likewise. Nothing had pinned the status before. **[Fixed: ADR
+  0014 — `401` + `WWW-Authenticate` / `403`, gRPC
+  `UNAUTHENTICATED`/`PERMISSION_DENIED`; the JSON-RPC body unchanged;
+  WebSocket still the body alone. The SLIMRPC binding's server still sent
+  `INVALID_ARGUMENT` until 2026-09-25, found auditing the book; it now maps
+  the rejection too, and `a_refused_credential_reaches_the_client_as_401_or_403`
+  fails on the old mapping]**
+- **N37 — the axum adapter's errors were not the AIP-193 shape spec §11.6
+  names** (Low, server wire behaviour, `axum` feature; found reading the
+  N36 change). The adapter answered `{"error": "<text>"}` where
+  `RestDispatcher` answers `google.rpc.Status` with `code`, `status` and the
+  `ErrorInfo` details, so a client could not read the error identity from
+  the adapter, and one request got two shapes from this crate's two
+  HTTP+JSON dispatchers. VALIDATED: `tests/http_json_error_parity.rs` fails
+  on the old adapter (`{"error": "task not found: nope"}`). **[Fixed: the
+  adapter answers through the REST dispatcher's builders; REST's route and
+  body errors gain `status`]**
+- **N38 — HTTP+JSON responses are labelled `application/json`, and the
+  axum adapter's successes carried no `A2A-Version`** (Low, server wire
+  behaviour; found by the ACTS conformance suite, REST-CT-001, a SHOULD).
+  Spec §11.1 reads "`application/a2a+json` **SHOULD** be used for requests
+  and responses"; the code cited §11.1 for `application/json`, from the
+  2026-03-31 snapshot, which said so. Switching to the A2A media type
+  (`dfc69ed2`) broke the official Go SDK: a2a-go v2.5.0's
+  `internal/rest.FromRESTError` decodes an error body only under
+  `application/json`, so every HTTP+JSON error reached a Go client as a
+  bare "server error" (`go_sdk_interop.sh`, 5 failures on CI). a2a-go's
+  server and the official Rust SDK send `application/json` as well, and
+  the latter fails REST-CT-001 too. **[Kept as a deliberate deviation,
+  with the citation corrected; `application/a2a+json` stays accepted on
+  requests. Fixed: the adapter's successes go through the REST builder and
+  carry `A2A-Version`; `rest_and_axum_answer_operations_with_the_same_headers`
+  fails on the old adapter. The deviation is recorded in the book's
+  conformance history, "Deliberate deviations"; not reported upstream at
+  this time, by the maintainer's decision (2026-09-25)]**
+- **Examined and left, from the same audit** (CONJECTURED, not reproduced):
+  a queue write dropped between persisting and broadcasting an event — only
+  the executor timeout firing inside a terminal event's verdict wait can do
+  it — leaves live subscribers one event short; the blocking path's push
+  job reads webhook configs after the response, so a config deleted at
+  once can still receive that send's events, which were raised while it
+  was registered; the SLIMRPC binding's unicast bridge and multicast
+  fan-out outlive a dropped consumer while the agent is quiet, as N31 did;
+  `CleanupGuard`'s release is not on the shutdown tracker (unreachable
+  under the release profile's `panic = "abort"`); a WebSocket client
+  request registered in the instant after a connection drop waits its
+  timeout instead of failing at once.
 
 Rows in the tables below carry a **[Fixed: …]** marker naming the commits
 that fixed them. A row with no marker is open.

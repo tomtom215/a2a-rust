@@ -30,7 +30,7 @@ let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 - **Streaming** — `SendStreamingMessage` and `SubscribeToTask` return SSE streams
 - **CORS** — Configurable cross-origin headers
 - **Content type** — Accepts `application/json` and `application/a2a+json`
-- **Version validation** — Validates `A2A-Version` header if present; rejects incompatible major versions with `VersionNotSupported` (-32009)
+- **Version validation** — Requires the `A2A-Version` header by default: a request without it (read as v0.3, spec §3.6.2) or with a major version other than 1 is refused with `VersionNotSupported` (-32009). `DispatchConfig::accept_missing_version_header()` admits header-less requests
 
 ### Batch Restrictions
 
@@ -38,9 +38,9 @@ Streaming methods cannot appear in batch requests:
 - `SendStreamingMessage` in a batch → error response
 - `SubscribeToTask` in a batch → error response
 
-An empty batch `[]` returns a parse error.
+An empty batch `[]` is answered with Invalid Request (-32600).
 
-Batch size is limited by `DispatchConfig::max_batch_size` (default 100). Batches exceeding this limit are rejected with a parse error before any individual request is dispatched.
+Batch size is limited by `DispatchConfig::max_batch_size` (default 100). Batches exceeding this limit are rejected with Invalid Request (-32600) before any individual request is dispatched.
 
 ### DispatchConfig
 
@@ -50,10 +50,11 @@ Both JSON-RPC and REST dispatchers share a `DispatchConfig` for transport-level 
 |-------|------|---------|-------------|
 | `max_request_body_size` | `usize` | 4 MiB | Maximum request body size in bytes |
 | `body_read_timeout` | `Duration` | 30 seconds | Timeout for reading the full request body |
-| `max_query_string_length` | `usize` | 4096 | Maximum query string length (REST only) |
+| `max_query_string_length` | `usize` | 4096 | Maximum query string length (`RestDispatcher` only; `A2aRouter` leaves query parsing to axum) |
 | `sse_keep_alive_interval` | `Duration` | 30 seconds | Periodic `: keep-alive` comment interval for SSE |
 | `sse_channel_capacity` | `usize` | 64 | Backpressure channel between event reader and HTTP response |
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
+| `require_version_header` | `bool` | `true` | Refuse requests without an `A2A-Version` header (`accept_missing_version_header()` turns it off) |
 
 ## RestDispatcher
 
@@ -192,7 +193,7 @@ No web framework required — the dispatchers work directly with hyper's service
 Provides bidirectional A2A communication over WebSocket. Enable with the `websocket` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.13", features = ["websocket"] }
+a2a-protocol-server = { version = "0.14", features = ["websocket"] }
 ```
 
 ```rust,no_run
@@ -234,9 +235,12 @@ under `":path"`) are captured during the handshake and passed to the
 handler for **every** request on the connection. Tenant resolvers, strict
 multi-tenancy, and header-based authentication behave exactly as they do
 over HTTP — credentials are presented once, at connect time, and apply to
-the whole connection. An upgrade request whose `A2A-Version` header names
-an unsupported major version is rejected during the handshake with
-HTTP 400.
+the whole connection — except that a refused credential is answered only in
+the JSON-RPC body (-32600), since interceptors run per message after the
+upgrade; see [Authentication](./authentication.md#error-mapping-important).
+An upgrade request with no `A2A-Version` header, or one naming an
+unsupported major version, is rejected during the handshake with HTTP 400
+(`accept_missing_version_header()` admits the former).
 
 ### Built-in Limits
 
@@ -295,7 +299,7 @@ Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature 
 `with_tls` — see [Transport Layers](../concepts/transport-layers.md#serving-tls):
 
 ```toml
-a2a-protocol-server = { version = "0.13", features = ["grpc"] }
+a2a-protocol-server = { version = "0.14", features = ["grpc"] }
 ```
 
 ```rust,no_run
@@ -340,6 +344,7 @@ let bound = dispatcher.serve_with_listener(listener)?;
 | `max_message_size` | `usize` | 4 MiB | Maximum inbound/outbound message size |
 | `concurrency_limit` | `usize` | 256 | Maximum concurrent gRPC requests per connection |
 | `stream_channel_capacity` | `usize` | 64 | Bounded channel for streaming responses |
+| `require_version_header` | `bool` | `true` | Refuse a request whose `a2a-version` metadata is absent or empty (`with_require_version_header(false)` admits it) |
 
 ### Bounding an idle gRPC connection
 
@@ -419,7 +424,7 @@ For projects already using Axum, the `axum` feature provides `A2aRouter` — an
 idiomatic adapter that wraps `RequestHandler` as an `axum::Router`:
 
 ```toml
-a2a-protocol-server = { version = "0.13", features = ["axum"] }
+a2a-protocol-server = { version = "0.14", features = ["axum"] }
 ```
 
 ```rust,no_run

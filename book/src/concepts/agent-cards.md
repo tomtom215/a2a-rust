@@ -19,7 +19,7 @@ Agent cards are served at `/.well-known/agent-card.json` and contain:
     },
     {
       "url": "https://agent.example.com/api",
-      "protocolBinding": "REST",
+      "protocolBinding": "HTTP+JSON",
       "protocolVersion": "1.0.0"
     }
   ],
@@ -44,7 +44,7 @@ Agent cards are served at `/.well-known/agent-card.json` and contain:
 ## Naming a protocol binding
 
 `protocolBinding` names the transport a client should dial. The spec's
-canonical values are `"JSONRPC"`, `"GRPC"` and `"HTTP+JSON"` (§5.3), and any
+canonical values are `"JSONRPC"`, `"GRPC"` and `"HTTP+JSON"` (the `AgentInterface.protocolBinding` field, §4.4.6; see the §8.5 sample card), and any
 binding outside those three is a *custom binding* (§12).
 
 Custom bindings **should** be identified by a URI rather than a bare word
@@ -143,7 +143,7 @@ use a2a_protocol_sdk::types::agent_card::AgentInterface;
 
 let interface = AgentInterface {
     url: "https://agent.example.com/rpc".into(),
-    protocol_binding: "JSONRPC".into(),  // or "REST", "GRPC"
+    protocol_binding: "JSONRPC".into(),  // or "HTTP+JSON", "GRPC"
     protocol_version: "1.0.0".into(),
     tenant: None, // Optional: fixed tenant for this interface
 };
@@ -158,7 +158,7 @@ An agent must have at least one interface. Having multiple interfaces (e.g., JSO
 
 The choice is the *client's*, not the card's. `ClientBuilder::from_card()` walks `ClientConfig::preferred_bindings` in order and takes the first binding the card offers, falling back to the card's first interface only when it offers none of them. Pass your own order with `ClientBuilder::from_card_preferring(&card, &["GRPC".into()])`.
 
-Because a card gives each binding its own URL, the endpoint follows the binding: selecting `GRPC` selects that interface's `url` and `tenant` as well. The `tenant` field from the selected interface is preserved in `ClientConfig::tenant` and sent on every request — all eleven methods, `GetExtendedAgentCard` included — as spec §8.3.2 rule 4 requires. A `tenant` set on an individual request overrides it.
+Because a card gives each binding its own URL, the endpoint follows the binding: selecting `GRPC` selects that interface's `url` and `tenant` as well. The `tenant` field from the selected interface is preserved in `ClientConfig::tenant` and sent on every request — all eleven methods, `GetExtendedAgentCard` included — as spec §8.3.2 rule 4 requires. Methods whose params carry a `tenant` (send, get, list, push-config) let a per-request value override it.
 
 ## Extended Agent Card
 
@@ -172,8 +172,13 @@ let capabilities = AgentCapabilities::none()
 ```
 
 If the capability is `false` or absent, the server returns `UnsupportedOperationError`.
-If the capability is declared but no card is configured, the server returns
-`ExtendedAgentCardNotConfiguredError`.
+`ExtendedAgentCardNotConfiguredError` is returned when the handler has no agent
+card at all.
+
+The operation must be authenticated (§13.3): without an authenticating
+interceptor (e.g. `BearerTokenAuthInterceptor`, `JwtAuthInterceptor`) the server
+refuses it with `InvalidRequest`, unless you opt in with
+`RequestHandlerBuilder::allow_unauthenticated_extended_card()`.
 
 ## Serving Agent Cards
 

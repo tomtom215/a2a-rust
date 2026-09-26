@@ -83,8 +83,8 @@ over-the-wire probe.
 
 * The REST dispatcher rejects `..`, `%2E%2E` and `%2e%2e` in path segments, and
   paths that escape the route hierarchy.
-* Request bodies are capped at 4 MiB and query strings at 4 KiB on REST; SSE
-  events at 16 MiB, configurable.
+* Request bodies are capped at 4 MiB (JSON-RPC and REST) and query strings at
+  4 KiB (REST); SSE events at 16 MiB, configurable.
 * A tenant at `max_concurrent_tasks` is refused rather than queued, so a
   declared bound stays a bound under load.
 
@@ -160,7 +160,7 @@ Stated because a security page that lists only strengths is not one.
   counted in an interceptor; setting the field without installing
   `RateLimitInterceptor` does nothing.
 * **The SLIMRPC binding is out of scope for the published crates' audit
-  surface.** It pulls 379 transitive dependencies including a native C crypto
+  surface.** It pulls 359 transitive dependencies including a native C crypto
   build, which is why it lives outside the workspace with its own lockfile and
   its own `cargo-deny` run.
 

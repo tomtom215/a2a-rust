@@ -22,6 +22,7 @@ are rustdoc's job.
 |--------|----------|
 | `agent_card` | Agent card and capability discovery types |
 | `artifact` | Artifact types for the A2A protocol |
+| `auth_rejection` | Why a request was refused on authentication or authorization grounds |
 | `error` | A2A protocol error types |
 | `events` | Server-sent event types for A2A streaming |
 | `extensions` | Agent extension and card-signature types |
@@ -180,6 +181,8 @@ are rustdoc's job.
 |------|-------------|
 | `A2aError` | Protocol-level error |
 | `ErrorCode` | Standard error codes |
+| `AuthRejection` | A refused credential an `A2aError` carries: its kind and `WWW-Authenticate` challenge |
+| `AuthRejectionKind` | `Unauthenticated` (HTTP 401, gRPC UNAUTHENTICATED) or `PermissionDenied` (HTTP 403, gRPC PERMISSION_DENIED) |
 | `A2aResult<T>` | Alias for `Result<T, A2aError>` |
 
 ### JSON-RPC
@@ -248,6 +251,7 @@ are rustdoc's job.
 | `list_tasks(params)` | `TaskListResponse` | Query tasks |
 | `cancel_task(id)` | `Task` | Cancel a running task |
 | `subscribe_to_task(id)` | `EventStream` | Re-subscribe to task events |
+| `subscribe_to_task_from(id, last_event_id)` | `EventStream` | Resume a broken stream from its last SSE `id:` (sends `Last-Event-ID`) |
 | `set_push_config(config)` | `TaskPushNotificationConfig` | Create push config |
 | `get_push_config(task_id, id)` | `TaskPushNotificationConfig` | Get push config |
 | `list_push_configs(params)` | `ListPushConfigsResponse` | List push configs |
@@ -330,6 +334,7 @@ are rustdoc's job.
 | `RequestHandler` | Central protocol orchestrator |
 | `RequestHandlerBuilder` | Fluent builder for handler configuration |
 | `RequestContext` | Per-execution context (task ID, message, etc.) |
+| `CancellationToken` | The type of `RequestContext::cancellation_token`, re-exported so an executor need not depend on `tokio-util` to name it |
 | `CallContext` | Per-request metadata (request ID, headers, tenant) |
 | `HandlerLimits` | Configurable validation limits |
 | `InboundTracePolicy` | What this handler does with a `traceparent` an as-yet unauthenticated peer sent (W3C Trace Context §7.2) |
@@ -414,6 +419,7 @@ are rustdoc's job.
 | `ApiKeyAuthInterceptor` | Rejects requests whose API-key header is absent or not in the allowed set |
 | `BearerTokenAuthInterceptor` | Rejects requests whose bearer token is absent or not in the allowed set |
 | `ServerInterceptorChain` | An ordered chain of `ServerInterceptor` instances |
+| `CallOutcome` | How a call ended — succeeded, failed with the error sent, or cancelled — as `ServerInterceptor::on_complete` is told |
 | `Migration` | A single SQLite schema migration (`sqlite` feature) |
 | `MigrationRunner` | Runs schema migrations against a SQLite database (`sqlite` feature) |
 | `PgMigration` | A single PostgreSQL schema migration (`postgres` feature) |

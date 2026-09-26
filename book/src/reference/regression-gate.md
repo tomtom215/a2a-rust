@@ -3,13 +3,14 @@
 
 # Pull-Request Benchmark Regression Gate
 
-Every pull request against `main` runs the [`Regression Gate`][job] job in
-the `Benchmarks` workflow. The job runs a focused subset of the criterion
+Every pull request against `main` that touches `benches/**`, `crates/**`,
+`Cargo.toml`, `Cargo.lock` or the workflow file itself runs the
+[`Regression Gate`][job] job in the `Benchmarks` workflow. The job runs a focused subset of the criterion
 benchmark suite twice — once on the PR's base branch, once on the PR — and
 fails CI if any individual benchmark regresses beyond the configured
 threshold.
 
-[job]: ../../.github/workflows/benchmarks.yml
+[job]: https://github.com/tomtom215/a2a-rust/blob/main/.github/workflows/benchmarks.yml
 
 This page documents the **design**, the **statistical test**, and the
 **known limitations** of the gate so that future contributors (and
@@ -17,16 +18,16 @@ reviewers) can evaluate its signals with informed context.
 
 ## What the gate runs
 
-Only two of the ~14 criterion modules participate in the PR gate:
+Only two of the ~15 criterion modules participate in the PR gate:
 
 | Module | Why it's in the gate |
 |---|---|
 | `transport_throughput.rs` | Exercises the per-transport HTTP round-trip hot path (JSON-RPC and REST end-to-end through loopback). Most "quiet production slowdown" bugs land here. |
 | `protocol_overhead.rs` | Exercises the serde hot loop (serialize/deserialize every A2A wire type plus JSON-RPC envelopes). Catches allocator thrash, missing `#[inline]` on hot helpers, and regressions from generic-explosion in derive macros. |
 
-The full criterion suite (~14 modules, ~267 individual benchmarks) still
-runs — but only on pushes to `main`, published to the [Benchmark
-Dashboard][dashboard]. Running all of them twice inside a 60-minute PR job
+The full criterion suite (~15 modules, 13 of them run on `main`; ~290
+individual benchmarks) still runs — but only on pushes to `main`, published
+to the [Benchmark Dashboard][dashboard]. Running all of them twice inside a 60-minute PR job
 is not realistic on a shared CI runner.
 
 [dashboard]: ./dashboard.md
@@ -63,7 +64,7 @@ Exit code `0` means no regression; `1` means at least one benchmark
 regressed; `2` means a configuration error (no criterion output
 found, malformed JSON, etc.). CI surfaces all three meaningfully.
 
-[script]: ../../benches/scripts/check_regression.py
+[script]: https://github.com/tomtom215/a2a-rust/blob/main/benches/scripts/check_regression.py
 
 ## The threshold — and why it's 50 %
 
@@ -123,7 +124,7 @@ If this project migrates to self-hosted runners with stable CPU
 pinning, the threshold should come back down to 20 % or lower; the
 comment in [`benchmarks.yml`][workflow] flags this for the future.
 
-[workflow]: ../../.github/workflows/benchmarks.yml
+[workflow]: https://github.com/tomtom215/a2a-rust/blob/main/.github/workflows/benchmarks.yml
 
 ## When the gate fails
 
@@ -143,9 +144,8 @@ Before investigating as a real regression, check:
    amount in the opposite direction?** That's a strong hint of
    runner-systematic effects rather than a real regression.
 3. **Does the regression reproduce on a clean local machine?** Run
-   `./benches/scripts/run_benchmarks.sh --save` on `main`, then the
-   same command again on the PR branch, then
-   `--compare`. If the regression does not reproduce locally, it's
+   `./benches/scripts/run_benchmarks.sh --save` on `main`, then
+   `./benches/scripts/run_benchmarks.sh --compare` on the PR branch. If the regression does not reproduce locally, it's
    CI-specific.
 4. **If it does reproduce locally, does it reproduce *again*, on the
    same commit pair, immediately afterward?** A single local match is
@@ -205,9 +205,8 @@ excluded regression is dropped from the failing set while an
 unexcluded one in the same run still fails the job).
 
 **`protocol/payload_scaling/from_str/16384` is the case that motivated
-this.** It started as a `--override */from_str/16384=0.75` entry (see
-the previous section's history) after repeatedly producing tight-CI
-swings past the 50 % default on provably unchanged code. PR #99 showed
+this.** It started as a `--override */from_str/16384=0.75` entry after
+repeatedly producing tight-CI swings past the 50 % default on provably unchanged code. PR #99 showed
 that 75 % isn't a ceiling either — the investigation, dated 2026-07-29:
 
 1. Two separate CI runs on the **same commit** measured `from_str/16384`

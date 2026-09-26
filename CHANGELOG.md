@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.14.0] - 2026-09-26
+
+**Cadence exception:** 0.13.0 came out on 2026-09-20, but this release can't wait until October. It fixes problems people are running into now. A dropped send could leave a task wedged or stuck in `working` (N26, N27). The client never let go of a revoked credential (N36). The official conformance suites also found several interoperability failures.
+
 ### Breaking Changes
 
 - **`tracing` is a default feature of `a2a-protocol-client`,
@@ -57,10 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Transport(_)` to detect a dropped WebSocket, or
   `Protocol(e)` with `e.code == InternalError` to detect a truncated gRPC
   stream, should match `IncompleteStream { .. }` / `HttpClient(_)`, or ask
-  `is_retryable()`. Not a wire change. `WebSocketTransport` does not
-  reconnect: after a drop, every later call on it fails with a
-  non-retryable `Transport("WebSocket connection closed")`, so the retry
-  a retryable drop invites has to go through a new transport (audit N18).
+  `is_retryable()`. Not a wire change. The retry a retryable drop invites
+  reconnects on the same `WebSocketTransport` (audit N18; see **Fixed**).
 
 - **gRPC status codes map to what the caller has to do about them.** Over the
   gRPC transport and the slimrpc binding, `UNAUTHENTICATED` is now
@@ -111,7 +115,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TerminalStateConflict` in its data. Code that "reopens" a finished task
   through a shipped store now gets that error. See **Fixed** for why.
 
+### Behaviour Changes
+
+Changes in what a caller observes for the same input, with no change to any
+type or signature — the entries a careful adopter has to read at every bump,
+and which `cargo semver-checks` cannot see. Listed here as well as under
+their own heading. An adopter asked for this section after 0.12.1's change to
+what a new task on an existing context inherits (#130) reached them filed
+under **Fixed**; that entry did say it changed the wire shape, but not where
+someone scanning for such changes would look.
+
+- **The axum adapter's successful responses carry `A2A-Version`** (server,
+  `axum` feature; audit N38), as its errors and `RestDispatcher`'s responses
+  already did. HTTP+JSON responses stay `application/json`, a deliberate
+  deviation from spec §11.1's SHOULD for `application/a2a+json`: the
+  official Go SDK's client cannot read an error labelled that way.
+- **The axum adapter's error bodies are AIP-193, as `RestDispatcher`'s are**
+  (server, `axum` feature; audit N37). It answered `{"error": "<text>"}`; it
+  now answers `{"error": {"code", "status", "message", "details"}}` through
+  the REST dispatcher's own builders. A client that read `error` as a string
+  from the adapter reads `error.message`. REST's own route and body errors
+  gain the `status` name they lacked.
+- **A refused credential answers `401`/`403`, not `400`** (server; audit N36,
+  ADR 0014). The auth interceptors answered every refusal as
+  `InvalidRequest`: HTTP `400` on both HTTP bindings, gRPC
+  `INVALID_ARGUMENT`. Now a missing or wrong credential answers `401` with a
+  `WWW-Authenticate` challenge (`Bearer realm="a2a"`, or
+  `ApiKey header="x-api-key"`) and gRPC `UNAUTHENTICATED`; the AIP-193 body's
+  `status` says `UNAUTHENTICATED`. JSON-RPC answers the same `401` with the
+  body unchanged (`-32600`); batches stay `200`. WebSocket is unchanged (the
+  body alone). **Migration:** a client or alert that matched `400` for an
+  auth failure matches `401`/`403`.
+- **The SLIMRPC binding's server answers a refused credential
+  `UNAUTHENTICATED` or `PERMISSION_DENIED`** (binding; audit N36). It mapped
+  by error code alone, so the same refusal went out as `INVALID_ARGUMENT` and
+  a client never dropped a revoked token there, the N36 defect the gRPC
+  dispatcher had already been fixed for. Found auditing the book on
+  2026-09-25. **Migration:** as for gRPC above.
+- **`SendMessage` refuses a part whose `mediaType` the agent card does not
+  declare, with `ContentTypeNotSupportedError`** (server; audit N34). When
+  the card declares input modes — `defaultInputModes` or any skill's
+  `inputModes` — a part carrying an explicit `mediaType` outside them is
+  refused (-32005 over JSON-RPC, HTTP 400 over HTTP+JSON), as spec §3.1.1
+  requires; it used to reach the executor. Parts without a `mediaType` are
+  not checked, and nothing is enforced without a card or when the card
+  declares no modes. **Migration:** declare every media type the agent
+  accepts on its card, or call
+  `RequestHandlerBuilder::allow_undeclared_input_modes()` to keep the old
+  behaviour while the card is corrected.
+- **A continuation sent the moment a task reaches `input-required` is
+  admitted** (server; audit N21). It used to be refused as "already being
+  processed" whenever the executor that parked the task had not yet returned
+  — see **Fixed**.
+- **A WebSocket stream the caller reads more slowly than the agent writes
+  ends with a `stream_lagged` error once 64 frames are waiting** (client;
+  audit N29). It used to be held back without loss, which stalled every
+  other call on the socket — see **Fixed**. `ClientError::is_stream_lagged`
+  identifies it; resubscribe to continue.
+- **A call on a `WebSocketTransport` whose socket has dropped reconnects**
+  (client; audit N18) instead of failing with a non-retryable `Transport`
+  error. Code that matched that error to detect a dead transport now sees
+  the call succeed, or fail retryably if the reconnect does.
+- **A WebSocket request whose connection ends is cancelled** (server;
+  audit N30). It used to run on after its peer had gone, which is how a
+  peer that stopped reading held its connection open; a request on the HTTP
+  bindings is dropped the same way when its client disconnects.
+- **An idle `SubscribeToTask` stream over SSE now ends at
+  `subscribe_max_idle`** (server; audit N25). It used to stay open for as
+  long as its client did — see **Fixed**. A client that relied on the
+  stream staying open resubscribes, which §3.5.2 supports.
+
+### Security
+
+- **The published manifests no longer admit dependency versions with RustSec
+  advisories** (audit N24). A consumer's cargo keeps whatever version its own
+  lockfile holds as long as our requirement admits it, so a fix that only
+  moved this repository's lockfile never reached them — an adopter on 0.12.1
+  found `cargo update -p a2a-protocol-client` leaving rustls 0.23.43 in place,
+  inside RUSTSEC-2026-0285. Measured against the RustSec database on
+  2026-09-24, the requirements admitted affected releases under seven
+  advisories: `rustls` (RUSTSEC-2024-0336, RUSTSEC-2024-0399,
+  RUSTSEC-2026-0285), `ring` (RUSTSEC-2025-0009), `bytes`
+  (RUSTSEC-2026-0007), `sqlx` (RUSTSEC-2024-0363), `time`
+  (RUSTSEC-2026-0009) and `tokio` (RUSTSEC-2025-0023, unsound). The floors
+  are now `rustls >=0.23.45`, `ring 0.17.12`, `bytes 1.11.1`, `sqlx 0.8.1`,
+  `time 0.3.47` and `tokio >=1.44.2`; each declares a `rust-version` at or
+  below 1.88, and both lockfiles already held newer versions, so neither
+  changed. **Effect on consumers:** upgrading to this release moves any of
+  those dependencies still below its new floor. A new CI gate,
+  `scripts/check_advisory_floors.py`, fails when a normal or build
+  dependency of a published crate admits an affected, published version;
+  `cargo deny`, which reads our lockfile, could not see this and was green
+  throughout.
+
 ### Added
+
+- **`ServerInterceptor::on_complete` and `CallOutcome`.** `after` runs only
+  on success and its error replaces the response, so no hook saw a failed
+  or abandoned call: an interceptor that acquired something in `before` —
+  an in-flight gauge, a concurrency slot, an open audit record — had no
+  place to release it. `on_complete` is called once per call, in reverse
+  order, on every interceptor whose `before` ran (including the one that
+  refused the call), with `Succeeded`, `Failed(&ServerError)` — the error
+  the caller is sent — or `Cancelled`, when the call's future is dropped
+  unanswered. It returns `()`, so it cannot change the response. The
+  default does nothing, so existing interceptors compile and behave as
+  before. Every `RequestHandler` method, on every binding, runs through it;
+  calls made with `ServerInterceptorChain::run_before` and `run_after`
+  directly do not. A new test drops a real JSON-RPC and HTTP+JSON
+  connection mid-call and sees `Cancelled` in `on_complete` and `cancelled`
+  in the `rpc.server.call` record — the first test of the premise that
+  N26, N27 and N28 rest on: hyper drops a request's future when its client
+  disconnects.
+
+- **`Task::new`, `TaskQueryParams::new` (with `with_history_length` and
+  `with_tenant`), and `a2a_protocol_server::CancellationToken`** (audit
+  N16). A custom store or test built a `Task`, and every `GetTask` caller a
+  `TaskQueryParams`, with a full struct literal that breaks when a field is
+  added; and an executor that stored its `RequestContext::cancellation_token`
+  needed its own `tokio-util` dependency at a matching version to name the
+  type. The re-export reaches the SDK as `a2a_protocol_sdk::server::CancellationToken`.
 
 - **`testing::ScriptedPeer`** (client feature `testing`): a loopback A2A
   peer that stalls, cuts off, mis-frames or refuses every call on purpose,
@@ -322,6 +445,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bucket (audit O5). Dashboards that read its `le` labels see new ones.
 
 ### Fixed
+
+- **A continuation answering `input-required` at once is admitted** (server;
+  audit N21). A blocking send returns when the task reaches an interrupted
+  state, and a stream delivers that state, before the executor that wrote
+  it has returned; admission refused any send while that executor's token
+  was live, with an error telling the caller to wait for `input-required` —
+  the state it had just been sent. The executor's writer now marks the turn
+  *parked* when the latest state it writes is `input-required` or
+  `auth-required`, and admission waits up to
+  `HandlerLimits::executor_drain_timeout` (default 5 s) for a parked turn's
+  executor to finish. A send into a task still working is refused at once,
+  as before, and one still beside a live executor past the bound is refused
+  exactly as before, so two executors never run for one task.
+- **An idle `SubscribeToTask` stream over SSE ends at `subscribe_max_idle`**
+  (server; audit N25). The bound was measured inside a future that each SSE
+  keep-alive discarded, so with the defaults — keep-alive 30 s, bound 300 s
+  — a subscription to a task parked at `input-required` never ended and
+  polled the store for as long as its client stayed. `InMemoryQueueReader::read`
+  is now cancel-safe across the reattach wait.
+- **A send whose client goes away mid-commit no longer wedges its task**
+  (server; audit N26). A request dropped between claiming its idempotency
+  key and spawning its executor — a client timing out during a slow store
+  write — kept the task's queue lease and cancellation token for the life
+  of the process, so every later continuation was refused as "already being
+  processed", and a retry carrying the same idempotency key waited on a
+  task that did not exist. What the send took is now released when its
+  future is dropped, and only what it took: a continuation dropped while it
+  waits for the previous turn leaves that turn's executor cancelable.
+- **A blocking send whose client goes away still records the task's
+  outcome** (server; audit N27). The collector that persists a blocking
+  send's events ran in the request's future, so when a client timed out on a
+  slow agent the executor finished into nothing: the task stayed `working`
+  in the store, and no later push notification was sent. The collection now
+  runs on its own task, which shutdown waits for, and the request awaits it.
+- **A failing interceptor `after` hook no longer orphans a send's task**
+  (server; audit N28). `after` ran between spawning the executor and
+  attaching what persists its events, so its error left a task the agent
+  went on to complete at `submitted` in the store. It now runs once the
+  response exists. `ServerInterceptor::after`'s documentation said it runs
+  even when the handler fails; no method ever did that, and it now says so.
+- **`WebSocketTransport` reconnects after its connection drops** (client;
+  audit N18). Once its socket dropped, every later call failed at once with
+  a non-retryable `Transport("WebSocket connection closed")`, so a
+  long-lived client had to be rebuilt by hand after any server restart. The
+  next call now reconnects to the same endpoint with the same configuration,
+  bounded by `connect_timeout`, one reconnect for concurrent callers; a call
+  that races the old connection's close fails as retryable. Streams already
+  open keep the connection they were opened on.
+- **An unread WebSocket stream no longer stalls other calls on the same
+  socket** (client; audit N29). The transport's single reader waited for
+  room in a stream's 64-frame buffer before reading anything else, so a
+  `GetTask` made before reading an open stream timed out once the agent had
+  sent more than 64 events. The reader no longer waits: a stream whose
+  buffer overflows ends with a `stream_lagged` error, as a lagging reader
+  does on the server.
+- **A WebSocket peer that stops reading is closed by the idle timeout**
+  (server; audit N30). With `with_idle_timeout` set, a peer that stopped
+  reading while being streamed to was never closed: the stream's send held
+  the sink's lock, the keepalive waited for that lock, and so did the
+  closing handshake, so the connection and its `max_connections` slot were
+  held for as long as the peer liked. The keepalive no longer waits, the
+  connection's requests are cancelled when the peer is gone, and the close
+  handshake is bounded at 1 s.
+- **A gRPC stream the client cancels releases its subscription at once**
+  (server; audit N31), rather than at the task's next event.
+- **The agent card's poll watcher retries a card that failed to parse**
+  (server; audit N32). It recorded the file's mtime even when the reload
+  failed, so on a filesystem with coarse timestamps a fix written in the
+  same second as a half-written file was never loaded.
+- **Every task status carries a timestamp** (server; audit N35).
+  `EventEmitter::status` — the helper executors are pointed to — built its
+  status with `TaskStatus::new`, which leaves `timestamp` empty, so agents
+  built on it served statuses with no time: spec §5.6.1 wants ISO 8601 UTC
+  timestamps, `ListTasks` is ordered by them (§3.1.4), and ACTS
+  DM-SERIAL-001 (a MUST) failed. The event queue now stamps any status
+  update or task snapshot the executor left without one, before it is
+  persisted or streamed; a timestamp the executor set is kept. The stamp
+  counts toward `max_event_size`, so a status event within a few dozen
+  bytes of that limit may now be refused.
+- **The two HTTP+JSON dispatchers answer the same failure identically**
+  (server; audit N37) — see **Behaviour Changes**. Found while fixing N36.
+- **The axum adapter's successes carry `A2A-Version`** (server; audit N38)
+  — see **Behaviour Changes**. Found while examining ACTS REST-CT-001.
+- **This SDK's client recovers from a revoked or rotated token against this
+  SDK's server** (server; audit N36). The client drops a cached token on
+  `401`; the server never sent one, so the refused token was re-sent on every
+  call until the provider's cache expired, on every binding. See **Behaviour
+  Changes**. New in `a2a-protocol-types`: `A2aError::unauthenticated`,
+  `A2aError::permission_denied`, `A2aError::auth_rejection` and
+  `AuthRejection`/`AuthRejectionKind`, for custom interceptors to get the
+  same statuses.
+- **`SendMessage` checks message parts' media types against the agent
+  card** (server; audit N34) — see **Behaviour Changes** for what is
+  refused and how to opt out. Found by the ACTS conformance suite
+  (CORE-SEND-004, a MUST); the official Rust SDK has the same gap open as
+  a2aproject/a2a-rs#270.
+- **JSON that is not a JSON-RPC Request object is answered Invalid Request
+  (-32600), not Parse error (-32700)** (server, JSON-RPC and WebSocket; audit
+  N33). A body with no `method`, a bare value such as `1`, an empty batch
+  `[]` and a batch item that is not a request were all answered -32700,
+  which JSON-RPC 2.0 reserves for a body that is not JSON; its own examples
+  answer these -32600. Found by the ACTS conformance suite (CORE-ERR-006, a
+  MUST). A client that matched on -32700 for these cases now sees -32600.
 
 - **The agent card's poll watcher sees a change made just after it starts**
   (audit N23). It read the file's baseline mtime inside its own task, on
@@ -539,6 +765,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the two behaviours, and the one a reader can recover from. Documentation
   only; no code changed.
 
+
+### Internal
+
+- **The documentation site serves each page's own canonical URL.** Every
+  page's HTML declared the site root as its canonical and carried two
+  identical site-wide descriptions; a script rewrote them after load, which
+  Google advises against for canonicals (Search Console reported
+  introduction.html as "Duplicate without user-selected canonical").
+  `scripts/seo_postprocess.py` now writes the canonical, share URLs, titles
+  and one description per page into the built HTML before deploy, and
+  `docs.yml` fails the deploy if any page is wrong; `print.html` and
+  `404.html` are `noindex`, the sitemap drops `introduction.html` (a copy of
+  the root), the benchmark dashboard gains a canonical and description, and
+  the JSON-LD's MSRV (it said 1.93) is read from `Cargo.toml`.
+- **STABILITY.md's one-breaking-minor-a-month rule gains a declared
+  exception** for fixes adopters cannot wait for. A release's notes may
+  carry `**Cadence exception:** <reason>`; `check_release_tree.py cadence`
+  then accepts a second breaking minor in the month and prints the reason,
+  and refuses the line without one. Breaking changes in a patch release are
+  still refused. `prove_workflow_gates_fail.py` proves the reasonless case
+  fails.
+- **The genai examples move to genai 0.6.5** (`genai-a2a-agent`,
+  `incident-response`; supersedes Dependabot's #128). 0.12 kept them on 0.5
+  because every 0.6.x depends on the unmaintained `paste`
+  (RUSTSEC-2024-0436). That advisory is now `deny.toml`'s first ignore, with
+  its justification: it is informational, `paste` is a compile-time
+  proc-macro, and it reaches only these two examples, not a published
+  crate. genai 0.7.0-beta.24 was considered and still depends on `paste`.
+  No source change was needed; both examples' tests pass.
+- **`scripts/check_panic_paths.py` counts `unreachable!`**, which panics as
+  `panic!` does and was invisible to the gate. The one in library code — the
+  JSON-RPC dispatcher's batch branch, after an `is_array()` test that made
+  it redundant — is gone: the branch now matches the array directly.
+- **`scripts/preflight.sh` builds with `CARGO_INCREMENTAL=0`, as CI does.**
+  `ci.yml` does not set it, but both actions every CI job starts with export
+  it (read at their pinned SHAs). Without it a `--full` run kept 16 GB of
+  incremental state CI never builds and nearly filled a 38 GB allowance.
+  `prove_gates_fail.sh` already turned it off; its comment saying CI did not
+  is corrected.
+- **The mutants the release PR's in-diff mutation run found surviving are
+  now caught by tests**: stamping a task snapshot's status timestamp (N35;
+  only status updates were tested), the gRPC `UNAUTHENTICATED` and
+  `PERMISSION_DENIED` mappings for a refused credential (N36; their tests
+  lived in the SDK crate, which the server crate's mutation run does not
+  execute), admitting a send when the task's only token is already
+  cancelled (N21), every `google.rpc.Code` name the REST dispatcher's
+  plain error responses carry (N37; eight of its eleven arms were
+  untested), and the agent-card poll watcher warning once about a card
+  that stays broken (N32; in a test binary of its own, because a
+  thread-local capture in the unit-test binary saw 0 warnings in some
+  full-suite runs once another test had cached the callsite as
+  uninterested). The default `ServerInterceptor::on_complete` is marked
+  `#[mutants::skip]`: it is an empty future, and so is the mutant (ADR
+  0006). Tests only; no behaviour changed.
+- **The official TCK's `CORE-SEND-003` is baselined** as a defect in the
+  suite: it declares no expected error, so it demands that a message part
+  with an unsupported media type be accepted, and it began failing when N34
+  started answering the `ContentTypeNotSupportedError` §3.1.1 requires.
+  Evidence in `docs/official-tck-findings.md` §22.
+
+### Correction, 2026-09-24: claims that were not true when published
+
+An audit of every public claim from 0.6.0 onward — the READMEs inside the
+published `.crate` files, the crate documentation, the book, the GitHub
+release notes and this file — found claims their own artifacts contradict.
+Those in the repository are corrected in this release. Those in published
+artifacts cannot be changed: crates.io and docs.rs go on serving them for
+each version below until the next release replaces the current one. Each
+was checked against the published `.crate` for that version.
+
+- **`a2a-protocol-types` README, 0.7.0 to 0.13.0:** "`A2A_VERSION` —
+  `"1.0.0"`". The constant is `"1.0"` in every one of those versions.
+- **`a2a-protocol-types` README, every version:** "zero `unsafe` blocks
+  anywhere in this crate". From 0.12.0 the published crate's `build.rs`
+  contains `unsafe { std::env::set_var("PROTOC", …) }`, as do the client's
+  and server's; `#![forbid(unsafe_code)]` covers `src/` only. The 0.12.0
+  release notes counted four such build scripts in the repository; there
+  are five.
+- **`a2a-protocol-client` README, every version:** documents
+  `resubscribe()`, `get_authenticated_extended_card()` and
+  `ClientBuilder::with_transport()`. None exists in any published version;
+  the methods are `subscribe_to_task`, `get_extended_agent_card` and
+  `with_protocol_binding` / `with_custom_transport`.
+- **`a2a-protocol-client` and `a2a-protocol-server` READMEs, every
+  version:** the `signing` feature is described as agent card signature
+  verification ("signing verification" on the server). In both crates it
+  only forwards `a2a-protocol-types/signing`; neither crate signs or
+  verifies anything on its own. This is a security-relevant capability
+  claim, and it was false.
+- **The book's introduction**, as deployed: "zero surviving mutants
+  enforced via `cargo-mutants` CI gate" (the gate covers only functions a
+  pull request changes; the weekly sweep has recorded survivors), "the
+  entire codebase is free of unsafe code", "no panics on any caller input or
+  I/O failure" (no gate measures that), "exhaustive pattern matching"
+  (protocol enums are `#[non_exhaustive]`), "zero-cost abstractions" (the
+  extension points are trait objects and boxed futures), and "all defaults
+  … are overridable". Each is rewritten to what its evidence supports.
+- **0.7.0 release notes:** "Official-SDK interop is now proven, both
+  directions … 20/20 on both JSON-RPC and REST for every one". The 20/20
+  for the JavaScript and Java SDKs was scored after skipping checks they
+  fail (`list_tasks_basic` and `a2a_media_type_accepted` for JavaScript,
+  `a2a_media_type_accepted` for Java); the entry mentions that `--skip`
+  exists but not that it was used on them. The reverse direction was the
+  Python SDK's client only.
+- **0.8.0 release notes:** "MUST compatibility **100%**" and an empty
+  conformance baseline. True of what that run graded; four MUSTs have failed
+  against the suite's stale v1.0.0 table since A2A v1.0.1, and the figure
+  to quote is 88 of 114 passing and 4 failing.
+- **0.12.1**, raised by an adopter: the change to what a new task on an
+  existing context inherits (#130) was filed under **Fixed**. The entry
+  said it changed the wire shape, but not where someone scanning for such
+  changes looks; **Behaviour Changes** above exists for that.
+- **`CITATION.cff`**: "A complete Rust implementation" — rewritten to what
+  is measured.
 
 ## [0.13.0] - 2026-09-20
 

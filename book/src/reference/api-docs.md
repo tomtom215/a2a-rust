@@ -31,7 +31,7 @@ the deploy rather than shipping a dead link.
 
 Not included here. The SLIMRPC binding sits outside the workspace with its own
 lockfile — see [its chapter](../bindings/slimrpc.md) — and documenting it would
-pull 379 transitive dependencies into the docs build. Build it locally with:
+pull 359 transitive dependencies into the docs build. Build it locally with:
 
 ```sh
 cd bindings/a2a-protocol-slimrpc && cargo doc --open

@@ -85,9 +85,12 @@ pub const WEBSOCKET_BINDING_URI: &str = "https://a2a-rust.com/bindings/websocket
 
 /// Content type emitted by the JSON-RPC and REST bindings.
 ///
-/// Spec §9.1 and §11.1 both require `application/json` for requests and
-/// responses; the registered `application/a2a+json` type remains accepted
-/// on ingress for compatibility.
+/// §9.1 specifies `application/json` for JSON-RPC. For HTTP+JSON, §11.1 says
+/// `application/a2a+json` SHOULD be used; this SDK keeps `application/json`
+/// there deliberately, because the official Go SDK's client reads error
+/// bodies only under `application/json` (audit N38, and the book's
+/// conformance history, "Deliberate deviations"). [`A2A_CONTENT_TYPE`] is
+/// accepted on ingress by both.
 pub const JSON_CONTENT_TYPE: &str = "application/json";
 
 /// HTTP header name for the A2A protocol version.
@@ -103,6 +106,7 @@ pub const A2A_EXTENSIONS_HEADER: &str = "A2A-Extensions";
 
 pub mod agent_card;
 pub mod artifact;
+pub mod auth_rejection;
 pub mod error;
 pub mod events;
 pub mod extensions;
@@ -127,6 +131,7 @@ pub mod trace_context;
 
 pub use agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentProvider, AgentSkill};
 pub use artifact::{Artifact, ArtifactId};
+pub use auth_rejection::{AuthRejection, AuthRejectionKind};
 pub use error::{A2aError, A2aResult, ErrorCode};
 pub use events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 pub use extensions::{AgentCardSignature, AgentExtension};

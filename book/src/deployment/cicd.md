@@ -4,21 +4,26 @@ a2a-rust uses GitHub Actions for continuous integration, crate publishing, and d
 
 ## CI Pipeline
 
-The CI workflow (`.github/workflows/ci.yml`) runs on every push and PR:
+The CI workflow (`.github/workflows/ci.yml`) runs on pushes to `main` and `claude/**` and on PRs to `main`:
 
 | Job | Description |
 |-----|-------------|
-| **Format** | `cargo fmt --all -- --check` — enforces consistent formatting |
-| **Clippy** | `cargo clippy` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, all-features) across 3 OSes (ubuntu, macOS, Windows) on stable (lint verdicts are a property of the clippy version; the MSRV leg of the Test job is what proves 1.88 compatibility) |
+| **Static checks** | `cargo fmt --all -- --check`, vendored-proto agreement, the 500-line file-length ratchet, no process-global panic hooks, the mutants-config check, and gate-inventory completeness |
+| **Clippy** | `cargo clippy` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, websocket, grpc, auth-jwt without default features, all-features) across 3 OSes (ubuntu, macOS, Windows) on stable (lint verdicts are a property of the clippy version; the MSRV leg of the Test job is what proves 1.88 compatibility) |
 | **Feature matrix** | `cargo hack clippy --each-feature` over the four published crates — every feature on its own, plus no-default-features and all-features — so a `#[cfg(feature)]` gap is caught here rather than by a downstream build enabling an unusual subset |
-| **Test** | `cargo test --workspace` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, all-features, no-default-features) across 3 OSes and 2 Rust versions |
+| **Test** | `cargo test --workspace` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, websocket, grpc, auth-jwt, auth-jwt + tls-rustls, all-features, no-default-features) across 3 OSes and 2 Rust versions |
 | **Test (postgres integration)** | Runs the `#[ignore]`-gated live-database suite (`postgres_store_tests.rs`) against a `postgres:16` service container |
-| **Nightly** | Tests on nightly Rust toolchain for early compatibility checks (`continue-on-error: true` — non-blocking) |
+| **Nightly** | Tests and clippy on the nightly Rust toolchain for early compatibility checks (`continue-on-error: true` — non-blocking) |
 | **Deny** | `cargo deny check` — audits dependencies for vulnerabilities |
-| **Doc** | `cargo doc --workspace --no-deps` — verifies documentation builds |
+| **Doc** | `cargo doc --workspace --no-deps`, then each published crate on its own in its own default features — verifies documentation builds |
 | **Package** | `cargo package --workspace` (excluding example and tool crates) — validates crate packaging for publish |
+| **Semver** | `cargo-semver-checks` over the four published crates, all features |
+| **SDK dogfood** | `cargo run -p agent-team --release --all-features` |
+| **SLIMRPC binding** | builds the out-of-workspace binding and runs `cargo-deny` over its own dependency tree |
+| **Example surface coverage** | runs the examples (echo-agent, incident-response, genai, rig, multi-lang-team), each driving every method over every binding it supports |
+| **Go SDK interop** | `scripts/go_sdk_interop.sh` — both directions, three bindings |
 
-The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `main` and PRs:
+The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `main` and `claude/**`, on PRs, on demand, and weekly (for the `codecov.yml` ignores-applied check):
 - Uses `cargo-llvm-cov` for source-based coverage instrumentation
 - Generates LCOV reports and uploads to [Codecov](https://codecov.io/gh/tomtom215/a2a-rust)
 
@@ -27,7 +32,7 @@ The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separat
 
 | Mode | Trigger | Scope |
 |------|---------|-------|
-| **Full sweep** | Weekly (Mondays 03:00 UTC) + on-demand (`workflow_dispatch`) | All library crates, sharded across parallel runners (8-way for `a2a-server`) |
+| **Full sweep** | Weekly (Mondays 03:00 UTC) + on-demand (`workflow_dispatch`) | All library crates, sharded across parallel runners (12-way for `a2a-server`, 4-way for `a2a-types` and `a2a-client`) |
 
 Every pull request additionally runs an **incremental** mutation gate:
 `cargo-mutants --in-diff` mutates only the source lines changed in the PR
@@ -48,11 +53,13 @@ dated, durable record each sweep should be copied into.
 
 The **Benchmarks** workflow (`.github/workflows/benchmarks.yml`) runs on-demand (`workflow_dispatch`) and on pushes to `main` that affect benchmark or SDK code. It:
 
-1. Builds and runs all 14 benchmark suites (275 benchmarks total) individually via Criterion.rs
+1. Builds and runs 13 of the 15 benchmark suites individually via Criterion.rs (`coordinator_chain_under_fault` and `send_latency_breakdown` are run by hand)
 2. Auto-generates the [benchmark results page](../reference/benchmarks.md) via `benches/scripts/generate_book_page.sh`
 3. Auto-generates the [interactive benchmark dashboard](../reference/dashboard.md) via `benches/scripts/generate_dashboard.sh`
-4. Commits the updated results page and dashboard to `main` via `github-actions[bot]`
+4. Commits the updated results page and dashboard to `main` via `github-actions[bot]` (skipped while the in-tree version has no release tag)
 5. Archives the full criterion HTML reports (violin plots, comparison overlays) as workflow artifacts with 30-day retention
+
+On PRs that touch benchmark or SDK code, a separate **Regression Gate** job compares `transport_throughput` and `protocol_overhead` against the base branch.
 
 The 14 benchmark suites cover: transport throughput (payload scaling to 1MB), protocol overhead (including `protocol/payload_scaling` isolation benchmarks for serde regression detection), task lifecycle, concurrent agents, cross-language comparison, realistic workloads, error paths, streaming and backpressure, data volume scaling (with cache-busting), memory overhead, enterprise scenarios, production scenarios, advanced scenarios, and — new in this release — **agent-level latency under fault** via an in-process 5-hop coordinator chain with fault injection at every link. The last suite is the first benchmark on this page that does not measure SDK-layer overhead; see the [Agent-Level Latency Under Fault](../reference/benchmarks.md#agent-level-latency-under-fault) section for the honest caveats.
 
@@ -61,7 +68,7 @@ The **TCK** workflow (`.github/workflows/tck.yml`) runs the Technology Compatibi
 All actions are **SHA-pinned** for supply chain security:
 
 ```yaml
-- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+- uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 ```
 
 ## Release Pipeline
@@ -72,7 +79,7 @@ The release workflow (`.github/workflows/release.yml`) triggers on version tags:
 vX.Y.Z tag → validate → ci + security → package + publish-dry-run → github-release → publish
 ```
 
-The `grpc` feature (enabled by `--all-features` and `cargo package`) compiles the canonical schema with `prost-build`/`tonic-prost-build`; the build scripts fall back to the vendored `protoc` (`protoc-bin-vendored`) automatically, and CI installs one via `arduino/setup-protoc` only to exercise the system-`PROTOC` path.
+The `grpc` feature compiles the canonical schema with `prost-build`/`tonic-prost-build` using the vendored `protoc` (`protoc-bin-vendored`); no workflow installs a system `protoc`. Set `PROTOC` to use your own.
 
 Crates are published in dependency order:
 1. `a2a-protocol-types` (no internal deps)
@@ -81,10 +88,12 @@ Crates are published in dependency order:
 
 ## Documentation Deployment
 
-The docs workflow builds the mdBook and deploys to GitHub Pages:
+The docs workflow builds the mdBook and deploys to GitHub Pages. Abridged — the
+toolchain, cache and API-documentation steps are omitted; see the workflow file
+for the whole of it:
 
 ```yaml
-# .github/workflows/docs.yml
+# .github/workflows/docs.yml (abridged)
 name: Deploy Documentation
 
 on:
@@ -114,8 +123,12 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Build book
         run: mdbook build book
-      - name: Copy static files (robots.txt, sitemap.xml)
-        run: cp book/static/robots.txt book/static/sitemap.xml book/book/
+      - name: Copy static assets into build output
+        run: |
+          set -euo pipefail
+          cp -r --no-preserve=mode book/static/. book/book/
+          test -f book/book/robots.txt
+          test -f book/book/sitemap.xml
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:
@@ -154,14 +167,14 @@ mdbook serve book --open
 
 ## Cargo Documentation
 
-Rust API docs are generated separately:
+The docs workflow also builds rustdoc for the four published crates
+(`--all-features`, `--cfg docsrs`) and publishes it under `/api/` beside the
+book. To build it locally:
 
 ```bash
 # Build API docs for all crates
 cargo doc --workspace --no-deps --open
 ```
-
-Consider deploying these alongside the book, or linking to docs.rs once published.
 
 ## Next Steps
 

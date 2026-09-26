@@ -23,6 +23,7 @@ mod capability;
 mod concurrency;
 mod event_processing;
 pub(crate) mod helpers;
+pub(crate) mod input_modes;
 mod introspection;
 mod lifecycle;
 mod limits;
@@ -101,6 +102,11 @@ pub struct RequestHandler {
     /// operation MUST require authentication, so the default is `false`:
     /// without an authenticator the endpoint refuses to serve the card.
     pub(crate) allow_unauthenticated_extended_card: bool,
+    /// The media types the agent card accepts for message parts, or `None`
+    /// when none are enforced (no card, a card declaring none, or
+    /// [`allow_undeclared_input_modes`](crate::builder::RequestHandlerBuilder::allow_undeclared_input_modes)).
+    /// See `input_modes`.
+    pub(crate) accepted_input_modes: Option<Vec<String>>,
     /// URIs of agent-card extensions marked `required: true`. Every
     /// data-plane operation checks the client's `A2A-Extensions` declaration
     /// against this set (§3.3.4) and rejects with
@@ -132,6 +138,31 @@ pub(crate) struct CancellationEntry {
     pub(crate) token: tokio_util::sync::CancellationToken,
     /// When this entry was created (for time-based eviction).
     pub(crate) created_at: Instant,
+    /// What the executor holding this token has said about its turn: whether
+    /// it has parked the task at an interrupted state, and whether it has
+    /// finished. Admission reads it to tell a continuation racing the end of
+    /// a turn from a send into a task that is genuinely still working (N21).
+    pub(crate) turn: Arc<ExecutorTurn>,
+}
+
+/// The state of one executor turn, shared by the executor's writer, its
+/// cleanup, and admission.
+#[derive(Debug, Default)]
+pub(crate) struct ExecutorTurn {
+    /// The last state the executor wrote was `input-required` or
+    /// `auth-required`. Set *before* the event reaches the queue, so no
+    /// reader can see the interrupted state while this still says otherwise.
+    pub(crate) parked: std::sync::atomic::AtomicBool,
+    /// Cancelled once the executor's queue and token have been released —
+    /// the moment a continuation can be admitted.
+    pub(crate) finished: tokio_util::sync::CancellationToken,
+}
+
+impl ExecutorTurn {
+    /// Whether the executor's latest state asks the client for input.
+    pub(crate) fn is_parked(&self) -> bool {
+        self.parked.load(std::sync::atomic::Ordering::Acquire)
+    }
 }
 
 impl RequestHandler {

@@ -169,14 +169,18 @@ impl RequestHandler {
                 headers,
                 self.inbound_trace_policy,
             );
-            self.interceptors.run_before(&call_ctx).await?;
-            // SPEC §3.3.4: reject clients that do not declare support for
-            // extensions the agent card marks required.
-            self.ensure_required_extensions(&call_ctx)?;
+            let mut call = self.interceptors.begin(&call_ctx);
+            let result = async {
+                call.before().await?;
+                // SPEC §3.3.4: reject clients that do not declare support for
+                // extensions the agent card marks required.
+                self.ensure_required_extensions(&call_ctx)?;
 
-            let result = self.validate_and_store_push_config(config).await?;
-            self.interceptors.run_after(&call_ctx).await?;
-            Ok(result)
+                let result = self.validate_and_store_push_config(config).await?;
+                Ok(result)
+            }
+            .await;
+            call.finish(result).await
         })
         .await;
 
@@ -227,21 +231,25 @@ impl RequestHandler {
                 headers,
                 self.inbound_trace_policy,
             );
-            self.interceptors.run_before(&call_ctx).await?;
-            // SPEC §3.3.4: reject clients that do not declare support for
-            // extensions the agent card marks required.
-            self.ensure_required_extensions(&call_ctx)?;
+            let mut call = self.interceptors.begin(&call_ctx);
+            let result = async {
+                call.before().await?;
+                // SPEC §3.3.4: reject clients that do not declare support for
+                // extensions the agent card marks required.
+                self.ensure_required_extensions(&call_ctx)?;
 
-            // SPEC §3.1.8: a missing push notification configuration MUST be
-            // reported as TaskNotFoundError, not InvalidParams.
-            let config = self
-                .push_config_store
-                .get(&params.task_id, &params.id)
-                .await?
-                .ok_or_else(|| ServerError::TaskNotFound(TaskId::new(&params.task_id)))?;
+                // SPEC §3.1.8: a missing push notification configuration MUST be
+                // reported as TaskNotFoundError, not InvalidParams.
+                let config = self
+                    .push_config_store
+                    .get(&params.task_id, &params.id)
+                    .await?
+                    .ok_or_else(|| ServerError::TaskNotFound(TaskId::new(&params.task_id)))?;
 
-            self.interceptors.run_after(&call_ctx).await?;
-            Ok(config)
+                Ok(config)
+            }
+            .await;
+            call.finish(result).await
         })
         .await;
 
@@ -288,13 +296,17 @@ impl RequestHandler {
                     headers,
                     self.inbound_trace_policy,
                 );
-                self.interceptors.run_before(&call_ctx).await?;
-                // SPEC §3.3.4: reject clients that do not declare support for
-                // extensions the agent card marks required.
-                self.ensure_required_extensions(&call_ctx)?;
-                let configs = self.push_config_store.list(task_id).await?;
-                self.interceptors.run_after(&call_ctx).await?;
-                Ok(configs)
+                let mut call = self.interceptors.begin(&call_ctx);
+                let result = async {
+                    call.before().await?;
+                    // SPEC §3.3.4: reject clients that do not declare support for
+                    // extensions the agent card marks required.
+                    self.ensure_required_extensions(&call_ctx)?;
+                    let configs = self.push_config_store.list(task_id).await?;
+                    Ok(configs)
+                }
+                .await;
+                call.finish(result).await
             })
             .await;
 
@@ -343,15 +355,19 @@ impl RequestHandler {
                 headers,
                 self.inbound_trace_policy,
             );
-            self.interceptors.run_before(&call_ctx).await?;
-            // SPEC §3.3.4: reject clients that do not declare support for
-            // extensions the agent card marks required.
-            self.ensure_required_extensions(&call_ctx)?;
-            self.push_config_store
-                .delete(&params.task_id, &params.id)
-                .await?;
-            self.interceptors.run_after(&call_ctx).await?;
-            Ok(())
+            let mut call = self.interceptors.begin(&call_ctx);
+            let result = async {
+                call.before().await?;
+                // SPEC §3.3.4: reject clients that do not declare support for
+                // extensions the agent card marks required.
+                self.ensure_required_extensions(&call_ctx)?;
+                self.push_config_store
+                    .delete(&params.task_id, &params.id)
+                    .await?;
+                Ok(())
+            }
+            .await;
+            call.finish(result).await
         })
         .await;
 

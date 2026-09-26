@@ -9,6 +9,7 @@
 //! them to the appropriate [`RequestHandler`] method, and serializes the
 //! response (or streams SSE for streaming methods).
 
+mod refusal;
 mod response;
 
 use std::collections::HashMap;
@@ -30,8 +31,8 @@ use crate::serve::Dispatcher;
 use crate::streaming::build_sse_response;
 
 use response::{
-    error_response, error_response_bytes, extract_headers, json_response, parse_error_response,
-    parse_params, read_body_limited, success_response, success_response_bytes,
+    error_response, error_response_bytes, extract_headers, json_response, parse_params,
+    read_body_limited, success_response, success_response_bytes,
 };
 
 /// JSON-RPC 2.0 request dispatcher.
@@ -213,17 +214,14 @@ impl JsonRpcDispatcher {
             Err(e) => return self.refuse_unparsed(started, &e.to_string()),
         };
 
-        if raw.is_array() {
-            // Batch request: take ownership of the array to avoid per-item clones.
-            let serde_json::Value::Array(items) = raw else {
-                unreachable!()
-            };
+        // Batch request: take ownership of the array to avoid per-item clones.
+        if let serde_json::Value::Array(items) = raw {
             if items.is_empty() {
-                return self.refuse_unparsed(started, "empty batch request");
+                return self.refuse_invalid(started, "empty batch request");
             }
             // FIX(M8): Reject oversized batches to prevent resource exhaustion.
             if items.len() > self.config.max_batch_size {
-                return self.refuse_unparsed(
+                return self.refuse_invalid(
                     started,
                     &format!(
                         "batch too large: {} requests exceeds {} limit",
@@ -237,13 +235,16 @@ impl JsonRpcDispatcher {
                 let rpc_req: JsonRpcRequest = match serde_json::from_value(item) {
                     Ok(r) => r,
                     Err(e) => {
-                        // Invalid request within batch — return individual parse error.
-                        self.record_unrouted(started, ErrorCode::ParseError);
+                        // An item that is JSON but not a Request object:
+                        // Invalid Request (-32600), per JSON-RPC 2.0 §6's own
+                        // example `[1]`. Parse error (-32700) is for a body
+                        // that is not JSON, and this one parsed.
+                        self.record_unrouted(started, ErrorCode::InvalidRequest);
                         let err_resp = JsonRpcErrorResponse::new(
                             None,
                             JsonRpcError::new(
-                                a2a_protocol_types::error::ErrorCode::ParseError.as_i32(),
-                                format!("Parse error: {e}"),
+                                a2a_protocol_types::error::ErrorCode::InvalidRequest.as_i32(),
+                                format!("Invalid Request: {e}"),
                             ),
                         );
                         if let Ok(v) = serde_json::to_value(&err_resp) {
@@ -263,40 +264,12 @@ impl JsonRpcDispatcher {
             // Single request.
             let rpc_req: JsonRpcRequest = match serde_json::from_value(raw) {
                 Ok(r) => r,
-                Err(e) => return self.refuse_unparsed(started, &e.to_string()),
+                // JSON, but not a Request object — no `method`, a number, a
+                // string: Invalid Request (ACTS CORE-ERR-006).
+                Err(e) => return self.refuse_invalid(started, &e.to_string()),
             };
             self.dispatch_single_request_http(&rpc_req, &headers).await
         }
-    }
-
-    /// Answers a request refused before it named a method, and records it
-    /// as a failed call (audit O11).
-    fn refuse(
-        &self,
-        started: std::time::Instant,
-        err: &ServerError,
-    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        self.record_unrouted(started, err.to_a2a_error().code);
-        error_response(None, err)
-    }
-
-    /// [`refuse`](Self::refuse) for a body that is not a JSON-RPC request.
-    fn refuse_unparsed(
-        &self,
-        started: std::time::Instant,
-        message: &str,
-    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        self.record_unrouted(started, ErrorCode::ParseError);
-        parse_error_response(None, message)
-    }
-
-    fn record_unrouted(&self, started: std::time::Instant, code: ErrorCode) {
-        crate::rpc_span::record_unrouted(
-            &self.handler,
-            crate::rpc_span::RpcSystem::JsonRpc,
-            started,
-            &code.as_i32().to_string(),
-        );
     }
 
     /// The span one JSON-RPC call runs in (ADR 0013).
@@ -368,7 +341,17 @@ impl JsonRpcDispatcher {
                     })
                     .await
             }
-            _ => json_response(200, self.dispatch_single_request(rpc_req, headers).await),
+            // Not `dispatch_single_request`, which answers bytes: a single
+            // call's HTTP status can carry a refused credential (N36), a
+            // batch's cannot, since one batch answers many calls.
+            _ => match self
+                .rpc_span(rpc_req, headers)
+                .run(self.call(id.clone(), rpc_req, headers))
+                .await
+            {
+                Ok(body) => json_response(200, body),
+                Err(e) => error_response(id, &e),
+            },
         }
     }
 

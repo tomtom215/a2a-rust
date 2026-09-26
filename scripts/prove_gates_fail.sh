@@ -373,6 +373,10 @@ injection_for() {
             echo "timeout_nesting" ;;
         *"check_inert_bounds.py"*)
             echo "inert_bounds" ;;
+        *"check_advisory_floors.py"*)
+            echo "advisory_floors" ;;
+        *"check_lockfiles.sh"*)
+            echo "lockfiles" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
@@ -515,6 +519,8 @@ expected_marker() {
         mutants_config)   echo ".cargo/mutants.toml is in effect and carries key(s) cargo-mutants rejects" ;;
         timeout_nesting)  echo "push_delivery_timeout / HttpPushSender" ;;
         inert_bounds)     echo "max_probe_rows" ;;
+        advisory_floors)  echo "RUSTSEC-2026-0285" ;;
+        lockfiles)        echo "STALE  itk/Cargo.lock" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         package_manifest) echo "NO_SUCH_README.md" ;;
@@ -869,6 +875,32 @@ PY
             sed -i 's/\.is_some_and(|wanted| wanted > limits\.push_delivery_timeout)/.is_some()/' "$pd"
             grep -q 'max_delivery_duration()' "$pd" \
                 || { echo "timeout_nesting: anchor not found in $pd" >&2; return 1; }
+            ;;
+        advisory_floors)
+            # Put rustls back to the floor it shipped with in 0.13.0, which
+            # admits 0.23.13 to 0.23.44 under RUSTSEC-2026-0285 — the defect
+            # verbatim, as the adopter found it (N24).
+            local client_toml=crates/a2a-protocol-client/Cargo.toml
+            note_touched "$client_toml"
+            sed -i 's/version = ">=0.23.45, <0.24"/version = ">=0.23, <0.24"/' "$client_toml"
+            grep -q 'version = ">=0.23, <0.24"' "$client_toml" \
+                || { echo "advisory_floors: rustls requirement not found in $client_toml" >&2; return 1; }
+            ;;
+        lockfiles)
+            # Put `itk/Cargo.lock` back the way it was found on 2026-09-24:
+            # pinning a workspace crate at a version its manifest no longer
+            # has.
+            local lock=itk/Cargo.lock
+            note_touched "$lock"
+            python3 - "$lock" <<'PY' || { echo "lockfiles: a2a-protocol-types entry not found in $lock" >&2; return 1; }
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+t, n = re.subn(r'(name = "a2a-protocol-types"\nversion = )"[^"]+"', r'\1"0.11.0"', s, count=1)
+if n != 1:
+    sys.exit(1)
+open(p, "w").write(t)
+PY
             ;;
         inert_bounds)
             # A `max_*` bound one TaskStore honours and its five siblings do
@@ -1413,8 +1445,12 @@ apply_ci_env() {
 
 apply_ci_env
 
-# Incremental state off, and not to match CI (which does not set it either
-# way) — for disk. This sweep compiles the workspace under a dozen distinct
+# Incremental state off, which is also what CI runs with: ci.yml's `env:`
+# does not set it, but the two actions every job uses both export
+# `CARGO_INCREMENTAL=0` (dtolnay/rust-toolchain's action.yml, when unset, and
+# Swatinem/rust-cache's restore step, checked at the pinned SHAs on
+# 2026-09-24). This comment said CI did not set it either way until then. It
+# matters here for disk. This sweep compiles the workspace under a dozen distinct
 # feature permutations, and each keeps its own incremental artifacts:
 # `target/debug/incremental` reached 13 GB partway through a run and filled
 # the device, after which gates failed on ENOSPC instead of on their injected

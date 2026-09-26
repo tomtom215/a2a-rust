@@ -14,9 +14,9 @@ a2a-rust/
 │   │       ├── task.rs         # Task, TaskState, TaskStatus, TaskId
 │   │       ├── message.rs      # Message, Part, PartContent, MessageRole
 │   │       ├── artifact.rs     # Artifact, ArtifactId
-│   │       ├── agent_card.rs   # AgentCard, AgentInterface, AgentSkill
+│   │       ├── agent_card/     # AgentCard, AgentInterface, AgentSkill
 │   │       ├── events.rs       # StreamResponse, status/artifact events
-│   │       ├── params.rs       # MessageSendParams, TaskQueryParams, ...
+│   │       ├── params/         # MessageSendParams, TaskQueryParams, ...
 │   │       ├── responses.rs    # SendMessageResponse, TaskListResponse
 │   │       ├── jsonrpc.rs      # JSON-RPC 2.0 envelope types
 │   │       ├── push.rs         # Push notification config types
@@ -57,7 +57,8 @@ a2a-rust/
 │   │       ├── auth.rs         # CredentialsStore, AuthInterceptor
 │   │       ├── interceptor.rs  # CallInterceptor, InterceptorChain
 │   │       ├── retry.rs        # RetryPolicy, RetryTransport
-│   │       ├── error.rs        # ClientError, ClientResult
+│   │       ├── testing/        # ScriptedPeer hostile test peer (feature-gated)
+│   │       ├── error/          # ClientError, ClientResult
 │   │       ├── config.rs       # ClientConfig
 │   │       ├── discovery.rs    # Agent card discovery
 │   │       └── tls.rs          # TLS configuration helpers
@@ -67,8 +68,8 @@ a2a-rust/
 │   │       ├── lib.rs          # Public re-exports
 │   │       ├── handler/        # RequestHandler (core orchestration)
 │   │       │   ├── mod.rs          # Struct definition, SendMessageResult
-│   │       │   ├── limits.rs       # HandlerLimits config
-│   │       │   ├── messaging.rs    # SendMessage / SendStreamingMessage
+│   │       │   ├── limits/         # HandlerLimits config
+│   │       │   ├── messaging/      # SendMessage / SendStreamingMessage
 │   │       │   ├── lifecycle/        # Task lifecycle handlers
 │   │       │   │   ├── mod.rs            # Re-exports
 │   │       │   │   ├── get_task.rs       # GetTask handler
@@ -83,9 +84,10 @@ a2a-rust/
 │   │       │   │   └── background/       # Background event processor
 │   │       │   │       ├── mod.rs            # Event loop orchestration
 │   │       │   │       ├── state_machine.rs  # Event dispatch, state transitions
-│   │       │   │       └── push_delivery.rs  # Push notification delivery
-│   │       │   ├── shutdown.rs     # Graceful shutdown
+│   │       │   │       └── push_delivery/    # Push notification delivery
+│   │       │   ├── shutdown/       # Graceful shutdown
 │   │       │   └── helpers.rs      # Validation, context builders
+│   │       ├── auth/           # Server-side authentication interceptors
 │   │       ├── builder.rs      # RequestHandlerBuilder
 │   │       ├── executor.rs     # AgentExecutor trait
 │   │       ├── executor_helpers.rs # boxed_future, agent_executor!, EventEmitter
@@ -94,6 +96,7 @@ a2a-rust/
 │   │       │   ├── rest/           # REST dispatcher
 │   │       │   │   ├── mod.rs          # RestDispatcher, route handlers
 │   │       │   │   ├── response.rs     # HTTP response helpers
+│   │       │   │   ├── error_response.rs # AIP-193 error bodies
 │   │       │   │   └── query.rs        # Query/URL parsing utilities
 │   │       │   ├── jsonrpc/        # JSON-RPC 2.0 dispatcher
 │   │       │   │   ├── mod.rs          # JsonRpcDispatcher, dispatch logic
@@ -105,21 +108,22 @@ a2a-rust/
 │   │       │       ├── mod.rs          # Proto includes, re-exports
 │   │       │       ├── config.rs       # GrpcConfig
 │   │       │       ├── dispatcher.rs   # GrpcDispatcher, server setup
-│   │       │       ├── service.rs      # A2aService trait implementation
-│   │       │       └── helpers.rs      # JSON codec, error mapping
+│   │       │       ├── native.rs       # lf.a2a.v1.A2AService implementation
+│   │       │       ├── shutdown.rs     # GrpcDispatcher::serve_with_shutdown
+│   │       │       └── helpers.rs      # Metadata extraction, error → gRPC status mapping
 │   │       ├── store/          # Task persistence
 │   │       │   ├── mod.rs          # Re-exports
 │   │       │   ├── task_store/     # TaskStore trait + in-memory impl
 │   │       │   │   ├── mod.rs          # TaskStore trait, TaskStoreConfig
 │   │       │   │   └── in_memory/      # InMemoryTaskStore
 │   │       │   │       ├── mod.rs          # Core CRUD, TaskStore impl
-│   │       │   │       └── eviction.rs     # TTL + capacity eviction
-│   │       │   ├── sqlite_store.rs     # SqliteTaskStore (feature-gated)
+│   │       │   │       └── eviction/       # TTL + capacity eviction
+│   │       │   ├── sqlite_store/       # SqliteTaskStore (feature-gated)
 │   │       │   ├── migration.rs        # Schema migration runner
 │   │       │   ├── tenant_sqlite_store.rs # TenantAwareSqliteTaskStore
-│   │       │   ├── postgres_store.rs   # PostgresTaskStore (feature-gated)
+│   │       │   ├── postgres_store/     # PostgresTaskStore (feature-gated)
 │   │       │   ├── pg_migration.rs     # PostgreSQL migration runner
-│   │       │   ├── tenant_postgres_store.rs # TenantAwarePostgresTaskStore
+│   │       │   ├── tenant_postgres_store/ # TenantAwarePostgresTaskStore
 │   │       │   └── tenant/         # Multi-tenant isolation
 │   │       │       ├── mod.rs          # Re-exports
 │   │       │       ├── context.rs      # TenantContext (task-local)
@@ -151,13 +155,14 @@ a2a-rust/
 │   │       │   ├── pipeline.rs     # OTLP pipeline setup
 │   │       │   └── builder.rs      # OtelMetrics builder
 │   │       ├── call_context.rs # CallContext with HTTP headers
-│   │       ├── metrics.rs      # Metrics trait
-│   │       ├── rate_limit.rs   # RateLimitInterceptor, RateLimitConfig
-│   │       ├── serve.rs        # serve(), serve_with_addr() helpers
+│   │       ├── conformance/    # AgentExecutor conformance harness (feature-gated)
+│   │       ├── metrics/        # Metrics trait
+│   │       ├── rate_limit/     # RateLimitInterceptor, RateLimitConfig
+│   │       ├── serve/          # serve(), serve_with_addr(), Server, ServeConfig
 │   │       ├── request_context.rs  # RequestContext
-│   │       ├── interceptor.rs  # ServerInterceptor trait
-│   │       ├── error.rs        # ServerError, ServerResult
-│   │       ├── tenant_config.rs   # PerTenantConfig, TenantLimits
+│   │       ├── interceptor/    # ServerInterceptor trait
+│   │       ├── error/          # ServerError, ServerResult
+│   │       ├── tenant_config/  # PerTenantConfig, TenantLimits
 │   │       └── tenant_resolver.rs # TenantResolver trait + impls
 │   │
 │   └── a2a-protocol-sdk/      # Umbrella crate
@@ -165,11 +170,18 @@ a2a-rust/
 │           └── lib.rs          # Re-exports + prelude
 │
 ├── examples/
-│   ├── echo-agent/         # Minimal echo agent example
+│   ├── hello-agent/        # Smallest complete agent
+│   ├── deploy-agent/       # The hello agent made deployable (health, SIGTERM, container)
+│   ├── echo-agent/         # Every A2A method over all four bindings
+│   ├── incident-response/  # Three cooperating agents: input-required, delegation, cancel
 │   ├── agent-team/         # Comprehensive 4-agent dogfood suite (102 E2E tests by default, 87 bare)
 │   ├── multi-lang-team/    # Multi-language team example
 │   ├── rig-agent/          # Integration with the Rig framework
-│   └── genai-agent/        # Integration with the GenAI framework
+│   ├── genai-agent/        # Integration with the GenAI framework
+│   ├── mcp-agent/          # Tools discovered from an MCP server
+│   ├── mcp-bridge/         # A remote A2A agent exposed as an MCP server
+│   ├── resilient-agent/
+│   └── harness/            # Shared coverage matrix and sweep for the examples
 │
 ├── tck/                    # Technology Compatibility Kit
 │

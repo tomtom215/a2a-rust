@@ -114,7 +114,9 @@ The agent team exercises **45+ distinct SDK features** in a single run:
 
 ```text
 examples/agent-team/src/
-├── main.rs                      # Thin orchestrator (~470 lines)
+├── main.rs                      # Thin orchestrator (~500 lines)
+├── features.rs                  # Feature-claim table and its audit against the run
+├── surface.rs                   # Every method × every binding matrix
 ├── executors/
 │   ├── mod.rs                   # Re-exports
 │   ├── code_analyzer.rs         # CodeAnalyzer executor
@@ -132,6 +134,7 @@ examples/agent-team/src/
     ├── stress.rs                # Tests 31-40: stress, durability, event ordering
     ├── dogfood.rs               # Tests 41-50: SDK gaps, regressions, edge cases
     ├── transport.rs             # Tests 51-58: WebSocket, gRPC, multi-tenancy
+    ├── registration.rs          # Every test_* is registered and claimed
     └── coverage_gaps/           # Tests 61-98: modular test suite
         ├── mod.rs                   # Re-exports
         ├── batch_jsonrpc.rs         # Batch JSON-RPC tests
@@ -205,8 +208,8 @@ All architecture, ergonomics, observability, performance, and durability issues 
 | **OpenTelemetry integration** | `crates/a2a-protocol-server/src/otel/` — `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
 | **Connection pooling metrics** | `crates/a2a-protocol-server/src/metrics/mod.rs` — `ConnectionPoolStats`, `on_connection_pool_stats` |
 | **Hot-reload agent cards** | `crates/a2a-protocol-server/src/agent_card/hot_reload.rs` — file polling + SIGHUP reload |
-| **Store migration tooling** | `crates/a2a-protocol-server/src/store/migration.rs` — `MigrationRunner`, V1–V3 migrations |
-| **Per-tenant configuration** | `crates/a2a-protocol-server/src/tenant_config.rs` — `PerTenantConfig`, `TenantLimits` |
+| **Store migration tooling** | `crates/a2a-protocol-server/src/store/migration.rs` — `MigrationRunner`, V1–V7 migrations |
+| **Per-tenant configuration** | `crates/a2a-protocol-server/src/tenant_config/mod.rs` — `PerTenantConfig`, `TenantLimits` |
 | **TenantResolver trait** | `crates/a2a-protocol-server/src/tenant_resolver.rs` — header, bearer token, path segment strategies |
 | **Agent card signing E2E** | `examples/agent-team/src/tests/coverage_gaps/feature_gated.rs` — test 79 (`signing` feature) |
 

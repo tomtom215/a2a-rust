@@ -97,7 +97,7 @@ assert_eq!(A2A_VERSION_HEADER, "A2A-Version");
 - **ID newtypes** for type safety: `TaskId`, `ContextId`, `MessageId`, `ArtifactId`
 - **`#[non_exhaustive]`** on enums for forward-compatible additions
 - **ProtoJSON naming**: `TaskState::Completed` serializes as `"TASK_STATE_COMPLETED"`
-- **No unsafe code**: `#![forbid(unsafe_code)]` — zero `unsafe` blocks anywhere in this crate
+- **No unsafe library code**: `#![forbid(unsafe_code)]` covers `src/`. The build script is outside the attribute's reach and, with the `proto` feature, sets `PROTOC` through `std::env::set_var`, which edition 2024 makes `unsafe`
 - **All types documented**: `#![deny(missing_docs)]`
 - **Property-tested**: JSON ser/de round-trip verified via `proptest`
 

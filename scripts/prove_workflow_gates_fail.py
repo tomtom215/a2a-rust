@@ -698,6 +698,58 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "a2a_protocol_server",
         "a2a_protocol_sdk",
     ]
+    # The SEO step rewrites the built pages, then checks them. Its fixture is
+    # pages made from the real `head.hbs` (it has no Handlebars expressions),
+    # so a template change the script cannot handle is caught here, and the
+    # real script, `book.toml` and `Cargo.toml` it reads the origin and MSRV
+    # from.
+    def _seo_site(template_edit=None, pages=True):
+        def setup(d):
+            for rel in ("scripts/seo_postprocess.py", "book/book.toml", "Cargo.toml"):
+                (d / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO / rel, d / rel)
+            site = d / "book" / "book"
+            site.mkdir(parents=True, exist_ok=True)
+            if not pages:
+                return {}
+            head = (REPO / "book/theme/head.hbs").read_text(encoding="utf-8")
+            if template_edit:
+                head = template_edit(head)
+            desc = '<meta name="description" content="site-wide">'
+            para = "<p>" + "A paragraph long enough to become the description. " * 2 + "</p>"
+            for rel, title in (
+                ("index.html", "Introduction"),
+                ("introduction.html", "Introduction"),
+                ("guide/page.html", "A Page"),
+                ("print.html", "Print"),
+                ("404.html", "Not Found"),
+            ):
+                robots = '<meta name="robots" content="noindex">' if rel == "print.html" else ""
+                page = (
+                    f"<html><head>{desc}{robots}{head}<title>{title} - a2a-rust</title>"
+                    f"</head><body><main><h1>{title}</h1>{para}</main></body></html>"
+                )
+                (site / rel).parent.mkdir(parents=True, exist_ok=True)
+                (site / rel).write_text(page, encoding="utf-8")
+            return {}
+
+        return setup
+
+    reg["docs.yml::build::Write per-page SEO metadata"] = Probe(
+        healthy=_seo_site(),
+        defects=[
+            Defect(
+                "the template lost its canonical link, so no page can carry its own",
+                _seo_site(lambda h: re.sub(r'<link rel="canonical"[^>]*>', "", h)),
+                "expected one #a2a-canonical",
+            ),
+            Defect(
+                "the book build produced no pages",
+                _seo_site(pages=False),
+                "no book pages",
+            ),
+        ],
+    )
     reg["docs.yml::build::Place API documentation under /api/"] = Probe(
         healthy=_rustdoc_fixture(ALL_DOC_CRATES),
         defects=[
@@ -1181,6 +1233,11 @@ def build_registry() -> dict[str, Probe | Exempt]:
                 "in the same calendar month",
             ),
             Defect(
+                "a same-month break whose exception gives no reason",
+                _next_release_fixture("same-month-empty-exception"),
+                "in the same calendar month",
+            ),
+            Defect(
                 "a breaking change in a patch release",
                 _next_release_fixture("breaking-patch"),
                 "is a patch release",
@@ -1307,16 +1364,22 @@ RELEASE_FILES = (
 )
 
 
-def repo_version() -> str:
-    """The version the crates currently declare — the fixture's healthy tag.
+def released_version() -> str:
+    """The newest version with a dated `## [X.Y.Z] - YYYY-MM-DD` heading in
+    CHANGELOG.md — the last release actually cut, and the fixture's healthy tag.
 
-    Read rather than hardcoded, so a version bump does not quietly turn the
-    healthy control into a defect and every release probe INCONCLUSIVE.
+    Not the version the crates declare. Between the version bump and release
+    preparation those name a release whose notes, CITATION.cff and
+    SECURITY.md rows do not exist yet, so a fixture tagged there fails two
+    release gates for real and turns their probes INCONCLUSIVE. That is how
+    this read `Cargo.toml` until 2026-09-25, when 0.14.0 was bumped ahead of
+    its release prep. The release files always describe the last release, so
+    this is the version they agree with at every point in the cycle.
     """
-    text = (REPO / "crates/a2a-protocol-types/Cargo.toml").read_text()
-    m = re.search(r'(?m)^version\s*=\s*"([^"]+)"', text)
+    text = (REPO / "CHANGELOG.md").read_text()
+    m = re.search(r"(?m)^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}", text)
     if not m:
-        raise SystemExit("error: cannot read version from a2a-protocol-types/Cargo.toml")
+        raise SystemExit("error: CHANGELOG.md has no dated `## [X.Y.Z] - date` heading")
     return m.group(1)
 
 
@@ -1326,7 +1389,7 @@ def _release_fixture(
     """A git repo holding this repo's real release-relevant files, tagged."""
 
     def setup(d: Path) -> dict[str, str]:
-        version = repo_version()
+        version = released_version()
         r = d / "r"
         for rel in RELEASE_FILES:
             dst = r / rel
@@ -1421,11 +1484,11 @@ def _next_release_fixture(defect: str | None = None) -> Setup:
         g = lambda *a: subprocess.run(  # noqa: E731
             ["git", "-C", str(r), *a], check=True, capture_output=True, text=True
         ).stdout.strip()
-        current = repo_version()
+        current = released_version()
         major, minor, _ = (int(x) for x in current.split("-")[0].split("."))
         nxt = f"{major}.{minor + 1}.0" if defect != "breaking-patch" else f"{major}.{minor}.1"
         date = "2100-01-15"
-        if defect == "same-month":
+        if defect in ("same-month", "same-month-empty-exception", "same-month-excepted"):
             # The month of the newest dated release that carries breaking
             # changes, read from the file so it cannot go stale.
             text = (REPO / "CHANGELOG.md").read_text()
@@ -1439,6 +1502,19 @@ def _next_release_fixture(defect: str | None = None) -> Setup:
             dst = r / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / rel, dst)
+        # Start from the released version. The tree may already declare the
+        # next one (0.14.0 was bumped ahead of its release prep), and the
+        # healthy control's point is the bump *after* the notes below, which
+        # would otherwise be an empty commit git refuses.
+        declared = re.search(
+            r'(?m)^version\s*=\s*"([^"]+)"',
+            (r / "crates/a2a-protocol-types/Cargo.toml").read_text(),
+        ).group(1)
+        if declared != current:
+            for rel in RELEASE_FILES:
+                if rel.endswith("Cargo.toml"):
+                    p = r / rel
+                    p.write_text(p.read_text().replace(f'"{declared}"', f'"{current}"'))
         cl = r / "CHANGELOG.md"
         text = cl.read_text()
         m = re.search(r"(?ms)^## \[Unreleased\]\n(.*?)(?=^## \[)", text)
@@ -1447,6 +1523,10 @@ def _next_release_fixture(defect: str | None = None) -> Setup:
         body = m.group(1).strip()
         if not body or body == "Nothing yet.":
             body = "### Fixed\n\n- A fixture entry."
+        if defect == "same-month-empty-exception":
+            body = "**Cadence exception:** n/a\n\n" + body
+        elif defect == "same-month-excepted":
+            body = "**Cadence exception:** a critical fix that cannot wait a month\n\n" + body
         if "### Breaking Changes" not in body:
             # The cadence defects need a breaking release to be wrong about.
             body = "### Breaking Changes\n\n- A fixture break.\n\n" + body

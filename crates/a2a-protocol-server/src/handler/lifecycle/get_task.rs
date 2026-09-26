@@ -36,26 +36,30 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("GetTask", headers, self.inbound_trace_policy);
-            self.interceptors.run_before(&call_ctx).await?;
-            // SPEC §3.3.4: reject clients that do not declare support for
-            // extensions the agent card marks required.
-            self.ensure_required_extensions(&call_ctx)?;
+            let mut call = self.interceptors.begin(&call_ctx);
+            let result = async {
+                call.before().await?;
+                // SPEC §3.3.4: reject clients that do not declare support for
+                // extensions the agent card marks required.
+                self.ensure_required_extensions(&call_ctx)?;
 
-            let task_id = TaskId::new(&params.id);
-            let mut task = self
-                .task_store
-                .get(&task_id)
-                .await?
-                .ok_or_else(|| ServerError::TaskNotFound(task_id))?;
+                let task_id = TaskId::new(&params.id);
+                let mut task = self
+                    .task_store
+                    .get(&task_id)
+                    .await?
+                    .ok_or_else(|| ServerError::TaskNotFound(task_id))?;
 
-            // Apply historyLength: truncate history to the requested number
-            // of most recent messages. A value of 0 means "no history".
-            if let Some(history_length) = params.history_length {
-                task.history = truncate_history(task.history, history_length);
+                // Apply historyLength: truncate history to the requested number
+                // of most recent messages. A value of 0 means "no history".
+                if let Some(history_length) = params.history_length {
+                    task.history = truncate_history(task.history, history_length);
+                }
+
+                Ok(task)
             }
-
-            self.interceptors.run_after(&call_ctx).await?;
-            Ok(task)
+            .await;
+            call.finish(result).await
         })
         .await;
 

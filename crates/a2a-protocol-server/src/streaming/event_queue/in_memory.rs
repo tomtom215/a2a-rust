@@ -281,9 +281,11 @@ impl InMemoryQueueWriter {
 impl EventQueueWriter for InMemoryQueueWriter {
     fn write<'a>(
         &'a self,
-        event: StreamResponse,
+        mut event: StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            // Before anything persists or broadcasts it (N35).
+            super::status_stamp::stamp_status(&mut event);
             self.check_event_size(&event)?;
             // Send to the persistence channel first (if configured) — this
             // channel is independent of SSE consumer backpressure.
@@ -408,6 +410,19 @@ pub struct InMemoryQueueReader {
     pending: std::collections::VecDeque<A2aResult<StreamEvent>>,
     /// Consulted when the channel closes; see [`Self::with_reattach`].
     reattach: Option<ReattachFn>,
+    /// The hook's answer while it is still being awaited.
+    ///
+    /// Kept here, not in a local of `read`, so that `read` is cancel-safe.
+    /// The SSE writer races `read()` against its keep-alive timer and drops
+    /// the loser; a hook future that lived only in `read` was dropped with
+    /// it, and the next `read` called the hook afresh. The hook's idle bound
+    /// is measured from the moment it is called, so every keep-alive
+    /// restarted it, and a subscription to a task parked at `input-required`
+    /// outlived its `subscribe_max_idle` indefinitely.
+    ///
+    /// In a `Mutex` only to keep the reader `Sync`, which it was before this
+    /// field; `read` takes `&mut self`, so the lock is never contended.
+    reattaching: std::sync::Mutex<Option<Pin<Box<dyn Future<Output = Reattached> + Send>>>>,
     /// Set once a frame reporting a terminal state has been handed to the
     /// consumer. Suppresses the synthesized final frame, so a client that
     /// already saw the real one does not get it twice.
@@ -495,6 +510,7 @@ impl InMemoryQueueReader {
             rx,
             pending: std::collections::VecDeque::new(),
             reattach: None,
+            reattaching: std::sync::Mutex::new(None),
             saw_terminal: false,
             replayed_through: 0,
         }
@@ -536,6 +552,7 @@ impl InMemoryQueueReader {
             rx,
             pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
+            reattaching: std::sync::Mutex::new(None),
             saw_terminal: false,
             replayed_through: 0,
         }
@@ -556,6 +573,7 @@ impl InMemoryQueueReader {
             rx,
             pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
+            reattaching: std::sync::Mutex::new(None),
             saw_terminal: false,
             replayed_through: 0,
         }
@@ -638,7 +656,20 @@ impl EventQueueReader for InMemoryQueueReader {
                             return None;
                         }
                         let reattach = self.reattach.as_ref()?;
-                        match reattach().await {
+                        let answer = {
+                            let slot = self
+                                .reattaching
+                                .get_mut()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            slot.get_or_insert_with(|| reattach()).await
+                        };
+                        // Only once the hook has answered: a `read` dropped
+                        // while awaiting it leaves it for the next `read`.
+                        *self
+                            .reattaching
+                            .get_mut()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+                        match answer {
                             Reattached::Channel(rx) => self.rx = rx,
                             Reattached::Final(event) => {
                                 self.saw_terminal = true;
@@ -800,7 +831,17 @@ mod tests {
     /// must be accepted.
     #[tokio::test]
     async fn event_of_exactly_max_size_is_accepted() {
-        let event = make_status_event("t-exact", TaskState::Working);
+        // Already stamped: `write` stamps an empty status timestamp before it
+        // measures (N35), so an unstamped event would grow past `exact` by
+        // the stamp's length and the boundary would no longer be at `exact`.
+        let stamped = || {
+            let mut event = make_status_event("t-exact", TaskState::Working);
+            if let StreamResponse::StatusUpdate(u) = &mut event {
+                u.status.timestamp = Some("2026-01-02T03:04:05.000Z".into());
+            }
+            event
+        };
+        let event = stamped();
         let exact = serde_json::to_vec(&event).expect("serializes").len();
 
         let (writer, _reader) = new_in_memory_queue_with_options(16, exact, DEFAULT_WRITE_TIMEOUT);
@@ -812,7 +853,7 @@ mod tests {
 
         // And one byte under the size is still rejected, which pins the
         // boundary from the other side.
-        let event = make_status_event("t-exact", TaskState::Working);
+        let event = stamped();
         let (writer, _reader) =
             new_in_memory_queue_with_options(16, exact - 1, DEFAULT_WRITE_TIMEOUT);
         assert!(

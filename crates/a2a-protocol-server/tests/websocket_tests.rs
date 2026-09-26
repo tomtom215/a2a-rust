@@ -326,6 +326,25 @@ async fn ws_malformed_json_returns_parse_error() {
     assert_eq!(resp.error.code, -32700, "should be parse error");
 }
 
+/// JSON that is not a Request object is Invalid Request (-32600) over
+/// WebSocket too; -32700 stays for text that is not JSON (above).
+#[tokio::test]
+async fn ws_json_without_a_method_returns_invalid_request() {
+    let addr = start_ws_server().await;
+    let mut ws = connect(addr).await;
+
+    ws.send(WsMessage::Text(
+        r#"{"jsonrpc":"2.0","id":1,"params":{}}"#.into(),
+    ))
+    .await
+    .unwrap();
+
+    let msg = ws.next().await.unwrap().unwrap();
+    let text = msg.into_text().unwrap();
+    let resp: JsonRpcErrorResponse = serde_json::from_str(&text).expect("should be error response");
+    assert_eq!(resp.error.code, -32600, "should be invalid request");
+}
+
 #[tokio::test]
 async fn ws_ping_pong() {
     let addr = start_ws_server().await;

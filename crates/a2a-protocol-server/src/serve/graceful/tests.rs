@@ -34,6 +34,12 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 struct SlowDispatcher {
     delay: Duration,
     finished: Arc<std::sync::atomic::AtomicBool>,
+    /// Notified as each request reaches the handler. The tests below wait on
+    /// this before signalling shutdown or sending the next request: they
+    /// slept 50-100ms instead, and a slow runner (macOS, Rust 1.88, CI run
+    /// 36146016893) had not accepted the connection by then, so the drain
+    /// found nothing in flight and the test failed on its own timing.
+    started: Arc<tokio::sync::Notify>,
 }
 
 impl SlowDispatcher {
@@ -41,8 +47,18 @@ impl SlowDispatcher {
         Self {
             delay,
             finished: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            started: Arc::new(tokio::sync::Notify::new()),
         }
     }
+}
+
+/// Waits until a request has reached the handler. `notify_one` stores a
+/// permit when nobody is waiting yet, so a request that arrives first is not
+/// missed. Bounded, so a server that never serves fails here, by name.
+async fn until_started(started: &tokio::sync::Notify) {
+    tokio::time::timeout(Duration::from_secs(10), started.notified())
+        .await
+        .expect("the request never reached the handler");
 }
 
 impl Dispatcher for SlowDispatcher {
@@ -52,6 +68,7 @@ impl Dispatcher for SlowDispatcher {
     ) -> Pin<Box<dyn Future<Output = super::super::DispatchResponse> + Send + '_>> {
         let delay = self.delay;
         let finished = Arc::clone(&self.finished);
+        self.started.notify_one();
         Box::pin(async move {
             tokio::time::sleep(delay).await;
             finished.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -225,6 +242,7 @@ async fn server_does_not_return_until_in_flight_requests_are_answered() {
 
     let dispatcher = SlowDispatcher::new(Duration::from_millis(300));
     let finished = Arc::clone(&dispatcher.finished);
+    let started = Arc::clone(&dispatcher.started);
 
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let serving = tokio::spawn(async move {
@@ -242,9 +260,9 @@ async fn server_does_not_return_until_in_flight_requests_are_answered() {
             .await
     });
 
-    // Let the request reach the dispatcher, then signal shutdown while it
-    // is still sleeping — the window in which the response would be lost.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Once the request is in the dispatcher, signal shutdown while it is
+    // still sleeping — the window in which the response would be lost.
+    until_started(&started).await;
     tx.send(()).expect("signal shutdown");
 
     let report = serving.await.expect("join server");
@@ -274,17 +292,16 @@ async fn expired_drain_reports_abandoned_connections() {
         .with_config(ServeConfig::new().with_drain_timeout(Duration::from_millis(50)));
     let addr = server.local_addr().expect("addr");
 
+    // Far longer than the drain timeout, so the deadline is certain to
+    // expire first.
+    let dispatcher = SlowDispatcher::new(Duration::from_secs(30));
+    let started = Arc::clone(&dispatcher.started);
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let serving = tokio::spawn(async move {
         server
-            .serve_with_shutdown(
-                // Far longer than the drain timeout, so the deadline is
-                // certain to expire first.
-                SlowDispatcher::new(Duration::from_secs(30)),
-                async {
-                    rx.await.ok();
-                },
-            )
+            .serve_with_shutdown(dispatcher, async {
+                rx.await.ok();
+            })
             .await
     });
 
@@ -295,7 +312,7 @@ async fn expired_drain_reports_abandoned_connections() {
             .await
     });
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    until_started(&started).await;
     tx.send(()).expect("signal shutdown");
 
     let report = serving.await.expect("join server");
@@ -324,10 +341,12 @@ async fn max_connections_bounds_concurrent_service() {
         );
     let addr = server.local_addr().expect("addr");
 
+    let dispatcher = SlowDispatcher::new(Duration::from_millis(400));
+    let started = Arc::clone(&dispatcher.started);
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let serving = tokio::spawn(async move {
         server
-            .serve_with_shutdown(SlowDispatcher::new(Duration::from_millis(400)), async {
+            .serve_with_shutdown(dispatcher, async {
                 rx.await.ok();
             })
             .await
@@ -344,8 +363,10 @@ async fn max_connections_bounds_concurrent_service() {
         })
     };
 
+    // The second request is sent only once the first holds the one slot,
+    // so the order the ceiling is measured against is the order it ran in.
     let first = mk();
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    until_started(&started).await;
     let second = mk();
 
     let (ok1, _) = first.await.expect("join first");

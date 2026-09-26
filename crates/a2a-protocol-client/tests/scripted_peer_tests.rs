@@ -302,14 +302,15 @@ async fn the_peer_reads_a_body_that_arrives_after_its_head() {
     );
 }
 
-/// `WebSocketTransport` does not reconnect (audit N18), so once its socket
-/// has dropped, a new call on it cannot succeed however often it is retried.
-/// It must say so — fail at once, and not as retryable — rather than invite
-/// a retry loop against a transport that cannot recover. The call that was in
-/// flight when the socket dropped is the retryable one (N13).
+/// A call made after the transport's socket dropped reconnects (audit N18)
+/// rather than being refused: the call in flight when the socket dropped is
+/// retryable (N13), and the next one opens a new connection. Against a peer
+/// that cuts every connection, that call fails too — as retryable, with a
+/// second connection made — which is what a retry loop needs to be told.
+/// It used to fail at once, non-retryable, with no connection attempted.
 #[cfg(feature = "websocket")]
 #[tokio::test(flavor = "multi_thread")]
-async fn a_call_on_a_dropped_websocket_is_refused_as_final() {
+async fn a_call_after_a_dropped_websocket_reconnects() {
     let peer = ScriptedPeer::new()
         .cut_off_after(0)
         .on(Binding::WebSocket)
@@ -326,13 +327,17 @@ async fn a_call_on_a_dropped_websocket_is_refused_as_final() {
         matches!(&in_flight, Err(e) if e.is_retryable()),
         "the call the drop interrupted: {in_flight:?}"
     );
+    let before = peer.connections();
 
     let next = tokio::time::timeout(GUARD, client.send_message(params()))
         .await
-        .expect("refused at once");
+        .expect("the reconnect is bounded");
     assert!(
-        matches!(&next, Err(ClientError::Transport(_))),
-        "a call on the dead transport: {next:?}"
+        peer.connections() > before,
+        "no new connection was made for the call after the drop"
     );
-    assert!(!next.as_ref().is_err_and(ClientError::is_retryable));
+    assert!(
+        next.as_ref().is_err_and(ClientError::is_retryable),
+        "a call cut off again must be retryable: {next:?}"
+    );
 }

@@ -60,7 +60,14 @@ export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
 RIG_MODEL=qwen3:1.7b cargo run -p rig-a2a-agent
 ```
 
-Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port. The agent serves a
+Without `A2A_BIND_ADDR`, `cargo run` is a self-driving demo, not a server: it
+starts the agent on all four bindings, drives every A2A method over each,
+prints `LLM leg: EXERCISED` or `LLM leg: NOT EXERCISED`, and exits. In that
+demo a provider error is answered with a *labelled* mechanical fallback, so
+the protocol mechanics stay visible with no model at all.
+
+Set `A2A_BIND_ADDR=127.0.0.1:8080` to serve instead — JSON-RPC only, on that
+address, with no fallback. The agent serves a
 discovery card at `/.well-known/agent-card.json`, supports push-config
 CRUD, and passes the in-repo TCK: 21/21 graded checks, 1 not applicable, on
 the JSON-RPC binding. `tck.yml`'s `tck-example-agents` job gates that figure on
@@ -89,13 +96,16 @@ call however capable it is.
 | Answer, no tools called | `TASK_STATE_COMPLETED`, artifact `rig-response` |
 | Answer after tool calls | `TASK_STATE_COMPLETED`, artifacts `rig-response` and `tool-trace` |
 | A tool errored | **not** a task failure — the error returns to the model, and the trace records it |
-| Model never stops calling tools | `TASK_STATE_FAILED` after `MAX_TURNS` |
-| Provider unreachable / errors | `TASK_STATE_FAILED` |
+| Model never stops calling tools | `TASK_STATE_FAILED` after `MAX_TURNS` when serving; a labelled mechanical reply in the demo |
+| Provider unreachable / errors | `TASK_STATE_FAILED` when serving (`A2A_BIND_ADDR`); a labelled mechanical reply in the demo |
 | Message has no text part | `TASK_STATE_FAILED` (invalid params) |
 
-Errors surface through the task state — they are never folded into a
-"successful" artifact. The one deliberate exception is a *tool* error, which
-is not an agent failure but information the model is expected to act on.
+When serving, errors surface through the task state — they are never folded
+into a "successful" artifact. The one deliberate exception is a *tool* error,
+which is not an agent failure but information the model is expected to act
+on. The self-driving demo is the other exception, and says so: its fallback
+reply is labelled
+`[no model reachable — mechanical fallback, not an LLM answer]`, and the run ends by reporting whether the LLM leg was exercised.
 
 See [`examples/rig-agent/README.md`](https://github.com/tomtom215/a2a-rust/blob/main/examples/rig-agent/README.md)
 for the full verified walkthrough, including both transcripts.

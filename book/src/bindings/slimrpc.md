@@ -54,14 +54,14 @@ complete — neither is.
 
 ```toml
 [dependencies]
-a2a-protocol-slimrpc = "0.5"
-a2a-protocol-server  = "0.13"
+a2a-protocol-slimrpc = "0.6"
+a2a-protocol-server  = "0.14"
 ```
 
 ### Why two version numbers
 
-`a2a-protocol-slimrpc` is versioned independently of the SDK — it is at `0.5`
-while the SDK is at `0.13`. Numbering it to match would claim eight minor
+`a2a-protocol-slimrpc` is versioned independently of the SDK — it is at `0.6`
+while the SDK is at `0.14`. Numbering it to match would claim eight minor
 versions of API stability it has not earned, and would force a bump
 on every SDK release even when nothing here changed.
 
@@ -125,9 +125,9 @@ do over JSON-RPC. Only the wire underneath changes.
 Every other Rust block in this book is compiled as a doctest by the
 `a2a-book-tests` crate. These are not, and the reason is structural rather than
 neglect: `a2a-protocol-slimrpc` is deliberately outside the root workspace with
-its own `Cargo.lock`, because `agntcy-slim-rpc` pulls 379 transitive
-dependencies including `aws-lc-sys`, a native C crypto build. Against 188 for
-`a2a-protocol-server` at all features and 12 for `a2a-protocol-types` at its
+its own `Cargo.lock`, because `agntcy-slim-rpc` pulls 359 transitive
+dependencies including `aws-lc-sys`, a native C crypto build. Against 206 for
+`a2a-protocol-server` at all features and 11 for `a2a-protocol-types` at its
 defaults — both counting normal edges only, as `cargo tree --edges normal`
 reports them; add build-dependencies and the server reading is 222 — none of
 that belongs in the published crates' audit surface, or in the book's test

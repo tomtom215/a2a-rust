@@ -27,8 +27,8 @@
 
 use a2a_protocol_client::ClientError;
 use a2a_protocol_server::ServerError;
-use a2a_protocol_types::ErrorCode;
 use a2a_protocol_types::error::A2aError;
+use a2a_protocol_types::{AuthRejection, AuthRejectionKind, ErrorCode};
 use slim_rpc::{RpcCode, RpcError};
 
 /// The A2A error type name for an [`ErrorCode`], as the SLIMRPC spec spells it.
@@ -129,10 +129,18 @@ pub fn server_error_to_rpc_error(err: &ServerError) -> RpcError {
         return RpcError::resource_exhausted(msg.clone());
     }
     let a2a = err.to_a2a_error();
-    RpcError::new(
-        error_code_to_rpc_code(a2a.code),
-        format!("{}: {}", a2a_error_type_name(a2a.code), a2a.message),
-    )
+    let message = format!("{}: {}", a2a_error_type_name(a2a.code), a2a.message);
+    // A refused credential carries its A2A code (`InvalidRequest`) and, beside
+    // it, which refusal it is (ADR 0014). The code alone would send
+    // `INVALID_ARGUMENT`, and a client's `BearerAuthInterceptor` drops a token
+    // only on `UNAUTHENTICATED`, so a revoked one was re-sent: audit N36,
+    // which the gRPC dispatcher fixed and this binding had not.
+    match a2a.auth_rejection().map(AuthRejection::kind) {
+        Some(AuthRejectionKind::Unauthenticated) => RpcError::unauthenticated(message),
+        // `PermissionDenied`, and any kind added later: refusing is safer.
+        Some(_) => RpcError::permission_denied(message),
+        None => RpcError::new(error_code_to_rpc_code(a2a.code), message),
+    }
 }
 
 /// Converts an [`RpcError`] received by a client into a [`ClientError`].
@@ -335,6 +343,35 @@ mod tests {
     }
 
     /// A call the peer cancelled is not a timeout and must not be retried.
+    #[test]
+    fn a_refused_credential_reaches_the_client_as_401_or_403() {
+        let refused = ServerError::Protocol(A2aError::unauthenticated(
+            "authentication required",
+            "Bearer realm=\"a2a\"",
+        ));
+        let wire = server_error_to_rpc_error(&refused);
+        assert_eq!(wire.code(), RpcCode::Unauthenticated, "{wire:?}");
+        assert!(matches!(
+            rpc_error_to_client_error(&wire),
+            ClientError::UnexpectedStatus { status: 401, .. }
+        ));
+
+        let forbidden = ServerError::Protocol(A2aError::permission_denied("not permitted"));
+        let wire = server_error_to_rpc_error(&forbidden);
+        assert_eq!(wire.code(), RpcCode::PermissionDenied, "{wire:?}");
+        assert!(matches!(
+            rpc_error_to_client_error(&wire),
+            ClientError::UnexpectedStatus { status: 403, .. }
+        ));
+
+        // An ordinary InvalidRequest is not a refusal and keeps its mapping.
+        let plain = ServerError::Protocol(A2aError::new(ErrorCode::InvalidRequest, "bad"));
+        assert_eq!(
+            server_error_to_rpc_error(&plain).code(),
+            RpcCode::InvalidArgument
+        );
+    }
+
     #[test]
     fn a_cancelled_call_is_not_retryable() {
         let err = rpc_error_to_client_error(&RpcError::cancelled("gone"));

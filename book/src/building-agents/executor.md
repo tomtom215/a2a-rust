@@ -174,8 +174,8 @@ could not enforce "only this tenant may invoke this skill" — and left
 `Message.metadata` as the only channel for anything caller-specific, which
 the *caller* writes and so is not a fact about the caller at all.
 
-Five accessors read it, each returning `None` rather than a default when
-nobody said:
+Five accessors read it; the `Option` ones return `None` rather than a
+default when nobody said (`activated_extensions()` returns an empty slice):
 
 | Accessor | Returns |
 |----------|---------|

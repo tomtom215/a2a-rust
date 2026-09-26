@@ -250,7 +250,7 @@ Budget for it before you start:
 
 | | |
 |---|---|
-| Transitive dependencies | **379**, against 12 for `a2a-protocol-types` |
+| Transitive dependencies | **359**, against 11 for `a2a-protocol-types` (normal edges, 2026-09-25) |
 | Native builds | `aws-lc-sys` — needs a C toolchain and `cmake` |
 | Cold build | Several minutes |
 | Disk | Roughly **16 GB** of `target/`, on top of the workspace's own |

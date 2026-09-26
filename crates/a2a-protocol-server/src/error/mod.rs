@@ -13,6 +13,7 @@ use std::fmt;
 
 use a2a_protocol_types::error::{A2aError, ErrorCode};
 use a2a_protocol_types::task::TaskId;
+use a2a_protocol_types::{AuthRejection, AuthRejectionKind};
 
 // ── ServerError ──────────────────────────────────────────────────────────────
 
@@ -146,13 +147,53 @@ impl ServerError {
     /// two where the axum adapter answered `413` and `503` (audit N20): the
     /// same binding, two answers, and an overload that told a retrying client
     /// not to retry.
+    ///
+    /// A credential refusal (N36) answers `401` or `403` whatever its code:
+    /// an OAuth client discards a cached token on `401` and on nothing else.
     #[must_use]
     pub(crate) fn http_status(&self) -> u16 {
+        if let Some(rejection) = self.auth_rejection() {
+            return match rejection.kind() {
+                AuthRejectionKind::Unauthenticated => 401,
+                // `PermissionDenied`, and any kind added later: refusing is
+                // the safe reading of a refusal this binding does not know.
+                _ => 403,
+            };
+        }
         match self {
             Self::PayloadTooLarge(_) => 413,
             Self::Overloaded(_) => 503,
             other => other.to_a2a_error().code.http_status(),
         }
+    }
+
+    /// The credential refusal this error carries, if any (audit N36). Each
+    /// binding answers it with its own status; see
+    /// [`AuthRejection`](a2a_protocol_types::AuthRejection).
+    #[must_use]
+    pub(crate) const fn auth_rejection(&self) -> Option<&AuthRejection> {
+        match self {
+            Self::Protocol(e) => e.auth_rejection(),
+            _ => None,
+        }
+    }
+
+    /// The canonical status name (`google.rpc.Code`) the HTTP bindings put in
+    /// an AIP-193 error body's `status`, agreeing with
+    /// [`http_status`](Self::http_status) and the gRPC dispatcher's code.
+    #[must_use]
+    pub(crate) fn status_name(&self) -> &'static str {
+        match self.auth_rejection().map(AuthRejection::kind) {
+            Some(AuthRejectionKind::Unauthenticated) => "UNAUTHENTICATED",
+            Some(_) => "PERMISSION_DENIED",
+            None => self.to_a2a_error().code.grpc_status(),
+        }
+    }
+
+    /// The `WWW-Authenticate` value a `401` for this error carries.
+    #[must_use]
+    pub(crate) fn challenge(&self) -> Option<&str> {
+        self.auth_rejection().and_then(AuthRejection::challenge)
     }
 
     /// Converts this server error into an [`A2aError`] suitable for wire responses.

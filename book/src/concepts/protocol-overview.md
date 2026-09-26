@@ -58,12 +58,12 @@ A **Task** is the central unit of work. When a client sends a message, the serve
 
     * = terminal state (no further transitions)
 
-    Valid transitions:
-    Submitted  → Working, Failed, Canceled, Rejected
-    Working    → Working, Completed, Failed, Canceled, InputRequired, AuthRequired
-             (Working → Working is valid: repeated Working updates carry
-              progress messages; all other self-transitions are invalid)
-    InputRequired / AuthRequired → Working, Failed, Canceled
+    The arrows show the usual paths, not the only valid ones.
+    Valid transitions (the only two rules enforced):
+    1. Terminal states (Completed, Failed, Canceled, Rejected) are final.
+    2. Nothing transitions into Submitted.
+    Everything else is allowed, e.g. Submitted → Completed,
+    Working → Working (repeated Working updates carry progress messages).
 ```
 
 Terminal states (Completed, Failed, Canceled, Rejected) are final — no further transitions are allowed.
@@ -101,7 +101,7 @@ A2A supports two communication styles:
 
 ### Synchronous (SendMessage)
 
-The client sends a message and blocks until the task is complete:
+The client sends a message and blocks until the task reaches a terminal or interrupted (`InputRequired`, `AuthRequired`) state:
 
 ```text
   Client                        Server
@@ -117,13 +117,15 @@ The client sends a message and blocks until the task is complete:
 
 ### Streaming (SendStreamingMessage)
 
-The client sends a message and receives events in real time via SSE:
+The client sends a message and receives events in real time (via SSE on the HTTP bindings):
 
 ```text
   Client                        Server
      │                             │
      │  SendStreamingMessage       │
      │ ───────────────────────────►│
+     │    Task (snapshot)          │
+     │ ◄───────────────────────────│
      │    StatusUpdate: Working    │
      │ ◄───────────────────────────│
      │    ArtifactUpdate           │

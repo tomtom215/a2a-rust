@@ -241,41 +241,43 @@ fn extract_headers(headers: &axum::http::HeaderMap) -> HashMap<String, String> {
 
 // ── Helper: convert A2A errors to HTTP responses ─────────────────────────────
 
-fn a2a_error_to_response(err: &dyn std::fmt::Display, status: u16) -> axum::response::Response {
-    let body = serde_json::json!({ "error": err.to_string() });
-    (
-        axum::http::StatusCode::from_u16(status)
-            .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR),
-        axum::Json(body),
-    )
-        .into_response()
+/// An error response from the REST dispatcher's own builders, so this adapter
+/// and `RestDispatcher` send one AIP-193 shape (spec §11.6; audit N37). This
+/// adapter answered `{"error": "<text>"}` until 2026-09-25: no `code`,
+/// `status` or `details`, so a client could not read the error identity the
+/// spec requires, and the same failure looked different on the two
+/// HTTP+JSON dispatchers.
+fn plain_error(status: u16, message: &str) -> axum::response::Response {
+    hyper_to_axum(crate::dispatch::rest::error_json_response(status, message))
 }
 
-/// The HTTP status this adapter answers with: [`ServerError::http_status`],
-/// the one mapping both HTTP+JSON dispatchers use.
-///
-/// This was a second, hand-written copy of §5.4's table, and it had drifted
-/// from the one in [`ErrorCode::http_status`] in three places:
-/// `TaskNotCancelable` and `InvalidStateTransition` answered `409`, and
-/// `PushNotSupported` answered `501`, where the table says `400` for all
-/// three. It then held the only copy of the `413`/`503` arms, so the REST
-/// dispatcher answered differently for the same errors (audit N20); both now
-/// live on `ServerError`.
+/// A handler error, answered as `RestDispatcher` answers it: the status from
+/// [`ServerError::http_status`], the `ErrorInfo` details, and the
+/// `WWW-Authenticate` challenge of a refused credential (N36).
 ///
 /// [`ServerError::http_status`]: crate::error::ServerError::http_status
-fn server_error_status(err: &crate::error::ServerError) -> u16 {
-    err.http_status()
+fn handler_error_to_response(err: &crate::error::ServerError) -> axum::response::Response {
+    hyper_to_axum(crate::dispatch::rest::server_error_to_response(err))
 }
 
-fn handler_error_to_response(err: &crate::error::ServerError) -> axum::response::Response {
-    a2a_error_to_response(err, server_error_status(err))
+/// A request body this adapter could not read, answered as `RestDispatcher`
+/// answers one.
+fn bad_body(err: &serde_json::Error) -> axum::response::Response {
+    plain_error(400, &err.to_string())
 }
 
 // ── Helper: convert SSE hyper response to axum response ──────────────────────
 
 /// Converts a hyper `Response<BoxBody<Bytes, Infallible>>` (from SSE builder)
 /// into an axum `Response`.
-fn hyper_sse_to_axum(
+/// An A2A operation's success response, built by the REST dispatcher's own
+/// builder so both HTTP+JSON dispatchers answer with the same headers;
+/// `axum::Json` sent no `A2A-Version`.
+fn a2a_json<T: serde::Serialize>(value: &T) -> axum::response::Response {
+    hyper_to_axum(crate::dispatch::rest::json_ok_response(value))
+}
+
+fn hyper_to_axum(
     resp: hyper::Response<http_body_util::combinators::BoxBody<Bytes, Infallible>>,
 ) -> axum::response::Response {
     let (parts, body) = resp.into_parts();
@@ -401,7 +403,7 @@ async fn handle_tasks_catchall(
             .await
         }
 
-        _ => a2a_error_to_response(&"not found", 404),
+        _ => plain_error(404, "not found"),
     }
 }
 
@@ -485,7 +487,7 @@ async fn handle_list_tasks(
         &hdrs,
         async {
             match state.handler.on_list_tasks(params, Some(&hdrs)).await {
-                Ok(result) => axum::Json(result).into_response(),
+                Ok(result) => a2a_json(&result),
                 Err(e) => handler_error_to_response(&e),
             }
         },
@@ -505,7 +507,7 @@ async fn handle_extended_card(
         &hdrs,
         async {
             match state.handler.on_get_extended_agent_card(Some(&hdrs)).await {
-                Ok(card) => axum::Json(card).into_response(),
+                Ok(card) => a2a_json(&card),
                 Err(e) => handler_error_to_response(&e),
             }
         },
@@ -515,7 +517,7 @@ async fn handle_extended_card(
 
 async fn handle_agent_card(State(state): State<A2aState>) -> axum::response::Response {
     state.handler.agent_card.as_ref().map_or_else(
-        || a2a_error_to_response(&"agent card not configured", 404),
+        || plain_error(404, "agent card not configured"),
         |card| axum::Json(card).into_response(),
     )
 }
@@ -572,15 +574,15 @@ async fn handle_send_inner(
     let params: a2a_protocol_types::params::MessageSendParams = match serde_json::from_slice(&body)
     {
         Ok(p) => p,
-        Err(e) => return a2a_error_to_response(&e, 400),
+        Err(e) => return bad_body(&e),
     };
     match state
         .handler
         .on_send_message(params, streaming, Some(hdrs))
         .await
     {
-        Ok(SendMessageResult::Response(resp)) => axum::Json(resp).into_response(),
-        Ok(SendMessageResult::Stream(reader)) => hyper_sse_to_axum(build_sse_response(
+        Ok(SendMessageResult::Response(resp)) => a2a_json(&resp),
+        Ok(SendMessageResult::Stream(reader)) => hyper_to_axum(build_sse_response(
             reader,
             Some(state.config.sse_keep_alive_interval),
             Some(state.config.sse_channel_capacity),
@@ -601,7 +603,7 @@ async fn handle_get_task_inner(
         history_length: None,
     };
     match state.handler.on_get_task(params, Some(hdrs)).await {
-        Ok(task) => axum::Json(task).into_response(),
+        Ok(task) => a2a_json(&task),
         Err(e) => handler_error_to_response(&e),
     }
 }
@@ -617,7 +619,7 @@ async fn handle_cancel_task_inner(
         metadata: None,
     };
     match state.handler.on_cancel_task(params, Some(hdrs)).await {
-        Ok(task) => axum::Json(task).into_response(),
+        Ok(task) => a2a_json(&task),
         Err(e) => handler_error_to_response(&e),
     }
 }
@@ -632,7 +634,7 @@ async fn handle_subscribe_inner(
         id: id.to_owned(),
     };
     match state.handler.on_resubscribe(params, Some(hdrs)).await {
-        Ok(reader) => hyper_sse_to_axum(build_sse_response(
+        Ok(reader) => hyper_to_axum(build_sse_response(
             reader,
             Some(state.config.sse_keep_alive_interval),
             Some(state.config.sse_channel_capacity),
@@ -650,7 +652,7 @@ async fn handle_create_push_config_inner(
 ) -> axum::response::Response {
     let mut value: serde_json::Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
-        Err(e) => return a2a_error_to_response(&e, 400),
+        Err(e) => return bad_body(&e),
     };
     if let Some(obj) = value.as_object_mut() {
         obj.entry("taskId")
@@ -659,10 +661,10 @@ async fn handle_create_push_config_inner(
     let config: a2a_protocol_types::push::TaskPushNotificationConfig =
         match serde_json::from_value(value) {
             Ok(c) => c,
-            Err(e) => return a2a_error_to_response(&e, 400),
+            Err(e) => return bad_body(&e),
         };
     match state.handler.on_set_push_config(config, Some(hdrs)).await {
-        Ok(result) => axum::Json(result).into_response(),
+        Ok(result) => a2a_json(&result),
         Err(e) => handler_error_to_response(&e),
     }
 }
@@ -679,7 +681,7 @@ async fn handle_get_push_config_inner(
         id: config_id.to_owned(),
     };
     match state.handler.on_get_push_config(params, Some(hdrs)).await {
-        Ok(config) => axum::Json(config).into_response(),
+        Ok(config) => a2a_json(&config),
         Err(e) => handler_error_to_response(&e),
     }
 }
@@ -699,7 +701,7 @@ async fn handle_list_push_configs_inner(
                 configs,
                 next_page_token: None,
             };
-            axum::Json(resp).into_response()
+            a2a_json(&resp)
         }
         Err(e) => handler_error_to_response(&e),
     }
@@ -721,7 +723,7 @@ async fn handle_delete_push_config_inner(
         .on_delete_push_config(params, Some(hdrs))
         .await
     {
-        Ok(()) => axum::Json(serde_json::json!({})).into_response(),
+        Ok(()) => a2a_json(&serde_json::json!({})),
         Err(e) => handler_error_to_response(&e),
     }
 }
@@ -931,44 +933,52 @@ mod tests {
     }
 
     #[test]
-    fn server_error_status_task_not_found() {
+    fn handler_error_status_task_not_found() {
         use crate::error::ServerError;
         assert_eq!(
-            server_error_status(&ServerError::TaskNotFound("t".into())),
+            handler_error_to_response(&ServerError::TaskNotFound("t".into()))
+                .status()
+                .as_u16(),
             404
         );
     }
 
     #[test]
-    fn server_error_status_method_not_found() {
+    fn handler_error_status_method_not_found() {
         use crate::error::ServerError;
         assert_eq!(
-            server_error_status(&ServerError::MethodNotFound("m".into())),
+            handler_error_to_response(&ServerError::MethodNotFound("m".into()))
+                .status()
+                .as_u16(),
             404
         );
     }
 
     #[test]
-    fn server_error_status_invalid_params() {
+    fn handler_error_status_invalid_params() {
         use crate::error::ServerError;
         assert_eq!(
-            server_error_status(&ServerError::InvalidParams("p".into())),
+            handler_error_to_response(&ServerError::InvalidParams("p".into()))
+                .status()
+                .as_u16(),
             400
         );
     }
 
     #[test]
-    fn server_error_status_serialization() {
+    fn handler_error_status_serialization() {
         use crate::error::ServerError;
         let err = ServerError::Serialization(serde_json::from_str::<String>("bad").unwrap_err());
-        assert_eq!(server_error_status(&err), 400);
+        assert_eq!(handler_error_to_response(&err).status().as_u16(), 400);
     }
 
     #[test]
-    fn server_error_status_task_not_cancelable() {
+    fn handler_error_status_task_not_cancelable() {
         use crate::error::ServerError;
         assert_eq!(
-            server_error_status(&ServerError::TaskNotCancelable("t".into())),
+            handler_error_to_response(&ServerError::TaskNotCancelable("t".into()))
+                .status()
+                .as_u16(),
             400
         );
     }
@@ -978,7 +988,7 @@ mod tests {
     /// per dispatcher. They disagreed for three variants until the duplicate
     /// table here was removed; this fails if a second copy reappears.
     #[test]
-    fn server_error_status_agrees_with_the_shared_5_4_table() {
+    fn handler_error_status_agrees_with_the_shared_5_4_table() {
         use crate::error::ServerError;
         let cases = [
             ServerError::TaskNotFound("t".into()),
@@ -990,7 +1000,7 @@ mod tests {
         ];
         for err in cases {
             assert_eq!(
-                server_error_status(&err),
+                handler_error_to_response(&err).status().as_u16(),
                 err.to_a2a_error().code.http_status(),
                 "adapter disagrees with ErrorCode::http_status for {err:?}"
             );
@@ -998,7 +1008,7 @@ mod tests {
     }
 
     #[test]
-    fn server_error_status_invalid_state_transition() {
+    fn handler_error_status_invalid_state_transition() {
         use crate::error::ServerError;
         let err = ServerError::InvalidStateTransition {
             task_id: "t".into(),
@@ -1007,64 +1017,86 @@ mod tests {
         };
         // `InvalidStateTransition` carries `InvalidParams`, which §5.4 puts
         // at 400. It answered 409 while this adapter kept its own table.
-        assert_eq!(server_error_status(&err), 400);
+        assert_eq!(handler_error_to_response(&err).status().as_u16(), 400);
     }
 
     #[test]
-    fn server_error_status_push_not_supported() {
+    fn handler_error_status_push_not_supported() {
         use crate::error::ServerError;
         // 400, not 501: §5.4 assigns `PushNotificationNotSupportedError` a
         // 400, and "not implemented" is not the same claim as "this agent
         // does not offer that capability".
-        assert_eq!(server_error_status(&ServerError::PushNotSupported), 400);
+        assert_eq!(
+            handler_error_to_response(&ServerError::PushNotSupported)
+                .status()
+                .as_u16(),
+            400
+        );
     }
 
     #[test]
-    fn server_error_status_payload_too_large() {
+    fn handler_error_status_payload_too_large() {
         use crate::error::ServerError;
         assert_eq!(
-            server_error_status(&ServerError::PayloadTooLarge("big".into())),
+            handler_error_to_response(&ServerError::PayloadTooLarge("big".into()))
+                .status()
+                .as_u16(),
             413
         );
     }
 
     #[test]
-    fn server_error_status_overloaded() {
+    fn handler_error_status_overloaded() {
         use crate::error::ServerError;
         // A transient overload maps to 503 (retryable), NOT the generic 500 that
         // deleting this arm would fall through to.
         assert_eq!(
-            server_error_status(&ServerError::Overloaded("at capacity".into())),
+            handler_error_to_response(&ServerError::Overloaded("at capacity".into()))
+                .status()
+                .as_u16(),
             503
         );
     }
 
     #[test]
-    fn server_error_status_internal() {
+    fn handler_error_status_internal() {
         use crate::error::ServerError;
         assert_eq!(
-            server_error_status(&ServerError::Internal("oops".into())),
+            handler_error_to_response(&ServerError::Internal("oops".into()))
+                .status()
+                .as_u16(),
             500
         );
     }
 
-    #[test]
-    fn a2a_error_to_response_returns_correct_status() {
-        let resp = a2a_error_to_response(&"test error", 400);
-        assert_eq!(resp.status().as_u16(), 400);
+    async fn body_of(resp: axum::response::Response) -> serde_json::Value {
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&bytes).unwrap()
     }
 
-    #[test]
-    fn a2a_error_to_response_returns_json_body() {
-        let resp = a2a_error_to_response(&"not found", 404);
+    /// N37: the AIP-193 shape spec §11.6 names, not `{"error": "<text>"}`.
+    #[tokio::test]
+    async fn a_plain_error_is_an_aip_193_status() {
+        let resp = plain_error(404, "not found");
         assert_eq!(resp.status().as_u16(), 404);
+        assert_eq!(
+            body_of(resp).await,
+            serde_json::json!({"error": {"code": 404, "status": "NOT_FOUND", "message": "not found"}})
+        );
     }
 
-    #[test]
-    fn a2a_error_to_response_invalid_status_falls_back_to_500() {
-        // HTTP status codes are valid 100-999; 1000+ is invalid
-        let resp = a2a_error_to_response(&"bad status", 1000);
-        assert_eq!(resp.status().as_u16(), 500);
+    #[tokio::test]
+    async fn a_handler_error_carries_its_error_info() {
+        use crate::error::ServerError;
+        let body = body_of(handler_error_to_response(&ServerError::TaskNotFound(
+            "t1".into(),
+        )))
+        .await;
+        assert_eq!(body["error"]["code"], 404);
+        assert_eq!(body["error"]["status"], "NOT_FOUND");
+        assert_eq!(body["error"]["details"][0]["reason"], "TASK_NOT_FOUND");
     }
 
     #[test]

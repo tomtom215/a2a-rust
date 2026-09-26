@@ -40,10 +40,23 @@ db-urls   = ["https://github.com/rustsec/advisory-db"]
 # Verified clean before tightening: `cargo deny check advisories` reports no
 # yanked crates in the current graph (2026-07-30).
 yanked    = "deny"
-# No active advisory ignores. Add entries here only when an advisory
-# applies to a transitive dependency we can't upgrade yet — with a
-# short justification and an upgrade-path note.
-ignore    = []
+# Add entries here only when an advisory applies to a transitive
+# dependency we can't upgrade yet — with a short justification and an
+# upgrade-path note.
+#
+# RUSTSEC-2024-0436 (added 2026-09-25, the first ignore in this file):
+# `paste` is unmaintained. The advisory is informational, not a
+# vulnerability, and lists no patched version. `paste` is a proc-macro, so
+# it runs at compile time and is not linked into any binary. It reaches the
+# graph only through `genai` 0.6, which only the two example agents
+# (`genai-a2a-agent`, `incident-response`) depend on; none of the four
+# published crates does (`cargo tree -i paste`). genai 0.7.0-beta.24 still
+# depends on it. Remove this entry when genai drops `paste`, for instance
+# for the `pastey` fork the advisory suggests, or when the examples leave
+# genai.
+ignore    = [
+    { id = "RUSTSEC-2024-0436", reason = "paste (unmaintained, informational) is a compile-time proc-macro reached only via genai 0.6 in the two example agents; no published crate depends on it. See the note above." },
+]
 
 # ---------------------------------------------------------------------------
 # Banned crates

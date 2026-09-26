@@ -179,6 +179,7 @@ async fn seed_cancelled_tokens(handler: &RequestHandler, n: usize) -> Vec<TaskId
         tokens.insert(
             id.clone(),
             CancellationEntry {
+                turn: std::sync::Arc::default(),
                 token,
                 created_at: Instant::now(),
             },
@@ -1939,6 +1940,7 @@ async fn a_live_token_alone_refuses_a_resend() {
     handler.cancellation_tokens.write().await.insert(
         task_id.clone(),
         CancellationEntry {
+            turn: std::sync::Arc::default(),
             token: tokio_util::sync::CancellationToken::new(),
             created_at: Instant::now(),
         },
@@ -1954,6 +1956,45 @@ async fn a_live_token_alone_refuses_a_resend() {
     assert!(
         !handler.event_queue_manager.has_queue(&task_id).await,
         "refused before a queue was leased"
+    );
+}
+
+/// The other side of the test above: a token already cancelled (its
+/// executor was told to stop, and cleanup has not yet removed the entry) is
+/// not an executor in flight, so a continuation is admitted.
+#[tokio::test]
+async fn a_cancelled_token_alone_does_not_refuse_a_resend() {
+    let handler = make_handler();
+    let task_id = TaskId::new("cancelled-token-only");
+    handler
+        .task_store
+        .save(&Task {
+            id: task_id.clone(),
+            context_id: ContextId::new("ctx-cancelled-token"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        })
+        .await
+        .unwrap();
+    let token = tokio_util::sync::CancellationToken::new();
+    token.cancel();
+    handler.cancellation_tokens.write().await.insert(
+        task_id.clone(),
+        CancellationEntry {
+            turn: std::sync::Arc::default(),
+            token,
+            created_at: Instant::now(),
+        },
+    );
+
+    let mut resend = make_params(Some("ctx-cancelled-token"));
+    resend.message.task_id = Some(task_id.clone());
+    let result = handler.on_send_message(resend, false, None).await;
+    assert!(
+        result.is_ok(),
+        "a cancelled token is not an executor in flight, got {result:?}"
     );
 }
 
@@ -2042,6 +2083,7 @@ async fn seed_aged_token(handler: &RequestHandler, id: &str) -> TaskId {
     handler.cancellation_tokens.write().await.insert(
         id.clone(),
         CancellationEntry {
+            turn: std::sync::Arc::default(),
             token: tokio_util::sync::CancellationToken::new(),
             created_at: Instant::now()
                 .checked_sub(std::time::Duration::from_secs(2))
@@ -2112,6 +2154,7 @@ async fn the_sweep_keeps_an_aged_token_whose_queue_is_live() {
 #[test]
 fn second_send_blocked_iff_token_live() {
     let live = CancellationEntry {
+        turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: Instant::now(),
     };
@@ -2123,6 +2166,7 @@ fn second_send_blocked_iff_token_live() {
     let token = tokio_util::sync::CancellationToken::new();
     token.cancel();
     let cancelled = CancellationEntry {
+        turn: std::sync::Arc::default(),
         token,
         created_at: Instant::now(),
     };
@@ -2171,6 +2215,7 @@ fn token_still_evictable_spares_fresh_live_token() {
 
     // A fresh, live token (the concurrent-resend replacement): spared.
     let fresh = CancellationEntry {
+        turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
     };
@@ -2181,6 +2226,7 @@ fn token_still_evictable_spares_fresh_live_token() {
 
     // A cancelled token: still evictable.
     let cancelled = CancellationEntry {
+        turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
     };
@@ -2194,6 +2240,7 @@ fn token_still_evictable_spares_fresh_live_token() {
     // monotonic-clock epoch is younger than `max_age` (e.g. a freshly
     // booted Windows CI runner), which would spuriously fail the test.
     let aged = CancellationEntry {
+        turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
     };
@@ -2517,4 +2564,661 @@ async fn a_send_asking_for_history_gets_the_whole_conversation() {
          the earlier turns are missing, so the response was shaped from the \
          send path's own one-message task instead of the stored conversation"
     );
+}
+
+// ── N21: a continuation racing the end of a parked turn ─────────────────
+//
+// `a_continuation_keeps_what_earlier_turns_wrote` above sleeps 50 ms between
+// turns, and that sleep is what kept it green: without it, a client that
+// answers `input-required` at once can arrive while the executor that parked
+// the task is still returning, and was refused as "already being processed".
+// `swarm_scale` found it under load (N21). These pin the race directly, by
+// having the executor linger after it parks instead of relying on a busy host.
+
+/// Parks the task at `input-required` on its first turn and lingers for
+/// `linger` before returning, as an executor that tidies up after asking
+/// does; completes the task on the turn that continues it.
+struct LingeringExecutor {
+    linger: std::time::Duration,
+}
+
+impl crate::executor::AgentExecutor for LingeringExecutor {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a crate::request_context::RequestContext,
+        queue: &'a dyn crate::streaming::EventQueueWriter,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            let continuing = ctx
+                .stored_task
+                .as_ref()
+                .is_some_and(|t| t.status.state == TaskState::InputRequired);
+            let state = if continuing {
+                TaskState::Completed
+            } else {
+                TaskState::InputRequired
+            };
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::with_timestamp(state),
+                    metadata: None,
+                }))
+                .await?;
+            if !continuing {
+                tokio::select! {
+                    () = tokio::time::sleep(self.linger) => {}
+                    () = ctx.cancellation_token.cancelled() => {}
+                }
+            }
+            Ok(())
+        })
+    }
+}
+
+fn lingering_handler(linger: std::time::Duration, bound: std::time::Duration) -> RequestHandler {
+    RequestHandlerBuilder::new(LingeringExecutor { linger })
+        .with_handler_limits(
+            crate::handler::HandlerLimits::default().with_executor_drain_timeout(bound),
+        )
+        .build()
+        .expect("build handler")
+}
+
+/// Sends the first turn blocking, returning the parked task's id.
+async fn park(handler: &RequestHandler, context: &str) -> TaskId {
+    let SendMessageResult::Response(SendMessageResponse::Task(task)) = handler
+        .on_send_message(make_params(Some(context)), false, None)
+        .await
+        .expect("first turn")
+    else {
+        panic!("expected a task");
+    };
+    assert_eq!(task.status.state, TaskState::InputRequired);
+    task.id
+}
+
+fn continuation(context: &str, task_id: &TaskId) -> MessageSendParams {
+    let mut params = make_params(Some(context));
+    params.message.id = MessageId::new("msg-2");
+    params.message.task_id = Some(task_id.clone());
+    params
+}
+
+/// The blocking reply says `input-required`; answering it at once must be
+/// admitted, not refused because the executor has not yet returned.
+#[tokio::test]
+async fn an_immediate_answer_to_input_required_is_admitted() {
+    let linger = std::time::Duration::from_millis(300);
+    let handler = lingering_handler(linger, std::time::Duration::from_secs(10));
+    let id = park(&handler, "ctx-n21").await;
+
+    let started = std::time::Instant::now();
+    let result = handler
+        .on_send_message(continuation("ctx-n21", &id), false, None)
+        .await;
+    let Ok(SendMessageResult::Response(SendMessageResponse::Task(task))) = result else {
+        panic!("the continuation of an input-required task was refused: {result:?}");
+    };
+    assert_eq!(task.id, id);
+    assert_eq!(task.status.state, TaskState::Completed);
+    // It waited for the first executor rather than running beside it.
+    assert!(
+        started.elapsed() < linger + std::time::Duration::from_secs(5),
+        "admission waited far past the executor's return: {:?}",
+        started.elapsed()
+    );
+}
+
+/// The same answer from a streaming client, which sees `input-required`
+/// on the stream while the executor is still inside `execute`.
+#[tokio::test]
+async fn a_streaming_answer_to_input_required_is_admitted() {
+    let handler = lingering_handler(
+        std::time::Duration::from_millis(300),
+        std::time::Duration::from_secs(10),
+    );
+    let SendMessageResult::Stream(mut reader) = handler
+        .on_send_message(make_params(Some("ctx-n21s")), true, None)
+        .await
+        .expect("first turn")
+    else {
+        panic!("expected a stream");
+    };
+    let id = loop {
+        let event = reader
+            .read()
+            .await
+            .expect("the stream ended before input-required")
+            .expect("event");
+        if let StreamResponse::StatusUpdate(u) = event.event
+            && u.status.state == TaskState::InputRequired
+        {
+            break u.task_id;
+        }
+    };
+
+    let result = handler
+        .on_send_message(continuation("ctx-n21s", &id), false, None)
+        .await;
+    let Ok(SendMessageResult::Response(SendMessageResponse::Task(task))) = result else {
+        panic!("a continuation sent on seeing input-required was refused: {result:?}");
+    };
+    assert_eq!(task.status.state, TaskState::Completed);
+}
+
+/// The wait is bounded: an executor that parks and then never returns
+/// still refuses the continuation, after the bound and not before, and
+/// no second executor is started beside it.
+#[tokio::test]
+async fn a_parked_executor_that_never_returns_is_refused_after_the_bound() {
+    let bound = std::time::Duration::from_millis(200);
+    let handler = lingering_handler(std::time::Duration::from_secs(3600), bound);
+    let id = park(&handler, "ctx-n21b").await;
+
+    let started = std::time::Instant::now();
+    let result = handler
+        .on_send_message(continuation("ctx-n21b", &id), false, None)
+        .await;
+    let waited = started.elapsed();
+    assert!(
+        matches!(result, Err(ServerError::UnsupportedOperation(_))),
+        "a continuation beside a live executor must be refused, got {result:?}"
+    );
+    assert!(
+        waited >= bound,
+        "refused after {waited:?}, before the {bound:?} bound"
+    );
+    let _ = handler.shutdown().await;
+}
+
+/// A send into a task whose executor has not parked it is refused at once,
+/// as before N21: only a parked turn is waited for.
+#[tokio::test]
+async fn a_send_into_a_working_task_is_refused_without_waiting() {
+    let bound = std::time::Duration::from_secs(30);
+    let handler = RequestHandlerBuilder::new(BlockingExecutor)
+        .with_handler_limits(
+            crate::handler::HandlerLimits::default().with_executor_drain_timeout(bound),
+        )
+        .build()
+        .unwrap();
+    let mut first = make_params(Some("ctx-n21w"));
+    first.configuration = Some(SendMessageConfiguration {
+        accepted_output_modes: vec!["text/plain".into()],
+        task_push_notification_config: None,
+        history_length: None,
+        return_immediately: Some(true),
+    });
+    let SendMessageResult::Response(SendMessageResponse::Task(task)) =
+        handler.on_send_message(first, false, None).await.unwrap()
+    else {
+        panic!("expected an immediate Task response");
+    };
+
+    let started = std::time::Instant::now();
+    let result = handler
+        .on_send_message(continuation("ctx-n21w", &task.id), false, None)
+        .await;
+    assert!(matches!(result, Err(ServerError::UnsupportedOperation(_))));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "a send into a working task waited {:?} before its refusal",
+        started.elapsed()
+    );
+    let _ = handler.shutdown().await;
+}
+
+// ── A send dropped mid-commit ────────────────────────────────────────────
+//
+// hyper drops a request's future when its client goes away, so every await
+// in the send path is a place the future can simply stop. Between leasing
+// the task's queue and spawning its executor the path holds three things
+// only an `Err` used to release: the queue lease, the cancellation token and
+// the idempotency key. A drop there released none of them.
+
+/// A store whose `save_appending_history` — the write that persists a new
+/// turn — can be held open, so a test can drop the send while it waits.
+struct GatedStore {
+    inner: crate::store::InMemoryTaskStore,
+    armed: std::sync::atomic::AtomicBool,
+    entered: tokio::sync::Notify,
+}
+
+impl crate::store::TaskStore for GatedStore {
+    fn save<'a>(
+        &'a self,
+        task: &'a a2a_protocol_types::task::Task,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        self.inner.save(task)
+    }
+    fn get<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = a2a_protocol_types::error::A2aResult<
+                        Option<a2a_protocol_types::task::Task>,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        self.inner.get(id)
+    }
+    fn list<'a>(
+        &'a self,
+        params: &'a a2a_protocol_types::params::ListTasksParams,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = a2a_protocol_types::error::A2aResult<
+                        a2a_protocol_types::responses::TaskListResponse,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        self.inner.list(params)
+    }
+    fn insert_if_absent<'a>(
+        &'a self,
+        task: &'a a2a_protocol_types::task::Task,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<bool>>
+                + Send
+                + 'a,
+        >,
+    > {
+        self.inner.insert_if_absent(task)
+    }
+    fn delete<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        self.inner.delete(id)
+    }
+    fn supports_idempotency(&self) -> bool {
+        self.inner.supports_idempotency()
+    }
+    fn claim_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+        message_id: &'a MessageId,
+        task_id: &'a TaskId,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = a2a_protocol_types::error::A2aResult<crate::store::IdempotencyClaim>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        self.inner.claim_idempotency_key(key, message_id, task_id)
+    }
+    fn release_idempotency_key<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        self.inner.release_idempotency_key(key)
+    }
+    fn save_appending_history<'a>(
+        &'a self,
+        task: &'a a2a_protocol_types::task::Task,
+        messages: &'a [Message],
+        max_history: usize,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            if self.armed.load(std::sync::atomic::Ordering::SeqCst) {
+                self.entered.notify_one();
+                std::future::pending::<()>().await;
+            }
+            self.inner
+                .save_appending_history(task, messages, max_history)
+                .await
+        })
+    }
+}
+
+/// A continuation whose request is dropped while its turn is being persisted
+/// leaves nothing behind: no token, no queue, and the next continuation of
+/// the same task is admitted.
+#[tokio::test]
+async fn a_send_dropped_mid_commit_releases_what_it_took() {
+    let (store, handler) = gated_handler(std::time::Duration::ZERO);
+    let id = TaskId::new("t-dropped");
+    crate::store::TaskStore::save(
+        &store.inner,
+        &a2a_protocol_types::task::Task {
+            id: id.clone(),
+            context_id: ContextId::new("ctx-dropped"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    store.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    let entered = store.entered.notified();
+    let send = tokio::spawn({
+        let handler = std::sync::Arc::clone(&handler);
+        let params = continuation("ctx-dropped", &id);
+        async move { handler.on_send_message(params, false, None).await }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), entered)
+        .await
+        .expect("the send never reached the store write");
+    // The client goes away: hyper drops the request future.
+    send.abort();
+    let _ = send.await;
+    store
+        .armed
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+
+    // Whatever releases a dropped send's resources may be spawned; give it
+    // a bounded moment rather than a fixed sleep.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while (handler.cancellation_tokens.read().await.contains_key(&id)
+        || handler.event_queue_manager.active_count().await > 0)
+        && tokio::time::Instant::now() < deadline
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(
+        !handler.cancellation_tokens.read().await.contains_key(&id),
+        "a dropped send left its cancellation token registered"
+    );
+    assert_eq!(
+        handler.event_queue_manager.active_count().await,
+        0,
+        "a dropped send left its event queue leased"
+    );
+    let retry = handler
+        .on_send_message(continuation("ctx-dropped", &id), false, None)
+        .await;
+    assert!(
+        retry.is_ok(),
+        "the task is wedged: a continuation after a dropped send was refused with {retry:?}"
+    );
+}
+
+fn gated_handler(
+    linger: std::time::Duration,
+) -> (std::sync::Arc<GatedStore>, std::sync::Arc<RequestHandler>) {
+    let store = std::sync::Arc::new(GatedStore {
+        inner: crate::store::InMemoryTaskStore::new(),
+        armed: std::sync::atomic::AtomicBool::new(false),
+        entered: tokio::sync::Notify::new(),
+    });
+    let handler = std::sync::Arc::new(
+        RequestHandlerBuilder::new(LingeringExecutor { linger })
+            .with_task_store_arc(store.clone())
+            .with_handler_limits(
+                crate::handler::HandlerLimits::default()
+                    .with_executor_drain_timeout(std::time::Duration::from_secs(30)),
+            )
+            .build()
+            .expect("build handler"),
+    );
+    (store, handler)
+}
+
+/// A continuation dropped while it waits for the previous turn's executor
+/// (the N21 wait) must leave that executor's token alone: it is still the
+/// only way to cancel the work in flight.
+#[tokio::test]
+async fn a_send_dropped_while_waiting_leaves_the_running_turn_cancelable() {
+    let (_store, handler) = gated_handler(std::time::Duration::from_secs(3600));
+    let id = park(&handler, "ctx-wait-drop").await;
+    let running = handler
+        .cancellation_tokens
+        .read()
+        .await
+        .get(&id)
+        .map(|e| std::sync::Arc::clone(&e.turn))
+        .expect("the parked turn's executor is still running");
+
+    let send = tokio::spawn({
+        let handler = std::sync::Arc::clone(&handler);
+        let params = continuation("ctx-wait-drop", &id);
+        async move { handler.on_send_message(params, false, None).await }
+    });
+    // Long enough to be inside the admission wait, far short of its bound.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(!send.is_finished(), "the continuation should be waiting");
+    send.abort();
+    let _ = send.await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let still = handler
+        .cancellation_tokens
+        .read()
+        .await
+        .get(&id)
+        .map(|e| std::sync::Arc::clone(&e.turn));
+    assert!(
+        still.is_some_and(|t| std::sync::Arc::ptr_eq(&t, &running)),
+        "dropping a waiting continuation released the running turn's token"
+    );
+    let _ = handler.shutdown().await;
+}
+
+/// A fresh send carrying an idempotency key, dropped before its task was
+/// stored, releases the key: the client's retry of the same message runs
+/// instead of waiting on a task that will never exist.
+#[tokio::test]
+async fn a_send_dropped_mid_commit_releases_its_idempotency_key() {
+    let (store, handler) = gated_handler(std::time::Duration::ZERO);
+    let mut params = make_params(Some("ctx-key-drop"));
+    a2a_protocol_types::idempotency::set_key(
+        &mut params.message,
+        "retry-key-0001-0123456789abcdef",
+    )
+    .expect("valid key");
+
+    store.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    let entered = store.entered.notified();
+    let send = tokio::spawn({
+        let handler = std::sync::Arc::clone(&handler);
+        let params = params.clone();
+        async move { handler.on_send_message(params, false, None).await }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), entered)
+        .await
+        .expect("the send never reached the store write");
+    send.abort();
+    let _ = send.await;
+    store
+        .armed
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let retry = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        handler.on_send_message(params, false, None),
+    )
+    .await
+    .expect("the retry hung on the dropped send's key");
+    assert!(
+        matches!(
+            retry,
+            Ok(SendMessageResult::Response(SendMessageResponse::Task(_)))
+        ),
+        "the retry of a dropped keyed send did not run: {retry:?}"
+    );
+}
+
+/// Works for `delay`, then completes the task.
+struct SlowCompletingExecutor {
+    delay: std::time::Duration,
+}
+
+impl crate::executor::AgentExecutor for SlowCompletingExecutor {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a crate::request_context::RequestContext,
+        queue: &'a dyn crate::streaming::EventQueueWriter,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            let status = |state| {
+                StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::with_timestamp(state),
+                    metadata: None,
+                })
+            };
+            queue.write(status(TaskState::Working)).await?;
+            tokio::time::sleep(self.delay).await;
+            queue.write(status(TaskState::Completed)).await?;
+            Ok(())
+        })
+    }
+}
+
+/// A blocking send whose client goes away while the agent works — a client
+/// timeout on a slow model call, typically — still leaves the task's
+/// outcome in the store. The request future was the only thing persisting a
+/// blocking send's events, so the executor finished into nothing and the
+/// task stayed `working` for good.
+#[tokio::test]
+async fn a_blocking_send_dropped_mid_work_still_records_the_outcome() {
+    let handler = std::sync::Arc::new(
+        RequestHandlerBuilder::new(SlowCompletingExecutor {
+            delay: std::time::Duration::from_millis(200),
+        })
+        .build()
+        .expect("build handler"),
+    );
+    let send = tokio::spawn({
+        let handler = std::sync::Arc::clone(&handler);
+        async move {
+            handler
+                .on_send_message(make_params(Some("ctx-blocking-drop")), false, None)
+                .await
+        }
+    });
+    // Once the store shows the task `working` — the executor has started and
+    // the collection is persisting — drop the request.
+    let started = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let listed = handler
+            .task_store
+            .list(&a2a_protocol_types::params::ListTasksParams::default())
+            .await
+            .expect("list");
+        if listed.tasks.first().map(|t| t.status.state) == Some(TaskState::Working) {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < started,
+            "the task never started working"
+        );
+        tokio::task::yield_now().await;
+    }
+    send.abort();
+    let _ = send.await;
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    let state = loop {
+        let listed = handler
+            .task_store
+            .list(&a2a_protocol_types::params::ListTasksParams::default())
+            .await
+            .expect("list");
+        let state = listed.tasks.first().map(|t| t.status.state);
+        if state == Some(TaskState::Completed) || tokio::time::Instant::now() >= deadline {
+            break state;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
+    assert_eq!(
+        state,
+        Some(TaskState::Completed),
+        "the agent completed the task, but the store never heard"
+    );
+}
+
+/// An interceptor whose `after` hook refuses every call.
+struct FailingAfter;
+
+impl crate::interceptor::ServerInterceptor for FailingAfter {
+    fn before<'a>(
+        &'a self,
+        _ctx: &'a crate::call_context::CallContext,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async { Ok(()) })
+    }
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a crate::call_context::CallContext,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::internal(
+                "after hook failed",
+            ))
+        })
+    }
+}
+
+/// An `after` hook that fails does not orphan the task it ran after. The
+/// executor is already running when `after` runs; the hook's error used to
+/// drop the send before anything persisting its events was attached, so a
+/// task the agent completed stayed `submitted` in the store.
+#[tokio::test]
+async fn a_failing_after_hook_does_not_orphan_the_running_task() {
+    for streaming in [false, true] {
+        let handler = RequestHandlerBuilder::new(SlowCompletingExecutor {
+            delay: std::time::Duration::from_millis(20),
+        })
+        .with_interceptor(FailingAfter)
+        .build()
+        .expect("build handler");
+        let context = format!("ctx-after-{streaming}");
+        let result = handler
+            .on_send_message(make_params(Some(&context)), streaming, None)
+            .await;
+        assert!(result.is_err(), "the after hook's error is still reported");
+
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let state = loop {
+            let listed = handler
+                .task_store
+                .list(&a2a_protocol_types::params::ListTasksParams::default())
+                .await
+                .expect("list");
+            let state = listed.tasks.first().map(|t| t.status.state);
+            if state == Some(TaskState::Completed) || tokio::time::Instant::now() >= deadline {
+                break state;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        };
+        assert_eq!(
+            state,
+            Some(TaskState::Completed),
+            "streaming={streaming}: the agent completed the task, but the store never heard"
+        );
+    }
 }

@@ -49,13 +49,13 @@ while let Some(event) = stream.next().await {
 
 A typical stream delivers events in this order:
 
-1. `Task` snapshot (always first — per spec, both `SendStreamingMessage` and `SubscribeToTask` emit this)
+1. `Task` snapshot (first on every stream from this repository's server; the spec requires it for `SubscribeToTask` and allows a stream from `SendStreamingMessage` to be a single `Message` instead)
 2. `StatusUpdate` → `Working`
 3. `ArtifactUpdate` (one or more, potentially chunked)
 4. `StatusUpdate` → `Completed` (or `Failed`)
 5. Optionally, a final `Task` snapshot with accumulated artifacts
 
-> **Note:** The server always emits a `Task` snapshot as the **first event** in
+> **Note:** This repository's server always emits a `Task` snapshot as the **first event** in
 > any streaming response. For `subscribe_to_task()`, this allows reconnecting
 > clients to recover the current state. For `stream_message()`, it
 > provides the initial task state before execution events begin.
@@ -77,8 +77,8 @@ Ok(StreamResponse::ArtifactUpdate(ev)) => {
 
     if is_append {
         // Append parts to existing artifact. The server also
-        // deep-merges metadata from the new event into the existing
-        // artifact's metadata (new keys override existing).
+        // merges the new event's metadata into the existing artifact's,
+        // key by key at the top level (new keys override existing).
         buffer.push_str(&extract_text(&ev.artifact));
     } else {
         // New artifact or first chunk
@@ -146,6 +146,13 @@ loop {
 WebSocket streams carry no ids, so there it is always `None` and a resubscribe
 starts from the `Task` snapshot.
 
+A reader that falls too far behind is cut off: over SSE when it lags the
+server's broadcast queue, and over WebSocket once 64 frames are waiting unread.
+The error answers `e.is_stream_lagged()` (with `e.dropped_event_count()`). The
+task is unaffected; resubscribe (`subscribe_to_task_from` with
+`stream.last_event_id()` over SSE, or `subscribe_to_task` over WebSocket) to
+continue.
+
 ## Stream Timeouts
 
 A stream has three bounds, one per phase:
@@ -182,7 +189,7 @@ The SSE parser protects against resource exhaustion:
 | Limit | Value | Purpose |
 |-------|-------|---------|
 | Event size | 16 MiB (`with_max_event_size`) | Refuses an oversized event with an error and skips it; a line with no end is refused once it outgrows the limit, so memory stays bounded |
-| Connect timeout | 30s (default) | Fails fast on unreachable servers |
+| Stream connect timeout | 30s (default) | Bounds waiting for the stream's response headers (TCP connect itself is `with_connection_timeout`, 10s) |
 | Idle timeout | 5 min (default) | Ends a stream whose server stopped sending, keep-alives included |
 
 ## Next Steps

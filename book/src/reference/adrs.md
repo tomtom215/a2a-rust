@@ -27,8 +27,8 @@ Key design decisions for a2a-rust, documented as ADRs. Each record captures the 
 
 **Decision:** Minimal dependency footprint:
 - No web frameworks required (optional Axum integration via `axum` feature)
-- No TLS bundled (bring your own or use a proxy)
-- No logging framework forced (optional `tracing` feature)
+- TLS through pure-Rust rustls, no OpenSSL (`tls-rustls`, a default feature of the client and SDK; `default-features = false` removes it)
+- Logging through `tracing`, a default feature since 0.14 (ADR 0013); `default-features = false` compiles it out
 - In-tree SSE parser instead of third-party crate
 - `serde` + `hyper` as the only mandatory heavyweight deps
 
@@ -46,7 +46,7 @@ Key design decisions for a2a-rust, documented as ADRs. Each record captures the 
 
 ## ADR 0004: Transport Abstraction Design
 
-**Status:** Accepted
+**Status:** Accepted (superseded in part by ADR 0009 — the gRPC transport is protobuf-native as of 0.7, no longer JSON-over-gRPC)
 
 **Context:** A2A defines three transport bindings (JSON-RPC, REST, gRPC). Both client and server share protocol logic that must not be duplicated across transport implementations.
 
@@ -83,10 +83,10 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 
 **Context:** The test suite includes unit, integration, property, fuzz, and E2E dogfood tests — but none of these measure whether the tests actually *detect* real bugs. A test suite can achieve 100% line coverage with trivial assertions. At multi-data-center deployment scales, the bugs that escape traditional testing have the highest blast radius.
 
-The full sweep runs via `workflow_dispatch`; every pull request runs an
-incremental `--in-diff` mutation gate on the changed lines.
+The full sweep runs weekly and on demand (`workflow_dispatch`); every pull
+request runs an incremental `--in-diff` mutation gate on the changed lines.
 
-**Rationale:** Mutation testing is the only technique that directly measures *fault detection capability*. It provides an objective, automated answer to "would this test suite catch a real bug at this location?" The tradeoff is CI time: making it a blocking PR gate is punitive given current compute budgets, so it is treated as an on-demand audit that *enforces* zero survivors when it runs, rather than a per-commit gate.
+**Rationale:** Mutation testing is the only technique that directly measures *fault detection capability*. It provides an objective, automated answer to "would this test suite catch a real bug at this location?" The tradeoff is CI time: running the full sweep on every commit is punitive given current compute budgets, so the full sweep is scheduled, and pull requests are gated on the mutants in their own diff.
 
 ## ADR 0007: Axum Integration and TCK Wire Format Tests
 
@@ -119,11 +119,18 @@ incremental `--in-diff` mutation gate on the changed lines.
 | 0003 | Tokio as mandatory runtime |
 | 0004 | Three-layer architecture (dispatcher → handler → executor) |
 | 0005 | In-tree SSE parser/emitter, zero additional deps |
-| 0006 | `cargo-mutants` as on-demand test-effectiveness audit |
+| 0006 | `cargo-mutants` as a test-effectiveness gate: weekly full sweep, per-PR diff gate |
 | 0007 | Axum integration + TCK wire format conformance tests |
 | 0008 | `AgentExecutor` kept object-safe so `RequestHandler` stays non-generic |
 | 0009 | Protobuf-native gRPC on the canonical `lf.a2a.v1.A2AService`, wire-compatible with the official SDKs; the pre-0.7 JSON tunnel was deprecated behind `grpc-legacy-json` in 0.7 and removed in 0.8 |
-| 0010 | First-party auth helpers (client OAuth2 client-credentials + token providers; server API-key/bearer/JWT interceptors) built on `ring`/`hyper`, not the OAuth-ecosystem crates |
+| 0010 | First-party auth helpers (client OAuth2 client-credentials + token providers; server API-key/bearer/JWT interceptors) built on `ring`/`hyper`, not the OAuth-ecosystem crates; its "rejections map to `InvalidRequest`" consequence is superseded by ADR 0014 |
+| 0011 | Task retention is explicit, and the store does not schedule it (Accepted) |
+| 0012 | An append-only event log, with the snapshot kept as the record (Accepted) |
+| 0013 | Spans, metrics and one telemetry entry point (the file's status is **Proposed**; its open question on making `tracing` a default feature records the maintainer's decision of 2026-09-23: yes) |
+| 0014 | A refused credential answers each binding's own status: HTTP `401`/`403`, gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED` (Accepted; supersedes ADR 0010's `InvalidRequest` mapping) |
+
+Only ADRs 0001–0008 have a section above; the table is the summary for all
+fourteen.
 
 The full ADR documents are in the [`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr) directory.
 

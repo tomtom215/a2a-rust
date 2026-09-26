@@ -90,7 +90,7 @@ Enable the `sqlite` feature for a production-ready persistent store:
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.13", features = ["sqlite"] }
+a2a-protocol-server = { version = "0.14", features = ["sqlite"] }
 ```
 
 ```rust,no_run
@@ -431,4 +431,4 @@ is not enough — that is the race the rule exists to close.
 ## Next Steps
 
 - **[Production Hardening](../deployment/production.md)** — Deployment checklist
-- **[Configuration Reference](../
+- **[Configuration Reference](../reference/configuration.md)** — Every builder and store default

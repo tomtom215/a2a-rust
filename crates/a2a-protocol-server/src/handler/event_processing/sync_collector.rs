@@ -5,6 +5,8 @@
 
 //! Synchronous event collection for non-streaming mode.
 
+use std::sync::Arc;
+
 use crate::metrics::push_outcome;
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::Message;
@@ -102,7 +104,57 @@ fn revert_artifact_append(
 /// dashboard that filters on it.
 pub const EXECUTOR_DRAIN_TIMEOUT: &str = "executor_drain_timeout";
 
+/// The part of the handler a blocking send's collection uses, owned, so the
+/// collection can run on a task of its own.
+///
+/// A blocking `SendMessage` has no background processor: this collection is
+/// the only thing that persists the executor's events. It used to run in the
+/// request's future, so a client that went away — a timeout on a slow model
+/// call — dropped it, the executor finished into nothing, and the task stayed
+/// `working` in the store for good, with no push notification either (N27).
+/// The fields keep the handler's names so the methods below read as they did.
+pub struct SyncCollector {
+    task_store: Arc<dyn crate::store::TaskStore>,
+    push_config_store: Arc<dyn crate::push::PushConfigStore>,
+    push_sender: Option<Arc<dyn crate::push::PushSender>>,
+    limits: crate::handler::HandlerLimits,
+    metrics: Arc<dyn crate::metrics::Metrics>,
+    in_flight: crate::handler::shutdown::InFlight,
+    cancellation_tokens: Arc<
+        tokio::sync::RwLock<std::collections::HashMap<TaskId, crate::handler::CancellationEntry>>,
+    >,
+}
+
 impl RequestHandler {
+    /// The collector for a blocking send, sharing this handler's stores,
+    /// token map and trackers.
+    pub(crate) fn sync_collector(&self) -> SyncCollector {
+        SyncCollector {
+            task_store: Arc::clone(&self.task_store),
+            push_config_store: Arc::clone(&self.push_config_store),
+            push_sender: self.push_sender.clone(),
+            limits: self.limits.clone(),
+            metrics: Arc::clone(&self.metrics),
+            in_flight: self.in_flight.clone(),
+            cancellation_tokens: Arc::clone(&self.cancellation_tokens),
+        }
+    }
+
+    /// [`SyncCollector::collect_events`], in the caller's future.
+    #[cfg(test)]
+    pub(crate) async fn collect_events(
+        &self,
+        reader: InMemoryQueueReader,
+        task_id: TaskId,
+        executor_handle: tokio::task::JoinHandle<()>,
+    ) -> ServerResult<Collected> {
+        self.sync_collector()
+            .collect_events(reader, task_id, executor_handle)
+            .await
+    }
+}
+
+impl SyncCollector {
     /// Collects events until stream closes, updating the task store and
     /// delivering push notifications.
     ///
@@ -1581,7 +1633,7 @@ mod tests {
             )
             .build()
             .unwrap();
-        handler.spawn_push_delivery(
+        handler.sync_collector().spawn_push_delivery(
             TaskId::new("t-budget"),
             vec![make_status_event("t-budget", TaskState::Working)],
         );
@@ -1648,7 +1700,7 @@ mod tests {
             )
             .build()
             .unwrap();
-        handler.spawn_push_delivery(
+        handler.sync_collector().spawn_push_delivery(
             TaskId::new("t-outcomes"),
             vec![
                 make_status_event("t-outcomes", TaskState::Submitted),

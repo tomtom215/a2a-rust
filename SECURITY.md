@@ -12,8 +12,8 @@ workflow checks that it covers the version being tagged.)
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.13.x  | :white_check_mark: |
-| < 0.13  | :x:                |
+| 0.14.x  | :white_check_mark: |
+| < 0.14  | :x:                |
 
 ## Scope
 
@@ -26,7 +26,7 @@ This policy covers **every crate published from this repository**:
 * **`bindings/a2a-protocol-slimrpc`**, which is publishable and **is covered by
   this policy**, even though it is deliberately *outside* the root workspace —
   it is not in `Cargo.toml`'s `members` list and carries its own `Cargo.lock`
-  and its own `deny.toml`, because `agntcy-slim-rpc` brings 379 transitive
+  and its own `deny.toml`, because `agntcy-slim-rpc` brings 359 transitive
   dependencies into a tree the SDK crates must not inherit. "All crates in the
   workspace" therefore did not reach it, which is why this section now names
   it. Two things a reporter should know about it: it has **never been
@@ -78,7 +78,7 @@ Know what you can and cannot verify about a release:
 | Git tags `v0.2.0` … `v0.7.0` | **No** | Nothing to verify. These ten are lightweight — unannotated and unsigned — so they carry no tagger identity, no date, and no signature. |
 | Git tags `v0.8.0` onward | **Not signed, but annotated** | `git cat-file -t v0.9.0` prints `tag`, and `git for-each-ref` shows a tagger and a date. That establishes *who cut the release and when*; it does not establish authenticity, because nothing is GPG/SSH-signed, so `git tag -v` still cannot verify any release. `release.yml` refuses a lightweight tag, so this holds for every future release. |
 | Release binaries / SBOMs | Yes | Attested in the release workflow; see [`PROVENANCE.md`](PROVENANCE.md). |
-| Published crates | Yes (by crates.io) | Standard crates.io registry checksums. |
+| Published crates | **No** — integrity only | crates.io records a SHA-256 checksum per `.crate`, which cargo verifies on download. A checksum proves the bytes are the ones crates.io holds, not who published them; this file said "signed" until 2026-09-24. The release's `SHA256SUMS` asset and build attestation are what tie a `.crate` to this repository. |
 
 If you need a cryptographic link between a published version and this
 repository, use the build provenance attestations described in
@@ -92,6 +92,25 @@ documented way for adopters to obtain it.
 - Steps to reproduce or a minimal proof of concept.
 - Affected crate(s) and version(s).
 - Any suggested fix, if available.
+
+## Advisories in the dependencies you compile
+
+Your lockfile, not this repository's, decides which version of a dependency
+you build. When a dependency of these crates publishes a security fix, cargo
+moves you to it only if you update that dependency, or if a new release of
+these crates raises its minimum to the fixed version. Updating an a2a crate
+alone does neither when the old version still satisfies the requirement —
+an adopter found exactly that with rustls and RUSTSEC-2026-0285 on 0.12.1.
+
+From 0.14.0 on, no requirement in a published manifest admits a
+version with a RustSec advisory: `scripts/check_advisory_floors.py`, a CI gate, tests every
+published version each normal and build dependency admits against the RustSec
+database. So upgrading these crates moves you off every advisory, known
+when the release was cut, in the crates they depend on directly. It says
+nothing about those crates' own dependencies, which their requirements
+govern; for those, and for advisories published since, update the
+dependency yourself (`cargo update -p rustls`) and run `cargo audit` or
+`cargo deny check advisories` against your own lockfile.
 
 ## Disclosure Timeline
 

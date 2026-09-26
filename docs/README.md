@@ -22,6 +22,7 @@ Architecture Decision Records (ADRs) and implementation planning documents for t
 | [0011](adr/0011-task-retention.md) | Task Retention | Explicit, opt-in purging; the store schedules nothing |
 | [0012](adr/0012-event-log-and-resumption.md) | Event Log and Resumption | An append-only log beside the snapshot; SSE `id:` and `Last-Event-ID` |
 | [0013](adr/0013-observability.md) | Observability (proposed) | `tracing` spans exported through `tracing-opentelemetry`; one RPC span shape on every binding; semconv metrics beside the deprecated catalogue; `init_telemetry()` |
+| [0014](adr/0014-auth-rejection-status.md) | Auth Rejection Status | A refused credential answers `401`/`403` and gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED`; supersedes ADR 0010's `400` mapping |
 
 ## Implementation Documents
 
@@ -40,6 +41,8 @@ Architecture Decision Records (ADRs) and implementation planning documents for t
 - **Planning a feature?** Check the implementation plan for architectural context
 - **Using this SDK as a coordinator, or wondering what an adopter hits?** Read [adopter-audit-2026-09-22.md](adopter-audit-2026-09-22.md) — seventy findings across every crate, which are fixed, and what is still open
 - **Wondering whether this scales to a swarm?** Read [swarm-scale-findings.md](swarm-scale-findings.md) — measured behaviour at a thousand agents sharing one task, and why the shard key has to be the context
+- **About to quote a claim this project makes?** Read [claims-ledger-2026-09-24.md](claims-ledger-2026-09-24.md) — every overstated claim found from 0.6.0 on, checked against the published artifacts, and what backs the ones that stand
+- **Asking whether it is ready for production?** Read [readiness-bar.md](readiness-bar.md) — what that would have to mean, written before measuring, and what has been measured against it
 - **Picking up work mid-stream?** Read [handoff.md](handoff.md) — branch state, what is in flight outside this repository, what to do first, and the ideas the project has not committed to
 
 ## License

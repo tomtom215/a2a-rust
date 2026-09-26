@@ -31,53 +31,14 @@ impl RequestHandler {
         let result: ServerResult<_> = async {
             let call_ctx =
                 build_call_context("GetExtendedAgentCard", headers, self.inbound_trace_policy);
-            self.interceptors.run_before(&call_ctx).await?;
+            let mut call = self.interceptors.begin(&call_ctx);
+            let result = async {
+                call.before().await?;
 
-            // SPEC §3.1.11: If capabilities.extended_agent_card is false or
-            // absent, MUST return UnsupportedOperationError. If capability is
-            // declared but card not configured, return ExtendedAgentCardNotConfigured.
-            let card = match &self.agent_card {
-                Some(card) => {
-                    let has_capability = card.capabilities.extended_agent_card.unwrap_or(false);
-                    if !has_capability {
-                        return Err(ServerError::UnsupportedOperation(
-                            "agent does not support extended agent card".into(),
-                        ));
-                    }
-                    // SPEC §13.3: this operation MUST require authentication.
-                    // The interceptor chain (which already ran above) is the
-                    // enforcement point — but when it contains no
-                    // authenticating interceptor at all, a default deployment
-                    // would serve the "authenticated" card to anyone. Refuse
-                    // unless the operator explicitly opted in.
-                    if !self.interceptors.has_authenticator()
-                        && !self.allow_unauthenticated_extended_card
-                    {
-                        return Err(ServerError::Protocol(
-                            a2a_protocol_types::error::A2aError::new(
-                                a2a_protocol_types::error::ErrorCode::InvalidRequest,
-                                "extended agent card requires authentication, but no \
-                                 authenticating interceptor is configured; register one \
-                                 (e.g. BearerTokenAuthInterceptor / JwtAuthInterceptor) or \
-                                 opt in explicitly with \
-                                 RequestHandlerBuilder::allow_unauthenticated_extended_card()",
-                            ),
-                        ));
-                    }
-                    card.clone()
-                }
-                None => {
-                    return Err(ServerError::Protocol(
-                        a2a_protocol_types::error::A2aError::new(
-                            a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured,
-                            "extended agent card not configured",
-                        ),
-                    ));
-                }
-            };
-
-            self.interceptors.run_after(&call_ctx).await?;
-            Ok(card)
+                self.extended_card_for_this_call()
+            }
+            .await;
+            call.finish(result).await
         }
         .await;
 
@@ -94,6 +55,43 @@ impl RequestHandler {
             }
         }
         result
+    }
+
+    /// The extended card, or why this handler will not serve it.
+    fn extended_card_for_this_call(&self) -> ServerResult<AgentCard> {
+        use a2a_protocol_types::error::{A2aError, ErrorCode};
+
+        // SPEC §3.1.11: If capabilities.extended_agent_card is false or
+        // absent, MUST return UnsupportedOperationError. If capability is
+        // declared but card not configured, return ExtendedAgentCardNotConfigured.
+        let Some(card) = &self.agent_card else {
+            return Err(ServerError::Protocol(A2aError::new(
+                ErrorCode::ExtendedAgentCardNotConfigured,
+                "extended agent card not configured",
+            )));
+        };
+        if !card.capabilities.extended_agent_card.unwrap_or(false) {
+            return Err(ServerError::UnsupportedOperation(
+                "agent does not support extended agent card".into(),
+            ));
+        }
+        // SPEC §13.3: this operation MUST require authentication.
+        // The interceptor chain (which already ran above) is the
+        // enforcement point — but when it contains no
+        // authenticating interceptor at all, a default deployment
+        // would serve the "authenticated" card to anyone. Refuse
+        // unless the operator explicitly opted in.
+        if !self.interceptors.has_authenticator() && !self.allow_unauthenticated_extended_card {
+            return Err(ServerError::Protocol(A2aError::new(
+                ErrorCode::InvalidRequest,
+                "extended agent card requires authentication, but no \
+                 authenticating interceptor is configured; register one \
+                 (e.g. BearerTokenAuthInterceptor / JwtAuthInterceptor) or \
+                 opt in explicitly with \
+                 RequestHandlerBuilder::allow_unauthenticated_extended_card()",
+            )));
+        }
+        Ok(card.clone())
     }
 }
 

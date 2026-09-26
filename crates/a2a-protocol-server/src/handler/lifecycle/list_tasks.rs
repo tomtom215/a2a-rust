@@ -57,30 +57,34 @@ impl RequestHandler {
         let include_artifacts = params.include_artifacts;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("ListTasks", headers, self.inbound_trace_policy);
-            self.interceptors.run_before(&call_ctx).await?;
-            // SPEC §3.3.4: reject clients that do not declare support for
-            // extensions the agent card marks required.
-            self.ensure_required_extensions(&call_ctx)?;
-            let mut result = self.task_store.list(&params).await?;
+            let mut call = self.interceptors.begin(&call_ctx);
+            let result = async {
+                call.before().await?;
+                // SPEC §3.3.4: reject clients that do not declare support for
+                // extensions the agent card marks required.
+                self.ensure_required_extensions(&call_ctx)?;
+                let mut result = self.task_store.list(&params).await?;
 
-            // Apply historyLength: truncate each task's history to the
-            // requested number of most recent messages. 0 means "no history".
-            if let Some(hl) = history_length {
-                for task in &mut result.tasks {
-                    task.history = truncate_history(task.history.take(), hl);
+                // Apply historyLength: truncate each task's history to the
+                // requested number of most recent messages. 0 means "no history".
+                if let Some(hl) = history_length {
+                    for task in &mut result.tasks {
+                        task.history = truncate_history(task.history.take(), hl);
+                    }
                 }
-            }
 
-            // Per Section 3.1.4: when includeArtifacts is false (default),
-            // the artifacts field MUST be omitted entirely from each Task.
-            if !include_artifacts.unwrap_or(false) {
-                for task in &mut result.tasks {
-                    task.artifacts = None;
+                // Per Section 3.1.4: when includeArtifacts is false (default),
+                // the artifacts field MUST be omitted entirely from each Task.
+                if !include_artifacts.unwrap_or(false) {
+                    for task in &mut result.tasks {
+                        task.artifacts = None;
+                    }
                 }
-            }
 
-            self.interceptors.run_after(&call_ctx).await?;
-            Ok(result)
+                Ok(result)
+            }
+            .await;
+            call.finish(result).await
         })
         .await;
 

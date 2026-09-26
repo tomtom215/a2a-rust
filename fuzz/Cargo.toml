@@ -13,7 +13,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 a2a-protocol-types = { path = "../crates/a2a-protocol-types", features = ["proto"] }
-a2a-protocol-client = { path = "../crates/a2a-protocol-client", default-features = false }
+a2a-protocol-client = { path = "../crates/a2a-protocol-client", default-features = false, features = ["websocket"] }
 a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = ["auth-jwt"] }
 serde_json = "1"
 prost = ">=0.14.1, <0.15"
@@ -105,6 +105,13 @@ bench = false
 [[bin]]
 name = "page_token"
 path = "fuzz_targets/page_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "client_peer_input"
+path = "fuzz_targets/client_peer_input.rs"
 test = false
 doc = false
 bench = false

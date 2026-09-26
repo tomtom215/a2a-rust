@@ -155,9 +155,27 @@ impl RequestHandler {
             executor_handle,
             ..
         } = started;
-        let collected = self
-            .collect_events(reader, task.id, executor_handle)
-            .await?;
+        // On a task of its own, and awaited: if this request's client goes
+        // away, the request future is dropped but the collection — the only
+        // thing persisting a blocking send's events — runs on to the end
+        // (N27). On the background tracker, so shutdown waits for it as it
+        // does for the background processor, and in the tenant and span of
+        // this call, which `tokio::spawn` would otherwise not carry.
+        let collector = self.sync_collector();
+        let tenant = crate::store::tenant::TenantContext::current();
+        let collection = self
+            .in_flight
+            .background()
+            .spawn(crate::rpc_span::in_current_span(
+                crate::store::tenant::TenantContext::scope(tenant, async move {
+                    collector
+                        .collect_events(reader, task.id, executor_handle)
+                        .await
+                }),
+            ));
+        let collected = collection.await.map_err(|e| {
+            crate::error::ServerError::Internal(format!("event collection ended abnormally: {e}"))
+        })??;
 
         // SPEC §3.1.1: SendMessage returns "a `Task` object representing
         // the processing of the message, OR a `Message` — a direct

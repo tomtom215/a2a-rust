@@ -1,6 +1,6 @@
 # Transport Layers
 
-A2A supports four transport bindings: **JSON-RPC 2.0**, **REST**, **WebSocket** (`websocket` feature flag), and **gRPC** (`grpc` feature flag). All four are first-class citizens in a2a-rust — the server can serve multiple transports simultaneously, and the client auto-selects based on the agent card.
+A2A supports four transport bindings: **JSON-RPC 2.0**, **REST**, **WebSocket** (`websocket` feature flag), and **gRPC** (`grpc` feature flag). All four are first-class citizens in a2a-rust — the server can serve multiple transports simultaneously, and `ClientBuilder::from_card` selects an interface from the agent card (`build()` constructs JSON-RPC or REST; gRPC needs `build_grpc`, and WebSocket a transport passed to `with_custom_transport`).
 
 ## JSON-RPC 2.0
 
@@ -117,6 +117,12 @@ the path and the body disagree the path wins, as a path variable does under
 ### Content Types
 
 The REST dispatcher accepts both `application/json` and `application/a2a+json`.
+A `POST` with any other `Content-Type` is refused with 400.
+
+Responses are `application/json` on both HTTP bindings. For HTTP+JSON this is a
+deliberate deviation from §11.1's SHOULD of `application/a2a+json`, because
+a2a-go's client cannot read an error labelled that way; JSON-RPC's
+`application/json` is what §9.1 requires.
 
 ### Security
 
@@ -132,10 +138,10 @@ The **WebSocket** transport (`websocket` feature flag) provides a persistent bid
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.13", features = ["websocket"] }
+a2a-protocol-server = { version = "0.14", features = ["websocket"] }
 
 # Client
-a2a-protocol-client = { version = "0.13", features = ["websocket"] }
+a2a-protocol-client = { version = "0.14", features = ["websocket"] }
 ```
 
 ### Server
@@ -163,7 +169,7 @@ dispatcher.serve("0.0.0.0:3002").await?;
 
 - Client sends JSON-RPC 2.0 requests as text frames
 - Server responds with JSON-RPC 2.0 responses as text frames
-- The full A2A method surface is routed — the same method names (and v0.3 aliases) as the JSON-RPC HTTP binding
+- The v1.0 method names the JSON-RPC HTTP binding routes; of the v0.3 `method/verb` aliases only `message/stream` is accepted, and the others are refused with `MethodNotFound`
 - For streaming methods (`SendStreamingMessage`, `SubscribeToTask`), the server sends multiple frames — one per event — followed by a `stream_complete` response
 - Ping/pong frames are handled automatically
 - Connection closes cleanly on WebSocket close frame
@@ -201,7 +207,7 @@ let client = ClientBuilder::new("wss://agent.example.com:3002")
 Because the transport is built before the client and handed to
 `with_custom_transport`, it never sees the `ClientConfig` — so `with_timeout`,
 `with_connection_timeout` and `with_max_response_size` on the builder do not
-reach it. Its equivalents are the three above:
+reach it. Its equivalents are these:
 
 | Knob | Default | Bounds |
 |------|---------|--------|
@@ -209,6 +215,13 @@ reach it. Its equivalents are the three above:
 | `request_timeout` | 30s | waiting for one response on an established connection |
 | `max_message_size` | 32 MiB | an incoming frame, at the protocol level |
 | `max_pending_requests` | 64 | requests awaiting a response on one connection; the next is refused with `ClientError::TooManyPendingRequests` (retryable) rather than queued |
+
+After the socket drops, the next call reconnects to the same endpoint with the
+same configuration (one reconnect shared by concurrent callers, bounded by
+`connect_timeout`). A stream keeps its connection open until you drop it, even
+if the client is dropped first. A stream you read more slowly than the agent
+writes ends with a `stream_lagged` error once 64 frames are waiting unread
+(`ClientError::is_stream_lagged`); resubscribe to continue.
 
 ### When to Use WebSocket
 
@@ -222,10 +235,10 @@ The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via p
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.13", features = ["grpc"] }
+a2a-protocol-server = { version = "0.14", features = ["grpc"] }
 
 # Client
-a2a-protocol-client = { version = "0.13", features = ["grpc"] }
+a2a-protocol-client = { version = "0.14", features = ["grpc"] }
 ```
 
 ### Server

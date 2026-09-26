@@ -118,14 +118,14 @@ println!("Task state: {:?}", task.status.state);
 # }
 ```
 
-Cancellation is cooperative — the agent's executor must implement the `cancel` method. If the agent doesn't support cancellation, you'll get an error response.
+Cancellation is cooperative. The default `AgentExecutor::cancel` records `Canceled` and triggers the task's cancellation token, which a running `execute` should observe; override `cancel` to also stop downstream work. A task already in a terminal state answers `TaskNotCancelable`.
 
 ### Cancellation States
 
 | Current State | Can Cancel? |
 |---------------|-------------|
 | `Submitted` | Yes → `Canceled` |
-| `Working` | Yes → `Canceled` (if agent supports it) |
+| `Working` | Yes → `Canceled` |
 | `InputRequired` | Yes → `Canceled` |
 | `AuthRequired` | Yes → `Canceled` |
 | `Completed` | No (terminal state) |
