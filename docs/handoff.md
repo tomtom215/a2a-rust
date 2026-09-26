@@ -823,6 +823,14 @@ merge commit (as #143), tag `v0.14.0` (annotated) on it the same day, since
 the docs site deploys from `main` and tells readers to install 0.14. Then
 publish the SLIMRPC binding 0.6.0 by hand (`RELEASING.md`, "SLIMRPC").
 
+The first Official TCK run on the PR (#144) failed on `CORE-SEND-003`, on all
+three bindings under the full and minimal profiles. The cause is the suite,
+not N34: the requirement declares no `expected_error`, so it demands that an
+unsupported media type be accepted. It is baselined, with the evidence in
+`docs/official-tck-findings.md` §22. The tally to quote is now 87 of 114
+passing and 5 failing (README, ROADMAP, conformance history). The fix touches
+no packaged file; the manifest was regenerated after it.
+
 **What the next session should do first:** check CI on the branch head,
 then the `swarm_scale`
 comparison for N21 and WS3.

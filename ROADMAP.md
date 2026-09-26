@@ -1002,8 +1002,13 @@ This is the category most worth clearing before any external review.
 
 ## Conformance
 
-Measured against the official `a2a-tck` suite, re-measured 2026-09-01 against
-`a2a-tck@de6af18`: **88 of 114 MUST requirements passing, 4 failing.** All four
+Measured against the official `a2a-tck` suite, re-measured 2026-09-26 against
+`a2a-tck@main` (CI on the 0.14.0 release PR): **87 of 114 MUST requirements
+passing, 5 failing.** One, `CORE-SEND-003`, is a defect in the suite: it
+declares no expected error, so it demands that a send with an unsupported
+media type succeed, and it began failing when 0.14.0 started answering the
+`ContentTypeNotSupportedError` that §3.1.1 requires
+(`docs/official-tck-findings.md` §22). The other four
 failures are the suite grading §5.4 against the specification copy it vendors,
 which its own `specification/version.json` records as A2A v1.0.0 (taken
 2026-03-13, and byte-identical to that tag); A2A released v1.0.1 on 2026-05-28

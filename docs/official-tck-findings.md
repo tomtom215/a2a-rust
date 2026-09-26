@@ -57,7 +57,7 @@ one client tells you the two disagree. It does not tell you which is wrong.
 
 ## 1. Score, and how CI gates on it
 
-> **Read §20 and §21 with this section.** Every figure below was measured on
+> **Read §20, §21 and §22 with this section.** Every figure below was measured on
 > 2026-08-12 at `6ebf821` against `a2a-tck@5996b79`, and the harness floats
 > (`A2A_TCK_REVISION: main`). It has since moved: as of 2026-09-01 at
 > `a2a-tck@de6af18` the tally is **88 MUST passing and 4 failing**, not 92 and
@@ -65,6 +65,9 @@ one client tells you the two disagree. It does not tell you which is wrong.
 > onto rows of §5.4 that its vendored copy of the specification has stale, and
 > all four are baselined with the evidence in §20 and §21. The 22-requirement
 > remainder below — 21 `NOT TESTED`, `CARD-EXT-002` inapplicable — is unchanged.
+> Since 2026-09-26 the tally is **87 passing and 5 failing**: `CORE-SEND-003`
+> is baselined as a defect in the suite, which demands success where §3.1.1
+> requires `ContentTypeNotSupportedError` (§22).
 > This section is left as measured rather than restated, because a dated
 > measurement that gets quietly edited is no longer a measurement.
 
@@ -1989,3 +1992,53 @@ The gate does not read that percentage; it reads per-requirement statuses, and
 `NOT TESTED` is not one of the statuses it gates on. `MUST graded` is still 88,
 exactly its floor. The change makes the suite's headline number agree with what
 §1 has said all along about what 100% did and did not mean.
+
+## 22. `CORE-SEND-003`: the suite demands success where §3.1.1 requires an error
+
+The Official TCK run on PR #144 (2026-09-26, job
+[108357365124](https://github.com/tomtom215/a2a-rust/actions/runs/36225060630/job/108357365124),
+`a2a-tck@main`) failed on `CORE-SEND-003` on all three bindings it grades,
+under both the full and the minimal profile. It is not a regression in this
+SDK. The earlier passes were false passes, and the check cannot pass against
+an agent that does what the requirement's own title says.
+
+**What the requirement says.** `tck/requirements/core_operations.py` titles it
+*"SendMessage returns ContentTypeNotSupportedError for unsupported media"*,
+describes it as *"A Media Type provided in the request's message parts that is
+not supported by the agent MUST result in ContentTypeNotSupportedError"*, and
+sends one part with `mediaType: "application/x-unsupported-tck-type"`. §3.1.1
+of the vendored specification lists the same error for the same case.
+
+**What the harness checks.** The `RequirementSpec` sets `expected_behavior`
+but not `expected_error`. `_validate_response` in
+`tests/compatibility/core_operations/test_requirements.py` validates an error
+only `if requirement.expected_error is not None`; otherwise it appends
+`Operation failed: …` whenever the response is not a success. So the check
+passes only if the agent **accepts** the unsupported media type. Read at
+`a2a-tck@263b9cf`, which is still upstream `main` as fetched on 2026-09-26; the
+CI log's failure text matches that code path.
+
+**Why it passed before.** Until N34 (0.14.0) this SDK did not enforce
+`defaultInputModes` / a skill's `inputModes` at all, so it accepted the part
+and the suite scored that as a pass. N34 made the server answer
+`ContentTypeNotSupportedError` (`-32005` on JSON-RPC; HTTP `400`
+per A2A v1.0.1's §5.4), which is what the requirement describes. The SUT's card
+declares `defaultInputModes: ["text/plain"]` and no skill-level modes, so the
+TCK's part is refused on every binding. The server's own tests pin the code
+(`handler/input_modes.rs`, `dispatch_edge_tests.rs`,
+`jsonrpc_dispatch_coverage_tests.rs`).
+
+**What was not done, and why.** Opting the SUT out with
+`allow_undeclared_input_modes()`, or declaring the TCK's made-up type on its
+card, would turn the check green by making the SUT stop doing what §3.1.1
+requires. That would test the suite's defect rather than this SDK.
+
+**What was done.** `CORE-SEND-003` is baselined on `grpc`, `http_json` and
+`jsonrpc`. The gate stays differential: when the suite adds the missing
+`expected_error`, the three pairs become unexpected passes and the gate fails
+until the entry is removed. Not reported upstream, by the maintainer's
+decision; the defect is recorded here and in the baseline's `_comment`.
+
+**Effect on the quoted tally.** The full profile still grades 88 MUSTs, now
+83 `PASS` and 5 `FAIL`. Across the three profiles the figure to quote is
+**87 of 114 passing and 5 failing**: the four §20/§21 entries plus this one.
