@@ -3,10 +3,9 @@
 
 # Upgrading Between Minor Versions
 
-As of 2026-09-25, with 0.14.0 in preparation. The newest minor boundary this
-page covers is 0.13 → 0.14, whose breaking section is `## [Unreleased]` in
-[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md)
-until the release names it `## [0.14.0]`.
+As of 2026-09-26, with 0.14.0 prepared. The newest minor boundary this page
+covers is 0.13 → 0.14, whose breaking section is `## [0.14.0]` in
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
 (0.12.1 is a patch and breaks nothing, so it has no section of its own here.)
 
 This page is the migration guide the 191 KB changelog is not. One section per
@@ -139,7 +138,8 @@ already carries a wildcard arm and a new variant does not break it.
 
 0.14.0 makes a failure read the same on every binding, and a refused credential
 answer the status a client acts on. CHANGELOG.md lists seven breaking items and
-nine behaviour changes; one more change, in the SLIMRPC binding, is at the end.
+ten behaviour changes; the SLIMRPC binding's, the last, has its own section at
+the end.
 None of them is a compile error: the first two change what a build contains,
 and the rest change what a `match` on an error, a status check or a gateway
 rule sees, which only a test, a peer or a run notices.

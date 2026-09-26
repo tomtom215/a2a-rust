@@ -811,9 +811,17 @@ agent-team 102/102, workspace clippy, rustdoc `-D warnings`, 22 script
 gates, the book built with mdBook 0.4.40 and `seo_postprocess.py --check`
 clean on 65 pages, and the changed pages rendered and read.
 
-**Open decision: the docs site deploys from `main`,** and the book tells
-readers to install 0.14, which is not on crates.io until the tag. Merge and
-release on the same day, or move `docs.yml` to deploy on release tags.
+**0.14.0 is prepared on this branch (2026-09-26), in one pull request.**
+The maintainer chose to fold release prep into the content PR rather than a
+second one, and to ship inside September under a declared cadence exception
+(its wording is the maintainer's). The prep commit dates the CHANGELOG and
+moves CITATION.cff, SECURITY.md, ROADMAP.md and the book's changelog; the
+provenance manifest is regenerated in the commit after it. Both must stay
+last: a later change to a packaged file needs the 0.14.0 notes touched after
+it, and any change at all needs the manifest regenerated last. Merge with a
+merge commit (as #143), tag `v0.14.0` (annotated) on it the same day, since
+the docs site deploys from `main` and tells readers to install 0.14. Then
+publish the SLIMRPC binding 0.6.0 by hand (`RELEASING.md`, "SLIMRPC").
 
 **What the next session should do first:** check CI on the branch head,
 then the `swarm_scale`

@@ -12,8 +12,8 @@ workflow checks that it covers the version being tagged.)
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.13.x  | :white_check_mark: |
-| < 0.13  | :x:                |
+| 0.14.x  | :white_check_mark: |
+| < 0.14  | :x:                |
 
 ## Scope
 
@@ -102,7 +102,7 @@ these crates raises its minimum to the fixed version. Updating an a2a crate
 alone does neither when the old version still satisfies the requirement —
 an adopter found exactly that with rustls and RUSTSEC-2026-0285 on 0.12.1.
 
-From the release after 0.13.0, no requirement in a published manifest admits a
+From 0.14.0 on, no requirement in a published manifest admits a
 version with a RustSec advisory: `scripts/check_advisory_floors.py`, a CI gate, tests every
 published version each normal and build dependency admits against the RustSec
 database. So upgrading these crates moves you off every advisory, known

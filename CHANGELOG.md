@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.14.0] - 2026-09-26
+
+**Cadence exception:** 0.13.0 came out on 2026-09-20, but this release can't wait until October. It fixes problems people are running into now. A dropped send could leave a task wedged or stuck in `working` (N26, N27). The client never let go of a revoked credential (N36). The official conformance suites also found several interoperability failures.
+
 ### Breaking Changes
 
 - **`tracing` is a default feature of `a2a-protocol-client`,

@@ -3,7 +3,7 @@
 
 # Roadmap
 
-Current release: **0.13.0** (prepared 2026-09-20; the tag is the maintainer's act). MSRV **1.88** (lowered from 1.93 on 2026-09-09; edition 2024).
+Current release: **0.14.0** (prepared 2026-09-26; the tag is the maintainer's act). MSRV **1.88** (lowered from 1.93 on 2026-09-09; edition 2024).
 
 ## What this file is
 
