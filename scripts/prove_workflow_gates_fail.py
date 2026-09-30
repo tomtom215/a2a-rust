@@ -1485,8 +1485,15 @@ def _next_release_fixture(defect: str | None = None) -> Setup:
             ["git", "-C", str(r), *a], check=True, capture_output=True, text=True
         ).stdout.strip()
         current = released_version()
-        major, minor, _ = (int(x) for x in current.split("-")[0].split("."))
-        nxt = f"{major}.{minor + 1}.0" if defect != "breaking-patch" else f"{major}.{minor}.1"
+        major, minor, patch = (int(x) for x in current.split("-")[0].split("."))
+        # The patch case bumps the patch number, not to `.1`: once the last
+        # release is itself a patch (0.14.1), `.1` is the version already
+        # declared, and the bump below becomes an empty commit git refuses.
+        nxt = (
+            f"{major}.{minor + 1}.0"
+            if defect != "breaking-patch"
+            else f"{major}.{minor}.{patch + 1}"
+        )
         date = "2100-01-15"
         if defect in ("same-month", "same-month-empty-exception", "same-month-excepted"):
             # The month of the newest dated release that carries breaking

@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.14.1] - 2026-09-30
+
 ### Security
 
 - **`PathSegmentTenantResolver` let a caller choose its own tenant
@@ -99,6 +103,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   database behind: 0 claimed, 16 replayed, the CI signature exactly. It and
   `a_migrated_store_can_take_an_artifact_append`, which used the same naming,
   now use a per-run directory and drop the store before removing it.
+- **`prove_workflow_gates_fail.py` could not probe a release after a patch
+  release.** Its breaking-patch scenario bumped to `{major}.{minor}.1`,
+  which after 0.14.1 is the version already declared, so the bump was an
+  empty commit and the probe crashed the Static checks job on this
+  release's own pull request. It now bumps the patch number.
 
 ## [0.14.0] - 2026-09-26
 

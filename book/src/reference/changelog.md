@@ -51,6 +51,22 @@ Topological order over **all** dependency edges: server precedes client
 because the client has a versioned dev-dependency on the server, which
 `cargo publish` resolves against the crates.io index.
 
+## v0.14.1 (2026-09-30)
+
+A patch release for one security advisory. No API changes. Full detail in
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
+
+- **`PathSegmentTenantResolver` takes the tenant from the URL only
+  (GHSA-hr9h-6jvf-wvg6).** From 0.7.0 through 0.14.0 it fell back to a
+  `path` request header, which any client can send, so on JSON-RPC,
+  HTTP+JSON, gRPC and the Axum adapter a caller could choose its own tenant.
+  On gRPC and the Axum adapter, which carry no tenant in the URL, it now
+  resolves none: use `BearerTokenTenantResolver` or `HeaderTenantResolver`
+  there.
+- Internal: the vendored SLIMRPC specification follows upstream's
+  2026-09-29 merge (the binding is unchanged), and two intermittent server
+  tests are fixed.
+
 ## v0.14.0 (2026-09-26)
 
 A minor release of fixes, most of them found by an audit of drop and
