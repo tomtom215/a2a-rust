@@ -264,9 +264,15 @@ impl TenantResolver for BearerTokenTenantResolver {
 /// removed. For example, the path `/tenants/acme/tasks` has segments
 /// `["tenants", "acme", "tasks"]`; index `1` yields `"acme"`.
 ///
-/// The resolver reads the path from the `:path` pseudo-header (HTTP/2) or
-/// the lowercased `path` key in [`CallContext::http_headers`]. If neither is
-/// present, resolution returns `None`.
+/// The resolver reads the request path from the `:path` key in
+/// [`CallContext::http_headers`], which the JSON-RPC, REST and WebSocket
+/// dispatchers set from the request URI. The gRPC dispatcher and the Axum
+/// adapter do not set it, so there resolution always returns `None`; use
+/// [`BearerTokenTenantResolver`] or [`HeaderTenantResolver`] with those.
+///
+/// Through 0.14.0 this resolver fell back to an ordinary `path` header when
+/// `:path` was absent. Any client could send that header, and so choose its
+/// own tenant (GHSA-hr9h-6jvf-wvg6); the fallback is gone.
 ///
 /// # Example
 ///
@@ -311,11 +317,10 @@ impl TenantResolver for PathSegmentTenantResolver {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = Option<String>> + Send + 'a>> {
         Box::pin(async move {
-            // Try :path pseudo-header first (HTTP/2), then "path".
-            let path = ctx
-                .http_headers()
-                .get(":path")
-                .or_else(|| ctx.http_headers().get("path"))?;
+            // `:path` is inserted by the dispatchers from the request URI.
+            // No fallback to a `path` header: that is an ordinary,
+            // client-settable HTTP header, not the URL.
+            let path = ctx.http_headers().get(":path")?;
             self.extract_from_path(path)
         })
     }
@@ -405,21 +410,21 @@ mod tests {
     #[tokio::test]
     async fn path_resolver_extracts_segment() {
         let resolver = PathSegmentTenantResolver::new(1);
-        let ctx = make_ctx().with_http_header("path", "/tenants/acme/tasks");
+        let ctx = make_ctx().with_http_header(":path", "/tenants/acme/tasks");
         assert_eq!(resolver.resolve(&ctx).await, Some("acme".into()));
     }
 
     #[tokio::test]
     async fn path_resolver_first_segment() {
         let resolver = PathSegmentTenantResolver::new(0);
-        let ctx = make_ctx().with_http_header("path", "/v1/agents");
+        let ctx = make_ctx().with_http_header(":path", "/v1/agents");
         assert_eq!(resolver.resolve(&ctx).await, Some("v1".into()));
     }
 
     #[tokio::test]
     async fn path_resolver_out_of_bounds() {
         let resolver = PathSegmentTenantResolver::new(10);
-        let ctx = make_ctx().with_http_header("path", "/a/b");
+        let ctx = make_ctx().with_http_header(":path", "/a/b");
         assert_eq!(resolver.resolve(&ctx).await, None);
     }
 
@@ -459,7 +464,8 @@ mod tests {
         let ctx = make_ctx().with_http_header("path", "/tenant-from-path/tasks");
         assert_eq!(
             resolver.resolve(&ctx).await,
-            Some("tenant-from-path".into())
+            None,
+            "a client-settable `path` header must not select the tenant"
         );
     }
 

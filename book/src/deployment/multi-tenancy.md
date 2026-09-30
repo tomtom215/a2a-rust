@@ -24,6 +24,11 @@ Three resolvers ship:
 | `HeaderTenantResolver` | a request header | a proxy you control sets it and strips any inbound copy |
 | `PathSegmentTenantResolver` | a URL path segment | the same, and never on its own |
 
+`PathSegmentTenantResolver` reads the request URL on the JSON-RPC, HTTP+JSON and
+WebSocket dispatchers. The gRPC dispatcher and the Axum adapter give it no URL,
+so there it resolves no tenant. Before 0.14.1 it fell back to a `path` request
+header, which any caller could set (GHSA-hr9h-6jvf-wvg6); upgrade.
+
 A header or a path segment is caller-supplied input. It is a legitimate design
 when something in front of the agent authenticates the caller and rewrites the
 header — and a vulnerability the moment that is not true, because `curl -H

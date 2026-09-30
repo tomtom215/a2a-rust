@@ -10,6 +10,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`PathSegmentTenantResolver` let a caller choose its own tenant
+  (GHSA-hr9h-6jvf-wvg6).** The resolver read the `:path` pseudo-header and,
+  when that was absent, an ordinary request header named `path`. Only the
+  WebSocket dispatcher set `:path`, so on every other entry point the tenant
+  came from the `path` header, which any client can send. A server built
+  with `.with_tenant_resolver(PathSegmentTenantResolver::new(..))` and served
+  over JSON-RPC, HTTP+JSON, gRPC (as a metadata entry) or the Axum adapter's
+  `A2aRouter` ran a request carrying `path: /tenants/<other>/x` as tenant
+  `<other>`, with that tenant's tasks and push configurations to read, list,
+  cancel, subscribe to and write. Path-based tenancy isolates tenants only
+  when something in front of the agent authorizes each caller against the
+  URL, as the multi-tenancy guide requires of this resolver, and that is the
+  control the header defeated: a caller admitted to one tenant's URLs could
+  act as another. On JSON-RPC the header overrode the URL outright
+  (`/tenants/acme` with `path: /tenants/victim/x` ran as `victim`); on
+  HTTP+JSON a URL naming a different tenant was rejected as a mismatch, so
+  the header worked on routes without a tenant prefix, such as
+  `/message:send`. Affected: 0.7.0 through 0.14.0, the
+  releases in which the handler calls the configured resolver (0.3.0 through
+  0.6.0 had the same fallback, but only application code that called the
+  resolver itself was exposed). Not affected: the WebSocket binding,
+  `HeaderTenantResolver`, `BearerTokenTenantResolver`, custom resolvers that
+  do not read a `path` header, and servers with no resolver. The same gap meant the
+  legitimate URL form never worked on the HTTP bindings: JSON-RPC served
+  `/tenants/acme` from the default tenant, and HTTP+JSON rejected it with
+  400 because the resolver found no tenant to match the URL's.
+  - **Fix.** The JSON-RPC and HTTP+JSON dispatchers now record the request
+    URI's path under `:path`, as the WebSocket dispatcher already did. A real
+    header cannot carry that name. The resolver reads `:path` and nothing
+    else.
+  - **Migration.** gRPC and `A2aRouter` pass the resolver no URL, so there it
+    now resolves no tenant: the request is served from the default tenant,
+    or rejected under `require_resolved_tenant(true)`. A deployment that used
+    this resolver on those entry points was taking the tenant from the client
+    all along. Switch it to `BearerTokenTenantResolver`, or to
+    `HeaderTenantResolver` behind a proxy that sets the header and strips any
+    inbound copy.
+  - **If you cannot upgrade yet,** strip the inbound `path` header (for gRPC,
+    the `path` metadata key, which is the same HTTP/2 header) at a proxy in
+    front of the agent, or change resolver as above.
+  - **Known limitation.** The resolver returns the path segment as sent, but
+    HTTP+JSON percent-decodes the tenant it takes from the URL, so on that
+    binding a tenant whose name needs percent-encoding is rejected with 400.
+    This fails closed.
+  - **Regression tests:** `crates/a2a-protocol-sdk/tests/tenant_path_resolver_isolation.rs`
+    sends a forged `path` header over JSON-RPC, HTTP+JSON, gRPC and
+    WebSocket and asserts the executor never ran as that tenant, that the
+    URL form selects the tenant where the URL can carry one, and that the
+    URL still wins when both are sent;
+    `crates/a2a-protocol-server/tests/axum_tenant_path_header.rs` does the
+    same through `A2aRouter`. Before the fix all but the WebSocket case fail
+    with the executor having run as the forged tenant.
+
 ### Internal
 
 - **The vendored SLIMRPC specification follows upstream's 2026-09-29 merge;

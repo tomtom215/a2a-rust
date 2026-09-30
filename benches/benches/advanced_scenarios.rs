@@ -112,7 +112,7 @@ fn bench_tenant_resolver(c: &mut Criterion) {
     // PathSegmentTenantResolver: extract from URL path
     group.bench_function("path_resolver", |b| {
         let resolver = PathSegmentTenantResolver::new(2); // /api/v1/{tenant}/...
-        let ctx = make_ctx(vec![("path", "/api/v1/tenant-acme-corp/tasks")]);
+        let ctx = make_ctx(vec![(":path", "/api/v1/tenant-acme-corp/tasks")]);
         b.iter(|| rt.block_on(resolver.resolve(std::hint::black_box(&ctx))));
     });
 
