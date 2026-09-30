@@ -22,12 +22,13 @@ v1.0 specification contains no occurrence of "slim" or "agntcy". Nothing here is
 required for A2A conformance — this exists because the SLIM fabric is where some
 deployments already live.
 
-The binding itself is complete **against the specification on upstream's
-`main`**: all eleven methods in that inventory, both streaming methods included,
-plus multicast — verified end-to-end over a real SLIM datapath and across a real
-SLIM node on a socket. Upstream also develops specifications on branches that
-`main` has not merged; the next section says which, and what this crate does
-about them.
+The binding itself is complete **against the A2A 1.0 surface of the
+specification on upstream's `main`**: all eleven A2A 1.0 methods in that
+inventory, both streaming methods included, plus multicast — verified
+end-to-end over a real SLIM datapath and across a real SLIM node on a socket.
+Since 2026-09-29 upstream's `main` also specifies `SendLiveMessage`, an A2A 1.1
+method, and a collaborative-task profile; neither is implemented here, and the
+next two sections and the method inventory say why.
 
 ## Relationship to the official `a2a-slimrpc` crate
 
@@ -41,7 +42,7 @@ before you choose:
 | | this crate | official `a2a-slimrpc` |
 |---|---|---|
 | Eleven A2A methods | yes | yes |
-| Multicast (`spec/v1/slimrpc-multicast.md`, on upstream `main`) | **yes** | no |
+| Multicast (`spec/v1/slimrpc-multicast.md` §§1–7 and 9, on upstream `main`; §8's `SendLiveMessage` form is A2A 1.1, see below) | **yes** | no |
 | Collaborate (`Collaborate` on `experimental.slimrpc.collaborative_channel.v1.CollaborativeChannelService`; its document no longer exists on any upstream branch — see below) | **no** | yes, at 0.2.7 |
 | Channel moderator (`spec/v1/slimrpc-channel-moderator.md`, unmerged branch) | no | no |
 
@@ -52,9 +53,10 @@ channel see each other's traffic, attributed by a `slim-src` metadata key. A
 deployment that needs channel semantics is not served by multicast, and vice
 versa.
 
-Collaborate is not implemented here because its specification has not been
-merged upstream. That is a judgement about a moving target rather than a
-statement that it does not matter — the tracking item is B24 in
+Collaborate is not implemented here, and neither is the collaborative-task
+design upstream replaced it with, for the reasons given below. That is a
+judgement about a moving target rather than a statement that it does not
+matter — the tracking item is B24 in
 `docs/v0.9.0-post-release-review.md`, and `scripts/check_slimrpc_spec.sh` fails
 CI if upstream gains a specification nobody here has triaged.
 
@@ -85,7 +87,12 @@ implemented here because it is the profile of `a2a-collaborative-task.md`, whose
 §4.3 makes appending peer messages to 1.1's `timeline` as `TimelineEntry(Message)`
 a MUST; because its native mode needs SLIM shared-responses group channels
 (`Server.new_with_shared_responses_and_connection`), which this crate does not
-implement; and because the document has never reached upstream `main`.
+implement. A third reason given here until 2026-09-30 — that the document had
+never reached upstream `main` — no longer holds: upstream merged it on
+2026-09-29 as `1328426` (upstream PR #5). The merged text of all three documents
+is byte-identical to the branch tip `36b03a7` the reasons above were written
+against, so the merge changed none of them. The documents are now vendored in
+`spec/slimrpc_v1/` alongside the two this crate implements.
 
 Verified 2026-08-26 and re-verified 2026-09-10 by reading both sources and all
 upstream branch tips, not by comparing feature lists. The 2026-09-12 re-check
@@ -93,7 +100,9 @@ covers the upstream half only: every branch tip enumerated and both new
 specification files read end to end. The official crate's source was not re-read
 that day, so the `0.2.7` row rests on the 2026-09-10 reading. On 2026-09-12
 `check_slimrpc_spec.sh` reported 2 files on upstream `main`, all vendored and
-matching, and 7 branch-only specifications, all triaged.
+matching, and 7 branch-only specifications, all triaged. On 2026-09-30, after
+upstream's merge and the re-vendor, it reported 5 files on upstream `main`, all
+vendored and matching, and 4 branch-only specifications, all triaged.
 
 ## Why it is not in the workspace
 
@@ -138,8 +147,15 @@ the CHANGELOG entry for `a2a-protocol-client`.
 
 ## Method inventory
 
-All eleven, per `spec/v1/slimrpc.md`. Nine unary, two unary-request /
-streaming-response.
+All eleven A2A 1.0 methods, per `spec/v1/slimrpc.md`. Nine unary, two
+unary-request / streaming-response.
+
+The specification's table also lists a twelfth, `SendLiveMessage`
+(bidirectional streaming, marked "1.1+"). It is not implemented: no released A2A
+specification defines it (the newest `a2aproject/A2A` tag is `v1.0.1`), and the
+SLIMRPC specification itself says that implementations targeting an older
+version of A2A **MUST** use the method names from that version's proto. The
+`slimrpc-context-map` metadata key it reserves applies only to that call.
 
 | SLIMRPC method | Kind | `RequestHandler` |
 |---|---|---|
