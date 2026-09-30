@@ -28,6 +28,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A2A 1.0 surface. The three triage entries they held in
   `scripts/check_slimrpc_spec.sh` are removed, since a file on `main` can no
   longer match one.
+- **Two `a2a-protocol-server` unit tests failed intermittently, each for a
+  reason in the test.** Both surfaced on Dependabot pull requests whose diffs
+  could not have caused them (#145, #146).
+  `the_rps_unit_is_multiplied_by_the_window` failed on macOS with its 121st
+  request admitted: the limiter counts in fixed windows aligned to the wall
+  clock, so a minute boundary inside the test's loop resets the count, as it
+  should. It and the one-second-window tenant test now discard any attempt
+  that straddles a boundary and retry, via `refused_within_one_window`.
+  `concurrent_claims_of_one_key_produce_exactly_one_winner` failed on Windows
+  with no winner at all, which only a pre-existing claim can produce. Its
+  database lived at `a2a-idem-{pid}`, and the removal ran while the store
+  held the file open, which Windows refuses; a later test process given the
+  same PID found the key already claimed. Reproduced by leaving such a
+  database behind: 0 claimed, 16 replayed, the CI signature exactly. It and
+  `a_migrated_store_can_take_an_artifact_append`, which used the same naming,
+  now use a per-run directory and drop the store before removing it.
 
 ## [0.14.0] - 2026-09-26
 

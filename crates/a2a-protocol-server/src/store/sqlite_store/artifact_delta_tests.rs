@@ -388,7 +388,14 @@ async fn delta_preserves_list_position() {
 /// example-surface job caught it; nothing in this crate did.
 #[tokio::test]
 async fn a_migrated_store_can_take_an_artifact_append() {
-    let dir = std::env::temp_dir().join(format!("a2a-migrated-{}", std::process::id()));
+    // Unique per run, not per process: a PID-named directory whose removal
+    // failed (Windows refuses to delete an open file) would hand a later test
+    // process with the same PID this run's database. See the idempotency test.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("a2a-migrated-{}-{nanos}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     let url = format!("sqlite://{}/m.db?mode=rwc", dir.display());
 
@@ -418,5 +425,6 @@ async fn a_migrated_store_can_take_an_artifact_append() {
         "the appended part must come back"
     );
 
+    drop(store);
     let _ = std::fs::remove_dir_all(&dir);
 }

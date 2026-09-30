@@ -138,7 +138,18 @@ async fn concurrent_claims_of_one_key_produce_exactly_one_winner() {
     // A shared file-backed database, because `sqlite::memory:` gives each
     // pool connection its own private database — concurrent claims would not
     // meet, and the test would pass without proving anything.
-    let dir = std::env::temp_dir().join(format!("a2a-idem-{}", std::process::id()));
+    //
+    // The name must be unique per run, not just per process. It used to be
+    // `a2a-idem-{pid}`, and the removal at the end ran while the store still
+    // held the file open, which Windows refuses (the error was discarded). A
+    // later test process given the same PID then found the key already
+    // claimed, and all 16 claims replayed: "exactly one claim may win, left: 0"
+    // on a Windows runner, 2026-09-28.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("a2a-idem-{}-{nanos}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("claims.db");
     let url = format!("sqlite://{}?mode=rwc", path.display());
@@ -172,6 +183,7 @@ async fn concurrent_claims_of_one_key_produce_exactly_one_winner() {
             }
         }
     }
+    drop(store);
     let _ = std::fs::remove_dir_all(&dir);
 
     assert_eq!(claimed, 1, "exactly one claim may win");
