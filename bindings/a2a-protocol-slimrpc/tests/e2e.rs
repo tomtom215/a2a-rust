@@ -78,8 +78,9 @@ impl Fabric {
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
-/// Every method in the spec's inventory is registered, under the canonical
-/// service name. Eleven methods, no more and no fewer — a binding that quietly
+/// Every A2A 1.0 method in the spec's inventory is registered, under the
+/// canonical service name (the inventory's twelfth, `SendLiveMessage`, is A2A
+/// 1.1 and deliberately absent). Eleven methods, no more and no fewer — a binding that quietly
 /// serves ten is a binding whose eleventh fails at runtime.
 #[tokio::test]
 async fn every_spec_method_is_registered() {

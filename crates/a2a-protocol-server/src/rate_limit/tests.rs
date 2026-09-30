@@ -843,6 +843,42 @@ mod tenant {
     use crate::ServerInterceptor as _;
     use crate::store::tenant::TenantContext;
     use crate::tenant_config::{PerTenantConfig, TenantLimits};
+    use std::future::Future;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// The limiter's window number now, computed as `window.rs` computes it.
+    fn window_now(window_secs: u64) -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            / window_secs
+    }
+
+    /// Runs `attempt` until one run starts and ends in the same window, and
+    /// returns what that run reports: whether its final request was refused.
+    ///
+    /// Windows are fixed and aligned to the wall clock, so a boundary that
+    /// falls between the admitted requests and the one expected to be refused
+    /// resets the count, and that request is — correctly — admitted. The
+    /// 121-request test below failed exactly that way on a macOS runner
+    /// (2026-09-28). A straddled run proves nothing either way, so it is
+    /// discarded rather than asserted on. A rollover can only admit more, so
+    /// the admissions an attempt asserts along the way hold in either case.
+    async fn refused_within_one_window<F, Fut>(window_secs: u64, mut attempt: F) -> bool
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = bool>,
+    {
+        for _ in 0..3 {
+            let start = window_now(window_secs);
+            let refused = attempt().await;
+            if window_now(window_secs) == start {
+                return refused;
+            }
+        }
+        panic!("three attempts each straddled a {window_secs}s window boundary");
+    }
 
     /// A limiter whose own caller limit is high enough not to interfere, so a
     /// rejection can only have come from the tenant bucket.
@@ -868,37 +904,40 @@ mod tenant {
         // 1 rps over a 1s window = 1 request. Two different callers, so the
         // per-caller buckets are distinct and only a tenant-keyed bucket can
         // reject the second.
-        let rl = limiter_with(Some(1), 1);
-
-        TenantContext::scope("acme", async {
-            assert!(rl.before(&make_ctx(Some("alice"))).await.is_ok());
-            assert!(
-                rl.before(&make_ctx(Some("bob"))).await.is_err(),
-                "a tenant allowance must not be multiplied by its caller count"
-            );
+        let refused = refused_within_one_window(1, || async {
+            let rl = limiter_with(Some(1), 1);
+            TenantContext::scope("acme", async {
+                assert!(rl.before(&make_ctx(Some("alice"))).await.is_ok());
+                rl.before(&make_ctx(Some("bob"))).await.is_err()
+            })
+            .await
         })
         .await;
+        assert!(
+            refused,
+            "a tenant allowance must not be multiplied by its caller count"
+        );
     }
 
     #[tokio::test]
     async fn the_rps_unit_is_multiplied_by_the_window() {
         // 2 rps over a 60s window is 120 requests, not 2. Reading the number
         // as a drop-in for `requests_per_window` would reject the third.
-        let rl = limiter_with(Some(2), 60);
-
-        TenantContext::scope("acme", async {
-            for i in 0..120 {
-                assert!(
-                    rl.before(&make_ctx(Some("alice"))).await.is_ok(),
-                    "request {i} of the tenant's 2 rps x 60s allowance was refused"
-                );
-            }
-            assert!(
-                rl.before(&make_ctx(Some("alice"))).await.is_err(),
-                "the 121st request exceeds 2 rps x 60s"
-            );
+        let refused = refused_within_one_window(60, || async {
+            let rl = limiter_with(Some(2), 60);
+            TenantContext::scope("acme", async {
+                for i in 0..120 {
+                    assert!(
+                        rl.before(&make_ctx(Some("alice"))).await.is_ok(),
+                        "request {i} of the tenant's 2 rps x 60s allowance was refused"
+                    );
+                }
+                rl.before(&make_ctx(Some("alice"))).await.is_err()
+            })
+            .await
         })
         .await;
+        assert!(refused, "the 121st request exceeds 2 rps x 60s");
     }
 
     #[tokio::test]

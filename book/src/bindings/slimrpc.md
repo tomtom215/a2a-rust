@@ -22,9 +22,9 @@ which §12 admits as a custom binding — four in all, and not this one.
 
 It exists because the SLIM fabric is where some deployments already are.
 
-The binding itself is complete against upstream's `main`: all eleven A2A
-methods, both streaming methods, plus multicast, driving the same
-`RequestHandler` the HTTP bindings drive.
+The binding itself is complete against the A2A 1.0 surface of upstream's
+`main`: all eleven A2A methods, both streaming methods, plus multicast, driving
+the same `RequestHandler` the HTTP bindings drive.
 
 ## There are two Rust implementations, and neither contains the other
 
@@ -39,10 +39,13 @@ directions:
 | Collaborate — many-to-many channel, members see each other's traffic, attributed by `slim-src` | **no** | yes, at 0.2.7 |
 
 Multicast's specification is on upstream `main`. Collaborate's never reached
-`main`, and the branch that held it has renamed the design twice since —
+`main`: the branch that held it renamed the design twice —
 `slimrpc-broadcast-live.md` on 2026-09-02, then `slimrpc-collaborative-task.md`
-on 2026-09-11 — while the official crate still ships `Collaborate` against the
-withdrawn text. The current design is not implemented here because it profiles
+on 2026-09-11 — and it was that last form upstream merged to `main` on
+2026-09-29, while the official crate still ships `Collaborate` against the
+withdrawn text. Upstream's `main` now also specifies `SendLiveMessage`, an A2A
+1.1 method, which this crate does not implement because no released A2A
+specification defines it. The current design is not implemented here because it profiles
 an A2A extension whose timeline semantics are A2A 1.1's, which no released A2A
 specification defines, and because its native mode needs SLIM shared-responses
 group channels this crate does not have. The tracking item is B24 in the

@@ -10,7 +10,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Internal
+
+- **The vendored SLIMRPC specification follows upstream's 2026-09-29 merge;
+  the binding does not.** Upstream merged its collaborative-task work to `main`
+  as `1328426`, which added three documents to `main` and changed both
+  vendored ones, and the nightly `Official TCK` run failed on the drift check —
+  before the official suite ran, so `main` went without a full conformance
+  result until this landed. All five documents are now vendored. Everything the
+  merge added to the two the binding implements is A2A 1.1 (`SendLiveMessage`,
+  a multicast form of it, and the `slimrpc-context-map` key it uses), and no
+  A2A 1.1 specification has been released, so the binding is unchanged; the
+  three collaborative-task documents are byte-identical to the branch text
+  already triaged as not followed. The reasoning is in
+  `spec/slimrpc_v1/README.md`. The binding's README and book chapter no longer
+  say those documents never reached `main`, and now qualify "complete" as the
+  A2A 1.0 surface. The three triage entries they held in
+  `scripts/check_slimrpc_spec.sh` are removed, since a file on `main` can no
+  longer match one.
+- **Two `a2a-protocol-server` unit tests failed intermittently, each for a
+  reason in the test.** Both surfaced on Dependabot pull requests whose diffs
+  could not have caused them (#145, #146).
+  `the_rps_unit_is_multiplied_by_the_window` failed on macOS with its 121st
+  request admitted: the limiter counts in fixed windows aligned to the wall
+  clock, so a minute boundary inside the test's loop resets the count, as it
+  should. It and the one-second-window tenant test now discard any attempt
+  that straddles a boundary and retry, via `refused_within_one_window`.
+  `concurrent_claims_of_one_key_produce_exactly_one_winner` failed on Windows
+  with no winner at all, which only a pre-existing claim can produce. Its
+  database lived at `a2a-idem-{pid}`, and the removal ran while the store
+  held the file open, which Windows refuses; a later test process given the
+  same PID found the key already claimed. Reproduced by leaving such a
+  database behind: 0 claimed, 16 replayed, the CI signature exactly. It and
+  `a_migrated_store_can_take_an_artifact_append`, which used the same naming,
+  now use a per-run directory and drop the store before removing it.
 
 ## [0.14.0] - 2026-09-26
 
