@@ -10,7 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Performance
+
+- **The in-memory store's TTL pass no longer scans every task under the write
+  lock.** Every `eviction_interval` writes (64 by default) the pass visited
+  every stored task — up to `max_capacity`, 10,000 by default — to find the
+  terminal ones last written at least `task_ttl` ago, holding the store's
+  write lock while it did, so every concurrent `save` waited behind a scan
+  that in the common case found nothing. A write-ordered `expiry_index` now
+  lets the pass walk only the entries that old. Measured on the default
+  store behind `JsonRpcDispatcher`, `SendMessage` from a closed-loop client,
+  server pinned to two cores, three runs each: 4,845 → 5,593 requests/s at
+  16 connections and 4,236 → 5,001 at 64, with p99 falling from 6.4 to
+  5.1 ms and from 23.5 to 20.1 ms. The index costs one ordered-map entry
+  per stored task; at the default cap the plateau RSS under sustained load
+  rose from 96.6 to 98.1 MiB. Eviction semantics are unchanged: the same
+  tasks expire at the same moment, which `expiry_tests.rs` pins at the
+  boundary for every write path that moves `last_updated`. Found by the
+  2026-10-02 SDK comparison (`docs/sdk-comparison-2026-10-02.md`).
 
 ## [0.14.1] - 2026-09-30
 

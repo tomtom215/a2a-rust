@@ -55,6 +55,11 @@ use crate::store::terminal::{TerminalStateConflict, refuses_write};
 /// wall-clock, preserving "most recently written first" for them.
 pub(super) type OrderKey = (i64, u64);
 
+/// `expiry_index` key: when the entry was last written, then the entry's
+/// `OrderKey` sequence. The sequence is unique per entry, so two entries
+/// written in the same clock tick still get distinct keys.
+pub(super) type ExpiryKey = (Instant, u64);
+
 /// Entry in the in-memory task store, tracking creation time for TTL eviction.
 #[derive(Debug, Clone)]
 pub(super) struct TaskEntry {
@@ -99,6 +104,19 @@ pub(super) struct StoreData {
     /// context-filtered `list()` is O(log m + page\_size) in that context's
     /// tasks *and* returns them in the same order.
     pub(super) context_index: HashMap<String, BTreeMap<OrderKey, TaskId>>,
+    /// Write-order index keyed by [`ExpiryKey`]: `(last_updated, seq) → TaskId`.
+    ///
+    /// The TTL pass asks "which entries were last written at least `ttl`
+    /// ago", which is a prefix of this map. Before it existed the pass
+    /// answered by visiting every entry, under the write lock, every
+    /// `eviction_interval` writes — a full scan of up to `max_capacity`
+    /// entries that found nothing in the common case. Measured 2026-10-02 on
+    /// the default store at 16 concurrent `SendMessage` callers: disabling
+    /// that pass alone raised throughput from 4,269 to 5,881 requests/s.
+    ///
+    /// `order_index` cannot serve here: it is keyed by the *status*
+    /// timestamp, which a caller sets and which need not follow write order.
+    pub(super) expiry_index: BTreeMap<ExpiryKey, TaskId>,
     /// Next update-order sequence to assign. Monotonic across the store's
     /// lifetime; guarded by the same write lock as the maps.
     pub(super) next_seq: u64,
@@ -126,6 +144,7 @@ impl StoreData {
             entries: HashMap::with_capacity(capacity),
             order_index: BTreeMap::new(),
             context_index: HashMap::new(),
+            expiry_index: BTreeMap::new(),
             next_seq: 0,
             idempotency_index: HashMap::new(),
         }
@@ -183,6 +202,7 @@ impl StoreData {
         if let Some(old) = self.entries.get(&task_id) {
             let old_key = old.order_key;
             let old_ctx = old.task.context_id.0.clone();
+            self.expiry_index.remove(&(old.last_updated, old_key.1));
             self.order_index.remove(&old_key);
             if let Some(map) = self.context_index.get_mut(&old_ctx) {
                 map.remove(&old_key);
@@ -193,6 +213,8 @@ impl StoreData {
         }
 
         // Position under the new key.
+        self.expiry_index
+            .insert((last_updated, seq), task_id.clone());
         self.order_index.insert(key, task_id.clone());
         self.context_index
             .entry(task.context_id.0.clone())
@@ -230,6 +252,7 @@ impl StoreData {
             return false;
         };
         let old_key = entry.order_key;
+        let old_expiry: ExpiryKey = (entry.last_updated, old_key.1);
         let ctx = entry.task.context_id.0.clone();
 
         // Same key derivation as `insert`, including the sequence bump, so a
@@ -243,6 +266,9 @@ impl StoreData {
             .unwrap_or_else(now_unix_millis);
         let key: OrderKey = (millis, seq);
 
+        self.expiry_index.remove(&old_expiry);
+        self.expiry_index
+            .insert((last_updated, seq), task_id.clone());
         self.order_index.remove(&old_key);
         if let Some(map) = self.context_index.get_mut(&ctx) {
             map.remove(&old_key);
@@ -299,9 +325,28 @@ impl StoreData {
         true
     }
 
+    /// Records a write to `task_id` at `now` that changes neither its status
+    /// nor its list position, re-keying it in `expiry_index` only.
+    ///
+    /// Every assignment to `last_updated` has to go through here or through
+    /// `insert` / `update_status`: an entry whose index key no longer matches
+    /// its `last_updated` is invisible to the TTL pass or swept early.
+    pub(super) fn touch(&mut self, task_id: &TaskId, now: Instant) {
+        let Some(entry) = self.entries.get_mut(task_id) else {
+            return;
+        };
+        let seq = entry.order_key.1;
+        let old: ExpiryKey = (entry.last_updated, seq);
+        entry.last_updated = now;
+        self.expiry_index.remove(&old);
+        self.expiry_index.insert((now, seq), task_id.clone());
+    }
+
     /// Removes a task by ID, maintaining all indexes.
     pub(super) fn remove(&mut self, id: &TaskId) -> Option<TaskEntry> {
         if let Some(entry) = self.entries.remove(id) {
+            self.expiry_index
+                .remove(&(entry.last_updated, entry.order_key.1));
             self.order_index.remove(&entry.order_key);
             let ctx = &entry.task.context_id.0;
             if let Some(map) = self.context_index.get_mut(ctx) {
@@ -889,8 +934,8 @@ impl TaskStore for InMemoryTaskStore {
                     .entries
                     .get_mut(&task.id)
                     .is_some_and(|entry| apply_delta(&mut entry.task, task, delta));
-                if applied && let Some(entry) = store.entries.get_mut(&task.id) {
-                    entry.last_updated = Instant::now();
+                if applied {
+                    store.touch(&task.id, Instant::now());
                 }
                 let len = store.len();
                 // Released before the fallback below, which takes the lock
