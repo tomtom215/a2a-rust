@@ -22,6 +22,7 @@ members = [
     "examples/mcp-agent",
     "examples/mcp-bridge",
     "examples/resilient-agent",
+    "examples/swarm",
     "benches",
     "book-tests",
     "tck",

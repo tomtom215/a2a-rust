@@ -4190,6 +4190,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
+name = "swarm"
+version = "0.0.0"
+dependencies = [
+ "a2a-protocol-client",
+ "a2a-protocol-server",
+ "a2a-protocol-types",
+ "bytes",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
