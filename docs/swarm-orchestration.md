@@ -1,0 +1,139 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
+# Swarm orchestration — what holds, what is missing, and the order to build it
+
+Written 2026-10-02 from measurements, not from a feature list. Every number
+below names the run that produced it. The swarm runs are
+[`examples/swarm`](../examples/swarm) at `ba864a1`; the store numbers are
+from the SDK comparison in
+[`sdk-comparison-2026-10-02.md`](sdk-comparison-2026-10-02.md).
+
+## What a swarm needs from this layer
+
+A swarm here means hundreds to thousands of agents delegating to each other
+in a tree, running for hours or days, often with no human watching. What
+makes that work — planning, judging whether a result is right, deciding
+when to escalate to a human — lives above A2A, in whatever drives the
+agents. This SDK is the substrate. What a substrate owes a swarm is:
+
+| | Requirement | Why a swarm cannot do without it |
+|---|---|---|
+| R1 | **Control.** Stopping a root stops everything under it. | An autonomous tree that cannot be stopped is not under control. |
+| R2 | **Bounded failure.** A caller can tell retryable from final. | Otherwise it retries forever, or gives up on work that would have succeeded. |
+| R3 | **Durability.** A node that restarts does not lose or orphan its subtree. | Over hours, every node restarts eventually. |
+| R4 | **Throughput and bounded memory per node.** | A long-running node with unbounded memory does not finish the job. |
+| R5 | **Isolation.** One tenant's tree cannot read or cancel another's. | Swarms share hosts. |
+| R6 | **Observability across hops.** One job is traceable through the tree. | Debugging a ten-hop failure from ten separate logs does not work. |
+| R7 | **Budget and authority.** A child cannot spend more than its parent granted. | Without this, cost and blast radius are unbounded. |
+
+## What is measured today
+
+| | Status | Evidence |
+|---|---|---|
+| R1 | **Missing in the protocol and the SDK; possible by hand.** A2A has no link from a task to the tasks it started. Cancelling a supervisor's root task left **256 of 256** (64-worker run) and **512 of 512** (256-worker run) children still executing 5 s later. With the cascade written by hand (`run_once` in `examples/swarm/src/supervisor.rs`, which follows each child's stream and cancels it when the parent's token fires), the same trees went from 256 to 0 live executions in 65 ms, and from 512 to 0 in 84 ms. | `swarm` `cancel` and `cancel-control` rows; `benches/sdk-comparison/results/swarm/` |
+| R2 | **Holds.** `FailureClass` travels on the failed status. Retry-by-class was exact at both scales: 400 of 400 and 2,000 of 2,000 transient faults retried; 80 of 80 and 400 of 400 invalid requests not retried; every other job completed. | `swarm` `faults` rows |
+| R3 | **Building blocks exist; the orchestrator side does not.** A task survives `kill -9` and a restart on the SQLite store (probe in the comparison). The event log and `Last-Event-ID` let a client resume a stream. Nothing records which children a supervisor started, so a supervisor that restarts should orphan its subtree just as the R1 control arm does (CONJECTURED: no run restarted a supervisor). | `feature_results.txt`; `docs/swarm-scale-findings.md` |
+| R4 | **Memory bounded; throughput behind the official SDK.** The default store plateaus at about 98 MiB under sustained load, against a2a-rs growing without limit (565 MiB after 374,252 tasks, still climbing). Throughput was 1.17–1.62× behind a2a-rs per node. The TTL-sweep fix in `831b8ef` closed part of that gap (to 1.17–1.31×). Two delegation hops sustained 3,773–3,909 jobs/s on two cores. | comparison §4.3; `swarm` `fanout` rows |
+| R5 | **Opt-in, and the default leaks.** The default `RequestHandlerBuilder` store ignores the `tenant` field: tenant B read, listed, subscribed to and cancelled tenant A's task in all 5 probes. With `TenantAware*` stores, all 5 were isolated. | `results/probes/tenant_results.jsonl` |
+| R6 | **Exists, not exercised here.** Per source, W3C trace context is propagated by `TracePropagationInterceptor` and joined on the server's RPC span. The swarm runs did not turn it on, so nothing here measures it. | `crates/a2a-protocol-client/src/trace_propagation.rs` |
+| R7 | **Absent.** Each child has its own executor timeout (1 h by default), whatever its parent has left. There is no budget field or grant. | `DEFAULT_EXECUTOR_TIMEOUT` |
+
+## The gaps, ranked by what was measured
+
+### G1 — Cancellation does not cascade (R1)
+
+Measured: 100% of children orphaned when their root is cancelled, unless
+every orchestrator writes the cascade itself. This is the gap that most
+directly answers "can it be controlled".
+
+| Approach | What it covers | Cost |
+|---|---|---|
+| **A. Client-side delegation handle** in `a2a-protocol-client`. It sends the child, records the child's task id from the first event, and cancels the child when a parent token fires or when the handle is dropped. | Every orchestrator built on this SDK, with no wire change. It does **not** cover a parent that crashes, because the handle dies with the parent. | Small. It is `run_once` from `examples/swarm/src/supervisor.rs`, made public and tested. |
+| **B. Lease extension.** The child is sent a deadline and a renewal interval, declared as an extension the way idempotency and failure class are. A child whose lease lapses cancels itself. | Parent crash and network partition: the cases A cannot reach. | Medium. Server-side enforcement, an extension URI, and a renewal path. |
+| **C. Lineage in the protocol.** A `parentTaskId`, and server-side cascade. | Cross-SDK, but only once other SDKs adopt it. | Large, and only meaningful upstream. |
+
+**Recommendation: A now, B next, C only if the A2A project wants it.** A
+removes the hand-written cascade the measurement shows every orchestrator
+needs. B is what makes a long-horizon tree safe against the failure that will
+certainly happen over hours: a node that disappears.
+
+### G2 — A restarting supervisor orphans its subtree (R3)
+
+The pieces exist: SQL stores, the event log, resubscribe from a cursor.
+What is missing is the supervisor writing "I started child X on agent Y"
+to its own durable record *before* awaiting the child, and reading it back
+on restart to reattach with `subscribe_to_task_from`. This belongs with
+G1's handle, which already learns the child id at the right moment.
+
+### G3 — Tenant isolation fails open by default (R5)
+
+A server that receives a `tenant` field and does not partition by it
+should not silently serve the request. The options:
+
+1. The default store becomes tenant-aware. Its cost is unmeasured.
+2. A request carrying a tenant is refused when the configured store is not
+   tenant-aware.
+3. Leave the behaviour and document it more loudly.
+
+Option 2 fails closed and is cheap. It is a behaviour change, though: a
+deployment that sends tenants today and relies on them being ignored would
+start getting errors. **That is a maintainer decision, so it is recorded
+here and not made.**
+
+### G4 — Per-node throughput (R4)
+
+After `831b8ef`, a2a-rs is still 1.17× (64 connections) to 1.31× (16
+connections) faster on the echo benchmark. The patched build's profile
+has no SDK function above 1.64% self time. The libc allocator accounts for
+about 31% of samples and kernel scheduling and wakeups for about 21%
+(`benches/sdk-comparison/results/perf/profile_patched_top.txt`). What is
+left is allocation volume and cross-task handoffs, spread across the
+request path, not one fixable hotspot (CONJECTURED from the profile shape;
+not attributed further). This
+matters for a swarm only once a node is CPU-bound on protocol rather than
+on model inference. In the live-model run the model was the bottleneck by
+three orders of magnitude: about 2 jobs/s against 3,900 jobs/s with no
+model.
+
+### G5 — Budget and deadline propagation (R7)
+
+Deadline first, budget later. A deadline is mechanical: the remaining time
+is carried on the send, the child's executor timeout is capped at
+`min(own, inherited)`, and the existing `BudgetExhausted` failure class
+reports it. It also composes with G1-B, since a lease is a renewable
+deadline. Token or cost budgets need agreement on units, which the A2A
+specification does not supply. Attenuable grants (`docs/handoff.md`, B1)
+stay speculative until a deadline exists to attenuate.
+
+### G6 — Shared-channel limits (already measured)
+
+`docs/swarm-scale-findings.md` covers the coordination-channel shape: one
+channel peaks at four writers, sharding by context recovers throughput, and
+the single-writer refusal does not cross replicas. Nothing here changes
+those findings.
+
+## Where this work goes, and where it does not
+
+`docs/handoff.md` ("What not to chase") records a decision not to turn the
+SDK into a runtime: no registries, schedulers, orchestration DSLs or mesh.
+The plan above respects that. G1-A and G2 are a client-side handle on
+existing methods. G1-B and G5 are extensions in the established style, like
+idempotency and failure class. G3 changes a default. None of them puts
+scheduling or placement into the protocol crates.
+`examples/swarm` is where an orchestrator lives, and it stays an example.
+
+What would falsify the priority order: if adopters' trees are one hop deep,
+G1 matters much less and G3 matters more. The order above is argued from
+the two-hop runs measured here.
+
+## Next, in order
+
+1. **G1-A** — the delegation handle in `a2a-protocol-client`, with the swarm
+   example rewritten on top of it. The example's own CI gate then proves
+   the handle cascades.
+2. **G3** — decide fail-closed or not. Either answer is small to implement.
+3. **G2** — durable child records plus reattach, exercised by a swarm run
+   that kills a supervisor partway through.
+4. **G1-B and G5** — the lease and deadline extension, with a run that kills
+   a supervisor and measures how quickly its children stop.

@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+# Standalone: its own lockfile pins exactly what was measured, and no
+# feature unification with the other SDK's harness or the repo workspace.
+[workspace]
+
+[package]
+name = "agent-a2a-rust"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+default = []
+llm = ["dep:reqwest"]
+sqlite = ["a2a-protocol-sdk/sqlite"]
+
+[dependencies]
+a2a-protocol-sdk = { version = "=0.14.1" }
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+serde_json = "1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream"], optional = true }
+
+[profile.release]
+debug = false

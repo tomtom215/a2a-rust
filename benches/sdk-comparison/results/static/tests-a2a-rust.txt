@@ -1,0 +1,243 @@
+test error::chain_tests::a_cause_the_display_already_shows_is_not_repeated ... ok
+test error::chain_tests::an_error_with_no_source_is_just_its_text ... ok
+test error::chain_tests::causes_hidden_by_display_are_appended_in_order ... ok
+test error::tests::a_transport_error_carries_no_lag_information ... ok
+test error::tests::a_zero_drop_count_is_reported_as_zero_not_as_absent ... ok
+test error::tests::an_ordinary_protocol_error_is_not_stream_lag ... ok
+test error::tests::client_error_display_and_source_http ... ok
+test error::tests::client_error_display_auth_required ... ok
+test error::tests::client_error_display_http_client ... ok
+test error::tests::client_error_display_invalid_endpoint ... ok
+test error::tests::client_error_display_protocol ... ok
+test error::tests::client_error_display_protocol_binding_mismatch ... ok
+test error::tests::client_error_display_serialization ... ok
+test error::tests::client_error_display_timeout ... ok
+test error::tests::client_error_display_transport ... ok
+test error::tests::client_error_display_unexpected_status ... ok
+test error::tests::client_error_from_a2a_error ... ok
+test error::tests::client_error_from_serde_json_error ... ok
+test error::tests::client_error_source_http ... ok
+test error::tests::client_error_source_none_for_string_variants ... ok
+test error::tests::client_error_unexpected_status ... ok
+test error::tests::retry_after_absent_is_none ... ok
+test error::tests::retry_after_delta_seconds_is_parsed_exactly ... ok
+test error::tests::retry_after_http_date_form_is_none ... ok
+test error::tests::retry_after_is_clamped_to_one_hour ... ok
+test error::tests::retry_after_tolerates_surrounding_whitespace ... ok
+test error::tests::retryable_classification_exhaustive ... ok
+test error::tests::stream_lag_is_recognised_through_the_client_error ... ok
+test error::tests::timeout_is_retryable_transport_is_not ... ok
+test result: ok. 465 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.94s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.02s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.54s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test error::tests::display_all_variants ... ok
+test error::tests::display_http_variant ... ok
+test error::tests::display_serialization_variant ... ok
+test error::tests::from_a2a_error ... ok
+test error::tests::from_hyper_error ... ok
+test error::tests::from_serde_error ... ok
+test error::tests::metric_labels_are_distinct_and_non_empty_per_variant ... ok
+test error::tests::source_http_returns_some ... ok
+test error::tests::source_internal_returns_none ... ok
+test error::tests::source_protocol_returns_some ... ok
+test error::tests::source_serialization_returns_some ... ok
+test error::tests::source_task_not_found_returns_none ... ok
+test error::tests::source_transport_returns_none ... ok
+test error::tests::to_a2a_error_all_variants ... ok
+test error::tests::to_a2a_error_http_variant ... ok
+test result: ok. 1063 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.69s
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.02s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.03s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.13s
+test result: ok. 0 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.19s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test error::tests::a2a_error_is_std_error ... ok
+test error::tests::a2a_error_display_format ... ok
+test error::tests::a2a_error_display ... ok
+test error::tests::a2a_error_metric_label_delegates_to_its_code ... ok
+test error::tests::a2a_error_new_has_no_data ... ok
+test error::tests::a2a_error_with_data_has_some_data ... ok
+test error::tests::a2a_reason_all_a2a_variants_distinct_and_non_empty ... ok
+test error::tests::a2a_reason_content_type_not_supported ... ok
+test error::tests::a2a_reason_extended_agent_card_not_configured ... ok
+test error::tests::a2a_error_serialization ... ok
+test error::tests::a2a_reason_extension_support_required ... ok
+test error::tests::a2a_reason_invalid_agent_response ... ok
+test error::tests::a2a_error_with_data ... ok
+test error::tests::a2a_reason_none_for_standard_jsonrpc_errors ... ok
+test error::tests::a2a_reason_push_notification_not_supported ... ok
+test error::tests::a2a_reason_task_not_cancelable ... ok
+test error::tests::a2a_reason_task_not_found ... ok
+test error::tests::a2a_reason_unsupported_operation ... ok
+test error::tests::a2a_reason_version_not_supported ... ok
+test error::tests::error_code_rejects_adjacent_values ... ok
+test error::tests::error_code_roundtrip ... ok
+test error::tests::error_code_roundtrip_all_variants ... ok
+test error::tests::error_code_unknown_value ... ok
+test error::tests::error_info_data_for_a2a_error_has_expected_shape ... ok
+test error::tests::error_info_data_for_standard_jsonrpc_error_is_null ... ok
+test error::tests::error_info_data_metadata_not_added_when_none ... ok
+test error::tests::error_info_data_mutation_not_default_value ... ok
+test error::tests::from_a2a_reason_is_exact_inverse_of_a2a_reason ... ok
+test error::tests::error_info_data_with_metadata_includes_metadata ... ok
+test error::tests::grpc_status_content_type_not_supported_is_invalid_argument ... ok
+test error::tests::grpc_status_extended_card_not_configured_is_failed_precondition ... ok
+test error::tests::grpc_status_extension_support_required_is_failed_precondition ... ok
+test error::tests::grpc_status_internal_error_is_internal ... ok
+test error::tests::grpc_status_invalid_agent_response_is_internal ... ok
+test error::tests::grpc_status_invalid_params_is_invalid_argument ... ok
+test error::tests::grpc_status_invalid_request_is_invalid_argument ... ok
+test error::tests::grpc_status_method_not_found_is_unimplemented ... ok
+test error::tests::grpc_status_method_not_found_stays_unimplemented_while_refusals_move ... ok
+test error::tests::grpc_status_never_empty ... ok
+test error::tests::grpc_status_parse_error_is_invalid_argument ... ok
+test error::tests::grpc_status_push_not_supported_is_failed_precondition ... ok
+test error::tests::grpc_status_task_not_cancelable_is_failed_precondition ... ok
+test error::tests::grpc_status_task_not_found_is_not_found ... ok
+test error::tests::grpc_status_unsupported_operation_is_failed_precondition ... ok
+test error::tests::grpc_status_version_not_supported_is_failed_precondition ... ok
+test error::tests::http_status_content_type_not_supported_is_400 ... ok
+test error::tests::http_status_extended_card_not_configured_is_400 ... ok
+test error::tests::http_status_extension_support_required_is_400 ... ok
+test error::tests::http_status_internal_error_is_500 ... ok
+test error::tests::http_status_invalid_agent_response_is_500 ... ok
+test error::tests::http_status_invalid_params_is_400 ... ok
+test error::tests::http_status_invalid_request_is_400 ... ok
+test error::tests::http_status_parse_error_is_400 ... ok
+test error::tests::http_status_push_not_supported_is_400 ... ok
+test error::tests::http_status_method_not_found_is_404 ... ok
+test error::tests::http_status_task_not_cancelable_is_400 ... ok
+test error::tests::http_status_task_not_found_is_404 ... ok
+test error::tests::http_status_unsupported_operation_is_400 ... ok
+test error::tests::http_status_version_not_supported_is_400 ... ok
+test error::tests::metric_label_is_pinned_for_every_variant ... ok
+test error::tests::metric_labels_are_distinct_and_bounded ... ok
+test error::tests::named_constructors_include_argument_in_message ... ok
+test error::tests::named_constructors_use_correct_codes ... ok
+test error::tests::ordinary_errors_are_not_lag_signals ... ok
+test error::tests::stream_lagged_reports_the_dropped_count ... ok
+test result: ok. 349 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test crates/a2a-protocol-client/src/error/mod.rs - error::ClientError::is_stream_lagged (line 171) - compile ... ok
+test crates/a2a-protocol-client/src/error/mod.rs - error::A2aError (line 243) - compile ... ok
+test result: ok. 19 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 37 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test crates/a2a-protocol-types/src/error.rs - error::A2aError::is_stream_lagged (line 424) ... ok
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+EXIT=0

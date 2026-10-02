@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+# Standalone: its own lockfile pins exactly what was measured, and no
+# feature unification with the other SDK's harness or the repo workspace.
+[workspace]
+
+[package]
+name = "agent-a2a-rs"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+default = []
+llm = ["dep:reqwest"]
+
+[dependencies]
+a2a-client = { package = "a2a-client-lf", version = "=0.2.7" }
+a2a = { package = "a2a-lf", version = "=0.4.1" }
+a2a-server = { package = "a2a-server-lf", version = "=0.5.1" }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+tokio-stream = "0.1"
+chrono = "0.4"
+serde_json = "1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream"], optional = true }
+
+[profile.release]
+debug = false

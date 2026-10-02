@@ -52,7 +52,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | | |
 |---|---|
 | **Pluggable stores** | `TaskStore` / `PushConfigStore` traits; in-memory defaults + SQLite (`sqlite`) + PostgreSQL (`postgres`) with migrations |
-| **Multi-tenancy** | Tenant-aware stores, `PerTenantConfig` for per-tenant limits, `TenantResolver` strategies (header, bearer, path) |
+| **Multi-tenancy** | Tenant-aware stores, `PerTenantConfig` for per-tenant limits, `TenantResolver` strategies (header, bearer, path). **Isolation is opt-in:** the default store does not partition by tenant, so a request's `tenant` field isolates nothing until the `TenantAware*` stores are configured ([measured](docs/sdk-comparison-2026-10-02.md#51-black-box-probes)) |
 | **Executor ergonomics** | `agent_executor!` macro, `EventEmitter`, `boxed_future` — no manual `Pin<Box<dyn Future>>` |
 | **Interceptors** | Client `CallInterceptor` + server `ServerInterceptor` chains for auth, logging, etc.; `ServerInterceptor::on_complete` runs once per call with its outcome — succeeded, failed or cancelled — so cleanup cannot be skipped by an error or a client that disconnects |
 | **State validation** | `TaskState::can_transition_to()` enforces valid state machine transitions |
