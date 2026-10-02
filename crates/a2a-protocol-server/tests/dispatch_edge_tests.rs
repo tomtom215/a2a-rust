@@ -53,7 +53,14 @@ impl AgentExecutor for EchoExecutor {
 }
 
 fn make_handler() -> Arc<a2a_protocol_server::RequestHandler> {
-    Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap())
+    // Tenant-aware: several tests here route through `/{tenant}/...`, which
+    // a store that cannot isolate tenants refuses.
+    Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .with_task_store(a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new())
+            .build()
+            .unwrap(),
+    )
 }
 
 /// Start a server on a random port and return the address.

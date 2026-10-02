@@ -125,6 +125,27 @@ push configs   TenantAwareInMemoryPushConfigStore
 A task written under one tenant is not readable, listable or cancellable under
 another. That holds regardless of the limits above being set.
 
+### A store that cannot isolate refuses tenants
+
+The default stores (`InMemoryTaskStore`, `SqliteTaskStore`,
+`PostgresTaskStore` and their push-config counterparts) do not partition by
+tenant. A request that resolves to a non-empty tenant — named by the client
+or derived by a resolver — is therefore **refused** with
+`UnsupportedOperation` (`-32004` on JSON-RPC, `400` on HTTP+JSON) unless both
+the task store and the push-config store are tenant-aware. Requests without
+a tenant are unaffected.
+
+Before this, such a request was served from the shared records, so tenant B
+could get, list, subscribe to and cancel tenant A's tasks. Configuring a
+tenant-aware task store is enough: an unset push-config store then defaults
+to `TenantAwareInMemoryPushConfigStore`. A store you write yourself declares
+isolation by returning `true` from `TaskStore::isolates_tenants` (and
+`PushConfigStore::isolates_tenants`).
+
+Where tenants key only limits over records every caller is meant to share,
+`RequestHandlerBuilder::accept_unisolated_tenants()` serves them anyway.
+That is an explicit statement that tenants share data, not a default.
+
 ### The fifth limit, and why it is not on `TenantLimits`
 
 A per-tenant cap on *stored tasks* lives on the store —

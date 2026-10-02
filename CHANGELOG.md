@@ -10,6 +10,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A server whose stores cannot isolate tenants now refuses requests that
+  name one.** The default `RequestHandlerBuilder` store ignored the `tenant`
+  field, so a request carrying one was served from records every tenant
+  shares: on 0.14.1, tenant B could get, list, subscribe to and cancel
+  tenant A's task (five of five probes,
+  `docs/sdk-comparison-2026-10-02.md` §5.1). `TaskStore` and
+  `PushConfigStore` gain `isolates_tenants()`, `false` by default and `true`
+  on the six `TenantAware*` stores. A request that resolves to a non-empty
+  tenant — named by the client or derived by a resolver — is refused with
+  `UnsupportedOperation` unless both stores answer `true`. Requests without
+  a tenant are unaffected.
+
+### Changed
+
+- **Behaviour change for deployments that send tenants to the default
+  stores**, which now get `UnsupportedOperation` (`-32004` on JSON-RPC,
+  `400` on HTTP+JSON) where they used to be served from shared records.
+  Configure the `TenantAware*` stores; configuring the task store alone is
+  enough, because an unset push-config store now defaults to
+  `TenantAwareInMemoryPushConfigStore` when the task store isolates. Where
+  tenants only key limits over deliberately shared records, call
+  `RequestHandlerBuilder::accept_unisolated_tenants()`. A custom store that
+  partitions by tenant must now say so by overriding `isolates_tenants()`;
+  a wrapper store must forward it.
+
 ### Performance
 
 - **The in-memory store's TTL pass no longer scans every task under the write

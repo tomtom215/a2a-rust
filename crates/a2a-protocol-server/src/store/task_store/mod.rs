@@ -166,6 +166,29 @@ pub trait TaskStore: Send + Sync + 'static {
         Box::pin(async { Ok(0) })
     }
 
+    /// Whether this store partitions what it holds by tenant.
+    ///
+    /// A store answering `true` reads
+    /// [`TenantContext::current`](crate::store::tenant::TenantContext::current)
+    /// on every call and keeps each tenant's records apart, so a task saved
+    /// under one tenant is not readable, listable or cancellable under
+    /// another. The `TenantAware*` stores do.
+    ///
+    /// Defaults to `false`, and that default is load-bearing in the same way
+    /// [`supports_idempotency`](TaskStore::supports_idempotency)'s is: the
+    /// handler refuses any request that resolves to a non-empty tenant unless
+    /// both its task store and its push-config store answer `true`. A store
+    /// that ignores the tenant therefore produces a loud refusal, never one
+    /// tenant reading another's tasks. Until this existed, the default store
+    /// accepted a `tenant` field and silently shared every record — measured
+    /// 2026-10-02 as five of five cross-tenant probes succeeding
+    /// (`docs/sdk-comparison-2026-10-02.md` §5.1).
+    ///
+    /// A wrapper that forwards to another store must forward this too.
+    fn isolates_tenants(&self) -> bool {
+        false
+    }
+
     /// Whether this store can back idempotency keys.
     ///
     /// Defaults to `false`, and that default is load-bearing: a server

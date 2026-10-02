@@ -36,7 +36,13 @@ def check(name, r, leak_if):
     o = outcome(r)
     results.append({"server": label, "check": name, "outcome": o, "verdict": "LEAK" if leak_if(r) else "isolated"})
 
-done_id = send("tenant-a", "hello")
+first = rpc("SendMessage", {"tenant": "tenant-a", "message": {"role": "ROLE_USER", "messageId": str(uuid.uuid4()), "parts": [{"text": "hello"}]}})
+if "error" in first:
+    # The server refuses tenants it cannot isolate: nothing is stored, so
+    # there is nothing for tenant B to reach. That is the fail-closed outcome.
+    print(json.dumps({"server": label, "check": "A SendMessage with a tenant", "outcome": outcome(first), "verdict": "refused"}))
+    sys.exit(0)
+done_id = first["result"]["task"]["id"]
 # positive control: owner can read it
 r = rpc("GetTask", {"tenant": "tenant-a", "id": done_id})
 results.append({"server": label, "check": "control: A GetTask own task", "outcome": outcome(r),

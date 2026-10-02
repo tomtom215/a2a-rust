@@ -70,6 +70,16 @@ pub const DEFAULT_MAX_CONCURRENT_STREAMS: usize = 1024;
 /// that costs.
 pub const DEFAULT_EXECUTOR_TIMEOUT: Duration = Duration::from_secs(3600);
 
+/// Whether a tenant the stores cannot isolate is refused or served.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TenantIsolation {
+    /// Refused unless both stores partition by tenant. The default.
+    Required,
+    /// Served from shared records:
+    /// [`RequestHandlerBuilder::accept_unisolated_tenants`].
+    SharedAccepted,
+}
+
 /// Fluent builder for [`RequestHandler`].
 ///
 /// # Required
@@ -81,7 +91,11 @@ pub const DEFAULT_EXECUTOR_TIMEOUT: Duration = Duration::from_secs(3600);
 /// # Optional (with defaults)
 ///
 /// - `task_store`: defaults to [`InMemoryTaskStore`].
-/// - `push_config_store`: defaults to [`InMemoryPushConfigStore`].
+/// - `push_config_store`: defaults to [`InMemoryPushConfigStore`], or to
+///   [`TenantAwareInMemoryPushConfigStore`](crate::push::TenantAwareInMemoryPushConfigStore)
+///   when the task store partitions by tenant.
+/// - Tenants: a request naming a tenant is refused unless both stores
+///   partition by tenant; see [`accept_unisolated_tenants`](Self::accept_unisolated_tenants).
 /// - `push_sender`: defaults to `None`.
 /// - `interceptors`: defaults to an empty chain.
 /// - `agent_card`: defaults to `None`.
@@ -110,6 +124,7 @@ pub struct RequestHandlerBuilder {
     tenant_resolver: Option<Arc<dyn TenantResolver>>,
     tenant_config: Option<PerTenantConfig>,
     require_resolved_tenant: bool,
+    tenant_isolation: TenantIsolation,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
     allow_unauthenticated_extended_card: bool,
     allow_undeclared_input_modes: bool,
@@ -138,6 +153,7 @@ impl RequestHandlerBuilder {
             tenant_resolver: None,
             tenant_config: None,
             require_resolved_tenant: false,
+            tenant_isolation: TenantIsolation::Required,
             inbound_trace_policy: crate::handler::InboundTracePolicy::Continue,
             allow_unauthenticated_extended_card: false,
             allow_undeclared_input_modes: false,
@@ -326,6 +342,24 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub const fn require_resolved_tenant(mut self) -> Self {
         self.require_resolved_tenant = true;
+        self
+    }
+
+    /// Serves requests that name a tenant even though the stores do not
+    /// partition by tenant.
+    ///
+    /// By default such a request is refused with `UnsupportedOperation`: a
+    /// store that ignores the tenant would serve tenant B the records tenant A
+    /// wrote. Call this only where tenants key something other than data —
+    /// per-tenant limits through [`with_tenant_config`](Self::with_tenant_config)
+    /// over a store every caller is meant to share. Every tenant then reads
+    /// and writes the same records; that is what this opts in to.
+    ///
+    /// Has no effect when both stores answer
+    /// [`isolates_tenants`](crate::store::TaskStore::isolates_tenants).
+    #[must_use]
+    pub const fn accept_unisolated_tenants(mut self) -> Self {
+        self.tenant_isolation = TenantIsolation::SharedAccepted;
         self
     }
 
@@ -561,12 +595,26 @@ impl RequestHandlerBuilder {
             self.allow_undeclared_input_modes,
         );
 
+        // An unset push-config store follows the task store: a deployment
+        // that configured tenant-aware tasks gets tenant-aware push configs
+        // too, rather than having every tenant refused because of a store it
+        // never chose.
+        let push_config_store: Arc<dyn PushConfigStore> =
+            self.push_config_store.unwrap_or_else(|| {
+                if task_store.isolates_tenants() {
+                    Arc::new(crate::push::TenantAwareInMemoryPushConfigStore::new())
+                } else {
+                    Arc::new(InMemoryPushConfigStore::new())
+                }
+            });
+        let stores_isolate = task_store.isolates_tenants() && push_config_store.isolates_tenants();
+        let refuse_unisolated_tenants =
+            !stores_isolate && self.tenant_isolation == TenantIsolation::Required;
+
         Ok(RequestHandler {
             executor: self.executor,
             task_store,
-            push_config_store: self
-                .push_config_store
-                .unwrap_or_else(|| Arc::new(InMemoryPushConfigStore::new())),
+            push_config_store,
             push_sender: self.push_sender,
             event_queue_manager: {
                 let mut mgr = self
@@ -589,6 +637,7 @@ impl RequestHandlerBuilder {
             limits: self.handler_limits,
             tenant_resolver: self.tenant_resolver,
             require_resolved_tenant: self.require_resolved_tenant,
+            refuse_unisolated_tenants,
             inbound_trace_policy: self.inbound_trace_policy,
             allow_unauthenticated_extended_card: self.allow_unauthenticated_extended_card,
             accepted_input_modes,
@@ -624,6 +673,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("tenant_resolver", &self.tenant_resolver.is_some())
             .field("tenant_config", &self.tenant_config)
             .field("require_resolved_tenant", &self.require_resolved_tenant)
+            .field("tenant_isolation", &self.tenant_isolation)
             .field("inbound_trace_policy", &self.inbound_trace_policy)
             .field(
                 "allow_unauthenticated_extended_card",

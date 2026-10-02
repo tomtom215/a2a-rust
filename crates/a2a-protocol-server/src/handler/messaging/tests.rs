@@ -1594,7 +1594,10 @@ async fn unknown_task_id_returns_task_not_found() {
 #[tokio::test]
 async fn send_message_with_tenant() {
     // Covers line 46: tenant scoping with non-default tenant.
-    let handler = make_handler();
+    let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
+        .build()
+        .expect("tenant-aware handler");
     let mut params = make_params(None);
     params.tenant = Some("test-tenant".to_string());
 

@@ -34,6 +34,10 @@ use crate::store::tenant_idempotency as idem;
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for TenantAwarePostgresTaskStore {
+    fn isolates_tenants(&self) -> bool {
+        true
+    }
+
     fn supports_idempotency(&self) -> bool {
         true
     }

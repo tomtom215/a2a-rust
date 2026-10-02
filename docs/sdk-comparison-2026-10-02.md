@@ -350,7 +350,7 @@ Nothing has been filed upstream.
 
 | ID | Severity | Finding | Status |
 |---|---|---|---|
-| R1 | High | Default configuration ignores `tenant` and leaks across tenants (§5.1). | Open. Options and a recommendation are in [`swarm-orchestration.md`](swarm-orchestration.md) G3; it is a behaviour change, so it is the maintainer's call. |
+| R1 | High | Default configuration ignores `tenant` and leaks across tenants (§5.1). | **Fixed after this report:** a server whose stores cannot isolate now refuses any request naming a tenant (`-32004`); the same probe against the fixed build records `refused`. See CHANGELOG, Unreleased. |
 | R2 | Medium | 1.17–1.62× slower than a2a-rs per request (§4.1). | Partly fixed in `831b8ef` (+15–18%). The rest is spread across allocation and task handoffs, with no single hotspot (§4.2). |
 | R3 | Medium | Cancelling a task does not reach the tasks it delegated to. This is a protocol gap, but this SDK offers no helper for it either (`swarm-orchestration.md` G1). | Open. Measured in `examples/swarm`. |
 | R4 | Low | ACTS `REST-CT-001`: REST content type is `application/json`, not `application/a2a+json`. | Open. |

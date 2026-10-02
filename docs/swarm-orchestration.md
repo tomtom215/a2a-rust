@@ -76,10 +76,12 @@ should not silently serve the request. The options:
    tenant-aware.
 3. Leave the behaviour and document it more loudly.
 
-Option 2 fails closed and is cheap. It is a behaviour change, though: a
-deployment that sends tenants today and relies on them being ignored would
-start getting errors. **That is a maintainer decision, so it is recorded
-here and not made.**
+**Decided 2026-10-02: option 2.** A request resolving to a non-empty tenant
+is refused with `UnsupportedOperation` unless both stores answer
+`isolates_tenants()`. An unset push-config store follows a tenant-aware task
+store, and `RequestHandlerBuilder::accept_unisolated_tenants()` is the
+explicit opt-out for tenants that key only limits. The tenant probe against
+the fixed build records `refused` where it recorded five leaks.
 
 ### G4 — Per-node throughput (R4)
 
