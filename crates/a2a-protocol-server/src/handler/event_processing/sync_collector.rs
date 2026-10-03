@@ -162,8 +162,10 @@ impl RequestHandler {
         task_id: TaskId,
         executor_handle: tokio::task::JoinHandle<()>,
     ) -> ServerResult<Collected> {
+        let mut executor =
+            crate::handler::messaging::WatchedExecutor::Spawned(Some(executor_handle));
         self.sync_collector()
-            .collect_events(events, task_id, executor_handle)
+            .collect_events(events, task_id, &mut executor)
             .await
     }
 }
@@ -172,14 +174,15 @@ impl SyncCollector {
     /// Collects events until stream closes, updating the task store and
     /// delivering push notifications.
     ///
-    /// Takes the executor's `JoinHandle` so that if the executor panics or
-    /// terminates without closing the queue properly, we detect it and avoid
-    /// blocking forever (CB-3).
+    /// Watches the executor so that if it panics or terminates without
+    /// closing the queue properly, we detect it and avoid blocking forever
+    /// (CB-3). The executor is borrowed, not taken: when it runs inline, the
+    /// caller drives it to its end after the collection returns.
     pub(crate) async fn collect_events(
         &self,
         mut events: CollectedEvents,
         task_id: TaskId,
-        executor_handle: tokio::task::JoinHandle<()>,
+        executor: &mut crate::handler::messaging::WatchedExecutor,
     ) -> ServerResult<Collected> {
         let mut state = CollectState {
             task: self
@@ -197,7 +200,6 @@ impl SyncCollector {
         // When the executor finishes (or panics), we'll drain remaining events
         // and then return, rather than blocking forever.
         let mut executor_done = false;
-        let mut handle_fuse = executor_handle;
 
         loop {
             if executor_done {
@@ -227,9 +229,9 @@ impl SyncCollector {
                             None => break,
                         }
                     }
-                    result = &mut handle_fuse => {
+                    returned = &mut *executor => {
                         executor_done = true;
-                        let folded = self.on_executor_finished(&result, &task_id, &mut state).await;
+                        let folded = self.on_executor_finished(returned, &task_id, &mut state).await;
                         self.unless_superseded(folded, &task_id, &mut state).await?;
                     }
                 }
@@ -324,17 +326,18 @@ impl SyncCollector {
         Ok(())
     }
 
-    /// Handles the executor's `JoinHandle` resolving mid-collection.
+    /// Handles the executor ending mid-collection; `returned` is false when
+    /// it panicked or was aborted.
     ///
     /// A panic (CB-2) marks the task failed; either way the caller keeps
     /// draining whatever the queue still holds.
     async fn on_executor_finished(
         &self,
-        result: &Result<(), tokio::task::JoinError>,
+        returned: bool,
         _task_id: &TaskId,
         state: &mut CollectState,
     ) -> ServerResult<()> {
-        if result.is_err() {
+        if !returned {
             trace_error!(task_id = %_task_id, "executor task panicked");
             if !state.task.status.state.is_terminal() {
                 state.task.status = TaskStatus::with_timestamp(TaskState::Failed);

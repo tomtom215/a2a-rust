@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **On a single-worker runtime a blocking `SendMessage` runs its executor
+  in the task that collects its events.** Two tasks on one worker cannot
+  run in parallel, so the split cost only handoffs. Echo benchmark, unary,
+  16 connections, jemalloc, 3 interleaved runs: one worker 14,166–14,770 →
+  19,308–20,105 requests/s (user CPU 50–53 → 41–42 µs/request). With more
+  workers the executor keeps its own task, which runs beside the
+  collection; on two workers this measured 12,133 vs 12,353 requests/s, no
+  difference within noise. A container limited to one CPU gets one worker
+  (`available_parallelism` reads the CPU quota).
+
 - **An event write no longer allocates a large future, and the handler's
   persistence channels carry the broadcast's `Arc`.** `write` does its work
   synchronously when the persistence channel has room and no terminal

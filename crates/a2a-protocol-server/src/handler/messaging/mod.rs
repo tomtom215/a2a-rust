@@ -40,6 +40,7 @@ mod create;
 mod decisions;
 mod eviction;
 mod execute;
+pub use execute::WatchedExecutor;
 mod idempotency;
 mod respond;
 mod terminal;
@@ -81,13 +82,47 @@ struct Started {
     reader: InMemoryQueueReader,
     /// The background processor's channel, present when one was requested.
     persistence_rx: Option<crate::streaming::event_queue::PersistenceRx>,
-    /// The spawned executor.
-    executor_handle: JoinHandle<()>,
+    /// The executor: spawned for a send answered in the background, deferred
+    /// for a blocking one, whose collecting task runs it.
+    executor: ExecutorStart,
     /// The executor's cancellation token, so the background processor can
     /// stop it when the store says another writer already finished the task.
     cancel: tokio_util::sync::CancellationToken,
     /// The queue's terminal gate, answered by the background processor.
     gate: Option<std::sync::Arc<crate::streaming::event_queue::terminal_gate::TerminalGate>>,
+}
+
+/// Whether the current tokio runtime has a single worker thread: a
+/// current-thread runtime, or a multi-thread one sized to one CPU (as
+/// `available_parallelism` reports for a container limited to one).
+fn runtime_has_one_worker() -> bool {
+    tokio::runtime::Handle::try_current().is_ok_and(|h| h.metrics().num_workers() <= 1)
+}
+
+/// How a committed send's executor runs.
+enum ExecutorStart {
+    /// Already running on a task of its own.
+    Spawned(JoinHandle<()>),
+    /// Run by whoever collects its events; spawned if dropped unrun.
+    Deferred(execute::DeferredExecutor),
+}
+
+impl ExecutorStart {
+    /// The executor on a task of its own, spawning it if it is not yet.
+    fn into_handle(self) -> JoinHandle<()> {
+        match self {
+            Self::Spawned(handle) => handle,
+            Self::Deferred(deferred) => deferred.spawn(),
+        }
+    }
+
+    /// The executor as the sync collector watches it.
+    fn watch(self) -> execute::WatchedExecutor {
+        match self {
+            Self::Spawned(handle) => execute::WatchedExecutor::Spawned(Some(handle)),
+            Self::Deferred(deferred) => deferred.watch(),
+        }
+    }
 }
 
 /// What committing a send produced.
@@ -369,12 +404,23 @@ impl RequestHandler {
 
             let cancel = ctx.cancellation_token.clone();
             let gate = writer.terminal_gate();
-            let executor_handle = self.spawn_executor(ctx, writer, tenant_slot, turn);
+            // On a single-worker runtime a blocking send's executor runs in
+            // the task that collects its events (see `respond_blocking`):
+            // two tasks on one worker cannot run in parallel, so the split
+            // only costs handoffs. With more workers it gets its own task,
+            // which then runs beside the collection. Measured on the echo
+            // benchmark, unary sends: one worker, 14.4k -> 19.6k rps for the
+            // shared task; two workers, 11.9k (own task) vs 11.4k (shared).
+            let executor = if use_background || !runtime_has_one_worker() {
+                ExecutorStart::Spawned(self.spawn_executor(ctx, writer, tenant_slot, turn))
+            } else {
+                ExecutorStart::Deferred(self.defer_executor(ctx, writer, tenant_slot, turn))
+            };
             Ok(Started {
                 task,
                 reader,
                 persistence_rx,
-                executor_handle,
+                executor,
                 cancel,
                 gate,
             })
@@ -399,5 +445,7 @@ impl RequestHandler {
 
 #[cfg(test)]
 mod idempotency_tests;
+#[cfg(test)]
+mod inline_executor_tests;
 #[cfg(test)]
 mod tests;
