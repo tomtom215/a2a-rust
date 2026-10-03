@@ -219,6 +219,34 @@ not attributed further. The likeliest remainder, not measured, is the
 waiting itself: a terminal event is stored before it is sent, which any
 design that keeps the guarantee keeps. The gate stays as it is.
 
+**The streaming gap, attributed (2026-10-03).** One core, jemalloc for
+both, 16 connections. `/proc` CPU per streamed request, 4 interleaved runs:
+a2a-rust 86.1 µs (user 61.2, system 24.9), a2a-rs 70.2 µs (46.9, 23.8) —
+a 15.9 µs gap, 14.3 of it user time. perf (8 s at 1,999 Hz each, frame
+pointers; ~8% inflated) puts it at 17.1 µs and splits it:
+
+| Where | a2a-rust | a2a-rs | Notes |
+|---|---|---|---|
+| Kernel, socket writes | 24.5 | 22.3 | 4.25 vs 2.66 writes per stream (`strace -c`): a2a-rust sends about one write per SSE frame, a2a-rs batches |
+| User space | 66.2 | 51.0 | by leaf: SDK code +10.5, tokio/tracing +3.1, copies +3.1; allocator −3.4, serde −1.8 |
+
+a2a-rust runs a streamed request on four tasks; a2a-rs on one. By task:
+connection 62.6 µs, background processor 12.7 (persistence 7.0, of which
+status 2.7, artifact 1.7, event log 1.3; future copies 1.9; initial store
+read 0.6), executor 8.2 (the agent 4.7), SSE forwarder 7.8 (frame
+serialization 2.0, keep-alive timer reset per event ~0.7, copies 0.7,
+channel send 0.5). The time in those three tasks beyond their useful work
+— about 5.7, 5.8 and 3.5 µs — accounts for roughly the user-space gap
+(CONJECTURED as a sum: perf anchors overlap).
+
+Merging tasks does not recover it: the executor in the processor's task
+and the SSE body reading the queue directly were both measured slower
+(above). Candidates that keep the layout, sized from this profile and not
+yet measured: coalesce ready SSE frames into one body frame (the ~1.6
+extra socket writes, ~2 µs); stop re-arming the keep-alive timer on every
+event (~0.7 µs); shrink the processor's and forwarder's futures (~2.6 µs
+of copies).
+
 This
 matters for a swarm only once a node is CPU-bound on protocol rather than
 on model inference. In the live-model run the model was the bottleneck by
