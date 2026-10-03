@@ -21,9 +21,7 @@ mod state_machine;
 
 use std::sync::Arc;
 
-use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::task::TaskId;
-use tokio::sync::mpsc;
 
 use super::super::RequestHandler;
 use crate::streaming::event_queue::terminal_gate::CloseOnDrop;
@@ -50,7 +48,7 @@ impl RequestHandler {
         &self,
         task_id: TaskId,
         executor_handle: tokio::task::JoinHandle<()>,
-        persistence_rx: Option<mpsc::Receiver<A2aResult<crate::streaming::StreamEvent>>>,
+        persistence_rx: Option<crate::streaming::event_queue::PersistenceRx>,
         initial_task: a2a_protocol_types::task::Task,
         links: super::ProcessorLinks,
     ) {
@@ -153,7 +151,7 @@ impl RequestHandler {
                             // Executor finished — drain remaining events from the
                             // persistence channel.
                             match persistence_reader.recv().await {
-                                Some(event) => run.handle(event).await,
+                                Some(event) => run.handle(crate::streaming::event_queue::unshare(event)).await,
                                 None => break,
                             }
                         } else {
@@ -161,7 +159,7 @@ impl RequestHandler {
                                 biased;
                                 event = persistence_reader.recv() => {
                                     match event {
-                                        Some(event) => run.handle(event).await,
+                                        Some(event) => run.handle(crate::streaming::event_queue::unshare(event)).await,
                                         None => break,
                                     }
                                 }

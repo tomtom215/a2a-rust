@@ -16,9 +16,7 @@ use crate::error::{ServerError, ServerResult};
 /// A blocking send's events, as its collector reads them: the queue's
 /// persistence channel, which never drops an event the way a lagging
 /// broadcast receiver does. See `InMemoryQueueWriter::collected`.
-pub type CollectedEvents = tokio::sync::mpsc::Receiver<
-    a2a_protocol_types::error::A2aResult<crate::streaming::StreamEvent>,
->;
+pub type CollectedEvents = crate::streaming::event_queue::PersistenceRx;
 
 use super::super::RequestHandler;
 
@@ -209,7 +207,9 @@ impl SyncCollector {
                 // *closing*, and a queue that never closes (an executor that
                 // returned without a terminal state, and a `destroy` that
                 // never ran) used to hold the blocking response open forever.
-                match tokio::time::timeout(self.limits.executor_drain_timeout, events.recv()).await
+                match tokio::time::timeout(self.limits.executor_drain_timeout, events.recv())
+                    .await
+                    .map(|e| e.map(crate::streaming::event_queue::unshare))
                 {
                     Ok(Some(event)) => self.fold(event, &task_id, &mut state).await?,
                     Ok(None) => break,
@@ -222,7 +222,7 @@ impl SyncCollector {
                 tokio::select! {
                     biased;
                     event = events.recv() => {
-                        match event {
+                        match event.map(crate::streaming::event_queue::unshare) {
                             Some(event) => self.fold(event, &task_id, &mut state).await?,
                             None => break,
                         }
@@ -675,7 +675,7 @@ mod tests {
     use crate::streaming::EventQueueWriter;
     use crate::streaming::event_queue::{
         DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY, DEFAULT_WRITE_TIMEOUT,
-        new_in_memory_queue_with_persistence,
+        new_in_memory_queue_with_shared_persistence,
     };
 
     /// A writer and the channel its collector reads, as a blocking send
@@ -687,7 +687,7 @@ mod tests {
     fn collected_queue_with_capacity(
         capacity: usize,
     ) -> (crate::streaming::InMemoryQueueWriter, CollectedEvents) {
-        let (writer, _broadcast, events) = new_in_memory_queue_with_persistence(
+        let (writer, _broadcast, events) = new_in_memory_queue_with_shared_persistence(
             capacity,
             DEFAULT_MAX_EVENT_SIZE,
             DEFAULT_WRITE_TIMEOUT,
@@ -1376,7 +1376,9 @@ mod tests {
         let (tx, reader) = tokio::sync::mpsc::channel(8);
 
         let err = A2aError::internal("executor failure");
-        tx.send(Err(err)).await.expect("send should succeed");
+        tx.send(std::sync::Arc::new(Err(err)))
+            .await
+            .expect("send should succeed");
         drop(tx);
 
         let executor_handle = tokio::spawn(async {});

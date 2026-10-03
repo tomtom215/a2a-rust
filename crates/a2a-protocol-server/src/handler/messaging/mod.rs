@@ -21,7 +21,6 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::task::Task;
 use tokio::sync::OwnedSemaphorePermit;
@@ -81,7 +80,7 @@ struct Started {
     /// The first reader on the task's event queue.
     reader: InMemoryQueueReader,
     /// The background processor's channel, present when one was requested.
-    persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<crate::streaming::StreamEvent>>>,
+    persistence_rx: Option<crate::streaming::event_queue::PersistenceRx>,
     /// The spawned executor.
     executor_handle: JoinHandle<()>,
     /// The executor's cancellation token, so the background processor can

@@ -24,6 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **An event write no longer allocates a large future, and the handler's
+  persistence channels carry the broadcast's `Arc`.** `write` does its work
+  synchronously when the persistence channel has room and no terminal
+  verdict is awaited; only a full channel or a gated terminal event returns
+  a waiting future. The channel's item is the shared event, not a deep copy,
+  so its first block is 256 bytes rather than 11.5 KB. Four allocations
+  above glibc's 1 KB thread-cache limit fewer per unary send (dhat). Echo
+  benchmark, unary, 16 connections, 3 interleaved runs: one server core
+  10,005 → 10,493 rps (user CPU 81.2 → 77.4 µs/request, ranges not
+  overlapping); two cores, no difference within noise. A fast write still
+  spends the task's cooperative budget, so a tight write loop yields as the
+  awaited `send` it replaces did. The public
+  `new_in_memory_queue_with_persistence` keeps its by-value channel.
+
 - **A task's event queue no longer pre-allocates ~99 KB.** The broadcast
   channel carries events behind an `Arc` instead of by value (360 bytes per
   slot × 256 slots, allocated per task). Bytes allocated per unary

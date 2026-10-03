@@ -17,7 +17,7 @@ use a2a_protocol_types::events::StreamResponse;
 use super::{
     DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY, DEFAULT_WRITE_TIMEOUT, InMemoryQueueReader,
     InMemoryQueueWriter, StreamEvent, new_in_memory_queue_with_options,
-    new_in_memory_queue_with_persistence,
+    new_in_memory_queue_with_persistence, new_in_memory_queue_with_shared_persistence,
 };
 use crate::metrics::Metrics;
 
@@ -51,7 +51,7 @@ pub enum QueueLease {
     Created {
         writer: Arc<InMemoryQueueWriter>,
         reader: InMemoryQueueReader,
-        persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<StreamEvent>>>,
+        persistence_rx: Option<super::PersistenceRx>,
     },
     /// A queue already existed for this task. The send path treats this as a
     /// concurrent/leaked-executor condition and rejects, so no writer/reader is
@@ -304,7 +304,7 @@ impl EventQueueManager {
         {
             QueueLease::CapacityExhausted
         } else {
-            let (writer, reader, persistence_rx) = new_in_memory_queue_with_persistence(
+            let (writer, reader, persistence_rx) = new_in_memory_queue_with_shared_persistence(
                 capacity,
                 self.max_event_size,
                 self.write_timeout,

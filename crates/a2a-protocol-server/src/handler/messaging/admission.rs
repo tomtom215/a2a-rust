@@ -11,7 +11,6 @@
 
 use std::sync::Arc;
 
-use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::task::TaskId;
 
 use super::super::RequestHandler;
@@ -25,7 +24,7 @@ use crate::streaming::{InMemoryQueueReader, InMemoryQueueWriter, QueueConsumer, 
 pub(super) type LeasedQueue = (
     Arc<InMemoryQueueWriter>,
     InMemoryQueueReader,
-    Option<tokio::sync::mpsc::Receiver<A2aResult<crate::streaming::StreamEvent>>>,
+    Option<crate::streaming::event_queue::PersistenceRx>,
 );
 
 impl RequestHandler {

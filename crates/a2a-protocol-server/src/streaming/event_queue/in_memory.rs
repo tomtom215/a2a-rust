@@ -57,6 +57,70 @@ impl std::io::Write for CountingWriter {
 
 // ── InMemoryQueueWriter ──────────────────────────────────────────────────────
 
+/// A send failure with its item dropped.
+const fn strip<T>(e: &mpsc::error::SendTimeoutError<T>) -> mpsc::error::SendTimeoutError<()> {
+    match e {
+        mpsc::error::SendTimeoutError::Timeout(_) => mpsc::error::SendTimeoutError::Timeout(()),
+        mpsc::error::SendTimeoutError::Closed(_) => mpsc::error::SendTimeoutError::Closed(()),
+    }
+}
+
+/// Where a writer hands each event for persistence.
+#[derive(Clone)]
+pub(super) enum PersistenceTx {
+    /// A deep copy of each event in its own slot: the channel
+    /// [`new_in_memory_queue_with_persistence`](super::new_in_memory_queue_with_persistence)
+    /// returns, whose item type is public API.
+    Owned(mpsc::Sender<A2aResult<StreamEvent>>),
+    /// The broadcast ring's own `Arc`: the handler's queues. A slot is a
+    /// pointer, so the channel's first block is 256 bytes rather than 11.5
+    /// KB, and handing an event over is a reference count, not a deep copy.
+    Shared(mpsc::Sender<super::Shared>),
+}
+
+/// What a non-waiting hand-off did.
+enum Handoff {
+    Sent,
+    Closed,
+    Full,
+}
+
+impl PersistenceTx {
+    /// Hands `event` over if the channel has room, without waiting.
+    fn try_hand_off(&self, event: &super::Shared) -> Handoff {
+        use mpsc::error::TrySendError;
+        let sent = match self {
+            Self::Owned(tx) => tx.try_send((**event).clone()).map_err(|e| match e {
+                TrySendError::Full(_) => Handoff::Full,
+                TrySendError::Closed(_) => Handoff::Closed,
+            }),
+            Self::Shared(tx) => tx.try_send(Arc::clone(event)).map_err(|e| match e {
+                TrySendError::Full(_) => Handoff::Full,
+                TrySendError::Closed(_) => Handoff::Closed,
+            }),
+        };
+        sent.map_or_else(|failed| failed, |()| Handoff::Sent)
+    }
+
+    /// Hands `event` over, waiting up to `timeout` for room.
+    async fn send_within(
+        &self,
+        event: &super::Shared,
+        timeout: std::time::Duration,
+    ) -> Result<(), mpsc::error::SendTimeoutError<()>> {
+        match self {
+            Self::Owned(tx) => tx
+                .send_timeout((**event).clone(), timeout)
+                .await
+                .map_err(|e| strip(&e)),
+            Self::Shared(tx) => tx
+                .send_timeout(Arc::clone(event), timeout)
+                .await
+                .map_err(|e| strip(&e)),
+        }
+    }
+}
+
 /// In-memory [`EventQueueWriter`] backed by a `broadcast` channel sender.
 ///
 /// Supports multiple concurrent readers (fan-out) via [`subscribe()`](Self::subscribe).
@@ -75,7 +139,7 @@ pub struct InMemoryQueueWriter {
     /// reader makes it *full*, which `write` reports, rather than making it
     /// silently skip. It said "will never lag" until 2026-08-19, three fields
     /// above the `write_timeout` that exists because a full one is a real state.
-    persistence_tx: Option<mpsc::Sender<A2aResult<StreamEvent>>>,
+    persistence_tx: Option<PersistenceTx>,
     /// Maximum serialized event size in bytes.
     max_event_size: usize,
     /// Deadline for handing one event to the persistence channel.
@@ -142,7 +206,7 @@ impl InMemoryQueueWriter {
     /// Creates a new `InMemoryQueueWriter` with a dedicated persistence channel.
     pub(super) fn new_with_persistence(
         tx: broadcast::Sender<super::Shared>,
-        persistence_tx: mpsc::Sender<A2aResult<StreamEvent>>,
+        persistence_tx: PersistenceTx,
         max_event_size: usize,
         write_timeout: std::time::Duration,
     ) -> Self {
@@ -303,114 +367,160 @@ impl InMemoryQueueWriter {
     }
 }
 
-#[allow(clippy::manual_async_fn)]
+impl InMemoryQueueWriter {
+    /// A closed persistence channel. Returns whether this is a collected
+    /// writer's collector having finished (see [`collected`](Self::collected)),
+    /// which is the send ending rather than a processor lost.
+    fn on_persistence_closed(&self, ticket: &mut Option<Ticket<'_>>) -> bool {
+        // Nobody is left to rule on it.
+        *ticket = None;
+        if self.collected {
+            return true;
+        }
+        trace_warn!("persistence channel closed, event not persisted");
+        // The one report that survives a default build. Until 0.12 the trace
+        // line above was the whole signal, and it compiles to nothing without
+        // the `tracing` feature (backlog B18).
+        if let Some(metrics) = &self.metrics {
+            metrics.on_persistence_error(
+                crate::metrics::persistence_operation::QUEUE_HANDOFF,
+                crate::metrics::queue_handoff_error::CHANNEL_CLOSED,
+            );
+        }
+        false
+    }
+
+    /// The part of a write that may wait: a full persistence channel, then
+    /// the store's verdict on a terminal event. `handed_off` is false when
+    /// the channel was full and the event still has to be handed over.
+    async fn finish_write(
+        &self,
+        mut event: super::Shared,
+        seq: u64,
+        mut ticket: Option<Ticket<'_>>,
+        deadline: tokio::time::Instant,
+        handed_off: bool,
+    ) -> A2aResult<()> {
+        let mut collector_gone = false;
+        if !handed_off && let Some(ref persistence_tx) = self.persistence_tx {
+            match persistence_tx.send_within(&event, self.write_timeout).await {
+                Ok(()) => {}
+                Err(mpsc::error::SendTimeoutError::Closed(())) => {
+                    collector_gone = self.on_persistence_closed(&mut ticket);
+                }
+                Err(mpsc::error::SendTimeoutError::Timeout(())) => {
+                    trace_warn!(
+                        timeout_ms =
+                            u64::try_from(self.write_timeout.as_millis()).unwrap_or(u64::MAX),
+                        "persistence channel full; background processor is not draining"
+                    );
+                    return Err(A2aError::internal(format!(
+                        "event queue: the persistence channel was still full after {:?}; \
+                         the background processor is not draining events",
+                        self.write_timeout
+                    )));
+                }
+            }
+        }
+        // A terminal event goes out as the store ruled on it: itself when it
+        // persisted, the stored terminal status when another writer had
+        // already finished the task. No verdict by the write's deadline — or a
+        // processor that exited — broadcasts it unchanged, which is what every
+        // event did before the gate existed.
+        if let Some(ticket) = ticket
+            && let Some(verdict) = ticket
+                .verdict_within(deadline.saturating_duration_since(tokio::time::Instant::now()))
+                .await
+        {
+            event = Arc::new(Ok(StreamEvent::at(seq, verdict)));
+        }
+        self.broadcast(event, collector_gone)
+    }
+
+    /// Broadcasts to live SSE subscribers.
+    ///
+    /// Zero receivers is NOT an error when a persistence channel took the
+    /// event: a client that dropped its stream can reattach later via
+    /// `tasks/resubscribe`, and a transport disconnect must not fail the
+    /// running task. Without one — no persistence channel, or a collected
+    /// writer whose collector has finished — the work has nowhere to go and
+    /// the executor should stop.
+    fn broadcast(&self, event: super::Shared, collector_gone: bool) -> A2aResult<()> {
+        match self.tx.send(event) {
+            Ok(_) => Ok(()),
+            Err(_) if self.persistence_tx.is_some() && !collector_gone => {
+                trace_warn!("no live event subscribers; event persisted only");
+                Ok(())
+            }
+            Err(_) => Err(A2aError::internal("event queue: no active receivers")),
+        }
+    }
+}
+
 impl EventQueueWriter for InMemoryQueueWriter {
+    /// Writes without allocating a large waiting future in the common case.
+    ///
+    /// Everything up to the persistence hand-off is synchronous, and when the
+    /// channel has room and no terminal verdict is awaited the write is done
+    /// before this returns; the future returned then only spends the task's
+    /// cooperative budget. Only a full channel or a gated terminal event
+    /// returns a future that waits. Until 2026-10-03 every write was one
+    /// 1.7 KB async block, allocated past glibc's per-thread cache — three
+    /// per echo request.
     fn write<'a>(
         &'a self,
         mut event: StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        // Before anything persists or broadcasts it (N35).
+        super::status_stamp::stamp_status(&mut event);
+        if let Err(e) = self.check_event_size(&event) {
+            return Box::pin(std::future::ready(Err(e)));
+        }
+        // The position, assigned exactly once and carried on both channels
+        // below. `Relaxed` is enough: this is the only writer of the counter
+        // and the value travels with the event, so no other memory is ordered
+        // against it.
+        let seq = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
+        let event = StreamEvent::at(seq, event);
+        // Armed before the hand-off, so the processor's verdict can never
+        // arrive ahead of the ticket it answers.
+        let mut ticket = self.ticket_for(&event);
+        // One deadline for the whole call: `write_timeout` is documented as
+        // the bound on a write, and the hand-off and the wait for the store's
+        // verdict are two phases of one write. Bounding each by the full
+        // timeout let a write take twice it.
+        let deadline = tokio::time::Instant::now() + self.write_timeout;
+        let event: super::Shared = Arc::new(Ok(event));
+
+        // Persistence first (if configured): this channel is independent of
+        // SSE consumer backpressure. A full channel waits, bounded by
+        // `write_timeout` — a plain `send().await` on a full bounded mpsc has
+        // no deadline, and a stalled background processor used to stop the
+        // executor outright with nothing logged. A closed one stays non-fatal:
+        // the processor is gone, the stream can still serve live subscribers.
+        let mut collector_gone = false;
+        if let Some(ref persistence_tx) = self.persistence_tx {
+            match persistence_tx.try_hand_off(&event) {
+                Handoff::Sent => {}
+                Handoff::Closed => collector_gone = self.on_persistence_closed(&mut ticket),
+                Handoff::Full => {
+                    return Box::pin(self.finish_write(event, seq, ticket, deadline, false));
+                }
+            }
+        }
+        if ticket.is_some() {
+            return Box::pin(self.finish_write(event, seq, ticket, deadline, true));
+        }
+        let outcome = self.broadcast(event, collector_gone);
+        // `try_send` spends none of the task's cooperative budget, and the
+        // `send` it replaces spent one unit per write. Without this an
+        // executor writing in a tight loop never yields: on a current-thread
+        // runtime it starved every stream forwarder and transport reader until
+        // it returned (`an_unread_stream_does_not_stall_a_unary_call_on_the_
+        // same_socket`). Yields only once the budget is spent.
         Box::pin(async move {
-            // Before anything persists or broadcasts it (N35).
-            super::status_stamp::stamp_status(&mut event);
-            self.check_event_size(&event)?;
-            // Send to the persistence channel first (if configured) — this
-            // channel is independent of SSE consumer backpressure.
-            //
-            // Bounded by `write_timeout`. A plain `send().await` on a full
-            // bounded mpsc waits with no deadline, so a stalled background
-            // processor used to stop the executor outright: measured, the
-            // channel filled after 1,024 events and `write` was still parked
-            // eight seconds later with nothing logged and no metric moved.
-            // A closed channel stays non-fatal — the processor is gone, the
-            // stream can still serve live subscribers — but a full one is
-            // reported, because the caller is producing state that will not be
-            // persisted and only the caller can decide to stop.
-            // The position, assigned exactly once and carried on both
-            // channels below. `Relaxed` is enough: this is the only writer of
-            // the counter and the value travels with the event, so no other
-            // memory is ordered against it.
-            let mut event = StreamEvent::at(self.seq.fetch_add(1, Ordering::Relaxed) + 1, event);
-
-            // Armed before the hand-off, so the processor's verdict can never
-            // arrive ahead of the ticket it answers.
-            let mut ticket = self.ticket_for(&event);
-            // One deadline for the whole call: `write_timeout` is documented
-            // as the bound on a write, and the hand-off and the wait for the
-            // store's verdict are two phases of one write. Bounding each by
-            // the full timeout let a write take twice it.
-            let deadline = tokio::time::Instant::now() + self.write_timeout;
-
-            // Set when a collected writer's collector has stopped reading.
-            let mut collector_gone = false;
-            if let Some(ref persistence_tx) = self.persistence_tx {
-                match persistence_tx
-                    .send_timeout(Ok(event.clone()), self.write_timeout)
-                    .await
-                {
-                    Ok(()) => {}
-                    Err(mpsc::error::SendTimeoutError::Closed(_)) if self.collected => {
-                        // The blocking send has answered; see `collected`.
-                        ticket = None;
-                        collector_gone = true;
-                    }
-                    Err(mpsc::error::SendTimeoutError::Closed(_)) => {
-                        // Nobody is left to rule on it.
-                        ticket = None;
-                        trace_warn!("persistence channel closed, event not persisted");
-                        // The one report that survives a default build. Until
-                        // 0.12 the trace line above was the whole signal, and
-                        // it compiles to nothing without the `tracing`
-                        // feature (backlog B18).
-                        if let Some(metrics) = &self.metrics {
-                            metrics.on_persistence_error(
-                                crate::metrics::persistence_operation::QUEUE_HANDOFF,
-                                crate::metrics::queue_handoff_error::CHANNEL_CLOSED,
-                            );
-                        }
-                    }
-                    Err(mpsc::error::SendTimeoutError::Timeout(_)) => {
-                        trace_warn!(
-                            timeout_ms =
-                                u64::try_from(self.write_timeout.as_millis()).unwrap_or(u64::MAX),
-                            "persistence channel full; background processor is not draining"
-                        );
-                        return Err(A2aError::internal(format!(
-                            "event queue: the persistence channel was still full after {:?}; \
-                             the background processor is not draining events",
-                            self.write_timeout
-                        )));
-                    }
-                }
-            }
-            // A terminal event goes out as the store ruled on it: itself when it
-            // persisted, the stored terminal status when another writer had
-            // already finished the task. No verdict by the write's deadline
-            // — or a processor that exited — broadcasts it unchanged, which is
-            // what every event did before the gate existed.
-            if let Some(ticket) = ticket
-                && let Some(verdict) = ticket
-                    .verdict_within(deadline.saturating_duration_since(tokio::time::Instant::now()))
-                    .await
-            {
-                event.event = verdict;
-            }
-
-            // Broadcast to live SSE subscribers. Zero receivers is NOT an
-            // error when a persistence channel exists: the event was already
-            // persisted above, and a client that dropped its stream can
-            // reattach later via `tasks/resubscribe` — a transport disconnect
-            // must not fail the running task. Without a persistence channel
-            // (sync mode) the sole receiver IS the request, so a closed
-            // channel means the work has nowhere to go and the executor
-            // should stop.
-            match self.tx.send(std::sync::Arc::new(Ok(event))) {
-                Ok(_) => Ok(()),
-                Err(_) if self.persistence_tx.is_some() && !collector_gone => {
-                    trace_warn!("no live event subscribers; event persisted only");
-                    Ok(())
-                }
-                Err(_) => Err(A2aError::internal("event queue: no active receivers")),
-            }
+            tokio::task::consume_budget().await;
+            outcome
         })
     }
 
@@ -1397,6 +1507,39 @@ mod tests {
             )],
             "the dropped event is counted, once, with the bounded labels"
         );
+    }
+
+    /// A write that completes at once still spends the task's cooperative
+    /// budget, so an executor writing in a tight loop yields to other tasks
+    /// on its thread. The fast path's `try_send` spends none; without the
+    /// explicit spend this loop ran to the end before the spawned task could
+    /// run, which starved stream forwarders on a current-thread runtime.
+    #[tokio::test]
+    async fn a_tight_write_loop_still_yields_to_other_tasks() {
+        let (writer, _sse, _persisted) = new_in_memory_queue_with_persistence(
+            64,
+            DEFAULT_MAX_EVENT_SIZE,
+            std::time::Duration::from_millis(50),
+        );
+        let ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        tokio::spawn({
+            let ran = Arc::clone(&ran);
+            async move { ran.store(true, std::sync::atomic::Ordering::SeqCst) }
+        });
+        let mut yielded_mid_loop = false;
+        // 600 fits the 1,024-slot persistence channel, so every write takes
+        // the fast path.
+        for _ in 0..600 {
+            writer
+                .write(make_status_event("t1", TaskState::Working))
+                .await
+                .expect("write");
+            if ran.load(std::sync::atomic::Ordering::SeqCst) {
+                yielded_mid_loop = true;
+                break;
+            }
+        }
+        assert!(yielded_mid_loop, "the loop never let the spawned task run");
     }
 
     /// A collected writer's channel closing is the blocking send ending,
