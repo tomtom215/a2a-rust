@@ -13,7 +13,12 @@ use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
 use crate::error::{ServerError, ServerResult};
-use crate::streaming::{EventQueueReader, InMemoryQueueReader};
+/// A blocking send's events, as its collector reads them: the queue's
+/// persistence channel, which never drops an event the way a lagging
+/// broadcast receiver does. See `InMemoryQueueWriter::collected`.
+pub type CollectedEvents = tokio::sync::mpsc::Receiver<
+    a2a_protocol_types::error::A2aResult<crate::streaming::StreamEvent>,
+>;
 
 use super::super::RequestHandler;
 
@@ -155,12 +160,12 @@ impl RequestHandler {
     #[cfg(test)]
     pub(crate) async fn collect_events(
         &self,
-        reader: InMemoryQueueReader,
+        events: CollectedEvents,
         task_id: TaskId,
         executor_handle: tokio::task::JoinHandle<()>,
     ) -> ServerResult<Collected> {
         self.sync_collector()
-            .collect_events(reader, task_id, executor_handle)
+            .collect_events(events, task_id, executor_handle)
             .await
     }
 }
@@ -174,7 +179,7 @@ impl SyncCollector {
     /// blocking forever (CB-3).
     pub(crate) async fn collect_events(
         &self,
-        mut reader: InMemoryQueueReader,
+        mut events: CollectedEvents,
         task_id: TaskId,
         executor_handle: tokio::task::JoinHandle<()>,
     ) -> ServerResult<Collected> {
@@ -204,7 +209,7 @@ impl SyncCollector {
                 // *closing*, and a queue that never closes (an executor that
                 // returned without a terminal state, and a `destroy` that
                 // never ran) used to hold the blocking response open forever.
-                match tokio::time::timeout(self.limits.executor_drain_timeout, reader.read()).await
+                match tokio::time::timeout(self.limits.executor_drain_timeout, events.recv()).await
                 {
                     Ok(Some(event)) => self.fold(event, &task_id, &mut state).await?,
                     Ok(None) => break,
@@ -216,7 +221,7 @@ impl SyncCollector {
             } else {
                 tokio::select! {
                     biased;
-                    event = reader.read() => {
+                    event = events.recv() => {
                         match event {
                             Some(event) => self.fold(event, &task_id, &mut state).await?,
                             None => break,
@@ -504,17 +509,6 @@ impl SyncCollector {
             Ok(_) => {
                 // Future stream response variants — continue.
             }
-            Err(ref e) if crate::streaming::event_queue::is_lag_error(e) => {
-                // The collector fell behind the broadcast ring and missed
-                // events. That is a delivery gap, not a task failure: later
-                // events (including the terminal one) still arrive and each
-                // status update supersedes the last, so keep draining rather
-                // than marking the task Failed.
-                trace_warn!(
-                    task_id = %task_id,
-                    "sync collector lagged; continuing with subsequent events"
-                );
-            }
             Err(e) => {
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
                 self.task_store.save_status_delta(last_task).await?;
@@ -666,9 +660,12 @@ impl SyncPushJob {
 mod tests {
     use std::sync::Arc;
 
+    use super::CollectedEvents;
     use super::EXECUTOR_DRAIN_TIMEOUT;
     use super::revert_artifact_append;
-    use a2a_protocol_types::events::StreamResponse;
+    use a2a_protocol_types::artifact::{Artifact, ArtifactId};
+    use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent};
+    use a2a_protocol_types::message::Part;
     use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
     use crate::agent_executor;
@@ -676,7 +673,27 @@ mod tests {
     use crate::metrics::{Metrics, push_outcome};
     use crate::store::{InMemoryTaskStore, TaskStore};
     use crate::streaming::EventQueueWriter;
-    use crate::streaming::event_queue::new_in_memory_queue;
+    use crate::streaming::event_queue::{
+        DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY, DEFAULT_WRITE_TIMEOUT,
+        new_in_memory_queue_with_persistence,
+    };
+
+    /// A writer and the channel its collector reads, as a blocking send
+    /// leases them.
+    fn collected_queue() -> (crate::streaming::InMemoryQueueWriter, CollectedEvents) {
+        collected_queue_with_capacity(DEFAULT_QUEUE_CAPACITY)
+    }
+
+    fn collected_queue_with_capacity(
+        capacity: usize,
+    ) -> (crate::streaming::InMemoryQueueWriter, CollectedEvents) {
+        let (writer, _broadcast, events) = new_in_memory_queue_with_persistence(
+            capacity,
+            DEFAULT_MAX_EVENT_SIZE,
+            DEFAULT_WRITE_TIMEOUT,
+        );
+        (writer.collected(), events)
+    }
 
     // ── helpers ───────────────────────────────────────────────────────────
 
@@ -724,7 +741,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         writer
             .write(StreamResponse::Message(Message {
                 id: MessageId::new("agent-m1"),
@@ -769,7 +786,7 @@ mod tests {
             .unwrap();
 
         // process_event is private — test it indirectly via collect_events.
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         writer
             .write(make_status_event("t1", TaskState::Working))
             .await
@@ -809,7 +826,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         // Try transitioning from Completed to Working (invalid).
         writer
             .write(make_status_event("t-invalid-trans", TaskState::Working))
@@ -853,7 +870,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         let artifact_event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
             task_id: TaskId::new("t-art"),
             context_id: a2a_protocol_types::task::ContextId::new("ctx-1"),
@@ -975,7 +992,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         writer
             .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                 task_id: TaskId::new("t-empty"),
@@ -1034,7 +1051,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         for (parts, append) in [
             (vec![Part::text("first")], None),
             (vec![Part::text("second")], Some(true)),
@@ -1089,7 +1106,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         for (parts, append, meta) in [
             (
                 vec![Part::text("first")],
@@ -1153,7 +1170,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         let events = [
             ("art-1", "one", None),
             ("art-2", "two", None),
@@ -1199,62 +1216,61 @@ mod tests {
         assert_eq!(art2.parts[1].text_content(), Some("two-appended"));
     }
 
-    /// Kills `replace match guard is_lag_error(e) with false`. A lagged
-    /// consumer is a delivery gap, not a task failure: later events still
-    /// arrive and supersede. Under the mutant the lag error falls through to
-    /// the generic error arm and the task is marked Failed.
+    /// Regression: a blocking send lost every event past the queue's
+    /// capacity that its collector had not reached yet.
     ///
-    /// The lag is real, not simulated — `collect_events` takes a concrete
-    /// `InMemoryQueueReader`, so there is no seam to inject an error through.
-    /// A capacity-1 broadcast channel written past its capacity before the
-    /// collector reads produces the genuine article.
+    /// The collector read the broadcast ring, which overwrites what a slow
+    /// reader has not taken. An executor writing a tight burst of 600
+    /// artifacts kept as few as 255 of them in the stored task, and the task
+    /// still ended `Completed`. Reading the persistence channel instead, a
+    /// burst far past the capacity — written before the collector reads at
+    /// all — arrives whole.
     #[tokio::test]
-    async fn lagged_consumer_does_not_fail_the_task() {
-        use crate::streaming::event_queue::new_in_memory_queue_with_capacity;
-
+    async fn a_burst_past_the_queue_capacity_loses_nothing() {
         let task_store = Arc::new(InMemoryTaskStore::new());
-        let task_id = TaskId::new("t-lag");
+        let task_id = TaskId::new("t-burst");
         task_store
-            .save(&make_task("t-lag", TaskState::Working))
+            .save(&make_task("t-burst", TaskState::Working))
             .await
             .unwrap();
-
         let handler = RequestHandlerBuilder::new(DummyExecutor)
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue_with_capacity(1);
-        // Overflow the ring while nothing is reading, so the first read lags.
-        for state in [TaskState::Working, TaskState::Working] {
+        // Capacity 4 makes the persistence channel 1,024 deep; 600 artifacts
+        // overflow the old ring 150 times over and fit the channel.
+        let (writer, events) = collected_queue_with_capacity(4);
+        for i in 0..600 {
             writer
-                .write(make_status_event("t-lag", state))
+                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                    task_id: task_id.clone(),
+                    context_id: ContextId::new("ctx-1"),
+                    artifact: Artifact::new(
+                        ArtifactId::new(format!("a{i}")),
+                        vec![Part::text("x")],
+                    ),
+                    append: None,
+                    last_chunk: None,
+                    metadata: None,
+                }))
                 .await
                 .unwrap();
         }
-        // Then a terminal event, which must still be honoured.
         writer
-            .write(make_status_event("t-lag", TaskState::Completed))
+            .write(make_status_event("t-burst", TaskState::Completed))
             .await
             .unwrap();
         drop(writer);
 
         let collected = handler
-            .collect_events(reader, task_id.clone(), tokio::spawn(async {}))
+            .collect_events(events, task_id.clone(), tokio::spawn(async {}))
             .await
-            .expect("a lagged stream must not abort collection");
-
-        assert_eq!(
-            collected.task.status.state,
-            TaskState::Completed,
-            "lag is a delivery gap; the terminal event still decides the state"
-        );
+            .expect("collection succeeds");
+        assert_eq!(collected.task.status.state, TaskState::Completed);
+        assert_eq!(collected.task.artifacts.as_ref().map_or(0, Vec::len), 600);
         let stored = task_store.get(&task_id).await.unwrap().unwrap();
-        assert_ne!(
-            stored.status.state,
-            TaskState::Failed,
-            "a lagged consumer must never mark the task Failed"
-        );
+        assert_eq!(stored.artifacts.as_ref().map_or(0, Vec::len), 600);
     }
 
     // ── process_event: task snapshot ────────────────────────────────────
@@ -1275,7 +1291,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         let replacement = make_task("t-snap", TaskState::Completed);
         writer
             .write(StreamResponse::Task(replacement))
@@ -1312,7 +1328,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         let msg_event = StreamResponse::Message(Message {
             id: MessageId::new("m1"),
             role: MessageRole::Agent,
@@ -1356,13 +1372,11 @@ mod tests {
             .build()
             .unwrap();
 
-        // We need to send an Err through the broadcast channel directly.
-        let (tx, rx) = tokio::sync::broadcast::channel(8);
-        let reader = crate::streaming::event_queue::InMemoryQueueReader::new(rx);
+        // We need to send an Err through the collector's channel directly.
+        let (tx, reader) = tokio::sync::mpsc::channel(8);
 
         let err = A2aError::internal("executor failure");
-        tx.send(std::sync::Arc::new(Err(err)))
-            .expect("send should succeed");
+        tx.send(Err(err)).await.expect("send should succeed");
         drop(tx);
 
         let executor_handle = tokio::spawn(async {});
@@ -1439,7 +1453,7 @@ mod tests {
         };
         handler.push_config_store.set(config).await.unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         writer
             .write(make_status_event("t-push", TaskState::Working))
             .await
@@ -1490,7 +1504,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
 
         // Spawn an executor that writes events then completes.
         let writer_clone = writer.clone();
@@ -1564,7 +1578,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         // The executor reports progress but never a terminal state, and the
         // original writer is kept alive for the whole test so the queue never
         // closes — the shape that used to wait forever.
@@ -1778,7 +1792,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
 
         // Spawn an executor that panics after a brief delay.
         // The writer is NOT moved into the task, so the queue stays open.
@@ -1830,7 +1844,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
 
         // Write two artifacts; only the first should be kept.
         for i in 0..2 {
@@ -1922,7 +1936,7 @@ mod tests {
         };
         handler.push_config_store.set(config).await.unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         writer
             .write(make_status_event("t-push-fail", TaskState::Working))
             .await
@@ -2005,7 +2019,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         writer
             .write(make_status_event("t-hang", TaskState::Working))
             .await
@@ -2047,7 +2061,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
 
         // Write a sequence of events, then close.
         writer
@@ -2089,7 +2103,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         writer
             .write(make_status_event("t-stale", TaskState::Completed))
             .await
@@ -2126,7 +2140,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, reader) = collected_queue();
         writer
             .write(make_status_event("t-fresh", TaskState::Completed))
             .await

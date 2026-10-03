@@ -152,9 +152,20 @@ impl RequestHandler {
         let Started {
             task,
             reader,
+            persistence_rx,
             executor_handle,
             ..
         } = started;
+        // The collector reads the persistence channel, which makes a slow
+        // collector hold the executor back instead of losing its events; the
+        // broadcast receiver is for nothing here, and dropping it leaves the
+        // ring to live subscribers.
+        drop(reader);
+        let Some(events) = persistence_rx else {
+            return Err(crate::error::ServerError::Internal(
+                "a blocking send was leased without its collector channel".to_owned(),
+            ));
+        };
         // On a task of its own, and awaited: if this request's client goes
         // away, the request future is dropped but the collection — the only
         // thing persisting a blocking send's events — runs on to the end
@@ -169,7 +180,7 @@ impl RequestHandler {
             .spawn(crate::rpc_span::in_current_span(
                 crate::store::tenant::TenantContext::scope(tenant, async move {
                     collector
-                        .collect_events(reader, task.id, executor_handle)
+                        .collect_events(events, task.id, executor_handle)
                         .await
                 }),
             ));

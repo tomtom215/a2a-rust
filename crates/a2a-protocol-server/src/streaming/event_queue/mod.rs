@@ -20,9 +20,9 @@ mod status_stamp;
 pub(crate) mod terminal_gate;
 
 pub use in_memory::{InMemoryQueueReader, InMemoryQueueWriter};
-pub(crate) use in_memory::{ReattachFn, Reattached, carries_terminal_state, is_lag_error};
+pub(crate) use in_memory::{ReattachFn, Reattached, carries_terminal_state};
 pub use manager::EventQueueManager;
-pub(crate) use manager::QueueLease;
+pub(crate) use manager::{QueueConsumer, QueueLease};
 
 use std::future::Future;
 use std::pin::Pin;

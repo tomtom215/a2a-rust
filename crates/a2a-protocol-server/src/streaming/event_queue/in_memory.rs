@@ -103,6 +103,10 @@ pub struct InMemoryQueueWriter {
     /// on it. `None` unless the send path enabled it; see
     /// [`TerminalGate`](super::terminal_gate::TerminalGate).
     terminal_gate: Option<Arc<super::terminal_gate::TerminalGate>>,
+    /// The persistence channel is read by a blocking send's collector, which
+    /// *is* the request: its closing is the send ending, not a processor
+    /// lost. See [`collected`](Self::collected).
+    collected: bool,
 }
 
 impl std::fmt::Debug for InMemoryQueueWriter {
@@ -131,6 +135,7 @@ impl InMemoryQueueWriter {
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
             terminal_gate: None,
+            collected: false,
         }
     }
 
@@ -149,6 +154,7 @@ impl InMemoryQueueWriter {
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
             terminal_gate: None,
+            collected: false,
         }
     }
 
@@ -209,6 +215,26 @@ impl InMemoryQueueWriter {
         if self.persistence_tx.is_some() {
             self.terminal_gate = Some(Arc::new(super::terminal_gate::TerminalGate::default()));
         }
+        self
+    }
+
+    /// Marks the persistence channel as read by a blocking send's collector.
+    ///
+    /// The collector reads the bounded `mpsc` rather than a broadcast
+    /// receiver because a broadcast ring overwrites what a slow reader has
+    /// not reached: an executor writing a burst of more than the queue's
+    /// capacity faster than the collector stored it lost the overflow from
+    /// the task's record, which still ended `Completed`. The `mpsc` makes the
+    /// writer wait instead (bounded by `write_timeout`).
+    ///
+    /// Once the collector has its answer it stops reading and the channel
+    /// closes. For this writer that is the send ending: a later write is not
+    /// a persistence failure, and — exactly as when the collector read the
+    /// broadcast channel — it fails with "no active receivers" unless a
+    /// live subscriber took it.
+    #[must_use]
+    pub(crate) const fn collected(mut self) -> Self {
+        self.collected = true;
         self
     }
 
@@ -314,12 +340,19 @@ impl EventQueueWriter for InMemoryQueueWriter {
             // the full timeout let a write take twice it.
             let deadline = tokio::time::Instant::now() + self.write_timeout;
 
+            // Set when a collected writer's collector has stopped reading.
+            let mut collector_gone = false;
             if let Some(ref persistence_tx) = self.persistence_tx {
                 match persistence_tx
                     .send_timeout(Ok(event.clone()), self.write_timeout)
                     .await
                 {
                     Ok(()) => {}
+                    Err(mpsc::error::SendTimeoutError::Closed(_)) if self.collected => {
+                        // The blocking send has answered; see `collected`.
+                        ticket = None;
+                        collector_gone = true;
+                    }
                     Err(mpsc::error::SendTimeoutError::Closed(_)) => {
                         // Nobody is left to rule on it.
                         ticket = None;
@@ -372,7 +405,7 @@ impl EventQueueWriter for InMemoryQueueWriter {
             // should stop.
             match self.tx.send(std::sync::Arc::new(Ok(event))) {
                 Ok(_) => Ok(()),
-                Err(_) if self.persistence_tx.is_some() => {
+                Err(_) if self.persistence_tx.is_some() && !collector_gone => {
                     trace_warn!("no live event subscribers; event persisted only");
                     Ok(())
                 }
@@ -580,14 +613,12 @@ impl InMemoryQueueReader {
     }
 }
 
-/// Marker key set in [`A2aError::data`] on the error a reader yields after
-/// falling behind the broadcast channel (events were dropped for THIS
-/// consumer only). Streaming bindings forward the error to the client — an
-/// explicit truncation signal beats silently skipping events — while the
-/// in-process sync collector recognizes the marker via [`is_lag_error`] and
-/// keeps draining (the store, fed by the lossless persistence channel or the
-/// collector's own writes, remains authoritative).
-/// Builds the consumer-lag stream error.
+/// Builds the consumer-lag stream error: what a reader yields after falling
+/// behind the broadcast channel (events were dropped for THIS consumer
+/// only). Streaming bindings forward it to the client — an explicit
+/// truncation signal beats silently skipping events. Nothing that persists a
+/// task reads the broadcast channel; both the background processor and the
+/// sync collector read the lossless persistence channel.
 ///
 /// Delegates to [`a2a_protocol_types::error::A2aError::stream_lagged`]. The
 /// marker string and the message used to be duplicated here; they now have a
@@ -597,13 +628,6 @@ impl InMemoryQueueReader {
 /// this crate had to match the raw JSON key by hand.
 fn lag_error(dropped: u64) -> a2a_protocol_types::error::A2aError {
     a2a_protocol_types::error::A2aError::stream_lagged(dropped)
-}
-
-/// Returns `true` when `err` is the consumer-lag error produced by
-/// [`InMemoryQueueReader::read`] (as opposed to a task-execution failure).
-#[allow(clippy::redundant_pub_crate)] // Re-exported crate-wide via event_queue/mod.rs.
-pub(crate) fn is_lag_error(err: &a2a_protocol_types::error::A2aError) -> bool {
-    err.is_stream_lagged()
 }
 
 impl EventQueueReader for InMemoryQueueReader {
@@ -1372,6 +1396,55 @@ mod tests {
                 crate::metrics::queue_handoff_error::CHANNEL_CLOSED.to_owned()
             )],
             "the dropped event is counted, once, with the bounded labels"
+        );
+    }
+
+    /// A collected writer's channel closing is the blocking send ending,
+    /// not a lost processor: no persistence error is counted, and with no
+    /// live subscriber the write fails as it did when the collector read the
+    /// broadcast channel, so the executor learns its output has nowhere to
+    /// go. With a subscriber, the subscriber takes it.
+    #[tokio::test]
+    async fn a_collected_writer_treats_its_collectors_end_as_the_sends_end() {
+        #[derive(Default)]
+        struct Seen(std::sync::Mutex<usize>);
+        impl crate::metrics::Metrics for Seen {
+            fn on_persistence_error(&self, _operation: &str, _error_kind: &str) {
+                *self.0.lock().unwrap() += 1;
+            }
+        }
+        let seen = Arc::new(Seen::default());
+        let (writer, sse, collector) = new_in_memory_queue_with_persistence(
+            16,
+            DEFAULT_MAX_EVENT_SIZE,
+            std::time::Duration::from_millis(50),
+        );
+        let writer = writer
+            .collected()
+            .with_metrics(Arc::clone(&seen) as Arc<dyn crate::metrics::Metrics>);
+        drop(sse);
+
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .expect("the collector takes the event; no subscriber is needed");
+
+        drop(collector);
+        let subscriber = writer.raw_subscribe();
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .expect("a live subscriber still takes the event");
+        drop(subscriber);
+        let err = writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .expect_err("with neither collector nor subscriber the write has nowhere to go");
+        assert!(err.message.contains("no active receivers"), "got {err:?}");
+        assert_eq!(
+            *seen.0.lock().unwrap(),
+            0,
+            "the send ending is not a persistence error"
         );
     }
 

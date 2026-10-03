@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A blocking `SendMessage` could lose events.** Its collector read the
+  task's broadcast queue, which overwrites what a slow reader has not
+  reached. An executor writing more than the queue's capacity (256) faster
+  than the collector stored it lost the overflow from the stored task,
+  which still ended `Completed`: 20 blocking sends of a 600-artifact burst
+  kept between 255 and 600. The collector now reads the bounded
+  persistence channel the background processor already used, so a slow
+  collector makes the executor wait (bounded by the write timeout) instead
+  of dropping events. Measured after: 600 of 600 in 60 of 60 sends.
+
 ### Performance
 
 - **A task's event queue no longer pre-allocates ~99 KB.** The broadcast
