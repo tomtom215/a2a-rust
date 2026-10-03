@@ -12,6 +12,14 @@ are not re-examined.
 
 ## Read this first
 
+**Note added 2026-10-03.** The speed figures below (1.17–1.62×) were measured
+against a2a-rust 0.14.1 and predate the throughput fixes that followed this
+report. Re-measured with both servers on jemalloc, a2a-rs's lead is now 1.13×
+on one core (was 1.65×), 1.09× on two cores unary (was 1.15×) and 1.21× on two
+cores streaming. Those runs, their method and the attribution of what remains
+are in G4 of [`swarm-orchestration.md`](swarm-orchestration.md). The rest of
+this report is unchanged.
+
 **Disclosure.** An AI assistant wrote this report and the harness behind it,
 working inside the a2a-rust repository at its maintainer's request. That is a
 source of bias toward a2a-rust. The mitigations: every comparison runs the same
