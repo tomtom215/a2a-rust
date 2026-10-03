@@ -882,22 +882,29 @@ scratchpad; the design (a deferred executor whose `Drop` spawns it, a
 `catch_unwind` poll wrapper, the result returned over a oneshot before the
 executor finishes) is recoverable from this paragraph.
 
-**Open bug, found 2026-10-03, not fixed: a blocking send can drop events.**
-The sync collector reads the task's 256-slot broadcast channel. An executor
-that writes more than ~255 events faster than the collector folds them
-(each fold is a store write) makes the reader lag; the lagged events are
-skipped with a `trace_warn!` and are missing from the stored task, which
-still ends `Completed`. Measured with 20 blocking sends of a tight
-600-artifact burst on a 4-worker runtime: kept between 255 and 600
-artifacts. The background path does not have this bug — it reads a
-dedicated `mpsc` persistence channel sized 16× the queue. The likely fix is
-the same for blocking sends: give the collector the persistence channel
-rather than a broadcast receiver.
+**Fixed 2026-10-03 (`ce9c533`): a blocking send could drop events.** Its
+collector read the 256-slot broadcast ring; a burst faster than the
+collector stored it lost the overflow (20 sends of 600 artifacts kept 255
+to 600). It now reads the persistence channel. After: 600 of 600 in 60 of
+60 sends.
 
-**What the next session should do first.** Fix that bug, with the burst as
-its regression test (20 sends of 600 artifacts must each keep 600). Then
-G1-A (the client-side delegation handle) is the first swarm enabler;
-`examples/swarm`'s CI gate already proves the behaviour it has to keep.
+**Throughput, where it stands.** `996a736` (synchronous writes, shared
+`Arc` on the persistence channel): +4.9% on one core, nothing measurable
+on two. G4 in `swarm-orchestration.md` has the one-core attribution: of
+a2a-rust's 74–80 µs user CPU per unary request against a2a-rs's 37–40,
+about 16 µs is evicting from the bounded default store, which a2a-rs does
+not do. Method notes that cost this session time: measure on one pinned
+core (`taskset -c 0`; tokio sizes its pool from the affinity mask), read
+user/system time from `/proc/<pid>/stat`, and do not trust cachegrind for
+time — it serialises threads and prices every instruction alike.
+
+**What the next session should do first.** Either shrink the remaining
+large allocations (hyper's 13 KB box of the dispatch future — by holding
+less across `.await`, not by boxing, which was tried and measured no
+faster), or cut what one eviction frees (~31 allocations per stored
+task). Then G1-A (the client-side delegation handle) is the first swarm
+enabler; `examples/swarm`'s CI gate already proves the behaviour it has to
+keep.
 
 **Environment notes that will cost the next session time.**
 
