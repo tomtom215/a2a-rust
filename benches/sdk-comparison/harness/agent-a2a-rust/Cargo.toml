@@ -13,6 +13,10 @@ publish = false
 
 [features]
 default = []
+# Counting global allocator: prints cumulative allocs/bytes to stderr every 500 ms.
+alloc-count = []
+# dhat heap profile; set RUN_SECS so the process exits and writes dhat-heap.json.
+dhat-heap = ["dep:dhat"]
 llm = ["dep:reqwest"]
 sqlite = ["a2a-protocol-sdk/sqlite"]
 
@@ -22,6 +26,10 @@ tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 serde_json = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream"], optional = true }
+
+[dependencies.dhat]
+version = "=0.3.3"
+optional = true
 
 [profile.release]
 debug = false

@@ -16,6 +16,29 @@ use a2a_protocol_sdk::prelude::*;
 #[path = "../../shared/llm.rs"]
 mod llm;
 
+#[cfg(all(feature = "dhat-heap", feature = "alloc-count"))]
+compile_error!("`dhat-heap` and `alloc-count` each install a global allocator; enable one");
+
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static DHAT: dhat::Alloc = dhat::Alloc;
+
+/// Runs `fut` to completion, or for `RUN_SECS` seconds when that is set, so a
+/// profiler that reports on exit (dhat, heaptrack) gets a clean exit.
+async fn run_bounded<F: std::future::Future>(fut: F) {
+    match std::env::var("RUN_SECS").ok().and_then(|s| s.parse::<u64>().ok()) {
+        Some(secs) => { let _ = tokio::time::timeout(std::time::Duration::from_secs(secs), fut).await; }
+        None => { fut.await; }
+    }
+}
+
+#[cfg(feature = "alloc-count")]
+#[path = "../../shared/alloc_count.rs"]
+mod alloc_count;
+#[cfg(feature = "alloc-count")]
+#[global_allocator]
+static GLOBAL: alloc_count::Counting = alloc_count::Counting;
+
 struct BenchExecutor {
     #[cfg(feature = "llm")]
     http: reqwest::Client,
@@ -61,6 +84,10 @@ impl AgentExecutor for BenchExecutor {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    #[cfg(feature = "dhat-heap")]
+    let _dhat = dhat::Profiler::new_heap();
+    #[cfg(feature = "alloc-count")]
+    alloc_count::spawn_reporter();
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(3002);
     let rest_port = port + 1000;
     let url = format!("http://127.0.0.1:{port}");
@@ -102,5 +129,7 @@ async fn main() -> std::io::Result<()> {
     eprintln!("agent-a2a-rust listening on {url} (REST on {rest_port})");
     let rest = tokio::spawn(serve(("127.0.0.1", rest_port), RestDispatcher::new(handler.clone())));
     let rpc = serve(("127.0.0.1", port), JsonRpcDispatcher::new(handler));
-    tokio::select! { r = rpc => r, r = rest => r.expect("join") }
+    let mut out = Ok(());
+    run_bounded(async { out = tokio::select! { r = rpc => r, r = rest => r.expect("join") } }).await;
+    out
 }
