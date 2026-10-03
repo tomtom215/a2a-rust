@@ -401,6 +401,8 @@ LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./my-agent
 
 The SDK does not choose an allocator for you; a library that set
 `#[global_allocator]` would override the one your application chose.
+`examples/deploy-agent` sets jemalloc in its `main.rs` and is the pattern
+to copy.
 
 ## Deployment Checklist
 

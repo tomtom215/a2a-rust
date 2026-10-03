@@ -902,9 +902,8 @@ time — it serialises threads and prices every instruction alike.
 Under jemalloc eviction costs nothing measurable; the ~16 µs it seemed to
 cost is glibc in a bounded heap (G4). The production recommendation is
 jemalloc or mimalloc, now in `book/src/deployment/production.md`: +65%
-unary throughput on two cores. Adding it to `examples/deploy-agent` (a
-`#[global_allocator]` dependency, or `libjemalloc2` + `LD_PRELOAD` in its
-Dockerfile) is a supply-chain decision left to the maintainer.
+unary throughput on two cores. `examples/deploy-agent` now runs on it via
+`tikv-jemallocator` (maintainer's choice, 2026-10-03; not on MSVC).
 
 **What the next session should do first.** On equal allocators a2a-rs
 still leads 1.15×. The remaining ~17 µs per request on one core is not yet
