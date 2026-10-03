@@ -92,7 +92,31 @@ about 31% of samples and kernel scheduling and wakeups for about 21%
 (`benches/sdk-comparison/results/perf/profile_patched_top.txt`). What is
 left is allocation volume and cross-task handoffs, spread across the
 request path, not one fixable hotspot (CONJECTURED from the profile shape;
-not attributed further). This
+not attributed further).
+
+Attributed further on 2026-10-03, after `1c2ca83` (echo harness, 2 server
+CPUs, 16 connections):
+
+| Per request | a2a-rust | a2a-rs |
+|---|---|---|
+| CPU time (`/proc` utime+stime, 4 interleaved runs, median) | 215 µs unary, 267 µs streaming | 178 µs, 234 µs |
+| Instructions (cachegrind, 12 s minus 4 s run) | 413,537 / 477,857 | 228,969 / 260,384 |
+| … of which `memcpy` | 216,935 / 243,451 | 34,104 / 33,597 |
+| Instructions excluding `memcpy`, unary | 196,602 | 194,865 |
+| `memmove` share of perf samples, unary | 6.6% | 7.0% |
+
+The 1.8× instruction gap is almost entirely bulk copying. cachegrind counts
+each byte iteration of `rep movsb`, so it inflates copies; on the real CPU
+the copy costs both SDKs the same share (VALIDATED by the perf row). The
+copies come mostly from futures moved by value: `on_send_message`,
+`rpc_span::Call`, and the spawned executor task are the top callers. Other
+work is equal to within 1% in instruction count. So the remaining ~16% CPU
+gap is not in instructions executed. It is in kernel time (63 vs 57
+µs/request) and allocator time, which the profile buckets put at 68 vs 57
+µs/request including memmove (CONJECTURED: cache and scheduler effects of
+a second spawned task per request; not isolated). Shrinking the moved
+futures would cut bytes copied ~6×, but on this evidence it would not close
+the gap. This
 matters for a swarm only once a node is CPU-bound on protocol rather than
 on model inference. In the live-model run the model was the bottleneck by
 three orders of magnitude: about 2 jobs/s against 3,900 jobs/s with no
