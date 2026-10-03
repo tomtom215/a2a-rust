@@ -108,6 +108,15 @@ async fn main() -> std::io::Result<()> {
         cfg.eviction_interval = 0;
         builder = builder.with_task_store_config(cfg);
     }
+    if std::env::var("UNBOUNDED_STORE").as_deref() == Ok("1") {
+        // Attribution probe only: no capacity cap and no TTL, so nothing is
+        // ever evicted — what a2a-rs's store does. Memory grows without bound.
+        eprintln!("task store unbounded (max_capacity = None, task_ttl = None)");
+        let mut cfg = a2a_protocol_sdk::server::TaskStoreConfig::default();
+        cfg.max_capacity = None;
+        cfg.task_ttl = None;
+        builder = builder.with_task_store_config(cfg);
+    }
     if std::env::var("TENANT_STORE").as_deref() == Ok("1") {
         eprintln!("using TenantAwareInMemoryTaskStore + TenantAwareInMemoryPushConfigStore");
         builder = builder

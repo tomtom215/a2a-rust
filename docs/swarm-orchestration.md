@@ -118,9 +118,47 @@ leading suspect. Removing it (the executor run inside the collecting task)
 was measured on 2026-10-03 and did not close the gap: 180.0 vs 185.6
 µs/request with overlapping ranges, against a2a-rs's 153.0 on the same runs
 (`docs/handoff.md` has the details, and why it was not landed). The cause is
-still unattributed. Shrinking the moved
-futures would cut bytes copied ~6×, but on this evidence it would not close
-the gap. This
+still unattributed at that point.
+
+**Attributed, 2026-10-03, second pass.** The earlier passes measured with
+two server cores and with cachegrind, and both hid the cause. On two cores
+both SDKs pay about 115 µs per request of cross-core overhead (a2a-rs 47 →
+161 µs, a2a-rust 100 → 217 µs), which buries a few µs of difference in ±3%
+noise. cachegrind serialises threads and counts a `lock`-prefixed or
+cache-missing instruction as one, so equal instruction counts said nothing
+about time. Pinned to **one core**, with `/proc` user and system time per
+request and perf self time, the gap is plain:
+
+| Per unary request, one core | a2a-rust | a2a-rs |
+|---|---|---|
+| user CPU (3 runs) | 74–80 µs | 37–40 µs |
+| glibc allocator, perf self time | 33.2 µs | 12.6 µs |
+| allocations ≥ 1 KB (dhat) | 11.9 | 5.9 |
+| system calls (strace -c) | 4.4 | 5.5 |
+
+Three causes, in order of size:
+
+1. **Bounded memory: ~16 µs.** The default store caps at 10,000 tasks, so
+   once full every new task evicts one written ~10,000 requests earlier —
+   about 31 cache-cold allocations to free. With the cap lifted
+   (`UNBOUNDED_STORE=1` in the harness, which is what a2a-rs's store does),
+   user CPU is 58–64 µs and throughput 12.0–13.3k against 10.2–10.8k rps.
+   This is the price of a guarantee a2a-rs does not make; its memory grows
+   without limit (§ R4 of the comparison).
+2. **Large allocations: ~4 µs recovered so far.** glibc serves blocks above
+   ~1 KB outside its thread cache. `996a736` took a2a-rust from 11.9 to 7.9
+   such blocks per send: +4.9% throughput on one core, nothing measurable on
+   two. What remains: hyper's 13 KB box of the dispatch future, the 8 KB
+   broadcast ring, the 6.6 KB executor task, the 3.3 KB collector task.
+3. **The rest, ~17 µs** with the cap lifted — not yet attributed function by
+   function.
+
+Boxing the large futures (tried, not landed) cut copies and simulated cache
+misses to a2a-rs's level but replaced each copy with a large allocation; it
+measured no faster. The futures are large because of what they hold across
+`.await` — `MessageSendParams` (448 B) twice in each of three layers, and
+coroutine layout padding — so shrinking them, not boxing them, is the
+remaining lever for (2). This
 matters for a swarm only once a node is CPU-bound on protocol rather than
 on model inference. In the live-model run the model was the bottleneck by
 three orders of magnitude: about 2 jobs/s against 3,900 jobs/s with no
