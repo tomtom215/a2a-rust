@@ -449,3 +449,18 @@ async fn a_batch_after_leading_whitespace_is_still_a_batch() {
     let v: serde_json::Value = serde_json::from_str(&resp).expect("a batch response");
     assert_eq!(v[0]["error"]["code"], -32001, "{resp}");
 }
+
+/// The derived `Deserialize` for `JsonRpcRequest` also accepts a struct
+/// written as an array of its fields in order, so this body parses as one
+/// request if it reaches the direct parse. It is a batch of four items that
+/// are not Request objects, and answering it as one shows the direct parse
+/// never saw it.
+#[tokio::test]
+async fn a_positional_array_is_a_batch_and_not_one_request() {
+    let addr = start_jsonrpc_server().await;
+    let (_, resp) = post_jsonrpc(addr, r#"["2.0",1,"GetTask",{"id":"absent"}]"#).await;
+    let v: serde_json::Value = serde_json::from_str(&resp).expect("a batch response");
+    let items = v.as_array().expect("a batch response is an array");
+    assert_eq!(items.len(), 4, "{resp}");
+    assert!(items.iter().all(|i| i["error"]["code"] == -32600), "{resp}");
+}
