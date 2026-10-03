@@ -416,3 +416,36 @@ async fn a_body_that_is_not_json_is_still_a_parse_error() {
     let (_, resp) = post_jsonrpc(addr, r#"{"jsonrpc":"2.0","#).await;
     assert_eq!(error_code(&resp), -32700, "{resp}");
 }
+
+// A single request parses straight into `JsonRpcRequest`, and only a body
+// that fails that is parsed the old way, through a `Value`. These pin the
+// two places the paths could disagree.
+
+/// A duplicated key fails the direct parse ("duplicate field") but the
+/// `Value` path accepts it with the last value winning, as it always has.
+/// Answering `GetTask`'s not-found (-32001) and not method-not-found
+/// (-32601) shows the second `method` was the one dispatched.
+#[tokio::test]
+async fn a_duplicated_key_is_still_accepted_with_the_last_value_winning() {
+    let addr = start_jsonrpc_server().await;
+    let (_, resp) = post_jsonrpc(
+        addr,
+        r#"{"jsonrpc":"2.0","id":1,"method":"NoSuchMethod","method":"GetTask","params":{"id":"absent"}}"#,
+    )
+    .await;
+    assert_eq!(error_code(&resp), -32001, "{resp}");
+}
+
+/// Batch detection reads the first non-whitespace byte, so leading
+/// whitespace still makes an array a batch.
+#[tokio::test]
+async fn a_batch_after_leading_whitespace_is_still_a_batch() {
+    let addr = start_jsonrpc_server().await;
+    let (_, resp) = post_jsonrpc(
+        addr,
+        " \n\t[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"GetTask\",\"params\":{\"id\":\"absent\"}}]",
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&resp).expect("a batch response");
+    assert_eq!(v[0]["error"]["code"], -32001, "{resp}");
+}

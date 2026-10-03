@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **A JSON-RPC request is parsed once, not three times.** The body was
+  parsed into a `serde_json::Value`, converted to `JsonRpcRequest`, and
+  its `params` cloned and converted again. A single request now parses
+  straight into `JsonRpcRequest`, and `params` deserializes from the
+  borrowed value. A body that fails the direct parse takes the old path,
+  so error codes and messages are unchanged and a duplicated key is still
+  accepted (last value wins). Echo benchmark, one worker, jemalloc, 3
+  interleaved runs: 19,434–19,782 → 21,033–21,615 requests/s.
+
 - **On a single-worker runtime a blocking `SendMessage` runs its executor
   in the task that collects its events.** Two tasks on one worker cannot
   run in parallel, so the split cost only handoffs. Echo benchmark, unary,
