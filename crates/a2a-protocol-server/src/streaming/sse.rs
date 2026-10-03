@@ -744,7 +744,8 @@ mod tests {
         let reader = crate::streaming::event_queue::InMemoryQueueReader::new(rx);
 
         let err = A2aError::internal("something broke");
-        tx.send(Err(err)).expect("send should succeed");
+        tx.send(std::sync::Arc::new(Err(err)))
+            .expect("send should succeed");
         drop(tx);
 
         let mut response = build_sse_response(reader, None, None, Some(Some(serde_json::json!(1))));

@@ -33,6 +33,25 @@ use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::StreamResponse;
 use tokio::sync::{broadcast, mpsc};
 
+/// What the broadcast channel carries: an event behind an `Arc`.
+///
+/// `tokio::sync::broadcast` allocates and initialises every slot when the
+/// channel is created, and one channel is created per task. Carried by value
+/// the item is 360 bytes, so the default 256-slot queue cost about 99 KB per
+/// task before a single event was sent — 56% of all bytes allocated per
+/// unary `SendMessage` (dhat, 2026-10-02). Behind an `Arc` a slot is a
+/// pointer. It also turns fan-out to N subscribers from N deep clones into N
+/// reference-count bumps, and [`unshare`] hands the last reader the event
+/// itself with no clone at all.
+pub(crate) type Shared = std::sync::Arc<A2aResult<StreamEvent>>;
+
+/// Takes the event out of `shared`: moved when this is the only reference
+/// left — the common case, since the channel releases a slot's copy once
+/// every receiver has read it — and cloned otherwise.
+pub(crate) fn unshare(shared: Shared) -> A2aResult<StreamEvent> {
+    std::sync::Arc::try_unwrap(shared).unwrap_or_else(|still_shared| (*still_shared).clone())
+}
+
 /// Default channel capacity for event queues.
 ///
 /// Set to 256 to avoid the 12× per-event cost inflection that occurs when the

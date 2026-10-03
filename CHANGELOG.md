@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **A task's event queue no longer pre-allocates ~99 KB.** The broadcast
+  channel carries events behind an `Arc` instead of by value (360 bytes per
+  slot × 256 slots, allocated per task). Bytes allocated per unary
+  `SendMessage` on the echo harness fell from 173,278 to 82,844 (counting
+  allocator, 16 connections). Instructions per request changed by under 1%
+  (cachegrind), so this is a memory win, not a throughput claim.
+- The blocking-send collector no longer clones every event into a push
+  buffer when no push sender is configured, and saves artifact updates as
+  deltas (`save_artifact_delta`) as the background processor already did,
+  instead of re-saving the whole task per chunk.
+
 ### Security
 
 - **A server whose stores cannot isolate tenants now refuses requests that

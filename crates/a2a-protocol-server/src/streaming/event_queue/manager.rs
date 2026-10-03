@@ -387,7 +387,7 @@ impl EventQueueManager {
     pub(crate) async fn raw_subscribe(
         &self,
         task_id: &TaskId,
-    ) -> Option<tokio::sync::broadcast::Receiver<A2aResult<StreamEvent>>> {
+    ) -> Option<tokio::sync::broadcast::Receiver<super::Shared>> {
         let map = self.writers.read().await;
         map.get(task_id).map(|writer| writer.raw_subscribe())
     }

@@ -66,6 +66,17 @@ struct CollectState {
     cancel: Option<tokio_util::sync::CancellationToken>,
 }
 
+impl CollectState {
+    /// Buffers `event` for webhook delivery — only when a push sender exists.
+    /// Without one, `spawn_push_delivery` discards the buffer unread, so
+    /// cloning every event into it was a deep copy per event for nothing.
+    fn record_for_push(&mut self, has_sender: bool, event: &StreamResponse) {
+        if has_sender {
+            self.push_events.push(event.clone());
+        }
+    }
+}
+
 /// Restores an artifact to its pre-append state after a failed save.
 ///
 /// Free function rather than inline in `process_event`, so the lookup it
@@ -369,7 +380,7 @@ impl SyncCollector {
                 };
                 self.task_store.save_status_delta(last_task).await?;
                 state.saw_task_shaped_event = true;
-                state.push_events.push(stream_resp.clone());
+                state.record_for_push(self.push_sender.is_some(), stream_resp);
             }
             Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
                 // Validate artifact has at least one part per A2A spec (unless appending).
@@ -387,9 +398,9 @@ impl SyncCollector {
                 // When append=true, merge parts and metadata into the existing
                 // artifact with the same ID (Python #735, Java #615).
                 if update.append == Some(true)
-                    && let Some(existing) =
-                        artifacts.iter_mut().find(|a| a.id == update.artifact.id)
+                    && let Some(index) = artifacts.iter().position(|a| a.id == update.artifact.id)
                 {
+                    let existing = &mut artifacts[index];
                     // Bound cumulative per-artifact growth (see the matching
                     // guard in the background processor): reject an append
                     // that would push this artifact past the cap.
@@ -408,6 +419,7 @@ impl SyncCollector {
                     let prev_parts_len = existing.parts.len();
                     let prev_metadata = existing.metadata.clone();
 
+                    let appended = update.artifact.parts.len();
                     existing.parts.extend(update.artifact.parts.iter().cloned());
                     if let Some(ref new_meta) = update.artifact.metadata {
                         let meta = existing.metadata.get_or_insert_with(|| {
@@ -421,7 +433,14 @@ impl SyncCollector {
                             }
                         }
                     }
-                    if let Err(e) = self.task_store.save(last_task).await {
+                    // A delta, not `save`: `save` clones the whole task, so each
+                    // chunk of a streamed artifact cost more than the last —
+                    // the background processor has saved deltas since 0.13.
+                    let delta = crate::store::ArtifactDelta::AppendedParts {
+                        index,
+                        count: appended,
+                    };
+                    if let Err(e) = self.task_store.save_artifact_delta(last_task, delta).await {
                         revert_artifact_append(
                             last_task,
                             &update.artifact.id,
@@ -431,7 +450,7 @@ impl SyncCollector {
                         return Err(ServerError::from(e));
                     }
                     state.saw_task_shaped_event = true;
-                    state.push_events.push(stream_resp.clone());
+                    state.record_for_push(self.push_sender.is_some(), stream_resp);
                     return Ok(());
                 }
                 // Artifact ID not found — fall through to push as new.
@@ -444,9 +463,14 @@ impl SyncCollector {
                     );
                 } else {
                     artifacts.push(update.artifact.clone());
-                    self.task_store.save(last_task).await?;
+                    let delta = crate::store::ArtifactDelta::Pushed {
+                        index: artifacts.len() - 1,
+                    };
+                    self.task_store
+                        .save_artifact_delta(last_task, delta)
+                        .await?;
                     state.saw_task_shaped_event = true;
-                    state.push_events.push(stream_resp.clone());
+                    state.record_for_push(self.push_sender.is_some(), stream_resp);
                 }
             }
             Ok(StreamResponse::Task(task)) => {
@@ -1337,7 +1361,8 @@ mod tests {
         let reader = crate::streaming::event_queue::InMemoryQueueReader::new(rx);
 
         let err = A2aError::internal("executor failure");
-        tx.send(Err(err)).expect("send should succeed");
+        tx.send(std::sync::Arc::new(Err(err)))
+            .expect("send should succeed");
         drop(tx);
 
         let executor_handle = tokio::spawn(async {});

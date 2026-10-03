@@ -68,7 +68,7 @@ impl std::io::Write for CountingWriter {
 /// the writer.
 #[derive(Clone)]
 pub struct InMemoryQueueWriter {
-    tx: broadcast::Sender<A2aResult<StreamEvent>>,
+    tx: broadcast::Sender<super::Shared>,
     /// Optional dedicated channel for the background persistence processor.
     /// Unlike the broadcast channel, this mpsc channel is not affected by
     /// slow SSE consumers, so it cannot lag in the broadcast sense — a slow
@@ -119,7 +119,7 @@ impl std::fmt::Debug for InMemoryQueueWriter {
 impl InMemoryQueueWriter {
     /// Creates a new `InMemoryQueueWriter`.
     pub(super) fn new(
-        tx: broadcast::Sender<A2aResult<StreamEvent>>,
+        tx: broadcast::Sender<super::Shared>,
         max_event_size: usize,
         write_timeout: std::time::Duration,
     ) -> Self {
@@ -136,7 +136,7 @@ impl InMemoryQueueWriter {
 
     /// Creates a new `InMemoryQueueWriter` with a dedicated persistence channel.
     pub(super) fn new_with_persistence(
-        tx: broadcast::Sender<A2aResult<StreamEvent>>,
+        tx: broadcast::Sender<super::Shared>,
         persistence_tx: mpsc::Sender<A2aResult<StreamEvent>>,
         max_event_size: usize,
         write_timeout: std::time::Duration,
@@ -196,7 +196,7 @@ impl InMemoryQueueWriter {
     ///
     /// Used by [`crate::streaming::EventQueueManager::subscribe_with_snapshot`]
     /// to create a reader with a pending first event.
-    pub(crate) fn raw_subscribe(&self) -> broadcast::Receiver<A2aResult<StreamEvent>> {
+    pub(crate) fn raw_subscribe(&self) -> broadcast::Receiver<super::Shared> {
         self.tx.subscribe()
     }
 
@@ -370,7 +370,7 @@ impl EventQueueWriter for InMemoryQueueWriter {
             // (sync mode) the sole receiver IS the request, so a closed
             // channel means the work has nowhere to go and the executor
             // should stop.
-            match self.tx.send(Ok(event)) {
+            match self.tx.send(std::sync::Arc::new(Ok(event))) {
                 Ok(_) => Ok(()),
                 Err(_) if self.persistence_tx.is_some() => {
                     trace_warn!("no live event subscribers; event persisted only");
@@ -401,7 +401,7 @@ impl EventQueueWriter for InMemoryQueueWriter {
 /// broadcast events. This is used by `SubscribeToTask` to emit a `Task`
 /// snapshot as the first event without broadcasting it to all subscribers.
 pub struct InMemoryQueueReader {
-    rx: broadcast::Receiver<A2aResult<StreamEvent>>,
+    rx: broadcast::Receiver<super::Shared>,
     /// Yielded, in order, before anything from the broadcast channel.
     ///
     /// A queue rather than one slot because a resuming subscriber gets the
@@ -460,7 +460,7 @@ impl std::fmt::Debug for InMemoryQueueReader {
 #[allow(clippy::large_enum_variant)]
 pub enum Reattached {
     /// Continue on a fresh queue — the task has more turns to run.
-    Channel(broadcast::Receiver<A2aResult<StreamEvent>>),
+    Channel(broadcast::Receiver<super::Shared>),
     /// The task finished while no queue was attached. Emit this frame, then
     /// end: without it the client would see the stream close having never
     /// observed a terminal state, which is the `STREAM-SUB-002` symptom even
@@ -505,7 +505,7 @@ impl InMemoryQueueReader {
     }
 
     /// Creates a new `InMemoryQueueReader`.
-    pub(crate) fn new(rx: broadcast::Receiver<A2aResult<StreamEvent>>) -> Self {
+    pub(crate) fn new(rx: broadcast::Receiver<super::Shared>) -> Self {
         Self {
             rx,
             pending: std::collections::VecDeque::new(),
@@ -545,7 +545,7 @@ impl InMemoryQueueReader {
 
     /// Creates a reader with a snapshot event that will be yielded first.
     pub(crate) fn with_first_event(
-        rx: broadcast::Receiver<A2aResult<StreamEvent>>,
+        rx: broadcast::Receiver<super::Shared>,
         first: StreamResponse,
     ) -> Self {
         Self {
@@ -622,7 +622,8 @@ impl EventQueueReader for InMemoryQueueReader {
             }
             loop {
                 match self.rx.recv().await {
-                    Ok(event) => {
+                    Ok(shared) => {
+                        let event = super::unshare(shared);
                         if let Ok(ref ev) = event {
                             // Already delivered by the replay. The broadcast
                             // receiver is attached before the log is read, so
