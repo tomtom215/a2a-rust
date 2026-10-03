@@ -153,6 +153,17 @@ Three causes, in order of size:
 3. **The rest, ~17 µs** with the cap lifted — not yet attributed function by
    function.
 
+**Cause 1 is glibc, not eviction (measured 2026-10-03).** Under jemalloc
+the bounded and unbounded store cost the same per request (50.4–53.0 vs
+50.4–50.8 µs, one core), and cutting the log each eviction frees to one
+event (`MAX_EVENTS_PER_TASK=1`, 12 of 31 blocks gone) changed nothing under
+glibc. What costs is glibc in the fixed-size, hole-filled heap a bounded
+store keeps; its tunables do not help (`tcache_count=64`: no change). So
+the store is not redesigned. The recommendation is the allocator, now in
+the book's production chapter: on two cores jemalloc takes a2a-rust from
+7,189 to 11,862 unary requests/s at 74 MB resident. With both servers on
+jemalloc, a2a-rs leads 1.15× (13,522 vs 11,762) holding 265 MB.
+
 Boxing the large futures (tried, not landed) cut copies and simulated cache
 misses to a2a-rs's level but replaced each copy with a large allocation; it
 measured no faster. The futures are large because of what they hold across

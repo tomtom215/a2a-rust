@@ -117,6 +117,13 @@ async fn main() -> std::io::Result<()> {
         cfg.task_ttl = None;
         builder = builder.with_task_store_config(cfg);
     }
+    if let Some(max) = std::env::var("MAX_EVENTS_PER_TASK").ok().and_then(|v| v.parse::<usize>().ok()) {
+        // Attribution probe only: how much of eviction's cost is the event log.
+        eprintln!("event log bounded at {max} events per task");
+        builder = builder.with_task_store_config(
+            a2a_protocol_sdk::server::TaskStoreConfig::default().with_max_events_per_task(Some(max)),
+        );
+    }
     if std::env::var("TENANT_STORE").as_deref() == Ok("1") {
         eprintln!("using TenantAwareInMemoryTaskStore + TenantAwareInMemoryPushConfigStore");
         builder = builder

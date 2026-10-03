@@ -898,13 +898,20 @@ core (`taskset -c 0`; tokio sizes its pool from the affinity mask), read
 user/system time from `/proc/<pid>/stat`, and do not trust cachegrind for
 time — it serialises threads and prices every instruction alike.
 
-**What the next session should do first.** Either shrink the remaining
-large allocations (hyper's 13 KB box of the dispatch future — by holding
-less across `.await`, not by boxing, which was tried and measured no
-faster), or cut what one eviction frees (~31 allocations per stored
-task). Then G1-A (the client-side delegation handle) is the first swarm
-enabler; `examples/swarm`'s CI gate already proves the behaviour it has to
-keep.
+**The store cap was kept and eviction was not redesigned (2026-10-03).**
+Under jemalloc eviction costs nothing measurable; the ~16 µs it seemed to
+cost is glibc in a bounded heap (G4). The production recommendation is
+jemalloc or mimalloc, now in `book/src/deployment/production.md`: +65%
+unary throughput on two cores. Adding it to `examples/deploy-agent` (a
+`#[global_allocator]` dependency, or `libjemalloc2` + `LD_PRELOAD` in its
+Dockerfile) is a supply-chain decision left to the maintainer.
+
+**What the next session should do first.** On equal allocators a2a-rs
+still leads 1.15×. The remaining ~17 µs per request on one core is not yet
+attributed function by function; start from a one-core perf profile of
+both on jemalloc. Then G1-A (the client-side delegation handle) is the
+first swarm enabler; `examples/swarm`'s CI gate already proves the
+behaviour it has to keep.
 
 **Environment notes that will cost the next session time.**
 
