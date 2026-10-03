@@ -617,11 +617,14 @@ impl WebSocketDispatcher {
                 return None;
             }
 
+            // Not `idle_for < half`: at equality that comparison chose between
+            // a zero wait and pinging now, which are the same thing, so its
+            // `<=` mutant could never be caught. Testing the remaining wait
+            // for zero has no such boundary.
+            let until_half = half.saturating_sub(idle_for);
             let wait = if pinged {
                 idle.saturating_sub(idle_for)
-            } else if idle_for < half {
-                half.saturating_sub(idle_for)
-            } else {
+            } else if until_half.is_zero() {
                 // Half the budget has passed with no traffic either way: send
                 // the keepalive.
                 //
@@ -653,6 +656,8 @@ impl WebSocketDispatcher {
                     continue;
                 }
                 retry.min(idle.saturating_sub(idle_for))
+            } else {
+                until_half
             };
 
             // A frame — any frame, the peer's Pong included — is traffic, and
