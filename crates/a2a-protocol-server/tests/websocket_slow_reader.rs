@@ -26,6 +26,7 @@ use tokio_tungstenite::tungstenite::Message as WsMessage;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::WebSocketDispatcher;
 use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::handler::HandlerLimits;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::error::A2aResult;
@@ -35,10 +36,19 @@ use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
-/// Streams `chunks` artifact chunks of `chunk_bytes` each, then completes:
-/// far more than a socket's buffers hold.
+/// The message id of the request the stalled peer sends.
+const FLOOD_MESSAGE_ID: &str = "msg-flood";
+
+/// Answers the stalled peer's request with artifact chunks of `chunk_bytes`
+/// each, without end, until the task is cancelled or a write fails; answers
+/// any other request by completing at once.
+///
+/// Without end because no fixed burst is guaranteed to outrun the peer's
+/// buffers: Windows loopback autotuning grows them past what the 4 KiB
+/// receive buffer asks for, and while the server's writes keep succeeding
+/// the connection is not idle. An endless stream fills any buffer, so the
+/// server's send is sure to block, which is the case under test.
 struct FloodExecutor {
-    chunks: usize,
     chunk_bytes: usize,
 }
 
@@ -49,21 +59,29 @@ impl AgentExecutor for FloodExecutor {
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let text = "x".repeat(self.chunk_bytes);
-            for i in 0..self.chunks {
-                queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        artifact: a2a_protocol_types::artifact::Artifact::new(
-                            "flood",
-                            vec![Part::text(text.clone())],
-                        ),
-                        append: Some(i > 0),
-                        last_chunk: Some(i + 1 == self.chunks),
-                        metadata: None,
-                    }))
-                    .await?;
+            if ctx.message.id.as_ref() == FLOOD_MESSAGE_ID {
+                let text = "x".repeat(self.chunk_bytes);
+                let mut first = true;
+                while !ctx.cancellation_token.is_cancelled() {
+                    queue
+                        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                            task_id: ctx.task_id.clone(),
+                            context_id: ContextId::new(ctx.context_id.clone()),
+                            artifact: a2a_protocol_types::artifact::Artifact::new(
+                                "flood",
+                                vec![Part::text(text.clone())],
+                            ),
+                            append: Some(!first),
+                            last_chunk: Some(false),
+                            metadata: None,
+                        }))
+                        .await?;
+                    first = false;
+                    // The test runtime has one thread, shared with the
+                    // server; a write that never waits must not starve it.
+                    tokio::task::yield_now().await;
+                }
+                return Ok(());
             }
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -120,11 +138,13 @@ fn upgrade(
 #[tokio::test]
 async fn a_peer_that_stops_reading_mid_stream_is_closed_by_the_idle_bound() {
     let idle = Duration::from_secs(1);
+    // The stream never ends, so cap what the store keeps of it: appends past
+    // the cap are still streamed, only not persisted.
     let handler = Arc::new(
         RequestHandlerBuilder::new(FloodExecutor {
-            chunks: 96,
             chunk_bytes: 128 * 1024,
         })
+        .with_handler_limits(HandlerLimits::default().with_max_parts_per_artifact(16))
         .build()
         .expect("build handler"),
     );
@@ -168,33 +188,23 @@ async fn a_peer_that_stops_reading_mid_stream_is_closed_by_the_idle_bound() {
          connection slot: {served:?}"
     );
 
-    // And the stalled peer's stream was abandoned, not merely parked. Not on
-    // Windows: whether a 12 MB burst overruns the peer's buffers there depends
-    // on loopback autotuning the 4 KiB receive buffer does not bound, and a
-    // server that finished the stream into buffers that took it all has done
-    // nothing wrong. The slot assertion above holds everywhere.
-    #[cfg(not(windows))]
-    assert_abandoned(&mut stalled).await;
+    // And the stalled peer's connection was closed, not merely parked.
+    assert_closed(&mut stalled).await;
 }
 
 /// Reads what the server managed to send a stalled peer, asserting the
-/// stream never finished.
-#[cfg(not(windows))]
-async fn assert_abandoned(stalled: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) {
-    // A task still blocked in its send would deliver everything once reading
-    // resumed, completion included, having held the socket all along.
-    let mut finished = false;
-    while let Ok(Some(Ok(frame))) =
-        tokio::time::timeout(Duration::from_secs(10), stalled.next()).await
-    {
-        if let WsMessage::Text(text) = frame
-            && (text.contains("TASK_STATE_COMPLETED") || text.contains("stream_complete"))
-        {
-            finished = true;
-        }
-    }
+/// connection then ends.
+///
+/// The stream is endless, so a server still sending to this peer — one that
+/// parked the stream rather than closing the connection — would keep it
+/// supplied once reading resumed, and it would never end.
+async fn assert_closed(stalled: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) {
+    let drained = tokio::time::timeout(Duration::from_secs(20), async {
+        while let Some(Ok(_)) = stalled.next().await {}
+    })
+    .await;
     assert!(
-        !finished,
-        "the server finished streaming to a peer it had closed as idle"
+        drained.is_ok(),
+        "the server was still streaming to a peer it should have closed as idle"
     );
 }
