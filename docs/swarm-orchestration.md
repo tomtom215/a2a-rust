@@ -169,7 +169,43 @@ misses to a2a-rs's level but replaced each copy with a large allocation; it
 measured no faster. The futures are large because of what they hold across
 `.await` — `MessageSendParams` (448 B) twice in each of three layers, and
 coroutine layout padding — so shrinking them, not boxing them, is the
-remaining lever for (2). This
+remaining lever for (2). **Closing the gap on equal allocators (2026-10-03, third pass).** Both
+servers on jemalloc, profiled on one core. a2a-rs runs a whole request in
+its connection task; a2a-rust spent ~20 µs per unary send in two extra
+tasks and three parses of each JSON-RPC body. Landed:
+
+| Change | One worker, unary rps | Two workers, unary rps |
+|---|---|---|
+| before (`467b668`) | 14,166–14,770 | 12,133 |
+| `701b02a` executor shares the collector's task on a single-worker runtime | 19,308–20,105 | 12,353 (no change) |
+| `774593c` JSON-RPC body parsed once | 21,033–21,615 | — |
+
+Where it stands (medians; one core 6 runs, two cores 4 runs):
+
+| | a2a-rust | a2a-rs | ratio |
+|---|---|---|---|
+| one core, unary | 20,457 | 23,068 | 1.13× (was 1.65×) |
+| two cores, unary | 12,436 | 13,595 | 1.09× (was 1.15×) |
+| two cores, streaming | 10,560 | 12,800 | 1.21× |
+
+Tried and rejected, each measured: the executor in the collector's task on
+every runtime (−4.6% on two workers); the collection in the request's own
+future behind a detach-on-drop guard (−21% on two workers: every event
+re-polled hyper's connection future); the SSE body reading the queue
+directly instead of through a forwarder task (slower on one core, and it
+lost wakeups on two — a dropped `read()` future deregisters its waker);
+skipping the second store lock for a new task (no measurable change).
+
+**What remains for streaming.** The terminal gate — a stream's terminal
+event waits for the background processor's verdict before it is
+broadcast, so a stream never reports a terminal state the store refused —
+costs 6.6% of two-core streaming throughput (probe with the gate removed:
+10,893 → 11,614 rps; a2a-rs 12,485). The guarantee stays; the candidate is
+having the processor broadcast the verdict itself, which removes the hop
+back to the executor. That changes who broadcasts terminal events, a
+correctness-critical ordering, and is proposed rather than done.
+
+This
 matters for a swarm only once a node is CPU-bound on protocol rather than
 on model inference. In the live-model run the model was the bottleneck by
 three orders of magnitude: about 2 jobs/s against 3,900 jobs/s with no

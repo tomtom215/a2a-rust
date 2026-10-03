@@ -905,12 +905,17 @@ jemalloc or mimalloc, now in `book/src/deployment/production.md`: +65%
 unary throughput on two cores. `examples/deploy-agent` now runs on it via
 `tikv-jemallocator` (maintainer's choice, 2026-10-03; not on MSVC).
 
-**What the next session should do first.** On equal allocators a2a-rs
-still leads 1.15×. The remaining ~17 µs per request on one core is not yet
-attributed function by function; start from a one-core perf profile of
-both on jemalloc. Then G1-A (the client-side delegation handle) is the
-first swarm enabler; `examples/swarm`'s CI gate already proves the
-behaviour it has to keep.
+**Throughput after the third pass (2026-10-03).** On jemalloc for both:
+one core 1.13× (was 1.65×), two cores unary 1.09×, two cores streaming
+1.21×. G4 has the table, the landed changes (`701b02a`, `774593c`) and
+four layouts measured and rejected.
+
+**What the next session should do first.** Decide with the maintainer
+whether the background processor should broadcast a gated terminal event
+itself (G4, "What remains for streaming"): the gate costs 6.6% of two-core
+streaming. Then G1-A (the client-side delegation handle) is the first
+swarm enabler; `examples/swarm`'s CI gate already proves the behaviour it
+has to keep.
 
 **Environment notes that will cost the next session time.**
 
@@ -921,7 +926,11 @@ behaviour it has to keep.
   directories. This repository's own `target/` reached 19 GB once in this
   session; budget for it.
 * `pkill -f <pattern>` matches the shell that runs it if the pattern appears
-  in the command line. Use `pkill -x <name>`.
+  in the command line. Use `pkill -x <name>` or kill by PID. (This session
+  still did it twice.)
+* Measure throughput on one pinned core with `/proc/<pid>/stat` user and
+  system time; two-core runs are latency-bound and the VM's noise is ±5–10%
+  there. Use 6 interleaved runs and compare medians.
 
 ## In flight outside this repository
 
