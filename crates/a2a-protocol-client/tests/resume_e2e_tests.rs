@@ -32,7 +32,7 @@ agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
 struct Shared(Arc<InMemoryTaskStore>);
 
 macro_rules! forward {
-    ($name:ident ( $($arg:ident : $ty:ty),* ) -> $ret:ty) => {
+    ($name:ident ( $($arg:ident : $ty:ty),* $(,)? ) -> $ret:ty) => {
         fn $name<'a>(
             &'a self,
             $($arg: $ty),*
@@ -45,13 +45,21 @@ macro_rules! forward {
 impl TaskStore for Shared {
     forward!(save(task: &'a Task) -> ());
     forward!(get(id: &'a TaskId) -> Option<Task>);
-    forward!(list(params: &'a a2a_protocol_types::params::ListTasksParams)
-        -> a2a_protocol_types::responses::TaskListResponse);
+    forward!(
+        list(
+            params: &'a a2a_protocol_types::params::ListTasksParams,
+        ) -> a2a_protocol_types::responses::TaskListResponse
+    );
     forward!(insert_if_absent(task: &'a Task) -> bool);
     forward!(delete(id: &'a TaskId) -> ());
     forward!(last_event_seq(task_id: &'a TaskId) -> u64);
-    forward!(read_events(task_id: &'a TaskId, after_seq: u64, limit: usize)
-        -> Vec<a2a_protocol_server::store::RecordedEvent>);
+    forward!(
+        read_events(
+            task_id: &'a TaskId,
+            after_seq: u64,
+            limit: usize,
+        ) -> Vec<a2a_protocol_server::store::RecordedEvent>
+    );
     forward!(append_event(task_id: &'a TaskId, seq: u64, event: &'a StreamResponse) -> ());
 
     fn supports_event_log(&self) -> bool {
