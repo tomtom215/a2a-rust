@@ -200,10 +200,24 @@ skipping the second store lock for a new task (no measurable change).
 event waits for the background processor's verdict before it is
 broadcast, so a stream never reports a terminal state the store refused —
 costs 6.6% of two-core streaming throughput (probe with the gate removed:
-10,893 → 11,614 rps; a2a-rs 12,485). The guarantee stays; the candidate is
-having the processor broadcast the verdict itself, which removes the hop
-back to the executor. That changes who broadcasts terminal events, a
-correctness-critical ordering, and is proposed rather than done.
+10,893 → 11,614 rps; a2a-rs 12,485). Two ways to cut it were weighed:
+
+- *The processor broadcasts the verdict itself.* Rejected without
+  building it: a second broadcaster on one channel makes subscriber order
+  depend on scheduling (an event written after the terminal one could be
+  seen before it), lets the queue close before the terminal event is
+  sent, has no clean timeout answer (duplicate or missing terminal), and
+  weakens what a returned terminal `write` means to an executor.
+- *Keep one broadcaster and the blocking write, and run the executor in
+  the processor's task* — the change that took unary sends +36% on one
+  worker (`701b02a`). Measured and rejected: streaming got slower, one
+  core 11,273 → 10,425 rps (medians of 6), two cores 10,700 → 9,340
+  (medians of 4).
+
+So the gate's cost is not the handoff between two tasks; what it costs is
+not attributed further. The likeliest remainder, not measured, is the
+waiting itself: a terminal event is stored before it is sent, which any
+design that keeps the guarantee keeps. The gate stays as it is.
 
 This
 matters for a swarm only once a node is CPU-bound on protocol rather than

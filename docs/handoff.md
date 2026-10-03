@@ -910,12 +910,15 @@ one core 1.13× (was 1.65×), two cores unary 1.09×, two cores streaming
 1.21×. G4 has the table, the landed changes (`701b02a`, `774593c`) and
 four layouts measured and rejected.
 
-**What the next session should do first.** Decide with the maintainer
-whether the background processor should broadcast a gated terminal event
-itself (G4, "What remains for streaming"): the gate costs 6.6% of two-core
-streaming. Then G1-A (the client-side delegation handle) is the first
-swarm enabler; `examples/swarm`'s CI gate already proves the behaviour it
-has to keep.
+**The terminal gate stays as it is (2026-10-03).** Its 6.6% of two-core
+streaming was examined both ways: a processor-side broadcast was rejected
+for ordering and liveness risks, and sharing one task between executor and
+processor was measured slower (G4). The remaining streaming gap is not
+attributed further.
+
+**What the next session should do first.** G1-A (the client-side
+delegation handle) is the first swarm enabler; `examples/swarm`'s CI gate
+already proves the behaviour it has to keep.
 
 **Environment notes that will cost the next session time.**
 
