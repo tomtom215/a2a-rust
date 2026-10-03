@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **A streaming send's background processor and SSE forwarder are boxed
+  before they are spawned**, so the span, tenant-scope and tracker
+  wrappers and tokio's task cell move a pointer rather than ~5.6 KB and
+  ~1.9 KB futures. Echo benchmark, streaming, one worker, jemalloc, two
+  independent replicates of 10 interleaved runs: 11,107 → 11,596 and
+  10,821 → 11,598 requests/s (Mann-Whitney p 0.049 and 0.023); two
+  workers, no change within noise.
+
 - **A JSON-RPC request is parsed once, not three times.** The body was
   parsed into a `serde_json::Value`, converted to `JsonRpcRequest`, and
   its `params` cloned and converted again. A single request now parses

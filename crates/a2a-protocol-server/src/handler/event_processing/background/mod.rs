@@ -74,7 +74,12 @@ impl RequestHandler {
             .background()
             .spawn(crate::rpc_span::in_child_span(
                 "a2a.process_events",
-                crate::store::tenant::TenantContext::scope(tenant, async move {
+                // Boxed before the tenant scope, span and tracker wrap it:
+                // each of them, and tokio's task cell, moved this ~5.6 KB
+                // future by value. Measured, streaming, one worker, jemalloc,
+                // two replicates of 10 interleaved runs: +4.4% and +7% (p
+                // 0.049 and 0.023, Mann-Whitney); no change on two workers.
+                crate::store::tenant::TenantContext::scope(tenant, Box::pin(async move {
                     let super::ProcessorLinks { cancel, gate } = links;
                     // Closes the gate however this task ends — including by panic —
                     // so no writer waits out its timeout on a processor that is gone.
@@ -176,7 +181,7 @@ impl RequestHandler {
                             }
                         }
                     }
-                }),
+                })),
             ));
     }
 }

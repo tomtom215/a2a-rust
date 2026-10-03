@@ -241,11 +241,22 @@ channel send 0.5). The time in those three tasks beyond their useful work
 
 Merging tasks does not recover it: the executor in the processor's task
 and the SSE body reading the queue directly were both measured slower
-(above). Candidates that keep the layout, sized from this profile and not
-yet measured: coalesce ready SSE frames into one body frame (the ~1.6
-extra socket writes, ~2 µs); stop re-arming the keep-alive timer on every
-event (~0.7 µs); shrink the processor's and forwarder's futures (~2.6 µs
-of copies).
+(above). Three candidates that keep the layout were then built and
+measured (one core, jemalloc, streaming, 10 interleaved runs per build,
+Mann-Whitney):
+
+| Candidate | Result |
+|---|---|
+| Coalesce ready SSE frames into one body frame | Socket writes per stream did not fall (3.49 → 3.64): the next event is rarely already queued when the forwarder wakes. Not landed. |
+| Keep-alive without re-arming the timer per event (same timing rule) | 11,123 vs 10,862 rps, p = 0.50. Not landed. |
+| Box the processor's and forwarder's futures before spawning | 11,107 → 11,596 and, replicated, 10,821 → 11,598 rps (p 0.049, 0.023); two cores unchanged. Landed. |
+
+One two-core streaming run of the boxed build logged a single client
+error ("operation was canceled", raised by the client's `send_request`)
+— the only error in 383 runs this session. 24 further runs (12 per
+build, ~1.3 M requests each) did not reproduce it. Boxing changes where a
+future lives, not what it does, so no mechanism is apparent; recorded as
+unexplained rather than dismissed.
 
 This
 matters for a swarm only once a node is CPU-bound on protocol rather than
