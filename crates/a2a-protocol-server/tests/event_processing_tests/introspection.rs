@@ -297,3 +297,38 @@ async fn pushed_artifacts_are_reported_at_their_own_index() {
         "each pushed artifact must be reported at the position it occupies; got {pushed:?}"
     );
 }
+
+/// The same contract on the blocking path, which the sync collector persists
+/// rather than the background processor. Its index arithmetic is separate
+/// code, so the streaming test above does not cover it.
+#[tokio::test]
+async fn pushed_artifacts_are_reported_at_their_own_index_when_blocking() {
+    const COUNT: usize = 3;
+
+    let deltas = Arc::new(Mutex::new(Vec::new()));
+    let handler = RequestHandlerBuilder::new(PushingExecutor { count: COUNT })
+        .with_task_store(DeltaRecordingStore::new(Arc::clone(&deltas)))
+        .build()
+        .expect("build handler");
+
+    let result = handler
+        .on_send_message(make_send_params(), false, None)
+        .await
+        .expect("send message");
+    assert_eq!(extract_task(result).status.state, TaskState::Completed);
+
+    let seen = deltas.lock().expect("delta log").clone();
+    let pushed: Vec<usize> = seen
+        .iter()
+        .filter_map(|d| match d {
+            ArtifactDelta::Pushed { index } => Some(*index),
+            ArtifactDelta::AppendedParts { .. } => None,
+        })
+        .collect();
+
+    assert_eq!(
+        pushed,
+        (0..COUNT).collect::<Vec<_>>(),
+        "each pushed artifact must be reported at the position it occupies; got {pushed:?}"
+    );
+}

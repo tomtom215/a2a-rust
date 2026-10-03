@@ -6,6 +6,18 @@
 **Date:** 27 July 2026
 **Supersedes:** the earlier `a2a-rust` v0.6.0 capability comparison
 
+> **Superseded for every measured capability, 2026-10-02.**
+> [`sdk-comparison-2026-10-02.md`](sdk-comparison-2026-10-02.md) re-measures
+> both SDKs at their 2026-09-30 crates.io releases (a2a-rs: `a2a-server-lf`
+> 0.5.1; a2a-rust: 0.14.1): conformance and interop through the A2A project's
+> own ACTS and ITK, performance, memory, and black-box feature probes. It
+> adds a measurement this document did not make: a2a-rs serves 1.17–1.62×
+> more requests per second. It also corrects one implication of §1, which
+> counts tenant enforcement among the things a2a-rust has. It has it only
+> when the `TenantAware*` stores are configured; the default store leaks
+> across tenants exactly as a2a-rs's does. The governance and provenance
+> sections are not re-examined there.
+>
 > **Status, 2026-09-10.** This is a dated snapshot and its figures are not
 > maintained. Every `a2a-rust` number below (commit and tag counts, test
 > count, DCO share, coverage, MSRV, release version) is as of `b416c1a`,

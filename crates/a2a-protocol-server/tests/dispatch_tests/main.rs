@@ -196,6 +196,7 @@ async fn start_jsonrpc_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
 async fn start_rest_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let handler = Arc::new(
         RequestHandlerBuilder::new(SimpleExecutor)
+            .with_task_store(a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new())
             .with_agent_card(minimal_agent_card())
             .with_push_sender(MockPushSender)
             // These fixtures run without auth interceptors; the extended-card

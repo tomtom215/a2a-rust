@@ -95,6 +95,7 @@ impl ServerInterceptor for IdentifyingInterceptor {
 
 fn handler(seen: &Arc<Mutex<Seen>>) -> RequestHandler {
     RequestHandlerBuilder::new(RecordingExecutor(Arc::clone(seen)))
+        .with_task_store(a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new())
         .with_interceptor(IdentifyingInterceptor)
         .with_tenant_resolver(HeaderTenantResolver::new("x-tenant-id"))
         .build()

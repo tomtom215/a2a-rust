@@ -84,6 +84,10 @@ impl TenantAwarePostgresPushConfigStore {
 
 #[allow(clippy::manual_async_fn)]
 impl PushConfigStore for TenantAwarePostgresPushConfigStore {
+    fn isolates_tenants(&self) -> bool {
+        true
+    }
+
     fn set<'a>(
         &'a self,
         mut config: TaskPushNotificationConfig,

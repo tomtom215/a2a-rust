@@ -308,7 +308,9 @@ pub fn build_sse_response(
 
     let body_writer = SseBodyWriter { tx };
 
-    tokio::spawn(crate::rpc_span::in_child_span("a2a.sse", async move {
+    // Boxed before it is wrapped and spawned, so the span wrapper and
+    // tokio's task cell move a pointer rather than this ~1.9 KB future.
+    let forward = Box::pin(async move {
         // Yield once before entering the read loop to ensure this task is
         // properly scheduled on the tokio executor. On multi-thread runtimes,
         // `tokio::spawn` may place this task on a different worker thread than
@@ -415,7 +417,8 @@ pub fn build_sse_response(
         }
 
         drop(body_writer);
-    }));
+    });
+    tokio::spawn(crate::rpc_span::in_child_span("a2a.sse", forward));
 
     let body = ChannelBody { rx };
 
@@ -744,7 +747,8 @@ mod tests {
         let reader = crate::streaming::event_queue::InMemoryQueueReader::new(rx);
 
         let err = A2aError::internal("something broke");
-        tx.send(Err(err)).expect("send should succeed");
+        tx.send(std::sync::Arc::new(Err(err)))
+            .expect("send should succeed");
         drop(tx);
 
         let mut response = build_sse_response(reader, None, None, Some(Some(serde_json::json!(1))));

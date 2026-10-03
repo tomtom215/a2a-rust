@@ -242,7 +242,10 @@ mod tests {
     #[tokio::test]
     async fn list_tasks_with_tenant() {
         // Covers line 32: tenant scoping with non-default tenant.
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
+            .build()
+            .unwrap();
         let params = ListTasksParams {
             tenant: Some("test-tenant".to_string()),
             ..Default::default()

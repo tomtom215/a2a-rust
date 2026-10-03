@@ -1,0 +1,6 @@
+swarm: 256 workers under 16 supervisors, 32 in flight per supervisor
+{"job_us":{"max":611212,"p50":103568,"p90":214730,"p99":321408},"jobs":20000,"jobs_per_s":3773.3950455087593,"outcomes":{"completed":20000},"retried":0,"scenario":"fanout","wall_s":5.300266672}
+{"accounting_exact":true,"injected_invalid":400,"injected_transient":2000,"jobs":20000,"outcomes":{"completed":19600,"failed:InvalidRequest":400},"retried":2000,"scenario":"faults","wall_s":5.798113158}
+{"result":{"expected_live":512,"jobs_live_before_cancel":512,"quiesce_ms":83.712996,"root_cancel_rpcs_ms":78.02619600000001,"still_executing_after_5s":0},"scenario":"cancel"}
+{"result":{"expected_live":512,"jobs_live_before_cancel":512,"quiesce_ms":null,"root_cancel_rpcs_ms":34.40758700000001,"still_executing_after_5s":512},"scenario":"cancel-control"}
+{"scenario":"llm","skipped":"SWARM_LLM_URL unset"}

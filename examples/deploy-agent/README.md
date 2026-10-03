@@ -90,9 +90,23 @@ that the card carries the configured URL *and* that it does not leak
 cargo test -p deploy-agent
 ```
 
-Three, all driving the real router over a real socket rather than calling the
+Five. Four drive the real router over a real socket rather than calling the
 handler directly — the point of this example is the wiring, and asserting on
-the handler would skip precisely the part that can be wrong.
+the handler would skip precisely the part that can be wrong. The fifth checks
+that an invalid `PORT` is rejected.
+
+## Allocator
+
+The binary runs on jemalloc (`tikv-jemallocator`), not glibc's allocator.
+A long-running server's bounded task store keeps a fixed-size heap full of
+freed holes, and glibc's allocator is slow there: on the echo benchmark
+jemalloc took unary throughput from 7,189 to 11,862 requests/s at the same
+resident memory. The book's production chapter has the measurement.
+
+To confirm a running build uses it, start it with
+`_RJEM_MALLOC_CONF=stats_print:true`; jemalloc prints its statistics when
+the process exits. Windows (MSVC) builds keep the system allocator, which
+`tikv-jemalloc-sys` does not replace there.
 
 ## What this does not cover
 

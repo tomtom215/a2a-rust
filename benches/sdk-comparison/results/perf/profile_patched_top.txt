@@ -1,0 +1,14 @@
+     9.12%  [kernel.kallsyms]  [k] _raw_spin_unlock_irqrestore                                                                                                            
+     7.26%  [kernel.kallsyms]  [k] finish_task_switch.isra.0                                                                                                              
+     6.87%  libc.so.6          [.] __memmove_evex_unaligned_erms                                                                                                          
+     6.84%  libc.so.6          [.] _int_malloc                                                                                                                            
+     4.86%  libc.so.6          [.] cfree@GLIBC_2.2.5                                                                                                                      
+     4.84%  [kernel.kallsyms]  [k] _raw_spin_unlock_irq                                                                                                                   
+     3.31%  libc.so.6          [.] malloc_consolidate                                                                                                                     
+     2.92%  libc.so.6          [.] malloc                                                                                                                                 
+     2.72%  libc.so.6          [.] _int_free                                                                                                                              
+     2.20%  libc.so.6          [.] unlink_chunk.isra.0                                                                                                                    
+     1.64%  agent-a2a-rust     [.] <a2a_protocol_server>9streaming11event_queue11StreamEventNtNtCslRxgsiMHJdm_18a2a_protocol_types5error8A2aErrorEEB1v_.llvm.3348448883551
+     1.18%  agent-a2a-rust     [.] <a2a_protocol_server>9streaming11event_queue11StreamEventNtNtCslRxgsiMHJdm_18a2a_protocol_types5error8A2aErrorEEE9drop_slowB2b_        
+     0.85%  libc.so.6          [.] _int_free_merge_chunk                                                                                                                  
+     0.82%  agent-a2a-rust     [.] <a2a_protocol_server>7handler9messagingNtB8_14RequestHandler15on_send_message0Ba_                                                      

@@ -1,0 +1,18 @@
+{"server": "a2a-rs-default", "check": "control: A GetTask own task", "outcome": "task state=TASK_STATE_COMPLETED", "verdict": "ok"}
+{"server": "a2a-rs-default", "check": "B GetTask(A's task)", "outcome": "task state=TASK_STATE_COMPLETED", "verdict": "LEAK"}
+{"server": "a2a-rs-default", "check": "B ListTasks sees A's task", "outcome": "list n=1", "verdict": "LEAK"}
+{"server": "a2a-rs-default", "check": "B SubscribeToTask(A's live task)", "outcome": "http 200: id: 1 data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"task\":{\"contextId\":\"01a0fe0a-4a87-7486-b9bc-1b55d4eaf50c\",\"hist", "verdict": "LEAK"}
+{"server": "a2a-rs-default", "check": "B CancelTask(A's live task)", "outcome": "task state=TASK_STATE_CANCELED", "verdict": "LEAK"}
+{"server": "a2a-rs-default", "check": "after B's cancel, A sees", "outcome": "task state=TASK_STATE_CANCELED", "verdict": "LEAK"}
+{"server": "a2a-rust-default", "check": "control: A GetTask own task", "outcome": "task state=TASK_STATE_COMPLETED", "verdict": "ok"}
+{"server": "a2a-rust-default", "check": "B GetTask(A's task)", "outcome": "task state=TASK_STATE_COMPLETED", "verdict": "LEAK"}
+{"server": "a2a-rust-default", "check": "B ListTasks sees A's task", "outcome": "list n=1", "verdict": "LEAK"}
+{"server": "a2a-rust-default", "check": "B SubscribeToTask(A's live task)", "outcome": "http 200: event: message data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"task\":{\"id\":\"d117e552-cc96-45af-8e1a-490345ee9bac\",\"co", "verdict": "LEAK"}
+{"server": "a2a-rust-default", "check": "B CancelTask(A's live task)", "outcome": "task state=TASK_STATE_CANCELED", "verdict": "LEAK"}
+{"server": "a2a-rust-default", "check": "after B's cancel, A sees", "outcome": "task state=TASK_STATE_CANCELED", "verdict": "LEAK"}
+{"server": "a2a-rust-TenantAwareStore", "check": "control: A GetTask own task", "outcome": "task state=TASK_STATE_COMPLETED", "verdict": "ok"}
+{"server": "a2a-rust-TenantAwareStore", "check": "B GetTask(A's task)", "outcome": "error -32001 Task not found: d56cb0e7-2c71-477f-b6b4-d4cb3cb46dc8", "verdict": "isolated"}
+{"server": "a2a-rust-TenantAwareStore", "check": "B ListTasks sees A's task", "outcome": "list n=0", "verdict": "isolated"}
+{"server": "a2a-rust-TenantAwareStore", "check": "B SubscribeToTask(A's live task)", "outcome": "http 200: {\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Task not found: e2872a59-3630-45e3-ae37-ce6ffccb495c", "verdict": "isolated"}
+{"server": "a2a-rust-TenantAwareStore", "check": "B CancelTask(A's live task)", "outcome": "error -32001 Task not found: e2872a59-3630-45e3-ae37-ce6ffccb495c", "verdict": "isolated"}
+{"server": "a2a-rust-TenantAwareStore", "check": "after B's cancel, A sees", "outcome": "task state=TASK_STATE_WORKING", "verdict": "isolated"}

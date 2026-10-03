@@ -110,13 +110,13 @@ impl RequestHandler {
             task,
             reader,
             persistence_rx,
-            executor_handle,
+            executor,
             cancel,
             gate,
         } = started;
         self.spawn_background_event_processor(
             task.id.clone(),
-            executor_handle,
+            executor.into_handle(),
             persistence_rx,
             task.clone(),
             super::super::event_processing::ProcessorLinks { cancel, gate },
@@ -152,29 +152,53 @@ impl RequestHandler {
         let Started {
             task,
             reader,
-            executor_handle,
+            persistence_rx,
+            executor,
             ..
         } = started;
-        // On a task of its own, and awaited: if this request's client goes
-        // away, the request future is dropped but the collection — the only
-        // thing persisting a blocking send's events — runs on to the end
-        // (N27). On the background tracker, so shutdown waits for it as it
-        // does for the background processor, and in the tenant and span of
-        // this call, which `tokio::spawn` would otherwise not carry.
+        // The collector reads the persistence channel, which makes a slow
+        // collector hold the executor back instead of losing its events; the
+        // broadcast receiver is for nothing here.
+        drop(reader);
+        let Some(events) = persistence_rx else {
+            return Err(crate::error::ServerError::Internal(
+                "a blocking send was leased without its collector channel".to_owned(),
+            ));
+        };
+        // On a task of its own: if this request's client goes away, the
+        // request future is dropped but the collection — the only thing
+        // persisting a blocking send's events — runs on to the end (N27).
+        // Not in the request's future even with that guarded: polled inside
+        // hyper's connection future, every event re-polled the connection,
+        // and two-worker throughput fell 21-30% (measured 2026-10-03).
+        //
+        // On a single-worker runtime the executor runs in this same task,
+        // polled beside the collection (see `commit_task`). The result comes
+        // back over a oneshot as soon as the collection ends, which can be
+        // before the executor returns (an interrupted state answers at
+        // once), and the task then runs the executor to its end. On the
+        // executors tracker, since it may run one, so shutdown counts and
+        // waits for it; in the tenant and span of this call, which
+        // `tokio::spawn` would otherwise not carry.
         let collector = self.sync_collector();
         let tenant = crate::store::tenant::TenantContext::current();
-        let collection = self
-            .in_flight
-            .background()
+        let mut executor = executor.watch();
+        let (answer, collected) = tokio::sync::oneshot::channel();
+        self.in_flight
+            .executors()
             .spawn(crate::rpc_span::in_current_span(
                 crate::store::tenant::TenantContext::scope(tenant, async move {
-                    collector
-                        .collect_events(reader, task.id, executor_handle)
-                        .await
+                    let result = collector
+                        .collect_events(events, task.id, &mut executor)
+                        .await;
+                    // The caller may have gone; the collection is done and
+                    // persisted either way.
+                    let _ = answer.send(result);
+                    executor.finish().await;
                 }),
             ));
-        let collected = collection.await.map_err(|e| {
-            crate::error::ServerError::Internal(format!("event collection ended abnormally: {e}"))
+        let collected = collected.await.map_err(|_| {
+            crate::error::ServerError::Internal("event collection ended abnormally".to_owned())
         })??;
 
         // SPEC §3.1.1: SendMessage returns "a `Task` object representing

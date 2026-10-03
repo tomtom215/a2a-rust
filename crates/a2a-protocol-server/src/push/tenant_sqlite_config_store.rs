@@ -81,6 +81,10 @@ impl TenantAwareSqlitePushConfigStore {
 
 #[allow(clippy::manual_async_fn)]
 impl PushConfigStore for TenantAwareSqlitePushConfigStore {
+    fn isolates_tenants(&self) -> bool {
+        true
+    }
+
     fn set<'a>(
         &'a self,
         mut config: TaskPushNotificationConfig,

@@ -73,7 +73,9 @@ where
         .params
         .as_ref()
         .ok_or_else(|| ServerError::InvalidParams("missing params".into()))?;
-    let parsed = serde_json::from_value(params.clone())
+    // From the borrowed tree: `&Value` is a deserializer, and the clone
+    // `from_value` needed copied every string in the params once more.
+    let parsed = T::deserialize(params)
         .map_err(|e| ServerError::InvalidParams(format!("invalid params: {e}")))?;
     warn_unrecognized_params::<T>(&rpc_req.method, params);
     Ok(parsed)

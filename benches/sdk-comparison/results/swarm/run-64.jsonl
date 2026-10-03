@@ -1,0 +1,6 @@
+swarm: 64 workers under 8 supervisors, 32 in flight per supervisor
+{"job_us":{"max":356768,"p50":44705,"p90":77654,"p99":208698},"jobs":4000,"jobs_per_s":3908.600462080023,"outcomes":{"completed":4000},"retried":0,"scenario":"fanout","wall_s":1.023384211}
+{"accounting_exact":true,"injected_invalid":80,"injected_transient":400,"jobs":4000,"outcomes":{"completed":3920,"failed:InvalidRequest":80},"retried":400,"scenario":"faults","wall_s":1.11320297}
+{"result":{"expected_live":256,"jobs_live_before_cancel":256,"quiesce_ms":64.68701300000001,"root_cancel_rpcs_ms":52.489435,"still_executing_after_5s":0},"scenario":"cancel"}
+{"result":{"expected_live":256,"jobs_live_before_cancel":256,"quiesce_ms":null,"root_cancel_rpcs_ms":16.785647,"still_executing_after_5s":256},"scenario":"cancel-control"}
+{"inflight_per_supervisor":2,"job_ms":{"max":2770.816,"p50":2024.316,"p90":2385.442},"jobs":32,"jobs_per_s":1.9933141068013527,"outcomes":{"completed":32},"retried":0,"scenario":"llm","supervisors":2,"wall_s":16.05366655,"workers":8}

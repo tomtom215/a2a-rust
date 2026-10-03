@@ -1,0 +1,4 @@
+rep 1 agent-a2a-rs clean release build 123.3 s
+rep 1 agent-a2a-rust clean release build 62.0 s
+rep 2 agent-a2a-rs clean release build 124.3 s
+rep 2 agent-a2a-rust clean release build 64.0 s

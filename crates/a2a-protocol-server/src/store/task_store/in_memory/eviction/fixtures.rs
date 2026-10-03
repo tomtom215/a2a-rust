@@ -17,7 +17,7 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 use super::{StoreData, TaskStoreConfig};
 
 /// A task in `state`, with the fixed context every fixture shares.
-fn task(id: &str, state: TaskState) -> Task {
+pub(super) fn task(id: &str, state: TaskState) -> Task {
     Task {
         id: TaskId::new(id),
         context_id: ContextId::new("ctx"),
