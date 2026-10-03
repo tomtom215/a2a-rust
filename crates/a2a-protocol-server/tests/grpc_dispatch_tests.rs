@@ -267,8 +267,44 @@ async fn multiple_dispatchers_from_same_handler() {
 // HTTP/2 connection preface, because "a socket is open" and "an HTTP/2 server
 // is running on it" are different claims, and only the second is what `serve`
 // promises. Same byte-level approach the OTel pipeline check uses.
+//
+// Reserving a port and releasing it so `serve` can bind it leaves a window in
+// which another test in this binary, running in parallel, can take the same
+// port: `serve` then fails with `AddrInUse`, or the connect reaches the other
+// test's socket and is reset. It failed that way once on Windows
+// (2026-10-03, `ConnectionReset` reading the first frame). Those two outcomes
+// mean "lost the port", not "`serve` is broken", so they are retried with a
+// fresh port; every other outcome — including the mutant's, where nothing
+// ever listens — fails on the first attempt.
 #[tokio::test]
 async fn serve_binds_the_address_and_speaks_http2() {
+    const ATTEMPTS: usize = 3;
+    for attempt in 1..=ATTEMPTS {
+        match serve_and_read_first_frame().await {
+            Ok(header) => {
+                assert_eq!(
+                    header[3], 0x04,
+                    "first frame from the server must be SETTINGS (type 0x04); \
+                     got type {:#04x} — an open socket that is not an HTTP/2 server",
+                    header[3]
+                );
+                return;
+            }
+            Err(lost) if attempt < ATTEMPTS => {
+                eprintln!("attempt {attempt}: lost the reserved port ({lost}); retrying");
+            }
+            Err(lost) => panic!("lost the reserved port on all {ATTEMPTS} attempts: {lost}"),
+        }
+    }
+}
+
+/// One attempt: reserve a port, `serve` on it, complete the HTTP/2 client
+/// preface and read the server's first frame header.
+///
+/// Returns `Err` only for the two signs that another socket took the port:
+/// `serve` failing to bind with `AddrInUse`, or the connection being reset or
+/// closed before a frame arrived. Panics on everything else.
+async fn serve_and_read_first_frame() -> Result<[u8; 9], String> {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
     // Reserve an ephemeral port, then release it so `serve` can bind it.
@@ -292,10 +328,22 @@ async fn serve_binds_the_address_and_speaks_http2() {
             stream = Some(s);
             break;
         }
+        if server.is_finished() {
+            break;
+        }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    let mut stream = stream
-        .unwrap_or_else(|| panic!("nothing listening on {addr} after 1s — `serve` never bound it"));
+    let Some(mut stream) = stream else {
+        // Nothing accepted. A `serve` that stopped because the port was taken
+        // lost the race; any other outcome means it never bound the port.
+        if server.is_finished()
+            && let Ok(Err(e)) = server.await
+            && e.kind() == std::io::ErrorKind::AddrInUse
+        {
+            return Err(format!("`serve` could not bind {addr}: {e}"));
+        }
+        panic!("nothing listening on {addr} after 1s — `serve` never bound it");
+    };
 
     // Client connection preface, then an empty SETTINGS frame.
     stream
@@ -309,22 +357,27 @@ async fn serve_binds_the_address_and_speaks_http2() {
 
     // The server's preface MUST begin with a SETTINGS frame (RFC 9113 §3.4).
     let mut header = [0_u8; 9];
-    tokio::time::timeout(
+    let read = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         stream.read_exact(&mut header),
     )
     .await
-    .expect("server responded within 5s")
-    .expect("read the server's first frame header");
-
-    assert_eq!(
-        header[3], 0x04,
-        "first frame from the server must be SETTINGS (type 0x04); \
-         got type {:#04x} — an open socket that is not an HTTP/2 server",
-        header[3]
-    );
-
+    .expect("server responded within 5s");
     server.abort();
+    match read {
+        Ok(_) => Ok(header),
+        Err(e)
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::UnexpectedEof
+            ) =>
+        {
+            Err(format!("connection to {addr} closed before a frame: {e}"))
+        }
+        Err(e) => panic!("read the server's first frame header: {e:?}"),
+    }
 }
 
 /// Opens a raw connection, sends the HTTP/2 client preface, and returns the
