@@ -113,8 +113,12 @@ copies come mostly from futures moved by value: `on_send_message`,
 work is equal to within 1% in instruction count. So the remaining ~16% CPU
 gap is not in instructions executed. It is in kernel time (63 vs 57
 µs/request) and allocator time, which the profile buckets put at 68 vs 57
-µs/request including memmove (CONJECTURED: cache and scheduler effects of
-a second spawned task per request; not isolated). Shrinking the moved
+µs/request including memmove. A second spawned task per request was the
+leading suspect. Removing it (the executor run inside the collecting task)
+was measured on 2026-10-03 and did not close the gap: 180.0 vs 185.6
+µs/request with overlapping ranges, against a2a-rs's 153.0 on the same runs
+(`docs/handoff.md` has the details, and why it was not landed). The cause is
+still unattributed. Shrinking the moved
 futures would cut bytes copied ~6×, but on this evidence it would not close
 the gap. This
 matters for a swarm only once a node is CPU-bound on protocol rather than

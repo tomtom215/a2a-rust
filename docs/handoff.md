@@ -857,20 +857,47 @@ here:
   with every figure tied to a file under `benches/sdk-comparison/results/`.
   Headline: conformance and interop are parity on the A2A project's own
   suites; a2a-rs is 1.17–1.62× faster per request; a2a-rust's memory is
-  bounded and a2a-rs's is not; a2a-rust's default store leaks across tenants
-  exactly as a2a-rs does.
+  bounded and a2a-rs's is not; a2a-rust's default store leaked across
+  tenants exactly as a2a-rs does (fixed since, below).
 * `831b8ef` — the TTL pass walks a write-ordered index (+15–18% on the echo
   benchmark). Its CHANGELOG entry carries the numbers.
 * [`swarm-orchestration.md`](swarm-orchestration.md) — gaps ranked by
   measurement, with `examples/swarm` (gated in `ci.yml`) as the evidence.
 
-**What the next session should do first.** Open the PR for this branch if
-the maintainer wants it, then take finding R1 — the tenant default — to the
-maintainer as a decision. Its options are in `swarm-orchestration.md` G3. It
-is the one finding here that is a security property rather than a number,
-and it is not this branch's to decide. After that, G1-A (the client-side
-delegation handle) is the first swarm enabler; `examples/swarm`'s CI gate
-already proves the behaviour it has to keep.
+* `a57de29` — R1 decided (G3 option 2): a store that cannot isolate refuses
+  any request naming a tenant. Breaking for deployments that relied on the
+  leak; the CHANGELOG says how to migrate.
+* `1c2ca83` — queue events behind `Arc`: bytes allocated per unary send
+  173,278 → 82,844. No throughput change; none is claimed.
+* G4 in `swarm-orchestration.md` attributes the remaining ~20% CPU gap to
+  a2a-rs: not instructions (equal within 1% once `memcpy` is excluded) but
+  kernel and allocator time.
+
+**Tried and not landed: running a blocking send's executor in its
+collector's task.** One task per send instead of two. Measured on 5
+interleaved runs: 8,422 vs 8,465 rps, CPU 180.0 vs 185.6 µs/request with
+overlapping ranges — no gain. It also made the bug below certain rather than
+racy, so it was not committed. The patch was kept only in the session's
+scratchpad; the design (a deferred executor whose `Drop` spawns it, a
+`catch_unwind` poll wrapper, the result returned over a oneshot before the
+executor finishes) is recoverable from this paragraph.
+
+**Open bug, found 2026-10-03, not fixed: a blocking send can drop events.**
+The sync collector reads the task's 256-slot broadcast channel. An executor
+that writes more than ~255 events faster than the collector folds them
+(each fold is a store write) makes the reader lag; the lagged events are
+skipped with a `trace_warn!` and are missing from the stored task, which
+still ends `Completed`. Measured with 20 blocking sends of a tight
+600-artifact burst on a 4-worker runtime: kept between 255 and 600
+artifacts. The background path does not have this bug — it reads a
+dedicated `mpsc` persistence channel sized 16× the queue. The likely fix is
+the same for blocking sends: give the collector the persistence channel
+rather than a broadcast receiver.
+
+**What the next session should do first.** Fix that bug, with the burst as
+its regression test (20 sends of 600 artifacts must each keep 600). Then
+G1-A (the client-side delegation handle) is the first swarm enabler;
+`examples/swarm`'s CI gate already proves the behaviour it has to keep.
 
 **Environment notes that will cost the next session time.**
 
