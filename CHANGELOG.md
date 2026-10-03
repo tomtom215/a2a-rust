@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on MSVC). On the echo benchmark jemalloc took unary throughput from 7,189
   to 11,862 requests/s at the same resident memory; see the book's
   production chapter, Allocator. The SDK crates set no allocator.
+- **A root `.dockerignore` excludes `**/target`.** The three images built
+  from the repository root (`examples/deploy-agent`, and `itk`'s
+  `rust-agent` and `tck`) compile inside the image, so the host's build
+  output was dead weight: measured, the context went from 10.15 GB (322 s
+  to transfer) to 26.53 MB (2.3 s) on a working tree with a full `target/`.
 - **Behaviour change for deployments that send tenants to the default
   stores**, which now get `UnsupportedOperation` (`-32004` on JSON-RPC,
   `400` on HTTP+JSON) where they used to be served from shared records.
