@@ -10,7 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `serve::Server::from_listener` builds the HTTP (JSON-RPC and REST) graceful
+  server on a `tokio::net::TcpListener` the caller has already bound, as the gRPC
+  and WebSocket dispatchers' `serve_with_shutdown` already allow. This covers
+  systemd socket activation, sockets handed over for a restart without
+  downtime, socket options `Server::bind` does not set (`SO_REUSEPORT`,
+  `IPV6_V6ONLY`, a custom backlog) and binding before dropping privileges
+  (#151). `Server::bind` now delegates to it.
 
 ## [0.14.1] - 2026-09-30
 

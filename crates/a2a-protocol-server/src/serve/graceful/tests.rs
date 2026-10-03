@@ -217,6 +217,38 @@ async fn timeouts_can_be_turned_off_without_breaking_the_connection() {
     serving.await.expect("join");
 }
 
+/// A server built from a listener the caller bound serves on that listener:
+/// it reports the caller's address and answers a request sent there.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_listener_bound_by_the_caller_is_the_one_served() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let bound = listener.local_addr().expect("caller's addr");
+    let server = Server::from_listener(listener);
+    assert_eq!(server.local_addr().expect("server's addr"), bound);
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let serving = tokio::spawn(async move {
+        server
+            .serve_with_shutdown(SlowDispatcher::new(Duration::ZERO), async {
+                rx.await.ok();
+            })
+            .await
+    });
+
+    let client: Client<_, Empty<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
+    let resp = client
+        .get(format!("http://{bound}/").parse().expect("uri"))
+        .await
+        .expect("a request to the caller's address is answered");
+    assert!(resp.status().is_success());
+    let body = resp.into_body().collect().await.expect("body").to_bytes();
+    assert_eq!(&body[..], b"late but complete");
+
+    tx.send(()).expect("signal shutdown");
+    let report = serving.await.expect("join server");
+    assert_eq!(report.accepted, 1, "{report:?}");
+}
+
 #[tokio::test]
 async fn bind_reports_the_port_it_actually_got() {
     let server = Server::bind("127.0.0.1:0").await.expect("bind");
