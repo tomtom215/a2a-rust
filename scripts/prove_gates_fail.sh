@@ -407,6 +407,11 @@ injection_for() {
         # succeeds; only the scaling check's count notices.
         "cargo run -p resilient-agent"*)
             echo "resilient_scaling" ;;
+        # The swarm example's own defect: supervisors stop forwarding their
+        # cancellation to the children they started. Every job still runs and
+        # every root still reports canceled; only the live-worker count does not.
+        "cargo run -p swarm"*)
+            echo "swarm_cancel" ;;
         "./scripts/go_sdk_interop.sh"*)
             echo "go_interop" ;;
         # Before the general incident-response arm: `-- harden` runs Act 5
@@ -530,6 +535,7 @@ expected_marker() {
         example_surface)  echo "matrix cell(s) never ran" ;;
         example_hardening) echo "partitions leak" ;;
         resilient_scaling) echo "should admit" ;;
+        swarm_cancel)     echo "cancel did not reach every worker" ;;
         go_interop)       echo "push delivery token header" ;;
         postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
         ignored_suite)    echo "gate probe: injected failure in ${1##*:}" ;;
@@ -1193,6 +1199,22 @@ if s.count(needle) != 1:
 # `limiter` stays assigned, or `-D warnings` fails the build on an
 # unused `mut` before the check can run and the probe proves nothing.
 open(p, "w").write(s.replace(needle, "            limiter = { let _ = counter; limiter };\n"))
+PY3
+            ;;
+        swarm_cancel)
+            # Children are never sent CancelTask: the supervisor's root goes
+            # canceled while every worker under it keeps executing, which is
+            # exactly what A2A does with no cascade written by hand.
+            note_touched "examples/swarm/src/supervisor.rs"
+            python3 - <<'PY3'
+p = "examples/swarm/src/supervisor.rs"
+s = open(p).read()
+needle = "                if let (true, Some(id)) = (propagate, &child) {\n"
+if s.count(needle) != 1:
+    raise SystemExit(
+        f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
+    )
+open(p, "w").write(s.replace(needle, "                if let (true, Some(id)) = (propagate && child.is_none(), &child) {\n"))
 PY3
             ;;
         example_hardening)

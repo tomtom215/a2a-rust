@@ -1,0 +1,6 @@
+who        n  ttft_med_ms ttft_p90_ms total_med_ms  text==direct  completed
+direct     20       108.1       280.8       1519.3     20/20     20/20
+a2a-rs     20       105.2       275.0       1509.0     20/20     20/20
+a2a-rust   20       108.7       264.2       1543.9     20/20     20/20
+a2a-rs    paired TTFT overhead ms: median 1.85 [min -191.45, max 243.54]; total overhead median 2.00
+a2a-rust  paired TTFT overhead ms: median -0.07 [min -179.46, max 195.88]; total overhead median 3.74

@@ -607,35 +607,41 @@ impl WebSocketDispatcher {
         // instead let a stream to a dead consumer re-arm the keepalive
         // indefinitely.
         let mut pinged = false;
+        let half = idle / 2;
+        // How soon a ping that found the write half busy is tried again.
+        let retry = (idle / 16).max(Duration::from_millis(1));
         loop {
             let idle_for = writer.activity.idle_for();
             if idle_for >= idle {
                 trace_debug!("WebSocket connection idle past its budget; closing");
                 return None;
             }
-            let half = idle / 2;
-            let (wait, ping_now) = if pinged || idle_for >= half {
-                (idle.saturating_sub(idle_for), false)
-            } else {
-                (half.saturating_sub(idle_for), true)
-            };
 
-            // A frame — any frame, the peer's Pong included — is traffic, and
-            // ends the wait.
-            if let Ok(frame) = tokio::time::timeout(wait, reader.next()).await {
-                return frame;
-            }
-            // The wait elapsed. Either send the keepalive, or recheck: an
-            // outbound write may have refreshed the clock meanwhile, so this
-            // must not close on the first tick.
-            if ping_now {
+            // Not `idle_for < half`: at equality that comparison chose between
+            // a zero wait and pinging now, which are the same thing, so its
+            // `<=` mutant could never be caught. Testing the remaining wait
+            // for zero has no such boundary.
+            let until_half = half.saturating_sub(idle_for);
+            let wait = if pinged {
+                idle.saturating_sub(idle_for)
+            } else if until_half.is_zero() {
+                // Half the budget has passed with no traffic either way: send
+                // the keepalive.
+                //
                 // Never waits: not for the lock, which a stream send blocked
                 // on a peer that stopped reading can hold indefinitely, and
                 // not past the budget for the ping itself, which a full
                 // socket would also block. Either wait made this loop the
                 // thing that stalled, and the idle check above never ran
-                // again (N30). A ping not sent is a ping not answered, which
-                // is the verdict the bound exists to reach.
+                // again (N30).
+                //
+                // A busy lock is not a verdict, though. It is usually a stream
+                // write in flight to a peer that is reading: the frame is about
+                // to land and refresh the clock, and the ping was only
+                // unlucky in its timing. So it is retried shortly rather than
+                // counted as sent. A peer that has stopped reading keeps the
+                // lock held, every retry finds it busy, and the budget runs
+                // out — the same verdict as before.
                 if let Ok(mut w) = writer.sink.try_lock() {
                     let budget = idle.saturating_sub(writer.activity.idle_for());
                     // A failed ping means the socket is already gone; let the
@@ -643,11 +649,23 @@ impl WebSocketDispatcher {
                     let _ =
                         tokio::time::timeout(budget, w.send(WsMessage::Ping(Vec::new().into())))
                             .await;
+                    // Deliberately *not* a `touch()`: our own keepalive must
+                    // not be able to keep a dead peer's connection alive. Only
+                    // the peer's answer counts.
+                    pinged = true;
+                    continue;
                 }
-                // Deliberately *not* a `touch()`: our own keepalive must not be
-                // able to keep a dead peer's connection alive. Only the peer's
-                // answer counts.
-                pinged = true;
+                retry.min(idle.saturating_sub(idle_for))
+            } else {
+                until_half
+            };
+
+            // A frame — any frame, the peer's Pong included — is traffic, and
+            // ends the wait. When the wait elapses, loop and recheck: an
+            // outbound write may have refreshed the clock meanwhile, so this
+            // must not ping or close on the first tick.
+            if let Ok(frame) = tokio::time::timeout(wait, reader.next()).await {
+                return frame;
             }
         }
     }
@@ -1585,6 +1603,72 @@ mod tests {
         );
     }
 
+    /// A keepalive that falls due while a write holds the sink is retried once
+    /// the sink is free, not counted as sent.
+    ///
+    /// The race behind `a_stream_to_a_silent_consumer_is_pinged_once` failing
+    /// on macOS CI (three times by 2026-10-03): the ping's deadline lands on
+    /// the same timer tick as a stream write, the write holds the sink, and
+    /// the ping was skipped yet recorded, so none was ever sent. Here the sink
+    /// is held deterministically through the half-budget and released well
+    /// before the budget is spent; a ping must still reach the peer.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_keepalive_that_finds_the_sink_busy_is_retried() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let client = tokio::spawn(async move {
+            tokio_tungstenite::connect_async(format!("ws://{addr}"))
+                .await
+                .expect("client handshake")
+                .0
+        });
+        let (tcp, _) = listener.accept().await.expect("accept");
+        let server_ws = tokio_tungstenite::accept_async(tcp)
+            .await
+            .expect("server handshake");
+        let mut client_ws = client.await.expect("join client");
+        let (sink, mut reader) = server_ws.split();
+        let conn: WsSink = Arc::new(Connection {
+            sink: tokio::sync::Mutex::new(sink),
+            activity: ActivityClock::new(),
+        });
+
+        // Held from before the half-budget (200 ms) until 300 ms, as a stream
+        // write in flight would hold it; released with 100 ms to spare.
+        let idle = Duration::from_millis(400);
+        let (locked_tx, locked_rx) = tokio::sync::oneshot::channel();
+        let held = Arc::clone(&conn);
+        let holder = tokio::spawn(async move {
+            let _guard = held.sink.lock().await;
+            let _ = locked_tx.send(());
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        });
+        locked_rx.await.expect("the sink is held");
+
+        let server = tokio::spawn(async move {
+            WebSocketDispatcher::next_frame(&mut reader, &conn, Some(idle)).await
+        });
+
+        let pinged = tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(Ok(frame)) = client_ws.next().await {
+                if matches!(frame, WsMessage::Ping(_)) {
+                    return true;
+                }
+            }
+            false
+        })
+        .await;
+        assert!(
+            matches!(pinged, Ok(true)),
+            "the keepalive found the sink busy at the half-budget and was never sent: {pinged:?}"
+        );
+
+        holder.await.expect("join holder");
+        server.abort();
+    }
+
     fn streaming_message_json(id: &str) -> String {
         serde_json::json!({
             "jsonrpc": "2.0",
@@ -2289,6 +2373,7 @@ mod tests {
 
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExec)
+                .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
                 .with_tenant_resolver(HeaderTenantResolver::default())
                 .require_resolved_tenant()
                 .build()

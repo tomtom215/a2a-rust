@@ -20,6 +20,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `IPV6_V6ONLY`, a custom backlog) and binding before dropping privileges
   (#151). `Server::bind` now delegates to it.
 
+### Fixed
+
+- **A blocking `SendMessage` could lose events.** Its collector read the
+  task's broadcast queue, which overwrites what a slow reader has not
+  reached. An executor writing more than the queue's capacity (256) faster
+  than the collector stored it lost the overflow from the stored task,
+  which still ended `Completed`: 20 blocking sends of a 600-artifact burst
+  kept between 255 and 600. The collector now reads the bounded
+  persistence channel the background processor already used, so a slow
+  collector makes the executor wait (bounded by the write timeout) instead
+  of dropping events. Measured after: 600 of 600 in 60 of 60 sends.
+
+### Performance
+
+- **A streaming send's background processor and SSE forwarder are boxed
+  before they are spawned**, so the span, tenant-scope and tracker
+  wrappers and tokio's task cell move a pointer rather than ~5.6 KB and
+  ~1.9 KB futures. Echo benchmark, streaming, one worker, jemalloc, two
+  independent replicates of 10 interleaved runs: 11,107 → 11,596 and
+  10,821 → 11,598 requests/s (Mann-Whitney p 0.049 and 0.023); two
+  workers, no change within noise.
+
+- **A JSON-RPC request is parsed once, not three times.** The body was
+  parsed into a `serde_json::Value`, converted to `JsonRpcRequest`, and
+  its `params` cloned and converted again. A single request now parses
+  straight into `JsonRpcRequest`, and `params` deserializes from the
+  borrowed value. A body that fails the direct parse takes the old path,
+  so error codes and messages are unchanged and a duplicated key is still
+  accepted (last value wins). Echo benchmark, one worker, jemalloc, 3
+  interleaved runs: 19,434–19,782 → 21,033–21,615 requests/s.
+
+- **On a single-worker runtime a blocking `SendMessage` runs its executor
+  in the task that collects its events.** Two tasks on one worker cannot
+  run in parallel, so the split cost only handoffs. Echo benchmark, unary,
+  16 connections, jemalloc, 3 interleaved runs: one worker 14,166–14,770 →
+  19,308–20,105 requests/s (user CPU 50–53 → 41–42 µs/request). With more
+  workers the executor keeps its own task, which runs beside the
+  collection; on two workers this measured 12,133 vs 12,353 requests/s, no
+  difference within noise. A container limited to one CPU gets one worker
+  (`available_parallelism` reads the CPU quota).
+
+- **An event write no longer allocates a large future, and the handler's
+  persistence channels carry the broadcast's `Arc`.** `write` does its work
+  synchronously when the persistence channel has room and no terminal
+  verdict is awaited; only a full channel or a gated terminal event returns
+  a waiting future. The channel's item is the shared event, not a deep copy,
+  so its first block is 256 bytes rather than 11.5 KB. Four allocations
+  above glibc's 1 KB thread-cache limit fewer per unary send (dhat). Echo
+  benchmark, unary, 16 connections, 3 interleaved runs: one server core
+  10,005 → 10,493 rps (user CPU 81.2 → 77.4 µs/request, ranges not
+  overlapping); two cores, no difference within noise. A fast write still
+  spends the task's cooperative budget, so a tight write loop yields as the
+  awaited `send` it replaces did. The public
+  `new_in_memory_queue_with_persistence` keeps its by-value channel.
+
+- **A task's event queue no longer pre-allocates ~99 KB.** The broadcast
+  channel carries events behind an `Arc` instead of by value (360 bytes per
+  slot × 256 slots, allocated per task). Bytes allocated per unary
+  `SendMessage` on the echo harness fell from 173,278 to 82,844 (counting
+  allocator, 16 connections). Instructions per request changed by under 1%
+  (cachegrind), so this is a memory win, not a throughput claim.
+- The blocking-send collector no longer clones every event into a push
+  buffer when no push sender is configured, and saves artifact updates as
+  deltas (`save_artifact_delta`) as the background processor already did,
+  instead of re-saving the whole task per chunk.
+
+### Security
+
+- **A server whose stores cannot isolate tenants now refuses requests that
+  name one.** The default `RequestHandlerBuilder` store ignored the `tenant`
+  field, so a request carrying one was served from records every tenant
+  shares: on 0.14.1, tenant B could get, list, subscribe to and cancel
+  tenant A's task (five of five probes,
+  `docs/sdk-comparison-2026-10-02.md` §5.1). `TaskStore` and
+  `PushConfigStore` gain `isolates_tenants()`, `false` by default and `true`
+  on the six `TenantAware*` stores. A request that resolves to a non-empty
+  tenant — named by the client or derived by a resolver — is refused with
+  `UnsupportedOperation` unless both stores answer `true`. Requests without
+  a tenant are unaffected.
+
+### Changed
+
+- **`examples/deploy-agent` runs on jemalloc** (`tikv-jemallocator`, not
+  on MSVC). On the echo benchmark jemalloc took unary throughput from 7,189
+  to 11,862 requests/s at the same resident memory; see the book's
+  production chapter, Allocator. The SDK crates set no allocator.
+- **A root `.dockerignore` excludes `**/target`.** The three images built
+  from the repository root (`examples/deploy-agent`, and `itk`'s
+  `rust-agent` and `tck`) compile inside the image, so the host's build
+  output was dead weight: measured, the context went from 10.15 GB (322 s
+  to transfer) to 26.53 MB (2.3 s) on a working tree with a full `target/`.
+- **Behaviour change for deployments that send tenants to the default
+  stores**, which now get `UnsupportedOperation` (`-32004` on JSON-RPC,
+  `400` on HTTP+JSON) where they used to be served from shared records.
+  Configure the `TenantAware*` stores; configuring the task store alone is
+  enough, because an unset push-config store now defaults to
+  `TenantAwareInMemoryPushConfigStore` when the task store isolates. Where
+  tenants only key limits over deliberately shared records, call
+  `RequestHandlerBuilder::accept_unisolated_tenants()`. A custom store that
+  partitions by tenant must now say so by overriding `isolates_tenants()`;
+  a wrapper store must forward it.
+
+### Performance
+
+- **The in-memory store's TTL pass no longer scans every task under the write
+  lock.** Every `eviction_interval` writes (64 by default) the pass visited
+  every stored task — up to `max_capacity`, 10,000 by default — to find the
+  terminal ones last written at least `task_ttl` ago, holding the store's
+  write lock while it did, so every concurrent `save` waited behind a scan
+  that in the common case found nothing. A write-ordered `expiry_index` now
+  lets the pass walk only the entries that old. Measured on the default
+  store behind `JsonRpcDispatcher`, `SendMessage` from a closed-loop client,
+  server pinned to two cores, three runs each: 4,845 → 5,593 requests/s at
+  16 connections and 4,236 → 5,001 at 64, with p99 falling from 6.4 to
+  5.1 ms and from 23.5 to 20.1 ms. The index costs one ordered-map entry
+  per stored task; at the default cap the plateau RSS under sustained load
+  rose from 96.6 to 98.1 MiB. Eviction semantics are unchanged: the same
+  tasks expire at the same moment, which `expiry_tests.rs` pins at the
+  boundary for every write path that moves `last_updated`. Found by the
+  2026-10-02 SDK comparison (`docs/sdk-comparison-2026-10-02.md`).
+
 ## [0.14.1] - 2026-09-30
 
 ### Security

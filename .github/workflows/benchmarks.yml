@@ -331,8 +331,13 @@ jobs:
           # Surface what criterion actually produced — helps diagnose
           # "no change files found" errors (bench rename, criterion
           # version bump, etc.) from the CI log alone.
+          #
+          # `sed -n 1,50p`, not `head -50`: head exits after 50 lines, and
+          # once the list outgrows one write (61 files on 2026-10-03), sort
+          # can still be writing; it dies on EPIPE and `pipefail` fails
+          # the step, as it did on #149 on 2026-10-03. sed reads to the end.
           find target/criterion -name "estimates.json" -path "*/change/*" \
-            | sort | head -50
+            | sort | sed -n '1,50p'
           echo "::endgroup::"
 
           echo "::group::Regression analysis"

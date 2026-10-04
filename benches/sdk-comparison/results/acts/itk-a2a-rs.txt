@@ -1,0 +1,13 @@
+PR - star - send message - jsonrpc - non-streaming: PASSED
+PR - star - send message - jsonrpc - streaming: PASSED
+PR - star - send message - grpc - non-streaming: PASSED
+PR - star - send message - grpc - streaming: PASSED
+PR - star - send message - http_json - non-streaming: PASSED
+PR - star - send message - http_json - streaming: PASSED
+PR - star - push notification - jsonrpc: PASSED
+PR - star - push notification - grpc: PASSED
+PR - star - push notification - http_json: PASSED
+PR - star - resubscribe - jsonrpc: PASSED
+PR - star - resubscribe - grpc: PASSED
+PR - star - resubscribe - http_json: PASSED
+OVERALL STATUS: PASSED

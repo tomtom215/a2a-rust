@@ -1,0 +1,8 @@
+client a2a-rs -> server a2a-rs :: state=Completed events=67 ttfa_ms=250 total_ms=4789 text='There are **three** primary colors in the context of light a' 
+client a2a-rs -> server a2a-rust :: state=Completed events=68 ttfa_ms=102 total_ms=4531 text='There are **three** primary colors in the context of light a' 
+client a2a-rust -> server a2a-rs :: state=Completed events=67 ttfa_ms=96 total_ms=4496 text='There are **three** primary colors in the context of light a' 
+client a2a-rust -> server a2a-rust :: state=Completed events=68 ttfa_ms=98 total_ms=4481 text='There are **three** primary colors in the context of light a' 
+a2a-rs 3101 Completed 250 8caa248473cee1b0
+a2a-rs 3102 Completed 250 8caa248473cee1b0
+a2a-rust 3101 Completed 250 8caa248473cee1b0
+a2a-rust 3102 Completed 250 8caa248473cee1b0

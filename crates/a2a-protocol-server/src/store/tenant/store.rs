@@ -330,6 +330,10 @@ impl TenantAwareInMemoryTaskStore {
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for TenantAwareInMemoryTaskStore {
+    fn isolates_tenants(&self) -> bool {
+        true
+    }
+
     /// Every tenant gets its own [`InMemoryTaskStore`], and that partition is
     /// exactly the scope an idempotency key needs: one tenant's key can never
     /// name another tenant's task, because it is never in the same index.

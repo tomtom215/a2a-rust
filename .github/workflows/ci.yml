@@ -773,7 +773,7 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude mcp-a2a-agent --exclude a2a-mcp-bridge --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli
+        run: cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude mcp-a2a-agent --exclude a2a-mcp-bridge --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude swarm --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli
 
   # ── SDK dogfood (examples/agent-team) ────────────────────────────────────
   #
@@ -1080,6 +1080,13 @@ jobs:
         env:
           A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
           RESILIENT_REQUIRE_ALL: "1"
+      # A coordinator, 8 supervisor agents and 64 worker agents, every hop a
+      # real A2A call. Exits non-zero if fan-out loses a job, if retry-by-class
+      # retries anything but the injected transient faults, or if cancelling
+      # the roots leaves any worker executing. The live-model leg is skipped
+      # here (no SWARM_LLM_URL) and says so in its own JSON line.
+      - name: swarm — fan-out, retry by failure class, cancel through two A2A hops
+        run: cargo run -p swarm --release
 
   # The official Go SDK (a2a-go, pinned in itk/agents/go-sdk/go.mod and
   # itk/interop/go-sdk-client/go.mod) against this SDK in both directions,

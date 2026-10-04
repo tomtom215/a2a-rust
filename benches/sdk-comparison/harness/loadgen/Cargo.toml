@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+# Standalone: its own lockfile pins exactly what was measured, and no
+# feature unification with the other SDK's harness or the repo workspace.
+[workspace]
+
+[package]
+name = "loadgen"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+hdrhistogram = "7"
+serde_json = "1"
+
+[profile.release]
+debug = false

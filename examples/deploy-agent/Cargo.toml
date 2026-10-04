@@ -16,5 +16,14 @@ a2a-protocol-sdk = { path = "../../crates/a2a-protocol-sdk", features = ["axum"]
 axum             = { version = "0.8", features = ["json", "query", "tokio", "http1"] }
 tokio            = { workspace = true, features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
 
+# jemalloc in place of glibc's allocator. A server with a bounded task store
+# keeps a fixed-size heap full of freed holes, where glibc's allocator is
+# slow: on the echo benchmark jemalloc took unary throughput from 7,189 to
+# 11,862 requests/s at the same resident memory (book: deployment ›
+# production › Allocator). Not on MSVC, which tikv-jemalloc-sys does not
+# support; Windows builds keep the system allocator.
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.7"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }

@@ -1,0 +1,9 @@
+t=5s rss_kb 89092
+t=10s rss_kb 99680
+t=15s rss_kb 100256
+t=20s rss_kb 100296
+t=25s rss_kb 100488
+t=30s rss_kb 100488
+t=35s rss_kb 100488
+t=40s rss_kb 100492
+requests_ok 200855 errors 0

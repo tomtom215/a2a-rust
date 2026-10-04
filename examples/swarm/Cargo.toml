@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "swarm"
+version     = "0.0.0"
+description = "Hierarchical agent swarm over A2A: fan-out, retry, cancel propagation, live-model leg — measured"
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[dependencies]
+a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
+a2a-protocol-client = { path = "../../crates/a2a-protocol-client" }
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }
+tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+tokio-util     = { version = ">=0.7, <0.8" }
+hyper          = { workspace = true }
+hyper-util     = { workspace = true, features = ["client-legacy", "http1", "tokio"] }
+http-body-util = { workspace = true }
+bytes          = "1"
+serde_json     = { workspace = true }
+uuid           = { workspace = true }

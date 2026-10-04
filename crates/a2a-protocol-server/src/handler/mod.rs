@@ -90,6 +90,13 @@ pub struct RequestHandler {
     /// be determined) causes the request to be **rejected** rather than falling
     /// back to the shared default (`""`) partition. Opt-in strict multi-tenancy.
     pub(crate) require_resolved_tenant: bool,
+    /// `true` when a request that resolves to a non-empty tenant must be
+    /// refused because the stores cannot keep tenants apart: neither the
+    /// task store nor the push-config store both answer
+    /// [`isolates_tenants`](crate::store::TaskStore::isolates_tenants), and
+    /// the builder was not told
+    /// [`accept_unisolated_tenants`](crate::RequestHandlerBuilder::accept_unisolated_tenants).
+    pub(crate) refuse_unisolated_tenants: bool,
 
     /// What to do with a `traceparent` an as-yet-unauthenticated peer sent.
     ///
@@ -238,7 +245,7 @@ impl RequestHandler {
         client_tenant: Option<&str>,
     ) -> ServerResult<String> {
         let Some(resolver) = self.tenant_resolver.as_deref() else {
-            return Ok(client_tenant.unwrap_or_default().to_owned());
+            return self.isolatable(client_tenant.unwrap_or_default().to_owned());
         };
         let call_ctx =
             crate::handler::helpers::build_call_context(method, headers, self.inbound_trace_policy);
@@ -264,7 +271,34 @@ impl RequestHandler {
                 "request tenant '{client}' does not match the authenticated tenant"
             )));
         }
-        Ok(authoritative)
+        self.isolatable(authoritative)
+    }
+
+    /// Passes `tenant` through when this handler can keep it apart from
+    /// every other tenant, and refuses it otherwise.
+    ///
+    /// The empty tenant is the shared default partition every store has, so
+    /// it always passes. A non-empty one on stores that do not partition by
+    /// tenant would be served from the same records as every other tenant —
+    /// the cross-tenant read, list, subscribe and cancel the 2026-10-02
+    /// comparison measured — so it is refused before anything is read or
+    /// written.
+    ///
+    /// # Errors
+    ///
+    /// [`ServerError::UnsupportedOperation`](crate::error::ServerError::UnsupportedOperation)
+    /// naming what to configure.
+    fn isolatable(&self, tenant: String) -> ServerResult<String> {
+        if tenant.is_empty() || !self.refuse_unisolated_tenants {
+            return Ok(tenant);
+        }
+        Err(crate::error::ServerError::UnsupportedOperation(
+            "this server cannot isolate tenants: its task store or push-config store does not \
+             partition by tenant, so a request naming a tenant would share every other \
+             tenant's records. Configure the TenantAware* stores, or call \
+             RequestHandlerBuilder::accept_unisolated_tenants() if tenants here only key limits"
+                .to_owned(),
+        ))
     }
 }
 
@@ -292,6 +326,8 @@ pub enum SendMessageResult {
     Stream(InMemoryQueueReader),
 }
 
+#[cfg(test)]
+mod tenant_isolation_tests;
 #[cfg(test)]
 mod tenant_limits_tests;
 #[cfg(test)]
