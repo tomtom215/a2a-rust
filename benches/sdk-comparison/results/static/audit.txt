@@ -1,0 +1,14 @@
+== agent-a2a-rs
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1280 security advisories (from /root/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (261 crate dependencies)
+exit=0
+== agent-a2a-rust
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1280 security advisories (from /root/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (183 crate dependencies)
+exit=0
+a2a-rs         deps 602 vulns 1 ['RUSTSEC-2026-0285:rustls'] warnings {'unmaintained': ['RUSTSEC-2025-0134:rustls-pemfile'], 'yanked': ['chacha20', 'spin']}
+a2a-rust-rel   deps 522 vulns 1 ['RUSTSEC-2023-0071:rsa'] warnings {'unmaintained': ['RUSTSEC-2024-0436:paste']}

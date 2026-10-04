@@ -212,6 +212,19 @@ impl JsonRpcDispatcher {
         };
 
         // JSON-RPC 2.0 §6.3: detect batch (array) vs single (object) request.
+        //
+        // A single request — nearly every request — parses straight into
+        // `JsonRpcRequest`. Building a `Value` tree first and converting it
+        // was a second pass over every field. Only when that fails is the
+        // body parsed the old way, so a body that is not JSON still answers
+        // Parse error and JSON that is not a Request still answers Invalid
+        // Request, with the same messages as before.
+        let first = body_bytes.iter().find(|b| !b.is_ascii_whitespace());
+        if first != Some(&b'[')
+            && let Ok(rpc_req) = serde_json::from_slice::<JsonRpcRequest>(&body_bytes)
+        {
+            return self.dispatch_single_request_http(&rpc_req, &headers).await;
+        }
         let raw: serde_json::Value = match serde_json::from_slice(&body_bytes) {
             Ok(v) => v,
             Err(e) => return self.refuse_unparsed(started, &e.to_string()),

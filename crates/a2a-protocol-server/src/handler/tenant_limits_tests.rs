@@ -76,6 +76,7 @@ fn config_with(tenant: &str, limits: TenantLimits) -> PerTenantConfig {
 #[tokio::test]
 async fn a_tenant_executor_timeout_overrides_the_handlers() {
     let handler = RequestHandlerBuilder::new(SleepyExecutor(Duration::from_secs(60)))
+        .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
         .with_executor_timeout(Duration::from_secs(30))
         .with_tenant_config(config_with(
             "impatient",
@@ -105,6 +106,7 @@ async fn a_tenant_without_an_override_keeps_the_handlers_timeout() {
     // The tenant is configured, but declares no executor_timeout. `None` on
     // the tenant has always meant "use the handler's", and must still.
     let handler = RequestHandlerBuilder::new(SleepyExecutor(Duration::from_secs(60)))
+        .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
         .with_executor_timeout(Duration::from_millis(50))
         .with_tenant_config(config_with(
             "quiet",
@@ -144,6 +146,7 @@ async fn saturate(handler: &Arc<RequestHandler>, tenant: &str, n: usize) {
 fn capped_handler(tenant: &str, cap: usize) -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(SleepyExecutor(Duration::from_secs(60)))
+            .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
             .with_tenant_config(config_with(
                 tenant,
                 TenantLimits::builder().max_concurrent_tasks(cap).build(),
@@ -193,6 +196,7 @@ async fn a_refused_request_leaves_no_task_behind() {
 async fn the_slot_is_released_when_the_executor_finishes() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(SleepyExecutor(Duration::from_millis(10)))
+            .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
             .with_tenant_config(config_with(
                 "serial",
                 TenantLimits::builder().max_concurrent_tasks(1).build(),
@@ -213,6 +217,7 @@ async fn the_slot_is_released_when_the_executor_finishes() {
 async fn the_concurrency_limit_is_per_tenant_not_global() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(SleepyExecutor(Duration::from_secs(60)))
+            .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
             .with_tenant_config(
                 PerTenantConfig::builder()
                     .with_override(
@@ -255,6 +260,7 @@ async fn no_limit_configured_means_no_ceiling() {
     // A handler with no PerTenantConfig at all must behave exactly as before.
     let handler = Arc::new(
         RequestHandlerBuilder::new(SleepyExecutor(Duration::from_secs(60)))
+            .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
             .build()
             .expect("build"),
     );

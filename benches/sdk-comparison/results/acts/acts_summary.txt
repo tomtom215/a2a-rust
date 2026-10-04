@@ -1,0 +1,11 @@
+a2a-rs    grpc     total  88 pass  87 | MUST 47/47 SHOULD 27/28 MAY 13/13 |  105.1s
+     FAIL CORE-CAP-002 (should) Streaming not supported returns UnsupportedOperationError :: [{"id": "stream", "result": "fail", "duration_ms": 44, "failure": {"message": "expected an error, but the stream opened and produced 2 event(s)", "step_id": "stream", "expected": "an error", "actual": "2 event(s)"}}]
+a2a-rs    jsonrpc  total 101 pass 100 | MUST 59/59 SHOULD 28/29 MAY 13/13 |  191.9s
+     FAIL CORE-CAP-002 (should) Streaming not supported returns UnsupportedOperationError :: [{"id": "stream", "result": "fail", "duration_ms": 45, "failure": {"message": "expected an error, but the stream opened and produced 2 event(s)", "step_id": "stream", "expected": "an error", "actual": "2 event(s)"}}]
+a2a-rs    rest     total  92 pass  91 | MUST 49/49 SHOULD 29/30 MAY 13/13 |   84.4s
+     FAIL CORE-CAP-002 (should) Streaming not supported returns UnsupportedOperationError :: [{"id": "stream", "result": "fail", "duration_ms": 45, "failure": {"message": "expected an error, but the stream opened and produced 2 event(s)", "step_id": "stream", "expected": "an error", "actual": "2 event(s)"}}]
+a2a-rust  grpc     total  88 pass  88 | MUST 47/47 SHOULD 28/28 MAY 13/13 |   22.1s
+a2a-rust  jsonrpc  total 101 pass 101 | MUST 59/59 SHOULD 29/29 MAY 13/13 |  217.7s
+a2a-rust  rest     total  92 pass  91 | MUST 49/49 SHOULD 29/30 MAY 13/13 |   21.3s
+     FAIL REST-CT-001 (should) REST responses use application/a2a+json content type :: [{"id": "send", "result": "fail", "duration_ms": 2, "failure": {"message": "headers.Content-Type should start with application/a2a+json, got application/json", "step_id": "send", "expected": "application/a2a+json", "actual": "application/json", "assertion_path": "headers.Content-Type"}}]
+{'a2a-rs': [278, 281], 'a2a-rust': [280, 281]}

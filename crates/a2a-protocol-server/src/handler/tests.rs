@@ -115,6 +115,7 @@ fn headers_with(tenant: &str) -> HashMap<String, String> {
 #[tokio::test]
 async fn resolve_tenant_uses_resolver_when_client_omits_tenant() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
         .with_tenant_resolver(HeaderTenantResolver::default())
         .build()
         .unwrap();
@@ -146,6 +147,7 @@ async fn resolve_tenant_rejects_client_tenant_mismatch() {
 #[tokio::test]
 async fn resolve_tenant_accepts_matching_client_tenant() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
         .with_tenant_resolver(HeaderTenantResolver::default())
         .build()
         .unwrap();
@@ -194,7 +196,10 @@ async fn resolve_tenant_strict_rejects_unresolved() {
 #[tokio::test]
 async fn resolve_tenant_without_resolver_trusts_client_value() {
     // No resolver → single-tenant / trusted-caller mode: client value used.
-    let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
+        .build()
+        .unwrap();
     let tenant = handler
         .resolve_tenant("GetTask", None, Some("whatever"))
         .await

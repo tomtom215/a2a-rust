@@ -160,6 +160,28 @@ async fn tenant_postgres_store_advertises_idempotency_support() {
     db.drop_db().await;
 }
 
+/// The handler refuses a tenant unless both stores say they partition by
+/// it, so the tenant-aware Postgres pair must say so and the plain pair must
+/// not.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn only_the_tenant_aware_postgres_stores_isolate_tenants() {
+    let db = TestDb::create("isolates_tenants").await;
+    let tasks = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("tenant task store");
+    let configs = TenantAwarePostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("tenant push store");
+    assert!(tasks.isolates_tenants() && configs.isolates_tenants());
+    let plain_tasks = PostgresTaskStore::new(&db.url).await.expect("task store");
+    let plain_configs = PostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("push store");
+    assert!(!plain_tasks.isolates_tenants() && !plain_configs.isolates_tenants());
+    db.drop_db().await;
+}
+
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn task_save_and_get() -> A2aResult<()> {

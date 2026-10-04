@@ -74,13 +74,117 @@ impl Drop for CleanupGuard {
     }
 }
 
+/// A blocking send's executor, built at commit and run by the task that
+/// collects its events — one task per blocking send instead of two.
+///
+/// Nothing in the executor's future runs, and so nothing in it is armed,
+/// until it is first polled: dropped unrun, the task's queue, token and turn
+/// would never be released and the task would stay `Submitted`. So `Drop`
+/// spawns it exactly as [`RequestHandler::spawn_executor`] would have, and
+/// the only way to skip that is to take it with [`Self::watch`].
+pub struct DeferredExecutor {
+    run: Option<ExecutorRun>,
+    tracker: tokio_util::task::TaskTracker,
+}
+
+/// The executor's whole run, as [`RequestHandler::executor_future`] builds it.
+type ExecutorRun = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+
+impl DeferredExecutor {
+    /// Spawns the executor on the handler's tracker, as
+    /// [`RequestHandler::spawn_executor`] does.
+    pub fn spawn(mut self) -> JoinHandle<()> {
+        self.run.take().map_or_else(
+            || self.tracker.spawn(async {}),
+            |run| self.tracker.spawn(run),
+        )
+    }
+
+    /// Takes the executor, to be run in the caller's own task.
+    pub fn watch(mut self) -> WatchedExecutor {
+        WatchedExecutor::Inline(self.run.take())
+    }
+}
+
+impl Drop for DeferredExecutor {
+    fn drop(&mut self) {
+        if let Some(run) = self.run.take() {
+            self.tracker.spawn(run);
+        }
+    }
+}
+
+/// An executor as the sync collector watches it: resolves once the executor
+/// has ended, to `true` when it returned and `false` when it panicked or was
+/// aborted.
+pub enum WatchedExecutor {
+    /// Polled from the watcher's own task; `None` once it has ended.
+    Inline(Option<ExecutorRun>),
+    /// Running on a task of its own; `None` once it has ended.
+    Spawned(Option<JoinHandle<()>>),
+}
+
+impl std::future::Future for WatchedExecutor {
+    type Output = bool;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<bool> {
+        use std::task::Poll;
+        match &mut *self {
+            Self::Inline(slot) => {
+                let Some(run) = slot.as_mut() else {
+                    return Poll::Ready(true);
+                };
+                // `AssertUnwindSafe`: after a panic the future is never polled
+                // again — it is dropped right here, which is what tokio does
+                // with a panicked task, and what releases the executor's
+                // `CleanupGuard`. Nothing observes its state in between.
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    run.as_mut().poll(cx)
+                })) {
+                    Ok(Poll::Pending) => Poll::Pending,
+                    Ok(Poll::Ready(())) => {
+                        *slot = None;
+                        Poll::Ready(true)
+                    }
+                    Err(_panic) => {
+                        *slot = None;
+                        Poll::Ready(false)
+                    }
+                }
+            }
+            Self::Spawned(slot) => {
+                let Some(handle) = slot.as_mut() else {
+                    return Poll::Ready(true);
+                };
+                match std::pin::Pin::new(handle).poll(cx) {
+                    Poll::Pending => Poll::Pending,
+                    Poll::Ready(joined) => {
+                        *slot = None;
+                        Poll::Ready(joined.is_ok())
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl WatchedExecutor {
+    /// Runs an inline executor to its end. A blocking send answers as soon
+    /// as the task is terminal or interrupted, which can be before the
+    /// executor returns; its cleanup still has to run. A spawned executor
+    /// ends on its own task.
+    pub async fn finish(self) {
+        if let Self::Inline(Some(run)) = self {
+            run.await;
+        }
+    }
+}
+
 impl RequestHandler {
     /// Spawns the executor for a task whose queue, token and row all exist.
-    ///
-    /// The spawned task owns the only writer clone needed, so the channel
-    /// closes — and readers see EOF — when the executor finishes. It also
-    /// owns the tenant's concurrency permit, which is returned when the
-    /// future ends, however it ends: dropping the future drops the permit.
     pub(super) fn spawn_executor(
         &self,
         ctx: RequestContext,
@@ -88,11 +192,49 @@ impl RequestHandler {
         tenant_slot: Option<OwnedSemaphorePermit>,
         turn: Arc<ExecutorTurn>,
     ) -> JoinHandle<()> {
+        self.in_flight
+            .executors()
+            .spawn(self.executor_future(ctx, writer, tenant_slot, turn))
+    }
+
+    /// Builds the executor for a task whose queue, token and row all exist,
+    /// to be run by the task that collects its events.
+    pub(super) fn defer_executor(
+        &self,
+        ctx: RequestContext,
+        writer: Arc<InMemoryQueueWriter>,
+        tenant_slot: Option<OwnedSemaphorePermit>,
+        turn: Arc<ExecutorTurn>,
+    ) -> DeferredExecutor {
+        DeferredExecutor {
+            run: Some(Box::pin(self.executor_future(
+                ctx,
+                writer,
+                tenant_slot,
+                turn,
+            ))),
+            tracker: self.in_flight.executors().clone(),
+        }
+    }
+
+    /// The executor's whole run, from its first poll to its cleanup.
+    ///
+    /// The future owns the only writer clone needed, so the channel closes —
+    /// and readers see EOF — when the executor finishes. It also owns the
+    /// tenant's concurrency permit, which is returned when the future ends,
+    /// however it ends: dropping the future drops the permit.
+    fn executor_future(
+        &self,
+        ctx: RequestContext,
+        writer: Arc<InMemoryQueueWriter>,
+        tenant_slot: Option<OwnedSemaphorePermit>,
+        turn: Arc<ExecutorTurn>,
+    ) -> impl std::future::Future<Output = ()> + Send + 'static {
         let executor = Arc::clone(&self.executor);
         let task_id = ctx.task_id.clone();
         let event_queue_mgr = self.event_queue_manager.clone();
         let cancel_tokens = Arc::clone(&self.cancellation_tokens);
-        // Resolved here, not inside the spawn: `TenantContext` is a task-local
+        // Resolved here, not inside the future: `TenantContext` is a task-local
         // and `tokio::spawn` does not inherit it. A per-tenant override wins
         // over the handler-wide default; `None` on the tenant means "use the
         // handler's", which is what the field has always documented.
@@ -110,68 +252,63 @@ impl RequestHandler {
         let tenant = crate::store::tenant::TenantContext::current();
         let shutdown = self.in_flight.shutdown_token();
 
-        // On the handler's tracker, so shutdown can wait for this future to
-        // end rather than exit underneath it.
         // Read before `ctx` moves into the executor's future; the span
         // records them when it is created.
         let span_ids = (ctx.task_id.to_string(), ctx.context_id.clone());
-        self.in_flight
-            .executors()
-            .spawn(crate::rpc_span::in_executor_span(
-                &span_ids.0,
-                &span_ids.1,
-                crate::store::tenant::TenantContext::scope(tenant, async move {
-                    // Owned by this future, so the slot is returned when the executor
-                    // finishes, fails, panics, or is aborted.
-                    let _tenant_slot = tenant_slot;
-                    trace_debug!(task_id = %ctx.task_id, "executor started");
+        crate::rpc_span::in_executor_span(
+            &span_ids.0,
+            &span_ids.1,
+            crate::store::tenant::TenantContext::scope(tenant, async move {
+                // Owned by this future, so the slot is returned when the executor
+                // finishes, fails, panics, or is aborted.
+                let _tenant_slot = tenant_slot;
+                trace_debug!(task_id = %ctx.task_id, "executor started");
 
-                    // Armed before the executor runs; see the type's docs for when it
-                    // fires. There is no `catch_unwind` here — the guard *is* the
-                    // panic handling.
-                    let mut cleanup_guard = CleanupGuard {
-                        task_id: Some(task_id.clone()),
-                        queue_mgr: event_queue_mgr.clone(),
-                        tokens: Arc::clone(&cancel_tokens),
-                        turn: Arc::clone(&turn),
-                    };
+                // Armed before the executor runs; see the type's docs for when it
+                // fires. There is no `catch_unwind` here — the guard *is* the
+                // panic handling.
+                let mut cleanup_guard = CleanupGuard {
+                    task_id: Some(task_id.clone()),
+                    queue_mgr: event_queue_mgr.clone(),
+                    tokens: Arc::clone(&cancel_tokens),
+                    turn: Arc::clone(&turn),
+                };
 
-                    let writer = TerminalTracking::new(writer, Arc::clone(&turn));
-                    let result =
-                        run_executor(executor.as_ref(), &ctx, &writer, executor_timeout).await;
-                    if let Err((ref e, class)) = result {
-                        write_failure_event(&writer, &ctx, e, class).await;
-                    } else if shutdown.is_cancelled() && !writer.terminal_written() {
-                        // Shut down, not cancelled by a caller: `CancelTask` runs
-                        // this hook itself, and cancels only the task's own child
-                        // token. The executor saw its token and returned without a
-                        // terminal state, so end the task the way `CancelTask`
-                        // would — the default hook writes `Canceled` — and every
-                        // stream still open on it gets a terminal event instead of
-                        // simply stopping. After `execute` returned, never beside
-                        // it: an executor that wrote its own terminal state while
-                        // the hook wrote another would have the second rejected as
-                        // an invalid transition and the task marked `Failed`.
-                        if let Err(_e) = executor.cancel(&ctx, &writer).await {
-                            trace_warn!(
-                                task_id = %ctx.task_id,
-                                error = %_e,
-                                "cancel hook failed during shutdown"
-                            );
-                        }
+                let writer = TerminalTracking::new(writer, Arc::clone(&turn));
+                let result = run_executor(executor.as_ref(), &ctx, &writer, executor_timeout).await;
+                if let Err((ref e, class)) = result {
+                    write_failure_event(&writer, &ctx, e, class).await;
+                } else if shutdown.is_cancelled() && !writer.terminal_written() {
+                    // Shut down, not cancelled by a caller: `CancelTask` runs
+                    // this hook itself, and cancels only the task's own child
+                    // token. The executor saw its token and returned without a
+                    // terminal state, so end the task the way `CancelTask`
+                    // would — the default hook writes `Canceled` — and every
+                    // stream still open on it gets a terminal event instead of
+                    // simply stopping. After `execute` returned, never beside
+                    // it: an executor that wrote its own terminal state while
+                    // the hook wrote another would have the second rejected as
+                    // an invalid transition and the task marked `Failed`.
+                    if let Err(_e) = executor.cancel(&ctx, &writer).await {
+                        trace_warn!(
+                            task_id = %ctx.task_id,
+                            error = %_e,
+                            "cancel hook failed during shutdown"
+                        );
                     }
-                    // Drop the writer so the channel closes and readers see EOF.
-                    drop(writer);
-                    // Explicit cleanup, then disarm the guard so it does not release
-                    // a second time on normal exit.
-                    event_queue_mgr.destroy(&task_id).await;
-                    cancel_tokens.write().await.remove(&task_id);
-                    cleanup_guard.task_id = None;
-                    // Last: a continuation waiting in admission may now lease
-                    // a queue and register a token under the same id.
-                    turn.finished.cancel();
-                }),
-            ))
+                }
+                // Drop the writer so the channel closes and readers see EOF.
+                drop(writer);
+                // Explicit cleanup, then disarm the guard so it does not release
+                // a second time on normal exit.
+                event_queue_mgr.destroy(&task_id).await;
+                cancel_tokens.write().await.remove(&task_id);
+                cleanup_guard.task_id = None;
+                // Last: a continuation waiting in admission may now lease
+                // a queue and register a token under the same id.
+                turn.finished.cancel();
+            }),
+        )
     }
 }
 
@@ -263,4 +400,65 @@ fn failure_status(ctx: &RequestContext, error: &A2aError, class: FailureClass) -
     set_class(&mut note, class);
     status.message = Some(note);
     status
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use super::{DeferredExecutor, WatchedExecutor};
+
+    /// Dropped unrun, a deferred executor is spawned rather than lost: its
+    /// cleanup guard is armed only once it runs, so losing it would leak
+    /// the task's queue and token and leave the task `Submitted`.
+    #[tokio::test]
+    async fn a_deferred_executor_dropped_unrun_still_runs() {
+        let ran = Arc::new(AtomicBool::new(false));
+        let tracker = tokio_util::task::TaskTracker::new();
+        let deferred = DeferredExecutor {
+            run: Some(Box::pin({
+                let ran = Arc::clone(&ran);
+                async move { ran.store(true, Ordering::SeqCst) }
+            })),
+            tracker: tracker.clone(),
+        };
+        drop(deferred);
+        tracker.close();
+        tracker.wait().await;
+        assert!(ran.load(Ordering::SeqCst));
+    }
+
+    /// Taken with `watch`, it is not spawned a second time on drop.
+    #[tokio::test]
+    async fn a_watched_executor_runs_once_inline() {
+        let tracker = tokio_util::task::TaskTracker::new();
+        let deferred = DeferredExecutor {
+            run: Some(Box::pin(async {})),
+            tracker: tracker.clone(),
+        };
+        let mut watched = deferred.watch();
+        assert!(tracker.is_empty(), "watching does not spawn");
+        assert!(
+            (&mut watched).await,
+            "a returning executor resolves to true"
+        );
+        watched.finish().await;
+        assert!(tracker.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_inline_panic_resolves_to_false() {
+        let mut watched = WatchedExecutor::Inline(Some(Box::pin(async { panic!("inline panic") })));
+        assert!(!(&mut watched).await);
+    }
+
+    #[tokio::test]
+    async fn a_spawned_executor_reports_its_join_result() {
+        let mut ok = WatchedExecutor::Spawned(Some(tokio::spawn(async {})));
+        assert!((&mut ok).await);
+        let mut panicked =
+            WatchedExecutor::Spawned(Some(tokio::spawn(async { panic!("spawned panic") })));
+        assert!(!(&mut panicked).await);
+    }
 }

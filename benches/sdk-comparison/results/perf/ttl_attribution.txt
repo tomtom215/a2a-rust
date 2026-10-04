@@ -1,0 +1,6 @@
+rep 1 default [0 banner] rps 4620 p50 3317 p99 6419 err 0
+rep 1 NO_TTL_SWEEP=1 [1 banner] rps 5903 p50 2515 p99 5339 err 0
+rep 2 default [0 banner] rps 4019 p50 3875 p99 7295 err 0
+rep 2 NO_TTL_SWEEP=1 [1 banner] rps 5342 p50 2877 p99 5971 err 0
+rep 3 default [0 banner] rps 4269 p50 3665 p99 6647 err 0
+rep 3 NO_TTL_SWEEP=1 [1 banner] rps 5881 p50 2567 p99 5167 err 0

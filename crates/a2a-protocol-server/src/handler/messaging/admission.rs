@@ -11,13 +11,12 @@
 
 use std::sync::Arc;
 
-use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::task::TaskId;
 
 use super::super::RequestHandler;
 use super::decisions::second_send_blocked;
 use crate::error::{ServerError, ServerResult};
-use crate::streaming::{InMemoryQueueReader, InMemoryQueueWriter, QueueLease};
+use crate::streaming::{InMemoryQueueReader, InMemoryQueueWriter, QueueConsumer, QueueLease};
 
 /// What a successful lease hands the send path: the writer the executor will
 /// own, the first reader, and the persistence receiver when a background
@@ -25,7 +24,7 @@ use crate::streaming::{InMemoryQueueReader, InMemoryQueueWriter, QueueLease};
 pub(super) type LeasedQueue = (
     Arc<InMemoryQueueWriter>,
     InMemoryQueueReader,
-    Option<tokio::sync::mpsc::Receiver<A2aResult<crate::streaming::StreamEvent>>>,
+    Option<crate::streaming::event_queue::PersistenceRx>,
 );
 
 impl RequestHandler {
@@ -118,7 +117,15 @@ impl RequestHandler {
             .and_then(|limits| limits.event_queue_capacity);
         match self
             .event_queue_manager
-            .lease(task_id, use_background, capacity)
+            .lease(
+                task_id,
+                if use_background {
+                    QueueConsumer::Background
+                } else {
+                    QueueConsumer::Collector
+                },
+                capacity,
+            )
             .await
         {
             QueueLease::Created {

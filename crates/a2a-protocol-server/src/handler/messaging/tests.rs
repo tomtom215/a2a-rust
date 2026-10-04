@@ -1594,7 +1594,10 @@ async fn unknown_task_id_returns_task_not_found() {
 #[tokio::test]
 async fn send_message_with_tenant() {
     // Covers line 46: tenant scoping with non-default tenant.
-    let handler = make_handler();
+    let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
+        .build()
+        .expect("tenant-aware handler");
     let mut params = make_params(None);
     params.tenant = Some("test-tenant".to_string());
 
@@ -2131,8 +2134,10 @@ async fn the_sweep_evicts_an_aged_token_whose_queue_is_gone() {
 async fn the_sweep_keeps_an_aged_token_whose_queue_is_live() {
     let handler = handler_with_token_cap(1);
     let aged = seed_aged_token(&handler, "aged-live-queue").await;
-    let crate::streaming::QueueLease::Created { writer, .. } =
-        handler.event_queue_manager.lease(&aged, false, None).await
+    let crate::streaming::QueueLease::Created { writer, .. } = handler
+        .event_queue_manager
+        .lease(&aged, crate::streaming::QueueConsumer::Collector, None)
+        .await
     else {
         panic!("a fresh id leases a queue");
     };

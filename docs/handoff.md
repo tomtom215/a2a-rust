@@ -11,9 +11,10 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-09-24 — `claude/keen-noether-q73ekn` merged as
-`0b7e87c2` (#143); the drop-path findings N21–N32, N16 and N18 are on
-`claude/peaceful-ptolemy-noka5b`.
+Last updated 2026-10-02 — `claude/eager-galileo-h4x21s`: the SDK comparison
+against a2a-rs at both 2026-09-30 releases, the TTL-sweep fix it found, and
+`examples/swarm`. `git log -1 --format='%ci %s' -- docs/handoff.md` remains
+the authority on this line.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -107,7 +108,9 @@ the *content* merge.
 | `claude/pensive-allen-socw7b` | merged, still present | **Merged as `fa2e901` via [#141](https://github.com/tomtom215/a2a-rust/pull/141) on 2026-09-23.** The adopter audit and phase 1 of its fixes; see its section below. Safe to delete. |
 | `claude/determined-galileo-rywiyj` | merged, still present | **Merged as `8a54d7e9` via [#142](https://github.com/tomtom215/a2a-rust/pull/142) on 2026-09-23.** The adopter audit's open work after phase 1; see its section below. Safe to delete. |
 | `claude/keen-noether-q73ekn` | merged, still present | **Merged as `0b7e87c2` via [#143](https://github.com/tomtom215/a2a-rust/pull/143).** The audit's gate gaps (escape classes 1, 6, 7, 8, 9), then phase 2 of observability. Safe to delete. |
-| `claude/peaceful-ptolemy-noka5b` | open — no PR yet | **Destined for `main`.** N21 (the maintainer chose the admission side), the adopter's four reports, the claims ledger, and the drop-path hunt (N24–N32, N16, N18). See its section below. |
+| `claude/peaceful-ptolemy-noka5b` | merged | **Merged as `10f3435` via [#144](https://github.com/tomtom215/a2a-rust/pull/144).** N21 (the maintainer chose the admission side), the adopter's four reports, the claims ledger, and the drop-path hunt (N24–N32, N16, N18). This row said "open — no PR yet" until 2026-10-02; `git log --oneline --merges | grep 144` settles it. See its section below. |
+| `claude/clever-curie-wbfxzc` | merged | **Merged via [#147](https://github.com/tomtom215/a2a-rust/pull/147) (`d4f32eb`) and [#148](https://github.com/tomtom215/a2a-rust/pull/148) (`775fe46`).** The 0.14.1 release for GHSA-hr9h-6jvf-wvg6 and its provenance re-measurement. It had no row here. |
+| `claude/eager-galileo-h4x21s` | open — no PR yet | **Destined for `main`.** The 2026-10-02 SDK comparison, the in-memory store's TTL-sweep fix (`831b8ef`), `examples/swarm`, and `docs/swarm-orchestration.md`. See its section below. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -843,6 +846,95 @@ regenerated after it.
 then the `swarm_scale`
 comparison for N21 and WS3.
 
+## `claude/eager-galileo-h4x21s` — the comparison, one fix, and the swarm
+
+The maintainer asked for a fresh, non-partisan comparison against a2a-rs at
+both projects' crates.io releases, with a live model, plus a start on swarm
+orchestration. What landed and why is in the three documents rather than
+here:
+
+* [`sdk-comparison-2026-10-02.md`](sdk-comparison-2026-10-02.md) — results,
+  with every figure tied to a file under `benches/sdk-comparison/results/`.
+  Headline: conformance and interop are parity on the A2A project's own
+  suites; a2a-rs is 1.17–1.62× faster per request; a2a-rust's memory is
+  bounded and a2a-rs's is not; a2a-rust's default store leaked across
+  tenants exactly as a2a-rs does (fixed since, below).
+* `831b8ef` — the TTL pass walks a write-ordered index (+15–18% on the echo
+  benchmark). Its CHANGELOG entry carries the numbers.
+* [`swarm-orchestration.md`](swarm-orchestration.md) — gaps ranked by
+  measurement, with `examples/swarm` (gated in `ci.yml`) as the evidence.
+
+* `a57de29` — R1 decided (G3 option 2): a store that cannot isolate refuses
+  any request naming a tenant. Breaking for deployments that relied on the
+  leak; the CHANGELOG says how to migrate.
+* `1c2ca83` — queue events behind `Arc`: bytes allocated per unary send
+  173,278 → 82,844. No throughput change; none is claimed.
+* G4 in `swarm-orchestration.md` attributes the remaining ~20% CPU gap to
+  a2a-rs: not instructions (equal within 1% once `memcpy` is excluded) but
+  kernel and allocator time.
+
+**Tried and not landed: running a blocking send's executor in its
+collector's task.** One task per send instead of two. Measured on 5
+interleaved runs: 8,422 vs 8,465 rps, CPU 180.0 vs 185.6 µs/request with
+overlapping ranges — no gain. It also made the bug below certain rather than
+racy, so it was not committed. The patch was kept only in the session's
+scratchpad; the design (a deferred executor whose `Drop` spawns it, a
+`catch_unwind` poll wrapper, the result returned over a oneshot before the
+executor finishes) is recoverable from this paragraph.
+
+**Fixed 2026-10-03 (`ce9c533`): a blocking send could drop events.** Its
+collector read the 256-slot broadcast ring; a burst faster than the
+collector stored it lost the overflow (20 sends of 600 artifacts kept 255
+to 600). It now reads the persistence channel. After: 600 of 600 in 60 of
+60 sends.
+
+**Throughput, where it stands.** `996a736` (synchronous writes, shared
+`Arc` on the persistence channel): +4.9% on one core, nothing measurable
+on two. G4 in `swarm-orchestration.md` has the one-core attribution: of
+a2a-rust's 74–80 µs user CPU per unary request against a2a-rs's 37–40,
+about 16 µs is evicting from the bounded default store, which a2a-rs does
+not do. Method notes that cost this session time: measure on one pinned
+core (`taskset -c 0`; tokio sizes its pool from the affinity mask), read
+user/system time from `/proc/<pid>/stat`, and do not trust cachegrind for
+time — it serialises threads and prices every instruction alike.
+
+**The store cap was kept and eviction was not redesigned (2026-10-03).**
+Under jemalloc eviction costs nothing measurable; the ~16 µs it seemed to
+cost is glibc in a bounded heap (G4). The production recommendation is
+jemalloc or mimalloc, now in `book/src/deployment/production.md`: +65%
+unary throughput on two cores. `examples/deploy-agent` now runs on it via
+`tikv-jemallocator` (maintainer's choice, 2026-10-03; not on MSVC).
+
+**Throughput after the third pass (2026-10-03).** On jemalloc for both:
+one core 1.13× (was 1.65×), two cores unary 1.09×, two cores streaming
+1.21×. G4 has the table, the landed changes (`701b02a`, `774593c`) and
+four layouts measured and rejected.
+
+**The terminal gate stays as it is (2026-10-03).** Its 6.6% of two-core
+streaming was examined both ways: a processor-side broadcast was rejected
+for ordering and liveness risks, and sharing one task between executor and
+processor was measured slower (G4). The remaining streaming gap is not
+attributed further.
+
+**What the next session should do first.** G1-A (the client-side
+delegation handle) is the first swarm enabler; `examples/swarm`'s CI gate
+already proves the behaviour it has to keep.
+
+**Environment notes that will cost the next session time.**
+
+* Docker is installed but the daemon is not running; `dockerd &` starts it.
+  The a2a-itk image needs the CA and proxy overlay from
+  `benches/sdk-comparison/scripts/itk_dockerfile_overlay.py` in this sandbox.
+* A 4-core sandbox fills its disk with three or four Rust target
+  directories. This repository's own `target/` reached 19 GB once in this
+  session; budget for it.
+* `pkill -f <pattern>` matches the shell that runs it if the pattern appears
+  in the command line. Use `pkill -x <name>` or kill by PID. (This session
+  still did it twice.)
+* Measure throughput on one pinned core with `/proc/<pid>/stat` user and
+  system time; two-core runs are latency-bound and the VM's noise is ±5–10%
+  there. Use 6 interleaved runs and compare medians.
+
 ## In flight outside this repository
 
 - **adk-rust 0.12 upgrade — prepared, not submitted.** Patch and its base commit
@@ -1119,6 +1211,12 @@ all. It is recorded because it would most change how agents compose, where the
 rest of this section only makes existing composition more reliable.
 
 ### What not to chase
+
+*(2026-10-02: the maintainer asked for work toward orchestrating large agent
+swarms. [`swarm-orchestration.md`](swarm-orchestration.md) reconciles that
+request with the paragraph below. Orchestration lives in `examples/swarm`.
+The protocol crates gain only a client-side helper and declared extensions;
+no scheduler, registry or mesh.)*
 
 Anything that turns the SDK into a runtime: agent registries, scheduling,
 orchestration DSLs, a mesh. That is a different product, and pursuing it would

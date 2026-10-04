@@ -23,10 +23,12 @@
 //!
 //! Neither pass runs under the `save()` write lock; both take their own.
 //!
-//! All eviction operations maintain the secondary indexes (`order_index`
-//! and `context_index`) via [`StoreData::remove`].
+//! All eviction operations maintain the secondary indexes (`order_index`,
+//! `context_index` and `expiry_index`) via [`StoreData::remove`].
 
 mod capacity;
+#[cfg(test)]
+mod expiry_tests;
 #[cfg(test)]
 mod fixtures;
 #[cfg(test)]
@@ -172,7 +174,7 @@ impl InMemoryTaskStore {
     /// otherwise do on every write once the store is full.
     pub(super) fn evict(store: &mut StoreData, config: &TaskStoreConfig, passes: EvictionPasses) {
         if let Some(ttl) = config.task_ttl.filter(|_| passes.ttl) {
-            Self::evict_expired(store, ttl);
+            Self::evict_expired(store, ttl, Instant::now());
         }
 
         if let Some(max) = config.max_capacity.filter(|_| passes.capacity) {
@@ -190,24 +192,39 @@ impl InMemoryTaskStore {
 
     /// Removes every terminal task whose last update is at least `ttl` old.
     ///
-    /// O(n) in the store size, unavoidably: finding the expired entries means
-    /// looking at all of them. That cost is the reason this pass is amortized
-    /// behind `eviction_interval` instead of running on every write — see
-    /// [`EvictionPasses`].
+    /// Walks only the prefix of `expiry_index` written at or before
+    /// `now - ttl`: O(k log n) in the k entries that old, rather than a visit
+    /// to every entry. In the common case — nothing has been idle for a whole
+    /// TTL — the range is empty and the pass costs one tree descent. That
+    /// matters because it runs under the store's write lock, so every
+    /// concurrent `save` waits behind it.
+    ///
+    /// Non-terminal entries inside the prefix are walked and kept: a task
+    /// still working is never expired, however long it has been quiet.
     ///
     /// Ids are collected before removing, rather than removed during the walk,
     /// so each removal can go through [`StoreData::remove`] and keep the
     /// secondary indexes consistent.
-    fn evict_expired(store: &mut StoreData, ttl: Duration) {
-        let now = Instant::now();
+    ///
+    /// `now` is a parameter for the reason given on
+    /// [`expire_idempotency_keys`](Self::expire_idempotency_keys): so "at
+    /// least `ttl` ago" can be tested exactly at `ttl`.
+    fn evict_expired(store: &mut StoreData, ttl: Duration, now: Instant) {
+        // No representable instant is `ttl` before `now`, so nothing stored
+        // can be that old.
+        let Some(cutoff) = now.checked_sub(ttl) else {
+            return;
+        };
         let expired: Vec<TaskId> = store
-            .entries
-            .iter()
-            .filter(|(_, entry)| {
-                entry.task.status.state.is_terminal()
-                    && now.duration_since(entry.last_updated) >= ttl
+            .expiry_index
+            .range(..=(cutoff, u64::MAX))
+            .filter(|(_, id)| {
+                store
+                    .entries
+                    .get(*id)
+                    .is_some_and(|entry| entry.task.status.state.is_terminal())
             })
-            .map(|(id, _)| id.clone())
+            .map(|(_, id)| id.clone())
             .collect();
         for id in expired {
             store.remove(&id);

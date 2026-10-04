@@ -367,6 +367,43 @@ let builder = builder.with_event_queue_capacity(64);
 > module can further reduce per-event serialization overhead via thread-local
 > buffer reuse.
 
+### Allocator
+
+Run the server on jemalloc (or mimalloc), not glibc's default allocator.
+A server with a bounded task store sits at a steady heap size full of freed
+holes, and glibc's allocator is slow in exactly that state; jemalloc is not.
+Measured on the echo benchmark (`benches/sdk-comparison`, two server cores,
+16 connections, unary `SendMessage`, 4 interleaved runs, 2026-10-03):
+
+| Allocator | Requests/s | CPU µs per request | Resident memory |
+|---|---|---|---|
+| glibc 2.39 (default) | 7,189 | 217.7 | 79 MB |
+| jemalloc 5 | 11,862 | 137.5 | 74 MB |
+| mimalloc 2.1 | 10,457 | 155.9 | 74 MB |
+
+Streaming sends gain in the same proportion (6,721 → 10,969 requests/s on
+jemalloc). glibc's tunables do not close the gap: a larger thread cache
+(`glibc.malloc.tcache_count=64`) measured the same as the default.
+
+Two ways to switch, with the same effect:
+
+- **In the binary**, with the `tikv-jemallocator` or `mimalloc` crate and a
+  `#[global_allocator]` static in your `main.rs`. Both build their C sources
+  with your Rust build; `tikv-jemallocator` also needs `make`.
+- **At run time**, with no code change: install the system library and
+  preload it.
+
+```sh
+# Debian/Ubuntu images
+apt-get install -y libjemalloc2
+LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./my-agent
+```
+
+The SDK does not choose an allocator for you; a library that set
+`#[global_allocator]` would override the one your application chose.
+`examples/deploy-agent` sets jemalloc in its `main.rs` and is the pattern
+to copy.
+
 ## Deployment Checklist
 
 - [ ] HTTPS termination configured
@@ -381,6 +418,7 @@ let builder = builder.with_event_queue_capacity(64);
 - [ ] Push notification URLs restricted to HTTPS
 - [ ] Body/query size limits verified
 - [ ] Graceful shutdown implemented
+- [ ] Server runs on jemalloc or mimalloc, not glibc's default allocator
 
 ## Next Steps
 

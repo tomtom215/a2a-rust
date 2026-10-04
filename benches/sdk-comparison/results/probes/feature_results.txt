@@ -1,0 +1,5 @@
+PASS persistence: task 67787a05-3164-4d6d-acaf-df9623e4a27d readable after kill -9 + restart
+auth <no header>: http 401
+auth Authorization: Bearer wrong: http 401
+auth Authorization: Bearer s3cret: http 200
+auth card without token: http 200

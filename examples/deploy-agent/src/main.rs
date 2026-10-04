@@ -17,6 +17,7 @@
 //! | Health checks | `GET /healthz`, `GET /readyz` | Nothing probes an example, so nothing notices it has no probe endpoint |
 //! | Graceful shutdown | `SIGTERM`/`SIGINT` drain the in-flight work | Examples are killed with Ctrl-C and nobody minds the truncated stream |
 //! | Bind address | `0.0.0.0`, not loopback | A loopback bind is invisible locally and unreachable in a container |
+//! | Allocator | jemalloc, not glibc's | A short run never fills the task store; a long-running server's bounded store does, and glibc is slow in that heap |
 //!
 //! The agent itself is deliberately trivial. Everything interesting here is the
 //! wrapper, because the wrapper is the part that is missing when someone tries
@@ -222,6 +223,13 @@ async fn shutdown_signal() {
         () = terminate => println!("SIGTERM received, draining"),
     }
 }
+
+/// jemalloc rather than glibc's allocator; see `Cargo.toml` for the
+/// measurement. An application sets this, never a library: a library's
+/// `#[global_allocator]` would override the one its application chose.
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

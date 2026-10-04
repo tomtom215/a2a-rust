@@ -59,6 +59,14 @@ pub trait PushConfigStore: Send + Sync + 'static {
         id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
+    /// Whether this store partitions configs by tenant. Same contract as
+    /// [`TaskStore::isolates_tenants`](crate::store::TaskStore::isolates_tenants):
+    /// defaults to `false`, and the handler refuses a request that names a
+    /// tenant unless both stores answer `true`.
+    fn isolates_tenants(&self) -> bool {
+        false
+    }
+
     /// Returns the total number of stored configs the handler should count
     /// against its global ceiling, or `None` if this backend does not report a
     /// count (in which case only the per-task cap is enforced).

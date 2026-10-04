@@ -20,9 +20,9 @@ mod status_stamp;
 pub(crate) mod terminal_gate;
 
 pub use in_memory::{InMemoryQueueReader, InMemoryQueueWriter};
-pub(crate) use in_memory::{ReattachFn, Reattached, carries_terminal_state, is_lag_error};
+pub(crate) use in_memory::{ReattachFn, Reattached, carries_terminal_state};
 pub use manager::EventQueueManager;
-pub(crate) use manager::QueueLease;
+pub(crate) use manager::{QueueConsumer, QueueLease};
 
 use std::future::Future;
 use std::pin::Pin;
@@ -32,6 +32,25 @@ use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::StreamResponse;
 use tokio::sync::{broadcast, mpsc};
+
+/// What the broadcast channel carries: an event behind an `Arc`.
+///
+/// `tokio::sync::broadcast` allocates and initialises every slot when the
+/// channel is created, and one channel is created per task. Carried by value
+/// the item is 360 bytes, so the default 256-slot queue cost about 99 KB per
+/// task before a single event was sent — 56% of all bytes allocated per
+/// unary `SendMessage` (dhat, 2026-10-02). Behind an `Arc` a slot is a
+/// pointer. It also turns fan-out to N subscribers from N deep clones into N
+/// reference-count bumps, and [`unshare`] hands the last reader the event
+/// itself with no clone at all.
+pub(crate) type Shared = std::sync::Arc<A2aResult<StreamEvent>>;
+
+/// Takes the event out of `shared`: moved when this is the only reference
+/// left — the common case, since the channel releases a slot's copy once
+/// every receiver has read it — and cloned otherwise.
+pub(crate) fn unshare(shared: Shared) -> A2aResult<StreamEvent> {
+    std::sync::Arc::try_unwrap(shared).unwrap_or_else(|still_shared| (*still_shared).clone())
+}
 
 /// Default channel capacity for event queues.
 ///
@@ -242,7 +261,34 @@ pub fn new_in_memory_queue_with_persistence(
     (
         InMemoryQueueWriter::new_with_persistence(
             tx,
-            persistence_tx,
+            in_memory::PersistenceTx::Owned(persistence_tx),
+            max_event_size,
+            write_timeout,
+        ),
+        InMemoryQueueReader::new(rx),
+        persistence_rx,
+    )
+}
+
+/// The persistence channel of a queue the handler leases: each item is the
+/// broadcast ring's own `Arc`; take the event out with [`unshare`].
+pub(crate) type PersistenceRx = mpsc::Receiver<Shared>;
+
+/// [`new_in_memory_queue_with_persistence`] with a channel of shared events,
+/// for the handler's own queues: a slot is a pointer, so the channel's first
+/// block is 256 bytes rather than 11.5 KB, and handing an event over costs a
+/// reference count instead of a deep copy. Same capacity, same semantics.
+pub(crate) fn new_in_memory_queue_with_shared_persistence(
+    capacity: usize,
+    max_event_size: usize,
+    write_timeout: std::time::Duration,
+) -> (InMemoryQueueWriter, InMemoryQueueReader, PersistenceRx) {
+    let (tx, rx) = broadcast::channel(capacity);
+    let (persistence_tx, persistence_rx) = mpsc::channel(capacity.saturating_mul(16).max(1024));
+    (
+        InMemoryQueueWriter::new_with_persistence(
+            tx,
+            in_memory::PersistenceTx::Shared(persistence_tx),
             max_event_size,
             write_timeout,
         ),

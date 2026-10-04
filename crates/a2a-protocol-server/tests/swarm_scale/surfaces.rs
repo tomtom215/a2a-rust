@@ -157,7 +157,7 @@ async fn listing_a_context_as_it_fills() {
         let mut bytes = 0;
         let started = Instant::now();
         for _ in 0..20 {
-            let (ok, n, us) = get(&c, addr, &format!("/v1/tasks?contextId={context}")).await;
+            let (ok, n, us) = get(&c, addr, &format!("/tasks?contextId={context}")).await;
             assert!(ok, "ListTasks must succeed at {created} tasks");
             bytes = n;
             samples.push(us);
@@ -200,7 +200,7 @@ async fn push_config_crud_as_a_coordination_path() {
         let request = hyper::Request::builder()
             .method("POST")
             .uri(format!(
-                "http://{addr}/v1/tasks/{task}/pushNotificationConfigs"
+                "http://{addr}/tasks/{task}/pushNotificationConfigs"
             ))
             .header("content-type", "application/json")
             .header("a2a-version", "1.0")

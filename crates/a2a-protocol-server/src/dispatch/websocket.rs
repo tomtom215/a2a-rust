@@ -2373,6 +2373,7 @@ mod tests {
 
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExec)
+                .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
                 .with_tenant_resolver(HeaderTenantResolver::default())
                 .require_resolved_tenant()
                 .build()

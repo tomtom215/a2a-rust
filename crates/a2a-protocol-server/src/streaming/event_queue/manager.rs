@@ -17,11 +17,20 @@ use a2a_protocol_types::events::StreamResponse;
 use super::{
     DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY, DEFAULT_WRITE_TIMEOUT, InMemoryQueueReader,
     InMemoryQueueWriter, StreamEvent, new_in_memory_queue_with_options,
-    new_in_memory_queue_with_persistence,
+    new_in_memory_queue_with_persistence, new_in_memory_queue_with_shared_persistence,
 };
 use crate::metrics::Metrics;
 
 // ── QueueLease ───────────────────────────────────────────────────────────────
+
+/// What reads a leased queue's persistence channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueConsumer {
+    /// The background event processor, which also answers the terminal gate.
+    Background,
+    /// A blocking send's collector, which is the request itself.
+    Collector,
+}
 
 /// Outcome of leasing a writer for a task via
 /// [`EventQueueManager::lease`].
@@ -42,7 +51,7 @@ pub enum QueueLease {
     Created {
         writer: Arc<InMemoryQueueWriter>,
         reader: InMemoryQueueReader,
-        persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<StreamEvent>>>,
+        persistence_rx: Option<super::PersistenceRx>,
     },
     /// A queue already existed for this task. The send path treats this as a
     /// concurrent/leaked-executor condition and rejects, so no writer/reader is
@@ -282,7 +291,7 @@ impl EventQueueManager {
     pub(crate) async fn lease(
         &self,
         task_id: &TaskId,
-        with_persistence: bool,
+        consumer: QueueConsumer,
         capacity: Option<usize>,
     ) -> QueueLease {
         let capacity = capacity.unwrap_or(self.capacity);
@@ -294,30 +303,27 @@ impl EventQueueManager {
             .is_some_and(|max| map.len() >= max)
         {
             QueueLease::CapacityExhausted
-        } else if with_persistence {
-            let (writer, reader, persistence_rx) = new_in_memory_queue_with_persistence(
+        } else {
+            let (writer, reader, persistence_rx) = new_in_memory_queue_with_shared_persistence(
                 capacity,
                 self.max_event_size,
                 self.write_timeout,
             );
             // Gated: the send path always hands `persistence_rx` to a
             // background processor, which answers the terminal tickets.
-            let writer = Arc::new(self.observed(writer).with_terminal_gate());
-            map.insert(task_id.clone(), Arc::clone(&writer));
-            QueueLease::Created {
-                writer,
-                reader,
-                persistence_rx: Some(persistence_rx),
-            }
-        } else {
-            let (writer, reader) =
-                new_in_memory_queue_with_options(capacity, self.max_event_size, self.write_timeout);
+            // Only the background processor answers the terminal gate; a
+            // gate on a collected writer would hold every terminal event for
+            // the full write timeout.
+            let writer = match consumer {
+                QueueConsumer::Background => self.observed(writer).with_terminal_gate(),
+                QueueConsumer::Collector => self.observed(writer).collected(),
+            };
             let writer = Arc::new(writer);
             map.insert(task_id.clone(), Arc::clone(&writer));
             QueueLease::Created {
                 writer,
                 reader,
-                persistence_rx: None,
+                persistence_rx: Some(persistence_rx),
             }
         };
         let queue_count = map.len();
@@ -387,7 +393,7 @@ impl EventQueueManager {
     pub(crate) async fn raw_subscribe(
         &self,
         task_id: &TaskId,
-    ) -> Option<tokio::sync::broadcast::Receiver<A2aResult<StreamEvent>>> {
+    ) -> Option<tokio::sync::broadcast::Receiver<super::Shared>> {
         let map = self.writers.read().await;
         map.get(task_id).map(|writer| writer.raw_subscribe())
     }
@@ -618,7 +624,7 @@ mod tests {
 
         // First lease creates the queue.
         assert!(matches!(
-            manager.lease(&task, true, None).await,
+            manager.lease(&task, QueueConsumer::Background, None).await,
             QueueLease::Created { .. }
         ));
         assert!(manager.has_queue(&task).await, "queue should now be live");
@@ -626,7 +632,7 @@ mod tests {
         // A second lease for the same task reports Existing — the send path
         // treats this as a concurrent/leaked-executor condition and rejects.
         assert!(matches!(
-            manager.lease(&task, true, None).await,
+            manager.lease(&task, QueueConsumer::Background, None).await,
             QueueLease::Existing
         ));
 
@@ -721,8 +727,9 @@ mod tests {
     async fn lease_capacity_override_beats_the_managers_own() {
         let manager = EventQueueManager::new();
         let task_id = TaskId::new("override");
-        let crate::streaming::QueueLease::Created { writer, reader, .. } =
-            manager.lease(&task_id, false, Some(1)).await
+        let crate::streaming::QueueLease::Created { writer, reader, .. } = manager
+            .lease(&task_id, QueueConsumer::Collector, Some(1))
+            .await
         else {
             panic!("first lease must create a queue");
         };
@@ -750,8 +757,9 @@ mod tests {
     async fn lease_without_an_override_uses_the_managers_capacity() {
         let manager = EventQueueManager::with_capacity(1);
         let task_id = TaskId::new("no-override");
-        let crate::streaming::QueueLease::Created { writer, reader, .. } =
-            manager.lease(&task_id, false, None).await
+        let crate::streaming::QueueLease::Created { writer, reader, .. } = manager
+            .lease(&task_id, QueueConsumer::Collector, None)
+            .await
         else {
             panic!("first lease must create a queue");
         };

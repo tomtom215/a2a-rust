@@ -1,0 +1,7 @@
+# Build output. Every Dockerfile that builds from the repository root
+# (examples/deploy-agent, itk/Dockerfile.rust-agent, itk/Dockerfile.tck)
+# copies the source and compiles inside the image, so a host `target/` is
+# never needed there — it only made the build context gigabytes larger and,
+# for the musl images, carried glibc artifacts in. `**/` also covers the
+# per-agent directories under benches/sdk-comparison/harness.
+**/target

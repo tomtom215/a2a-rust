@@ -1,0 +1,2 @@
+target-rs/release/agent-a2a-rs stripped 6096600 bytes
+target-rust/release/agent-a2a-rust stripped 4169320 bytes
