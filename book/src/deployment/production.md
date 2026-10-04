@@ -178,6 +178,12 @@ Your executor has to take part: `execute` must watch
 elsewhere and return. One that never looks at its token cannot be stopped
 early; `ServeReport::tasks` counts it in `still_running`.
 
+To serve on a socket bound elsewhere — inherited from systemd socket
+activation, handed over for a restart without downtime, or built with options
+such as `SO_REUSEPORT` — use `Server::from_listener(listener)` in place of
+`Server::bind`. A `std::net::TcpListener` needs `set_nonblocking(true)` before
+`tokio::net::TcpListener::from_std`.
+
 With Axum (or anything else that owns the sockets), call
 `handler.finish_in_flight(completion, grace)` at the end of the future you pass to
 `with_graceful_shutdown`, so it runs before Axum starts draining —

@@ -162,10 +162,37 @@ impl Server {
     ///
     /// Returns [`std::io::Error`] if the address cannot be bound.
     pub async fn bind(addr: impl tokio::net::ToSocketAddrs) -> std::io::Result<Self> {
-        Ok(Self {
-            listener: TcpListener::bind(addr).await?,
+        Ok(Self::from_listener(TcpListener::bind(addr).await?))
+    }
+
+    /// Wraps a listener the caller has already bound, without accepting
+    /// anything yet.
+    ///
+    /// For a socket bound outside this crate: one inherited from systemd
+    /// socket activation or handed over by a supervisor for a restart without
+    /// downtime, one built with options [`bind`](Self::bind) does not set
+    /// (`SO_REUSEPORT`, `IPV6_V6ONLY`, a custom backlog), or one bound before
+    /// the process drops privileges. The gRPC and WebSocket dispatchers'
+    /// `serve_with_shutdown` take a listener the same way.
+    ///
+    /// A [`std::net::TcpListener`] must be switched to non-blocking before it
+    /// is converted:
+    ///
+    /// ```no_run
+    /// use a2a_protocol_server::serve::Server;
+    ///
+    /// fn wrap(inherited: std::net::TcpListener) -> std::io::Result<Server> {
+    ///     inherited.set_nonblocking(true)?;
+    ///     let listener = tokio::net::TcpListener::from_std(inherited)?;
+    ///     Ok(Server::from_listener(listener))
+    /// }
+    /// ```
+    #[must_use]
+    pub fn from_listener(listener: TcpListener) -> Self {
+        Self {
+            listener,
             config: ServeConfig::default(),
-        })
+        }
     }
 
     /// Applies limits to this server.
