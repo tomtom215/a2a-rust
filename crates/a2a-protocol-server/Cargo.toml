@@ -119,7 +119,7 @@ tonic-prost       = { workspace = true, optional = true }
 tonic-types       = { workspace = true, optional = true }
 prost             = { workspace = true, optional = true }
 tokio-stream      = { workspace = true, optional = true }
-opentelemetry     = { version = "0.32", optional = true }
+opentelemetry     = { version = "0.33", optional = true }
 # Bridges the crate's `tracing` spans to OpenTelemetry, so the span an inbound
 # call runs in can take the caller's `traceparent` as its remote parent and
 # the id sent downstream names a span the exporter has (ADR 0013). 0.33 is the

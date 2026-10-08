@@ -88,5 +88,5 @@ rustls       = { version = ">=0.23.45, <0.24", default-features = false, feature
 tracing                = { workspace = true }
 tracing-subscriber     = { workspace = true }
 tracing-opentelemetry  = { version = ">=0.33, <0.34", default-features = false }
-opentelemetry          = { version = "0.32" }
+opentelemetry          = { version = "0.33" }
 opentelemetry_sdk      = { version = "0.32", features = ["trace", "metrics", "testing", "experimental_metrics_custom_reader"] }
