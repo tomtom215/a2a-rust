@@ -1,0 +1,393 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Source of docs/compliance/control-map.md. Edit this file, then run
+#   scripts/check_compliance_map.py --write
+# CI runs `--check`, which fails when a cited test, file or CI step no longer
+# exists, or when the Markdown is stale. Statuses:
+#
+#   supported   the SDK does what the row says; at least one cited test or CI
+#               step proves it
+#   documented  satisfied by a document or a process, cited as evidence
+#   partial     some of it; `gap` says what is missing
+#   gap         none of it yet; `gap` says what would close it
+#   integrator  not something a protocol library can do; `gap` says why, and
+#               what the SDK offers the integrator who must
+
+[meta]
+as_of = "2026-10-08"
+preamble = """
+This is a map from regulatory and standards provisions to what a2a-rust, a
+protocol library, provides toward them. It is not a claim that the SDK is
+compliant with anything: the EU AI Act places no obligation on this SDK,
+which is neither an AI system nor a provider (Regulation (EU) 2024/1689,
+Articles 3(1) and 3(3)), and Article 25(4) exempts free and open-source
+components from the value-chain duties, an exemption Regulation (EU)
+2026/1744 kept. The obligations below belong to whoever builds an AI system
+or a product with this SDK. Each row says how much of one this SDK carries
+for them, with the test that proves it, and what is left. Not legal advice.
+"""
+
+[[sources]]
+id = "ai-act"
+title = "EU AI Act — Regulation (EU) 2024/1689, as amended by Regulation (EU) 2026/1744"
+url = "https://eur-lex.europa.eu/eli/reg/2024/1689/oj/eng"
+verification = "primary"
+note = """
+Article text read on EUR-Lex on 2026-10-08. Application dates per the
+Commission's page and the amending regulation: Article 50 from 2 August 2026;
+Annex III high-risk obligations from 2 December 2027; Annex I high-risk
+obligations from 2 August 2028.
+"""
+
+[[sources]]
+id = "cra"
+title = "Cyber Resilience Act — Regulation (EU) 2024/2847"
+url = "https://eur-lex.europa.eu/eli/reg/2024/2847/oj/eng"
+verification = "primary"
+note = """
+Article text read on EUR-Lex on 2026-10-08. Article 14 applies from 11
+September 2026 and the rest from 11 December 2027 (Article 71(2)).
+Non-monetised open-source software is outside the Act (Recital 18); these
+rows serve the manufacturers who integrate it (Article 13(5)).
+"""
+
+[[sources]]
+id = "gdpr"
+title = "GDPR — Regulation (EU) 2016/679"
+url = "https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng"
+verification = "primary"
+
+[[sources]]
+id = "owasp-asi"
+title = "OWASP Top 10 for Agentic Applications (2026)"
+url = "https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/"
+verification = "secondary"
+note = """
+Published 9 December 2025. The identifiers and names below agree across
+three secondary summaries; OWASP's own page carries the list only as a
+download.
+"""
+
+[[sources]]
+id = "iso42001"
+title = "ISO/IEC 42001:2023 — AI management systems"
+url = "https://www.iso.org/standard/81230.html"
+verification = "secondary"
+note = """
+A management-system standard: an organisation is certified against it, a
+library is not. Annex A control numbers are taken from secondary sources,
+which disagree on some of them; check against the published standard.
+"""
+
+# ── EU AI Act ────────────────────────────────────────────────────────────────
+
+[[control]]
+id = "AIA-12-1"
+source = "ai-act"
+provision = "Art. 12(1)"
+requirement = "High-risk AI systems shall technically allow for the automatic recording of events (logs) over the lifetime of the system."
+sdk = "An append-only event log of every task's status and artifact events, durable in the SQLite and PostgreSQL stores and replayable by position (`Last-Event-ID`); an OpenTelemetry span for every RPC on every binding."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::events_round_trip_in_order_with_their_positions",
+  "crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::appending_the_same_position_twice_leaves_one_row",
+  "crates/a2a-protocol-client/tests/resume_e2e_tests.rs::subscribe_to_task_from_replays_from_the_offset_on_both_bindings",
+]
+evidence = ["docs/adr/0012-event-log-and-resumption.md"]
+gap = "The log records what happened to a task, not who caused it: no caller identity, authentication scheme or tenant per event, and nothing makes it tamper-evident."
+
+[[control]]
+id = "AIA-12-2"
+source = "ai-act"
+provision = "Art. 12(2)(a)–(c)"
+requirement = "Logging shall enable the recording of events relevant for identifying risk situations or substantial modifications, for post-market monitoring (Art. 72) and for deployers' monitoring (Art. 26(5))."
+sdk = "Every state transition, including failed, rejected and canceled, is an event; a typed failure taxonomy; semantic-convention metrics (`rpc.server.call.duration`) and spans carrying the task state."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-server/tests/event_processing_tests/state_transitions.rs::sync_mode_working_to_canceled",
+  "crates/a2a-protocol-server/tests/telemetry_export/agent_spans.rs::the_executor_span_is_invoke_agent_without_content_by_default",
+]
+evidence = ["docs/adr/0013-observability.md"]
+gap = "Telemetry is sampled and exported, not retained: there is no single record stream a deployer can keep for the period Art. 19 and 26(6) require."
+
+[[control]]
+id = "AIA-13-3f"
+source = "ai-act"
+provision = "Art. 13(3)(f)"
+requirement = "The instructions for use shall describe the mechanisms that allow deployers to properly collect, store and interpret the logs."
+sdk = "The observability chapter of the book and ADRs 0012 and 0013 describe the event log, its replay, the spans and the metrics."
+status = "partial"
+evidence = ["book/src/deployment/observability.md", "docs/adr/0012-event-log-and-resumption.md"]
+gap = "No text a provider can lift into instructions for use that describes these records as an audit log: what each record holds, how long to keep it, how to verify it."
+
+[[control]]
+id = "AIA-14-4d"
+source = "ai-act"
+provision = "Art. 14(4)(d)"
+requirement = "Natural persons overseeing the system can decide not to use it, or disregard, override or reverse its output."
+sdk = "The `input-required` and `auth-required` states let an executor pause a task for a person and resume it on the same task id."
+status = "partial"
+tests = ["crates/a2a-protocol-server/src/handler/messaging/tests.rs::input_required_continuation_reuses_task_id"]
+gap = "Nothing gates an output on a person's approval or records who approved what."
+
+[[control]]
+id = "AIA-14-4e"
+source = "ai-act"
+provision = "Art. 14(4)(e)"
+requirement = "Natural persons can intervene in or interrupt the system through a 'stop' button or similar procedure that brings it to a halt in a safe state."
+sdk = "`CancelTask` on every binding signals the executor's cancellation token; graceful shutdown cancels in-flight work and reports what ignored cancellation."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs::cancel_task_signals_cancellation_token",
+  "crates/a2a-protocol-server/src/handler/shutdown/tests/mod.rs::shutdown_with_timeout_cancels_tokens",
+]
+evidence = ["docs/swarm-orchestration.md"]
+gap = "Cancelling a task does not reach the tasks it delegated to other agents (all children orphaned in examples/swarm, G1 in swarm-orchestration.md), and there is no tenant-wide or global stop."
+
+[[control]]
+id = "AIA-15-5"
+source = "ai-act"
+provision = "Art. 15(5)"
+requirement = "High-risk AI systems shall be resilient against attempts by unauthorised third parties to alter their use, outputs or performance by exploiting system vulnerabilities."
+sdk = "Authentication (API key in constant time, bearer, JWT with a fixed algorithm list and HS256 secrets of at least 32 bytes), signed agent cards, an SSRF guard on push delivery, body and rate limits, refusal of tenants the stores cannot isolate, 13 fuzz targets."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-server/src/auth/jwt.rs::alg_none_is_rejected",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::algorithm_confusion_rejected",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::hs256_secret_shorter_than_32_bytes_fails_closed",
+  "crates/a2a-protocol-types/src/signing.rs::verify_rejects_tampered_card",
+  "crates/a2a-protocol-server/src/push/sender.rs::rejects_loopback_ipv4",
+  "crates/a2a-protocol-server/src/handler/tenant_isolation_tests.rs::the_default_store_refuses_a_client_named_tenant",
+]
+ci = ["cargo +nightly fuzz run"]
+gap = "The model-level attacks the article names — data and model poisoning, adversarial examples — are the provider's to address; the SDK carries messages and offers interceptors as the hook for a content filter, but ships none."
+
+[[control]]
+id = "AIA-19-26-6"
+source = "ai-act"
+provision = "Art. 19(1), 26(6)"
+requirement = "Providers and deployers keep the automatically generated logs for a period appropriate to the intended purpose, of at least six months, unless Union or national law provides otherwise."
+sdk = "The SQLite and PostgreSQL stores keep everything until told otherwise; `purge_expired` deletes only terminal tasks older than an age the operator sets."
+status = "partial"
+tests = ["crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::purges_terminal_tasks_past_the_age_and_nothing_else"]
+evidence = ["docs/adr/0011-task-retention.md"]
+gap = "No retention preset that encodes a six-month floor, no legal hold, and the in-memory store's default one-hour TTL makes it unsuitable as a log of record."
+
+[[control]]
+id = "AIA-50-1"
+source = "ai-act"
+provision = "Art. 50(1)"
+requirement = "Natural persons are informed that they are interacting with an AI system."
+sdk = "A2A carries agent-to-agent traffic; the agent card names the agent and describes it."
+status = "integrator"
+gap = "The person interacts with the integrator's interface, which this SDK never renders; the disclosure belongs there."
+
+[[control]]
+id = "AIA-50-2"
+source = "ai-act"
+provision = "Art. 50(2)"
+requirement = "Synthetic audio, image, video or text outputs are marked in a machine-readable format and detectable as artificially generated."
+sdk = "Messages and artifacts carry arbitrary metadata, which the SDK passes through."
+status = "gap"
+gap = "No defined marker that an artifact was generated by AI, and no signature binding such a marker to the artifact. Watermarking the content itself is the generator's, not the transport's."
+
+[[control]]
+id = "AIA-72-2"
+source = "ai-act"
+provision = "Art. 72(2)"
+requirement = "The post-market monitoring system shall include an analysis of the interaction with other AI systems, where relevant."
+sdk = "W3C trace context: the client sends a `traceparent` naming its own span, and the server continues it under a configurable inbound policy, so a call chain across agents is one trace."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-client/src/call_span/tests.rs::the_traceparent_names_the_call_span",
+  "crates/a2a-protocol-server/src/handler/helpers.rs::a_traceparent_header_reaches_the_call_context",
+]
+gap = "The cross-agent link lives in exported traces, which are sampled and expire; nothing persists it beside the task's own records."
+
+[[control]]
+id = "AIA-73"
+source = "ai-act"
+provision = "Art. 73"
+requirement = "Providers report serious incidents to market surveillance authorities."
+sdk = "Typed failures, error metrics and spans give a provider the signals to detect one."
+status = "integrator"
+gap = "Deciding that an incident is serious, and reporting it, is the provider's act."
+
+# ── Cyber Resilience Act ─────────────────────────────────────────────────────
+
+[[control]]
+id = "CRA-13-5"
+source = "cra"
+provision = "Art. 13(5)"
+requirement = "Manufacturers exercise due diligence when integrating components sourced from third parties, free and open-source software included."
+sdk = "Per-crate CycloneDX SBOMs and SLSA build-provenance attestations on every release; release tags signed and verified; OSV-Scanner and cargo-deny on every pull request; the OpenSSF Best Practices evidence."
+status = "supported"
+ci = ["Generate CycloneDX SBOMs", "actions/attest-build-provenance", "scripts/verify_tag_signature.sh --self-test", "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml"]
+evidence = ["PROVENANCE.md", "SECURITY.md", "docs/openssf-best-practices.md"]
+
+[[control]]
+id = "CRA-13-6"
+source = "cra"
+provision = "Art. 13(6)"
+requirement = "A manufacturer that identifies a vulnerability in a component reports it to whoever maintains the component."
+sdk = "SECURITY.md names the private reporting channels, accepts Article 13(6) reports and shared fixes on the same three-business-day acknowledgement, and defers to the reporter's statutory notification deadlines."
+status = "documented"
+evidence = ["SECURITY.md"]
+
+[[control]]
+id = "CRA-AI-II-1"
+source = "cra"
+provision = "Annex I, Part II(1)"
+requirement = "Manufacturers draw up a software bill of materials in a commonly used, machine-readable format covering at least the top-level dependencies."
+sdk = "A CycloneDX SBOM per published crate, attached to every GitHub release and attested."
+status = "supported"
+ci = ["Generate CycloneDX SBOMs", "actions/attest-sbom"]
+
+[[control]]
+id = "CRA-AI-I-2a"
+source = "cra"
+provision = "Annex I, Part I(2)(a)"
+requirement = "Products are made available without known exploitable vulnerabilities."
+sdk = "cargo-deny advisories on every pull request and release; OSV-Scanner over all seven Cargo lockfiles; no published manifest admits a version with a RustSec advisory."
+status = "supported"
+ci = ["EmbarkStudios/cargo-deny-action", "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml", "scripts/check_advisory_floors.py"]
+
+# ── GDPR ─────────────────────────────────────────────────────────────────────
+
+[[control]]
+id = "GDPR-25-1"
+source = "gdpr"
+provision = "Art. 25(1), 5(1)(c)"
+requirement = "Data protection by design: measures such as pseudonymisation, implementing data minimisation."
+sdk = "Message content is kept out of spans unless the operator opts in; `CallContext` debug output names headers but never prints their values; the JWT validator, push configuration and token provider redact their secrets in debug output."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-server/tests/telemetry_export/agent_spans.rs::the_executor_span_is_invoke_agent_without_content_by_default",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::debug_impls_render_type_and_redact_secrets",
+]
+gap = "The task store and event log keep full message content in plaintext, with no hook to pseudonymise or digest it before it is written."
+
+[[control]]
+id = "GDPR-32-1a"
+source = "gdpr"
+provision = "Art. 32(1)(a)"
+requirement = "Security of processing, including pseudonymisation and encryption of personal data."
+sdk = "The client speaks TLS through rustls with certificate validation; the gRPC listener terminates TLS and mutual TLS."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-client/tests/tls_integration_tests.rs::tls_client_rejects_unknown_ca",
+  "crates/a2a-protocol-client/tests/grpc_tls_apply_tests.rs::https_endpoint_completes_a_tls_handshake_with_the_pinned_ca",
+]
+gap = "The JSON-RPC and HTTP+JSON listeners do not terminate TLS (a reverse proxy does), and nothing encrypts stored task data at rest."
+
+[[control]]
+id = "GDPR-5-1e"
+source = "gdpr"
+provision = "Art. 5(1)(e), 17"
+requirement = "Storage limitation, and erasure on request."
+sdk = "`purge_expired` removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys."
+status = "partial"
+tests = ["crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::purges_terminal_tasks_past_the_age_and_nothing_else"]
+gap = "No erasure of one person's data on request; the store has no notion of a data subject."
+
+# ── OWASP agentic Top 10 ─────────────────────────────────────────────────────
+
+[[control]]
+id = "ASI03"
+source = "owasp-asi"
+provision = "ASI03 Identity and Privilege Abuse"
+requirement = "Agents act under identities and delegated privileges that are scoped, attributable and not escalated."
+sdk = "Authenticated callers are named, and the name reaches the executor through the request context."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-server/src/auth/identity_tests.rs::a_labelled_api_key_names_its_caller",
+  "crates/a2a-protocol-server/tests/request_context_tests.rs::an_executor_sees_the_caller_identity_the_interceptor_established",
+]
+gap = "A delegated call carries the delegating agent's credential, not the originating principal, and nothing records the chain."
+
+[[control]]
+id = "ASI04"
+source = "owasp-asi"
+provision = "ASI04 Agentic Supply Chain Vulnerabilities"
+requirement = "Agents, tools and schemas an agent imports are verified before they are trusted."
+sdk = "Agent cards can be signed (JWS, RFC 8785 canonical form) and verified."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-types/src/signing.rs::sign_and_verify_agent_card",
+  "crates/a2a-protocol-types/src/signing.rs::verify_rejects_tampered_card",
+]
+gap = "ES256 only, and verification needs the caller to fetch the key: no JWKS resolution from the card's `jku`/`kid`."
+
+[[control]]
+id = "ASI07"
+source = "owasp-asi"
+provision = "ASI07 Insecure Inter-Agent Communication"
+requirement = "Messages between agents are authenticated and protected against interception and forgery."
+sdk = "TLS on every client transport, mutual TLS on gRPC, authenticated calls, signed agent cards."
+status = "partial"
+tests = ["crates/a2a-protocol-client/tests/tls_integration_tests.rs::tls_client_rejects_unknown_ca"]
+gap = "Messages and artifacts are not signed, so an intermediary that terminates TLS can alter them undetected; mutual TLS is gRPC-only."
+
+[[control]]
+id = "ASI08"
+source = "owasp-asi"
+provision = "ASI08 Cascading Failures"
+requirement = "A failure in one agent or tool does not propagate unchecked through the agents that depend on it."
+sdk = "Per-caller rate limits, per-tenant concurrency limits, an executor timeout, bounded queues and stores."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-server/src/rate_limit/tests.rs::fast_path_rate_limit_exceeded",
+  "crates/a2a-protocol-server/src/handler/tenant_limits_tests.rs::a_tenant_at_its_concurrency_limit_is_refused",
+]
+gap = "Cancellation does not cascade to delegated tasks, so a stopped parent leaves its children running."
+
+[[control]]
+id = "ASI09"
+source = "owasp-asi"
+provision = "ASI09 Human-Agent Trust Exploitation"
+requirement = "Sensitive actions require explicit human confirmation rather than trust in confident output."
+sdk = "The `input-required` state can carry a request for confirmation."
+status = "partial"
+tests = ["crates/a2a-protocol-server/src/handler/messaging/tests.rs::input_required_continuation_reuses_task_id"]
+gap = "No gate that refuses to complete a task until a person has confirmed it, and no record of the confirmation."
+
+[[control]]
+id = "ASI10"
+source = "owasp-asi"
+provision = "ASI10 Rogue Agents"
+requirement = "Agents acting outside their intended behaviour are detected and stopped."
+sdk = "Spans and metrics for every call; cancellation of a task."
+status = "partial"
+tests = ["crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs::cancel_task_signals_cancellation_token"]
+gap = "No kill switch that halts every task of a tenant or of the server at once."
+
+[[control]]
+id = "ASI-MODEL"
+source = "owasp-asi"
+provision = "ASI01, ASI02, ASI05, ASI06"
+requirement = "Goal hijack, tool misuse, unexpected code execution, memory and context poisoning."
+sdk = "Server and client interceptors are where an integrator's filter or policy runs, before and after every call."
+status = "integrator"
+gap = "These attack the model, its tools and its memory, which live in the integrator's executor, not in the transport."
+
+# ── ISO/IEC 42001 ────────────────────────────────────────────────────────────
+
+[[control]]
+id = "ISO42001-A.6.2.8"
+source = "iso42001"
+provision = "Annex A.6.2.8, AI system recording of event logs (numbering unverified)"
+requirement = "The organisation determines at which life-cycle phases event logging is enabled, at minimum while the AI system is in use."
+sdk = "As for AIA-12-1: the event log and per-call spans."
+status = "partial"
+tests = ["crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::events_round_trip_in_order_with_their_positions"]
+gap = "As for AIA-12-1: no actor identity, no tamper evidence."
+
+[[control]]
+id = "ISO42001-AIMS"
+source = "iso42001"
+provision = "Clauses 4–10"
+requirement = "An AI management system: policy, roles, risk assessment, impact assessment, monitoring, improvement."
+sdk = "Nothing beyond the records above."
+status = "integrator"
+gap = "A management system is an organisation's; a library cannot hold one."

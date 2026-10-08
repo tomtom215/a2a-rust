@@ -45,6 +45,7 @@ Architecture Decision Records (ADRs) and implementation planning documents for t
 - **Building an orchestrator over many agents?** Read [swarm-orchestration.md](swarm-orchestration.md) — what a swarm needs from this layer, what `examples/swarm` measured (cancellation does not cascade), and the order to close the gaps
 - **About to quote a claim this project makes?** Read [claims-ledger-2026-09-24.md](claims-ledger-2026-09-24.md) — every overstated claim found from 0.6.0 on, checked against the published artifacts, and what backs the ones that stand
 - **Asking whether it is ready for production?** Read [readiness-bar.md](readiness-bar.md) — what that would have to mean, written before measuring, and what has been measured against it
+- **Building a regulated AI system on this SDK?** Read [compliance/control-map.md](compliance/control-map.md) — EU AI Act, Cyber Resilience Act, GDPR, OWASP agentic Top 10 and ISO/IEC 42001 provisions, what the SDK provides toward each with the test that proves it, and what is left to you
 - **Registering for the OpenSSF Best Practices badge?** Read [openssf-best-practices.md](openssf-best-practices.md) — every passing-level criterion with the file or measurement that answers it
 - **Picking up work mid-stream?** Read [handoff.md](handoff.md) — branch state, what is in flight outside this repository, what to do first, and the ideas the project has not committed to
 

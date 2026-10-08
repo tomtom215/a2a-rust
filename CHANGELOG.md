@@ -255,6 +255,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the README badge. `docs/openssf-best-practices.md` answers all 67
   passing-level criteria of the OpenSSF Best Practices badge with evidence,
   ready for the maintainer to register.
+- **A regulatory control map, checked in CI.** `docs/compliance/control-map.md`,
+  generated from `docs/compliance/controls.toml`, maps 27 provisions of the
+  EU AI Act, the Cyber Resilience Act, the GDPR, OWASP's agentic Top 10 and
+  ISO/IEC 42001 onto what the SDK provides, each with the tests or CI steps
+  that prove it and what is missing. It states plainly that the AI Act places
+  no obligation on this SDK. `scripts/check_compliance_map.py --check`, a
+  static-checks gate proven by `prove_gates_fail.sh`, fails when a cited test
+  no longer exists or is not a test, when a cited file or CI step is gone, or
+  when the Markdown is stale.
 - **Release tags must be signed** (`release.yml`). A tag must point at a
   commit on `main` and carry an SSH or OpenPGP signature that verifies
   against a key in `.github/release-signers/` as it stands on `main`
