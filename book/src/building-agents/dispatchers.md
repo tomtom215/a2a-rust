@@ -120,7 +120,7 @@ The REST dispatcher includes automatic protections:
 | **Path traversal** | `..` in path segments (including `%2E%2E`, `%2e%2e`) → 400 |
 | **Query string size** | Over 4 KiB → 414 |
 | **Body size** | Over 4 MiB → 413 |
-| **Content type** | Accepts `application/json` and `application/a2a+json` |
+| **Content type** | Accepts `application/json` and `application/a2a+json`; answers `application/a2a+json` to a client that asks for it ([negotiation](../concepts/transport-layers.md#content-types)) |
 
 ## Server Startup
 

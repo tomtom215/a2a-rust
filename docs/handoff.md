@@ -749,13 +749,13 @@ run clippy before calling a change on the send path done.
 - task #16, CI: pin the official suites, a lightweight daily canary, an
   ACTS gate against a baseline, and spec/proto drift detection — the last
   is what N38 (and the push sender's Content-Type before it) needed. The
-  ACTS gate must key on `run_acts.py`'s exit status (MUST-only, §12.7) or
-  baseline REST-CT-001, which fails by choice (conformance history,
-  "Deliberate deviations");
-- N38's media type: recorded as a deliberate deviation in
-  `book/src/reference/conformance-history.md`. The maintainer chose not to
-  report a2a-go's `application/json`-only error decoding upstream for now
-  (2026-09-25); revisit when a2a-go changes, using `go_sdk_interop.sh`;
+  ACTS gate must key on `run_acts.py`'s exit status (MUST-only, §12.7).
+  REST-CT-001 no longer needs a baseline entry: it passes since 2026-10-08;
+- N38's media type: **resolved 2026-10-08** by negotiation (see the
+  `claude/bold-gauss-9qc9dc` section). An unconditional
+  `application/a2a+json` default waits for an a2a-go release whose
+  `isJSONErrorContentType` accepts it (on a2a-go `main` at `3e1aa7fa`, not in
+  v2.6.0); `go_sdk_interop.sh` is the check;
 - close Dependabot's #128: genai 0.6.5 landed on this branch with
   `deny.toml`'s first advisory ignore (RUSTSEC-2024-0436, `paste`), the
   maintainer's choice on 2026-09-25; 0.7.0-beta.24 was checked and still

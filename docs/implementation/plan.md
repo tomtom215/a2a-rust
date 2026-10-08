@@ -607,7 +607,7 @@ All demos complete successfully, validating the full client-server pipeline acro
 | Tenant-prefixed REST routes | ✅ Done | `strip_tenant_prefix()` supports optional `/tenants/{tenant}/` prefix on all routes. |
 | `SubscribeToTask` as GET | ✅ Done | `GET /tasks/{id}:subscribe` now allowed alongside POST. |
 | GetTask `historyLength` query param | ✅ Done | Parsed from URL query string via `parse_query_param_u32()`. |
-| Protocol headers in responses | ✅ Done | All REST responses include `A2A-Version: 1.0` and `Content-Type: application/json` — §11.1 recommends `application/a2a+json` (a SHOULD); kept for the official Go SDK client, which reads errors only under `application/json` (audit N38). Both accepted on ingress. |
+| Protocol headers in responses | ✅ Done | All REST responses include `A2A-Version: 1.0`. `Content-Type` is negotiated (since 2026-10-08): `application/a2a+json`, which §11.1 says SHOULD be used, to a client that asks for it; `application/json` otherwise, which the official Go SDK client needs to read errors (audit N38). Both accepted on ingress. |
 
 #### 7C. Protocol Headers (`a2a-protocol-server` + `a2a-protocol-client`) ✅
 

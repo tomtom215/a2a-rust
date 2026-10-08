@@ -93,6 +93,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `TracePropagationInterceptor` in a `CurrentTrace` scope; the server
   span a call causes is now the child of the client's span rather than of
   the caller's. Opt out with `ClientBuilder::with_trace_propagation(false)`.
+- **HTTP+JSON responses negotiate their media type** (server; both
+  `RestDispatcher` and the axum adapter). A client whose `Accept` prefers
+  `application/a2a+json`, or whose request body is labelled with it and whose
+  `Accept` is absent or a wildcard, now receives `application/a2a+json`, as
+  spec §11.1 says SHOULD be used; every other client still receives
+  `application/json`. Successes and errors are labelled alike; the agent card
+  and `/health` and `/ready` are unchanged. A client that sends an A2A body
+  and parses responses only under `application/json` must send
+  `Accept: application/json`. Released a2a-go (v2.6.0) already does and is
+  unaffected (`go_sdk_interop.sh`, every check passing). ACTS `REST-CT-001`,
+  the only failure on earlier runs, now passes: HTTP+JSON 94/94 against
+  a2a-itk `82458cea` (`acts/reports/2026-10-08/`).
 
 ### Fixed
 

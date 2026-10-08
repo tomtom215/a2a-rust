@@ -496,7 +496,22 @@ Places where this SDK knowingly does not do what the specification
 recommends. Each one is a **SHOULD**, never a MUST; each gives the evidence
 for the choice and the condition under which it would be reversed.
 
-### HTTP+JSON responses are `application/json`, not `application/a2a+json`
+### HTTP+JSON responses are `application/json`, not `application/a2a+json` — resolved 2026-10-08
+
+**Resolved by negotiation.** Since 2026-10-08 HTTP+JSON responses are
+labelled `application/a2a+json` for a client whose `Accept` prefers it, or
+whose request body carries it, and `application/json` for everyone else
+(`dispatch::rest::media_type`, on both `RestDispatcher` and the axum adapter;
+`rest_and_axum_negotiate_the_response_media_type` pins it). Released a2a-go
+v2.6.0 still decodes errors only under `application/json`, but it sends
+`Accept: application/json`, so it keeps receiving that: `go_sdk_interop.sh`
+passed every check on the change. ACTS then rated HTTP+JSON 94/94, every
+level, against a2a-itk `82458cea` (`acts/reports/2026-10-08/`). a2a-go's
+`main` already accepts both types in `isJSONErrorContentType`; once a release
+carries it, an unconditional `application/a2a+json` default becomes possible
+and `go_sdk_interop.sh` will say so.
+
+The record below is the deviation as it stood from 2026-09-25 to 2026-10-08.
 
 **Specification.** §11.1: "`application/a2a+json` **SHOULD** be used for
 requests and responses."

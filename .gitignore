@@ -50,6 +50,10 @@ mutants.out.old/
 /itk/raw_results.json
 /itk/itk_rust.json
 /itk/logs
+# ACTS outputs the shared ITK driver writes next to itself (run_itk_shared.sh §6b).
+/itk/acts_request.json
+/itk/acts_results_*.json
+/itk/acts-report-*.json
 fuzz/corpus/
 fuzz/artifacts/
 fuzz/target/

@@ -169,7 +169,24 @@ impl A2aRouter {
             .route("/ready", get(handle_ready))
             .with_state(state)
             .layer(axum::extract::DefaultBodyLimit::max(max_body))
+            .layer(axum::middleware::from_fn(negotiate_media_type))
     }
+}
+
+/// Labels the response `application/a2a+json` for a client that asks for it,
+/// exactly as `RestDispatcher` does (§11.1; `dispatch::rest::media_type`).
+async fn negotiate_media_type(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use crate::dispatch::rest::media_type::{ResponseMediaType, is_negotiable_path};
+    let media = ResponseMediaType::from_headers(req.headers());
+    let negotiable = is_negotiable_path(req.uri().path());
+    let mut resp = next.run(req).await;
+    if negotiable {
+        media.apply(resp.headers_mut());
+    }
+    resp
 }
 
 // ── Body extraction ──────────────────────────────────────────────────────────

@@ -622,7 +622,10 @@ stores (`tests/cross_replica_cancel/`).
   carry `A2A-Version`; `rest_and_axum_answer_operations_with_the_same_headers`
   fails on the old adapter. The deviation is recorded in the book's
   conformance history, "Deliberate deviations"; not reported upstream at
-  this time, by the maintainer's decision (2026-09-25)]**
+  this time, by the maintainer's decision (2026-09-25)]** **[Resolved
+  2026-10-08 by negotiation: `application/a2a+json` to a client that asks
+  for it, `application/json` otherwise; a2a-go v2.6.0 sends
+  `Accept: application/json` and is unaffected. ACTS HTTP+JSON 94/94.]**
 - **Examined and left, from the same audit** (CONJECTURED, not reproduced):
   a queue write dropped between persisting and broadcasting an event — only
   the executor timeout firing inside a terminal event's verdict wait can do
