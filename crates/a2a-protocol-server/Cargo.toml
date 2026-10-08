@@ -134,7 +134,7 @@ opentelemetry_sdk = { version = "0.32", optional = true, features = ["metrics", 
 # (hyper + rustls, `otel/telemetry/http.rs`), because `deny.toml` keeps
 # reqwest out of this crate's graph. `tls-ring` + `tls-webpki-roots` give the
 # gRPC exporter the same ring provider and Mozilla roots the client uses.
-opentelemetry-otlp = { version = "0.32", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "metrics", "trace", "logs", "tls-ring", "tls-webpki-roots"] }
+opentelemetry-otlp = { version = "0.33", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "metrics", "trace", "logs", "tls-ring", "tls-webpki-roots"] }
 opentelemetry-http = { version = "0.32", optional = true, default-features = false }
 opentelemetry-appender-tracing = { version = "0.32", optional = true, default-features = false }
 # Not the workspace's `>=0.3.18`: this is a dependency of the published crate,
