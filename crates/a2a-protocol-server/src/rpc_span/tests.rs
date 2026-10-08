@@ -225,7 +225,9 @@ fn a_long_method_original_is_cut_on_a_character_boundary() {
 /// including those recorded after creation.
 #[cfg(feature = "tracing")]
 #[derive(Clone, Default)]
-struct Fields(Arc<std::sync::Mutex<std::collections::BTreeMap<String, String>>>);
+pub(super) struct Fields(
+    pub(super) Arc<std::sync::Mutex<std::collections::BTreeMap<String, String>>>,
+);
 
 #[cfg(feature = "tracing")]
 struct Collect<'a>(&'a mut std::collections::BTreeMap<String, String>);

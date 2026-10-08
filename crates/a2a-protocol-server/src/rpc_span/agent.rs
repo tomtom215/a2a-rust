@@ -409,6 +409,27 @@ mod tests {
         assert_eq!(take("rest", &mut budget), "…[truncated 4 bytes]");
     }
 
+    /// What fits is charged to the budget exactly, for text and for data.
+    #[test]
+    fn what_fits_is_charged_exactly() {
+        let mut budget = 10;
+        assert_eq!(take("abc", &mut budget), "abc");
+        assert_eq!(budget, 7);
+        let mut budget = 100;
+        // `{"a":1}` is seven bytes.
+        let got = parts_json(&[Part::data(json!({"a": 1}))], &mut budget);
+        assert_eq!(got[0]["content"], json!({"a": 1}));
+        assert_eq!(budget, 93);
+    }
+
+    /// A budget ending inside a character cuts before it, not after.
+    #[test]
+    fn a_cut_inside_a_character_moves_back_to_its_start() {
+        let mut budget = 2;
+        // 'é' is bytes 1 and 2 of "aé"; byte 2 is inside it.
+        assert_eq!(take("aé", &mut budget), "a…[truncated 2 bytes]");
+    }
+
     #[test]
     fn data_that_does_not_fit_is_replaced_not_cut() {
         let mut budget = 3;

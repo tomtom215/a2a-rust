@@ -481,4 +481,6 @@ pub fn in_current_span<F: Future>(fut: F) -> impl Future<Output = F::Output> {
 }
 
 #[cfg(test)]
+mod span_tests;
+#[cfg(test)]
 mod tests;

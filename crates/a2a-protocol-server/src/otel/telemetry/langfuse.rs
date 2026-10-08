@@ -184,5 +184,9 @@ mod tests {
             Langfuse::new(LANGFUSE_SELF_HOSTED, "pk", "sk-very-secret")
         );
         assert!(!shown.contains("sk-very-secret"), "{shown}");
+        // It still says what it is: the instance and the public key.
+        assert!(shown.contains(LANGFUSE_SELF_HOSTED), "{shown}");
+        assert!(shown.contains("\"pk\""), "{shown}");
+        assert!(shown.contains("<redacted>"), "{shown}");
     }
 }

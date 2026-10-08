@@ -425,3 +425,38 @@ fn grpc_over_tls_without_the_private_ca_exports_nothing() {
     let _ = telemetry.shutdown();
     assert!(collector.received().is_empty(), "{:?}", collector.paths());
 }
+
+/// `force_flush` reports a lost export as `shutdown` does.
+#[test]
+fn an_unreachable_collector_is_reported_by_force_flush() {
+    let port = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        l.local_addr().expect("addr").port()
+    };
+    let telemetry = builder(
+        &format!("http://127.0.0.1:{port}"),
+        OtlpProtocol::HttpProtobuf,
+    )
+    .with_metrics(false)
+    .with_logs(false)
+    .build()
+    .expect("build");
+    record_one_of_each(&telemetry);
+    let err = telemetry.force_flush().expect_err("the export failed");
+    assert!(err.to_string().contains("traces: 1 export(s)"), "{err}");
+}
+
+/// Dropping the guard flushes and shuts down, even while something else
+/// still holds a provider — which would otherwise keep it from flushing.
+#[test]
+fn dropping_the_guard_flushes_what_was_recorded() {
+    let collector = Collector::http();
+    let telemetry = builder(&collector.http_base(), OtlpProtocol::HttpProtobuf)
+        .build()
+        .expect("build");
+    let held = telemetry.tracer_provider().cloned();
+    record_one_of_each(&telemetry);
+    drop(telemetry);
+    assert_all_three_arrived(&collector);
+    drop(held);
+}

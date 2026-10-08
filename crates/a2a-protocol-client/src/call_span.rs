@@ -349,47 +349,4 @@ fn remote_context(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Every method the client sends has a qualified name; none falls to
-    /// `_OTHER`.
-    #[cfg(feature = "tracing")]
-    #[test]
-    fn every_client_method_has_a_qualified_name() {
-        for m in [
-            "SendMessage",
-            "SendStreamingMessage",
-            "GetTask",
-            "ListTasks",
-            "CancelTask",
-            "SubscribeToTask",
-            "CreateTaskPushNotificationConfig",
-            "GetTaskPushNotificationConfig",
-            "ListTaskPushNotificationConfigs",
-            "DeleteTaskPushNotificationConfig",
-            "GetExtendedAgentCard",
-        ] {
-            assert_eq!(qualified(m), format!("lf.a2a.v1.A2AService/{m}"));
-        }
-        assert_eq!(qualified("message/send"), "_OTHER");
-    }
-
-    #[test]
-    fn peer_reads_system_address_and_default_port() {
-        let p = Peer::new("JSONRPC", "https://agents.example.com/a2a", None);
-        assert_eq!(p.system, Some("jsonrpc"));
-        assert_eq!(p.address.as_deref(), Some("agents.example.com"));
-        assert_eq!(p.port, Some(443));
-        assert!(p.carries_headers);
-        let p = Peer::new("HTTP+JSON", "http://[::1]:8080", None);
-        assert_eq!(p.system, Some("a2a_http_json"));
-        assert_eq!(p.address.as_deref(), Some("::1"));
-        assert_eq!(p.port, Some(8080));
-        let p = Peer::new("SOMETHING", "not a url", None);
-        assert_eq!(
-            (p.system, p.address, p.port, p.carries_headers),
-            (None, None, None, false)
-        );
-    }
-}
+mod tests;

@@ -100,6 +100,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
+# The call span's own tests record through a real OpenTelemetry tracer, to
+# check the `traceparent` it sends (`src/call_span/tests.rs`).
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 criterion = { workspace = true }
 bytes = "1.11.1"

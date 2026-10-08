@@ -151,3 +151,83 @@ fn debug_output_never_contains_header_values() {
     let b = with_env(&[]).with_otlp_header("authorization", "Basic c2VjcmV0");
     assert!(!format!("{b:?}").contains("c2VjcmV0"));
 }
+
+/// The process environment is read as such, with an unset or empty value
+/// treated as unset. Cargo and nextest both set `CARGO_PKG_NAME` for a test.
+#[test]
+fn process_env_reads_the_process_environment() {
+    assert_eq!(
+        config::process_env("CARGO_PKG_NAME").as_deref(),
+        Some("a2a-protocol-server")
+    );
+    assert_eq!(config::process_env("A2A_TELEMETRY_TEST_SURELY_UNSET"), None);
+}
+
+/// `http/json` is a protocol the specification names, so it is refused for
+/// a reason of its own rather than as unknown.
+#[test]
+fn http_json_is_refused_as_not_compiled_in() {
+    let err = with_env(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")])
+        .build()
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("not compiled in"), "{err}");
+}
+
+#[test]
+fn builder_debug_names_its_settings() {
+    let shown = format!("{:?}", with_env(&[]).with_default_service_name("svc"));
+    assert!(shown.starts_with("TelemetryBuilder"), "{shown}");
+    assert!(shown.contains("\"svc\""), "{shown}");
+}
+
+/// A configuration error shows the value only when there is one.
+#[test]
+fn a_config_error_shows_its_value_only_when_set() {
+    assert_eq!(
+        TelemetryError::config("VAR", "", "required").to_string(),
+        "VAR: required"
+    );
+    assert_eq!(
+        TelemetryError::config("VAR", "v", "bad").to_string(),
+        "VAR=\"v\": bad"
+    );
+}
+
+/// The two errors that wrap another error give it as their source.
+#[test]
+fn wrapped_errors_are_their_source() {
+    use std::error::Error as _;
+    let exporter = TelemetryError::Exporter {
+        signal: "traces",
+        source: opentelemetry_otlp::ExporterBuildError::NoHttpClient,
+    };
+    assert!(exporter.source().is_some());
+    let runtime = TelemetryError::Runtime(std::io::Error::other("no thread"));
+    assert_eq!(
+        runtime.source().map(ToString::to_string).as_deref(),
+        Some("no thread")
+    );
+    assert!(TelemetryError::Tls("x".into()).source().is_none());
+}
+
+/// Dropping the export runtime waits for it: when `drop` returns, the
+/// runtime and every task on it have been dropped.
+#[test]
+fn dropping_the_export_runtime_waits_for_it_to_stop() {
+    struct SetOnDrop(Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for SetOnDrop {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+    let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let runtime = runtime::ExportRuntime::start().expect("start");
+    let guard = SetOnDrop(Arc::clone(&dropped));
+    runtime.handle().spawn(async move {
+        let _guard = guard;
+        std::future::pending::<()>().await;
+    });
+    drop(runtime);
+    assert!(dropped.load(Ordering::SeqCst));
+}

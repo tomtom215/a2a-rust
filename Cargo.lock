@@ -99,6 +99,7 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "opentelemetry",
+ "opentelemetry_sdk",
  "prost",
  "protoc-bin-vendored",
  "rcgen",

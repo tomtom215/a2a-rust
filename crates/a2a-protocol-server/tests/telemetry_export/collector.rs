@@ -303,7 +303,12 @@ async fn serve_http(
                             hyper::Response::builder()
                                 .status(status)
                                 .header("content-type", "application/x-protobuf")
-                                .body(Full::new(Bytes::new()))
+                                // A real collector's success reply: an
+                                // `Export*ServiceResponse` with an empty
+                                // `partial_success` (field 1). Not empty,
+                                // so the exporter's response-size limit is
+                                // exercised on every export.
+                                .body(Full::new(Bytes::from_static(b"\x0a\x00")))
                                 .expect("response"),
                         )
                     }
