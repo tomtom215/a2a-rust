@@ -138,6 +138,9 @@ pub mod page_deployment_multi_tenancy {}
 #[doc = include_str!("../../book/src/deployment/observability.md")]
 pub mod page_deployment_observability {}
 
+#[doc = include_str!("../../book/src/deployment/langfuse.md")]
+pub mod page_deployment_langfuse {}
+
 #[doc = include_str!("../../book/src/deployment/production.md")]
 #[doc = include_str!("../../book/src/deployment/horizontal-scaling.md")]
 pub mod page_deployment_production {}

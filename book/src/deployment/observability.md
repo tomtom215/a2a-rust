@@ -3,10 +3,11 @@
 
 # Observability
 
-Two independent things, often confused: **logs** say what happened in one
-request, **metrics** say what is happening across all of them. This SDK ships
-both. Logging (`tracing`) is on by default and still needs a subscriber;
-metrics export (`otel`) is **off by default**.
+Three signals, often confused: **logs** say what happened in one request,
+**traces** say how one request travelled — through this agent and every agent
+it called — and **metrics** say what is happening across all of them. This SDK
+records all three. Logging and spans (`tracing`) are on by default and still
+need a subscriber; exporting them over OTLP (`otel`) is **off by default**.
 
 That default is deliberate. A protocol library that pulled in an OpenTelemetry
 exporter to serve one agent would be the wrong trade for most users. The cost
@@ -16,14 +17,42 @@ and the answer is almost always this page's first section.
 ## Turning them on
 
 ```toml
-a2a-protocol-server = { version = "0.14", features = ["tracing", "otel"] }
+a2a-protocol-sdk = { version = "0.14", features = ["otel"] }
 ```
 
 * **`tracing`** — on by default in all three crates; with
-  `default-features = false` the logging calls compile to nothing. With it,
-  your binary still has to install a subscriber; the library emits events
-  and does not decide where they go.
-* **`otel`** — makes `OtelMetrics` available, which exports over OTLP.
+  `default-features = false` the logging calls and spans compile to nothing.
+  With it, your binary still has to install a subscriber; the library emits
+  events and spans and does not decide where they go.
+* **`otel`** — makes [`Telemetry`](#exporting-with-telemetry) available: OTLP
+  export of traces, metrics and logs, configured by the standard `OTEL_*`
+  environment. On the SDK it also turns on the client's half: each call's
+  `traceparent` names the call's own span (see [Spans](#spans)).
+
+With the `otel` feature, the whole setup is this, and the rest of the page
+explains it:
+
+```rust,no_run
+use a2a_protocol_server::otel::Telemetry;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
+
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+let telemetry = Telemetry::builder()
+    .with_default_service_name("my-agent") // OTEL_SERVICE_NAME wins over it
+    .build()?;
+tracing_subscriber::registry().with(telemetry.layer()).init();
+
+// Hand the handler builder `.with_metrics(telemetry.otel_metrics())`, serve,
+// and on the way out:
+telemetry.shutdown()?; // or let it drop: both flush
+# Ok(())
+# }
+```
+
+To send traces to Langfuse instead of a collector, see
+[Langfuse](./langfuse.md).
 
 ## Metrics are opt-in twice over
 
@@ -62,75 +91,82 @@ SDK — which is the distinction this two-minute step buys you.
 With the `otel` feature, `OtelMetrics` is the real provider and exports the
 catalogue below over OTLP.
 
-## Exporting over OTLP — the sequence, and where it bites
+## Exporting with `Telemetry`
 
-Installing `OtelMetrics` is half of it. Nothing leaves the process until an
-export pipeline exists, and the order matters more than it looks.
+`Telemetry` (ADR 0013, option 5) builds one OTLP exporter per signal, on the
+transport the environment names, installs the tracer and meter providers and
+the W3C `tracecontext` and `baggage` propagators as the process-global ones,
+and returns a guard whose drop — or explicit `shutdown` — flushes all three.
+`telemetry.layer()` is the `tracing` layer that turns spans into OpenTelemetry
+spans and events into OpenTelemetry log records; add it next to whatever other
+layers you run.
 
-```rust
-use a2a_protocol_server::otel::{OtelMetricsBuilder, init_otlp_pipeline};
-use a2a_protocol_server::builder::RequestHandlerBuilder;
-
-/// The whole sequence. Called from inside the runtime — see below.
-async fn install(executor: impl a2a_protocol_server::executor::AgentExecutor)
-    -> Result<(), Box<dyn std::error::Error>>
-{
-    // 1. The pipeline first. It installs a process-global meter provider,
-    //    which is what `OtelMetrics` records through.
-    let provider = init_otlp_pipeline("my-agent")?;
-
-    // 2. Then the metrics provider, on the handler.
-    let handler = RequestHandlerBuilder::new(executor)
-        .with_metrics(OtelMetricsBuilder::new().build())
-        .build()?;
-    let _ = handler;
-
-    // 3. On shutdown, flush. Treat an error as "metrics may have been lost",
-    //    not as a failure to terminate: the final flush fails whenever the
-    //    collector is unreachable.
-    let _ = provider.shutdown();
-    Ok(())
-}
-# fn main() {}
-```
-
-Four things that are easy to get wrong, in the order people hit them.
-
-**It must be called from inside a Tokio runtime.** `init_otlp_pipeline`
-builds the tonic channel, and tonic spawns onto the ambient runtime while
-doing so. Called from a plain `fn main` before the runtime starts, it panics
-with `there is no reactor running` — and because release builds set
-`panic = "abort"`, that is a **process abort, not an error you can handle**.
-Call it inside `#[tokio::main]`, or within a `Runtime::enter` guard.
-
-**The transport is gRPC and cannot be changed.** OTLP/gRPC on port 4317. The
-HTTP/protobuf exporter is not compiled in, so **`OTEL_EXPORTER_OTLP_PROTOCOL`
-has no effect**. Setting it to `http/protobuf` and pointing
-`OTEL_EXPORTER_OTLP_ENDPOINT` at a collector's `:4318` gives you gRPC spoken
-at an HTTP port, and silence. Of the standard variables, only these reach the
-exporter:
+It reads the environment as the OpenTelemetry specification defines it, and
+refuses a value it cannot act on rather than ignoring it:
 
 | Variable | Effect |
 |---|---|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | ✅ collector address; defaults to `http://localhost:4317` |
-| `OTEL_EXPORTER_OTLP_HEADERS` | ✅ |
-| `OTEL_EXPORTER_OTLP_TIMEOUT` | ✅ |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` | ❌ ignored — gRPC always |
-| `OTEL_SERVICE_NAME` | ❌ overridden by the `service_name` argument |
-| `OTEL_RESOURCE_ATTRIBUTES` | ◑ read, except `service.name`, which the argument overwrites |
+| `OTEL_SDK_DISABLED=true` | Builds nothing; the layer records nothing |
+| `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | `otlp` or `none` per signal; any other value (`console`, `prometheus`, …) is an error naming it |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` (and `_TRACES_` / `_METRICS_` / `_LOGS_`) | `grpc` or `http/protobuf`, the default; `http/json` is an error (not compiled in) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (and per signal) | The collector; OTLP/HTTP appends `/v1/traces`, `/v1/metrics` or `/v1/logs` to the general one |
+| `OTEL_EXPORTER_OTLP_HEADERS` (and per signal) | Sent with every export |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` (and per signal) | Milliseconds; 10 s when unset |
+| `OTEL_EXPORTER_OTLP_CERTIFICATE` (and per signal) | A PEM file of CA certificates trusted alongside the bundled Mozilla roots |
+| `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | The resource; either naming the service wins over `with_default_service_name` |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_BSP_*` | Read by the OpenTelemetry SDK itself |
 
-**`OTEL_SERVICE_NAME` loses to the argument.** The SDK's resource builder does
-read it, and then the `service_name` you pass overwrites what it found. That
-is the opposite of what the OpenTelemetry environment-variable specification
-prescribes, and it is a current limitation rather than a decision: pass the
-value your environment would have supplied, or read the variable yourself and
-hand it in.
+The builder's `with_otlp_endpoint`, `with_otlp_protocol`, `with_otlp_header`
+and `with_ca_certificate_pem` set the same things in code, and — as in the
+OpenTelemetry SDK — a value set in code wins over the variable. Client
+certificates (mutual TLS to the collector) are not supported yet.
 
-**It is last-write-wins, process-wide.** Calling it twice replaces the first
-provider and silently orphans it.
+Things it gets right that hand-wiring tends not to, each covered by a test in
+`crates/a2a-protocol-server/tests/telemetry_export/`:
+
+* **It works from anywhere**: a plain `fn main`, a `current_thread` runtime,
+  a test. Export runs on a private runtime of its own, so building the gRPC
+  exporter does not need yours, and shutting down from inside a
+  `current_thread` runtime neither deadlocks nor loses the final flush.
+  (The obvious hand-wiring — `opentelemetry-otlp`'s default blocking HTTP
+  client under a simple span processor, inside Tokio — panics with "Cannot
+  drop a runtime in a context where blocking is not allowed" and exports
+  nothing; that was observed, not predicted.)
+* **OTLP/HTTP without reqwest.** Export goes over this crate's own hyper and
+  rustls (ring) stack; `deny.toml` keeps reqwest out of the graph.
+* **TLS to a gRPC collector verifies against real roots.** For an `https://`
+  endpoint `opentelemetry-otlp` 0.32 builds an empty `ClientTlsConfig`, which
+  in tonic 0.14 enables no roots; `Telemetry` passes the Mozilla roots and
+  any extra CA explicitly.
+* **The exporter's own stack is never exported.** Spans and events from
+  `opentelemetry*`, `hyper`, `h2`, `tonic`, `tower` and `rustls` are filtered
+  out of the layer, so an export cannot produce telemetry that needs
+  exporting. They still reach your other layers, so a `fmt` layer still shows
+  an export error.
+* **A lost export is reported.** The OpenTelemetry SDK's batch processors
+  log a failed export and drop the batch, and their `shutdown` returns `Ok`
+  regardless (`opentelemetry_sdk` 0.32.1). Over OTLP/HTTP, `Telemetry` counts
+  exports that did not reach the collector or that it refused, and
+  `shutdown` and `force_flush` return `TelemetryError::Export` naming the
+  signal and the count. Over gRPC the export goes through tonic's client, and
+  a failure is only logged.
+* **Log records are `INFO` and above** by default (`with_log_level` changes
+  it); spans are not filtered by level here.
+
+### The older `init_otlp_pipeline`
+
+`init_otlp_pipeline` and `init_otlp_pipeline_with_endpoint` predate
+`Telemetry` and stay for existing callers. They export **metrics only**, over
+**gRPC only** (`OTEL_EXPORTER_OTLP_PROTOCOL` has no effect on them), must be
+called from inside a Tokio runtime — outside one they panic with `there is no
+reactor running`, which release builds' `panic = "abort"` turns into a process
+abort — and their `service_name` argument overwrites `OTEL_SERVICE_NAME`,
+the opposite of what the environment specification prescribes. Calling one
+twice replaces the first provider and silently orphans it. New code should use
+`Telemetry`.
 
 If `CountingMetrics` above prints and your collector is still empty, the
-problem is in this section, not in the SDK.
+problem is in the exporter configuration, not in the SDK.
 
 ## The catalogue
 
@@ -269,19 +305,20 @@ skipped            the per-event budget ran out before this config was tried
 
 Stated so a green dashboard is not mistaken for a complete one:
 
-* **Spans are recorded, not exported for you.** Every call runs in a
-  `SERVER` span (see [Spans](#spans) below), but the `otel` feature's
-  `init_otlp_pipeline` installs a meter provider only: to export the spans,
-  install a `TracerProvider` and the `tracing-opentelemetry` layer yourself.
-* **The executor has a span, not a metric.** Its time is the `a2a.execute`
-  span's duration; no histogram records it.
+* **The executor has a span, not a metric.** Its time is the
+  `invoke_agent` span's duration; no histogram records it.
 * **Task-store operations have no latency instrument.** `persistence_errors`
   counts failures, not slowness — a store degrading toward a timeout shows up
   in request latency first, without saying it was the store.
 * **There is no per-tenant metric dimension.** A tenant hitting
   `max_concurrent_tasks` shows as `Overloaded` errors in the aggregate; see
   [Multi-Tenancy](./multi-tenancy.md) for what the limits actually are.
-* **The client is not instrumented** the way the server is.
+  (The call's span does carry `a2a.tenant`.)
+* **The client records spans, not metrics.** There is no
+  `rpc.client.call.duration`; the client span's duration is the measure.
+* **Model calls are not seen.** The SDK does not know which model your
+  executor calls. Instrument the model client itself — its spans nest under
+  `invoke_agent` — or use a framework that reports `chat` spans.
 
 ## Logs
 
@@ -308,18 +345,69 @@ server does not serve is named for its binding (`jsonrpc`), with
 `rpc.method` `_OTHER` and the name the peer sent, cut to 128 bytes, as
 `rpc.method_original`.
 
-Work spawned for the call runs in `INTERNAL` children of that span:
-`a2a.execute` (the executor, with the task and context ids),
-`a2a.process_events`, `a2a.deliver_push` and `a2a.sse`. A span is exported
-when it closes, and `tracing` holds a span open until its children close, so
-a call's span reaches your backend once the work it spawned has finished —
-with its own end time, the call's, not theirs.
+It also carries the attributes of the **draft OpenTelemetry A2A
+conventions** — `open-telemetry/semantic-conventions-genai` pull request
+#195, read at `842a839`; open, and every attribute `development`, so these
+names may still change:
 
-Recording is not free. On a loopback round trip of about 175 µs, a
-`tracing-opentelemetry` layer over a batch processor added about 100 µs a
-call, almost all of it the bridge building the call's two spans; with no
-layer installed the spans cost too little to separate from noise on
-JSON-RPC. The measurement and its conditions are in ADR 0013.
+| Attribute | Value |
+|---|---|
+| `a2a.method.name` | `SendMessage`, `GetTask`, … |
+| `a2a.protocol.version` | `1.0` |
+| `a2a.tenant` | The request's `tenant`, when set |
+| `a2a.message.id` | The request's message, when it carries one |
+| `a2a.message.reference_task_ids` | Its `referenceTaskIds` (string array; `otel` feature) |
+| `a2a.task.id` | The task the call ran or named |
+| `a2a.task.state` | `TASK_STATE_COMPLETED` …, when the response carries a task |
+| `gen_ai.conversation.id` | The A2A `contextId` |
+| `gen_ai.agent.name`, `.description`, `.version` | From the handler's agent card |
+
+The draft asks HTTP server spans to be renamed `{a2a.method.name}`; this SDK
+keeps one name per call on every binding (ADR 0013), as its gRPC rule does.
+
+Work spawned for the call runs in `INTERNAL` children of that span:
+`a2a.process_events`, `a2a.deliver_push`, `a2a.sse`, and the executor's run.
+**The executor's span follows the OpenTelemetry GenAI agent conventions**
+(`docs/gen-ai/gen-ai-agent-spans.md`, also `development`): it is named
+`invoke_agent {card name}` and carries `gen_ai.operation.name =
+invoke_agent`, the agent's name, description and version, the context as
+`gen_ai.conversation.id`, the task's final `a2a.task.state`, and — kept from
+before — `a2a.task.id` and `a2a.context.id`. That is what an agent-aware
+backend keys on: Langfuse shows the run as an agent and groups a context's
+runs into one session. If an agent framework inside your executor reports
+its own `invoke_agent` span, turn this one off with
+`RequestHandlerBuilder::with_agent_span_conventions(false)`; the span is then
+`a2a.execute`, as in 0.14.
+
+**Message content is opt-in.** With
+`RequestHandlerBuilder::with_span_content_capture(true)`, the executor's span
+records the request's message as `gen_ai.input.messages` and the agent's
+replies and artifacts as `gen_ai.output.messages`, in the conventions' JSON
+message format. That copies what users and agents say into your traces and
+wherever they are exported, which is why it is off. Each attribute holds at
+most 64 KiB of text and data, cut with a marker beyond that; raw file bytes
+are never recorded, only their media type and length.
+
+**Each call through the client is a `CLIENT` span** with the same name as the
+server span it causes, the same A2A attributes as far as the request and
+response show them, the agent's name, description and version when the
+client was built from its card, and `server.address` and `server.port`. A
+streaming call's span covers consuming the stream, and is exported when the
+stream is dropped. As the draft conventions require of A2A instrumentation,
+the client reports no `invoke_agent` span of its own.
+
+A span is exported when it closes, and `tracing` holds a span open until its
+children close, so a call's span reaches your backend once the work it
+spawned has finished — with its own end time, the call's, not theirs. Every
+attribute is recorded once: `tracing-opentelemetry` 0.33.0 exports a field
+recorded twice as two attributes with one key, and the SDK's observability
+gate fails on any span that carries one.
+
+Recording is not free. On a loopback JSON-RPC round trip with a trivial
+executor, a `tracing-opentelemetry` layer recording every span cost about
+65 µs a call more than before these spans and attributes (323 → 388 µs, the
+median of three rounds; ADR 0013 has the conditions). With no layer
+installed the difference was inside the run-to-run noise.
 
 With the `otel` feature and a `tracing-opentelemetry` layer installed, a
 well-formed inbound `traceparent` is the `SERVER` span's remote parent, and
@@ -374,9 +462,20 @@ It never means the SDK invented one: a malformed header is dropped rather
 than repaired, because attaching work to a guessed-at trace is a wrong
 answer where a missing trace is only an absent one.
 
-**Calling.** Add `TracePropagationInterceptor` to the client and it writes
-the ambient `CurrentTrace` onto every request over JSON-RPC, REST or gRPC. An
-agent that is the first hop starts one with `CurrentTrace::start_root()`.
+**Calling.** With the `otel` feature and a `tracing-opentelemetry` layer
+recording, nothing is needed: every call's `traceparent` names the call's own
+`CLIENT` span, so the agent called becomes its child — from inside an
+executor, under the executor's span; from anywhere else, under whatever span
+is current. `ClientBuilder::with_trace_propagation(false)` turns that off for
+a client calling agents that should not learn your trace ids. It applies to
+the transports the client builds for JSON-RPC, HTTP+JSON and gRPC, not to one
+supplied through `with_custom_transport`.
+
+Without a recording layer, add `TracePropagationInterceptor` to the client and
+it writes the ambient `CurrentTrace` onto every request over JSON-RPC, REST or
+gRPC. An agent that is the first hop starts one with
+`CurrentTrace::start_root()`. With both, a `CurrentTrace` scope is the client
+span's parent when no recorded span is current.
 
 Not over the `websocket` transport, which has no per-request header channel —
 it carries headers only on the HTTP upgrade, and a `traceparent` fixed there
@@ -401,7 +500,7 @@ chains are readable end to end.
 vendor entry of its own and reads nobody else's; it only truncates whole
 entries when a list exceeds the documented 4096-character or 32-member cap
 (W3C §3.3.1.5). There is no sampler. Each hop's `a2a.task.id` is on its own
-`a2a.execute` span; nothing links one hop's task id to the next hop's.
+`invoke_agent` span; nothing links one hop's task id to the next hop's.
 
 See also [Troubleshooting](./troubleshooting.md) for the symptom-first version
 of this page, and [Production Hardening](./production.md) for health checks.

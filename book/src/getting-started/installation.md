@@ -64,7 +64,8 @@ and no logging.
 |---------|-------------|
 | `tls-rustls` | HTTPS via rustls (no OpenSSL required) |
 | `signing` | Forwards `a2a-protocol-types/signing`; the client neither signs nor verifies cards on its own (call `verify_agent_card` yourself) |
-| `tracing` | Structured logging via the `tracing` crate |
+| `tracing` | Structured logging via the `tracing` crate, and a `CLIENT` span per call |
+| `otel` | Each call's `traceparent` names the call's own span when a `tracing-opentelemetry` layer records it (implies `tracing`) |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` (plaintext) |
 | `grpc-tls` | gRPC over TLS — `grpc` + tonic's rustls connector (independent of `tls-rustls`); needed for `https://` gRPC endpoints and for the default dialling of a bare non-loopback `host:port` target |
@@ -82,7 +83,7 @@ and no logging.
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` |
 | `grpc-tls` | TLS on the gRPC listener (`GrpcDispatcher::with_tls`); implies `grpc` |
-| `otel` | OpenTelemetry metrics via `opentelemetry-otlp` |
+| `otel` | `Telemetry`: OTLP export of traces, metrics and logs, gRPC or HTTP/protobuf, with a Langfuse preset |
 | `conformance` | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | JWT bearer-token authentication (`JwtAuthInterceptor`) |
@@ -99,7 +100,7 @@ and no logging.
 | `websocket` | Enables WebSocket across client and server |
 | `sqlite` | Enables SQLite stores in the server |
 | `postgres` | Enables PostgreSQL stores in the server |
-| `otel` | Enables OpenTelemetry metrics in the server |
+| `otel` | Enables `otel` in the server and the client |
 | `axum` | Enables Axum integration in the server |
 | `auth-jwt` | Enables JWT bearer-token authentication in the server |
 

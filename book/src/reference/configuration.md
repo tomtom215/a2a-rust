@@ -212,7 +212,7 @@ and the `with_*` setters.
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` (plaintext listener) |
 | `grpc-tls` | Off | TLS on the gRPC listener itself: `GrpcDispatcher::with_tls(ServerTlsConfig)` with a server identity and, optionally, a client CA for mutual TLS; implies `grpc`; the TLS types are re-exported from `dispatch::grpc` |
-| `otel` | Off | OpenTelemetry metrics and spans via `opentelemetry-otlp` / `tracing-opentelemetry` (implies `tracing`) |
+| `otel` | Off | `Telemetry`: OTLP export of traces, metrics and logs (gRPC or HTTP/protobuf), `OtelMetrics`, the Langfuse preset, and the spans' OpenTelemetry bridge (implies `tracing`) |
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
@@ -222,7 +222,8 @@ and the `with_*` setters.
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | Forwards `a2a-protocol-types/signing`; the client itself neither signs nor verifies anything |
-| `tracing` | **On** | Structured logging via `tracing` crate; `default-features = false` compiles it out |
+| `tracing` | **On** | Structured logging via `tracing` crate, and a `CLIENT` span per call; `default-features = false` compiles both out |
+| `otel` | Off | Each call's `traceparent` names the call's own span when a `tracing-opentelemetry` layer records it (implies `tracing`) |
 | `tls-rustls` | **On** | HTTPS via rustls (no OpenSSL dependency); `default-features = false` for a plaintext-only build |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` (plaintext; `https://` is refused with a message naming `grpc-tls`) |
@@ -248,7 +249,7 @@ and the `with_*` setters.
 | `websocket` | Off | Enables `websocket` in client and server |
 | `sqlite` | Off | Enables `sqlite` in the server |
 | `postgres` | Off | Enables `postgres` in the server |
-| `otel` | Off | Enables `otel` in the server |
+| `otel` | Off | Enables `otel` in the server and the client |
 | `axum` | Off | Enables `axum` in the server |
 | `auth-jwt` | Off | Enables `auth-jwt` in the server |
 
