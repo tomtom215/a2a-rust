@@ -58,7 +58,7 @@ impl TelemetryBuilder {
     /// The `service.name` to report when the environment names none.
     /// `OTEL_SERVICE_NAME`, or `service.name` in `OTEL_RESOURCE_ATTRIBUTES`,
     /// wins over it, as the OpenTelemetry environment specification has it —
-    /// unlike [`init_otlp_pipeline`](super::init_otlp_pipeline)'s argument.
+    /// unlike [`init_otlp_pipeline`](crate::otel::init_otlp_pipeline)'s argument.
     #[must_use]
     pub fn with_default_service_name(mut self, name: impl Into<String>) -> Self {
         self.default_service_name = Some(name.into());
