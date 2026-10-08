@@ -438,6 +438,13 @@ mod tests {
         assert_eq!(budget, 3);
     }
 
+    /// The conventions name the agent's side `assistant`.
+    #[test]
+    fn roles_map_to_the_conventions_names() {
+        assert_eq!(role(MessageRole::Agent), "assistant");
+        assert_eq!(role(MessageRole::User), "user");
+    }
+
     #[test]
     fn modality_follows_the_media_type() {
         assert_eq!(modality(Some("audio/ogg")), "audio");
