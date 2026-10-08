@@ -278,6 +278,12 @@ impl Jwks {
 
 // ── JwtValidator ──────────────────────────────────────────────────────────────
 
+/// The shortest HS256 secret [`JwtValidator`] accepts, in bytes.
+///
+/// RFC 7518 §3.2: "A key of the same size as the hash output (for instance,
+/// 256 bits for "HS256") or larger MUST be used with this algorithm."
+pub const MIN_HS256_SECRET_LEN: usize = 32;
+
 /// The set of claim checks applied after a JWT's signature verifies.
 ///
 /// All checks are opt-in *except* signature and `exp`: if you set no issuer,
@@ -359,10 +365,46 @@ impl JwtValidator {
     /// HS256 is only ever checked against this secret — never against a JWKS
     /// public key — which is what makes the RS256→HS256 confusion attack
     /// impossible.
+    ///
+    /// The secret must be at least [`MIN_HS256_SECRET_LEN`] (32) bytes: RFC
+    /// 7518 §3.2 requires an HS256 key at least as long as the hash output.
+    /// A shorter one **fails closed** — it is not stored, an error is logged,
+    /// and every HS256 token is rejected — because a guessable HMAC key lets
+    /// anyone who guesses it mint tokens this validator accepts. Use
+    /// [`try_with_hs256_secret`](Self::try_with_hs256_secret) to refuse such a
+    /// secret at startup instead.
     #[must_use]
     pub fn with_hs256_secret(mut self, secret: impl Into<Vec<u8>>) -> Self {
-        self.hs256_secret = Some(Arc::new(secret.into()));
+        let secret = secret.into();
+        if secret.len() < MIN_HS256_SECRET_LEN {
+            trace_error!(
+                len = secret.len(),
+                min = MIN_HS256_SECRET_LEN,
+                "HS256 secret shorter than RFC 7518 §3.2 allows; every HS256 token will be rejected"
+            );
+            self.hs256_secret = None;
+            return self;
+        }
+        self.hs256_secret = Some(Arc::new(secret));
         self
+    }
+
+    /// Sets a shared secret for verifying HS256 tokens, refusing one shorter
+    /// than [`MIN_HS256_SECRET_LEN`] bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`] when the secret is shorter than
+    /// [`MIN_HS256_SECRET_LEN`] bytes (RFC 7518 §3.2).
+    pub fn try_with_hs256_secret(self, secret: impl Into<Vec<u8>>) -> A2aResult<Self> {
+        let secret = secret.into();
+        if secret.len() < MIN_HS256_SECRET_LEN {
+            return Err(A2aError::invalid_params(format!(
+                "HS256 secret is {} bytes; RFC 7518 §3.2 requires at least {MIN_HS256_SECRET_LEN}",
+                secret.len()
+            )));
+        }
+        Ok(self.with_hs256_secret(secret))
     }
 
     /// Verifies a token's signature (against `jwks` for RS256/ES256, or the
@@ -1042,6 +1084,51 @@ mod tests {
         assert!(i.before(&ctx_bearer(HS256_VALID)).await.is_err());
     }
 
+    /// An HS256 token for `base_validator`'s issuer and audience, valid for
+    /// an hour, signed with `secret`.
+    fn hs256_token(secret: &[u8]) -> String {
+        let exp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3600;
+        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
+        let claims = URL_SAFE_NO_PAD.encode(format!(
+            r#"{{"iss":"https://issuer.test","aud":"a2a-agent","sub":"s","exp":{exp}}}"#
+        ));
+        let input = format!("{header}.{claims}");
+        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
+        let sig = URL_SAFE_NO_PAD.encode(ring::hmac::sign(&key, input.as_bytes()).as_ref());
+        format!("{input}.{sig}")
+    }
+
+    /// RFC 7518 §3.2: an HS256 key shorter than the hash output is refused.
+    /// A 31-byte secret verifies nothing, even a token it signed itself; a
+    /// 32-byte one verifies its own tokens. The boundary is the point.
+    #[tokio::test]
+    async fn hs256_secret_shorter_than_32_bytes_fails_closed() {
+        let short = [7u8; MIN_HS256_SECRET_LEN - 1];
+        let exact = [7u8; MIN_HS256_SECRET_LEN];
+
+        let i = JwtAuthInterceptor::new(base_validator().with_hs256_secret(short), Jwks::new());
+        assert!(i.before(&ctx_bearer(&hs256_token(&short))).await.is_err());
+
+        let i = JwtAuthInterceptor::new(base_validator().with_hs256_secret(exact), Jwks::new());
+        assert!(i.before(&ctx_bearer(&hs256_token(&exact))).await.is_ok());
+    }
+
+    #[test]
+    fn try_with_hs256_secret_refuses_a_short_secret() {
+        let err = JwtValidator::new()
+            .try_with_hs256_secret([0u8; MIN_HS256_SECRET_LEN - 1])
+            .unwrap_err();
+        assert!(err.to_string().contains("31 bytes"), "{err}");
+        let v = JwtValidator::new()
+            .try_with_hs256_secret([0u8; MIN_HS256_SECRET_LEN])
+            .unwrap();
+        assert!(v.hs256_secret.is_some());
+    }
+
     // -- RS256 ----------------------------------------------------------------
 
     fn rsa_jwks() -> Jwks {
@@ -1254,7 +1341,7 @@ mod tests {
         assert!(jwks_dbg.contains("Jwks"), "Jwks Debug: {jwks_dbg}");
         assert!(jwks_dbg.contains("keys"), "Jwks Debug lists key count");
 
-        let secret = b"super-secret-value-1234567890";
+        let secret = b"super-secret-value-1234567890-abcd";
         let validator = base_validator().with_hs256_secret(secret.to_vec());
         let v_dbg = format!("{validator:?}");
         assert!(

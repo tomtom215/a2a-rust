@@ -93,9 +93,11 @@ let interceptor = JwtAuthInterceptor::new(
     jwks,
 );
 
-// HS256 shared secret (no JWKS):
+// HS256 shared secret (no JWKS). At least 32 bytes (RFC 7518 §3.2);
+// `try_with_hs256_secret` refuses a shorter one here, at startup.
+let secret = b"0123456789abcdef0123456789abcdef".to_vec(); // load yours from a secret store
 let interceptor = JwtAuthInterceptor::new(
-    JwtValidator::new().with_hs256_secret(b"shared-secret".to_vec()),
+    JwtValidator::new().try_with_hs256_secret(secret)?,
     Jwks::new(),
 );
 # Ok(())
@@ -108,6 +110,11 @@ let interceptor = JwtAuthInterceptor::new(
   algorithm are rejected. HS256 is only ever verified against a configured
   secret — never a JWKS public key — so the RS256→HS256 algorithm-confusion
   downgrade is structurally impossible.
+- **HS256 secrets are at least 32 bytes.** RFC 7518 §3.2 requires an HS256
+  key at least as long as the hash output. `try_with_hs256_secret` returns an
+  error for a shorter one; `with_hs256_secret` fails closed instead — it logs
+  an error and rejects every HS256 token — so a short secret can never be
+  the thing standing between a guesser and a valid token.
 - **Rejections are generic.** A missing, malformed, expired, or wrong token all
   produce the same error, so the response can't be used as an oracle.
 - **Constant-time comparison** for API keys and static bearer tokens.

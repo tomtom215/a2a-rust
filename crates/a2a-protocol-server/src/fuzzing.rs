@@ -13,6 +13,11 @@
 
 use std::collections::HashMap;
 
+/// The HS256 secret [`jwt_validate`] verifies against: 32 bytes, the
+/// shortest `JwtValidator` accepts (RFC 7518 §3.2).
+#[cfg(feature = "auth-jwt")]
+const FUZZ_HS256_SECRET: &[u8; 32] = b"fuzz-hs256-secret-of-thirty-two!";
+
 /// The JWT validator, fixed to accept HS256 under one secret and ES256 under
 /// the RFC 7515 Appendix A.3 key, so both signature paths are reachable.
 /// Returns whether the token was accepted.
@@ -30,7 +35,7 @@ pub fn jwt_validate(token: &str) -> bool {
         return false;
     };
     JwtValidator::new()
-        .with_hs256_secret(b"fuzz".to_vec())
+        .with_hs256_secret(FUZZ_HS256_SECRET.to_vec())
         .validate(token, &jwks)
         .is_ok()
 }
@@ -131,8 +136,8 @@ mod tests {
     #[cfg(feature = "auth-jwt")]
     #[test]
     fn forwards_the_token() {
-        // HS256 over a header and claims (expiring in 2100) with the secret `fuzz`,
-        // computed with ring below rather than pasted, so it cannot rot.
+        // HS256 over a header and claims (expiring in 2100) with the harness's
+        // secret, computed with ring below rather than pasted, so it cannot rot.
         use base64::Engine;
         use base64::engine::general_purpose::URL_SAFE_NO_PAD;
         let input = format!(
@@ -140,7 +145,7 @@ mod tests {
             URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256"}"#),
             URL_SAFE_NO_PAD.encode(br#"{"sub":"s","exp":4102444800}"#)
         );
-        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, b"fuzz");
+        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, super::FUZZ_HS256_SECRET);
         let sig = URL_SAFE_NO_PAD.encode(ring::hmac::sign(&key, input.as_bytes()).as_ref());
         assert!(jwt_validate(&format!("{input}.{sig}")));
         assert!(!jwt_validate(&format!("{input}.{sig}x")));

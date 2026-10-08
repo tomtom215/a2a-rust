@@ -202,6 +202,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tenant — named by the client or derived by a resolver — is refused with
   `UnsupportedOperation` unless both stores answer `true`. Requests without
   a tenant are unaffected.
+- **`JwtValidator` refuses an HS256 secret shorter than 32 bytes** (server,
+  `auth-jwt` feature). RFC 7518 §3.2 requires an HS256 key at least as long
+  as the hash output; `with_hs256_secret` accepted any length, down to one
+  byte, so a guessable secret let anyone who guessed it mint tokens the
+  server accepted. `with_hs256_secret` now fails closed for a short secret:
+  it logs an error and stores nothing, so every HS256 token is rejected. The
+  new `try_with_hs256_secret` returns an error instead, for refusing the
+  secret at startup, and `MIN_HS256_SECRET_LEN` names the bound. A
+  deployment configured with a short secret stops accepting HS256 tokens on
+  upgrade and must move to a secret of at least 32 bytes. RS256 keys under
+  2048 bits were already refused by `ring`. The book's example, which taught
+  a 13-byte secret, and `examples/genai-agent` now use
+  `try_with_hs256_secret`.
 
 ### Changed
 

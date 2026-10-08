@@ -359,7 +359,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Ok(secret) = std::env::var("A2A_JWT_HS256_SECRET") {
             use a2a_protocol_server::auth::{Jwks, JwtAuthInterceptor, JwtValidator};
-            let mut validator = JwtValidator::new().with_hs256_secret(secret.into_bytes());
+            // `try_`: refuses a secret under 32 bytes (RFC 7518 §3.2) at
+            // startup, rather than starting a server no HS256 token can reach.
+            let mut validator = JwtValidator::new().try_with_hs256_secret(secret.into_bytes())?;
             if let Ok(iss) = std::env::var("A2A_JWT_ISS") {
                 validator = validator.with_issuer(iss);
             }

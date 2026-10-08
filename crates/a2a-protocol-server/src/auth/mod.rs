@@ -55,7 +55,7 @@ use crate::interceptor::ServerInterceptor;
 pub mod jwt;
 
 #[cfg(feature = "auth-jwt")]
-pub use jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
+pub use jwt::{Jwks, JwtAuthInterceptor, JwtValidator, MIN_HS256_SECRET_LEN};
 
 /// The challenge the bearer-token interceptors send with a `401`.
 pub(crate) const BEARER_CHALLENGE: &str = "Bearer realm=\"a2a\"";
