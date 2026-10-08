@@ -102,6 +102,9 @@ pub struct ClientBuilder {
     /// [`build_grpc`]: ClientBuilder::build_grpc
     #[cfg(feature = "grpc-tls")]
     pub(super) grpc_tls_config: Option<crate::transport::grpc::ClientTlsConfig>,
+    /// The card's agent, for the client's spans; `None` unless the builder
+    /// came from a card.
+    pub(super) agent: Option<std::sync::Arc<(String, String, String)>>,
 }
 
 impl ClientBuilder {
@@ -124,6 +127,7 @@ impl ClientBuilder {
             grpc_tls_config: None,
             card_interfaces: Vec::new(),
             fallback_interfaces: Vec::new(),
+            agent: None,
         }
     }
 
@@ -223,10 +227,19 @@ impl ClientBuilder {
             grpc_tls_config: None,
             card_interfaces: card.supported_interfaces.clone(),
             fallback_interfaces: candidates.collect(),
+            agent: Some(crate::call_span::agent_identity(card)),
         })
     }
 
     // ── Configuration ─────────────────────────────────────────────────────────
+
+    /// Whether a call's `traceparent` names the call's own span (default:
+    /// yes); see [`ClientConfig::propagate_trace`].
+    #[must_use]
+    pub const fn with_trace_propagation(mut self, on: bool) -> Self {
+        self.config.propagate_trace = on;
+        self
+    }
 
     /// Sets the per-request timeout for non-streaming calls.
     #[must_use]

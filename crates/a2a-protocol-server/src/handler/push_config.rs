@@ -144,6 +144,10 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<TaskPushNotificationConfig> {
         let start = Instant::now();
+        #[cfg(feature = "tracing")]
+        if let Some(task_id) = config.task_id.as_deref() {
+            crate::rpc_span::record_task(task_id, None);
+        }
         self.metrics.on_request("CreateTaskPushNotificationConfig");
 
         let tenant = self
@@ -214,6 +218,8 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<TaskPushNotificationConfig> {
         let start = Instant::now();
+        #[cfg(feature = "tracing")]
+        crate::rpc_span::record_task(&params.task_id, None);
         self.metrics.on_request("GetTaskPushNotificationConfig");
 
         let tenant = self
@@ -282,6 +288,8 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<Vec<TaskPushNotificationConfig>> {
         let start = Instant::now();
+        #[cfg(feature = "tracing")]
+        crate::rpc_span::record_task(task_id, None);
         self.metrics.on_request("ListTaskPushNotificationConfigs");
 
         let tenant_owned = self
@@ -338,6 +346,8 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<()> {
         let start = Instant::now();
+        #[cfg(feature = "tracing")]
+        crate::rpc_span::record_task(&params.task_id, None);
         self.metrics.on_request("DeleteTaskPushNotificationConfig");
 
         let tenant = self

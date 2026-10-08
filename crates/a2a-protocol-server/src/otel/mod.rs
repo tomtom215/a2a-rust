@@ -43,6 +43,7 @@
 
 mod builder;
 mod pipeline;
+mod telemetry;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -54,6 +55,9 @@ use crate::metrics::{ConnectionPoolStats, Metrics, RpcCall};
 
 pub use builder::OtelMetricsBuilder;
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
+pub use telemetry::{
+    LANGFUSE_CLOUD_EU, Langfuse, OtlpProtocol, Telemetry, TelemetryBuilder, TelemetryError,
+};
 
 // ── OtelMetrics ──────────────────────────────────────────────────────────────
 

@@ -62,7 +62,8 @@ All 11 A2A v1.0 methods are methods of `A2aClient`:
 |---------|---------|---------|
 | `tls-rustls` | Yes | HTTPS via rustls (no OpenSSL) |
 | `signing` | No | Forwards `a2a-protocol-types/signing`; the client signs and verifies nothing on its own |
-| `tracing` | Yes | Structured logging; `default-features = false` compiles it out |
+| `tracing` | Yes | Structured logging and a `CLIENT` span per call; `default-features = false` compiles both out |
+| `otel` | No | Each call's `traceparent` names the call's own span, recorded by a `tracing-opentelemetry` layer (implies `tracing`; no exporter) |
 | `websocket` | No | WebSocket transport |
 | `grpc` | No | gRPC transport via tonic (plaintext) |
 | `grpc-tls` | No | gRPC over TLS (implies `grpc`; independent of `tls-rustls`); bundled roots or a pinned `ClientTlsConfig`, re-exported from `transport::grpc` |

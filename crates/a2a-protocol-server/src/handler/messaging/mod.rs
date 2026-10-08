@@ -166,6 +166,8 @@ impl RequestHandler {
         };
         let start = Instant::now();
         trace_info!(method = method_name, streaming, "handling send message");
+        #[cfg(feature = "tracing")]
+        crate::rpc_span::record_message(&params.message);
         self.metrics.on_request(method_name);
 
         let tenant = self
@@ -176,6 +178,15 @@ impl RequestHandler {
                 .await
         })
         .await;
+        #[cfg(feature = "tracing")]
+        if let Ok(SendMessageResult::Response(
+            a2a_protocol_types::responses::SendMessageResponse::Task(task),
+        )) = &result
+        {
+            // The task and context were recorded when the executor started,
+            // or with the replay; only the state is new here.
+            crate::rpc_span::record_task_state(task.status.state);
+        }
         let elapsed = start.elapsed();
         match &result {
             Ok(_) => {
@@ -221,6 +232,8 @@ impl RequestHandler {
                 // Boxed: a replay is the cold path, and inlining it here grows
                 // the future every ordinary send carries.
                 Committed::Replay(task) => {
+                    #[cfg(feature = "tracing")]
+                    crate::rpc_span::record_task(&task.id.0, Some(&task.context_id.0));
                     Box::pin(self.respond_replay(*task, streaming, mode.response_history_length))
                         .await
                 }

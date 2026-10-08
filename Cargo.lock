@@ -98,6 +98,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
+ "opentelemetry",
  "prost",
  "protoc-bin-vendored",
  "rcgen",
@@ -116,6 +117,7 @@ dependencies = [
  "tonic-types",
  "tower-service",
  "tracing",
+ "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
  "webpki-roots 1.0.9",
@@ -148,18 +150,23 @@ name = "a2a-protocol-server"
 version = "0.14.1"
 dependencies = [
  "a2a-protocol-types",
+ "async-trait",
  "axum",
  "base64 0.23.1",
  "bytes",
  "criterion",
  "futures-util",
+ "http",
  "http-body-util",
  "hyper",
  "hyper-rustls",
  "hyper-util",
  "mutants",
  "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-http",
  "opentelemetry-otlp",
+ "opentelemetry-proto",
  "opentelemetry_sdk",
  "pin-project-lite",
  "prost",
@@ -2167,6 +2174,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "langfuse-agent"
+version = "0.0.0"
+dependencies = [
+ "a2a-protocol-sdk",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2531,6 +2551,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry-appender-tracing"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c0080f0dc1d7c786f467cd85a4e395fcab11ee852004f39a29a18ab7c25d837"
+dependencies = [
+ "opentelemetry",
+ "tracing",
+ "tracing-core",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "opentelemetry-http"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5683015d09e2df236ef005b17f6f196f0d5f6313c4fa43a7b6a53b52776e4331"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "http",
+ "opentelemetry",
+]
+
+[[package]]
 name = "opentelemetry-otlp"
 version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2538,6 +2582,7 @@ checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
 dependencies = [
  "http",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "prost",

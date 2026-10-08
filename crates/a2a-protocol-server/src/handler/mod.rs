@@ -104,6 +104,9 @@ pub struct RequestHandler {
     /// front gate and an internal endpoint can hold a different policy on
     /// each. See [`InboundTracePolicy`].
     pub(crate) inbound_trace_policy: InboundTracePolicy,
+    /// What the executor's span records: the `GenAI` `invoke_agent`
+    /// conventions, and whether messages are captured.
+    pub(crate) span_settings: crate::rpc_span::SpanSettings,
     /// When `true`, `GetExtendedAgentCard` is served even though no
     /// authenticating interceptor guards the chain. Spec §13.3 says the
     /// operation MUST require authentication, so the default is `false`:
@@ -244,6 +247,8 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
         client_tenant: Option<&str>,
     ) -> ServerResult<String> {
+        #[cfg(feature = "tracing")]
+        crate::rpc_span::record_tenant(client_tenant);
         let Some(resolver) = self.tenant_resolver.as_deref() else {
             return self.isolatable(client_tenant.unwrap_or_default().to_owned());
         };

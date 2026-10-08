@@ -53,6 +53,7 @@ impl ClientBuilder {
             ));
         }
 
+        let custom = self.transport_override.is_some();
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override.take() {
             t
         } else {
@@ -76,7 +77,17 @@ impl ClientBuilder {
             transport
         };
 
-        Ok(A2aClient::new(transport, self.interceptors, self.config))
+        // After selection: a fallback moves the endpoint and binding.
+        let peer = if custom {
+            crate::call_span::Peer::default()
+        } else {
+            crate::call_span::Peer::new(
+                self.preferred_binding.as_deref().unwrap_or(BINDING_JSONRPC),
+                &self.endpoint,
+                self.agent.clone(),
+            )
+        };
+        Ok(A2aClient::new(transport, self.interceptors, self.config).with_peer(peer))
     }
 
     /// Tries the card's remaining interfaces after the chosen one failed
@@ -146,6 +157,11 @@ impl ClientBuilder {
             ));
         }
 
+        let peer = if self.transport_override.is_some() {
+            crate::call_span::Peer::default()
+        } else {
+            crate::call_span::Peer::new("GRPC", &self.endpoint, self.agent.clone())
+        };
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override {
             t
         } else {
@@ -183,7 +199,7 @@ impl ClientBuilder {
             transport
         };
 
-        Ok(A2aClient::new(transport, self.interceptors, self.config))
+        Ok(A2aClient::new(transport, self.interceptors, self.config).with_peer(peer))
     }
 }
 

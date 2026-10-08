@@ -56,8 +56,18 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 ## it first). Without this feature the listener is plaintext and TLS is
 ## terminated in front of it.
 grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls"]
-## Enable OpenTelemetry integration for native OTLP export of traces and metrics.
-otel = ["tracing", "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
+## OpenTelemetry: `OtelMetrics`, the spans' OpenTelemetry bridge, and
+## `Telemetry` — one entry point that exports traces, metrics and logs over
+## OTLP/gRPC or OTLP/HTTP (protobuf), configured from the standard `OTEL_*`
+## environment. HTTP export runs on this crate's hyper and rustls (ring)
+## stack, not reqwest, on a private export thread.
+otel = [
+    "tracing",
+    "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry",
+    "dep:opentelemetry-http", "dep:opentelemetry-appender-tracing", "dep:tracing-subscriber", "dep:async-trait",
+    "dep:http", "dep:base64",
+    "dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots",
+]
 ## A harness that grades an `AgentExecutor` against the protocol invariants
 ## that hold for any agent — terminal states, legal transitions, cooperative
 ## cancellation, parking. Intended as a dev-dependency: the TCK grades
@@ -94,7 +104,7 @@ pin-project-lite = { version = ">=0.2.13, <0.3" }
 tracing        = { workspace = true, optional = true }
 hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features = false, features = ["ring", "http1", "http2", "webpki-tokio"] }
 rustls         = { version = ">=0.23.45, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
-rustls-pki-types = { version = ">=1.7, <2", optional = true }
+rustls-pki-types = { version = ">=1.9, <2", optional = true, features = ["std"] }
 webpki-roots   = { version = ">=1.0, <2", optional = true }
 # JWT verification (auth-jwt feature). `ring` is the same crypto backend the
 # types crate's `signing` feature already uses; `base64` is tiny with no
@@ -119,8 +129,19 @@ tracing-opentelemetry = { version = ">=0.33, <0.34", optional = true, default-fe
 # trait for the unit tests in `src/otel/mod.rs` that verify instrument emission
 # end-to-end. The feature only *adds* API surface — it does not change runtime
 # behaviour — so its "experimental" status only matters to the test code.
-opentelemetry_sdk = { version = "0.32", optional = true, features = ["metrics", "experimental_metrics_custom_reader"] }
-opentelemetry-otlp = { version = "0.32", optional = true, default-features = false, features = ["grpc-tonic", "metrics"] }
+opentelemetry_sdk = { version = "0.32", optional = true, features = ["metrics", "trace", "logs", "experimental_metrics_custom_reader"] }
+# `http-proto` without a bundled HTTP client: `Telemetry` supplies its own
+# (hyper + rustls, `otel/telemetry/http.rs`), because `deny.toml` keeps
+# reqwest out of this crate's graph. `tls-ring` + `tls-webpki-roots` give the
+# gRPC exporter the same ring provider and Mozilla roots the client uses.
+opentelemetry-otlp = { version = "0.32", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "metrics", "trace", "logs", "tls-ring", "tls-webpki-roots"] }
+opentelemetry-http = { version = "0.32", optional = true, default-features = false }
+opentelemetry-appender-tracing = { version = "0.32", optional = true, default-features = false }
+# Not the workspace's `>=0.3.18`: this is a dependency of the published crate,
+# and 0.3.18-0.3.19 carry RUSTSEC-2025-0055 (`check_advisory_floors.py`).
+tracing-subscriber = { version = ">=0.3.20, <0.4", optional = true, default-features = false, features = ["registry", "std"] }
+async-trait = { version = ">=0.1.80, <0.2", optional = true }
+http = { version = ">=1.1, <2", optional = true }
 axum = { version = "0.8", optional = true, default-features = false, features = ["json", "query", "tokio"] }
 
 [build-dependencies]
@@ -157,6 +178,13 @@ rcgen = "0.14"
 # survive, as the PR's incremental sweep reported on 2026-09-09.
 rustls = { version = ">=0.23.45, <0.24" }
 tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
+# Stand-in OTLP collectors for `tests/telemetry_export/`: decode what
+# `Telemetry` exports over HTTP, and serve the OTLP gRPC services.
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic", "trace", "metrics", "logs"] }
+prost = { workspace = true }
+tonic = { workspace = true }
+tokio-stream = { workspace = true, features = ["net"] }
+rustls-pki-types = { version = ">=1.9, <2" }
 
 [[bench]]
 name = "handler_bench"

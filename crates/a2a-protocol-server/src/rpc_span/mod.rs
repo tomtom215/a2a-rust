@@ -39,6 +39,9 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "tracing")]
+mod a2a;
+mod agent;
 mod names;
 #[cfg(feature = "otel")]
 mod otel;
@@ -47,6 +50,13 @@ mod otel;
 use crate::handler::InboundTracePolicy;
 use crate::handler::RequestHandler;
 use crate::metrics::{Metrics, RpcCall};
+#[cfg(feature = "tracing")]
+pub use a2a::{
+    record_message, record_task, record_task_response, record_task_state, record_tenant,
+};
+#[cfg(feature = "tracing")]
+pub use agent::OutputRecorder;
+pub use agent::{ExecutorSpan, SpanSettings};
 #[cfg(feature = "tracing")]
 use names::OTHER;
 pub use names::{RpcSystem, WireStatus, a2a_method};
@@ -125,20 +135,8 @@ impl ServerSpan {
                 } else {
                     qualified
                 };
-                let span = tracing::info_span!(
-                    target: "a2a_protocol_server::rpc",
-                    "a2a.rpc",
-                    otel.name = name,
-                    otel.kind = "server",
-                    otel.status_code = tracing::field::Empty,
-                    rpc.system.name = system.name(),
-                    rpc.method = qualified,
-                    rpc.method_original = tracing::field::Empty,
-                    rpc.status_code = tracing::field::Empty,
-                    error.type = tracing::field::Empty,
-                    http.request.method = tracing::field::Empty,
-                    http.route = tracing::field::Empty,
-                );
+                let span = call_span(name, system, qualified);
+                a2a::record_agent(&span, handler.agent_card.as_ref());
                 if qualified == OTHER {
                     span.record(
                         "rpc.method_original",
@@ -319,6 +317,36 @@ impl std::fmt::Debug for ServerSpan {
     }
 }
 
+/// The `SERVER` span for one call, every field declared up front: `tracing`
+/// records only fields a span declared when it opened.
+#[cfg(feature = "tracing")]
+fn call_span(name: &str, system: RpcSystem, qualified: &'static str) -> tracing::Span {
+    tracing::info_span!(
+        target: "a2a_protocol_server::rpc",
+        "a2a.rpc",
+        otel.name = name,
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
+        rpc.system.name = system.name(),
+        rpc.method = qualified,
+        rpc.method_original = tracing::field::Empty,
+        rpc.status_code = tracing::field::Empty,
+        error.type = tracing::field::Empty,
+        http.request.method = tracing::field::Empty,
+        http.route = tracing::field::Empty,
+        a2a.method.name = a2a::method_name(qualified),
+        a2a.protocol.version = a2a_protocol_types::A2A_VERSION,
+        a2a.tenant = tracing::field::Empty,
+        a2a.message.id = tracing::field::Empty,
+        a2a.task.id = tracing::field::Empty,
+        a2a.task.state = tracing::field::Empty,
+        gen_ai.conversation.id = tracing::field::Empty,
+        gen_ai.agent.name = tracing::field::Empty,
+        gen_ai.agent.description = tracing::field::Empty,
+        gen_ai.agent.version = tracing::field::Empty,
+    )
+}
+
 /// The future inside a call's span, as the call's future is wrapped when
 /// tracing is compiled in.
 #[cfg(feature = "tracing")]
@@ -448,38 +476,6 @@ pub fn in_current_span<F: Future>(fut: F) -> impl Future<Output = F::Output> {
     }
     #[cfg(not(feature = "tracing"))]
     {
-        fut
-    }
-}
-
-/// Runs the executor for one task in its child span, which carries the task
-/// and context ids — so its log events, and a user's own events emitted from
-/// inside the executor, can be followed by either id (the claim
-/// `deployment/observability.md` makes; audit O1).
-pub fn in_executor_span<F: Future>(
-    task_id: &str,
-    context_id: &str,
-    fut: F,
-) -> impl Future<Output = F::Output> + use<F> {
-    #[cfg(feature = "tracing")]
-    {
-        let untraced = untraced();
-        let span = if untraced {
-            tracing::Span::none()
-        } else {
-            tracing::info_span!(
-                target: "a2a_protocol_server::rpc",
-                "a2a.task",
-                otel.name = "a2a.execute",
-                a2a.task.id = task_id,
-                a2a.context.id = context_id,
-            )
-        };
-        tracing::Instrument::instrument(UNTRACED.scope(untraced, fut), span)
-    }
-    #[cfg(not(feature = "tracing"))]
-    {
-        let _ = (task_id, context_id);
         fut
     }
 }

@@ -43,7 +43,7 @@ grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
 ## `GrpcDispatcher::with_tls` (see the server crate's entry).
 grpc-tls = ["grpc", "tls-rustls", "a2a-protocol-client/grpc-tls", "a2a-protocol-server/grpc-tls"]
 ## Enable OpenTelemetry integration.
-otel = ["a2a-protocol-server/otel"]
+otel = ["a2a-protocol-server/otel", "a2a-protocol-client/otel"]
 ## Enable WebSocket transport via tokio-tungstenite.
 websocket = ["a2a-protocol-client/websocket", "a2a-protocol-server/websocket"]
 ## Enable SQLite-backed task and push config stores via sqlx.

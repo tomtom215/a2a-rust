@@ -132,6 +132,13 @@ pub struct EventStream {
     held: Option<
         Box<dyn std::any::Any + Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe>,
     >,
+    /// The call's span, kept open while the stream is: a streaming call
+    /// lasts until its consumer is done with it (`call_span.rs`).
+    /// `AssertUnwindSafe` keeps the stream's own unwind-safety auto traits,
+    /// which `held` above says `cargo-semver-checks` guards; a span holds no
+    /// state a panic could leave half-written.
+    #[cfg(feature = "tracing")]
+    span: Option<std::panic::AssertUnwindSafe<tracing::Span>>,
 }
 
 impl EventStream {
@@ -158,6 +165,8 @@ impl EventStream {
             events_received: 0,
             last_event_id: None,
             held: None,
+            #[cfg(feature = "tracing")]
+            span: None,
         }
     }
 
@@ -186,6 +195,8 @@ impl EventStream {
             events_received: 0,
             last_event_id: None,
             held: None,
+            #[cfg(feature = "tracing")]
+            span: None,
         }
     }
 
@@ -279,6 +290,8 @@ impl EventStream {
             events_received: 0,
             last_event_id: None,
             held: None,
+            #[cfg(feature = "tracing")]
+            span: None,
         }
     }
 
@@ -372,6 +385,14 @@ impl EventStream {
         self
     }
 
+    /// Keeps `span` open until the stream is dropped.
+    #[cfg(feature = "tracing")]
+    #[must_use]
+    pub(crate) fn with_span(mut self, span: tracing::Span) -> Self {
+        self.span = Some(std::panic::AssertUnwindSafe(span));
+        self
+    }
+
     /// Returns the HTTP status code from the response that established this stream.
     ///
     /// The transport layer validates the HTTP status during stream establishment
@@ -408,6 +429,18 @@ impl EventStream {
     /// and [`ClientError::Timeout`] when a silence bound expires. After an
     /// error the stream is finished and the next call returns `None`.
     pub async fn next(&mut self) -> Option<ClientResult<StreamResponse>> {
+        // Polled inside the call's span, so the span covers consuming the
+        // stream: `tracing-opentelemetry` ends a span at its last exit, and
+        // holding it alone would end it when the stream opened.
+        #[cfg(feature = "tracing")]
+        if let Some(span) = self.span.as_ref().map(|s| s.0.clone()) {
+            return tracing::Instrument::instrument(self.next_event(), span).await;
+        }
+        self.next_event().await
+    }
+
+    /// [`next`](Self::next), outside any span.
+    async fn next_event(&mut self) -> Option<ClientResult<StreamResponse>> {
         loop {
             // First, drain any frames the parser already has buffered.
             if let Some(result) = self.parser.next_frame() {

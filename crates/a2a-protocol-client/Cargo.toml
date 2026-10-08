@@ -40,6 +40,11 @@ signing = ["a2a-protocol-types/signing"]
 ## Structured logging via the `tracing` crate (on by default; compiled out
 ## when disabled).
 tracing = ["dep:tracing"]
+## OpenTelemetry for the client's spans: each call's `traceparent` names the
+## call's own span, recorded by a `tracing-opentelemetry` layer, so the agent
+## called is its child. No exporter — the application, or the server crate's
+## `Telemetry`, installs one.
+otel = ["tracing", "dep:opentelemetry", "dep:tracing-opentelemetry"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`. Speaks the canonical `lf.a2a.v1.A2AService`
@@ -71,6 +76,8 @@ hyper-util     = { workspace = true }
 tokio          = { workspace = true }
 uuid           = { workspace = true }
 tracing        = { workspace = true, optional = true }
+opentelemetry  = { version = "0.32", optional = true, default-features = false, features = ["trace"] }
+tracing-opentelemetry = { version = ">=0.33, <0.34", optional = true, default-features = false }
 tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
 hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features = false, features = ["ring", "http1", "http2", "webpki-tokio"] }

@@ -169,11 +169,16 @@ fn spans_created_under(policy: InboundTracePolicy) -> Vec<String> {
                     async {
                         // Spawned from inside the call, as the executor
                         // is; and spawning again from inside that task.
-                        tokio::spawn(in_executor_span(
-                            "t",
-                            "c",
-                            in_child_span("a2a.process_events", async {}),
-                        ))
+                        tokio::spawn(
+                            ExecutorSpan::open(
+                                "t",
+                                "c",
+                                None,
+                                SpanSettings::default(),
+                                &a2a_protocol_types::message::Message::user("m", vec![]),
+                            )
+                            .instrument(in_child_span("a2a.process_events", async {})),
+                        )
                         .await
                         .map_err(|e| ServerError::Internal(e.to_string()))
                     },
