@@ -63,12 +63,14 @@ tracing-subscriber = "0.3"
 
 ## Configure Langfuse credentials
 
-The same variables as the Langfuse SDKs:
+The same variables as the Langfuse SDKs. Unlike them, a2a-rust defaults the
+base URL to a [self-hosted](/self-hosting) instance at `http://localhost:3000`;
+set it for any other, including Langfuse Cloud:
 
 ```bash
 export LANGFUSE_PUBLIC_KEY=pk-lf-...
 export LANGFUSE_SECRET_KEY=sk-lf-...
-export LANGFUSE_BASE_URL=https://cloud.langfuse.com  # 🇪🇺 EU (default); https://us.cloud.langfuse.com for 🇺🇸 US
+export LANGFUSE_BASE_URL=http://localhost:3000  # default; or https://cloud.langfuse.com, https://us.cloud.langfuse.com
 ```
 
 ## Install telemetry

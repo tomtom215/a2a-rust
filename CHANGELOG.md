@@ -32,8 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   export). Tested end to end against stand-in OTLP/HTTP, HTTPS (private CA,
   with the counter-test without it) and gRPC collectors.
 - **`otel::Langfuse`: a preset for Langfuse.** `Langfuse::from_env()` reads
-  `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL` (default
-  `https://cloud.langfuse.com`), the variables Langfuse's own SDKs read;
+  `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL`, the
+  variables Langfuse's own SDKs read. Unlike theirs, the base URL defaults to
+  a self-hosted instance, `http://localhost:3000` (`LANGFUSE_SELF_HOSTED`),
+  so nothing leaves the machine unless it is set;
   `TelemetryBuilder::with_langfuse` sends traces to
   `/api/public/otel/v1/traces` over OTLP/HTTP with Basic auth and
   `x-langfuse-ingestion-version: 4`, and turns metrics and logs off by

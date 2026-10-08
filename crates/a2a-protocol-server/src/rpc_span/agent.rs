@@ -90,7 +90,10 @@ pub struct ExecutorSpan {
 impl ExecutorSpan {
     /// Opens it — or, for a call under `InboundTracePolicy::Drop`, a span
     /// that records nothing, as that policy promises.
-    #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+    #[cfg_attr(
+        not(feature = "tracing"),
+        allow(unused_variables, clippy::missing_const_for_fn)
+    )]
     pub fn open(
         task_id: &str,
         context_id: &str,
@@ -127,6 +130,7 @@ impl ExecutorSpan {
 
     /// Runs `fut` — the executor's whole run — inside the span, carrying the
     /// call's trace policy across the spawn.
+    #[cfg_attr(not(feature = "tracing"), allow(clippy::unused_self))]
     pub fn instrument<F: Future>(self, fut: F) -> impl Future<Output = F::Output> {
         #[cfg(feature = "tracing")]
         {
@@ -277,6 +281,7 @@ impl OutputRecorder {
 /// its list (`stop`, `length`, `content_filter`, `tool_call`, `compaction`,
 /// `error`), so
 /// none is claimed for them.
+#[cfg(feature = "tracing")]
 const fn finish_reason(state: TaskState) -> Option<&'static str> {
     match state {
         TaskState::Completed => Some("stop"),

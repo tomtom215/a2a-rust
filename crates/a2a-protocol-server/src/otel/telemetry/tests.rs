@@ -76,7 +76,7 @@ fn langfuse_defaults_metrics_and_logs_off_and_the_environment_can_restore_them()
 #[test]
 fn langfuse_traces_ignore_a_grpc_protocol_variable() {
     let b = with_env(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")]).with_langfuse(Langfuse::new(
-        "https://cloud.langfuse.com/",
+        "https://langfuse.internal.example/",
         "pk",
         "sk",
     ));
@@ -84,7 +84,7 @@ fn langfuse_traces_ignore_a_grpc_protocol_variable() {
     assert_eq!(traces.protocol, OtlpProtocol::HttpProtobuf);
     assert_eq!(
         traces.endpoint.as_deref(),
-        Some("https://cloud.langfuse.com/api/public/otel/v1/traces")
+        Some("https://langfuse.internal.example/api/public/otel/v1/traces")
     );
     // The other signals still follow the environment.
     assert_eq!(

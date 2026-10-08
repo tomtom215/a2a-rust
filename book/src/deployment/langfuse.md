@@ -11,6 +11,36 @@ configuration, which `Telemetry` reads from the three variables Langfuse's own
 SDKs read. A Rust agent is configured exactly like the Python agents next to
 it.
 
+The preset defaults to a Langfuse you run yourself, at
+`http://localhost:3000`. That is deliberate: Langfuse's own SDKs default to
+its cloud service, and an agent configured from this page sends nothing off
+the machine unless `LANGFUSE_BASE_URL` names somewhere else.
+
+## Run Langfuse
+
+Langfuse is open source and its repository ships a `docker-compose.yml`. From
+a clone of `langfuse/langfuse`, these variables make it create an
+organisation, a project with known keys and a user on first start;
+`TELEMETRY_ENABLED=false` turns off Langfuse's own usage reporting:
+
+```bash
+cat > langfuse.env <<'ENV'
+TELEMETRY_ENABLED=false
+LANGFUSE_INIT_ORG_ID=local
+LANGFUSE_INIT_PROJECT_ID=local
+LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-lf-local
+LANGFUSE_INIT_PROJECT_SECRET_KEY=sk-lf-local
+LANGFUSE_INIT_USER_EMAIL=you@example.com
+LANGFUSE_INIT_USER_PASSWORD=change-me-please
+ENV
+docker compose --env-file langfuse.env up -d
+```
+
+The UI is then at `http://localhost:3000`. Before running it anywhere but a
+laptop, follow Langfuse's self-hosting documentation
+(<https://langfuse.com/self-hosting>): the compose file's own comments mark
+the secrets to change.
+
 ## Setup
 
 ```toml
@@ -18,9 +48,9 @@ a2a-protocol-sdk = { version = "0.14", features = ["otel"] }
 ```
 
 ```bash
-export LANGFUSE_PUBLIC_KEY=pk-lf-...
-export LANGFUSE_SECRET_KEY=sk-lf-...
-export LANGFUSE_BASE_URL=https://cloud.langfuse.com   # the default; or us.cloud…, or http://localhost:3000
+export LANGFUSE_PUBLIC_KEY=pk-lf-local     # the project's keys
+export LANGFUSE_SECRET_KEY=sk-lf-local
+export LANGFUSE_BASE_URL=http://localhost:3000   # the default; set it for any other instance
 ```
 
 ```rust,no_run
@@ -100,6 +130,13 @@ propagation code in either agent: the client sends its own span as the
   Rust agent sends.
 * **Langfuse's UI.** The table above is what Langfuse's public API returned
   (`/api/public/v2/observations`), not screenshots of its interface.
+
+## Langfuse Cloud
+
+The same preset works with Langfuse's hosted service: set `LANGFUSE_BASE_URL`
+to the region's address (`https://cloud.langfuse.com`,
+`https://us.cloud.langfuse.com`) and use that project's keys. Nothing else
+changes. As noted below, this SDK has not been run against it.
 
 ## When you already run a collector
 

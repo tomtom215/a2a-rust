@@ -18,8 +18,8 @@
 //!   say into Langfuse, and is off by default for that reason.
 //!
 //! ```bash
-//! export LANGFUSE_PUBLIC_KEY=pk-lf-... LANGFUSE_SECRET_KEY=sk-lf-...
-//! export LANGFUSE_BASE_URL=http://localhost:3000   # default: Langfuse Cloud (EU)
+//! export LANGFUSE_PUBLIC_KEY=pk-lf-local LANGFUSE_SECRET_KEY=sk-lf-local
+//! export LANGFUSE_BASE_URL=http://localhost:3000   # the default: a self-hosted Langfuse
 //! cargo run -p langfuse-agent -- "summarise the quarterly report"
 //! ```
 //!

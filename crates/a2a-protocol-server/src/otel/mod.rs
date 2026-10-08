@@ -56,7 +56,7 @@ use crate::metrics::{ConnectionPoolStats, Metrics, RpcCall};
 pub use builder::OtelMetricsBuilder;
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
 pub use telemetry::{
-    LANGFUSE_CLOUD_EU, Langfuse, OtlpProtocol, Telemetry, TelemetryBuilder, TelemetryError,
+    LANGFUSE_SELF_HOSTED, Langfuse, OtlpProtocol, Telemetry, TelemetryBuilder, TelemetryError,
 };
 
 // ── OtelMetrics ──────────────────────────────────────────────────────────────

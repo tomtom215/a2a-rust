@@ -20,8 +20,13 @@ use base64::Engine as _;
 
 use super::TelemetryError;
 
-/// Langfuse's EU cloud region, which its SDKs default to.
-pub const LANGFUSE_CLOUD_EU: &str = "https://cloud.langfuse.com";
+/// Where a self-hosted Langfuse listens when started from its own
+/// `docker-compose.yml`; [`Langfuse::from_env`]'s default.
+///
+/// Langfuse's own SDKs default to its cloud service instead. This preset
+/// does not, so that nothing is sent off the machine unless
+/// `LANGFUSE_BASE_URL` says where.
+pub const LANGFUSE_SELF_HOSTED: &str = "http://localhost:3000";
 
 /// Where traces go, and the project keys that authorise them.
 ///
@@ -59,9 +64,9 @@ impl std::fmt::Debug for Langfuse {
 }
 
 impl Langfuse {
-    /// A project on the Langfuse at `base_url` — a cloud region such as
-    /// [`LANGFUSE_CLOUD_EU`] or `https://us.cloud.langfuse.com`, or a
-    /// self-hosted instance such as `http://localhost:3000`.
+    /// A project on the Langfuse at `base_url` — a self-hosted instance such
+    /// as [`LANGFUSE_SELF_HOSTED`], or Langfuse Cloud
+    /// (`https://cloud.langfuse.com`, `https://us.cloud.langfuse.com`).
     pub fn new(
         base_url: impl Into<String>,
         public_key: impl Into<String>,
@@ -75,8 +80,9 @@ impl Langfuse {
     }
 
     /// Reads `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and
-    /// `LANGFUSE_BASE_URL`, the variables Langfuse's SDKs read; the base URL
-    /// defaults to [`LANGFUSE_CLOUD_EU`], as theirs does.
+    /// `LANGFUSE_BASE_URL`, the variables Langfuse's SDKs read. The base URL
+    /// defaults to [`LANGFUSE_SELF_HOSTED`] — not to Langfuse Cloud, as
+    /// theirs does.
     ///
     /// # Errors
     ///
@@ -93,7 +99,7 @@ impl Langfuse {
             })
         };
         Ok(Self::new(
-            env("LANGFUSE_BASE_URL").unwrap_or_else(|| LANGFUSE_CLOUD_EU.to_owned()),
+            env("LANGFUSE_BASE_URL").unwrap_or_else(|| LANGFUSE_SELF_HOSTED.to_owned()),
             required("LANGFUSE_PUBLIC_KEY")?,
             required("LANGFUSE_SECRET_KEY")?,
         ))
@@ -140,7 +146,7 @@ mod tests {
 
     #[test]
     fn headers_are_basic_auth_of_the_key_pair_and_ingestion_version_4() {
-        let headers = Langfuse::new(LANGFUSE_CLOUD_EU, "pk-lf-1", "sk-lf-2").headers();
+        let headers = Langfuse::new(LANGFUSE_SELF_HOSTED, "pk-lf-1", "sk-lf-2").headers();
         // base64("pk-lf-1:sk-lf-2"), computed independently with
         // `printf 'pk-lf-1:sk-lf-2' | base64`.
         assert_eq!(
@@ -162,7 +168,7 @@ mod tests {
             ("LANGFUSE_SECRET_KEY", "sk"),
         ]))
         .unwrap();
-        assert_eq!(lf.base_url, LANGFUSE_CLOUD_EU);
+        assert_eq!(lf.base_url, LANGFUSE_SELF_HOSTED);
 
         let err = Langfuse::from_lookup(&*lookup(&[("LANGFUSE_PUBLIC_KEY", "pk-visible")]))
             .unwrap_err()
@@ -175,7 +181,7 @@ mod tests {
     fn debug_never_prints_the_secret_key() {
         let shown = format!(
             "{:?}",
-            Langfuse::new(LANGFUSE_CLOUD_EU, "pk", "sk-very-secret")
+            Langfuse::new(LANGFUSE_SELF_HOSTED, "pk", "sk-very-secret")
         );
         assert!(!shown.contains("sk-very-secret"), "{shown}");
     }

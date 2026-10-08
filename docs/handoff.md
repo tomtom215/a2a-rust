@@ -2480,6 +2480,12 @@ the example:
 - **Docker images are not a cache to delete casually.** Re-pulling Langfuse's
   hit the anonymous pull rate limit.
 
+**Decided 2026-10-08 by the maintainer:** the Langfuse preset and every page
+default to a self-hosted Langfuse (`http://localhost:3000`, Langfuse's own
+compose address) and lead with self-hosting, so the project does not appear
+to endorse Langfuse's hosted service. Cloud is documented as an alternative
+only. Keep it that way in anything new.
+
 **Not done, with why:**
 
 - Mutual TLS to the collector (`OTEL_EXPORTER_OTLP_CLIENT_*`): not

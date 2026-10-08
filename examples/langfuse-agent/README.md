@@ -11,23 +11,13 @@ explains each piece.
 
 ## Run it
 
-Against Langfuse Cloud, with a project's keys:
-
-```bash
-export LANGFUSE_PUBLIC_KEY=pk-lf-... LANGFUSE_SECRET_KEY=sk-lf-...
-cargo run -p langfuse-agent -- "summarise the quarterly report"
-```
-
-`LANGFUSE_BASE_URL` defaults to the EU region, as Langfuse's SDKs do; set it
-for another region or a self-hosted instance.
-
-Against a self-hosted Langfuse, from a clone of `langfuse/langfuse` (its
+Start a Langfuse of your own, from a clone of `langfuse/langfuse`. Its
 `docker-compose.yml` reads these variables to create a project with known keys
 on first start; `TELEMETRY_ENABLED=false` turns off Langfuse's own usage
-reporting):
+reporting:
 
 ```bash
-cat > langfuse.env <<'EOF'
+cat > langfuse.env <<'ENV'
 TELEMETRY_ENABLED=false
 LANGFUSE_INIT_ORG_ID=local
 LANGFUSE_INIT_PROJECT_ID=local
@@ -35,13 +25,20 @@ LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-lf-local
 LANGFUSE_INIT_PROJECT_SECRET_KEY=sk-lf-local
 LANGFUSE_INIT_USER_EMAIL=you@example.com
 LANGFUSE_INIT_USER_PASSWORD=change-me-please
-EOF
+ENV
 docker compose --env-file langfuse.env up -d
-
-LANGFUSE_PUBLIC_KEY=pk-lf-local LANGFUSE_SECRET_KEY=sk-lf-local \
-LANGFUSE_BASE_URL=http://localhost:3000 \
-cargo run -p langfuse-agent
 ```
+
+Then, from this repository:
+
+```bash
+LANGFUSE_PUBLIC_KEY=pk-lf-local LANGFUSE_SECRET_KEY=sk-lf-local \
+cargo run -p langfuse-agent -- "summarise the quarterly report"
+```
+
+`LANGFUSE_BASE_URL` defaults to `http://localhost:3000`, where that compose
+file serves; set it for any other instance, including Langfuse Cloud
+(`https://cloud.langfuse.com`), with that project's keys.
 
 The program prints the orchestrator's report and the session id to open in
 Langfuse. Without `LANGFUSE_PUBLIC_KEY` it exports to whatever
