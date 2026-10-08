@@ -28,7 +28,7 @@ use tokio::runtime::Handle;
 /// short protobuf or JSON status; the body is read only so the connection can
 /// be reused, and a misbehaving endpoint does not get to choose how much
 /// memory that takes.
-const MAX_RESPONSE_BODY: usize = 64 * 1024;
+pub(super) const MAX_RESPONSE_BODY: usize = 64 * 1024;
 
 type Https = hyper_rustls::HttpsConnector<HttpConnector>;
 

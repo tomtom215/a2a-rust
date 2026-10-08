@@ -231,3 +231,9 @@ fn dropping_the_export_runtime_waits_for_it_to_stop() {
     drop(runtime);
     assert!(dropped.load(Ordering::SeqCst));
 }
+
+/// The documented bound on a collector's reply: 64 KiB.
+#[test]
+fn a_collectors_reply_is_read_up_to_64_kib() {
+    assert_eq!(http::MAX_RESPONSE_BODY, 65_536);
+}

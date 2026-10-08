@@ -166,6 +166,22 @@ fn a_turn_with_nothing_said_records_no_output() {
     );
 }
 
+/// A whole task in a terminal state ends the turn with that state.
+#[test]
+fn a_task_event_records_its_state() {
+    let task: a2a_protocol_types::task::Task = serde_json::from_value(serde_json::json!({
+        "id": "t",
+        "contextId": "c",
+        "status": {"state": "TASK_STATE_CANCELED"}
+    }))
+    .unwrap();
+    let fields = executor_fields(&[StreamResponse::Task(task)]);
+    assert_eq!(
+        fields.get("a2a.task.state").map(String::as_str),
+        Some("TASK_STATE_CANCELED")
+    );
+}
+
 /// The output budget is 64 KiB: two thousand bytes fit whole.
 #[test]
 fn output_well_under_the_limit_is_kept_whole() {
