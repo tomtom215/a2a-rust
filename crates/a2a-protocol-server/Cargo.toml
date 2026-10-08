@@ -129,7 +129,7 @@ tracing-opentelemetry = { version = ">=0.33, <0.34", optional = true, default-fe
 # trait for the unit tests in `src/otel/mod.rs` that verify instrument emission
 # end-to-end. The feature only *adds* API surface — it does not change runtime
 # behaviour — so its "experimental" status only matters to the test code.
-opentelemetry_sdk = { version = "0.32", optional = true, features = ["metrics", "trace", "logs", "experimental_metrics_custom_reader"] }
+opentelemetry_sdk = { version = "0.33", optional = true, features = ["metrics", "trace", "logs", "experimental_metrics_custom_reader"] }
 # `http-proto` without a bundled HTTP client: `Telemetry` supplies its own
 # (hyper + rustls, `otel/telemetry/http.rs`), because `deny.toml` keeps
 # reqwest out of this crate's graph. `tls-ring` + `tls-webpki-roots` give the
