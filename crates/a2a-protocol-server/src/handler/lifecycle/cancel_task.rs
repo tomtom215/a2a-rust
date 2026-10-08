@@ -139,6 +139,11 @@ impl RequestHandler {
         })
         .await;
 
+        #[cfg(feature = "tracing")]
+        match &result {
+            Ok(task) => crate::rpc_span::record_task_response(task),
+            Err(_) => crate::rpc_span::record_task(&params.id, None),
+        }
         let elapsed = start.elapsed();
         match &result {
             Ok(_) => {

@@ -169,11 +169,16 @@ fn spans_created_under(policy: InboundTracePolicy) -> Vec<String> {
                     async {
                         // Spawned from inside the call, as the executor
                         // is; and spawning again from inside that task.
-                        tokio::spawn(in_executor_span(
-                            "t",
-                            "c",
-                            in_child_span("a2a.process_events", async {}),
-                        ))
+                        tokio::spawn(
+                            ExecutorSpan::open(
+                                "t",
+                                "c",
+                                None,
+                                SpanSettings::default(),
+                                &a2a_protocol_types::message::Message::user("m", vec![]),
+                            )
+                            .instrument(in_child_span("a2a.process_events", async {})),
+                        )
                         .await
                         .map_err(|e| ServerError::Internal(e.to_string()))
                     },
@@ -220,7 +225,9 @@ fn a_long_method_original_is_cut_on_a_character_boundary() {
 /// including those recorded after creation.
 #[cfg(feature = "tracing")]
 #[derive(Clone, Default)]
-struct Fields(Arc<std::sync::Mutex<std::collections::BTreeMap<String, String>>>);
+pub(super) struct Fields(
+    pub(super) Arc<std::sync::Mutex<std::collections::BTreeMap<String, String>>>,
+);
 
 #[cfg(feature = "tracing")]
 struct Collect<'a>(&'a mut std::collections::BTreeMap<String, String>);

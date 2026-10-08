@@ -78,7 +78,7 @@ enable them:
 | `grpc` | client, server | Protobuf-native gRPC (canonical `lf.a2a.v1.A2AService`) via tonic |
 | `grpc-tls` | client, server | gRPC over TLS. Client: tonic's rustls connector with the bundled Mozilla roots, or a pinned CA / client certificate. Server: TLS on its own gRPC listener via `GrpcDispatcher::with_tls` (server certificate and key, optional client CA for mutual TLS); the listener then speaks TLS only. Implies `grpc` |
 | `proto` | types | Canonical protobuf message types + JSON⇄proto conversion layer (enabled transitively by `grpc`) |
-| `otel` | server | OpenTelemetry OTLP metrics export |
+| `otel` | client, server | Server: `Telemetry`, OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, with a Langfuse preset. Client: each call's `traceparent` names the call's own span |
 | `axum` | server | Axum framework integration |
 | `auth-jwt` | server | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS with OIDC discovery) via `ring`; the header/token interceptors (`ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`) need no feature |
 | `conformance` | server | Harness that grades an `AgentExecutor` against the protocol invariants that hold for any agent — terminal states, legal transitions, cooperative cancellation, parking. Intended as a dev-dependency; pulls in no extra dependencies |

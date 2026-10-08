@@ -12,6 +12,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`otel::Telemetry`: one entry point for traces, metrics and logs** (server,
+  `otel` feature; ADR 0013 option 5). It reads the `OTEL_*` environment as the
+  OpenTelemetry specification defines it — `OTEL_SDK_DISABLED`, the
+  per-signal `OTEL_*_EXPORTER` (`otlp` or `none`; anything else is an error
+  naming it), `OTEL_EXPORTER_OTLP_PROTOCOL` (`grpc` or `http/protobuf`, the
+  default), endpoints, headers, timeout, `OTEL_EXPORTER_OTLP_CERTIFICATE`,
+  and `OTEL_SERVICE_NAME` winning over `with_default_service_name` — installs
+  the tracer and meter providers and the `tracecontext` + `baggage`
+  propagators, and returns a guard whose drop or `shutdown` flushes all
+  three. `layer()` is the `tracing` layer for spans and log records;
+  `otel_metrics()` is the `Metrics` provider on its meter. OTLP/HTTP runs on
+  this crate's hyper and rustls (ring) stack, not reqwest. Export runs on a
+  private runtime, so it works from a plain `fn main` or a `current_thread`
+  runtime and its shutdown neither deadlocks nor loses the final flush there.
+  Over OTLP/HTTP a failed or refused export is counted and reported by
+  `shutdown` and `force_flush`, which the OpenTelemetry SDK's own shutdown
+  does not do (`opentelemetry_sdk` 0.32.1 returns `Ok` after a failed final
+  export). Tested end to end against stand-in OTLP/HTTP, HTTPS (private CA,
+  with the counter-test without it) and gRPC collectors.
+- **`otel::Langfuse`: a preset for Langfuse.** `Langfuse::from_env()` reads
+  `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL`, the
+  variables Langfuse's own SDKs read. Unlike theirs, the base URL defaults to
+  a self-hosted instance, `http://localhost:3000` (`LANGFUSE_SELF_HOSTED`),
+  so nothing leaves the machine unless it is set;
+  `TelemetryBuilder::with_langfuse` sends traces to
+  `/api/public/otel/v1/traces` over OTLP/HTTP with Basic auth and
+  `x-langfuse-ingestion-version: 4`, and turns metrics and logs off by
+  default, because Langfuse discards OTLP metrics and has no OTLP logs route.
+  Verified against a self-hosted Langfuse 4.53.0; see the book's new
+  Langfuse page.
+- **The call's `SERVER` span carries the draft OpenTelemetry A2A
+  attributes** (`open-telemetry/semantic-conventions-genai` #195, open, read
+  at `842a839`): `a2a.method.name`, `a2a.protocol.version`, `a2a.tenant`,
+  `a2a.message.id`, `a2a.message.reference_task_ids`, `a2a.task.id`,
+  `a2a.task.state`, `gen_ai.conversation.id` (the `contextId`) and
+  `gen_ai.agent.{name,description,version}` from the card.
+- **Every client call runs in a `CLIENT` span** (client, `tracing` feature;
+  audit O8) named for the method like the server's, with the same A2A
+  attributes, the agent from its card, `server.address` and `server.port`,
+  and `error.type` on failure. A streaming call's span covers consuming the
+  stream. With the new client `otel` feature — which the SDK's `otel` now
+  turns on — the call's `traceparent` names that span, so the agent called
+  becomes its child with no interceptor or `CurrentTrace` scope (audit O9);
+  `ClientBuilder::with_trace_propagation(false)` and
+  `ClientConfig::propagate_trace` turn it off.
+- **`RequestHandlerBuilder::with_span_content_capture(true)`** records the
+  request's message and the agent's replies and artifacts on the executor's
+  span as `gen_ai.input.messages` / `gen_ai.output.messages`, in the GenAI
+  conventions' JSON format, at most 64 KiB each; raw bytes are never
+  recorded. Off by default: it copies what users and agents say into traces.
+- **`examples/langfuse-agent`**: an orchestrator delegating to a worker,
+  traced into one Langfuse trace, with a self-hosted Langfuse in two commands.
+
 - `serve::Server::from_listener` builds the HTTP (JSON-RPC and REST) graceful
   server on a `tokio::net::TcpListener` the caller has already bound, as the gRPC
   and WebSocket dispatchers' `serve_with_shutdown` already allow. This covers
@@ -19,6 +72,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   downtime, socket options `Server::bind` does not set (`SO_REUSEPORT`,
   `IPV6_V6ONLY`, a custom backlog) and binding before dropping privileges
   (#151). `Server::bind` now delegates to it.
+
+### Behaviour Changes
+
+- **The executor's span is `invoke_agent {card name}`** (server, `tracing`
+  feature), the OpenTelemetry GenAI conventions' in-process agent span, with
+  `gen_ai.operation.name = invoke_agent`, the agent's name, description and
+  version, the context as `gen_ai.conversation.id`, and the task's final
+  `a2a.task.state`; `a2a.task.id` and `a2a.context.id` stay. It was
+  `a2a.execute`. Backends key on it — Langfuse shows the run as an AGENT
+  observation and groups a context's runs into a session. A dashboard or
+  alert matching the span name `a2a.execute` must match the new name, or the
+  handler can keep the old span with
+  `RequestHandlerBuilder::with_agent_span_conventions(false)` — which an
+  application whose agent framework reports its own `invoke_agent` should do
+  anyway, so the two do not nest.
+- **With `otel` and a recording `tracing-opentelemetry` layer, the client
+  sends a `traceparent` on every call**, naming its own span, over the
+  JSON-RPC, HTTP+JSON and gRPC transports it builds. Before, it sent one only
+  with `TracePropagationInterceptor` in a `CurrentTrace` scope; the server
+  span a call causes is now the child of the client's span rather than of
+  the caller's. Opt out with `ClientBuilder::with_trace_propagation(false)`.
 
 ### Fixed
 

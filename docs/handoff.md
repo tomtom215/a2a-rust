@@ -11,10 +11,11 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-10-02 — `claude/eager-galileo-h4x21s`: the SDK comparison
-against a2a-rs at both 2026-09-30 releases, the TTL-sweep fix it found, and
-`examples/swarm`. `git log -1 --format='%ci %s' -- docs/handoff.md` remains
-the authority on this line.
+Last updated 2026-10-06 — `claude/zealous-lovelace-n5ulfc`: `otel::Telemetry`
+(traces, metrics and logs over OTLP/gRPC or OTLP/HTTP), the Langfuse preset,
+the GenAI and draft A2A span conventions, client spans with automatic
+`traceparent`, and `examples/langfuse-agent`. `git log -1 --format='%ci %s' --
+docs/handoff.md` remains the authority on this line.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
 constructors", which was two commits out of date. It is hand-maintained and
@@ -110,7 +111,8 @@ the *content* merge.
 | `claude/keen-noether-q73ekn` | merged, still present | **Merged as `0b7e87c2` via [#143](https://github.com/tomtom215/a2a-rust/pull/143).** The audit's gate gaps (escape classes 1, 6, 7, 8, 9), then phase 2 of observability. Safe to delete. |
 | `claude/peaceful-ptolemy-noka5b` | merged | **Merged as `10f3435` via [#144](https://github.com/tomtom215/a2a-rust/pull/144).** N21 (the maintainer chose the admission side), the adopter's four reports, the claims ledger, and the drop-path hunt (N24–N32, N16, N18). This row said "open — no PR yet" until 2026-10-02; `git log --oneline --merges | grep 144` settles it. See its section below. |
 | `claude/clever-curie-wbfxzc` | merged | **Merged via [#147](https://github.com/tomtom215/a2a-rust/pull/147) (`d4f32eb`) and [#148](https://github.com/tomtom215/a2a-rust/pull/148) (`775fe46`).** The 0.14.1 release for GHSA-hr9h-6jvf-wvg6 and its provenance re-measurement. It had no row here. |
-| `claude/eager-galileo-h4x21s` | open — no PR yet | **Destined for `main`.** The 2026-10-02 SDK comparison, the in-memory store's TTL-sweep fix (`831b8ef`), `examples/swarm`, and `docs/swarm-orchestration.md`. See its section below. |
+| `claude/eager-galileo-h4x21s` | merged | **Merged as `7ce2d24` via [#149](https://github.com/tomtom215/a2a-rust/pull/149).** The 2026-10-02 SDK comparison, the in-memory store's TTL-sweep fix (`831b8ef`), `examples/swarm`, and `docs/swarm-orchestration.md`. This row said "open — no PR yet" until 2026-10-06; `git log --oneline --merges | grep 149` settles it. See its section below. |
+| `claude/zealous-lovelace-n5ulfc` | open — no PR yet | **Destined for `main`.** Telemetry, Langfuse, the span conventions and client spans. See its section below. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -2421,3 +2423,80 @@ of these renames something a user's dashboards already select on:
 `agent_text` and `with_*` for all five optional fields; `Task` has `text` and
 `texts`. `MessageSendParams` turned out to have no `impl` block either and got
 `new` plus three `with_*`. See the section below.
+
+## `claude/zealous-lovelace-n5ulfc` — telemetry out of the box, and Langfuse
+
+Started 2026-10-06 from `20b162b`. The ask: traces, metrics and logs out of
+the box, Langfuse as a first-class destination, and every gap found on the way
+filled. Design and measurements are in [ADR 0013](adr/0013-observability.md)'s
+2026-10-06 section; what a user does is in the book's Observability and
+Langfuse pages. This section records what the code does not.
+
+**What landed.** `otel::Telemetry` (ADR 0013 option 5, which had never
+landed); `otel::Langfuse`; the draft A2A attributes on the `SERVER` span; the
+executor span as GenAI `invoke_agent` (a renamed span — Behaviour Changes);
+opt-in message capture; a `CLIENT` span per call and, with the new client
+`otel` feature, automatic `traceparent` from it; export failures reported by
+`shutdown`; `examples/langfuse-agent`.
+
+**Verified against a real Langfuse.** Self-hosted Langfuse 4.53.0 from
+`langfuse/langfuse@1a21a42`'s `docker-compose.yml`, test keys through
+`LANGFUSE_INIT_*`, queried through `/api/public/v2/observations` (v4's
+`events_only` mode refuses the v1 observations and traces endpoints). Three
+probes, kept in the session scratchpad rather than the repository, then
+the example:
+
+1. The baseline, hand-wired the way a user would have had to: two untyped
+   SPANs, no session, no input or output, no client span. The obvious wiring
+   (default blocking HTTP client, simple processor, inside Tokio) panicked and
+   exported nothing.
+2. `Telemetry` + preset + content capture: the executor as an AGENT
+   observation `invoke_agent hello-agent`, session = the A2A `contextId`,
+   input and output in the GenAI message format — the same JSON-string shape
+   as Langfuse's own fixture
+   (`packages/shared/src/utils/normalized-io/conventions/providers/otel-genai/fixtures.ts`).
+3. Caller → orchestrator → worker with no propagation code: seven
+   observations, one trace, each the child of the one before.
+
+4. `cargo run -p langfuse-agent` itself: seven observations, one trace,
+   one parent chain, the session on every observation but the root, input
+   and output on both AGENT observations — the tree its README draws. (The
+   first attempt hit Docker Hub's `429 Too Many Requests` re-pulling images
+   deleted to free disk; the retry succeeded. Run against an unreachable
+   endpoint, it printed the export error on stderr and exited.)
+
+**Lessons, each of which cost something:**
+
+- **Read the convention's YAML, not a summary of it.** A research summary gave
+  `a2a.method.name`'s values as `send_message`; those are the member ids, and
+  the values are `SendMessage`.
+- **A test that passes alone can still be a real bug.** The Langfuse-preset
+  test failed every run in the suite and passed alone; the cause was a level
+  hint of `OFF` from an absent layer, which hid every span whenever logs were
+  off.
+- **The gate caught what the unit tests did not.** The SDK's
+  `observability_e2e` found the duplicated `a2a.task.state`; its duplicate-key
+  check now fails any repeated attribute (proven by injection).
+- **Docker images are not a cache to delete casually.** Re-pulling Langfuse's
+  hit the anonymous pull rate limit.
+
+**Decided 2026-10-08 by the maintainer:** the Langfuse preset and every page
+default to a self-hosted Langfuse (`http://localhost:3000`, Langfuse's own
+compose address) and lead with self-hosting, so the project does not appear
+to endorse Langfuse's hosted service. Cloud is documented as an alternative
+only. Keep it that way in anything new.
+
+**Not done, with why:**
+
+- Mutual TLS to the collector (`OTEL_EXPORTER_OTLP_CLIENT_*`): not
+  implemented; documented as unsupported.
+- `http/json` OTLP: not compiled in; refused with a message.
+- A chain that crosses languages (a Python agent traced into the same Langfuse
+  trace): not run. `traceparent` is W3C, so it should join; unverified.
+- Langfuse Cloud: not run; no credentials in this environment.
+- Upstream: five drafts, indexed in `docs/upstream/README.md`, none posted. Posting is
+  the maintainer's decision.
+
+**What the next session should do first:** decide which `docs/upstream/`
+drafts to send, and run the example against Langfuse Cloud before the
+Langfuse docs draft goes anywhere.

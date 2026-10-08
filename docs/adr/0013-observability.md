@@ -171,3 +171,87 @@ existing `init_otlp_pipeline*` functions stay, deprecated.
   client build that dropped them was O13's other half. The SDK now takes the
   client and server without their own defaults (audit K1), so
   `default-features = false` on any of the three removes it again.
+
+## 2026-10-06: option 5, the agent conventions, and the client
+
+Implemented on `claude/zealous-lovelace-n5ulfc`, with what was decided and
+why, so the next change to any of it starts from the reasons.
+
+**Option 5 as written, with two departures.** `otel::Telemetry` reads the
+environment as §5 says, installs both providers and returns a flushing
+guard, and adds logs (`opentelemetry-appender-tracing` 0.32). The first
+departure is a private `current_thread` runtime for export: tonic needs a
+runtime to build its channel (the panic `init_otlp_pipeline` documents), and
+exporting on the application's runtime deadlocks a `current_thread`
+application at shutdown, because the final flush blocks the only thread the
+export would run on. The second is an HTTP client of our own
+(`otel/telemetry/http.rs`): `opentelemetry-otlp` offers reqwest, which
+`deny.toml` bans, or `opentelemetry-http`'s hyper client, which uses Tokio's
+timer wherever it is polled — and the SDK polls it on its batch thread, which
+has no runtime. Ours spawns each request onto the export runtime.
+
+Found while building it, each now covered by a test:
+
+- `Option<Layer>::max_level_hint` is `OFF` for `None` (tracing-subscriber
+  0.3.23). Composed as an `Option`, a signal that was off — logs, under the
+  Langfuse preset — switched every span off. Absent signals are `Identity`.
+- `tracing-opentelemetry` 0.33.0 appends a field recorded twice as a second
+  attribute with the same key. The executor span's `a2a.task.state` first read
+  `TASK_STATE_WORKING` on a completed task. Every attribute is now recorded
+  once, at the point its value is final, and the SDK's gate fails on a
+  repeated key.
+- `opentelemetry-otlp` 0.32 builds an empty `ClientTlsConfig` for an
+  `https://` gRPC endpoint, and tonic 0.14.6 enables no roots for an empty
+  one. `Telemetry` passes the Mozilla roots and any extra CA explicitly.
+- `opentelemetry_sdk` 0.32.1's batch processor computes its final export's
+  result and returns `Ok` from `shutdown` regardless. The HTTP client counts
+  failed and refused exports, and `shutdown` reports them; over gRPC a
+  failure is still only logged.
+
+**The executor's span is the GenAI conventions' `invoke_agent`** (internal,
+`semantic-conventions-genai` `docs/gen-ai/gen-ai-agent-spans.md` at
+`4f85037`; `development`). The executor is the agent, and the span covers one
+run of it in this process. Langfuse maps `gen_ai.operation.name =
+invoke_agent` to an AGENT observation and `gen_ai.conversation.id` to a
+session (`langfuse/langfuse@1a21a42`, `ObservationTypeMapper.ts`,
+`extractSessionId`), and so do other GenAI-aware backends. That is the whole
+of the Langfuse integration: no vendor attributes. The cost is a renamed span
+(`a2a.execute` before), listed under Behaviour Changes, with
+`with_agent_span_conventions(false)` as the way back.
+
+**The call spans carry the draft A2A conventions' attributes** (pull request
+#195 at `842a839`, open). Its rule that A2A instrumentation "SHOULD NOT report
+telemetry describing higher level GenAI agent operations" is kept for the
+`SERVER` and `CLIENT` spans, which carry A2A attributes only. Its rename of
+HTTP server spans to `{a2a.method.name}` is not followed: option 2's single
+name per call on every binding stands, as #195's own gRPC rule has it, until
+the conventions settle. Content capture is opt-in, as the GenAI conventions
+make `gen_ai.input.messages` and `gen_ai.output.messages`.
+
+**The client records a `CLIENT` span per call and sends it as the
+`traceparent`** when the `otel` feature is on and a layer records (O8, O9).
+The span is opened after the interceptors run, so it overrides what
+`TracePropagationInterceptor` wrote; a `CurrentTrace` scope becomes its parent
+when no recorded span is current. A streaming call's span is polled with the
+stream, because `tracing-opentelemetry` ends a span at its last exit.
+Propagation is skipped on a custom transport, where per-request headers may
+not exist (the WebSocket transport warns when it drops one).
+
+**Measured 2026-10-06**: a blocking JSON-RPC `SendMessage` round trip over
+loopback to `serve_with_addr`, trivial executor, client and server in one
+process on a two-worker runtime. Release profile, 4-vCPU Xeon at 2.1 GHz.
+`main` at `20b162b` against this branch, 2,000 calls a run, 15 runs a round,
+the round's median taken.
+
+- With no subscriber, 15 interleaved rounds (nine before-then-after, six
+  after-then-before, to expose order effects): a median of round medians of
+  214.9 µs before and 220.3 µs after (+2.5%). Individual rounds ranged from
+  −7.4% to +31.7%, and "after" was slower in 9 of 15. That is inside this
+  host's run-to-run spread and is not attributed.
+- With a `tracing-opentelemetry` layer over a batch processor and a
+  discarding exporter, 3 rounds: 323.2 → 388.0 µs (+20%, about 65 µs a call;
+  rounds +20.6%, +25.9%, +19.0%). That is the client span, a third span per
+  call, plus the new attributes.
+
+The client skips all of its attribute work when its span is disabled, and
+the executor span formats its name only when enabled.

@@ -53,6 +53,8 @@ pub struct A2aClient {
     pub(crate) interceptors: InterceptorChain,
     /// Client configuration.
     pub(crate) config: ClientConfig,
+    /// The agent called, as its spans describe it.
+    pub(crate) peer: crate::call_span::Peer,
 }
 
 impl A2aClient {
@@ -102,7 +104,14 @@ impl A2aClient {
             transport,
             interceptors,
             config,
+            peer: crate::call_span::Peer::default(),
         }
+    }
+
+    /// Sets what the client's spans say about the agent it calls.
+    pub(crate) fn with_peer(mut self, peer: crate::call_span::Peer) -> Self {
+        self.peer = peer;
+        self
     }
 
     /// Sends an intercepted request, and lets the interceptors see a
@@ -119,10 +128,26 @@ impl A2aClient {
         req: &mut ClientRequest,
     ) -> ClientResult<serde_json::Value> {
         let params = std::mem::take(&mut req.params);
-        let result = self
+        #[cfg(feature = "tracing")]
+        let call = crate::call_span::CallSpan::open(method, &self.peer, &params);
+        #[cfg(feature = "otel")]
+        crate::call_span::propagate(
+            &call,
+            &self.peer,
+            self.config.propagate_trace,
+            &mut req.extra_headers,
+        );
+        let send = self
             .transport
-            .send_request(method, params, &req.extra_headers)
-            .await;
+            .send_request(method, params, &req.extra_headers);
+        #[cfg(feature = "tracing")]
+        let send = tracing::Instrument::instrument(send, call.span.clone());
+        let result = send.await;
+        #[cfg(feature = "tracing")]
+        match &result {
+            Ok(value) => call.succeeded(Some(value)),
+            Err(e) => call.failed(e),
+        }
         if let Err(ref e) = result {
             self.interceptors.run_on_error(req, e).await;
         }
@@ -137,10 +162,35 @@ impl A2aClient {
         req: &mut ClientRequest,
     ) -> ClientResult<EventStream> {
         let params = std::mem::take(&mut req.params);
-        let result = self
+        #[cfg(feature = "tracing")]
+        let call = crate::call_span::CallSpan::open(method, &self.peer, &params);
+        #[cfg(feature = "otel")]
+        crate::call_span::propagate(
+            &call,
+            &self.peer,
+            self.config.propagate_trace,
+            &mut req.extra_headers,
+        );
+        let send = self
             .transport
-            .send_streaming_request(method, params, &req.extra_headers)
-            .await;
+            .send_streaming_request(method, params, &req.extra_headers);
+        #[cfg(feature = "tracing")]
+        let send = tracing::Instrument::instrument(send, call.span.clone());
+        let result = send.await;
+        // A stream's span stays open with the stream: the call lasts until
+        // the caller has finished consuming it (`call_span.rs`).
+        #[cfg(feature = "tracing")]
+        let result = match result {
+            Ok(stream) => {
+                let span = call.span.clone();
+                call.succeeded(None);
+                Ok(stream.with_span(span))
+            }
+            Err(e) => {
+                call.failed(&e);
+                Err(e)
+            }
+        };
         if let Err(ref e) = result {
             self.interceptors.run_on_error(req, e).await;
         }

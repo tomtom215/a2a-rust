@@ -64,6 +64,7 @@
 - [Adversarial Testing](./deployment/security-testing.md)
 - [Multi-Tenancy](./deployment/multi-tenancy.md)
 - [Observability](./deployment/observability.md)
+    - [Langfuse](./deployment/langfuse.md)
 - [Troubleshooting](./deployment/troubleshooting.md)
 - [Running More Than One Replica](./deployment/horizontal-scaling.md)
 - [GitHub Pages & CI/CD](./deployment/cicd.md)

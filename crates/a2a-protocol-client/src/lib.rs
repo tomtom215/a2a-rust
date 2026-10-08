@@ -119,6 +119,8 @@ struct ReadmeDoctests;
 #[macro_use]
 mod trace;
 
+mod call_span;
+
 pub mod auth;
 pub mod builder;
 pub mod client;

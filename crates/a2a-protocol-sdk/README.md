@@ -63,7 +63,7 @@ defaults, so `default-features = false` here removes both.
 | `tracing` | Yes | `a2a-protocol-client`, `a2a-protocol-server` |
 | `grpc` | No | `a2a-protocol-client`, `a2a-protocol-server` |
 | `grpc-tls` | No | `a2a-protocol-client`, `a2a-protocol-server` (and turns on `grpc`, `tls-rustls`) |
-| `otel` | No | `a2a-protocol-server` |
+| `otel` | No | `a2a-protocol-server`, `a2a-protocol-client` |
 | `websocket` | No | `a2a-protocol-client`, `a2a-protocol-server` |
 | `sqlite` | No | `a2a-protocol-server` |
 | `postgres` | No | `a2a-protocol-server` |

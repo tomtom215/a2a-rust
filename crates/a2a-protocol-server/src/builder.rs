@@ -126,6 +126,7 @@ pub struct RequestHandlerBuilder {
     require_resolved_tenant: bool,
     tenant_isolation: TenantIsolation,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
+    span_settings: crate::rpc_span::SpanSettings,
     allow_unauthenticated_extended_card: bool,
     allow_undeclared_input_modes: bool,
 }
@@ -155,6 +156,10 @@ impl RequestHandlerBuilder {
             require_resolved_tenant: false,
             tenant_isolation: TenantIsolation::Required,
             inbound_trace_policy: crate::handler::InboundTracePolicy::Continue,
+            span_settings: crate::rpc_span::SpanSettings {
+                agent: true,
+                content: false,
+            },
             allow_unauthenticated_extended_card: false,
             allow_undeclared_input_modes: false,
         }
@@ -388,6 +393,42 @@ impl RequestHandlerBuilder {
         policy: crate::handler::InboundTracePolicy,
     ) -> Self {
         self.inbound_trace_policy = policy;
+        self
+    }
+
+    /// Whether the executor's span follows the OpenTelemetry `GenAI` agent
+    /// conventions (default: yes).
+    ///
+    /// On, each run of the executor is an `invoke_agent {name}` span with
+    /// `gen_ai.operation.name`, the agent's name, description and version
+    /// from its card, and the A2A context as `gen_ai.conversation.id` — which
+    /// is what observability backends key on: Langfuse shows the run as an
+    /// agent and groups a context's runs into one session. Off, the span is
+    /// `a2a.execute` with the task and context ids only, as in 0.14.
+    ///
+    /// Turn it off when an agent framework running inside the executor
+    /// reports its own `invoke_agent` span, so the two do not nest. The
+    /// conventions are `development` upstream and may change; see
+    /// `book/src/deployment/observability.md`.
+    #[must_use]
+    pub const fn with_agent_span_conventions(mut self, on: bool) -> Self {
+        self.span_settings.agent = on;
+        self
+    }
+
+    /// Whether the executor's span records the request's message and the
+    /// agent's replies and artifacts, as `gen_ai.input.messages` and
+    /// `gen_ai.output.messages` (default: no).
+    ///
+    /// **This copies what users and agents say into your traces**, and from
+    /// there to wherever they are exported — which is why the conventions
+    /// make these attributes opt-in and why this is off unless you turn it
+    /// on. Each attribute holds at most 64 KiB of text and data, cut with a
+    /// marker beyond that; raw file bytes are never recorded, only their
+    /// media type and length.
+    #[must_use]
+    pub const fn with_span_content_capture(mut self, on: bool) -> Self {
+        self.span_settings.content = on;
         self
     }
 
@@ -639,6 +680,7 @@ impl RequestHandlerBuilder {
             require_resolved_tenant: self.require_resolved_tenant,
             refuse_unisolated_tenants,
             inbound_trace_policy: self.inbound_trace_policy,
+            span_settings: self.span_settings,
             allow_unauthenticated_extended_card: self.allow_unauthenticated_extended_card,
             accepted_input_modes,
             required_extensions,
@@ -675,6 +717,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("require_resolved_tenant", &self.require_resolved_tenant)
             .field("tenant_isolation", &self.tenant_isolation)
             .field("inbound_trace_policy", &self.inbound_trace_policy)
+            .field("span_settings", &self.span_settings)
             .field(
                 "allow_unauthenticated_extended_card",
                 &self.allow_unauthenticated_extended_card,

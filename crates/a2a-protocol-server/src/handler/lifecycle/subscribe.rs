@@ -293,6 +293,8 @@ impl RequestHandler {
     ) -> ServerResult<InMemoryQueueReader> {
         let start = Instant::now();
         trace_info!(method = "SubscribeToTask", task_id = %params.id, "handling resubscribe");
+        #[cfg(feature = "tracing")]
+        crate::rpc_span::record_task(&params.id, None);
         self.metrics.on_request("SubscribeToTask");
 
         let tenant = self

@@ -57,6 +57,7 @@ use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use tracing_subscriber::layer::SubscriberExt;
 
+mod conventions;
 mod fixtures;
 use fixtures::*;
 
@@ -68,6 +69,15 @@ const RPC_DURATION_BUCKETS: [f64; 14] = [
 
 /// The fully-qualified method the ADR names every binding's server span for.
 const SEND_SPAN: &str = "lf.a2a.v1.A2AService/SendMessage";
+/// The executor's span: the GenAI conventions' `invoke_agent {gen_ai.agent.name}`,
+/// named for the card below.
+const EXECUTE: &str = "invoke_agent observed";
+
+/// Spans the SDK opens for work it spawns, which must each have a recorded
+/// parent.
+fn spawned_by_the_sdk(name: &str) -> bool {
+    name.starts_with("a2a.") || name == EXECUTE
+}
 
 /// The method, and the JSON-RPC error code, of the call that fails.
 const GET_TASK: &str = "lf.a2a.v1.A2AService/GetTask";
@@ -242,7 +252,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
             spans.iter().map(|s| s.span_context.span_id()).collect();
         let settled = spans
             .iter()
-            .filter(|s| s.name.starts_with("a2a."))
+            .filter(|s| spawned_by_the_sdk(&s.name))
             .all(|s| ids.contains(&s.parent_span_id));
         if settled || tokio::time::Instant::now() >= deadline {
             break spans;
@@ -267,12 +277,14 @@ async fn one_server_three_bindings_what_an_operator_sees() {
             ));
             continue;
         };
-        if server.parent_span_id.to_string() != call.parent_id || !server.parent_span_is_remote {
-            gaps.push(format!(
-                "{b}: the server span's parent is {} (remote: {}), not the caller's {} (O1)",
-                server.parent_span_id, server.parent_span_is_remote, call.parent_id
-            ));
-        }
+        conventions::check_parentage(
+            call.binding,
+            call.trace_id,
+            call.parent_id,
+            server,
+            &spans,
+            &mut gaps,
+        );
         if attr(server, "rpc.system.name").as_deref() != Some(call.system) {
             gaps.push(format!(
                 "{b}: rpc.system.name is {:?}, not {:?}",
@@ -303,18 +315,17 @@ async fn one_server_three_bindings_what_an_operator_sees() {
         }
         // The book: "Task and context identifiers are on the spans" (O1).
         let execute = spans.iter().find(|s| {
-            s.name == "a2a.execute" && s.span_context.trace_id() == server.span_context.trace_id()
+            s.name == EXECUTE && s.span_context.trace_id() == server.span_context.trace_id()
         });
         match execute {
-            None => gaps.push(format!(
-                "{b}: no `a2a.execute` span in the call's trace (O4)"
-            )),
+            None => gaps.push(format!("{b}: no `{EXECUTE}` span in the call's trace (O4)")),
             Some(span) => {
                 for key in ["a2a.task.id", "a2a.context.id"] {
                     if attr(span, key).is_none_or(|v| v.is_empty()) {
                         gaps.push(format!("{b}: the executor's span has no `{key}` (O1)"));
                     }
                 }
+                conventions::check_call(b, span, server, &mut gaps);
             }
         }
         match seen.get(b) {
@@ -339,7 +350,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
     // call's span had closed (O4).
     let ids: std::collections::HashSet<_> =
         spans.iter().map(|s| s.span_context.span_id()).collect();
-    for span in spans.iter().filter(|s| s.name.starts_with("a2a.")) {
+    for span in spans.iter().filter(|s| spawned_by_the_sdk(&s.name)) {
         if !ids.contains(&span.parent_span_id) {
             gaps.push(format!(
                 "`{}` in trace {} has no recorded parent (O4)",
@@ -363,7 +374,8 @@ async fn one_server_three_bindings_what_an_operator_sees() {
             ));
         }
     }
-    for name in ["a2a.execute", "a2a.process_events", "a2a.sse"] {
+    conventions::check_unique_keys(&spans, &mut gaps);
+    for name in [EXECUTE, "a2a.process_events", "a2a.sse"] {
         if !spans.iter().any(|s| s.name == name) {
             gaps.push(format!("no `{name}` span was recorded (O4)"));
         }

@@ -252,13 +252,24 @@ impl RequestHandler {
         let tenant = crate::store::tenant::TenantContext::current();
         let shutdown = self.in_flight.shutdown_token();
 
-        // Read before `ctx` moves into the executor's future; the span
-        // records them when it is created.
-        let span_ids = (ctx.task_id.to_string(), ctx.context_id.clone());
-        crate::rpc_span::in_executor_span(
-            &span_ids.0,
-            &span_ids.1,
-            crate::store::tenant::TenantContext::scope(tenant, async move {
+        // Opened before `ctx` moves into the executor's future: the span
+        // records the ids, the agent and — when captured — the request's
+        // message when it is created. The call's own span learns the task
+        // and context here too, the first point both are known.
+        #[cfg(feature = "tracing")]
+        crate::rpc_span::record_task(&ctx.task_id.0, Some(&ctx.context_id));
+        let span = crate::rpc_span::ExecutorSpan::open(
+            &ctx.task_id.0,
+            &ctx.context_id,
+            self.agent_card.as_ref(),
+            self.span_settings,
+            &ctx.message,
+        );
+        #[cfg(feature = "tracing")]
+        let recorder = span.recorder();
+        span.instrument(crate::store::tenant::TenantContext::scope(
+            tenant,
+            async move {
                 // Owned by this future, so the slot is returned when the executor
                 // finishes, fails, panics, or is aborted.
                 let _tenant_slot = tenant_slot;
@@ -275,6 +286,8 @@ impl RequestHandler {
                 };
 
                 let writer = TerminalTracking::new(writer, Arc::clone(&turn));
+                #[cfg(feature = "tracing")]
+                let writer = writer.with_recorder(recorder);
                 let result = run_executor(executor.as_ref(), &ctx, &writer, executor_timeout).await;
                 if let Err((ref e, class)) = result {
                     write_failure_event(&writer, &ctx, e, class).await;
@@ -307,8 +320,8 @@ impl RequestHandler {
                 // Last: a continuation waiting in admission may now lease
                 // a queue and register a token under the same id.
                 turn.finished.cancel();
-            }),
-        )
+            },
+        ))
     }
 }
 

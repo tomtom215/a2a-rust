@@ -74,7 +74,8 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 
 | | |
 |---|---|
-| **OpenTelemetry** | Native OTLP metrics export — request counts, latency histograms, error rates, queue depth, pool stats, **persistence failures and push-delivery outcomes** (`otel` feature). A CI gate asserts the exporter forwards every `Metrics` callback, so a new one cannot be added and silently not exported |
+| **OpenTelemetry** | One call (`Telemetry`, `otel` feature) exports **traces, metrics and logs** over OTLP/gRPC or OTLP/HTTP, configured by the standard `OTEL_*` environment. Server and client spans carry the draft OpenTelemetry A2A attributes; the executor is a GenAI `invoke_agent` span; each call's `traceparent` names the call's span, so a delegation chain is one trace. Metrics: request counts, latency histograms, error rates, queue depth, pool stats, **persistence failures and push-delivery outcomes** — a CI gate asserts the exporter forwards every `Metrics` callback |
+| **Langfuse** | `Telemetry::builder().with_langfuse(Langfuse::from_env()?)` — the same `LANGFUSE_*` variables as Langfuse's Python and JS SDKs; each agent run shows as an AGENT observation, each A2A context as a session ([book](book/src/deployment/langfuse.md), [`examples/langfuse-agent`](examples/langfuse-agent/)) |
 | **Metrics trait** | Pluggable callbacks for requests, responses, errors, latency, connection pool statistics, background persistence failures, and push-delivery outcomes. The last two are the paths a client cannot observe: a stream delivers its events whether or not the store accepted them |
 | **Tracing** | Structured logging via `tracing` crate, zero cost when disabled |
 | **Request ID propagation** | `CallContext::request_id` auto-extracted from `X-Request-ID` header |

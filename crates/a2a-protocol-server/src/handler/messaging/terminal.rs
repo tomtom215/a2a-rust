@@ -35,6 +35,10 @@ pub(super) struct TerminalTracking {
     inner: Arc<InMemoryQueueWriter>,
     terminal: AtomicBool,
     turn: Arc<ExecutorTurn>,
+    /// Records each state, and the output when captured, on the executor's
+    /// span.
+    #[cfg(feature = "tracing")]
+    recorder: Option<crate::rpc_span::OutputRecorder>,
 }
 
 impl TerminalTracking {
@@ -44,7 +48,19 @@ impl TerminalTracking {
             inner,
             terminal: AtomicBool::new(false),
             turn,
+            #[cfg(feature = "tracing")]
+            recorder: None,
         }
+    }
+
+    /// Reports what the executor writes to `recorder`.
+    #[cfg(feature = "tracing")]
+    pub(super) fn with_recorder(
+        mut self,
+        recorder: Option<crate::rpc_span::OutputRecorder>,
+    ) -> Self {
+        self.recorder = recorder;
+        self
     }
 
     /// Whether a terminal state was successfully written.
@@ -78,6 +94,10 @@ impl EventQueueWriter for TerminalTracking {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let terminal = is_terminal(&event);
+            #[cfg(feature = "tracing")]
+            if let Some(recorder) = &self.recorder {
+                recorder.observe(&event);
+            }
             // Before the write, not after: once the event is in the queue a
             // client can read it and send its continuation, and admission
             // must already see the task as parked when that send arrives.

@@ -310,7 +310,7 @@ are rustdoc's job.
 | `handler` | Core request handler — protocol logic layer |
 | `interceptor` | Server-side interceptor chain |
 | `metrics` | Metrics hooks for observing handler activity |
-| `otel` | OpenTelemetry integration for the A2A server (`otel` feature) |
+| `otel` | `Telemetry` (OTLP traces, metrics and logs; the Langfuse preset) and `OtelMetrics` (`otel` feature) |
 | `push` | Push notification configuration storage and delivery |
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
 | `request_context` | Request context passed to the `AgentExecutor` |

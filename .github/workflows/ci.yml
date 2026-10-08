@@ -773,7 +773,7 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude mcp-a2a-agent --exclude a2a-mcp-bridge --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude swarm --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli
+        run: cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude mcp-a2a-agent --exclude a2a-mcp-bridge --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude swarm --exclude langfuse-agent --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli
 
   # ── SDK dogfood (examples/agent-team) ────────────────────────────────────
   #
