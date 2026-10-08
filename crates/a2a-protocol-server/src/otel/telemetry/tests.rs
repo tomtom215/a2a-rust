@@ -237,3 +237,26 @@ fn dropping_the_export_runtime_waits_for_it_to_stop() {
 fn a_collectors_reply_is_read_up_to_64_kib() {
     assert_eq!(http::MAX_RESPONSE_BODY, 65_536);
 }
+
+/// The export client debugs as itself and its timeout — and nothing that
+/// could carry a credential.
+#[test]
+fn the_export_client_debugs_as_its_timeout() {
+    let runtime = runtime::ExportRuntime::start().expect("start");
+    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("protocol versions")
+    .with_root_certificates(rustls::RootCertStore::empty())
+    .with_no_client_auth();
+    let client = http::ExportHttpClient::new(
+        runtime.handle().clone(),
+        &tls,
+        std::time::Duration::from_secs(7),
+        Arc::default(),
+    );
+    let shown = format!("{client:?}");
+    assert!(shown.starts_with("ExportHttpClient"), "{shown}");
+    assert!(shown.contains("7s"), "{shown}");
+}
