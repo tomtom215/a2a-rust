@@ -209,9 +209,13 @@ fn reference_task_ids_are_exported_as_a_string_array() {
     #[derive(Clone, Debug, Default)]
     struct Keep(Arc<std::sync::Mutex<Vec<SpanData>>>);
     impl SpanExporter for Keep {
-        async fn export(&self, batch: Vec<SpanData>) -> opentelemetry_sdk::error::OTelSdkResult {
+        fn export(
+            &self,
+            batch: Vec<SpanData>,
+        ) -> impl std::future::Future<Output = opentelemetry_sdk::error::OTelSdkResult> + Send
+        {
             self.0.lock().unwrap().extend(batch);
-            Ok(())
+            std::future::ready(Ok(()))
         }
     }
 
