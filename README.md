@@ -20,7 +20,8 @@
 [![Guide](https://img.shields.io/badge/guide-a2a--rust.com-blue)](https://a2a-rust.com)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
-[![A2A Conformance](https://img.shields.io/badge/official%20TCK-88%2F114%20MUST%2C%204%20failing-blue)](docs/official-tck-findings.md)
+[![A2A Conformance](https://img.shields.io/badge/official%20TCK-87%2F114%20MUST%2C%205%20failing-blue)](docs/official-tck-findings.md)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tomtom215/a2a-rust/badge)](https://scorecard.dev/viewer/?uri=github.com/tomtom215/a2a-rust)
 
 Pure Rust implementation of the [**Agent2Agent (A2A) protocol**](https://a2a-protocol.org/), written against the **v1.0.1** wire specification — the open, vendor-neutral standard for AI-agent interoperability.
 

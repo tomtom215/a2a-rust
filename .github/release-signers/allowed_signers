@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: Apache-2.0
+# SSH keys trusted to sign release tags. Format and procedure: README.md here.
+# Empty: no release can pass release.yml's signature gate until a key is added.

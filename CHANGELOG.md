@@ -238,6 +238,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   partitions by tenant must now say so by overriding `isolates_tenants()`;
   a wrapper store must forward it.
 
+### Internal
+
+- **Supply-chain workflows: OSV-Scanner, CodeQL and OpenSSF Scorecard.**
+  `osv.yml` scans all seven tracked `Cargo.lock` files on every pull request
+  (blocking on findings the PR introduces) and daily (blocking on any), and
+  reports, without blocking, the Go, Java, JavaScript and Python lockfiles of
+  the conformance peers. Its first run found `itk/Cargo.lock` and
+  `fuzz/Cargo.lock` still on h2 0.4.15 (RUSTSEC-2026-0258), which the root
+  workspace had left behind; both now pin 0.4.20. The two documented
+  waivers — `rsa` in the root lockfile, which no build resolves, and the
+  SLIMRPC binding's RUSTSEC-2026-0285 — are recorded in an
+  `osv-scanner.toml` beside each lockfile with a reason and an expiry; the binding's waiver was re-checked with `cargo update -p rustls --precise 0.23.45` on 2026-10-08 and is still blocked upstream.
+  `codeql.yml` runs `security-extended` over the Rust sources, the workflows
+  and the gate scripts; `scorecard.yml` publishes the Scorecard result for
+  the README badge. `docs/openssf-best-practices.md` answers all 67
+  passing-level criteria of the OpenSSF Best Practices badge with evidence,
+  ready for the maintainer to register.
+- **Release tags must be signed** (`release.yml`). A tag must point at a
+  commit on `main` and carry an SSH or OpenPGP signature that verifies
+  against a key in `.github/release-signers/` as it stands on `main`
+  (`scripts/verify_tag_signature.sh`, whose `--self-test` the same step runs
+  and which proves ten verdicts). It fails closed: no key is committed yet,
+  so no release passes until the maintainer adds one. See `RELEASING.md`.
+- **`SECURITY.md` states the support period and has a section for EU Cyber
+  Resilience Act integrators**: a line is supported exactly while it is the
+  latest minor; Article 13(5) due-diligence material, the Article 13(6)
+  reporting route, and that a reporter's legal notification duties take
+  precedence over the coordinated-disclosure embargo.
+- **The README's official-TCK badge said 88/114 MUST with 4 failing**, from
+  before CORE-SEND-003 joined the baseline on 2026-09-26. It now says 87 and
+  5, as the README's own text and `tck/conformance-baseline.json` do.
+
 ## [0.14.1] - 2026-09-30
 
 ### Security

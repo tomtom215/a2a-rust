@@ -96,6 +96,33 @@ jobs:
       # Release-time rather than per-commit on purpose: every commit moves
       # these counts, so a per-commit gate would fail constantly and be routed
       # around. The release is the only moment the figures are cited.
+      # Annotation records who cut the tag; nothing proves it. Since
+      # 2026-10-08 the tag must also be signed by a key committed under
+      # .github/release-signers/ (SSH or OpenPGP). The script fails closed —
+      # no configured key, no signature, an untrusted or expired key all
+      # refuse — and its --self-test proves each of those verdicts.
+      #
+      # The trusted keys are read from `main`, not from the tagged tree, and
+      # the tagged commit must be on `main` (every release from v0.10.0 to
+      # v0.14.1 is): otherwise a commit that adds its author's own key could
+      # be tagged and would vouch for itself. What no step here can stop is a
+      # tag on an unreviewed commit whose *workflow* has been edited, because
+      # this file runs from the tagged tree; that is what a repository rule
+      # restricting `v*` tag creation is for (.github/release-signers/README.md).
+      - name: Tag is on main and signed by a release key
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git fetch --no-tags --quiet origin '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag '$TAG' points at ${GITHUB_SHA}, which is not on main."
+            exit 1
+          fi
+          signers=$(mktemp -d)
+          git archive origin/main .github/release-signers | tar -x -C "$signers"
+          scripts/verify_tag_signature.sh --self-test
+          SIGNERS_DIR="$signers/.github/release-signers" scripts/verify_tag_signature.sh "$TAG"
+
       - name: Provenance manifest describes the commit being released
         run: ./scripts/check_provenance_manifest.py "$GITHUB_SHA"
 

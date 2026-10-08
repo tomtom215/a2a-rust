@@ -1149,6 +1149,22 @@ def build_registry() -> dict[str, Probe | Exempt]:
             )
         ],
     )
+    # The script's own --self-test (run first by the same step) proves its ten
+    # signature verdicts; this proves the step around it — that it reads the
+    # trusted keys from `main` and refuses a tag off `main`, which no
+    # self-test inside the script can see.
+    reg["release.yml::validate::Tag is on main and signed by a release key"] = Probe(
+        healthy=_signed_tag_fixture(),
+        defects=[
+            Defect("an annotated but unsigned tag", _signed_tag_fixture("unsigned"), "is annotated but not signed"),
+            Defect("a tag signed by a key main does not list", _signed_tag_fixture("untrusted"), "does not verify against"),
+            Defect(
+                "a side commit that adds its own key and tags itself",
+                _signed_tag_fixture("off-main"),
+                "which is not on main",
+            ),
+        ],
+    )
     reg["release.yml::validate::Extract version metadata"] = Probe(
         healthy=_release_fixture(),
         defects=[
@@ -1458,6 +1474,75 @@ def _release_fixture(
             "steps.meta.outputs.is_prerelease": "false",
             "__cwd__": str(r),
             "__env__": {"GITHUB_REF_NAME": name},
+        }
+
+    return setup
+
+
+def _signed_tag_fixture(defect: str | None = None) -> Setup:
+    """A repo with an `origin` whose `main` trusts one SSH key, and a tag.
+
+    Healthy: the tag is on `main` and signed by the trusted key. Defects:
+    `unsigned` (annotated only), `untrusted` (signed by a key `main` does not
+    list), `off-main` (a side commit that adds its own signer's key to
+    `.github/release-signers/` and tags itself, signed by that key — the
+    self-vouching case the step reads `main` to defeat).
+    """
+
+    def setup(d: Path) -> dict[str, str]:
+        r = d / "r"
+        (r / "scripts").mkdir(parents=True)
+        shutil.copy2(REPO / "scripts/verify_tag_signature.sh", r / "scripts/verify_tag_signature.sh")
+        keys = d / "keys"
+        keys.mkdir()
+        for who in ("trusted", "other"):
+            subprocess.run(
+                ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", who, "-f", str(keys / who)],
+                check=True, capture_output=True,
+            )
+
+        def signer_line(who: str) -> str:
+            pub = (keys / f"{who}.pub").read_text().split()
+            return f'release@example.test namespaces="git" {pub[0]} {pub[1]}\n'
+
+        signers = r / ".github/release-signers"
+        signers.mkdir(parents=True)
+        (signers / "allowed_signers").write_text(signer_line("trusted"))
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": str(d / "gitconfig"), "GIT_CONFIG_NOSYSTEM": "1"}
+        (d / "gitconfig").write_text("")
+        g = lambda *a: subprocess.run(  # noqa: E731
+            ["git", "-C", str(r), *a], check=True, capture_output=True, text=True, env=env
+        ).stdout.strip()
+        g("init", "-q", "-b", "main")
+        g("config", "user.email", "release@example.test")
+        g("config", "user.name", "T")
+        g("add", "-A")
+        g("commit", "-q", "-m", "trusted signer")
+        origin = d / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True, env=env)
+        g("remote", "add", "origin", str(origin))
+        g("push", "-q", "origin", "main")
+
+        name = "v9.9.9"
+        signed = ["-c", "gpg.format=ssh", "-c", f"user.signingkey={keys / 'trusted'}"]
+        if defect == "unsigned":
+            g("tag", "-a", name, "-m", "Release")
+        elif defect == "untrusted":
+            signed[-1] = f"user.signingkey={keys / 'other'}"
+            g(*signed, "tag", "-s", name, "-m", "Release")
+        elif defect == "off-main":
+            g("checkout", "-q", "-b", "side")
+            (signers / "allowed_signers").write_text(signer_line("trusted") + signer_line("other"))
+            g("commit", "-q", "-am", "add my own key")
+            signed[-1] = f"user.signingkey={keys / 'other'}"
+            g(*signed, "tag", "-s", name, "-m", "Release")
+        else:
+            g(*signed, "tag", "-s", name, "-m", "Release")
+        sha = g("rev-parse", f"{name}^{{commit}}")
+        return {
+            "github.ref_name": name,
+            "__cwd__": str(r),
+            "__env__": {"GITHUB_SHA": sha, "GIT_CONFIG_GLOBAL": str(d / "gitconfig"), "GIT_CONFIG_NOSYSTEM": "1"},
         }
 
     return setup

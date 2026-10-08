@@ -166,9 +166,17 @@ git add -A && git commit -m "chore: prepare release vX.Y.Z"
 
 ```bash
 git checkout main && git pull
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git tag -s vX.Y.Z -m "Release vX.Y.Z"   # signed; -s implies -a
+scripts/verify_tag_signature.sh vX.Y.Z   # the check release.yml will run
 git push origin vX.Y.Z
 ```
+
+**The tag must be signed** (since 2026-10-08), by an SSH or OpenPGP key
+listed in [`.github/release-signers/`](.github/release-signers/README.md) on
+`main`, and must point at a commit on `main`. `release.yml` refuses anything
+else before building. The directory holds no key until the maintainer commits
+one, so the first signed release starts with that pull request; the README
+there has the commands.
 
 > **Known gap — the first ten tags do not match this step.** Ten release
 > tags (`v0.2.0` … `v0.7.0`) are *lightweight*: bare refs to a commit,
@@ -203,10 +211,19 @@ git push origin vX.Y.Z
 > both annotated tag objects, the first two in this project's history that
 > record a tagger and a date. Neither is signed; that half is still open.
 >
-> That check deliberately does **not** require a signature. A gate for a key
-> that does not exist could never fail, and would read as signing coverage
-> this project does not have. When the key decision above is made, tightening
-> this check to `git tag -v` is the one-line follow-up.
+> That check deliberately did **not** require a signature: a gate for a key
+> that did not exist could never fail, and would have read as signing
+> coverage this project did not have.
+>
+> **Superseded 2026-10-08: signatures are required.** The maintainer chose
+> their own SSH or OpenPGP key over keyless signing or provenance alone.
+> `scripts/verify_tag_signature.sh` verifies the tag against
+> `.github/release-signers/` as it stands on `main`, failing closed when no
+> key is configured; its `--self-test`, run by the same step, proves it
+> refuses an unsigned tag, a lightweight tag, a tag signed by any other key,
+> and an OpenPGP key that is present but not listed by fingerprint. The ten
+> lightweight and the annotated-but-unsigned tags before this stay as they
+> are; re-tagging published releases would move refs downstreams pin.
 
 This triggers the release workflow (`.github/workflows/release.yml`) which:
 

@@ -15,6 +15,57 @@ workflow checks that it covers the version being tagged.)
 | 0.14.x  | :white_check_mark: |
 | < 0.14  | :x:                |
 
+### How long a line is supported
+
+Exactly as long as it is the latest minor line. The day a new minor release
+(`0.15.0`) is published, the previous line (`0.14.x`) stops receiving fixes,
+security fixes included; there is no overlap window and no long-term-support
+line. A fix for a vulnerability ships as a patch release of the current line
+— `0.14.1` for GHSA-hr9h-6jvf-wvg6 is the precedent. Pin and plan
+accordingly: if you need a longer support period than that, you need to
+carry it yourself (see the next section).
+
+This is the policy as it stands at `0.x`; `STABILITY.md` says what changes at
+`1.0`.
+
+## For manufacturers integrating these crates (EU Cyber Resilience Act)
+
+This section is for anyone who places on the EU market a product with
+digital elements that contains these crates. It is a description of what this
+project provides, not legal advice.
+
+**The project's own position, as the maintainer reads it.** These crates are
+free and open-source software published by an individual and not monetised:
+no paid support, no charge for the crates. Recital 18 of Regulation (EU)
+2024/2847 treats such software as not made available in the course of a
+commercial activity, and an open-source software steward (Article 24) is a
+legal person, which an individual maintainer is not. If that changes — paid
+support, or hosting by a foundation — this section changes with it.
+
+**Your obligations reach these crates.** Article 13(5) requires you to
+"exercise due diligence when integrating components sourced from third
+parties", free and open-source software included; Annex I, Part II(1)
+requires an SBOM covering at least your top-level dependencies; and Article
+13(6) requires you, on identifying a vulnerability in a component, to report
+it to whoever maintains that component. Article 14's reporting obligations
+apply from 11 September 2026 (Article 71(2)). What this project gives you for
+each of those:
+
+| You need | This project provides |
+|---|---|
+| Due diligence on the component (Art. 13(5)) | Per-crate CycloneDX SBOMs and SLSA build-provenance attestations on every GitHub release (`PROVENANCE.md`); `SHA256SUMS`; the conformance and audit record under `docs/`; this policy; the OpenSSF Best Practices evidence in `docs/openssf-best-practices.md` |
+| Your SBOM (Annex I, Part II(1)) | The release SBOMs list each crate's own dependency tree, to merge into yours |
+| Vulnerability monitoring | `cargo-deny` and OSV-Scanner run on every pull request and daily (`osv.yml`); GitHub security advisories for this repository |
+| A place to report a vulnerability you found in these crates (Art. 13(6)) | The two channels under **Reporting a Vulnerability** below. Say in the report that it is an Article 13(6) report; it gets the same 3-business-day acknowledgement as any other. If you have a fix, send it — Article 13(6) asks you to share it, and we will credit it |
+| A support period longer than the current minor line | Not available. Pin a version and backport fixes in your own fork, or upgrade with each minor release |
+
+**Your legal deadlines win over our embargo.** The coordinated-disclosure
+timeline below is a default for reporters with no other obligation. If the
+law requires you to notify a CSIRT or ENISA about an actively exploited
+vulnerability in a product that contains these crates, do so on the law's
+timetable, and tell us at the same time; nothing in this policy asks you to
+delay a notification you are required to make.
+
 ## Scope
 
 This policy covers **every crate published from this repository**:
@@ -34,7 +85,8 @@ This policy covers **every crate published from this repository**:
   affected today; and it carries a **live advisory waiver** —
   `RUSTSEC-2026-0285`, ignored in `bindings/a2a-protocol-slimrpc/deny.toml`
   because `slim-auth 0.15.4` pins `aws-lc-rs =1.16.2` while `rustls 0.23.45`
-  needs `^1.18`, with no upstream release resolving it as of 2026-09-16. A
+  needs `^1.18`, with no upstream release resolving it as of 2026-10-08
+  (the newer slim-auth 0.16 line pins `aws-lc-rs =1.16.3` the same way). A
   report about that advisory is not new information; a report about anything
   else in the binding is in scope and welcome.
 
@@ -76,15 +128,17 @@ Know what you can and cannot verify about a release:
 | Artifact | Signed? | How to verify |
 |---|---|---|
 | Git tags `v0.2.0` … `v0.7.0` | **No** | Nothing to verify. These ten are lightweight — unannotated and unsigned — so they carry no tagger identity, no date, and no signature. |
-| Git tags `v0.8.0` onward | **Not signed, but annotated** | `git cat-file -t v0.9.0` prints `tag`, and `git for-each-ref` shows a tagger and a date. That establishes *who cut the release and when*; it does not establish authenticity, because nothing is GPG/SSH-signed, so `git tag -v` still cannot verify any release. `release.yml` refuses a lightweight tag, so this holds for every future release. |
+| Git tags after `v0.14.1` | **Signed** | `release.yml` refuses a release whose tag is not signed by a key in `.github/release-signers/` on `main`. Check one yourself with `scripts/verify_tag_signature.sh <tag>`. |
+| Git tags `v0.8.0` … `v0.14.1` | **Not signed, but annotated** | `git cat-file -t v0.9.0` prints `tag`, and `git for-each-ref` shows a tagger and a date. That establishes *who cut the release and when*; it does not establish authenticity, because nothing is GPG/SSH-signed, so `git tag -v` still cannot verify any release. `release.yml` refuses a lightweight tag, so this holds for every future release. |
 | Release binaries / SBOMs | Yes | Attested in the release workflow; see [`PROVENANCE.md`](PROVENANCE.md). |
 | Published crates | **No** — integrity only | crates.io records a SHA-256 checksum per `.crate`, which cargo verifies on download. A checksum proves the bytes are the ones crates.io holds, not who published them; this file said "signed" until 2026-09-24. The release's `SHA256SUMS` asset and build attestation are what tie a `.crate` to this repository. |
 
 If you need a cryptographic link between a published version and this
 repository, use the build provenance attestations described in
-`PROVENANCE.md`, not the git tag. Annotation was adopted at `v0.8.0` and is
-enforced; **signing is still a known gap** and needs a maintainer key and a
-documented way for adopters to obtain it.
+`PROVENANCE.md`. Annotation was adopted at `v0.8.0` and is enforced. Signing
+is enforced from the first release after `v0.14.1`: the trusted keys are the
+files in `.github/release-signers/`, which is also how an adopter obtains
+them.
 
 ### What to Include
 

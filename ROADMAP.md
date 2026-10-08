@@ -842,9 +842,17 @@ This is the category most worth clearing before any external review.
   **Half of this is closed as of 2026-08-10, and confirmed since:**
   `release.yml` fails the release if the pushed tag is not an annotated tag,
   and the two releases cut under it — `v0.8.0` and `v0.9.0` — are annotated
-  tag objects carrying a tagger and a date. The signing half is unchanged and still needs the key
-  decision; the check deliberately does not require a signature, because a
-  gate for a key that does not exist could never fail.
+  tag objects carrying a tagger and a date.
+  **The signing half is built as of 2026-10-08 and waits on one commit.** The
+  maintainer chose their own SSH or OpenPGP key (the open question below).
+  `release.yml` now refuses a tag that is not on `main` or not signed by a
+  key in `.github/release-signers/` as it stands on `main`
+  (`scripts/verify_tag_signature.sh`, with a ten-case `--self-test` the same
+  step runs). No key is committed yet, so the next release is blocked until
+  the maintainer adds theirs — deliberately, since a gate that passes
+  unsigned tags while it waits is the gap itself. Remaining: that key, and a
+  `v*` tag ruleset in the repository settings (`.github/release-signers/README.md`
+  says why).
 * **PGP key for security reports.** `SECURITY.md` has none, so emailed
   vulnerability reports cannot be encrypted. GitHub Security Advisories is
   the recommended channel in the meantime.
@@ -1084,9 +1092,13 @@ steps in [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
 
 Genuinely undecided — listed so they are not mistaken for oversights.
 
-* Whether to adopt signed tags at all, or to rely solely on the SLSA build
+* ~~Whether to adopt signed tags at all, or to rely solely on the SLSA build
   provenance attestations already produced for release artifacts
-  (see [`PROVENANCE.md`](PROVENANCE.md)).
+  (see [`PROVENANCE.md`](PROVENANCE.md)).~~ **Decided 2026-10-08:** signed
+  tags, with the maintainer's own SSH or OpenPGP key, verified in
+  `release.yml` (see "Signed tags" above). The SLSA attestations stay; they
+  answer a different question (what built the artifact), the signature
+  answers who released it.
 * ~~Whether `0.8` should also raise MSRV, and what support window to state.~~
   **Decided 2026-09-09:** lowered to **1.88**, the oldest toolchain the
   dependency tree declares support for, with edition 2024 and the

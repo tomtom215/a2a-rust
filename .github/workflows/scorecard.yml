@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# OpenSSF Scorecard: the repository's supply-chain posture, scored by the
+# OpenSSF's own checks (branch protection, pinned dependencies, token
+# permissions, signed releases, fuzzing, SAST, and the rest), published to
+# api.scorecard.dev for the README badge and uploaded to code scanning.
+#
+# The shape is constrained by the Scorecard API, which rejects published
+# results from a workflow that breaks any of these (scorecard-action v2.4.4
+# README, "Workflow Restrictions"): no top-level `env` or `defaults`; no
+# workflow-level write permission; `id-token: write` only on the Scorecard
+# job; in that job no `env`, `defaults`, containers or services, an Ubuntu
+# hosted runner, and only checkout, upload-artifact, upload-sarif,
+# scorecard-action and harden-runner as steps. Adding anything else here
+# makes the publish fail, not the check pass.
+#
+# A score is a dashboard, not a gate: this workflow fails only if Scorecard
+# itself cannot run.
+
+name: Scorecard
+
+on:
+  branch_protection_rule:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 5 * * 1'
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload the SARIF as an artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scorecard-sarif
+          path: scorecard.sarif
+          retention-days: 5
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: scorecard.sarif

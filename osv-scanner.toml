@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# osv-scanner reads this file for the lockfiles in this directory: the
+# workspace's Cargo.lock. It scans the lockfile as text, so it also reports
+# packages the lockfile records but no build resolves — which cargo-deny,
+# reading the resolved graph, does not. Each entry below is one of those or a
+# mirror of a `deny.toml` ignore, with the evidence and a date on which the
+# entry stops applying and must be re-examined (`osv.yml`).
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2023-0071"
+ignoreUntil = 2027-01-08
+reason = "rsa 0.9.10 (Marvin timing side channel, no fixed release) is in Cargo.lock only as a dependency of sqlx-mysql, which no feature of any workspace crate enables: `cargo tree -i rsa --all-features --target all -e normal,build,dev` prints nothing (checked 2026-10-08)."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0436"
+ignoreUntil = 2027-01-08
+reason = "paste is unmaintained (informational, not a vulnerability). Mirrors the deny.toml ignore: a compile-time proc-macro reached only via genai 0.6 in two example agents; no published crate depends on it."

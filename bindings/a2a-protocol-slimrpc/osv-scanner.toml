@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# osv-scanner's view of this binding's Cargo.lock. Mirrors the one ignore in
+# this directory's deny.toml, whose note gives the full dependency chain; the
+# GHSA id is the same advisory under its GitHub alias, which osv-scanner
+# reports separately.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0285"
+ignoreUntil = 2027-01-08
+reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; agntcy-slim-auth pins it below that through mls-rs-crypto-awslc (0.23.0 =1.16.2 in the locked tree; the newest, 0.25.0 under slim-auth 0.16.3, still =1.16.3, checked 2026-10-08). The binding is unpublished. See deny.toml."
+
+[[IgnoredVulns]]
+id = "GHSA-2mjx-qc3c-rqvc"
+ignoreUntil = 2027-01-08
+reason = "Alias of RUSTSEC-2026-0285; see that entry."
