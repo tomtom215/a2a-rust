@@ -925,7 +925,15 @@ jobs:
     #
     # If a PR ever does overrun this, it now fails loudly at "Require a
     # readable mutation report" rather than silently reporting no survivors.
-    timeout-minutes: 75
+    #
+    # 120, raised from 75 on 2026-10-09, now that a PR has measured it. Run
+    # 37906246207 (the audit/oversight/provenance PR) put 103 mutants in
+    # shard 1/8, almost all in a2a-protocol-server, where each one runs the
+    # server and Postgres suites: 85 took 16,524 s of test time, ~194 s each,
+    # so the shard needed ~83 minutes at --jobs 4 and was cancelled at 75 with
+    # 18 untested. The other seven shards finished in 13-49 minutes. 120
+    # leaves that worst case ~35 minutes of headroom.
+    timeout-minutes: 120
     # Same reasoning as the full sweep above: a PR touching Postgres code must
     # be judged against a real database, not against absent tests.
     services:
