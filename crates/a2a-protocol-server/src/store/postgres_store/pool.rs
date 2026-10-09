@@ -15,7 +15,7 @@ use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 
 /// Creates a `PgPool` with production-ready defaults.
-pub(super) async fn pg_pool(url: &str) -> Result<PgPool, sqlx::Error> {
+pub async fn pg_pool(url: &str) -> Result<PgPool, sqlx::Error> {
     pg_pool_with_size(url, 10).await
 }
 

@@ -24,6 +24,10 @@ categories             = ["api-bindings"]
 # the signature over them — disagree with the signer's (RFC 8785 Appendix B;
 # audit T2).
 signing = ["dep:base64", "dep:ring", "serde_json/float_roundtrip"]
+## Tamper-evident audit records: the record schema, SHA-256 hash chains,
+## ES256/Ed25519-signed checkpoints and chain verification (ADR 0015). Pure
+## data and verification; the server crate's `audit` feature writes them.
+audit = ["signing"]
 ## Enable the canonical A2A protobuf message types (`lf.a2a.v1`, prost-generated)
 ## and lossless conversions to/from the serde domain types. Wire-compatible with
 ## the official Go/Python/Java A2A SDKs. Pure data — still no I/O; the gRPC

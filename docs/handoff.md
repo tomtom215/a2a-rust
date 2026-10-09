@@ -11,10 +11,10 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-10-06 — `claude/zealous-lovelace-n5ulfc`: `otel::Telemetry`
-(traces, metrics and logs over OTLP/gRPC or OTLP/HTTP), the Langfuse preset,
-the GenAI and draft A2A span conventions, client spans with automatic
-`traceparent`, and `examples/langfuse-agent`. `git log -1 --format='%ci %s' --
+Last updated 2026-10-09 — `claude/bold-gauss-9qc9dc`: compliance and
+oversight. It adds the HTTP+JSON media-type fix, OSV/CodeQL/Scorecard,
+signed-tag verification, the compliance control map, the audit trail, the
+delegation handle, the halt switch, and the approval gate. `git log -1 --format='%ci %s' --
 docs/handoff.md` remains the authority on this line.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
@@ -918,9 +918,9 @@ for ordering and liveness risks, and sharing one task between executor and
 processor was measured slower (G4). The remaining streaming gap is not
 attributed further.
 
-**What the next session should do first.** G1-A (the client-side
-delegation handle) is the first swarm enabler; `examples/swarm`'s CI gate
-already proves the behaviour it has to keep.
+**What the next session should do first.** ~~G1-A (the client-side
+delegation handle)~~ landed on `claude/bold-gauss-9qc9dc` (below); next in
+`swarm-orchestration.md`'s order is G3.
 
 **Environment notes that will cost the next session time.**
 
@@ -936,6 +936,84 @@ already proves the behaviour it has to keep.
 * Measure throughput on one pinned core with `/proc/<pid>/stat` user and
   system time; two-core runs are latency-bound and the VM's noise is ±5–10%
   there. Use 6 interleaved runs and compare medians.
+
+## `claude/bold-gauss-9qc9dc` — compliance, audit and human oversight
+
+The maintainer asked to make a2a-rust the most compliant and verifiable A2A
+SDK, measured against the EU AI Act
+(`docs/compliance/control-map.md` is the map). The work came as a plan in six
+phases, A–F; this branch carries A–C so far.
+
+* **A (pushed: `5683d09f`, `ae2efbce`, `d76ed2f7`, `df6daf1e`).**
+  - HTTP+JSON negotiates `application/a2a+json` (REST-CT-001). ACTS against
+    a2a-itk `82458cea` scored 101/101, 88/88 and 94/94.
+  - HS256 secrets shorter than 32 bytes fail closed.
+  - New workflows: OSV, CodeQL, Scorecard.
+  - Release tags must be signed by a key in `.github/release-signers/`.
+  - The compliance control map, with a CI gate.
+* **B, the audit trail.** ADR 0015 and the book's "Audit Trail" chapter
+  describe it.
+* **C, human oversight.** The book's "Human Oversight" chapter describes it.
+  It adds `delegation::Delegation` in the client (G1-A), with
+  `examples/swarm` rewritten on it; `RequestHandler::halt`/`resume`; and the
+  approval extension with `ApprovalGate`.
+
+**Decisions the maintainer made (2026-10-08).**
+- Commits are authored as Tom F. with sign-off.
+- Release tags are signed with the maintainer's own SSH or GPG key, and CI
+  verifies them.
+- New distribution channels (the CLI, Homebrew, winget) are drafted in-repo
+  only; the maintainer publishes.
+
+**Waiting on the maintainer, not on code.**
+- Commit the release public key to `.github/release-signers/allowed_signers`
+  (or `gpg-fingerprints.txt`) before the next tag. Until then
+  `release.yml` refuses every tag, by design.
+- Register the OpenSSF Best Practices badge. `docs/openssf-best-practices.md`
+  has the answers.
+- Add a `v*` tag ruleset.
+- OSV, CodeQL and Scorecard trigger on `main` and pull requests only, so they
+  had not run on GitHub when this was written.
+
+**Two halt designs were rejected (2026-10-09).**
+- *Writing `Canceled` from the halt, as `CancelTask` does.* It was measured
+  to stall a send that the halt caught mid-admission for exactly the 5 s
+  queue write timeout: the terminal write waits for a background processor
+  that does not exist yet.
+- *Re-checking the halt after the row is written and deleting the row.* That
+  would delete an existing task when the send was a continuation.
+
+The landed design marks the turn halted and fires its token; the executor's
+own post-run hook writes `Canceled`, as on shutdown. The race test failed
+with the admission re-check removed and passes with it.
+`a_turn_admitted_after_the_walk_stops_itself` covers the same path
+deterministically.
+
+**The mutation gate is slow on this diff.** `--in-diff` over B+C finds 586
+mutants. The first run finished 74 of them in about 100 minutes, with two
+jobs on four cores, before it was stopped to free disk. At that rate the
+whole diff takes roughly 13 hours. The partial results are not in the repository. The fixes they
+prompted are: the `Delegation::cancel` guard, which was redundant (an
+equivalent mutant, so the guard was removed), and the `AuditLog` `Debug`
+output, which now has a test.
+
+**What the next session should do first.**
+1. Finish the mutation sweep on this diff (`--iterate` against the saved
+   output, sharded).
+2. Phase D: signed messages and artifacts as a declared extension, with an
+   AI-generated marker. Then JWKS/`kid`/`jku` resolution and EdDSA for card
+   verification. Fix `verify_agent_card`'s doc, which says SPKI DER although
+   `ring` takes the raw 65-byte point. Then zeroize held secrets.
+3. Phases E and F, as listed in the plan.
+
+**Environment notes.**
+- Run every cargo command with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0`.
+  Without them `target/` plus two mutants copies filled the disk three times.
+- Postgres for the store tests: `sudo dockerd &`, then a `postgres:16`
+  container on the host network, with
+  `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`.
+- Run mutants without `RUSTFLAGS`, as `mutants.yml` does; `-D warnings`
+  turns caught mutants into unviable ones.
 
 ## In flight outside this repository
 

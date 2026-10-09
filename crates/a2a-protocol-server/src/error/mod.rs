@@ -63,6 +63,12 @@ pub enum ServerError {
     /// `max_concurrent_streams` cap) and transiently cannot accept the request.
     /// Clients should back off and retry. Maps to gRPC `RESOURCE_EXHAUSTED`.
     Overloaded(String),
+    /// An operator halted the server, or the request's tenant, with
+    /// [`RequestHandler::halt`](crate::RequestHandler::halt); new work is
+    /// refused until [`resume`](crate::RequestHandler::resume). Not
+    /// transient: retrying will not help until a person resumes it. HTTP
+    /// `503`, gRPC `UNAVAILABLE`, JSON-RPC internal error.
+    Halted(String),
 }
 
 impl fmt::Display for ServerError {
@@ -88,6 +94,7 @@ impl fmt::Display for ServerError {
                 )
             }
             Self::Overloaded(msg) => write!(f, "server overloaded: {msg}"),
+            Self::Halted(msg) => write!(f, "halted: {msg}"),
         }
     }
 }
@@ -130,6 +137,7 @@ impl ServerError {
             Self::UnsupportedOperation(_) => "unsupported_operation",
             Self::InvalidStateTransition { .. } => "invalid_state_transition",
             Self::Overloaded(_) => "overloaded",
+            Self::Halted(_) => "halted",
         }
     }
 
@@ -162,7 +170,7 @@ impl ServerError {
         }
         match self {
             Self::PayloadTooLarge(_) => 413,
-            Self::Overloaded(_) => 503,
+            Self::Overloaded(_) | Self::Halted(_) => 503,
             other => other.to_a2a_error().code.http_status(),
         }
     }
@@ -186,6 +194,7 @@ impl ServerError {
         match self.auth_rejection().map(AuthRejection::kind) {
             Some(AuthRejectionKind::Unauthenticated) => "UNAUTHENTICATED",
             Some(_) => "PERMISSION_DENIED",
+            None if matches!(self, Self::Halted(_)) => "UNAVAILABLE",
             None => self.to_a2a_error().code.grpc_status(),
         }
     }
@@ -241,6 +250,9 @@ impl ServerError {
             // message rather than the opaque one the cap path returned before.
             // The gRPC dispatcher maps it to the more precise RESOURCE_EXHAUSTED.
             Self::Overloaded(msg) => A2aError::internal(msg.clone()),
+            // No A2A code means "stopped by an operator" either; the message
+            // says so, and the HTTP and gRPC bindings answer 503/UNAVAILABLE.
+            Self::Halted(msg) => A2aError::internal(format!("halted: {msg}")),
         }
     }
 }

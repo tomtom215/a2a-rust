@@ -12,6 +12,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`RequestHandler::halt` / `resume`: stop one tenant or the whole server**
+  (server; book, "Human Oversight"). While a scope is halted, new sends are
+  refused with the new `ServerError::Halted` (HTTP `503` and gRPC
+  `UNAVAILABLE`; JSON-RPC answers an internal error reading
+  `halted: <reason>`). Every running task's cancellation token fires, and an
+  executor that returns on it without a terminal state has its task ended
+  `canceled`, as on shutdown. Reads and cancels are still served. A send
+  racing the halt is either refused or stopped; with the second check
+  removed, the race test failed. With `audit`, each halt and resume is a
+  `halt` record naming the operator and the tasks stopped. A halt holds in
+  one process and is not persisted.
+- **The approval extension, and `approval::ApprovalGate`** (types and
+  server; `https://a2a-rust.com/extensions/approval/v1`; book, "Human
+  Oversight"). An executor asks with `EventEmitter::request_approval`,
+  naming the action by the SHA-256 digest of its canonical JSON
+  (`approval::action_digest`, `signing` feature). The server records who
+  asked. With a gate installed, a continuation carrying a decision reaches
+  the executor (`RequestContext::approval`) only if all of these hold:
+  - it answers the pending request and echoes its digest;
+  - it comes from an authenticated approver the gate allows;
+  - by default, the approver is not the caller whose run asked.
+
+  Otherwise it is refused before anything runs. Without a gate,
+  `RequestContext::approval` is always `None`. With `audit`, each admitted
+  decision is an `approval` record naming the approver. The card declares
+  the extension when a gate is installed.
+- **`delegation::Delegation`: cancellation that follows a task to the agents
+  it delegated to** (client; book, "Delegating to Another Agent"). It sends a
+  child task as a stream and learns the child's id from its first event. It
+  cancels the child, in the tenant it was sent to, when the parent cancels,
+  when the child's stream is lost, or when the handle is dropped first. A
+  dropped handle is what an aborted parent future leaves behind. A child that
+  reaches `input-required` or `auth-required` is handed back, not cancelled.
+  `detach()` keeps a child running. Outcomes are typed: completed, failed
+  with its failure class, canceled, interrupted, message, lost, cancel
+  requested, cancel failed, unreachable. `examples/swarm` now uses it in
+  place of its hand-written cascade; its cancel gate still finds 0 of 256
+  children running 5 s after the roots are cancelled, against 256 of 256 in
+  the control arm (debug build, 2026-10-08). It does not cover a parent that
+  crashes (gap G1-B in `docs/swarm-orchestration.md`).
+- **A tamper-evident audit trail** (`audit` feature on the server, types and
+  SDK crates; ADR 0015; book, "Audit Trail").
+  `RequestHandlerBuilder::with_audit(Arc<AuditLog>)` records every call —
+  refused ones included — every run of a task with the caller who started
+  it, every event the agent emits with the run it belongs to, and every
+  cancel request, in a SHA-256 hash chain per tenant. Each record carries
+  the authenticated subject and scheme, the tenant and the W3C trace and span
+  ids; content is recorded only as digests of its RFC 8785 canonical JSON.
+  `CheckpointSigner` (ES256 or Ed25519 through `ring`, PKCS#8 as OpenSSL
+  writes it) signs checkpoints that make truncation of a chain's tail
+  detectable, and `a2a_protocol_types::audit::verify_chain` checks a chain
+  and its checkpoints offline, reporting the first edit, gap, reordering,
+  foreign record, missing start or removed tail. Stores: in memory, SQLite
+  and PostgreSQL (`SqliteAuditStore`, `PostgresAuditStore`); replicas sharing
+  one store interleave on a chain without forking it. Retention:
+  `AuditLog::purge` with `AuditRetention::six_months()` (184 days; a shorter
+  floor must be asked for by name), legal holds, and a signed anchor so a
+  purged chain still verifies. `AuditLog::require_record(true)` refuses a
+  call that cannot be recorded. A failed write is counted by
+  `AuditLog::failures` and reported as `audit_append` through
+  `Metrics::on_persistence_error`. Measured cost, release build on a 4-vCPU
+  Xeon @ 2.10 GHz: 9.2 µs per record in memory, 272 µs on a SQLite file
+  (medians of five runs).
+- **`CallContext::auth_scheme` / `set_auth_scheme`** (server). The bundled
+  API-key, bearer and JWT interceptors now record how they authenticated a
+  caller (`"api-key"`, `"bearer"`, `"jwt"`) beside the identity; a custom
+  interceptor can do the same.
+
 - **`otel::Telemetry`: one entry point for traces, metrics and logs** (server,
   `otel` feature; ADR 0013 option 5). It reads the `OTEL_*` environment as the
   OpenTelemetry specification defines it — `OTEL_SDK_DISABLED`, the

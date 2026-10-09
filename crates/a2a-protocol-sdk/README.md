@@ -69,6 +69,7 @@ defaults, so `default-features = false` here removes both.
 | `postgres` | No | `a2a-protocol-server` |
 | `axum` | No | `a2a-protocol-server` |
 | `auth-jwt` | No | `a2a-protocol-server` |
+| `audit` | No | `a2a-protocol-types`, `a2a-protocol-server` |
 
 The server's `conformance` feature and the types crate's `proto` feature
 are not forwarded; depend on those crates directly to enable them.

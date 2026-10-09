@@ -216,6 +216,7 @@ and the `with_*` setters.
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
+| `audit` | Off | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |
 
 ### `a2a-protocol-client`
 
@@ -235,6 +236,7 @@ and the `with_*` setters.
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
+| `audit` | Off | Audit record schema, hash chains, ES256/Ed25519-signed checkpoints and chain verification (`audit::verify_chain`); implies `signing` |
 | `proto` | Off | Canonical protobuf message types and the JSON⇄proto conversions (turned on by `grpc`) |
 
 ### `a2a-protocol-sdk` (umbrella)
@@ -252,6 +254,7 @@ and the `with_*` setters.
 | `otel` | Off | Enables `otel` in the server and the client |
 | `axum` | Off | Enables `axum` in the server |
 | `auth-jwt` | Off | Enables `auth-jwt` in the server |
+| `audit` | Off | Enables `audit` in the server and in `a2a-protocol-types` |
 
 ## Environment Variables
 

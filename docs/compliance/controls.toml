@@ -87,63 +87,70 @@ id = "AIA-12-1"
 source = "ai-act"
 provision = "Art. 12(1)"
 requirement = "High-risk AI systems shall technically allow for the automatic recording of events (logs) over the lifetime of the system."
-sdk = "An append-only event log of every task's status and artifact events, durable in the SQLite and PostgreSQL stores and replayable by position (`Last-Event-ID`); an OpenTelemetry span for every RPC on every binding."
-status = "partial"
+sdk = "With the `audit` feature, every call (refused ones included), every run of a task, every event an agent emits and every cancel request is recorded with the authenticated caller, the authentication scheme, the tenant and the trace, in a SHA-256 hash chain per tenant with signed checkpoints that make edits, deletions, reordering and truncation detectable (ADR 0015). The task event log and per-call spans remain beside it."
+status = "supported"
 tests = [
-  "crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::events_round_trip_in_order_with_their_positions",
-  "crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::appending_the_same_position_twice_leaves_one_row",
-  "crates/a2a-protocol-client/tests/resume_e2e_tests.rs::subscribe_to_task_from_replays_from_the_offset_on_both_bindings",
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/tests/audit_trail.rs::each_tenant_gets_its_own_chain",
+  "crates/a2a-protocol-types/src/audit/tests.rs::a_resealed_edit_breaks_the_next_link",
+  "crates/a2a-protocol-types/src/audit/tests.rs::truncating_the_tail_past_a_checkpoint_is_found",
+  "crates/a2a-protocol-server/src/audit/tests.rs::concurrent_appends_to_one_chain_never_fork_it",
 ]
-evidence = ["docs/adr/0012-event-log-and-resumption.md"]
-gap = "The log records what happened to a task, not who caused it: no caller identity, authentication scheme or tenant per event, and nothing makes it tamper-evident."
-
+evidence = ["docs/adr/0015-audit-trail.md", "docs/adr/0012-event-log-and-resumption.md"]
 [[control]]
 id = "AIA-12-2"
 source = "ai-act"
 provision = "Art. 12(2)(a)–(c)"
 requirement = "Logging shall enable the recording of events relevant for identifying risk situations or substantial modifications, for post-market monitoring (Art. 72) and for deployers' monitoring (Art. 26(5))."
-sdk = "Every state transition, including failed, rejected and canceled, is an event; a typed failure taxonomy; semantic-convention metrics (`rpc.server.call.duration`) and spans carrying the task state."
-status = "partial"
+sdk = "Every state transition — including failed, rejected and canceled — is an audit record naming the run, and so the caller, it belongs to; failed and refused calls are recorded with a bounded error name; records are retained rather than sampled. Metrics and spans carry the same states for live monitoring."
+status = "supported"
 tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
   "crates/a2a-protocol-server/tests/event_processing_tests/state_transitions.rs::sync_mode_working_to_canceled",
-  "crates/a2a-protocol-server/tests/telemetry_export/agent_spans.rs::the_executor_span_is_invoke_agent_without_content_by_default",
 ]
-evidence = ["docs/adr/0013-observability.md"]
-gap = "Telemetry is sampled and exported, not retained: there is no single record stream a deployer can keep for the period Art. 19 and 26(6) require."
-
+evidence = ["docs/adr/0015-audit-trail.md", "docs/adr/0013-observability.md"]
 [[control]]
 id = "AIA-13-3f"
 source = "ai-act"
 provision = "Art. 13(3)(f)"
 requirement = "The instructions for use shall describe the mechanisms that allow deployers to properly collect, store and interpret the logs."
-sdk = "The observability chapter of the book and ADRs 0012 and 0013 describe the event log, its replay, the spans and the metrics."
-status = "partial"
-evidence = ["book/src/deployment/observability.md", "docs/adr/0012-event-log-and-resumption.md"]
-gap = "No text a provider can lift into instructions for use that describes these records as an audit log: what each record holds, how long to keep it, how to verify it."
-
+sdk = "The book's Audit Trail chapter says what each record holds, how to configure the store and the checkpoint key, how to verify a chain and an export, how to follow one request across agents, and how retention and legal holds behave; ADR 0015 gives the threat model and limits. Text a provider can adapt into its instructions for use."
+status = "documented"
+evidence = ["book/src/deployment/audit.md", "docs/adr/0015-audit-trail.md"]
 [[control]]
 id = "AIA-14-4d"
 source = "ai-act"
 provision = "Art. 14(4)(d)"
 requirement = "Natural persons overseeing the system can decide not to use it, or disregard, override or reverse its output."
-sdk = "The `input-required` and `auth-required` states let an executor pause a task for a person and resume it on the same task id."
+sdk = "The approval extension: an executor asks with `EventEmitter::request_approval`, naming the action by the SHA-256 digest of its canonical JSON, and the task waits at `input-required`. With an `ApprovalGate`, the answer reaches the executor (`RequestContext::approval`) only if it answers the pending request, echoes its digest, and comes from an authenticated approver the gate allows, by default not the caller whose run asked. With the audit trail, each admitted decision is an `approval` record naming the approver."
 status = "partial"
-tests = ["crates/a2a-protocol-server/src/handler/messaging/tests.rs::input_required_continuation_reuses_task_id"]
-gap = "Nothing gates an output on a person's approval or records who approved what."
+tests = [
+  "crates/a2a-protocol-server/src/handler/messaging/tests.rs::input_required_continuation_reuses_task_id",
+  "crates/a2a-protocol-server/src/approval/tests.rs::an_approval_flows_through_the_gate_to_the_executor",
+  "crates/a2a-protocol-server/src/approval/tests.rs::a_decision_for_another_request_or_action_is_refused",
+  "crates/a2a-protocol-server/src/approval/tests.rs::who_may_approve",
+  "crates/a2a-protocol-server/src/approval/tests.rs::an_admitted_decision_is_audited_with_the_approver",
+]
+gap = "Which actions wait for a person is the executor's decision: the gate checks and records decisions, and cannot make an executor ask, or stop one that acts without asking."
 
 [[control]]
 id = "AIA-14-4e"
 source = "ai-act"
 provision = "Art. 14(4)(e)"
 requirement = "Natural persons can intervene in or interrupt the system through a 'stop' button or similar procedure that brings it to a halt in a safe state."
-sdk = "`CancelTask` on every binding signals the executor's cancellation token; graceful shutdown cancels in-flight work and reports what ignored cancellation."
+sdk = "`CancelTask` on every binding signals the executor's cancellation token. `RequestHandler::halt` stops one tenant or the whole server: new sends are refused (HTTP 503, gRPC UNAVAILABLE) and every running task's token fires, until `resume`; each is an audit record naming the operator. A `Delegation` in the client cancels the tasks a task delegated to other agents when it is cancelled, so a stop reaches the whole tree. Graceful shutdown cancels in-flight work and reports what ignored cancellation."
 status = "partial"
 tests = [
   "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs::cancel_task_signals_cancellation_token",
   "crates/a2a-protocol-server/src/handler/shutdown/tests/mod.rs::shutdown_with_timeout_cancels_tokens",
+  "crates/a2a-protocol-server/src/handler/halt/tests.rs::halting_a_tenant_cancels_its_tasks_and_refuses_its_sends",
+  "crates/a2a-protocol-server/src/handler/halt/tests.rs::no_send_racing_a_halt_is_left_running",
+  "crates/a2a-protocol-server/tests/halt_e2e.rs::a_halted_server_refuses_sends_on_both_http_bindings",
+  "crates/a2a-protocol-client/tests/delegation_tests.rs::the_parent_cancelling_cancels_the_child",
+  "crates/a2a-protocol-client/tests/delegation_tests.rs::aborting_the_parent_task_cancels_the_child",
 ]
-evidence = ["docs/swarm-orchestration.md"]
-gap = "Cancelling a task does not reach the tasks it delegated to other agents (all children orphaned in examples/swarm, G1 in swarm-orchestration.md), and there is no tenant-wide or global stop."
+evidence = ["docs/swarm-orchestration.md", "book/src/deployment/oversight.md"]
+gap = "A halt holds in one process and is not persisted: each replica is halted separately, and a restart starts unhalted. An executor that ignores its token keeps running. A parent that crashes leaves its delegated children running (G1-B in swarm-orchestration.md)."
 
 [[control]]
 id = "AIA-15-5"
@@ -168,12 +175,15 @@ id = "AIA-19-26-6"
 source = "ai-act"
 provision = "Art. 19(1), 26(6)"
 requirement = "Providers and deployers keep the automatically generated logs for a period appropriate to the intended purpose, of at least six months, unless Union or national law provides otherwise."
-sdk = "The SQLite and PostgreSQL stores keep everything until told otherwise; `purge_expired` deletes only terminal tasks older than an age the operator sets."
-status = "partial"
-tests = ["crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::purges_terminal_tasks_past_the_age_and_nothing_else"]
-evidence = ["docs/adr/0011-task-retention.md"]
-gap = "No retention preset that encodes a six-month floor, no legal hold, and the in-memory store's default one-hour TTL makes it unsuitable as a log of record."
-
+sdk = "Audit records are kept until purged, and purge deletes nothing younger than the configured floor (`AuditRetention::six_months()` is 184 days; a shorter floor must be asked for by name), never a chain's newest record, and nothing under a legal hold. A signed anchor keeps the remaining chain verifiable."
+status = "supported"
+tests = [
+  "crates/a2a-protocol-server/src/audit/tests.rs::purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies",
+  "crates/a2a-protocol-server/src/audit/tests.rs::a_legal_hold_stops_purge_until_released",
+  "crates/a2a-protocol-server/src/audit/tests.rs::six_months_is_the_longest_six_calendar_months",
+  "crates/a2a-protocol-types/src/audit/tests.rs::a_signed_anchor_lets_a_purged_chain_verify",
+]
+evidence = ["docs/adr/0015-audit-trail.md", "docs/adr/0011-task-retention.md"]
 [[control]]
 id = "AIA-50-1"
 source = "ai-act"
@@ -197,14 +207,13 @@ id = "AIA-72-2"
 source = "ai-act"
 provision = "Art. 72(2)"
 requirement = "The post-market monitoring system shall include an analysis of the interaction with other AI systems, where relevant."
-sdk = "W3C trace context: the client sends a `traceparent` naming its own span, and the server continues it under a configurable inbound policy, so a call chain across agents is one trace."
-status = "partial"
+sdk = "W3C trace context end to end: the client sends a `traceparent` naming its own span and the server continues it, and every audit record keeps the trace and span id, so one request's records can be joined across every audited agent it reached, long after the trace backend has expired the spans."
+status = "supported"
 tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
   "crates/a2a-protocol-client/src/call_span/tests.rs::the_traceparent_names_the_call_span",
   "crates/a2a-protocol-server/src/handler/helpers.rs::a_traceparent_header_reaches_the_call_context",
 ]
-gap = "The cross-agent link lives in exported traces, which are sampled and expire; nothing persists it beside the task's own records."
-
 [[control]]
 id = "AIA-73"
 source = "ai-act"
@@ -260,14 +269,14 @@ id = "GDPR-25-1"
 source = "gdpr"
 provision = "Art. 25(1), 5(1)(c)"
 requirement = "Data protection by design: measures such as pseudonymisation, implementing data minimisation."
-sdk = "Message content is kept out of spans unless the operator opts in; `CallContext` debug output names headers but never prints their values; the JWT validator, push configuration and token provider redact their secrets in debug output."
+sdk = "Audit records hold content only as SHA-256 digests; message content is kept out of spans unless the operator opts in; `CallContext` debug output names headers but never prints their values; the JWT validator, push configuration and token provider redact their secrets in debug output."
 status = "partial"
 tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
   "crates/a2a-protocol-server/tests/telemetry_export/agent_spans.rs::the_executor_span_is_invoke_agent_without_content_by_default",
   "crates/a2a-protocol-server/src/auth/jwt.rs::debug_impls_render_type_and_redact_secrets",
 ]
-gap = "The task store and event log keep full message content in plaintext, with no hook to pseudonymise or digest it before it is written."
-
+gap = "The task store and event log keep full message content in plaintext, with no hook to pseudonymise it before it is written; audit records name the caller's subject, which is personal data in most deployments."
 [[control]]
 id = "GDPR-32-1a"
 source = "gdpr"
@@ -286,11 +295,13 @@ id = "GDPR-5-1e"
 source = "gdpr"
 provision = "Art. 5(1)(e), 17"
 requirement = "Storage limitation, and erasure on request."
-sdk = "`purge_expired` removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys."
+sdk = "`purge_expired` removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys; audit purge removes records past the configured floor."
 status = "partial"
-tests = ["crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::purges_terminal_tasks_past_the_age_and_nothing_else"]
-gap = "No erasure of one person's data on request; the store has no notion of a data subject."
-
+tests = [
+  "crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::purges_terminal_tasks_past_the_age_and_nothing_else",
+  "crates/a2a-protocol-server/src/audit/tests.rs::purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies",
+]
+gap = "No erasure of one person's data on request; neither store has a notion of a data subject, and deleting one record from the middle of an audit chain would break it by design."
 # ── OWASP agentic Top 10 ─────────────────────────────────────────────────────
 
 [[control]]
@@ -334,33 +345,42 @@ id = "ASI08"
 source = "owasp-asi"
 provision = "ASI08 Cascading Failures"
 requirement = "A failure in one agent or tool does not propagate unchecked through the agents that depend on it."
-sdk = "Per-caller rate limits, per-tenant concurrency limits, an executor timeout, bounded queues and stores."
+sdk = "Per-caller rate limits, per-tenant concurrency limits, an executor timeout, bounded queues and stores. A `Delegation` cancels a task's children on other agents when the task is cancelled, its stream to a child is lost, or its handle is dropped."
 status = "partial"
 tests = [
   "crates/a2a-protocol-server/src/rate_limit/tests.rs::fast_path_rate_limit_exceeded",
   "crates/a2a-protocol-server/src/handler/tenant_limits_tests.rs::a_tenant_at_its_concurrency_limit_is_refused",
+  "crates/a2a-protocol-client/tests/delegation_tests.rs::a_lost_stream_cancels_the_child",
+  "crates/a2a-protocol-client/tests/delegation_tests.rs::dropping_an_unsettled_handle_cancels_the_child",
 ]
-gap = "Cancellation does not cascade to delegated tasks, so a stopped parent leaves its children running."
+gap = "A parent that crashes leaves its children running until they finish on their own (G1-B, a lease, is not built)."
 
 [[control]]
 id = "ASI09"
 source = "owasp-asi"
 provision = "ASI09 Human-Agent Trust Exploitation"
 requirement = "Sensitive actions require explicit human confirmation rather than trust in confident output."
-sdk = "The `input-required` state can carry a request for confirmation."
+sdk = "The approval extension binds a person's confirmation to the digest of the exact action, and the `ApprovalGate` refuses a confirmation of anything else, from anyone not allowed, or from the caller who asked; each admitted confirmation is an audit record."
 status = "partial"
-tests = ["crates/a2a-protocol-server/src/handler/messaging/tests.rs::input_required_continuation_reuses_task_id"]
-gap = "No gate that refuses to complete a task until a person has confirmed it, and no record of the confirmation."
+tests = [
+  "crates/a2a-protocol-server/src/approval/tests.rs::a_decision_for_another_request_or_action_is_refused",
+  "crates/a2a-protocol-server/src/approval/tests.rs::who_may_approve",
+  "crates/a2a-protocol-server/src/approval/tests.rs::without_a_gate_a_decision_is_never_reported_as_checked",
+]
+gap = "Which actions are sensitive enough to ask about is the executor's decision; the SDK cannot make it ask."
 
 [[control]]
 id = "ASI10"
 source = "owasp-asi"
 provision = "ASI10 Rogue Agents"
 requirement = "Agents acting outside their intended behaviour are detected and stopped."
-sdk = "Spans and metrics for every call; cancellation of a task."
+sdk = "Spans and metrics for every call; cancellation of a task; `RequestHandler::halt`, which stops every task of a tenant or of the server and refuses new ones until resumed."
 status = "partial"
-tests = ["crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs::cancel_task_signals_cancellation_token"]
-gap = "No kill switch that halts every task of a tenant or of the server at once."
+tests = [
+  "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs::cancel_task_signals_cancellation_token",
+  "crates/a2a-protocol-server/src/handler/halt/tests.rs::halting_all_cancels_every_tenant",
+]
+gap = "Nothing detects a rogue agent: deciding to halt is a person's or an integrator's monitor's. A halt holds in one process and does not survive a restart."
 
 [[control]]
 id = "ASI-MODEL"
@@ -378,11 +398,9 @@ id = "ISO42001-A.6.2.8"
 source = "iso42001"
 provision = "Annex A.6.2.8, AI system recording of event logs (numbering unverified)"
 requirement = "The organisation determines at which life-cycle phases event logging is enabled, at minimum while the AI system is in use."
-sdk = "As for AIA-12-1: the event log and per-call spans."
-status = "partial"
-tests = ["crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::events_round_trip_in_order_with_their_positions"]
-gap = "As for AIA-12-1: no actor identity, no tamper evidence."
-
+sdk = "As for AIA-12-1: the audit trail, on whenever the handler is built with it."
+status = "supported"
+tests = ["crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable"]
 [[control]]
 id = "ISO42001-AIMS"
 source = "iso42001"

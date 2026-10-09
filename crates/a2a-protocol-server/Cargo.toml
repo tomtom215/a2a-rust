@@ -80,6 +80,12 @@ axum = ["dep:axum"]
 ## JWKS with OIDC discovery) via `ring`. The header/token interceptors
 ## (`ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`) need no feature.
 auth-jwt = ["dep:ring", "dep:base64"]
+## A tamper-evident audit trail (ADR 0015): every call, run start, task event
+## and cancel request recorded in a SHA-256 hash chain per tenant, with
+## ES256/Ed25519-signed checkpoints, legal holds and a six-month retention
+## floor. `RequestHandlerBuilder::with_audit` switches it on. Stores: in
+## memory, and on SQLite or PostgreSQL with those features.
+audit = ["a2a-protocol-types/audit"]
 
 [dependencies]
 a2a-protocol-types      = { version = "0.14.1", path = "../a2a-protocol-types" }
@@ -167,6 +173,9 @@ axum      = { version = "0.8", features = ["json", "query", "tokio"] }
 # For the live-TLS end-to-end push-sender test (gated on `tls-rustls`): generate
 # a throwaway CA + server cert and run a real rustls HTTPS server on loopback.
 rcgen = "0.14"
+# Throwaway checkpoint-signing keys in the `audit` tests. Already in the graph
+# through `a2a-protocol-types`; no new crate.
+ring = "0.17.12"
 # rustls with its default provider (`aws-lc-rs`) alongside the `ring` the
 # `grpc-tls` feature links, so this crate's own test binaries link two
 # providers — the only configuration in which `GrpcDispatcher::with_tls`'s

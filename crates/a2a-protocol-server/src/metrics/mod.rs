@@ -197,6 +197,12 @@ pub mod persistence_operation {
     /// subscribers, but the task's stored state stops advancing, and until
     /// 0.12 a default build said nothing about it.
     pub const QUEUE_HANDOFF: &str = "queue_handoff";
+    /// Writing a record to the audit log (the `audit` feature).
+    ///
+    /// A call or event whose record failed was served or processed unrecorded; the
+    /// gap shows in the chain only as a missing record, so this is how it
+    /// is noticed.
+    pub const AUDIT_APPEND: &str = "audit_append";
 }
 
 /// Error kinds passed to [`Metrics::on_persistence_error`] for

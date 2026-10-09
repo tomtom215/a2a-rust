@@ -109,7 +109,10 @@ pub const A2A_VERSION_HEADER: &str = "A2A-Version";
 pub const A2A_EXTENSIONS_HEADER: &str = "A2A-Extensions";
 
 pub mod agent_card;
+pub mod approval;
 pub mod artifact;
+#[cfg(feature = "audit")]
+pub mod audit;
 pub mod auth_rejection;
 pub mod error;
 pub mod events;

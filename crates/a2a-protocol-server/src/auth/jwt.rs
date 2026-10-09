@@ -760,6 +760,7 @@ impl ServerInterceptor for JwtAuthInterceptor {
             if let Some(subject) = principal.subject {
                 ctx.set_caller_identity(subject);
             }
+            ctx.set_auth_scheme("jwt");
             Ok(())
         })
     }

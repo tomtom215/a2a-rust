@@ -53,6 +53,7 @@ impl RequestHandler {
                 token,
                 created_at: Instant::now(),
                 turn: Arc::clone(&turn),
+                tenant: crate::store::tenant::TenantContext::current(),
             },
         );
         turn

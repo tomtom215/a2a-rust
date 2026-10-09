@@ -251,9 +251,13 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
                 .ok_or_else(|| auth_rejected(&challenge))?;
             match labelled_constant_time_match(key.as_bytes(), &self.allowed) {
                 CredentialMatch::NoMatch => Err(auth_rejected(&challenge)),
-                CredentialMatch::Unnamed => Ok(()),
+                CredentialMatch::Unnamed => {
+                    ctx.set_auth_scheme("api-key");
+                    Ok(())
+                }
                 CredentialMatch::Named(identity) => {
                     ctx.set_caller_identity(identity);
+                    ctx.set_auth_scheme("api-key");
                     Ok(())
                 }
             }
@@ -355,9 +359,13 @@ impl ServerInterceptor for BearerTokenAuthInterceptor {
             let token = extract_bearer(header).ok_or_else(|| auth_rejected(BEARER_CHALLENGE))?;
             match labelled_constant_time_match(token.as_bytes(), &self.allowed) {
                 CredentialMatch::NoMatch => Err(auth_rejected(BEARER_CHALLENGE)),
-                CredentialMatch::Unnamed => Ok(()),
+                CredentialMatch::Unnamed => {
+                    ctx.set_auth_scheme("bearer");
+                    Ok(())
+                }
                 CredentialMatch::Named(identity) => {
                     ctx.set_caller_identity(identity);
+                    ctx.set_auth_scheme("bearer");
                     Ok(())
                 }
             }

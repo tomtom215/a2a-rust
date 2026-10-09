@@ -87,11 +87,22 @@ impl A2aClient {
     /// [`a2a_protocol_types::ErrorCode::TaskNotCancelable`] if the task cannot be
     /// canceled in its current state.
     pub async fn cancel_task(&self, id: impl Into<String>) -> ClientResult<Task> {
+        self.cancel_task_in(None, id.into()).await
+    }
+
+    /// [`cancel_task`](Self::cancel_task) in `tenant`, or in the client's
+    /// default tenant when `None`: a delegation cancels its child in the
+    /// tenant the child was sent to.
+    pub(crate) async fn cancel_task_in(
+        &self,
+        tenant: Option<String>,
+        id: String,
+    ) -> ClientResult<Task> {
         const METHOD: &str = "CancelTask";
 
         let params = CancelTaskParams {
-            tenant: self.tenant_or_default(None),
-            id: id.into(),
+            tenant: self.tenant_or_default(tenant),
+            id,
             metadata: None,
         };
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;

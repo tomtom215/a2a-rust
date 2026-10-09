@@ -358,6 +358,7 @@ fn metric_labels_are_distinct_and_non_empty_per_variant() {
             ServerError::UnsupportedOperation("x".into()),
         ),
         ("overloaded", ServerError::Overloaded("x".into())),
+        ("halted", ServerError::Halted("x".into())),
     ];
 
     let mut seen = HashSet::new();
@@ -383,4 +384,17 @@ fn metric_labels_are_distinct_and_non_empty_per_variant() {
         labelled.len(),
         "every variant needs its own label"
     );
+}
+
+/// A halt is an operator's decision, not load: `503` and `UNAVAILABLE` on the
+/// HTTP+JSON and gRPC bindings, and a message that says so on JSON-RPC.
+#[test]
+fn a_halt_maps_to_unavailable_on_every_binding() {
+    let err = ServerError::Halted("incident 42".into());
+    assert_eq!(err.http_status(), 503);
+    assert_eq!(err.status_name(), "UNAVAILABLE");
+    let wire = err.to_a2a_error();
+    assert_eq!(wire.code, ErrorCode::InternalError);
+    assert_eq!(wire.message, "halted: incident 42");
+    assert_eq!(err.to_string(), "halted: incident 42");
 }

@@ -21,7 +21,9 @@ are rustdoc's job.
 | Module | Contents |
 |--------|----------|
 | `agent_card` | Agent card and capability discovery types |
+| `approval` | The approval extension: `ApprovalRequest`, `ApprovalDecision`, and `action_digest` (`signing` feature) for binding a person's answer to an exact action |
 | `artifact` | Artifact types for the A2A protocol |
+| `audit` | Tamper-evident audit records: schema, hash chains, signed checkpoints, `verify_chain` (`audit` feature) |
 | `auth_rejection` | Why a request was refused on authentication or authorization grounds |
 | `error` | A2A protocol error types |
 | `events` | Server-sent event types for A2A streaming |
@@ -208,6 +210,7 @@ are rustdoc's job.
 | `builder` | Fluent builder for `A2aClient` |
 | `client` | The `A2aClient` itself |
 | `config` | Client configuration types |
+| `delegation` | `Delegation`: a task sent to another agent and cancelled with its parent — on the parent's cancel, a lost stream, or a dropped handle |
 | `discovery` | Agent card discovery with HTTP caching |
 | `error` | Client error types |
 | `interceptor` | Request/response interceptor infrastructure |
@@ -299,6 +302,8 @@ are rustdoc's job.
 | Module | Contents |
 |--------|----------|
 | `agent_card` | Agent card HTTP handlers (static, dynamic, and caching utilities) |
+| `approval` | `ApprovalGate`: admits an approval decision only from an allowed, authenticated approver, for the pending request and its digest; `VerifiedApproval` is what the executor sees |
+| `audit` | `AuditLog`, its stores, retention and legal holds; records every call, run, task event and cancel request (`audit` feature) |
 | `auth` | Server-side authentication interceptors |
 | `builder` | Builder for `RequestHandler` |
 | `call_context` | Call context for server-side interceptors |
@@ -342,6 +347,8 @@ are rustdoc's job.
 | `SendMessageResult` | Result of `RequestHandler::on_send_message`: a synchronous response or a streaming reader |
 | `ShutdownReport` | What a shutdown actually managed to do (live queues it had to destroy, whether executor cleanup completed) |
 | `InFlightReport` | What `RequestHandler::finish_in_flight` / `cancel_in_flight` did: tasks that completed on their own, tasks cancelled, still running at the end of the grace period, whether everything finished |
+| `HaltScope` | What `RequestHandler::halt` applies to: one tenant, or all |
+| `HaltReport` | What a halt stopped: the ids of the tasks whose token it fired |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 | `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |
 

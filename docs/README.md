@@ -23,6 +23,7 @@ Architecture Decision Records (ADRs) and implementation planning documents for t
 | [0012](adr/0012-event-log-and-resumption.md) | Event Log and Resumption | An append-only log beside the snapshot; SSE `id:` and `Last-Event-ID` |
 | [0013](adr/0013-observability.md) | Observability (proposed) | `tracing` spans exported through `tracing-opentelemetry`; one RPC span shape on every binding; semconv metrics beside the deprecated catalogue; `init_telemetry()` |
 | [0014](adr/0014-auth-rejection-status.md) | Auth Rejection Status | A refused credential answers `401`/`403` and gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED`; supersedes ADR 0010's `400` mapping |
+| [0015](adr/0015-audit-trail.md) | Audit Trail | Every call, run, task event and cancel request in a hash chain per tenant, content by digest, signed checkpoints, six-month retention floor, legal holds |
 
 ## Implementation Documents
 

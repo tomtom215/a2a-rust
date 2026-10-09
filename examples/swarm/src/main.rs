@@ -74,7 +74,7 @@ async fn build(
                 },
             )
             .await;
-            pool.push(topology::client(&url));
+            pool.push(Arc::new(topology::client(&url)));
         }
         let sup = Supervisor {
             workers: Arc::new(pool),

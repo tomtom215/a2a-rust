@@ -96,6 +96,9 @@ pub mod page_client_idempotency {}
 #[doc = include_str!("../../book/src/client/failure-classes.md")]
 pub mod page_client_failure_classes {}
 
+#[doc = include_str!("../../book/src/client/delegation.md")]
+pub mod page_client_delegation {}
+
 #[doc = include_str!("../../book/src/client/streaming.md")]
 pub mod page_client_streaming {}
 
@@ -140,6 +143,12 @@ pub mod page_deployment_observability {}
 
 #[doc = include_str!("../../book/src/deployment/langfuse.md")]
 pub mod page_deployment_langfuse {}
+
+#[doc = include_str!("../../book/src/deployment/audit.md")]
+pub mod page_deployment_audit {}
+
+#[doc = include_str!("../../book/src/deployment/oversight.md")]
+pub mod page_deployment_oversight {}
 
 #[doc = include_str!("../../book/src/deployment/production.md")]
 #[doc = include_str!("../../book/src/deployment/horizontal-scaling.md")]

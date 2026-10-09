@@ -129,6 +129,9 @@ pub struct RequestHandlerBuilder {
     span_settings: crate::rpc_span::SpanSettings,
     allow_unauthenticated_extended_card: bool,
     allow_undeclared_input_modes: bool,
+    approval_gate: Option<crate::approval::ApprovalGate>,
+    #[cfg(feature = "audit")]
+    audit: Option<Arc<crate::audit::AuditLog>>,
 }
 
 impl RequestHandlerBuilder {
@@ -162,6 +165,9 @@ impl RequestHandlerBuilder {
             },
             allow_unauthenticated_extended_card: false,
             allow_undeclared_input_modes: false,
+            approval_gate: None,
+            #[cfg(feature = "audit")]
+            audit: None,
         }
     }
 
@@ -211,6 +217,30 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_push_sender(mut self, sender: impl PushSender + 'static) -> Self {
         self.push_sender = Some(Arc::new(sender));
+        self
+    }
+
+    /// Records every call, run, task event and cancel request in `log`, a
+    /// hash chain per tenant (the `audit` feature; ADR 0015).
+    ///
+    /// The recording interceptor is placed first in the chain, whatever order
+    /// `with_interceptor` was called in, so it records calls that
+    /// authentication refuses. The task store is wrapped so that each event
+    /// written to a task's event log is also recorded. Records go to the
+    /// tenant's chain, `""` for a single-tenant server.
+    #[cfg(feature = "audit")]
+    #[must_use]
+    pub fn with_audit(mut self, log: Arc<crate::audit::AuditLog>) -> Self {
+        self.audit = Some(log);
+        self
+    }
+
+    /// Checks approval decisions before the executor sees them: see
+    /// [`approval`](crate::approval). The agent card, if one is set, declares
+    /// the approval extension.
+    #[must_use]
+    pub fn with_approval_gate(mut self, gate: crate::approval::ApprovalGate) -> Self {
+        self.approval_gate = Some(gate);
         self
     }
 
@@ -532,6 +562,23 @@ impl RequestHandlerBuilder {
         let task_store = self
             .task_store
             .unwrap_or_else(|| Arc::new(InMemoryTaskStore::with_config(self.task_store_config)));
+        #[cfg_attr(not(feature = "audit"), allow(unused_mut))]
+        let mut interceptors = self.interceptors;
+        #[cfg(feature = "audit")]
+        let task_store: Arc<dyn TaskStore> = match &self.audit {
+            Some(log) => {
+                interceptors.push_front(Arc::new(crate::audit::AuditInterceptor {
+                    log: Arc::clone(log),
+                    metrics: Arc::clone(&self.metrics),
+                }));
+                Arc::new(crate::audit::AuditedTaskStore {
+                    inner: task_store,
+                    log: Arc::clone(log),
+                    metrics: Arc::clone(&self.metrics),
+                })
+            }
+            None => task_store,
+        };
 
         // A server advertises an extension exactly when it can honour it. The
         // idempotency entry is derived from the store rather than set by hand,
@@ -558,6 +605,18 @@ impl RequestHandlerBuilder {
                         "Client-supplied idempotency keys on message/send: a \
                          retried send returns the task the first one created \
                          instead of starting a second."
+                            .to_owned(),
+                    ),
+                    required: Some(false),
+                    params: None,
+                });
+            }
+            if self.approval_gate.is_some() {
+                wanted.push(AgentExtension {
+                    uri: a2a_protocol_types::approval::APPROVAL_EXTENSION_URI.to_owned(),
+                    description: Some(
+                        "An agent asks before it acts; the answer is bound to the \
+                         digest of the action and checked against who may approve."
                             .to_owned(),
                     ),
                     required: Some(false),
@@ -671,7 +730,7 @@ impl RequestHandlerBuilder {
                 mgr = mgr.with_metrics(Arc::clone(&self.metrics));
                 mgr
             },
-            interceptors: self.interceptors,
+            interceptors,
             agent_card,
             executor_timeout: self.executor_timeout,
             metrics: self.metrics,
@@ -692,14 +751,18 @@ impl RequestHandlerBuilder {
             context_locks: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             tenant_slots: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             in_flight: crate::handler::InFlight::default(),
+            halts: std::sync::RwLock::default(),
+            approval_gate: self.approval_gate,
+            #[cfg(feature = "audit")]
+            audit: self.audit,
         })
     }
 }
 
 impl std::fmt::Debug for RequestHandlerBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RequestHandlerBuilder")
-            .field("executor", &"<dyn AgentExecutor>")
+        let mut d = f.debug_struct("RequestHandlerBuilder");
+        d.field("executor", &"<dyn AgentExecutor>")
             .field("task_store", &self.task_store.is_some())
             .field("task_store_config", &self.task_store_config)
             .field("push_config_store", &self.push_config_store.is_some())
@@ -726,7 +789,10 @@ impl std::fmt::Debug for RequestHandlerBuilder {
                 "allow_undeclared_input_modes",
                 &self.allow_undeclared_input_modes,
             )
-            .finish()
+            .field("approval_gate", &self.approval_gate);
+        #[cfg(feature = "audit")]
+        d.field("audit", &self.audit.is_some());
+        d.finish()
     }
 }
 
