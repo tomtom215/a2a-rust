@@ -295,7 +295,9 @@ pub struct JwtValidator {
     audiences: HashSet<String>,
     leeway: Duration,
     require_exp: bool,
-    hs256_secret: Option<Arc<Vec<u8>>>,
+    /// Wiped on drop. `ring` copies it into each HMAC key it builds, and
+    /// those copies are not; the long-lived one is.
+    hs256_secret: Option<Arc<zeroize::Zeroizing<Vec<u8>>>>,
 }
 
 impl std::fmt::Debug for JwtValidator {
@@ -375,7 +377,8 @@ impl JwtValidator {
     /// secret at startup instead.
     #[must_use]
     pub fn with_hs256_secret(mut self, secret: impl Into<Vec<u8>>) -> Self {
-        let secret = secret.into();
+        // Wrapped before anything else, so a refused secret is wiped too.
+        let secret = zeroize::Zeroizing::new(secret.into());
         if secret.len() < MIN_HS256_SECRET_LEN {
             trace_error!(
                 len = secret.len(),

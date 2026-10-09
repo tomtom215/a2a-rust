@@ -125,6 +125,7 @@ pub mod method;
 pub mod params;
 #[cfg(feature = "proto")]
 pub mod proto;
+pub mod provenance;
 pub mod push;
 pub mod responses;
 pub mod security;

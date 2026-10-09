@@ -34,6 +34,7 @@ are rustdoc's job.
 | `message` | Message types for the A2A protocol |
 | `method` | The A2A v1.0 service methods, mirrored from the ratified specification |
 | `params` | JSON-RPC method parameter types |
+| `provenance` | Marks messages and artifacts as AI-generated and signs them (`mark_ai_generated`; `sign_content`, `verify_content` with the `signing` feature) |
 | `proto` | Canonical A2A protobuf message types (`lf.a2a.v1`) and conversions (`proto` feature) |
 | `push` | Push notification configuration types |
 | `responses` | RPC method response types |
@@ -214,6 +215,7 @@ are rustdoc's job.
 | `discovery` | Agent card discovery with HTTP caching |
 | `error` | Client error types |
 | `interceptor` | Request/response interceptor infrastructure |
+| `jwks` | `fetch_jwks`: a JWK Set from a trusted HTTPS URL, bounded in size and time, for verifying card signatures (`signing` feature) |
 | `methods` | Per-method client helpers |
 | `retry` | Configurable retry policy for transient client errors |
 | `streaming` | SSE client-side streaming support |

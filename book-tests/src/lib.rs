@@ -150,6 +150,9 @@ pub mod page_deployment_audit {}
 #[doc = include_str!("../../book/src/deployment/oversight.md")]
 pub mod page_deployment_oversight {}
 
+#[doc = include_str!("../../book/src/deployment/provenance.md")]
+pub mod page_deployment_provenance {}
+
 #[doc = include_str!("../../book/src/deployment/production.md")]
 #[doc = include_str!("../../book/src/deployment/horizontal-scaling.md")]
 pub mod page_deployment_production {}

@@ -309,7 +309,9 @@ pub enum TokenEndpointAuthStyle {
 pub struct OAuth2ClientCredentials {
     token_url: String,
     client_id: String,
-    client_secret: String,
+    /// Wiped on drop. Each token request copies it into its body for as long
+    /// as the request lives; those copies are not.
+    client_secret: zeroize::Zeroizing<String>,
     scopes: Vec<String>,
     audience: Option<String>,
     extra_params: Vec<(String, String)>,
@@ -345,7 +347,7 @@ impl OAuth2ClientCredentials {
         Self {
             token_url: token_url.into(),
             client_id: client_id.into(),
-            client_secret: client_secret.into(),
+            client_secret: zeroize::Zeroizing::new(client_secret.into()),
             scopes: Vec::new(),
             audience: None,
             extra_params: Vec::new(),
@@ -543,7 +545,7 @@ impl OAuth2ClientCredentials {
         }
         if self.auth_style == TokenEndpointAuthStyle::Post {
             form.push(("client_id".to_owned(), self.client_id.clone()));
-            form.push(("client_secret".to_owned(), self.client_secret.clone()));
+            form.push(("client_secret".to_owned(), (*self.client_secret).clone()));
         }
 
         let mut builder = hyper::Request::builder()

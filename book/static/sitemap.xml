@@ -74,6 +74,7 @@
   <url><loc>https://a2a-rust.com/deployment/langfuse.html</loc><lastmod>2026-10-09</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://a2a-rust.com/deployment/audit.html</loc><lastmod>2026-10-09</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/deployment/oversight.html</loc><lastmod>2026-10-09</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://a2a-rust.com/deployment/provenance.html</loc><lastmod>2026-10-09</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/deployment/troubleshooting.html</loc><lastmod>2026-10-09</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/deployment/horizontal-scaling.html</loc><lastmod>2026-10-09</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/deployment/cicd.html</loc><lastmod>2026-10-09</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>

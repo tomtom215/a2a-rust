@@ -12,6 +12,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The provenance extension: AI-generated marker and signed content**
+  (types; `https://a2a-rust.com/extensions/provenance/v1`; book,
+  "Provenance and Signatures").
+  - `mark_ai_generated` marks a message or artifact as AI-generated and
+    names its generator, in machine-readable metadata (EU AI Act Article
+    50(2)).
+  - With `signing`, `sign_content` signs the whole content, marker included,
+    with ES256 or EdDSA, and `verify_content` checks it against a JWK Set.
+    Changing the text, the marker or other metadata after signing breaks the
+    signature. A signed artifact still verifies after a round trip through a
+    server, and a file part's bytes, including a C2PA manifest inside them,
+    come back unchanged (`tests/content_provenance_e2e.rs`).
+- **Card verification with EdDSA and JWK Sets** (types and client;
+  `signing`).
+  - `sign_agent_card_ed25519` signs with Ed25519, and verification accepts
+    EdDSA as well as ES256.
+  - `signing::{Jwk, Jwks, VerifyingKey}` and `verify_agent_card_with_jwks`
+    select keys by `kid`. A key is only ever tried under the algorithm its
+    type is for.
+  - `verify_card_with_jwks` tries every signature on a card, which covers
+    key rotation.
+  - The client's new `jwks::fetch_jwks` fetches a set from a URL the caller
+    trusts. It requires HTTPS (or HTTP to loopback), caps the body at 256
+    KiB, and gives the whole fetch one time budget.
+  - Checked against RFC 8037's Ed25519 example and against keys generated
+    by OpenSSL.
 - **`RequestHandler::halt` / `resume`: stop one tenant or the whole server**
   (server; book, "Human Oversight"). While a scope is halted, new sends are
   refused with the new `ServerError::Halted` (HTTP `503` and gRPC
@@ -176,6 +202,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`verify_agent_card` accepts the key form its documentation named.** Its
+  docs said `SubjectPublicKeyInfo` DER, but only the raw 65-byte point
+  verified, so a key exported with `openssl pkey -pubout -outform DER` was
+  refused. Both forms now verify, and the docs say so.
 - **A blocking `SendMessage` could lose events.** Its collector read the
   task's broadcast queue, which overwrites what a slow reader has not
   reached. An executor writing more than the queue's capacity (256) faster
@@ -259,6 +289,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Stored secrets are wiped on drop** (`zeroize`, already in the
+  dependency graph through rustls, so no new crate). This covers the HS256
+  secret held by `JwtValidator`, including one refused as too short, and the
+  client secret held by `OAuth2ClientCredentials`. The copies a request
+  makes while it is in flight are not wiped: `ring`'s HMAC key, the token
+  request body, and hyper's buffers. The documentation on each field says
+  so.
 - **A server whose stores cannot isolate tenants now refuses requests that
   name one.** The default `RequestHandlerBuilder` store ignored the `tenant`
   field, so a request carrying one was served from records every tenant
