@@ -34,7 +34,7 @@
 //! canonical JSON of the whole message or artifact with only
 //! `signature` removed, so it covers the marker too: stripping
 //! `aiGenerated` breaks it. ES256 or `EdDSA`, verified against a JWK Set
-//! ([`Jwks`](crate::signing::Jwks)) by `kid`.
+//! (`signing::Jwks`, with the `signing` feature) by `kid`.
 //!
 //! What it does not do: it says which key signed, not that the content is
 //! true; a verifier still decides which keys to trust. The canonical form is

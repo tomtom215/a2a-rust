@@ -994,6 +994,12 @@ phases, A–F; this branch carries all six.
 - OSV, CodeQL and Scorecard trigger on `main` and pull requests only, so they
   had not run on GitHub when this was written.
 
+**First thing after this branch merges.** Add
+`--lockfile=verification/loom-halt/Cargo.lock` to the `rust-pr` job in
+`osv.yml`. It was left out because the PR scan also scans the base, and the
+base did not have the file yet (`osv.yml` explains). The push and scheduled
+`rust` job already scans it.
+
 **Two halt designs were rejected (2026-10-09).**
 - *Writing `Canceled` from the halt, as `CancelTask` does.* It was measured
   to stall a send that the halt caught mid-admission for exactly the 5 s
