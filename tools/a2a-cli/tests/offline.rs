@@ -215,3 +215,82 @@ fn a_file_that_is_not_what_it_should_be_is_named() {
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("is not a JSON array of audit records"));
 }
+
+/// Serves `card` at the agent-card path and `jwks` at `/jwks.json`, over
+/// plain HTTP on loopback, on its own thread. Returns the base URL.
+fn agent_with_keys(card: Vec<u8>, jwks: Vec<u8>) -> String {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            tx.send(listener.local_addr().unwrap()).unwrap();
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let (card, jwks) = (card.clone(), jwks.clone());
+                tokio::spawn(async move {
+                    let svc = hyper::service::service_fn(
+                        move |req: hyper::Request<hyper::body::Incoming>| {
+                            let body = if req.uri().path() == "/jwks.json" {
+                                jwks.clone()
+                            } else {
+                                card.clone()
+                            };
+                            async move {
+                                Ok::<_, std::convert::Infallible>(
+                                    hyper::Response::builder()
+                                        .header("content-type", "application/json")
+                                        .body(http_body_util::Full::new(hyper::body::Bytes::from(
+                                            body,
+                                        )))
+                                        .unwrap(),
+                                )
+                            }
+                        },
+                    );
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(hyper_util::rt::TokioIo::new(stream), svc)
+                        .await;
+                });
+            }
+        });
+    });
+    format!("http://{}", rx.recv().unwrap())
+}
+
+#[test]
+fn a_card_and_its_keys_can_both_come_from_urls() {
+    let d = scratch("card-verify-urls");
+    std::fs::write(d.join("card.json"), CARD).unwrap();
+    std::fs::write(d.join("key.der"), hex(ED_PKCS8)).unwrap();
+    let p = |f: &str| d.join(f).to_string_lossy().into_owned();
+    let signed = a2a(&[
+        "card",
+        "sign",
+        &p("card.json"),
+        "--key",
+        &p("key.der"),
+        "--alg",
+        "eddsa",
+        "--kid",
+        "k1",
+    ]);
+    assert!(signed.status.success());
+    let jwks = std::fs::read(jwks_file(&d, "k1")).unwrap();
+    let base = agent_with_keys(signed.stdout, jwks);
+
+    let out = a2a(&[
+        "card",
+        "verify",
+        &base,
+        "--jwks",
+        &format!("{base}/jwks.json"),
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let shown: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(shown["verified"], true);
+}

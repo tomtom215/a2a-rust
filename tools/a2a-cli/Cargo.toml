@@ -48,3 +48,4 @@ a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
 hyper      = { workspace = true }
 hyper-util = { workspace = true, features = ["server", "server-auto"] }
+http-body-util = { workspace = true }

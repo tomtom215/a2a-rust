@@ -157,12 +157,12 @@ impl Jwk {
         };
         let (alg, key) = match (self.kty.as_str(), self.crv.as_deref()) {
             ("EC", Some("P-256")) => {
-                let (x, y) = (b64(&self.x, "x")?, b64(&self.y, "y")?);
-                if x.len() != 32 || y.len() != 32 {
-                    return Err(A2aError::invalid_params(
-                        "a P-256 JWK has 32-byte x and y coordinates",
-                    ));
-                }
+                let coordinate = |m: &Option<String>, name: &str| -> A2aResult<[u8; 32]> {
+                    <[u8; 32]>::try_from(b64(m, name)?).map_err(|_| {
+                        A2aError::invalid_params(format!("a P-256 JWK's {name} is 32 bytes"))
+                    })
+                };
+                let (x, y) = (coordinate(&self.x, "x")?, coordinate(&self.y, "y")?);
                 let mut point = Vec::with_capacity(65);
                 point.push(0x04);
                 point.extend_from_slice(&x);

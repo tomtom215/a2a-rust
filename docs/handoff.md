@@ -1017,9 +1017,15 @@ regenerated after the first fixes. It runs in two-hour chunks:
 | 1 (stopped early to free disk) | 50 | 2 | 22 | `/tmp/claude-0/mutBC-partial-1` |
 | 2 | 38 | 3 | 21 | overwritten by chunk 3 |
 | 3 (stopped at its 2-hour cap) | 50 | 12 | 186 | `/tmp/claude-0/mutBC/mutants.out` |
+| 4 (the rest of the B–F diff, `df6daf1e..HEAD`, 465 mutants) | 203 | 30 | 232 | same directory |
+| Re-run of chunk 4's 15 real misses and their neighbours (24 mutants) | 23 | 0 | 1 | `/tmp/claude-0/mutRe` |
 
-Chunks 1–3 tested 384 of the 642. The scratch paths do not survive the
-session.
+Chunks 1–3 tested 384 of the 642, and chunk 4 covered the rest of the B–F
+diff, so the sweep is complete for this branch. Of chunk 4's 30 misses, 15
+were the Kani harnesses, which only compile under `cfg(kani)`; they now
+carry `cfg_attr(test, mutants::skip)` with the reason in
+`kani_proofs.rs`. The other 15 now have tests, and a re-run of exactly those
+positions misses none. The scratch paths do not survive the session.
 
 Every miss so far is fixed in the commits on this branch, or the code was
 simplified so the mutant no longer exists:
@@ -1030,6 +1036,11 @@ simplified so the mutant no longer exists:
 - the `Debug` impls;
 - `record_event`'s arms;
 - the wrapper's three capability flags.
+- chunk 4: `verify_chain` on a twice-purged chain among other chains'
+  checkpoints, `MAX_SEQ`, `digest_of`, `CheckpointSigner::kid`, a mid-sized
+  JWK Set, and `card verify` from URLs. The JWK coordinate length check was
+  rewritten as a fixed-size conversion, so its equivalent mutant no longer
+  exists.
 
 Most "unviable" mutants replace a `BoxFuture` return with a value that does
 not type-check. Resume with `cargo mutants --iterate --in-diff <diff>
@@ -1037,9 +1048,8 @@ not type-check. Resume with `cargo mutants --iterate --in-diff <diff>
 chunk excludes what earlier ones caught.
 
 **What the next session should do first.**
-1. Finish the mutation sweep over phases B–F. Phases D, E and F have their
-   own diffs, which were never swept as a whole: regenerate the diff from
-   `df6daf1e`.
+1. Run the mutation sweep again only over what changes next; this branch's
+   diff is fully swept (above).
 2. Read the first GitHub runs of `acts.yml`, `verification.yml`, `osv.yml`,
    `codeql.yml` and `scorecard.yml`, which only trigger on `main` or pull
    requests. Fix what they find.

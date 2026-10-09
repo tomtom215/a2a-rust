@@ -1102,9 +1102,9 @@ Work committed to and not yet built:
 * **G1-B: children that stop when their parent goes quiet.** A `Delegation`
   cannot cancel a child once the parent process has crashed. A lease
   extension can (`docs/swarm-orchestration.md`).
-* **The in-diff mutation sweep over this work.** It runs in two-hour
-  chunks and is not finished. Every miss found so far has been fixed or
-  shown to be equivalent. The handoff has the counts and how to resume.
+* ~~**The in-diff mutation sweep over this work.**~~ **Done 2026-10-09:**
+  every mutant in the B–F diff has run. Every miss now has a test, or is a
+  Kani harness that only Kani compiles. The handoff has the counts.
 * **Listing on the ITK dashboard.** This waits on upstream changes, drafted
   in `docs/upstream/a2a-itk-dashboard-enrolment-draft.md`.
 

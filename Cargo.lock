@@ -50,6 +50,7 @@ dependencies = [
  "a2a-protocol-server",
  "a2a-protocol-types",
  "clap",
+ "http-body-util",
  "hyper",
  "hyper-util",
  "serde",

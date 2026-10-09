@@ -323,3 +323,71 @@ fn a_sec1_key_is_refused_with_the_command_that_converts_it() {
         .unwrap_err();
     assert!(err.to_string().contains("openssl pkcs8 -topk8"), "{err}");
 }
+
+/// A chain purged twice, verified against everything a real store holds for
+/// it and beside it: the earlier anchor, an old checkpoint the purge left
+/// behind, one exactly at the first remaining record, and another chain's
+/// checkpoints at the same and later positions. Only this chain's newest
+/// anchor and its checkpoints in range may count.
+#[test]
+fn a_twice_purged_chain_verifies_among_everything_else_in_the_store() {
+    let signer = ed25519_signer("k1");
+    let records = chain(12);
+    let kept = &records[8..]; // seq 9..=12
+    let cp = |kind: &str, chain: &str, seq: u64, hash: &str| {
+        let mut c = Checkpoint::new(kind, chain, seq, hash, "t");
+        signer.sign(&mut c).unwrap();
+        c
+    };
+    let checkpoints = vec![
+        cp("checkpoint", "globex", 8, "sha256:other"),
+        cp("anchor", "acme", 4, &records[3].hash),
+        cp("checkpoint", "acme", 5, &records[4].hash),
+        cp("anchor", "acme", 8, &records[7].hash),
+        cp("checkpoint", "acme", 9, &records[8].hash),
+        cp("checkpoint", "acme", 12, &records[11].hash),
+        cp("checkpoint", "globex", 20, "sha256:other"),
+    ];
+    let r = verify_chain(kept, &checkpoints, &[signer.public_key()]);
+    assert!(r.is_intact(), "{r:?}");
+    assert_eq!(r.anchored_at, Some(8));
+    assert_eq!(r.range, Some((9, 12)));
+    assert_eq!(r.checkpoints_verified, 2, "seq 9 and seq 12, nothing else");
+    assert_eq!(r.signed_through, Some(12));
+}
+
+#[test]
+fn the_largest_sequence_number_is_two_to_the_53_minus_one() {
+    assert_eq!(MAX_SEQ, 9_007_199_254_740_991);
+    let mut r = AuditRecord::new("acme", kind::CALL);
+    r.seal(9_007_199_254_740_991, Some("sha256:p".into()), "t".into())
+        .expect("the largest exact double");
+    assert!(
+        r.seal(9_007_199_254_740_992, Some("sha256:p".into()), "t".into())
+            .is_err()
+    );
+}
+
+/// Python: `hashlib.sha256(b'{"a":1,"b":[true,null]}')`.
+#[test]
+fn digest_of_is_sha256_over_the_canonical_json() {
+    #[derive(serde::Serialize)]
+    struct S {
+        b: Vec<Option<bool>>,
+        a: u8,
+    }
+    let want = "sha256:1cc69c7fa23616ca2ec3ee70d24390a6225c8832db8a4c814c7e0e7f942f8668";
+    assert_eq!(
+        digest_of(&S {
+            b: vec![Some(true), None],
+            a: 1
+        })
+        .unwrap(),
+        want
+    );
+}
+
+#[test]
+fn a_signer_reports_its_key_id() {
+    assert_eq!(es256_signer("audit-2026-10").kid(), "audit-2026-10");
+}

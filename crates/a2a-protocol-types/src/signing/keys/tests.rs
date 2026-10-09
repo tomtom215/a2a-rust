@@ -169,7 +169,22 @@ fn jwks_entries_that_must_not_be_used_are_skipped_or_refused() {
     assert!(lying.verifying_key().is_err());
     let mut short = Jwk::from_verifying_key(&es, Some("es-1"));
     short.y = Some("AAAA".into());
-    assert!(short.verifying_key().is_err());
+    assert!(
+        short
+            .verifying_key()
+            .unwrap_err()
+            .message
+            .contains("y is 32 bytes")
+    );
+    let mut short_x = Jwk::from_verifying_key(&es, Some("es-1"));
+    short_x.x = Some("AAAA".into());
+    assert!(
+        short_x
+            .verifying_key()
+            .unwrap_err()
+            .message
+            .contains("x is 32 bytes")
+    );
     let rsa: Jwk =
         serde_json::from_value(serde_json::json!({"kty": "RSA", "n": "AQAB", "e": "AQAB"}))
             .unwrap();

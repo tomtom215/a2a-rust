@@ -88,6 +88,19 @@ async fn a_card_verifies_under_a_fetched_set() {
     verify_card_with_jwks(&signed_card(), &fetched).unwrap();
 }
 
+/// A set well inside the cap is accepted: the cap is 256 KiB, not a few
+/// hundred bytes. Real sets with several keys and certificate chains run to
+/// kilobytes.
+#[tokio::test]
+async fn a_set_of_several_kilobytes_is_accepted() {
+    let key = VerifyingKey::from_bytes("ES256", &hex(P256_POINT)).unwrap();
+    let set = Jwks::new(vec![Jwk::from_verifying_key(&key, Some("k1"))]);
+    let mut body = serde_json::to_vec(&set).unwrap();
+    body.resize(8 * 1024, b' ');
+    let url = key_server(200, body).await;
+    assert_eq!(fetch_jwks(&url, &options()).await.unwrap(), set);
+}
+
 #[tokio::test]
 async fn a_key_server_cannot_answer_with_anything_else() {
     let url = key_server(404, b"no".to_vec()).await;
