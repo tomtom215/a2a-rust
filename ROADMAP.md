@@ -1088,9 +1088,36 @@ steps in [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
   shape as the gates this repo has found that could not fail. Proved by
   injection that the check goes red: run with a wrong token it exits 1.
 
+## Audit, oversight and provenance — what is left (2026-10-09)
+
+The audit trail, the delegation cascade, the halt switch, the approval gate,
+the provenance extension, the Kani proofs and the ACTS gate landed on
+`claude/bold-gauss-9qc9dc`. The control map has each row and its tests.
+Work committed to and not yet built:
+
+* **A halt that holds across replicas and restarts.** `RequestHandler::halt`
+  holds in one process and is not persisted, so each replica is halted
+  separately. Closing this needs a shared store for halts, read at
+  admission.
+* **G1-B: children that stop when their parent goes quiet.** A `Delegation`
+  cannot cancel a child once the parent process has crashed. A lease
+  extension can (`docs/swarm-orchestration.md`).
+* **The in-diff mutation sweep over this work.** It runs in two-hour
+  chunks and is not finished. Every miss found so far has been fixed or
+  shown to be equivalent. The handoff has the counts and how to resume.
+* **Listing on the ITK dashboard.** This waits on upstream changes, drafted
+  in `docs/upstream/a2a-itk-dashboard-enrolment-draft.md`.
+
 ## Open questions
 
 Genuinely undecided — listed so they are not mistaken for oversights.
+
+* **Whether, and how, to distribute the `a2a` CLI.** Release binaries are
+  built, checksummed and attested only when the repository variable
+  `PUBLISH_CLI_BINARIES` is `true`. Homebrew and winget manifests are drafts
+  under `packaging/`, and `tools/a2a-cli` stays `publish = false` on
+  crates.io. The maintainer decided on 2026-10-08 that this is theirs to
+  turn on.
 
 * ~~Whether to adopt signed tags at all, or to rely solely on the SLSA build
   provenance attestations already produced for release artifacts

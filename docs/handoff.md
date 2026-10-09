@@ -942,7 +942,7 @@ delegation handle)~~ landed on `claude/bold-gauss-9qc9dc` (below); next in
 The maintainer asked to make a2a-rust the most compliant and verifiable A2A
 SDK, measured against the EU AI Act
 (`docs/compliance/control-map.md` is the map). The work came as a plan in six
-phases, A–F; this branch carries A–C so far.
+phases, A–F; this branch carries all six.
 
 * **A (pushed: `5683d09f`, `ae2efbce`, `d76ed2f7`, `df6daf1e`).**
   - HTTP+JSON negotiates `application/a2a+json` (REST-CT-001). ACTS against
@@ -957,6 +957,25 @@ phases, A–F; this branch carries A–C so far.
   It adds `delegation::Delegation` in the client (G1-A), with
   `examples/swarm` rewritten on it; `RequestHandler::halt`/`resume`; and the
   approval extension with `ApprovalGate`.
+* **D, provenance (`6f2df2e3`).** The book's "Provenance and Signatures"
+  chapter describes it.
+  - The provenance extension: an AI-generated marker and signed content.
+  - EdDSA and JWK Set verification for cards, and the client's `fetch_jwks`.
+  - `verify_agent_card` accepts SPKI as its docs always said it did.
+  - The HS256 and OAuth client secrets are zeroized.
+  - An upstream draft of the approval and provenance extensions.
+* **E, verification (`6bf6ca12`).**
+  - Kani proofs in the types crate.
+  - A loom model of the halt protocol (`verification/loom-halt`).
+  - ACTS as a merge gate (`acts.yml`), and a signed conformance attestation
+    on released crates.
+  - A nightly ACTS run, and the ITK dashboard enrolment draft.
+* **F, developer experience.**
+  - `Profile::Auditable`.
+  - Offline CLI commands: `a2a card sign|verify` and `a2a audit verify`.
+  - The CLI carries the release version.
+  - Release binaries behind `PUBLISH_CLI_BINARIES`.
+  - Homebrew and winget drafts under `packaging/`.
 
 **Decisions the maintainer made (2026-10-08).**
 - Commits are authored as Tom F. with sign-off.
@@ -989,22 +1008,42 @@ with the admission re-check removed and passes with it.
 `a_turn_admitted_after_the_walk_stops_itself` covers the same path
 deterministically.
 
-**The mutation gate is slow on this diff.** `--in-diff` over B+C finds 586
-mutants. The first run finished 74 of them in about 100 minutes, with two
-jobs on four cores, before it was stopped to free disk. At that rate the
-whole diff takes roughly 13 hours. The partial results are not in the repository. The fixes they
-prompted are: the `Delegation::cancel` guard, which was redundant (an
-equivalent mutant, so the guard was removed), and the `AuditLog` `Debug`
-output, which now has a test.
+**The mutation gate is slow on this diff (counts as of 2026-10-09).**
+`--in-diff` over B and C finds 586 mutants, and 642 once the diff was
+regenerated after the first fixes. It runs in two-hour chunks:
+
+| Chunk | Caught | Missed | Unviable | Output |
+|---|---|---|---|---|
+| 1 (stopped early to free disk) | 50 | 2 | 22 | `/tmp/claude-0/mutBC-partial-1` |
+| 2 | 38 | 3 | 21 | overwritten by chunk 3 |
+| 3 (still running at handoff) | 47+ | 12 | 149+ | `/tmp/claude-0/mutBC/mutants.out` |
+
+The scratch paths do not survive the session.
+
+Every miss so far is fixed in the commits on this branch, or the code was
+simplified so the mutant no longer exists:
+
+- the `Delegation::cancel` guard and the `export` short-page check;
+- `failures()` and the anchor continuation;
+- `end_run`'s eviction order;
+- the `Debug` impls;
+- `record_event`'s arms;
+- the wrapper's three capability flags.
+
+Most "unviable" mutants replace a `BoxFuture` return with a value that does
+not type-check. Resume with `cargo mutants --iterate --in-diff <diff>
+--output <dir>`, without `RUSTFLAGS` and with `CARGO_INCREMENTAL=0`; each
+chunk excludes what earlier ones caught.
 
 **What the next session should do first.**
-1. Finish the mutation sweep on this diff (`--iterate` against the saved
-   output, sharded).
-2. Phase D: signed messages and artifacts as a declared extension, with an
-   AI-generated marker. Then JWKS/`kid`/`jku` resolution and EdDSA for card
-   verification. Fix `verify_agent_card`'s doc, which says SPKI DER although
-   `ring` takes the raw 65-byte point. Then zeroize held secrets.
-3. Phases E and F, as listed in the plan.
+1. Finish the mutation sweep over phases B–F. Phases D, E and F have their
+   own diffs, which were never swept as a whole: regenerate the diff from
+   `df6daf1e`.
+2. Read the first GitHub runs of `acts.yml`, `verification.yml`, `osv.yml`,
+   `codeql.yml` and `scorecard.yml`, which only trigger on `main` or pull
+   requests. Fix what they find.
+3. ROADMAP's "Audit, oversight and provenance — what is left": a halt that
+   holds across replicas, and G1-B.
 
 **Environment notes.**
 - Run every cargo command with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0`.
@@ -1014,6 +1053,11 @@ output, which now has a test.
   `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`.
 - Run mutants without `RUSTFLAGS`, as `mutants.yml` does; `-D warnings`
   turns caught mutants into unviable ones.
+- Kani 0.68.0 is installed with `cargo install --locked kani-verifier`, then
+  `rustup set auto-self-update disable`, then `cargo kani setup`. Without the
+  middle step, setup fails on a rustup self-update.
+- Never `pkill -f` a pattern that appears in your own command: it kills the
+  shell running it. That happened again on 2026-10-09; kill by PID.
 
 ## In flight outside this repository
 
