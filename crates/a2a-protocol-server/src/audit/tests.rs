@@ -56,7 +56,7 @@ async fn store_contract(store: &dyn AuditStore) {
     assert_eq!(all, vec![r1.clone(), r2.clone(), r3.clone()]);
     assert!(verify_chain(&all, &[], &[]).is_intact());
     assert_eq!(store.read("c", 1, 1).await.unwrap(), vec![r2.clone()]);
-    assert!(store.read("other", 0, 10).await.unwrap().is_empty());
+    assert_eq!(store.read("other", 0, 10).await.unwrap(), Vec::new());
 
     // Chains are separate.
     let o1 = sealed("other", 1, None, "2026-01-01T00:00:00.000Z");
@@ -97,7 +97,7 @@ async fn store_contract(store: &dyn AuditStore) {
     assert!(left.contains(&anchor), "{left:?}");
 
     // Holds.
-    assert!(store.holds().await.unwrap().is_empty());
+    assert_eq!(store.holds().await.unwrap(), Vec::new());
     let hold = LegalHold {
         chain: "c".to_owned(),
         reason: "case 7".to_owned(),
@@ -351,7 +351,7 @@ async fn a_legal_hold_stops_purge_until_released() {
     log.place_hold("c", "litigation 2026-17").await.unwrap();
     let held = log.purge(retention, Y2026 + 400 * DAY_MS).await.unwrap();
     assert_eq!(held.held, vec!["c".to_owned()]);
-    assert!(held.purged.is_empty());
+    assert_eq!(held.purged, Vec::new());
     assert_eq!(log.export("c").await.unwrap().len(), 4);
     assert!(log.release_hold("c").await.unwrap());
     let report = log.purge(retention, Y2026 + 400 * DAY_MS).await.unwrap();
@@ -375,8 +375,9 @@ async fn purge_without_a_signer_is_refused() {
 /// wrapper (CONTRIBUTING.md, "A default is not free").
 #[test]
 fn the_audited_task_store_overrides_every_task_store_method() {
-    let trait_src = include_str!("../store/task_store/mod.rs");
-    let wrapper_src = include_str!("task_store.rs");
+    // A Windows checkout may have CRLF line endings.
+    let trait_src = include_str!("../store/task_store/mod.rs").replace("\r\n", "\n");
+    let wrapper_src = include_str!("task_store.rs").replace("\r\n", "\n");
     let methods = |src: &str, start: &str| -> Vec<String> {
         let body = &src[src.find(start).unwrap()..];
         let end = body.find("\n}\n").unwrap();
@@ -386,8 +387,8 @@ fn the_audited_task_store_overrides_every_task_store_method() {
             .map(|l| l.split(['<', '(']).next().unwrap().to_owned())
             .collect()
     };
-    let wanted = methods(trait_src, "pub trait TaskStore");
-    let have = methods(wrapper_src, "impl TaskStore for AuditedTaskStore");
+    let wanted = methods(&trait_src, "pub trait TaskStore");
+    let have = methods(&wrapper_src, "impl TaskStore for AuditedTaskStore");
     assert!(
         wanted.len() >= 19,
         "parsed {} trait methods: {wanted:?}",
