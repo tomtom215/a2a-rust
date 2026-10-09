@@ -248,15 +248,13 @@ impl AuditLog {
     pub async fn export(&self, chain: &str) -> A2aResult<Vec<AuditRecord>> {
         let mut out = Vec::new();
         let mut after = 0;
+        // Until a page comes back empty: one read more than stopping at a
+        // short page, and no length arithmetic to get wrong.
         loop {
             let page = self.store.read(chain, after, READ_PAGE).await?;
             let Some(last) = page.last() else { break };
             after = last.seq;
-            let short = page.len() < READ_PAGE;
             out.extend(page);
-            if short {
-                break;
-            }
         }
         Ok(out)
     }

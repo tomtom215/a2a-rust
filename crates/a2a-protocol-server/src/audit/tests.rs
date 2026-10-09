@@ -452,3 +452,43 @@ async fn a_chain_emptied_behind_its_anchor_continues_after_it() {
     assert_eq!(next.prev.as_deref(), Some(last.hash.as_str()));
     assert!(log.verify("c").await.unwrap().is_intact());
 }
+
+/// An export reads page after page: a chain longer than one read, and one
+/// that ends exactly on a page boundary, come back whole.
+#[tokio::test]
+async fn an_export_returns_every_record_across_pages() {
+    for n in [1_000_u64, 2_500] {
+        let log = AuditLog::new(Arc::new(InMemoryAuditStore::new()));
+        for i in 0..n {
+            log.append(rec("c", &format!("t{i}"))).await.unwrap();
+        }
+        let all = log.export("c").await.unwrap();
+        assert_eq!(all.len() as u64, n);
+        assert!(all.iter().zip(1..).all(|(r, seq)| r.seq == seq));
+        assert!(log.verify("c").await.unwrap().is_intact());
+    }
+}
+
+/// Ending a run forgets it in the eviction order too, so the registry stays
+/// at its bound: the run still tracked is the one evicted when it fills.
+#[test]
+fn an_ended_run_leaves_the_registry_exactly_at_its_bound() {
+    let log = AuditLog::new(Arc::new(InMemoryAuditStore::new()));
+    log.begin_run("c", "ended", 1);
+    log.begin_run("c", "kept", 2);
+    log.end_run("c", "ended");
+    for i in 0..65_536_u64 {
+        log.begin_run("c", &format!("t{i}"), i + 3);
+    }
+    assert_eq!(log.tracked_runs(), 65_536);
+    assert_eq!(
+        log.run_of("c", "kept"),
+        None,
+        "the oldest live run is evicted"
+    );
+}
+
+#[test]
+fn the_in_memory_store_debug_form_names_it() {
+    assert!(format!("{:?}", InMemoryAuditStore::new()).starts_with("InMemoryAuditStore"));
+}
