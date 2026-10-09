@@ -32,6 +32,9 @@ pub enum CliError {
     Json(serde_json::Error),
     /// Writing to stdout failed (a closed pipe, most likely).
     Io(std::io::Error),
+    /// An offline command failed: a file that is not what it should be, a
+    /// chain that does not verify, a card no signature of which verifies.
+    Failed(String),
 }
 
 impl CliError {
@@ -80,6 +83,7 @@ impl fmt::Display for CliError {
             ),
             Self::Json(e) => write!(f, "could not render response as JSON: {e}"),
             Self::Io(e) => write!(f, "could not write output: {e}"),
+            Self::Failed(why) => f.write_str(why),
         }
     }
 }

@@ -195,3 +195,6 @@ impl TaskStore for AuditedTaskStore {
         self.inner.event_log_covers(task_id, after_seq)
     }
 }
+
+#[cfg(test)]
+mod tests;

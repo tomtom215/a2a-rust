@@ -17,6 +17,7 @@
 //! | `cli` | The command-line grammar (`clap` derive) |
 //! | `connect` | Building a client: discovery, binding selection, headers, timeouts |
 //! | `commands` | One function per command; JSON output |
+//! | `offline` | Commands that need no agent: `card sign`, `card verify`, `audit verify` |
 //! | `error` | The error type, how it prints, and the exit code it maps to |
 //!
 //! # Exit codes
@@ -34,12 +35,13 @@ mod cli;
 mod commands;
 mod connect;
 mod error;
+mod offline;
 
 use std::process::ExitCode;
 
 use clap::Parser;
 
-use cli::{Cli, Command, TaskCommand};
+use cli::{AuditCommand, CardCommand, Cli, Command, TaskCommand};
 use error::CliError;
 
 /// Runs the parsed command. Every command's output goes to stdout; every
@@ -47,7 +49,23 @@ use error::CliError;
 async fn run(cli: Cli) -> Result<(), CliError> {
     let global = &cli.global;
     match cli.command {
-        Command::Card { url } => commands::card(&url).await,
+        Command::Card(card) => match card.action {
+            Some(CardCommand::Sign {
+                card,
+                key,
+                alg,
+                kid,
+            }) => offline::card_sign(&card, &key, alg, &kid),
+            Some(CardCommand::Verify { card, jwks }) => {
+                offline::card_verify(global, &card, &jwks).await
+            }
+            None => commands::card(card.url.as_deref().unwrap_or_default()).await,
+        },
+        Command::Audit(AuditCommand::Verify {
+            records,
+            checkpoints,
+            keys,
+        }) => offline::audit_verify(&records, checkpoints.as_deref(), keys.as_deref()),
         Command::Send(args) => commands::send(global, &args).await,
         Command::Stream(args) => commands::stream(global, &args).await,
         Command::Task(task) => match task {

@@ -30,6 +30,15 @@ reinterpreted, so what you read is what the agent sent.
 | `a2a task cancel <URL> <TASK-ID>` | `CancelTask` | the task after cancellation, pretty JSON |
 | `a2a task list <URL> [--context-id ID] [--page-size N] [--page-token T]` | `ListTasks` | one page: `tasks`, `nextPageToken`, `pageSize`, `totalSize` |
 
+Offline commands need no agent. Each prints JSON and exits 1 when what it
+checks does not hold, so a script can gate on it:
+
+| Command | Does | Notes |
+|---|---|---|
+| `a2a card sign <CARD> --key <DER> --alg es256\|eddsa --kid <KID>` | Adds a signature to a card file and prints the card | Key: PKCS#8 DER (`openssl pkcs8 -topk8 -nocrypt -outform DER`) |
+| `a2a card verify <CARD> --jwks <JWKS>` | Checks the card's signatures against a JWK Set | `CARD`: an agent URL or a file. `JWKS`: an `https://` URL you trust, or a file; never the card's own `jku` |
+| `a2a audit verify <RECORDS> [--checkpoints F] [--keys JWKS]` | Verifies an exported audit chain: hashes, order, anchors, signed checkpoints | Prints the chain report; `unsignedTail` counts records no checkpoint covers |
+
 `--no-wait` sets `returnImmediately`, so `send` prints the task as soon as it
 is accepted; useful for creating something to `task get` or `task cancel`.
 

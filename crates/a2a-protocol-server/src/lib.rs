@@ -129,6 +129,8 @@ pub mod executor_helpers;
 pub mod handler;
 pub mod interceptor;
 pub mod metrics;
+#[cfg(feature = "audit")]
+pub mod profile;
 pub mod push;
 pub mod rate_limit;
 pub mod request_context;

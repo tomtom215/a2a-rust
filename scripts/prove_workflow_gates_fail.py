@@ -1384,6 +1384,7 @@ RELEASE_FILES = (
     "crates/a2a-protocol-client/Cargo.toml",
     "crates/a2a-protocol-server/Cargo.toml",
     "crates/a2a-protocol-sdk/Cargo.toml",
+    "tools/a2a-cli/Cargo.toml",
 )
 
 

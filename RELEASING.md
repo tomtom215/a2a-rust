@@ -71,11 +71,12 @@ new example silently breaks packaging — which is what
 # Create a release branch
 git checkout -b release/vX.Y.Z main
 
-# Update version in all 4 crate Cargo.toml files (must all match)
+# Update version in all 4 crate Cargo.toml files and the CLI's (must all match)
 # crates/a2a-protocol-types/Cargo.toml
 # crates/a2a-protocol-client/Cargo.toml
 # crates/a2a-protocol-server/Cargo.toml
 # crates/a2a-protocol-sdk/Cargo.toml
+# tools/a2a-cli/Cargo.toml  (unpublished; its release binaries report this)
 #
 # ...and the inter-crate *dependency pins*, which are eight further version
 # strings in those same four files and are NOT what release.yml checks — it

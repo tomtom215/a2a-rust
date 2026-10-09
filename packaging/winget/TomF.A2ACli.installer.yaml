@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# DRAFT — not submitted. See packaging/README.md.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
+PackageIdentifier: TomF.A2ACli
+PackageVersion: "@VERSION@"
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: a2a-v@VERSION@-x86_64-pc-windows-msvc\a2a.exe
+    PortableCommandAlias: a2a
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/tomtom215/a2a-rust/releases/download/v@VERSION@/a2a-v@VERSION@-x86_64-pc-windows-msvc.zip
+    InstallerSha256: "@SHA256_X86_64_PC_WINDOWS_MSVC@"
+ManifestType: installer
+ManifestVersion: 1.9.0

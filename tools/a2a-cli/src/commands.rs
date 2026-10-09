@@ -27,7 +27,7 @@ use crate::connect::connect;
 use crate::error::CliError;
 
 /// Writes `value` to stdout as pretty-printed JSON with a trailing newline.
-fn print_pretty<T: Serialize>(value: &T) -> Result<(), CliError> {
+pub(crate) fn print_pretty<T: Serialize>(value: &T) -> Result<(), CliError> {
     let mut out = std::io::stdout().lock();
     serde_json::to_writer_pretty(&mut out, value)?;
     out.write_all(b"\n")?;

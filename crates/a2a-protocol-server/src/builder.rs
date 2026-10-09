@@ -132,6 +132,9 @@ pub struct RequestHandlerBuilder {
     approval_gate: Option<crate::approval::ApprovalGate>,
     #[cfg(feature = "audit")]
     audit: Option<Arc<crate::audit::AuditLog>>,
+    /// The profile applied, if any; `build()` checks what it needs.
+    #[cfg(feature = "audit")]
+    profile: Option<crate::profile::ProfileKind>,
 }
 
 impl RequestHandlerBuilder {
@@ -168,6 +171,8 @@ impl RequestHandlerBuilder {
             approval_gate: None,
             #[cfg(feature = "audit")]
             audit: None,
+            #[cfg(feature = "audit")]
+            profile: None,
         }
     }
 
@@ -233,6 +238,22 @@ impl RequestHandlerBuilder {
     pub fn with_audit(mut self, log: Arc<crate::audit::AuditLog>) -> Self {
         self.audit = Some(log);
         self
+    }
+
+    /// Applies a deployment [`Profile`](crate::profile::Profile); see each
+    /// profile for what it sets and what `build()` then requires.
+    #[cfg(feature = "audit")]
+    #[must_use]
+    pub fn with_profile(mut self, profile: crate::profile::Profile) -> Self {
+        match profile {
+            crate::profile::Profile::Auditable(log) => {
+                self.profile = Some(crate::profile::ProfileKind::Auditable);
+                if self.approval_gate.is_none() {
+                    self.approval_gate = Some(crate::approval::ApprovalGate::new());
+                }
+                self.with_audit(log)
+            }
+        }
     }
 
     /// Checks approval decisions before the executor sees them: see
@@ -532,6 +553,11 @@ impl RequestHandlerBuilder {
             ));
         }
 
+        #[cfg(feature = "audit")]
+        if self.profile == Some(crate::profile::ProfileKind::Auditable) {
+            self.check_auditable()?;
+        }
+
         // Validate executor timeout is not zero.
         if let Some(timeout) = self.executor_timeout
             && timeout.is_zero()
@@ -759,6 +785,37 @@ impl RequestHandlerBuilder {
     }
 }
 
+#[cfg(feature = "audit")]
+impl RequestHandlerBuilder {
+    /// What [`Profile::Auditable`](crate::profile::Profile::Auditable)
+    /// requires, each failure naming its fix.
+    fn check_auditable(&self) -> ServerResult<()> {
+        let refuse = |why: &str| Err(crate::error::ServerError::InvalidParams(why.to_owned()));
+        let Some(log) = &self.audit else {
+            return refuse("the auditable profile needs an audit log");
+        };
+        if !log.is_required() {
+            return refuse(
+                "the auditable profile needs a required log (AuditLog::require_record(true)): \
+                 otherwise a call the log cannot record is served unrecorded",
+            );
+        }
+        if log.trusted_key().is_none() {
+            return refuse(
+                "the auditable profile needs a checkpoint signer (AuditLog::with_signer): \
+                 otherwise the end of a chain can be cut off without trace",
+            );
+        }
+        if !self.interceptors.has_authenticator() {
+            return refuse(
+                "the auditable profile needs an authenticating interceptor: \
+                 otherwise the records name no caller",
+            );
+        }
+        Ok(())
+    }
+}
+
 impl std::fmt::Debug for RequestHandlerBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut d = f.debug_struct("RequestHandlerBuilder");
@@ -791,7 +848,8 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             )
             .field("approval_gate", &self.approval_gate);
         #[cfg(feature = "audit")]
-        d.field("audit", &self.audit.is_some());
+        d.field("audit", &self.audit.is_some())
+            .field("profile", &self.profile);
         d.finish()
     }
 }

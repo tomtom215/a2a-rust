@@ -74,6 +74,38 @@ elsewhere), `SqliteAuditStore` with `sqlite`, `PostgresAuditStore` with
 `postgres`. Replicas can share one PostgreSQL store; they interleave on a
 tenant's chain without forking it.
 
+### Or as one profile
+
+`Profile::Auditable` applies the audit trail and an approval gate in one
+call. `build()` then refuses an incomplete configuration and names what is
+missing:
+
+- a log that is not required, which would serve calls it cannot record;
+- a log that signs no checkpoints, whose chains could lose their end
+  without trace;
+- no authenticating interceptor, which leaves the records naming no caller.
+
+```rust,no_run
+use std::sync::Arc;
+use a2a_protocol_server::audit::{AuditLog, SqliteAuditStore};
+use a2a_protocol_server::audit::record::{CheckpointSigner, SigningAlg};
+use a2a_protocol_server::profile::Profile;
+use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};
+# struct MyAgent;
+# a2a_protocol_server::agent_executor!(MyAgent, |_ctx, _q| async { Ok(()) });
+# async fn run(key: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+let log = AuditLog::new(Arc::new(SqliteAuditStore::new("sqlite:audit.db?mode=rwc").await?))
+    .with_signer(CheckpointSigner::from_pkcs8(SigningAlg::EdDsa, "audit-2026-10", key)?, 1_000)
+    .require_record(true);
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([("t", "billing-agent")]))
+    .with_profile(Profile::Auditable(Arc::new(log)))
+    .build()?;
+# let _ = handler;
+# Ok(())
+# }
+```
+
 ## The checkpoint key
 
 A hash chain shows that nothing in the middle changed. Only a signed
@@ -117,7 +149,9 @@ println!(
 That checks the store against the key this process holds. An auditor should
 verify an export — `log.export(chain)` and `store.checkpoints(chain)` — on
 their own machine with `a2a_protocol_types::audit::verify_chain` and a key
-they obtained independently. It reports the first thing wrong: an edited
+they obtained independently. The `a2a` CLI does the same from files, with no
+code: `a2a audit verify records.json --checkpoints checkpoints.json --keys
+jwks.json` prints the report and exits 1 unless the chain is intact. It reports the first thing wrong: an edited
 record, a gap, a reordering, a record from another chain, a missing start, a
 checkpoint beyond the last record (the tail was removed), or a signature that
 does not verify.

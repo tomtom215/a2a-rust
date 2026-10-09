@@ -12,6 +12,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`profile::Profile::Auditable`** (server, `audit` feature; book, "Audit
+  Trail"). `RequestHandlerBuilder::with_profile` turns on the audit trail and
+  an approval gate in one call. `build()` refuses the configuration, naming
+  what is missing, when:
+  - the log is not required;
+  - the log signs no checkpoints;
+  - no authenticating interceptor is installed.
+- **`a2a` CLI offline commands** (`tools/a2a-cli`). These need no agent,
+  print JSON, and exit 1 when the check fails:
+  - `a2a card sign` signs a card file with ES256 or EdDSA;
+  - `a2a card verify` checks a card from a URL or a file against a JWK Set
+    from an HTTPS URL or a file;
+  - `a2a audit verify` checks an exported audit chain against a JWK Set and
+    prints the chain report.
+
+  The CLI now carries the release version (0.14.1), and `release.yml` checks
+  it against the tag with the four library crates, so a release binary
+  reports what it is.
+- **Release binaries for the CLI, off until switched on** (`release.yml`,
+  `cli-binaries`). When the repository variable `PUBLISH_CLI_BINARIES` is
+  `true`, each tag builds `a2a` natively for x86_64 and aarch64 Linux,
+  aarch64 macOS and x86_64 Windows. Each archive gets a SHA-256 file and
+  SLSA build provenance, and is attached to the GitHub release. Homebrew and
+  winget manifests are drafted under `packaging/`; they have not been
+  submitted or validated.
 - **The provenance extension: AI-generated marker and signed content**
   (types; `https://a2a-rust.com/extensions/provenance/v1`; book,
   "Provenance and Signatures").

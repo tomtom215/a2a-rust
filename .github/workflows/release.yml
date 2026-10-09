@@ -184,7 +184,7 @@ jobs:
           FAILED=0
 
           echo "::group::Version consistency"
-          for toml in crates/a2a-protocol-types/Cargo.toml crates/a2a-protocol-client/Cargo.toml crates/a2a-protocol-server/Cargo.toml crates/a2a-protocol-sdk/Cargo.toml; do
+          for toml in crates/a2a-protocol-types/Cargo.toml crates/a2a-protocol-client/Cargo.toml crates/a2a-protocol-server/Cargo.toml crates/a2a-protocol-sdk/Cargo.toml tools/a2a-cli/Cargo.toml; do
             CARGO_VER=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
             if [[ "$CARGO_VER" != "$TAG_VER" ]]; then
               echo "::error file=$toml::$toml version ($CARGO_VER) != tag ($TAG_VER)."
@@ -651,6 +651,69 @@ jobs:
             echo "### Next step"
             echo "Approve the **crates-io** deployment environment to publish to crates.io."
           } >> "$GITHUB_STEP_SUMMARY"
+
+# ── Job 6b: The `a2a` CLI as release binaries (opt-in) ────────────────────────
+# Off until the maintainer sets the repository variable
+# PUBLISH_CLI_BINARIES=true: a new kind of public artifact is theirs to
+# decide on (handoff, "Decisions the maintainer made"). When on, each target
+# is built natively, archived with its SHA-256, given SLSA build provenance,
+# and attached to the GitHub release the job above created.
+  cli-binaries:
+    name: CLI binary (${{ matrix.target }})
+    needs: [validate, github-release]
+    if: vars.PUBLISH_CLI_BINARIES == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, archive: tar.gz }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, archive: tar.gz }
+          - { os: macos-latest, target: aarch64-apple-darwin, archive: tar.gz }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, archive: zip }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write      # upload to the release
+      id-token: write      # OIDC token for the provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master 2026-09-03
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      # Cold, like the .crate archives: nothing restored from routine CI.
+      - name: Build
+        run: cargo build --release --locked -p a2a-cli --target ${{ matrix.target }}
+      - name: Archive with its checksum
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          name="a2a-${TAG}-${TARGET}"
+          mkdir -p "dist/$name"
+          exe=a2a; [ "$ARCHIVE" = zip ] && exe=a2a.exe
+          cp "target/$TARGET/release/$exe" README.md LICENSE "dist/$name/"
+          cd dist
+          if [ "$ARCHIVE" = zip ]; then
+            7z a -tzip "$name.zip" "$name" >/dev/null
+          else
+            tar -czf "$name.tar.gz" "$name"
+          fi
+          sha256sum "$name.$ARCHIVE" 2>/dev/null > "$name.$ARCHIVE.sha256" \
+            || shasum -a 256 "$name.$ARCHIVE" > "$name.$ARCHIVE.sha256"
+          cat "$name.$ARCHIVE.sha256"
+      - name: Attest build provenance (SLSA)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/a2a-*.${{ matrix.archive }}
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" dist/a2a-*.${{ matrix.archive }} dist/a2a-*.sha256 --clobber
 
 # ── Job 7: Publish to crates.io (protected environment, requires approval) ────
   publish:
