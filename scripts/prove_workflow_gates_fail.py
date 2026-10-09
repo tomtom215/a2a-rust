@@ -1139,6 +1139,13 @@ def build_registry() -> dict[str, Probe | Exempt]:
     # state an actual release would be cut from. Defects then perturb one thing
     # each. A fixture invented from scratch would prove the greps run; this
     # proves they run against the shapes this repo actually ships.
+    reg["acts.yml::acts::Every test the suite ran passed"] = Probe(
+        healthy=_acts_fixture(),
+        defects=[
+            Defect("a report with one failed test", _acts_fixture("failure"), "acts_predicate: failed:"),
+            Defect("no report at all", _acts_fixture("missing"), "acts_predicate: no report at"),
+        ],
+    )
     reg["release.yml::validate::Tag is annotated"] = Probe(
         healthy=_release_fixture(),
         defects=[
@@ -1544,6 +1551,33 @@ def _signed_tag_fixture(defect: str | None = None) -> Setup:
             "__cwd__": str(r),
             "__env__": {"GITHUB_SHA": sha, "GIT_CONFIG_GLOBAL": str(d / "gitconfig"), "GIT_CONFIG_NOSYSTEM": "1"},
         }
+
+    return setup
+
+
+def _acts_fixture(defect: str | None = None) -> Setup:
+    """A tree holding `scripts/acts_predicate.py` and ACTS reports.
+
+    Healthy: the three reports committed under `acts/reports/2026-10-08`.
+    Defects: `failure` (one test in the HTTP+JSON report marked failed) and
+    `missing` (no report at all, so the step's glob reaches the script
+    unexpanded).
+    """
+
+    def setup(d: Path) -> dict[str, str]:
+        r = d / "r"
+        (r / "scripts").mkdir(parents=True)
+        (r / "itk").mkdir()
+        shutil.copy2(REPO / "scripts/acts_predicate.py", r / "scripts/acts_predicate.py")
+        if defect != "missing":
+            for src in sorted((REPO / "acts/reports/2026-10-08").glob("acts-report-*.json")):
+                shutil.copyfile(src, r / "itk" / src.name)
+        if defect == "failure":
+            path = next((r / "itk").glob("acts-report-*rest*.json"))
+            report = json.loads(path.read_text())
+            report["suites"][0]["tests"][0]["result"] = "fail"
+            path.write_text(json.dumps(report))
+        return {"__cwd__": str(r), "__env__": {"A2A_ITK_REVISION": "0" * 40}}
 
     return setup
 

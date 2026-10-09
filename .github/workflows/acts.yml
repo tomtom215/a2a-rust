@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The A2A project's conformance suite (ACTS, in a2aproject/a2a-itk) against
+# this repository's ITK agent over JSON-RPC, gRPC and HTTP+JSON — as a merge
+# gate.
+#
+# The upstream driver (itk/run_itk.sh → a2a-itk/scripts/run_itk_shared.sh)
+# runs ACTS *instead of* the cross-SDK traversal set when ITK_ACTS_RUN=1, and
+# outside the nightly passes `--require-conformant`, so the run exits
+# non-zero exactly when a test the suite runs does not pass. The traversal
+# set stays in itk-nightly.yml: it depends on every peer SDK's health, which
+# is not this pull request's to block on. ACTS depends only on this agent.
+#
+# The a2a-itk revision is pinned, so a pull request is graded against a fixed
+# suite; bump A2A_ITK_REVISION deliberately, with acts/reports/ updated.
+#
+# Also called by release.yml, whose attest-conformance job signs the reports
+# into an attestation on the released .crate files.
+
+name: ACTS conformance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  # a2aproject/a2a-itk main on 2026-10-08; the revision acts/reports/2026-10-08 used.
+  A2A_ITK_REVISION: 82458ceac60208cc46ccbe52b68dbb8e1ca2614a
+
+jobs:
+  acts:
+    name: ACTS (JSON-RPC, gRPC, HTTP+JSON)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check out a2a-itk at the pinned revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: a2aproject/a2a-itk
+          ref: ${{ env.A2A_ITK_REVISION }}
+          path: itk/a2a-itk
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the itk_service image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: itk/a2a-itk
+          tags: itk_service:latest
+          load: true
+          cache-from: type=gha,scope=itk_service_acts
+          cache-to: type=gha,mode=max,scope=itk_service_acts
+
+      - name: Run ACTS on every binding (fails unless conformant)
+        run: bash run_itk.sh
+        working-directory: itk
+        env:
+          ITK_ACTS_RUN: "1"
+          ITK_ACTS_TRANSPORTS: jsonrpc,grpc,rest
+          ITK_SKIP_BUILD: "1"
+
+      - name: Every test the suite ran passed
+        run: python3 scripts/acts_predicate.py --itk-revision "$A2A_ITK_REVISION" itk/acts-report-*.json > acts-predicate.json
+
+      - name: Upload the ACTS reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acts-reports
+          path: |
+            itk/acts-report-*.json
+            acts-predicate.json
+          if-no-files-found: warn

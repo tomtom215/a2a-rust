@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Proofs, as opposed to tests: each job checks a property over every input
+# in its domain, or every interleaving, rather than a sample.
+#
+#   kani  — bounded model checking of the types crate
+#           (crates/a2a-protocol-types/src/kani_proofs.rs): the task state
+#           machine whole, and key parsing over every byte string up to
+#           its SPKI length.
+#   loom  — the halt/admission protocol as a model (verification/loom-halt),
+#           every interleaving under the C11 memory model, plus a model with
+#           the second check removed that must fail.
+
+name: Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/a2a-protocol-types/**'
+      - 'crates/a2a-protocol-server/src/handler/halt.rs'
+      - 'crates/a2a-protocol-server/src/handler/messaging/**'
+      - 'verification/**'
+      - '.github/workflows/verification.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  kani:
+    name: Kani proofs (types crate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: model-checking/kani-github-action@f838096619a707b0f6b2118cf435eaccfa33e51f # v1.1
+        with:
+          kani-version: '0.68.0'
+          working-directory: crates/a2a-protocol-types
+          args: --features signing
+
+  loom:
+    name: Loom model (halt/admission protocol)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master 2026-09-03
+        with:
+          toolchain: stable
+      - name: Run the model
+        run: cargo test --release --locked
+        working-directory: verification/loom-halt

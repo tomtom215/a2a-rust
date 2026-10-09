@@ -231,9 +231,15 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
    exists, and that the tag publishes what its notes describe (below)
 2. **Runs CI** (fmt, clippy, test, doc, MSRV check) and **security audit** (cargo-deny)
 3. **Packages** all crates with SLSA build provenance attestation
-4. **Runs a publish dry run** to verify packages are publishable
-5. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts
-6. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval; authenticates with Trusted Publishing, falling back to the environment secret)
+4. **Runs the A2A conformance suite (ACTS)** on the tagged commit over every
+   binding (`acts.yml`), fails on any failed or errored test, and attests the
+   summary onto each `.crate` (predicate type
+   `https://a2a-rust.com/attestations/acts-conformance/v1`; verify with
+   `gh attestation verify <crate>.crate -R tomtom215/a2a-rust --predicate-type …`).
+   The GitHub release, and so the publish, waits on it
+5. **Runs a publish dry run** to verify packages are publishable
+6. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts
+7. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval; authenticates with Trusted Publishing, falling back to the environment secret)
 
 ### The tag must be the release-preparation commit
 

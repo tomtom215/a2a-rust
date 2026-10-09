@@ -16,7 +16,7 @@
 #
 # # Two scopes, two verdicts
 #
-# * **Rust lockfiles — blocking.** The seven Cargo.lock files. A finding here
+# * **Rust lockfiles — blocking.** The eight Cargo.lock files. A finding here
 #   is ours to fix, or to waive in the `osv-scanner.toml` beside the lockfile
 #   with a reason and an `ignoreUntil` date, as `deny.toml` does.
 # * **Conformance peers — reported, not blocking.** The Go, Java, JavaScript
@@ -68,6 +68,7 @@ jobs:
         --lockfile=benches/sdk-comparison/harness/agent-a2a-rs/Cargo.lock
         --lockfile=benches/sdk-comparison/harness/agent-a2a-rust/Cargo.lock
         --lockfile=benches/sdk-comparison/harness/loadgen/Cargo.lock
+        --lockfile=verification/loom-halt/Cargo.lock
 
   rust:
     name: Rust lockfiles
@@ -88,6 +89,7 @@ jobs:
         --lockfile=benches/sdk-comparison/harness/agent-a2a-rs/Cargo.lock
         --lockfile=benches/sdk-comparison/harness/agent-a2a-rust/Cargo.lock
         --lockfile=benches/sdk-comparison/harness/loadgen/Cargo.lock
+        --lockfile=verification/loom-halt/Cargo.lock
 
   peers:
     name: Conformance peers (informational)

@@ -107,6 +107,21 @@ jobs:
           # log; raw_results.json alone says only which pair failed, not why.
           ITK_LOG_LEVEL: DEBUG
 
+      # The A2A project's conformance suite (ACTS) on the same night, in its
+      # nightly form: no --require-conformant (acts.yml is the merge gate),
+      # and a tally appended to the rolling acts_rust.json, the file the ITK
+      # dashboard reads beside itk_rust.json. Runs even after a red traversal
+      # night: the two are independent.
+      - name: Run the ACTS nightly (every binding)
+        if: always()
+        run: bash run_itk.sh
+        working-directory: itk
+        env:
+          ITK_ACTS_RUN: "1"
+          ITK_ACTS_TRANSPORTS: jsonrpc,grpc,rest
+          ITK_NIGHTLY_RUN: "True"
+          ITK_SKIP_BUILD: "1"
+
       # The shared driver exits 0 for a nightly with failures — the run is
       # metrics, not a gate — so the failures are put where a reader looks:
       # the job summary, and the artifact. This step never fails the job.
@@ -147,14 +162,16 @@ jobs:
           path: |
             itk/raw_results.json
             itk/itk_rust.json
+            itk/acts_rust.json
+            itk/acts-report-*.json
             itk/logs/
           if-no-files-found: ignore
 
       # Only from main: a workflow_dispatch on a branch validates the run
       # (the artifact above carries its results) without moving the rolling
       # tag onto an unmerged commit.
-      - name: Publish itk_rust.json to the rolling nightly-metrics prerelease
-        if: always() && github.ref == 'refs/heads/main' && hashFiles('itk/itk_rust.json') != ''
+      - name: Publish itk_rust.json and acts_rust.json to the rolling nightly-metrics prerelease
+        if: always() && github.ref == 'refs/heads/main' && (hashFiles('itk/itk_rust.json') != '' || hashFiles('itk/acts_rust.json') != '')
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: nightly-metrics
@@ -165,4 +182,6 @@ jobs:
             in the ITK matrix). Replaced on every run; see
             .github/workflows/itk-nightly.yml.
           prerelease: true
-          files: itk/itk_rust.json
+          files: |
+            itk/itk_rust.json
+            itk/acts_rust.json

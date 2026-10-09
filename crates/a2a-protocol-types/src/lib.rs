@@ -135,6 +135,9 @@ pub mod signing;
 pub mod task;
 pub mod trace_context;
 
+#[cfg(kani)]
+mod kani_proofs;
+
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 
 pub use agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentProvider, AgentSkill};

@@ -345,6 +345,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Proofs, not only tests** (`verification.yml`).
+  - Kani proves the task state machine whole, in
+    `crates/a2a-protocol-types/src/kani_proofs.rs`:
+    - terminal states are final;
+    - every unfinished task can be cancelled;
+    - nothing re-enters `Submitted`;
+    - terminal and interrupted states are disjoint.
+  - Kani also proves the ES256 and EdDSA key parsers safe and exact over
+    every byte string up to their SPKI length.
+  - A loom model in `verification/loom-halt`, outside the workspace, checks
+    the halt/admission protocol in every interleaving.
+  - Each proof was shown able to fail. A weakened Kani assertion produced a
+    counterexample, and the loom model with the second check removed finds
+    the escaping interleaving.
+- **ACTS is a merge gate, and a release attests it** (`acts.yml`,
+  `scripts/acts_predicate.py`).
+  - The A2A project's conformance suite runs on every pull request, at a
+    pinned a2a-itk revision, over JSON-RPC, gRPC and HTTP+JSON.
+  - It fails on any failed or errored test at any level. That is stricter
+    than upstream's MUST-only `--require-conformant`.
+  - `release.yml` runs it on the tag and attests the summary onto each
+    `.crate`. The GitHub release waits on it.
+  - The nightly also runs ACTS and publishes `acts_rust.json`.
+  - `prove_workflow_gates_fail.py` proves the gate can fail: a report with
+    one failed test fails it, and so does no report at all.
+- **Upstream drafts, not sent:**
+  - `docs/upstream/a2a-itk-dashboard-enrolment-draft.md` asks the ITK
+    dashboard to list this SDK. It also reports that the shared driver
+    hard-codes the `a2aproject` org in its history URLs, so this
+    repository's nightly history never accumulates.
+  - `docs/upstream/a2a-oversight-provenance-extensions-draft.md` proposes the
+    approval and provenance extensions.
 - **Supply-chain workflows: OSV-Scanner, CodeQL and OpenSSF Scorecard.**
   `osv.yml` scans all seven tracked `Cargo.lock` files on every pull request
   (blocking on findings the PR introduces) and daily (blocking on any), and

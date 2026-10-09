@@ -26,6 +26,20 @@ const ED25519_SPKI_PREFIX: [u8; 12] = [
     0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
 ];
 
+/// The uncompressed P-256 point in `bytes`, raw or inside its SPKI DER.
+pub fn p256_point(bytes: &[u8]) -> Option<&[u8]> {
+    let raw = bytes.strip_prefix(&P256_SPKI_PREFIX[..]).unwrap_or(bytes);
+    (raw.len() == 65 && raw[0] == 0x04).then_some(raw)
+}
+
+/// The Ed25519 key in `bytes`, raw or inside its SPKI DER.
+pub fn ed25519_key(bytes: &[u8]) -> Option<&[u8]> {
+    let raw = bytes
+        .strip_prefix(&ED25519_SPKI_PREFIX[..])
+        .unwrap_or(bytes);
+    (raw.len() == 32).then_some(raw)
+}
+
 /// A public key and the one algorithm it may verify.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -46,26 +60,20 @@ impl VerifyingKey {
     /// bytes that are neither form of a key for it.
     pub fn from_bytes(alg: &str, bytes: &[u8]) -> A2aResult<Self> {
         match alg {
-            "ES256" => {
-                let raw = bytes.strip_prefix(&P256_SPKI_PREFIX[..]).unwrap_or(bytes);
-                if raw.len() != 65 || raw[0] != 0x04 {
-                    return Err(A2aError::invalid_params(
+            "ES256" => p256_point(bytes)
+                .map(|p| Self::Es256(p.to_vec()))
+                .ok_or_else(|| {
+                    A2aError::invalid_params(
                         "an ES256 key is a 65-byte uncompressed P-256 point, or its SPKI DER",
-                    ));
-                }
-                Ok(Self::Es256(raw.to_vec()))
-            }
-            "EdDSA" => {
-                let raw = bytes
-                    .strip_prefix(&ED25519_SPKI_PREFIX[..])
-                    .unwrap_or(bytes);
-                if raw.len() != 32 {
-                    return Err(A2aError::invalid_params(
+                    )
+                }),
+            "EdDSA" => ed25519_key(bytes)
+                .map(|k| Self::EdDsa(k.to_vec()))
+                .ok_or_else(|| {
+                    A2aError::invalid_params(
                         "an EdDSA key is a 32-byte Ed25519 key, or its SPKI DER",
-                    ));
-                }
-                Ok(Self::EdDsa(raw.to_vec()))
-            }
+                    )
+                }),
             other => Err(A2aError::invalid_params(format!(
                 "unsupported algorithm {other:?}; ES256 and EdDSA are supported"
             ))),

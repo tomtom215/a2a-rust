@@ -28,7 +28,7 @@ use crate::agent_card::AgentCard;
 use crate::error::{A2aError, A2aResult};
 use crate::extensions::AgentCardSignature;
 
-mod keys;
+pub(crate) mod keys;
 
 pub use keys::{Jwk, Jwks, VerifyingKey};
 
