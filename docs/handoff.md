@@ -1016,9 +1016,10 @@ regenerated after the first fixes. It runs in two-hour chunks:
 |---|---|---|---|---|
 | 1 (stopped early to free disk) | 50 | 2 | 22 | `/tmp/claude-0/mutBC-partial-1` |
 | 2 | 38 | 3 | 21 | overwritten by chunk 3 |
-| 3 (still running at handoff) | 47+ | 12 | 149+ | `/tmp/claude-0/mutBC/mutants.out` |
+| 3 (stopped at its 2-hour cap) | 50 | 12 | 186 | `/tmp/claude-0/mutBC/mutants.out` |
 
-The scratch paths do not survive the session.
+Chunks 1–3 tested 384 of the 642. The scratch paths do not survive the
+session.
 
 Every miss so far is fixed in the commits on this branch, or the code was
 simplified so the mutant no longer exists:
