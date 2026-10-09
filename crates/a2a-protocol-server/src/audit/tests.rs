@@ -419,3 +419,36 @@ async fn the_debug_form_shows_the_settings_and_hides_the_key() {
         assert!(shown.contains(part), "{part} missing from {shown}");
     }
 }
+
+#[test]
+fn every_failure_is_counted() {
+    let log = AuditLog::new(Arc::new(InMemoryAuditStore::new()));
+    assert_eq!(log.failures(), 0);
+    log.note_failure();
+    log.note_failure();
+    assert_eq!(log.failures(), 2);
+}
+
+/// A chain whose every stored record is gone — pruned through the store,
+/// behind this log's back — continues after its anchor, not from 1, so what
+/// is written next still links to what was deleted.
+#[tokio::test]
+async fn a_chain_emptied_behind_its_anchor_continues_after_it() {
+    let store = Arc::new(InMemoryAuditStore::new());
+    let log = AuditLog::new(Arc::clone(&store) as Arc<dyn AuditStore>).with_signer(signer(), 0);
+    let mut last = None;
+    for i in 0..5 {
+        last = Some(log.append(rec("c", &format!("t{i}"))).await.unwrap());
+    }
+    let last = last.unwrap();
+    log.sign_checkpoint("anchor", "c", last.seq, &last.hash)
+        .await
+        .unwrap();
+    assert_eq!(store.delete_through("c", last.seq).await.unwrap(), 5);
+    assert_eq!(store.head("c").await.unwrap(), None);
+
+    let next = log.append(rec("c", "t5")).await.unwrap();
+    assert_eq!(next.seq, 6);
+    assert_eq!(next.prev.as_deref(), Some(last.hash.as_str()));
+    assert!(log.verify("c").await.unwrap().is_intact());
+}
