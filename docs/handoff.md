@@ -11,10 +11,8 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-10-09 — `claude/bold-gauss-9qc9dc`: compliance and
-oversight. It adds the HTTP+JSON media-type fix, OSV/CodeQL/Scorecard,
-signed-tag verification, the compliance control map, the audit trail, the
-delegation handle, the halt switch, and the approval gate. `git log -1 --format='%ci %s' --
+Last updated 2026-10-10 — `claude/nifty-fermat-roj04f`: a requirement-level
+spec ledger and the conformance fixes it found. `git log -1 --format='%ci %s' --
 docs/handoff.md` remains the authority on this line.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
@@ -936,6 +934,106 @@ delegation handle)~~ landed on `claude/bold-gauss-9qc9dc` (below); next in
 * Measure throughput on one pinned core with `/proc/<pid>/stat` user and
   system time; two-core runs are latency-bound and the VM's noise is ±5–10%
   there. Use 6 interleaved runs and compare medians.
+
+## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
+
+The maintainer asked to keep closing the gap to full A2A compliance. The first
+`main` runs of the workflows #163 added were all green (2026-10-10, `f824b03`),
+but green hid two things: Scorecard scored 5.8/10 with "58 existing
+vulnerabilities", and nothing graded the specification below the level of an
+area. This branch answers both.
+
+**What landed, in commit order.**
+1. `ci:` least-privilege workflow tokens; the conformance peers' advisories
+   (122 unique by a local osv-scanner run) fixed without moving any graded SDK;
+   setup-go 1.25 to 1.26; `osv.yml`'s PR job scans the loom lockfile.
+2. `proto:` all six copies of `a2a.proto` were A2A v1.0.0's text. Now v1.0.1's,
+   pinned in `proto/UPSTREAM`, checked offline (`check_proto_copies.sh`) and
+   online (`check_a2a_proto_upstream.sh` in `official-tck.yml`).
+3. `fix(signing):` §8.4.1 field presence in card canonicalization; §8.4.2
+   `kid` required (`sign_card_es256`/`sign_card_ed25519`; the `Option` forms
+   are deprecated) and `typ: "JOSE"`. `itk/interop/card_signature_interop.py`
+   proves interop both ways against the official Python SDK, not yet in CI.
+4. `fix(server):` a message-only streaming answer is one `Message` (§3.1.2).
+5. `fix(server):` `?A2A-Version=` honoured (§3.6.1); the axum adapter checks
+   the version and the request media type; REST's
+   `ContentTypeNotSupportedError` carries `ErrorInfo` (§11.6).
+6. `fix(types):` OAuth flows whose empty `scopes` map is omitted parse.
+7. `docs(compliance):` `docs/compliance/spec-ledger.json` (512 entries) and
+   `scripts/check_spec_ledger.py` in `ci.yml`, proven by
+   `prove_gates_fail.sh`.
+
+**How the ledger was made, and how far to trust it.** Seven read-only audit
+agents, one per specification region plus one over the proto's `REQUIRED`
+fields, each opened the code and tests for every RFC 2119 line. Their entries
+are model output. Every entry this branch changed was re-verified by
+reproducing the defect and showing the new test fail without the fix; the
+others are recorded as found. Treat an unchanged entry as a lead, and verify it
+before acting on it, as this branch did.
+
+**Measured, not assumed.**
+- Official TCK, local run of this branch: identical to CI's on `main` (83
+  MUST passing, 5 failing, all baselined, 5 skipped, 21 untested; gate exit 0).
+  ROADMAP's "87 passing" did not add up and is corrected.
+- In-repo TCK against a2a-go 2.5.0 (Go 1.26.9, patched deps) and a2a-java
+  1.3.0 (Quarkus 3.37.0 with netty and jackson BOMs): all pass on JSON-RPC and
+  REST with tck.yml's one REST skip.
+- `cargo test --workspace --all-features --no-fail-fast`: 4,447 passed before
+  the last two test fixes (one delegation test and deploy-agent's helper,
+  both relying on behaviour this branch corrected); both pass now.
+- Workspace clippy `-D warnings`: clean. `prove_workflow_gates_fail.py`: 28
+  proven, 0 unproven, 21 exempt.
+
+**Decisions waiting on the maintainer.**
+- *Minor-version matching (ledger §3.6.2, line 737).* The spec says requests
+  are processed with the semantics of the requested `Major.Minor` and an
+  unsupported one is `VersionNotSupportedError`. This server accepts any
+  `1.x`, and so does the official Python SDK: `_is_version_compatible`
+  compares only the major version, although its docstring says major and
+  minor. Rejecting `1.1` follows the text and breaks the first 1.1 client.
+- *Upstream report: the Python SDK's card canonicalization.* Its
+  `_clean_empty` drops a security requirement whose scope list is empty, so a
+  card's `securityRequirements` (the ordinary bearer case) are not covered by
+  its signature and can be removed from a signed card undetected. That is a
+  signature-coverage weakness in the reference SDK; it should go to
+  a2a-python's security contact, not a public issue. Nothing was filed.
+
+**What the next session should do first.**
+1. Read the first CI run of this branch. New or changed gates: the ledger
+   check, the proto upstream check, Go 1.26 in tck/ci/pin-freshness, the Java
+   peer's BOM overrides.
+2. §13.1 per-caller authorization is the largest open item (six high
+   entries). In progress at the time of writing; see the next paragraph.
+3. Then the ledger's medium entries: §3.1.9 listing push configs of an unknown
+   task returns an empty list (a test pins it); rate limiting answers -32603 /
+   500 instead of a 429-shaped error; a duplicate non-append `artifactId` is
+   stored twice; `GetExtendedAgentCard` skips the required-extension check;
+   mid-stream JSON-RPC errors carry `data` that is not an `@type` array;
+   SLIMRPC's status codes and metadata-key case; `ROLE_UNSPECIFIED` accepted
+   over gRPC; the client never checks card capabilities before streaming.
+4. Put `card_signature_interop.py` in CI beside `python_client_vs_rust.py`.
+
+**§13.1, the design chosen.** Opt-in caller partitions: after the
+interceptors authenticate a caller, the tenant-aware stores key by tenant plus
+caller identity, so another caller's task is `TaskNotFound` and lists are
+scoped, while `TenantContext::current()` stays the tenant for the halt switch,
+quotas, audit chains and metric labels. A composite tenant string was
+rejected: it would have put each caller in its own halt scope, so halting a
+tenant would not stop its callers. A general `TaskAuthorizer` hook was
+deferred: it needs ownership stored server-side in all four stores.
+
+**Environment notes, new this session.**
+- `pkill -f` / `pgrep -f` with a pattern from your own command killed the
+  shell twice more. Find processes with `ps -eo pid,comm,args` filtered on
+  `comm`, and kill by PID.
+- Maven Central answers `curl` and osv-scanner's pom resolution with 429
+  under load; `mvn` itself worked. A pom scan that cannot fetch the override
+  BOMs falls back to Quarkus's own versions and reports advisories the build
+  does not contain; check the packaged jars.
+- `prove_workflow_gates_fail.py` needs `ssh-keygen` (`apt-get install
+  openssh-client`) and free ports; a SUT left running fails it with
+  "Address already in use".
+- osv-scanner: `go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.2.3`.
 
 ## `claude/bold-gauss-9qc9dc` — compliance, audit and human oversight
 

@@ -1010,9 +1010,13 @@ This is the category most worth clearing before any external review.
 
 ## Conformance
 
-Measured against the official `a2a-tck` suite, re-measured 2026-09-26 against
-`a2a-tck@main` (CI on the 0.14.0 release PR): **87 of 114 MUST requirements
-passing, 5 failing.** One, `CORE-SEND-003`, is a defect in the suite: it
+Measured against the official `a2a-tck` suite on 2026-10-10 (CI run
+38035262257 on `main` at `f824b03`, and locally on this branch, against
+`a2a-tck@263b9cf`): **83 of 114 MUST requirements passing, 5 failing, 5
+skipped, 21 with no upstream test**; 88 graded. (This line said 87 passing
+and 5 failing as of 2026-09-26, which does not add up to 114 with the skipped
+and untested counts; `docs/official-tck-findings.md` §1 has both.) One
+failure, `CORE-SEND-003`, is a defect in the suite: it
 declares no expected error, so it demands that a send with an unsupported
 media type succeed, and it began failing when 0.14.0 started answering the
 `ContentTypeNotSupportedError` that §3.1.1 requires
@@ -1026,9 +1030,9 @@ they agree. They are baselined in `tck/conformance-baseline.json` with the
 evidence in `docs/official-tck-findings.md` §20 and §21, and they clear when the
 suite refreshes its copy. (Before 2026-08-30 this line read 92 passing, 0
 failing; the four moved out of the passing column as upstream tightened its
-assertions onto the stale rows, not as anything here changed.) The remaining 22
-are not defects in this SDK — 21 have no test function upstream, and
-`CARD-EXT-002` is structurally inapplicable. Full analysis and reproduction
+assertions onto the stale rows, not as anything here changed.) Of the rest, 21
+have no test function upstream, and the 5 skipped need a differently
+configured SUT (`docs/official-tck-findings.md` §1, §12, §15, §18). Full analysis and reproduction
 steps in [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
 
 * **`SSE-001` is closed.** Reported upstream as

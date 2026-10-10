@@ -70,6 +70,16 @@ one client tells you the two disagree. It does not tell you which is wrong.
 > requires `ContentTypeNotSupportedError` (§22).
 > This section is left as measured rather than restated, because a dated
 > measurement that gets quietly edited is no longer a measurement.
+>
+> **2026-10-10.** CI's run on `main` at `f824b03`
+> ([38035262257](https://github.com/tomtom215/a2a-rust/actions/runs/38035262257))
+> and a local run of `claude/nifty-fermat-roj04f` against `a2a-tck@263b9cf`
+> measure the same thing: **83 MUST passing, 5 failing (all baselined), 5
+> `SKIPPED`, 21 `NOT TESTED`**, 114 in all, 88 graded (the gate's floor). The
+> suite's own table prints the 5 failures and the 21 untested together as
+> "Failed 26". The 2026-09-26 figure above, 87 passing and 5 failing, cannot be
+> reconciled with a 114-requirement total that also has 5 skipped and 21 not
+> tested (that would be 118); it is left as recorded and should not be quoted.
 
 | Run | Passed | Failed | Skipped |
 |---|---|---|---|
