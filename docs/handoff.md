@@ -1019,9 +1019,10 @@ before acting on it, as this branch did.
    metadata-key case; the client never checks card capabilities before
    streaming (a SHOULD, and checking would refuse servers that stream without
    declaring it).
-3. Run the Postgres store suite against the partition change
-   (`A2A_TEST_POSTGRES_URL`, see environment notes); this session ran SQLite
-   only. The Postgres stores took the same mechanical edit.
+3. Postgres was run this session too: `postgres_store_tests -- --ignored`,
+   67 passed against postgres:16, including
+   `caller_isolation_holds_on_the_tenant_postgres_stores`, which fails with
+   the Postgres store keyed by tenant alone.
 4. Put `card_signature_interop.py` in CI beside `python_client_vs_rust.py`.
 
 **§13.1, as built.** Opt-in caller partitions: `RequestHandler::admit` runs
