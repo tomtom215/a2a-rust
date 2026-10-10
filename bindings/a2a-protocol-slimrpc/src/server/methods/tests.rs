@@ -94,3 +94,38 @@ fn an_absent_version_is_accepted_for_interop() {
 
     assert_eq!(headers, metadata(&[("authorization", "Bearer t")]));
 }
+
+/// SLIMRPC spec §3: service parameter keys are case-insensitive. The handler
+/// reads them by lowercase name, so a peer that capitalises them must not
+/// lose its credential, its extensions, or its version check.
+#[test]
+fn service_parameter_keys_are_case_insensitive() {
+    let headers = a2a_headers(metadata(&[
+        ("Authorization", "Bearer t"),
+        ("A2A-Extensions", "urn:x"),
+    ]))
+    .expect("no version declared");
+    assert_eq!(
+        headers,
+        metadata(&[("authorization", "Bearer t"), ("a2a-extensions", "urn:x")])
+    );
+
+    let err = a2a_headers(metadata(&[("A2A-Version", "0.3")]))
+        .expect_err("a capitalised version key is still checked");
+    assert!(format!("{err:?}").contains("0.3"), "{err:?}");
+}
+
+/// Keys that differ only in case are one parameter, combined as HTTP
+/// combines a repeated field, in a fixed order.
+#[test]
+fn keys_differing_only_in_case_are_combined() {
+    let headers = a2a_headers(metadata(&[
+        ("a2a-extensions", "urn:b"),
+        ("A2A-Extensions", "urn:a"),
+    ]))
+    .expect("must succeed");
+    assert_eq!(
+        headers.get("a2a-extensions").map(String::as_str),
+        Some("urn:a, urn:b")
+    );
+}

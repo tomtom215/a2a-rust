@@ -7,11 +7,14 @@
 
 //! Error mapping between A2A and SLIMRPC.
 //!
-//! [`slim_rpc::RpcCode`] is the gRPC status set, so the outbound mapping is the
-//! one A2A §5.4 already specifies for the gRPC binding, and this module keeps
-//! it identical to `dispatch/grpc`'s on purpose — two bindings disagreeing
-//! about which code a `TaskNotCancelableError` is would be a defect in one of
-//! them.
+//! [`slim_rpc::RpcCode`] is the gRPC status set, but the outbound mapping is
+//! the SLIMRPC specification's own (`spec/slimrpc_v1/slimrpc.md` §6.1, "the
+//! canonical mapping", which every A2A error MUST follow), not the gRPC
+//! binding's. The two differ: SLIMRPC sends `PushNotificationNotSupportedError`
+//! and `UnsupportedOperationError` as `UNIMPLEMENTED` where A2A §5.4's gRPC
+//! column says `FAILED_PRECONDITION`, `ContentTypeNotSupportedError` as
+//! `UNIMPLEMENTED`, and `JSONParseError` as `INTERNAL`. The three errors that
+//! table omits take §5.4's gRPC code.
 //!
 //! Where SLIMRPC differs is how the error *identity* survives. gRPC attaches a
 //! `google.rpc.ErrorInfo` to `status.details`; SLIMRPC has no details protobuf,
@@ -89,30 +92,35 @@ pub fn parse_error_type_name(message: &str) -> Option<(ErrorCode, &str)> {
     Some((code, rest))
 }
 
-/// Maps an [`ErrorCode`] to the SLIMRPC status code, per A2A §5.4.
+/// Maps an [`ErrorCode`] to the SLIMRPC status code: the SLIMRPC spec's
+/// §6.1 table for the eleven errors it lists, A2A §5.4's gRPC column for the
+/// three it does not (`ExtendedAgentCardNotConfiguredError`,
+/// `ExtensionSupportRequiredError`, `VersionNotSupportedError`).
 ///
-/// Deliberately identical to `dispatch/grpc/helpers.rs`'s mapping:
-/// [`RpcCode`] is the gRPC code set, and the SLIMRPC binding spec reuses the
-/// gRPC error table verbatim.
+/// Until 2026-10-10 this claimed to copy the gRPC binding and matched
+/// neither: `JSONParseError` and `ContentTypeNotSupportedError` went out as
+/// `INVALID_ARGUMENT` and `VersionNotSupportedError` as `UNIMPLEMENTED`.
+///
+/// The table's `UNKNOWN` row, for unrecognized errors, has nothing to apply
+/// to here: every [`ServerError`] converts to an A2A code first, and a code
+/// newer than this crate is sent as `InternalError` (see
+/// [`a2a_error_type_name`]), so it goes out as `INTERNAL` under that name.
 #[must_use]
 pub const fn error_code_to_rpc_code(code: ErrorCode) -> RpcCode {
     match code {
         ErrorCode::TaskNotFound => RpcCode::NotFound,
         ErrorCode::TaskNotCancelable
         | ErrorCode::ExtendedAgentCardNotConfigured
-        | ErrorCode::ExtensionSupportRequired => RpcCode::FailedPrecondition,
-        ErrorCode::ContentTypeNotSupported
-        | ErrorCode::InvalidParams
-        | ErrorCode::InvalidRequest
-        | ErrorCode::ParseError => RpcCode::InvalidArgument,
+        | ErrorCode::ExtensionSupportRequired
+        | ErrorCode::VersionNotSupported => RpcCode::FailedPrecondition,
+        ErrorCode::InvalidParams | ErrorCode::InvalidRequest => RpcCode::InvalidArgument,
         ErrorCode::MethodNotFound
         | ErrorCode::PushNotificationNotSupported
         | ErrorCode::UnsupportedOperation
-        | ErrorCode::VersionNotSupported => RpcCode::Unimplemented,
-        // `InvalidAgentResponse`, `InternalError`, and the `#[non_exhaustive]`
-        // tail. See `a2a_error_type_name`: an unrecognised code is an internal
-        // error, matching what `dispatch/grpc` does with the same situation.
-        ErrorCode::InvalidAgentResponse | ErrorCode::InternalError | _ => RpcCode::Internal,
+        | ErrorCode::ContentTypeNotSupported => RpcCode::Unimplemented,
+        ErrorCode::ParseError | ErrorCode::InvalidAgentResponse | ErrorCode::InternalError | _ => {
+            RpcCode::Internal
+        }
     }
 }
 
@@ -129,6 +137,12 @@ pub fn server_error_to_rpc_error(err: &ServerError) -> RpcError {
         return RpcError::resource_exhausted(msg.clone());
     }
     let a2a = err.to_a2a_error();
+    // A rate-limit refusal (spec §13.4) is the same retryable signal, as on
+    // the gRPC binding. Its delay has no field to travel in: SLIMRPC errors
+    // carry no `RetryInfo`.
+    if a2a.retry_after().is_some() {
+        return RpcError::resource_exhausted(a2a.message);
+    }
     let message = format!("{}: {}", a2a_error_type_name(a2a.code), a2a.message);
     // A refused credential carries its A2A code (`InvalidRequest`) and, beside
     // it, which refusal it is (ADR 0014). The code alone would send
@@ -290,6 +304,51 @@ mod tests {
             }
             other => panic!("expected a protocol error, got {other:?}"),
         }
+    }
+
+    /// The SLIMRPC spec's §6.1 table, row by row
+    /// (`spec/slimrpc_v1/slimrpc.md`), and §5.4's gRPC code for the three
+    /// errors it does not list.
+    #[test]
+    fn status_codes_follow_the_slimrpc_table() {
+        for (code, want) in [
+            (ErrorCode::ParseError, RpcCode::Internal),
+            (ErrorCode::InvalidRequest, RpcCode::InvalidArgument),
+            (ErrorCode::MethodNotFound, RpcCode::Unimplemented),
+            (ErrorCode::InvalidParams, RpcCode::InvalidArgument),
+            (ErrorCode::InternalError, RpcCode::Internal),
+            (ErrorCode::TaskNotFound, RpcCode::NotFound),
+            (ErrorCode::TaskNotCancelable, RpcCode::FailedPrecondition),
+            (
+                ErrorCode::PushNotificationNotSupported,
+                RpcCode::Unimplemented,
+            ),
+            (ErrorCode::UnsupportedOperation, RpcCode::Unimplemented),
+            (ErrorCode::ContentTypeNotSupported, RpcCode::Unimplemented),
+            (ErrorCode::InvalidAgentResponse, RpcCode::Internal),
+            // Not in the SLIMRPC table: §5.4's gRPC column.
+            (
+                ErrorCode::ExtendedAgentCardNotConfigured,
+                RpcCode::FailedPrecondition,
+            ),
+            (
+                ErrorCode::ExtensionSupportRequired,
+                RpcCode::FailedPrecondition,
+            ),
+            (ErrorCode::VersionNotSupported, RpcCode::FailedPrecondition),
+        ] {
+            assert_eq!(error_code_to_rpc_code(code), want, "{code:?}");
+        }
+    }
+
+    /// A rate-limit refusal is retryable, as an overload is.
+    #[test]
+    fn a_rate_limit_refusal_maps_to_resource_exhausted() {
+        let err = server_error_to_rpc_error(&ServerError::Protocol(A2aError::rate_limited(
+            "slow down",
+            std::time::Duration::from_secs(5),
+        )));
+        assert_eq!(err.code(), RpcCode::ResourceExhausted);
     }
 
     /// Overload is retryable and must not be reported as an internal error.

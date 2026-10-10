@@ -1011,8 +1011,7 @@ before acting on it, as this branch did.
    peer's BOM overrides.
 2. The ledger's remaining medium entries (`docs/compliance/spec-ledger.md`
    lists every open one, most severe first). The ones read and confirmed
-   this session but not yet fixed: SLIMRPC's status codes and
-   metadata-key case; the client never checks card capabilities before
+   this session but not yet fixed: the client never checks card capabilities before
    streaming (a SHOULD, and checking would refuse servers that stream without
    declaring it).
 3. Postgres was run this session too: `postgres_store_tests -- --ignored`,

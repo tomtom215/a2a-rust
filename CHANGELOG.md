@@ -227,6 +227,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **SLIMRPC status codes follow the SLIMRPC specification's table**
+  (`a2a-protocol-slimrpc`; `spec/slimrpc_v1/slimrpc.md` §6.1, a MUST). The
+  binding claimed to copy the gRPC binding's mapping and matched neither:
+  `JSONParseError` is now `INTERNAL` (was `INVALID_ARGUMENT`),
+  `ContentTypeNotSupportedError` `UNIMPLEMENTED` (was `INVALID_ARGUMENT`), and
+  `VersionNotSupportedError`, which the table does not list, takes A2A §5.4's
+  `FAILED_PRECONDITION` (was `UNIMPLEMENTED`). A rate-limit refusal is
+  `RESOURCE_EXHAUSTED`, as an overload already was. The error type name in
+  the message, which is what this SDK's client reads, is unchanged.
+- **SLIMRPC metadata keys are case-insensitive** (`a2a-protocol-slimrpc`;
+  SLIMRPC spec §3). The server passed keys through in the case the peer sent,
+  and the handler looks them up in lowercase, so `Authorization`,
+  `A2A-Extensions` or `A2A-Version` from a peer that capitalised them were
+  ignored, the last one skipping the version check. Keys are lowercased now;
+  two that differ only in case are joined with a comma.
 - **A rate-limit refusal says it is temporary, and when to retry** (server,
   types; spec §13.4, §3.3.2). `RateLimitInterceptor` refused with a plain
   internal error, which reached callers as HTTP `500` / gRPC `INTERNAL`,

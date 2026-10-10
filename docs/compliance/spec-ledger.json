@@ -6080,11 +6080,12 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1108-1121"
    ],
    "test_evidence": [
-    "bindings/a2a-protocol-slimrpc/src/error.rs:224 every_error_code_round_trips_through_the_message_prefix"
+    "bindings/a2a-protocol-slimrpc/src/error.rs status_codes_follow_the_slimrpc_table"
    ],
-   "notes": "SLIMRPC maps PushNotificationNotSupported, UnsupportedOperation and VersionNotSupported to UNIMPLEMENTED (error.rs:110-113), while §5.4 (spec lines 1184-1190) and this repo's gRPC table (types error.rs:217-246) say FAILED_PRECONDITION. The comment at error.rs:93-95 claiming it is \"deliberately identical to dispatch/grpc\" is stale. WebSocket mid-stream errors use -32000, outside the §5.4 A2A code set.",
+   "notes": "SLIMRPC sends PushNotificationNotSupported and UnsupportedOperation as UNIMPLEMENTED where A2A §5.4's gRPC column says FAILED_PRECONDITION. This is the SLIMRPC spec's own §6.1 'canonical mapping' (a MUST), which the binding now follows exactly; the conflict is between the two specifications, not an implementation defect, and is left PARTIAL until upstream resolves it. The stale 'identical to dispatch/grpc' comment was rewritten.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 2991,
@@ -6210,20 +6211,19 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Transmission Mechanism (SLIMRPC: service parameter keys are case-insensitive in metadata, spec/slimrpc_v1/slimrpc.md:63)",
-   "status": "GAP",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:88-100",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:242-245",
-    "crates/a2a-protocol-server/src/tenant_resolver.rs:139",
-    "crates/a2a-protocol-server/src/auth/mod.rs:225"
+    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs a2a_headers"
    ],
    "test_evidence": [
-    "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs:50 transport_keys_are_filtered_regardless_of_case"
+    "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs service_parameter_keys_are_case_insensitive",
+    "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs keys_differing_only_in_case_are_combined"
    ],
-   "notes": "a2a_headers filters transport keys case-insensitively but does not lowercase the remaining keys. The handler looks headers up by exact lowercase name (`headers.get(\"a2a-extensions\")`, lowercase authorization/tenant header names), so a SLIMRPC peer that sends `A2A-Extensions` or `Authorization` in mixed case has them ignored. Our own client happens to send lowercase.",
+   "notes": "a2a_headers lowercases every key after filtering the transport keys, so the handler's lowercase lookups (authorization, a2a-extensions, a2a-version, tenant headers) see a capitalised key; keys differing only in case are joined with ', '. Until 2026-10-10 keys kept the peer's case and were ignored.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 3023,
@@ -6274,19 +6274,19 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "3. Use Appropriate Codes: Map to protocol-native error codes where applicable",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "bindings/a2a-protocol-slimrpc/src/error.rs:96-115",
-    "spec/slimrpc_v1/slimrpc.md:214-227",
-    "crates/a2a-protocol-types/src/error.rs:217-246"
+    "bindings/a2a-protocol-slimrpc/src/error.rs error_code_to_rpc_code"
    ],
    "test_evidence": [
-    "bindings/a2a-protocol-slimrpc/src/error.rs:276 the_type_name_prefix_beats_the_lossy_code_mapping"
+    "bindings/a2a-protocol-slimrpc/src/error.rs status_codes_follow_the_slimrpc_table",
+    "bindings/a2a-protocol-slimrpc/src/error.rs a_rate_limit_refusal_maps_to_resource_exhausted"
    ],
-   "notes": "SLIMRPC status codes match neither reference. Against the binding's own spec table: ContentTypeNotSupported is sent as INVALID_ARGUMENT (spec: UNIMPLEMENTED), JSONParseError as INVALID_ARGUMENT (spec: INTERNAL), and unknown errors as INTERNAL (spec: UNKNOWN). Against A2A §5.4: Push/UnsupportedOperation/Version are sent as UNIMPLEMENTED (§5.4: FAILED_PRECONDITION). No test asserts the code table per row.",
+   "notes": "The binding follows the SLIMRPC spec's §6.1 table row by row (ParseError INTERNAL, ContentTypeNotSupported/Push/UnsupportedOperation UNIMPLEMENTED) and A2A §5.4's gRPC code for the three errors the table omits (FAILED_PRECONDITION). The table's UNKNOWN row has no case to apply to: every ServerError converts to an A2A code. Where the SLIMRPC table and A2A §5.4's gRPC column disagree (Push, UnsupportedOperation), the binding's own table is followed; see the §12 entry at line 2985.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 3026,
