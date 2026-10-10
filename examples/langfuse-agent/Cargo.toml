@@ -21,5 +21,5 @@ tracing-subscriber = { workspace = true, features = ["registry", "env-filter"] }
 # The test records into an in-memory exporter instead of Langfuse, so it runs
 # with no network and no keys.
 opentelemetry         = { version = "0.32" }
-opentelemetry_sdk     = { version = "0.32", features = ["trace", "testing"] }
+opentelemetry_sdk     = { version = "0.33", features = ["trace", "testing"] }
 tracing-opentelemetry = { version = ">=0.33, <0.34", default-features = false }
