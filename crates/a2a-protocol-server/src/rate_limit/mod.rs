@@ -74,11 +74,12 @@
 //!
 //! Uses a fixed-window counter per caller key. Windows are aligned to wall
 //! clock seconds. When a request exceeds the per-window limit, the `before`
-//! hook returns an error. A2A / JSON-RPC define no dedicated throttling code,
-//! so this surfaces as an internal error (`-32603`) whose message names the
-//! rate limit; the request is rejected. (If you need a distinct client-visible
-//! signal for backoff, wrap this in a transport adapter that maps the message
-//! to your preferred status — e.g. HTTP 429.)
+//! hook returns [`A2aError::rate_limited`](a2a_protocol_types::error::A2aError::rate_limited),
+//! with the time left in the window as the retry delay. A2A / JSON-RPC define
+//! no dedicated throttling code, so the code is an internal error (`-32603`),
+//! the one spec §3.3.2 gives for "rate limit exceeded"; what tells a client to
+//! back off is the binding's status (HTTP `429` with `Retry-After`, gRPC
+//! `RESOURCE_EXHAUSTED`) and a `google.rpc.RetryInfo` detail on every binding.
 //!
 //! The bucket map is bounded by [`RateLimitConfig::max_buckets`]. When the
 //! map is full and stale buckets cannot be evicted, requests from *new*

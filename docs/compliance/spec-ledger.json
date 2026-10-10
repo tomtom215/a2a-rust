@@ -1715,11 +1715,14 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:61"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:258 server_error_overloaded_maps_to_503"
+    "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:258 server_error_overloaded_maps_to_503",
+    "crates/a2a-protocol-server/src/error/tests.rs an_overload_body_names_resource_exhausted",
+    "crates/a2a-protocol-server/tests/rate_limit_wire.rs a_throttled_rest_call_is_429_with_retry_after"
    ],
-   "notes": "Overloaded/Halted -> 503 (gRPC RESOURCE_EXHAUSTED/UNAVAILABLE); internal -> 500/INTERNAL.",
+   "notes": "Overloaded -> 503 with an AIP-193 status of RESOURCE_EXHAUSTED (gRPC RESOURCE_EXHAUSTED); Halted -> 503 / UNAVAILABLE; a rate-limit refusal -> 429 / RESOURCE_EXHAUSTED; internal -> 500 / INTERNAL. Until 2026-10-10 an overload's REST body read status INTERNAL under 503, naming a permanent failure.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 533,
@@ -1727,15 +1730,20 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Servers MAY include retry guidance (e.g., Retry-After header in HTTP)",
-   "status": "NOT_SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:70"
+    "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:98",
+    "crates/a2a-protocol-types/src/error.rs:398"
    ],
-   "test_evidence": [],
-   "notes": "No Retry-After header anywhere in crates/a2a-protocol-server/src (grep -i retry-after: no hits).",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/rate_limit_wire.rs a_throttled_rest_call_is_429_with_retry_after",
+    "crates/a2a-protocol-server/tests/rate_limit_wire.rs a_throttled_jsonrpc_call_carries_retry_info"
+   ],
+   "notes": "A rate-limit refusal carries Retry-After (whole seconds to the end of the window) on HTTP+JSON and a RetryInfo detail on every binding. Overload (503) and halt (503) send no retry guidance: neither has a known end.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 534,
@@ -7547,19 +7555,25 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Agents SHOULD return appropriate error responses when rate limits are exceeded",
-   "status": "GAP",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/rate_limit/window.rs:70",
-    "crates/a2a-protocol-server/src/rate_limit/window.rs:157",
-    "crates/a2a-protocol-server/src/rate_limit/window.rs:132"
+    "crates/a2a-protocol-types/src/error.rs:398",
+    "crates/a2a-protocol-server/src/rate_limit/window.rs:36",
+    "crates/a2a-protocol-server/src/error/mod.rs:171",
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:92",
+    "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:98"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/rate_limit/tests.rs:127 rejects_requests_over_limit"
+    "crates/a2a-protocol-server/tests/rate_limit_wire.rs a_throttled_rest_call_is_429_with_retry_after",
+    "crates/a2a-protocol-server/tests/rate_limit_wire.rs a_throttled_jsonrpc_call_carries_retry_info",
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs a_rate_limited_error_maps_to_resource_exhausted_with_retry_info",
+    "crates/a2a-protocol-types/src/error.rs a_rate_limited_error_carries_retry_info"
    ],
-   "notes": "Exceeding the limit returns `A2aError::internal(\"rate limit exceeded: ...\")`, i.e. JSON-RPC -32603 / HTTP 500 / gRPC INTERNAL, not 429 / RESOURCE_EXHAUSTED (the REST error mapper knows 429 but nothing produces it); clients will treat it as a server fault and may retry immediately. The test only asserts is_err().",
+   "notes": "RateLimitInterceptor refuses with A2aError::rate_limited, retrying when the window ends: HTTP+JSON 429 / RESOURCE_EXHAUSTED with Retry-After, gRPC RESOURCE_EXHAUSTED, and a google.rpc.RetryInfo detail on every binding. The JSON-RPC code stays -32603, the code §3.3.2 (spec line 536) gives as its example for 'rate limit exceeded'. Until 2026-10-10 the refusal was a plain internal error (500 / INTERNAL), indistinguishable from a server fault. The WebSocket binding sends no error data, so its callers see only -32603.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 3211,

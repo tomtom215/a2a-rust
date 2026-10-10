@@ -92,6 +92,13 @@ pub fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<By
         |body| {
             let mut resp = build_json_response(status, body);
             crate::dispatch::add_auth_challenge(resp.headers_mut(), err);
+            if let Some(delay) = err.retry_after() {
+                // Whole seconds: `A2aError::rate_limited` rounds up to them.
+                resp.headers_mut().insert(
+                    hyper::header::RETRY_AFTER,
+                    hyper::header::HeaderValue::from(delay.as_secs()),
+                );
+            }
             resp
         },
     )

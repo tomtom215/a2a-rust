@@ -1011,8 +1011,7 @@ before acting on it, as this branch did.
    peer's BOM overrides.
 2. The ledger's remaining medium entries (`docs/compliance/spec-ledger.md`
    lists every open one, most severe first). The ones read and confirmed
-   this session but not yet fixed: rate limiting answers -32603 / 500 rather
-   than a 429-shaped error; SLIMRPC's status codes and
+   this session but not yet fixed: SLIMRPC's status codes and
    metadata-key case; the client never checks card capabilities before
    streaming (a SHOULD, and checking would refuse servers that stream without
    declaring it).
@@ -1028,6 +1027,16 @@ before acting on it, as this branch did.
    rewrites every mid-stream error to -32000, dropping the code and the lag
    marker (ledger §12.4, spec line 3024, PARTIAL/medium); and unary
    responses drop `A2aError::data` (§9.5 MAY, PARTIAL/low).
+   Done: §13.4 rate-limit refusals are `A2aError::rate_limited` (429 +
+   `Retry-After` / `RESOURCE_EXHAUSTED` / `RetryInfo`). How this SDK's client
+   takes it, read from the code and not tested end to end: over REST the body
+   has no `ErrorInfo` reason, so `parse_aip193_error` returns `None` and the
+   429 surfaces as `UnexpectedStatus` with `retry_after`, which
+   `ClientError::is_retryable` (`retry.rs`) retries; over gRPC
+   `RESOURCE_EXHAUSTED` maps to `UnexpectedStatus { 429 }` (`grpc.rs`), also
+   retried. Over JSON-RPC it is `Protocol(InternalError)` with the `RetryInfo`
+   in `data`, which the retry layer does not retry. Open: decide whether the
+   JSON-RPC client should read `RetryInfo`.
 
 **§13.1, as built.** Opt-in caller partitions: `RequestHandler::admit` runs
 the interceptors and then records the caller in a per-request slot

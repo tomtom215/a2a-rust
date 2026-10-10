@@ -168,6 +168,9 @@ impl ServerError {
                 _ => 403,
             };
         }
+        if self.retry_after().is_some() {
+            return 429;
+        }
         match self {
             Self::PayloadTooLarge(_) => 413,
             Self::Overloaded(_) | Self::Halted(_) => 503,
@@ -186,15 +189,33 @@ impl ServerError {
         }
     }
 
+    /// How long a rate-limited caller should wait
+    /// ([`A2aError::rate_limited`]); `None` for anything else.
+    #[must_use]
+    pub(crate) fn retry_after(&self) -> Option<std::time::Duration> {
+        match self {
+            Self::Protocol(e) => e.retry_after(),
+            _ => None,
+        }
+    }
+
     /// The canonical status name (`google.rpc.Code`) the HTTP bindings put in
-    /// an AIP-193 error body's `status`, agreeing with
-    /// [`http_status`](Self::http_status) and the gRPC dispatcher's code.
+    /// an AIP-193 error body's `status`: the code the gRPC dispatcher sends
+    /// for the same error.
+    ///
+    /// An overload is `RESOURCE_EXHAUSTED` here as on gRPC, under HTTP `503`.
+    /// Until 2026-10-10 it fell through to its A2A code and the body read
+    /// `{"code":503,"status":"INTERNAL"}`, naming a permanent failure on a
+    /// response whose status says to retry.
     #[must_use]
     pub(crate) fn status_name(&self) -> &'static str {
         match self.auth_rejection().map(AuthRejection::kind) {
             Some(AuthRejectionKind::Unauthenticated) => "UNAUTHENTICATED",
             Some(_) => "PERMISSION_DENIED",
             None if matches!(self, Self::Halted(_)) => "UNAVAILABLE",
+            None if matches!(self, Self::Overloaded(_)) || self.retry_after().is_some() => {
+                "RESOURCE_EXHAUSTED"
+            }
             None => self.to_a2a_error().code.grpc_status(),
         }
     }

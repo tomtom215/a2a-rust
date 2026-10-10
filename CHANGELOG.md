@@ -227,6 +227,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A rate-limit refusal says it is temporary, and when to retry** (server,
+  types; spec §13.4, §3.3.2). `RateLimitInterceptor` refused with a plain
+  internal error, which reached callers as HTTP `500` / gRPC `INTERNAL`,
+  indistinguishable from a server fault. It now refuses with the new
+  `A2aError::rate_limited(message, retry_after)`, retrying when the window
+  ends: HTTP+JSON answers `429` with status `RESOURCE_EXHAUSTED` and a
+  `Retry-After` header, gRPC `RESOURCE_EXHAUSTED`, and every binding carries a
+  `google.rpc.RetryInfo` detail. The JSON-RPC code stays `-32603`, the code
+  §3.3.2 gives as its example for "rate limit exceeded". `A2aError::retry_after`
+  reads the delay; it is whole seconds, so `A2aError` stays 96 bytes.
+- **An overload's HTTP+JSON error body names `RESOURCE_EXHAUSTED`** (server).
+  It answered `503` with `"status":"INTERNAL"`, naming a permanent failure
+  under a status that says to retry; it now names the code the gRPC binding
+  sends for the same error.
 - **A mid-stream JSON-RPC error's `data` is an array of typed details**
   (server; spec §9.5). The SSE error frame copied `A2aError::data` through
   as an object, so the stream-lag signal went out as

@@ -27,7 +27,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | §1 |  |  |  |  | 4 | 2 | 1 |  | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 |  | 3 |
-| §3 | 72 | 21 | 18 | 4 | 3 | 9 | 9 | 1 | 137 |
+| §3 | 73 | 21 | 18 | 3 | 3 | 9 | 9 | 1 | 137 |
 | §4 | 3 | 5 | 2 |  | 1 | 1 | 3 |  | 15 |
 | §5 | 22 | 2 | 2 |  | 3 |  | 6 |  | 35 |
 | §7 | 6 | 13 | 2 |  |  | 1 |  |  | 22 |
@@ -36,11 +36,11 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §10 | 6 |  |  |  |  |  |  |  | 6 |
 | §11 | 12 |  |  | 3 |  |  | 2 | 2 | 19 |
 | §12 | 5 | 1 | 1 |  | 1 |  | 10 | 1 | 19 |
-| §13 | 20 | 26 | 3 | 4 |  | 5 | 5 | 6 | 69 |
+| §13 | 21 | 26 | 3 | 4 |  | 5 | 5 | 5 | 69 |
 | §14 | 4 | 5 | 3 |  |  | 1 | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
 | proto `REQUIRED` fields | 43 | 10 | 6 |  | 8 | 26 | 9 | 4 | 106 |
-| **All** | **227** | **88** | **43** | **13** | **22** | **46** | **57** | **16** | **512** |
+| **All** | **229** | **88** | **43** | **12** | **22** | **46** | **57** | **15** | **512** |
 
 ## Open items, most severe first
 
@@ -53,7 +53,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | medium | GAP | §11.1 (line 2758) | Content-Type: application/a2a+json SHOULD be used for requests | REST client always sends `Content-Type: application/json` (also on bodiless GET/DELETE) and `Accept: application/json`. It never uses application/a2a+json, and the test pins Accept=application/json. |
 | medium | GAP | §11.6 (line 2914) | Implementations SHOULD use well-known types such as google.rpc.BadRequest to attach structured data to validation errors | No BadRequest detail anywhere in the repository. REST body and params validation failures answer error_json_response(400, serde message) with no details at all. |
 | medium | GAP | §12.3 (line 3009) | Transmission Mechanism (SLIMRPC: service parameter keys are case-insensitive in metadata, spec/slimrpc_v1/slimrpc.md:63) | a2a_headers filters transport keys case-insensitively but does not lowercase the remaining keys. The handler looks headers up by exact lowercase name (`headers.get("a2a-extensions")`, lowercase authorization/tenant header names), so a SLIMRPC peer that sends … |
-| medium | GAP | §13.4 (line 3210) | Agents SHOULD return appropriate error responses when rate limits are exceeded | Exceeding the limit returns `A2aError::internal("rate limit exceeded: ...")`, i.e. JSON-RPC -32603 / HTTP 500 / gRPC INTERNAL, not 429 / RESOURCE_EXHAUSTED (the REST error mapper knows 429 but nothing produces it); clients will treat it as a server fault and … |
 | medium | IMPLEMENTED_UNTESTED | §3.1.4 (line 240) | When `includeArtifacts` is false (the default), the artifacts field MUST be omitted entirely from each Task object in the response. | Handler sets `task.artifacts = None` unless includeArtifacts==true, and serde skips None, so all bindings omit it. No test lists a task that has artifacts without includeArtifacts and asserts their absence (tests only set include_artifacts=Some(true)). |
 | medium | IMPLEMENTED_UNTESTED | §3.3.4 (line 574) | If AgentCard.capabilities.streaming is false or not present, SendStreamingMessage or SubscribeToTask MUST return UnsupportedOperationError | Only the predicate ensure_streaming_supported is unit tested; no test drives on_send_message(streaming=true) or on_resubscribe against a non-streaming card, nor checks the wire error on any binding. |
 | medium | IMPLEMENTED_UNTESTED | §3.5.2 (line 693) | Closing one stream MUST NOT affect other active streams for the same task | Readers are independent broadcast::Receivers with no Drop hook that closes the queue; but no test drops one subscriber/HTTP stream and asserts another continues receiving. |
