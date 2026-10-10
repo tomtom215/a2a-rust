@@ -93,7 +93,7 @@ over-the-wire probe.
 `signing` on `a2a-protocol-server` is a **forwarding feature**. It makes the
 signing types available. **The server never signs the card it serves.**
 
-Sign the card yourself with `sign_agent_card` and hand the signed card to
+Sign the card yourself with `sign_card_es256` and hand the signed card to
 `RequestHandlerBuilder`. An unsigned card is served happily and verifies as
 unsigned — the server has done what it was asked, so there is no error to look
 for. `examples/incident-response` does this correctly and is worth copying.
@@ -113,7 +113,7 @@ use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::extensions::AgentExtension;
 use a2a_protocol_types::failure::FAILURE_EXTENSION_URI;
 use a2a_protocol_types::idempotency::IDEMPOTENCY_EXTENSION_URI;
-use a2a_protocol_types::signing::sign_agent_card;
+use a2a_protocol_types::signing::sign_card_es256;
 
 fn card_to_serve(pkcs8: &[u8]) -> A2aResult<AgentCard> {
     let mut card = AgentCard::new(
@@ -130,7 +130,7 @@ fn card_to_serve(pkcs8: &[u8]) -> A2aResult<AgentCard> {
     ]);
 
     // ...then sign the card that results, and hand *that* to the builder.
-    let signature = sign_agent_card(&card, pkcs8, Some("my-key"))?;
+    let signature = sign_card_es256(&card, pkcs8, "my-key")?;
     card.signatures = Some(vec![signature]);
     Ok(card)
 }

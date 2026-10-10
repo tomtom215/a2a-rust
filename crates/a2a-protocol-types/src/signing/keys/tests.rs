@@ -9,9 +9,10 @@
 
 use super::*;
 use crate::agent_card::AgentCard;
+#[allow(deprecated)] // the kid-less tests below exercise it on purpose
 use crate::signing::{
-    sign_agent_card, sign_agent_card_ed25519, verify_agent_card, verify_agent_card_with_jwks,
-    verify_card_with_jwks,
+    sign_agent_card, sign_card_ed25519, sign_card_es256, verify_agent_card,
+    verify_agent_card_with_jwks, verify_card_with_jwks,
 };
 
 fn hex(s: &str) -> Vec<u8> {
@@ -45,7 +46,7 @@ fn card() -> AgentCard {
 fn an_es256_signature_verifies_against_the_raw_point_and_openssls_spki() {
     let spki = hex(P256_SPKI);
     let raw = &spki[26..];
-    let sig = sign_agent_card(&card(), &hex(P256_PKCS8), Some("k1")).unwrap();
+    let sig = sign_card_es256(&card(), &hex(P256_PKCS8), "k1").unwrap();
     verify_agent_card(&card(), &sig, raw).unwrap();
     verify_agent_card(&card(), &sig, &spki).unwrap();
 }
@@ -54,7 +55,7 @@ fn an_es256_signature_verifies_against_the_raw_point_and_openssls_spki() {
 fn an_eddsa_signature_verifies_against_the_raw_key_and_openssls_spki() {
     let spki = hex(ED_SPKI);
     let raw = &spki[12..];
-    let sig = sign_agent_card_ed25519(&card(), &hex(ED_PKCS8), Some("k2")).unwrap();
+    let sig = sign_card_ed25519(&card(), &hex(ED_PKCS8), "k2").unwrap();
     verify_agent_card(&card(), &sig, raw).unwrap();
     verify_agent_card(&card(), &sig, &spki).unwrap();
     let mut other = card();
@@ -81,7 +82,7 @@ fn the_rfc_8037_ed25519_example_verifies() {
 #[test]
 fn a_key_is_never_tried_under_another_algorithm() {
     let spki = hex(ED_SPKI);
-    let sig = sign_agent_card_ed25519(&card(), &hex(ED_PKCS8), None).unwrap();
+    let sig = sign_card_ed25519(&card(), &hex(ED_PKCS8), "ed-1").unwrap();
     let ed = VerifyingKey::from_bytes("EdDSA", &spki).unwrap();
     assert!(ed.verify("ES256", b"x", b"y").is_err());
     // An Ed25519 key handed over as if it were ES256 is refused as a key.
@@ -123,22 +124,23 @@ fn a_jwk_round_trips_to_the_same_key() {
 }
 
 #[test]
+#[allow(deprecated)] // signs without `kid`, as a foreign signer still may
 fn a_jwks_verifies_by_kid_and_alg() {
     let (set, _, _) = jwks();
-    let es_sig = sign_agent_card(&card(), &hex(P256_PKCS8), Some("es-1")).unwrap();
+    let es_sig = sign_card_es256(&card(), &hex(P256_PKCS8), "es-1").unwrap();
     verify_agent_card_with_jwks(&card(), &es_sig, &set).unwrap();
-    let eddsa_signature = sign_agent_card_ed25519(&card(), &hex(ED_PKCS8), Some("ed-1")).unwrap();
+    let eddsa_signature = sign_card_ed25519(&card(), &hex(ED_PKCS8), "ed-1").unwrap();
     verify_agent_card_with_jwks(&card(), &eddsa_signature, &set).unwrap();
     // No kid: every key of the right type is a candidate.
     let anon = sign_agent_card(&card(), &hex(P256_PKCS8), None).unwrap();
     verify_agent_card_with_jwks(&card(), &anon, &set).unwrap();
 
-    let unknown = sign_agent_card(&card(), &hex(P256_PKCS8), Some("es-2")).unwrap();
+    let unknown = sign_card_es256(&card(), &hex(P256_PKCS8), "es-2").unwrap();
     let err = verify_agent_card_with_jwks(&card(), &unknown, &set).unwrap_err();
     assert!(err.message.contains("no ES256 key"), "{err}");
 
     // A kid that names a key of another type finds no candidate.
-    let crossed = sign_agent_card(&card(), &hex(P256_PKCS8), Some("ed-1")).unwrap();
+    let crossed = sign_card_es256(&card(), &hex(P256_PKCS8), "ed-1").unwrap();
     assert!(verify_agent_card_with_jwks(&card(), &crossed, &set).is_err());
 
     let mut other = card();
@@ -152,7 +154,7 @@ fn a_jwks_verifies_by_kid_and_alg() {
 #[test]
 fn removing_a_key_from_the_set_revokes_it() {
     let (mut set, _, _) = jwks();
-    let sig = sign_agent_card(&card(), &hex(P256_PKCS8), Some("es-1")).unwrap();
+    let sig = sign_card_es256(&card(), &hex(P256_PKCS8), "es-1").unwrap();
     verify_agent_card_with_jwks(&card(), &sig, &set).unwrap();
     set.keys.retain(|k| k.kid.as_deref() != Some("es-1"));
     assert!(verify_agent_card_with_jwks(&card(), &sig, &set).is_err());
@@ -193,7 +195,7 @@ fn jwks_entries_that_must_not_be_used_are_skipped_or_refused() {
     // One bad entry does not disable the rest of the set.
     let mut mixed = set;
     mixed.keys.insert(0, enc);
-    let sig = sign_agent_card(&card(), &hex(P256_PKCS8), Some("es-1")).unwrap();
+    let sig = sign_card_es256(&card(), &hex(P256_PKCS8), "es-1").unwrap();
     verify_agent_card_with_jwks(&card(), &sig, &mixed).unwrap();
     assert_eq!(mixed.candidates(Some("es-1"), "ES256").len(), 1);
 }
@@ -208,13 +210,13 @@ fn a_card_verifies_when_any_of_its_signatures_does() {
             .message
             .contains("not signed")
     );
-    let stale = sign_agent_card(&card(), &hex(P256_PKCS8), Some("es-old")).unwrap();
+    let stale = sign_card_es256(&card(), &hex(P256_PKCS8), "es-old").unwrap();
     signed.signatures = Some(vec![stale.clone()]);
     assert!(
         verify_card_with_jwks(&signed, &set).is_err(),
         "rotated-out key only"
     );
-    let current = sign_agent_card_ed25519(&card(), &hex(ED_PKCS8), Some("ed-1")).unwrap();
+    let current = sign_card_ed25519(&card(), &hex(ED_PKCS8), "ed-1").unwrap();
     signed.signatures = Some(vec![stale, current]);
     verify_card_with_jwks(&signed, &set).unwrap();
 }

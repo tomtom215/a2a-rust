@@ -18,7 +18,7 @@ const LABEL: &str = "Agent card signing (sign, verify, detect tampering)";
 /// real signature from a decorative one.
 #[cfg(feature = "signing")]
 pub(super) fn card_signing() -> Check {
-    use a2a_protocol_types::signing::{sign_agent_card, verify_agent_card};
+    use a2a_protocol_types::signing::{sign_card_es256, verify_agent_card};
     use ring::rand::SystemRandom;
     use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair};
 
@@ -35,7 +35,7 @@ pub(super) fn card_signing() -> Check {
     let public_key = key_pair.public_key().as_ref().to_vec();
 
     let card = super::plain_card("http://127.0.0.1:9200", "Triage Agent");
-    let signature = match sign_agent_card(&card, pkcs8.as_ref(), Some("incident-demo-key")) {
+    let signature = match sign_card_es256(&card, pkcs8.as_ref(), "incident-demo-key") {
         Ok(signature) => signature,
         Err(e) => return Check::fail(LABEL, format!("signing: {e}")),
     };

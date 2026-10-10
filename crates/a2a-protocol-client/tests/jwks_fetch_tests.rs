@@ -15,7 +15,7 @@ use a2a_protocol_client::discovery::CardFetchOptions;
 use a2a_protocol_client::jwks::{MAX_JWKS_BODY_SIZE, fetch_jwks};
 use a2a_protocol_types::AgentCard;
 use a2a_protocol_types::signing::{
-    Jwk, Jwks, VerifyingKey, sign_agent_card, verify_card_with_jwks,
+    Jwk, Jwks, VerifyingKey, sign_card_es256, verify_card_with_jwks,
 };
 use http_body_util::Full;
 use hyper::body::Bytes;
@@ -69,7 +69,7 @@ fn signed_card() -> AgentCard {
         "skills": []
     }))
     .unwrap();
-    let sig = sign_agent_card(&card, &hex(P256_PKCS8), Some("k1")).unwrap();
+    let sig = sign_card_es256(&card, &hex(P256_PKCS8), "k1").unwrap();
     card.signatures = Some(vec![sig]);
     card
 }

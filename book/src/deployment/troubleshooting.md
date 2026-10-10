@@ -154,7 +154,7 @@ Check your `execute` loop observes `ctx.cancellation_token`.
 
 `signing` on `a2a-protocol-server` is a **forwarding feature**: it makes the
 signing types available and nothing more. **The server never signs the card it
-serves.** Sign the card yourself with `sign_agent_card` and hand the signed card
+serves.** Sign the card yourself with `sign_card_es256` and hand the signed card
 to `RequestHandlerBuilder`; `examples/incident-response` does exactly this.
 
 A card served unsigned verifies as unsigned, which is not a failure the server
