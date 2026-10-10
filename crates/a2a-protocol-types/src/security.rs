@@ -416,6 +416,10 @@ pub struct AuthorizationCodeFlow {
     pub refresh_url: Option<String>,
 
     /// Available scopes: name → description.
+    ///
+    /// ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+    /// without the key; absence means empty, as for `StringList::list`.
+    #[serde(default)]
     pub scopes: HashMap<String, String>,
 
     /// Whether PKCE (RFC 7636) is required for this flow.
@@ -438,6 +442,10 @@ pub struct ClientCredentialsFlow {
     pub refresh_url: Option<String>,
 
     /// Available scopes: name → description.
+    ///
+    /// ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+    /// without the key; absence means empty, as for `StringList::list`.
+    #[serde(default)]
     pub scopes: HashMap<String, String>,
 }
 
@@ -459,6 +467,10 @@ pub struct DeviceCodeFlow {
     pub refresh_url: Option<String>,
 
     /// Available scopes: name → description.
+    ///
+    /// ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+    /// without the key; absence means empty, as for `StringList::list`.
+    #[serde(default)]
     pub scopes: HashMap<String, String>,
 }
 
@@ -476,6 +488,10 @@ pub struct ImplicitFlow {
     pub refresh_url: Option<String>,
 
     /// Available scopes: name → description.
+    ///
+    /// ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+    /// without the key; absence means empty, as for `StringList::list`.
+    #[serde(default)]
     pub scopes: HashMap<String, String>,
 }
 
@@ -493,6 +509,10 @@ pub struct PasswordOAuthFlow {
     pub refresh_url: Option<String>,
 
     /// Available scopes: name → description.
+    ///
+    /// ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+    /// without the key; absence means empty, as for `StringList::list`.
+    #[serde(default)]
     pub scopes: HashMap<String, String>,
 }
 
@@ -573,6 +593,30 @@ mod tests {
             assert_eq!(h.bearer_format.as_deref(), Some("JWT"));
         } else {
             panic!("wrong variant");
+        }
+    }
+
+    /// ProtoJSON (every official SDK) omits an empty map even where the
+    /// proto marks it REQUIRED, so a peer's flow with no scopes has no
+    /// `scopes` key. Before `#[serde(default)]` that failed the whole card.
+    #[test]
+    fn oauth_flows_without_a_scopes_key_parse_as_empty() {
+        let flows: OAuthFlows = serde_json::from_value(serde_json::json!({
+            "clientCredentials": {"tokenUrl": "https://id.example.com/token"}
+        }))
+        .expect("a flow with its empty scopes omitted parses");
+        let OAuthFlows::ClientCredentials(cc) = &flows else {
+            panic!("expected clientCredentials, got {flows:?}");
+        };
+        assert!(cc.scopes.is_empty());
+        for flow in [
+            serde_json::json!({"authorizationCode": {"authorizationUrl": "a", "tokenUrl": "t"}}),
+            serde_json::json!({"deviceCode": {"deviceAuthorizationUrl": "d", "tokenUrl": "t"}}),
+            serde_json::json!({"implicit": {"authorizationUrl": "a"}}),
+            serde_json::json!({"password": {"tokenUrl": "t"}}),
+        ] {
+            serde_json::from_value::<OAuthFlows>(flow.clone())
+                .unwrap_or_else(|e| panic!("{flow}: {e}"));
         }
     }
 
