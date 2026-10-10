@@ -33,7 +33,8 @@
 # The PR variant scans the base with the same arguments, and a lockfile the
 # base does not have yet fails that scan, which fails the job. So a new
 # lockfile goes in `rust` first and joins `rust-pr` in a later pull request,
-# once it is on main. `verification/loom-halt/Cargo.lock` is in that state.
+# once it is on main. `verification/loom-halt/Cargo.lock` went through that
+# sequence: `rust` from #163, `rust-pr` once #163 had merged.
 
 name: OSV-Scanner
 
@@ -73,6 +74,7 @@ jobs:
         --lockfile=benches/sdk-comparison/harness/agent-a2a-rs/Cargo.lock
         --lockfile=benches/sdk-comparison/harness/agent-a2a-rust/Cargo.lock
         --lockfile=benches/sdk-comparison/harness/loadgen/Cargo.lock
+        --lockfile=verification/loom-halt/Cargo.lock
 
   rust:
     name: Rust lockfiles

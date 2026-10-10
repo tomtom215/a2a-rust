@@ -40,12 +40,15 @@ env:
   RUST_BACKTRACE: 1
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# Least privilege: only the `bench` job pushes the dashboard back to main.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   bench:
     name: Run Benchmarks
+    permissions:
+      contents: write
     # Full criterion sweep + book publish only runs on manual dispatch or
     # pushes to main. Pull requests are covered by the regression-gate job
     # below, which runs a focused subset against the base branch.
