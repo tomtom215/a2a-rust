@@ -130,6 +130,7 @@ the compliance claim is worse than no matrix.
 
 | Spec area | Implementation | Evidence |
 |---|---|---|
+| §13.1 Results scoped to the caller's authorization boundaries | Tenant partitions (`TenantResolver`, `TenantAware*` stores); per caller within a tenant with `RequestHandlerBuilder::isolate_tasks_by_caller` (`TenantContext::partition`, `RequestHandler::admit`). Off by default: callers in one tenant share its tasks unless the deployment asks otherwise | `tests/caller_isolation.rs` (every task-naming operation, lists, webhooks, background completion, SQLite) |
 | §13.3 Extended-card auth (see §8 row) | — | — |
 | Push webhook SSRF defense (DNS-resolve + pin) | `push/sender.rs` (`tls-rustls`) | push-sender e2e; live-TLS rebinding test |
 | Push webhook auth scheme (RFC 9110 case-insensitive) | `push/sender.rs` | push auth-scheme tests |

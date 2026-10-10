@@ -65,7 +65,7 @@ impl RequestHandler {
         // Capture the current tenant context so background store operations
         // are scoped to the correct tenant (task_local doesn't propagate
         // across tokio::spawn).
-        let tenant = crate::store::tenant::TenantContext::current();
+        let tenant = crate::store::tenant::TenantContext::capture();
 
         // On the handler's tracker: this is what persists the executor's last
         // events and delivers their push notifications, so shutdown waits for
@@ -79,7 +79,7 @@ impl RequestHandler {
                 // future by value. Measured, streaming, one worker, jemalloc,
                 // two replicates of 10 interleaved runs: +4.4% and +7% (p
                 // 0.049 and 0.023, Mann-Whitney); no change on two workers.
-                crate::store::tenant::TenantContext::scope(tenant, Box::pin(async move {
+                tenant.scope(Box::pin(async move {
                     let super::ProcessorLinks { cancel, gate } = links;
                     // Closes the gate however this task ends — including by panic —
                     // so no writer waits out its timeout on a processor that is gone.

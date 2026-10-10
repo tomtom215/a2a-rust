@@ -173,7 +173,7 @@ impl RequestHandler {
         let tenant = self
             .resolve_tenant(method_name, headers, params.tenant.as_deref())
             .await?;
-        let result = crate::store::tenant::TenantContext::scope(tenant, async {
+        let result = crate::store::tenant::TenantContext::scope_request(tenant, async {
             self.send_message_inner(params, streaming, method_name, headers)
                 .await
         })
@@ -213,7 +213,7 @@ impl RequestHandler {
         let call_ctx = build_call_context(method_name, headers, self.inbound_trace_policy);
         let mut call = self.interceptors.begin(&call_ctx);
         let result = async {
-            call.before().await?;
+            self.admit(&mut call, &call_ctx).await?;
             // SPEC §3.3.4: reject clients that do not declare support for
             // extensions the agent card marks required.
             self.ensure_required_extensions(&call_ctx)?;

@@ -40,5 +40,6 @@
 mod context;
 mod store;
 
-pub use context::TenantContext;
+pub(crate) use context::CALLER_SEPARATOR;
+pub use context::{CapturedTenant, TenantContext};
 pub use store::{TenantAwareInMemoryTaskStore, TenantStoreConfig};

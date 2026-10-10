@@ -157,36 +157,37 @@ impl RequestHandler {
                 config.tenant.as_deref(),
             )
             .await?;
-        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            // taskId is optional on the wire (a config nested in
-            // SendMessageConfiguration omits it), but a standalone create has
-            // no task context to infer it from — reject explicitly instead of
-            // storing an unroutable config.
-            if config.task_id.as_deref().unwrap_or("").is_empty() {
-                return Err(ServerError::InvalidParams(
-                    "taskId is required for CreateTaskPushNotificationConfig".into(),
-                ));
-            }
+        let result: ServerResult<_> =
+            crate::store::tenant::TenantContext::scope_request(tenant, async {
+                // taskId is optional on the wire (a config nested in
+                // SendMessageConfiguration omits it), but a standalone create has
+                // no task context to infer it from — reject explicitly instead of
+                // storing an unroutable config.
+                if config.task_id.as_deref().unwrap_or("").is_empty() {
+                    return Err(ServerError::InvalidParams(
+                        "taskId is required for CreateTaskPushNotificationConfig".into(),
+                    ));
+                }
 
-            let call_ctx = build_call_context(
-                "CreateTaskPushNotificationConfig",
-                headers,
-                self.inbound_trace_policy,
-            );
-            let mut call = self.interceptors.begin(&call_ctx);
-            let result = async {
-                call.before().await?;
-                // SPEC §3.3.4: reject clients that do not declare support for
-                // extensions the agent card marks required.
-                self.ensure_required_extensions(&call_ctx)?;
+                let call_ctx = build_call_context(
+                    "CreateTaskPushNotificationConfig",
+                    headers,
+                    self.inbound_trace_policy,
+                );
+                let mut call = self.interceptors.begin(&call_ctx);
+                let result = async {
+                    self.admit(&mut call, &call_ctx).await?;
+                    // SPEC §3.3.4: reject clients that do not declare support for
+                    // extensions the agent card marks required.
+                    self.ensure_required_extensions(&call_ctx)?;
 
-                let result = self.validate_and_store_push_config(config).await?;
-                Ok(result)
-            }
+                    let result = self.validate_and_store_push_config(config).await?;
+                    Ok(result)
+                }
+                .await;
+                call.finish(result).await
+            })
             .await;
-            call.finish(result).await
-        })
-        .await;
 
         let elapsed = start.elapsed();
         match &result {
@@ -229,35 +230,36 @@ impl RequestHandler {
                 params.tenant.as_deref(),
             )
             .await?;
-        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            // SPEC §3.3.4: reject when the agent card does not advertise push support.
-            self.ensure_push_supported()?;
-            let call_ctx = build_call_context(
-                "GetTaskPushNotificationConfig",
-                headers,
-                self.inbound_trace_policy,
-            );
-            let mut call = self.interceptors.begin(&call_ctx);
-            let result = async {
-                call.before().await?;
-                // SPEC §3.3.4: reject clients that do not declare support for
-                // extensions the agent card marks required.
-                self.ensure_required_extensions(&call_ctx)?;
+        let result: ServerResult<_> =
+            crate::store::tenant::TenantContext::scope_request(tenant, async {
+                // SPEC §3.3.4: reject when the agent card does not advertise push support.
+                self.ensure_push_supported()?;
+                let call_ctx = build_call_context(
+                    "GetTaskPushNotificationConfig",
+                    headers,
+                    self.inbound_trace_policy,
+                );
+                let mut call = self.interceptors.begin(&call_ctx);
+                let result = async {
+                    self.admit(&mut call, &call_ctx).await?;
+                    // SPEC §3.3.4: reject clients that do not declare support for
+                    // extensions the agent card marks required.
+                    self.ensure_required_extensions(&call_ctx)?;
 
-                // SPEC §3.1.8: a missing push notification configuration MUST be
-                // reported as TaskNotFoundError, not InvalidParams.
-                let config = self
-                    .push_config_store
-                    .get(&params.task_id, &params.id)
-                    .await?
-                    .ok_or_else(|| ServerError::TaskNotFound(TaskId::new(&params.task_id)))?;
+                    // SPEC §3.1.8: a missing push notification configuration MUST be
+                    // reported as TaskNotFoundError, not InvalidParams.
+                    let config = self
+                        .push_config_store
+                        .get(&params.task_id, &params.id)
+                        .await?
+                        .ok_or_else(|| ServerError::TaskNotFound(TaskId::new(&params.task_id)))?;
 
-                Ok(config)
-            }
+                    Ok(config)
+                }
+                .await;
+                call.finish(result).await
+            })
             .await;
-            call.finish(result).await
-        })
-        .await;
 
         let elapsed = start.elapsed();
         match &result {
@@ -296,7 +298,7 @@ impl RequestHandler {
             .resolve_tenant("ListTaskPushNotificationConfigs", headers, tenant)
             .await?;
         let result: ServerResult<_> =
-            crate::store::tenant::TenantContext::scope(tenant_owned, async {
+            crate::store::tenant::TenantContext::scope_request(tenant_owned, async {
                 // SPEC §3.3.4: reject when the agent card does not advertise push support.
                 self.ensure_push_supported()?;
                 let call_ctx = build_call_context(
@@ -306,7 +308,7 @@ impl RequestHandler {
                 );
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
-                    call.before().await?;
+                    self.admit(&mut call, &call_ctx).await?;
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
@@ -357,29 +359,30 @@ impl RequestHandler {
                 params.tenant.as_deref(),
             )
             .await?;
-        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            // SPEC §3.3.4: reject when the agent card does not advertise push support.
-            self.ensure_push_supported()?;
-            let call_ctx = build_call_context(
-                "DeleteTaskPushNotificationConfig",
-                headers,
-                self.inbound_trace_policy,
-            );
-            let mut call = self.interceptors.begin(&call_ctx);
-            let result = async {
-                call.before().await?;
-                // SPEC §3.3.4: reject clients that do not declare support for
-                // extensions the agent card marks required.
-                self.ensure_required_extensions(&call_ctx)?;
-                self.push_config_store
-                    .delete(&params.task_id, &params.id)
-                    .await?;
-                Ok(())
-            }
+        let result: ServerResult<_> =
+            crate::store::tenant::TenantContext::scope_request(tenant, async {
+                // SPEC §3.3.4: reject when the agent card does not advertise push support.
+                self.ensure_push_supported()?;
+                let call_ctx = build_call_context(
+                    "DeleteTaskPushNotificationConfig",
+                    headers,
+                    self.inbound_trace_policy,
+                );
+                let mut call = self.interceptors.begin(&call_ctx);
+                let result = async {
+                    self.admit(&mut call, &call_ctx).await?;
+                    // SPEC §3.3.4: reject clients that do not declare support for
+                    // extensions the agent card marks required.
+                    self.ensure_required_extensions(&call_ctx)?;
+                    self.push_config_store
+                        .delete(&params.task_id, &params.id)
+                        .await?;
+                    Ok(())
+                }
+                .await;
+                call.finish(result).await
+            })
             .await;
-            call.finish(result).await
-        })
-        .await;
 
         let elapsed = start.elapsed();
         match &result {

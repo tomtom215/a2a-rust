@@ -205,7 +205,7 @@ async fn a_direct_reply_is_a_message_outcome() {
         .expect("start");
     let done = d.wait(std::future::pending()).await;
     match done.outcome {
-        Outcome::Message(m) => assert_eq!(m.text().as_deref(), Some("hello")),
+        Outcome::Message(m) => assert_eq!(m.text(), Some("hello")),
         other => panic!("expected Message, got {other:?}"),
     }
     assert_eq!(done.task_id, None, "a message-only answer names no task");

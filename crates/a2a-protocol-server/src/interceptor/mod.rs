@@ -21,6 +21,7 @@ use crate::call_context::CallContext;
 use crate::error::ServerError;
 
 mod completion;
+pub(crate) use completion::InterceptedCall;
 #[cfg(test)]
 mod completion_tests;
 

@@ -574,13 +574,13 @@ impl SyncCollector {
         };
         // `task_local` tenant context does not cross `tokio::spawn`, so capture
         // it explicitly, exactly as the streaming background processor does.
-        let tenant = crate::store::tenant::TenantContext::current();
+        let tenant = crate::store::tenant::TenantContext::capture();
         // Tracked, so a shutdown waits for the delivery it would otherwise cut.
         self.in_flight
             .background()
             .spawn(crate::rpc_span::in_child_span(
                 "a2a.deliver_push",
-                crate::store::tenant::TenantContext::scope(tenant, job.run()),
+                tenant.scope(job.run()),
             ));
     }
 }

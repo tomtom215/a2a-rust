@@ -249,7 +249,7 @@ impl RequestHandler {
         // away from the request that caused them. The background event
         // processor and the sync collector already do exactly this; this
         // spawn was the one that did not.
-        let tenant = crate::store::tenant::TenantContext::current();
+        let tenant = crate::store::tenant::TenantContext::capture();
         let shutdown = self.in_flight.shutdown_token();
         #[cfg(feature = "audit")]
         let audit = self.audit_hook();
@@ -269,67 +269,62 @@ impl RequestHandler {
         );
         #[cfg(feature = "tracing")]
         let recorder = span.recorder();
-        span.instrument(crate::store::tenant::TenantContext::scope(
-            tenant,
-            async move {
-                // Owned by this future, so the slot is returned when the executor
-                // finishes, fails, panics, or is aborted.
-                let _tenant_slot = tenant_slot;
-                trace_debug!(task_id = %ctx.task_id, "executor started");
+        span.instrument(tenant.scope(async move {
+            // Owned by this future, so the slot is returned when the executor
+            // finishes, fails, panics, or is aborted.
+            let _tenant_slot = tenant_slot;
+            trace_debug!(task_id = %ctx.task_id, "executor started");
 
-                // Armed before the executor runs; see the type's docs for when it
-                // fires. There is no `catch_unwind` here — the guard *is* the
-                // panic handling.
-                let mut cleanup_guard = CleanupGuard {
-                    task_id: Some(task_id.clone()),
-                    queue_mgr: event_queue_mgr.clone(),
-                    tokens: Arc::clone(&cancel_tokens),
-                    turn: Arc::clone(&turn),
-                };
+            // Armed before the executor runs; see the type's docs for when it
+            // fires. There is no `catch_unwind` here — the guard *is* the
+            // panic handling.
+            let mut cleanup_guard = CleanupGuard {
+                task_id: Some(task_id.clone()),
+                queue_mgr: event_queue_mgr.clone(),
+                tokens: Arc::clone(&cancel_tokens),
+                turn: Arc::clone(&turn),
+            };
 
-                // Before the executor runs, so the run is registered first.
-                #[cfg(feature = "audit")]
-                crate::audit::record_run_started(audit.as_ref(), &ctx).await;
+            // Before the executor runs, so the run is registered first.
+            #[cfg(feature = "audit")]
+            crate::audit::record_run_started(audit.as_ref(), &ctx).await;
 
-                let writer = TerminalTracking::new(writer, Arc::clone(&turn));
-                #[cfg(feature = "tracing")]
-                let writer = writer.with_recorder(recorder);
-                let result = run_executor(executor.as_ref(), &ctx, &writer, executor_timeout).await;
-                if let Err((ref e, class)) = result {
-                    write_failure_event(&writer, &ctx, e, class).await;
-                } else if (shutdown.is_cancelled() || turn.is_halted())
-                    && !writer.terminal_written()
-                {
-                    // Shut down or halted, not cancelled by a caller:
-                    // `CancelTask` runs this hook itself, and cancels only the
-                    // task's own child token. The executor saw its token and returned without a
-                    // terminal state, so end the task the way `CancelTask`
-                    // would — the default hook writes `Canceled` — and every
-                    // stream still open on it gets a terminal event instead of
-                    // simply stopping. After `execute` returned, never beside
-                    // it: an executor that wrote its own terminal state while
-                    // the hook wrote another would have the second rejected as
-                    // an invalid transition and the task marked `Failed`.
-                    if let Err(_e) = executor.cancel(&ctx, &writer).await {
-                        trace_warn!(
-                            task_id = %ctx.task_id,
-                            error = %_e,
-                            "cancel hook failed during shutdown"
-                        );
-                    }
+            let writer = TerminalTracking::new(writer, Arc::clone(&turn));
+            #[cfg(feature = "tracing")]
+            let writer = writer.with_recorder(recorder);
+            let result = run_executor(executor.as_ref(), &ctx, &writer, executor_timeout).await;
+            if let Err((ref e, class)) = result {
+                write_failure_event(&writer, &ctx, e, class).await;
+            } else if (shutdown.is_cancelled() || turn.is_halted()) && !writer.terminal_written() {
+                // Shut down or halted, not cancelled by a caller:
+                // `CancelTask` runs this hook itself, and cancels only the
+                // task's own child token. The executor saw its token and returned without a
+                // terminal state, so end the task the way `CancelTask`
+                // would — the default hook writes `Canceled` — and every
+                // stream still open on it gets a terminal event instead of
+                // simply stopping. After `execute` returned, never beside
+                // it: an executor that wrote its own terminal state while
+                // the hook wrote another would have the second rejected as
+                // an invalid transition and the task marked `Failed`.
+                if let Err(_e) = executor.cancel(&ctx, &writer).await {
+                    trace_warn!(
+                        task_id = %ctx.task_id,
+                        error = %_e,
+                        "cancel hook failed during shutdown"
+                    );
                 }
-                // Drop the writer so the channel closes and readers see EOF.
-                drop(writer);
-                // Explicit cleanup, then disarm the guard so it does not release
-                // a second time on normal exit.
-                event_queue_mgr.destroy(&task_id).await;
-                cancel_tokens.write().await.remove(&task_id);
-                cleanup_guard.task_id = None;
-                // Last: a continuation waiting in admission may now lease
-                // a queue and register a token under the same id.
-                turn.finished.cancel();
-            },
-        ))
+            }
+            // Drop the writer so the channel closes and readers see EOF.
+            drop(writer);
+            // Explicit cleanup, then disarm the guard so it does not release
+            // a second time on normal exit.
+            event_queue_mgr.destroy(&task_id).await;
+            cancel_tokens.write().await.remove(&task_id);
+            cleanup_guard.task_id = None;
+            // Last: a continuation waiting in admission may now lease
+            // a queue and register a token under the same id.
+            turn.finished.cancel();
+        }))
     }
 }
 

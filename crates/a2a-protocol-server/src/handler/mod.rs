@@ -100,6 +100,11 @@ pub struct RequestHandler {
     /// [`accept_unisolated_tenants`](crate::RequestHandlerBuilder::accept_unisolated_tenants).
     pub(crate) refuse_unisolated_tenants: bool,
 
+    /// Whether each authenticated caller gets a partition of its own within
+    /// the tenant (spec §13.1). See
+    /// [`isolate_tasks_by_caller`](crate::RequestHandlerBuilder::isolate_tasks_by_caller).
+    pub(crate) caller_isolation: crate::builder::CallerIsolation,
+
     /// What to do with a `traceparent` an as-yet-unauthenticated peer sent.
     ///
     /// Per handler rather than per process, so one process serving a public
@@ -306,6 +311,67 @@ impl RequestHandler {
         self.isolatable(authoritative)
     }
 
+    /// Runs the interceptors' `before` hooks, then isolates the rest of the
+    /// request to the caller they identified
+    /// ([`enter_caller_partition`](Self::enter_caller_partition)). One call,
+    /// so no entry point can authenticate a caller and forget to scope it.
+    ///
+    /// # Errors
+    ///
+    /// An interceptor's refusal, or [`enter_caller_partition`](Self::enter_caller_partition)'s.
+    pub(crate) async fn admit(
+        &self,
+        call: &mut crate::interceptor::InterceptedCall<'_>,
+        call_ctx: &crate::call_context::CallContext,
+    ) -> ServerResult<()> {
+        call.before().await?;
+        self.enter_caller_partition(call_ctx)
+    }
+
+    /// Isolates the rest of this request to the authenticated caller's
+    /// partition, when the handler isolates callers. Called right after the
+    /// interceptors' `before`, which is where the identity is established.
+    ///
+    /// Spec §13.1: implementations MUST scope results to the caller's
+    /// authorized access boundaries, and `GetTask`, `ListTasks`, `CancelTask`,
+    /// `SubscribeToTask` and the push-config operations must not reach another
+    /// caller's tasks. The tenant-aware stores key by
+    /// [`TenantContext::partition`](crate::store::tenant::TenantContext::partition),
+    /// which from here on names the caller too, so another caller's task is
+    /// `TaskNotFound` (its existence is not revealed) and a list holds only
+    /// the caller's own. Everything that is per tenant — the halt switch,
+    /// quotas, audit chains, metric labels — still reads the tenant.
+    ///
+    /// # Errors
+    ///
+    /// `PermissionDenied` when isolation is on and no interceptor established
+    /// who the caller is: there is then no partition that is safe to serve.
+    /// `Internal` if the request has no caller slot to fill, which would mean
+    /// a handler entry point that does not open one.
+    pub(crate) fn enter_caller_partition(
+        &self,
+        call_ctx: &crate::call_context::CallContext,
+    ) -> ServerResult<()> {
+        if self.caller_isolation == crate::builder::CallerIsolation::Shared {
+            return Ok(());
+        }
+        let Some(caller) = call_ctx.caller_identity() else {
+            return Err(crate::error::ServerError::Protocol(
+                a2a_protocol_types::error::A2aError::permission_denied(
+                    "this agent isolates tasks by caller, and no authenticating \
+                     interceptor identified the caller of this request",
+                ),
+            ));
+        };
+        if crate::store::tenant::TenantContext::set_caller(caller) {
+            Ok(())
+        } else {
+            Err(crate::error::ServerError::Internal(
+                "caller isolation found no request scope to record the caller in".to_owned(),
+            ))
+        }
+    }
+
     /// Passes `tenant` through when this handler can keep it apart from
     /// every other tenant, and refuses it otherwise.
     ///
@@ -321,6 +387,13 @@ impl RequestHandler {
     /// [`ServerError::UnsupportedOperation`](crate::error::ServerError::UnsupportedOperation)
     /// naming what to configure.
     fn isolatable(&self, tenant: String) -> ServerResult<String> {
+        // The separator joins a tenant to a caller in a store partition key;
+        // a tenant containing it could name another tenant's caller partition.
+        if tenant.contains(crate::store::tenant::CALLER_SEPARATOR) {
+            return Err(crate::error::ServerError::InvalidParams(
+                "a tenant may not contain the U+001F unit separator".to_owned(),
+            ));
+        }
         if tenant.is_empty() || !self.refuse_unisolated_tenants {
             return Ok(tenant);
         }

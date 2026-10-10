@@ -303,14 +303,14 @@ impl RequestHandler {
         // Boxed: `SubscribeToTask` is a cold, once-per-stream path, and
         // inlining this body pushed the JSON-RPC and REST dispatch futures
         // past clippy's `large_futures` threshold.
-        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(
+        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope_request(
             tenant,
             Box::pin(async {
                 let call_ctx =
                     build_call_context("SubscribeToTask", headers, self.inbound_trace_policy);
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
-                    call.before().await?;
+                    self.admit(&mut call, &call_ctx).await?;
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;

@@ -182,22 +182,20 @@ impl RequestHandler {
         // waits for it; in the tenant and span of this call, which
         // `tokio::spawn` would otherwise not carry.
         let collector = self.sync_collector();
-        let tenant = crate::store::tenant::TenantContext::current();
+        let tenant = crate::store::tenant::TenantContext::capture();
         let mut executor = executor.watch();
         let (answer, collected) = tokio::sync::oneshot::channel();
         self.in_flight
             .executors()
-            .spawn(crate::rpc_span::in_current_span(
-                crate::store::tenant::TenantContext::scope(tenant, async move {
-                    let result = collector
-                        .collect_events(events, task.id, &mut executor)
-                        .await;
-                    // The caller may have gone; the collection is done and
-                    // persisted either way.
-                    let _ = answer.send(result);
-                    executor.finish().await;
-                }),
-            ));
+            .spawn(crate::rpc_span::in_current_span(tenant.scope(async move {
+                let result = collector
+                    .collect_events(events, task.id, &mut executor)
+                    .await;
+                // The caller may have gone; the collection is done and
+                // persisted either way.
+                let _ = answer.send(result);
+                executor.finish().await;
+            })));
         let collected = collected.await.map_err(|_| {
             crate::error::ServerError::Internal("event collection ended abnormally".to_owned())
         })??;

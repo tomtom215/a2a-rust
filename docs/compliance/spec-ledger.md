@@ -27,7 +27,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | §1 |  |  |  |  | 4 | 2 | 1 |  | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 |  | 3 |
-| §3 | 69 | 20 | 18 | 4 | 3 | 9 | 11 | 3 | 137 |
+| §3 | 69 | 21 | 18 | 4 | 3 | 9 | 10 | 3 | 137 |
 | §4 | 3 | 5 | 2 |  | 1 | 1 | 3 |  | 15 |
 | §5 | 22 | 2 | 2 |  | 3 |  | 6 |  | 35 |
 | §7 | 6 | 13 | 2 |  |  | 1 |  |  | 22 |
@@ -36,22 +36,16 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §10 | 6 |  |  |  |  |  |  |  | 6 |
 | §11 | 12 |  |  | 3 |  |  | 2 | 2 | 19 |
 | §12 | 5 | 1 | 1 |  | 1 |  | 10 | 1 | 19 |
-| §13 | 20 | 20 | 3 | 4 |  | 5 | 11 | 6 | 69 |
+| §13 | 20 | 26 | 3 | 4 |  | 5 | 5 | 6 | 69 |
 | §14 | 4 | 5 | 3 |  |  | 1 | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
 | proto `REQUIRED` fields | 41 | 10 | 6 |  | 8 | 26 | 10 | 5 | 106 |
-| **All** | **220** | **81** | **43** | **14** | **22** | **46** | **67** | **19** | **512** |
+| **All** | **220** | **88** | **43** | **14** | **22** | **46** | **60** | **19** | **512** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
-| high | PARTIAL | §13.1 (line 3083) | Implementations MUST ensure appropriate scope limitation based on the authenticated caller's authorization boundaries. This applies to all … | The only scoping the SDK performs is the tenant partition (TenantContext task-local + TenantAware* stores, resolver-derived tenant). Within a tenant (and in the default single-tenant deployment) there is no principal scoping and no hook to add one: TaskStore:… |
-| high | PARTIAL | §13.1 (line 3088) | Implementations MUST scope results to the caller's authorized access boundaries as defined by the agent's authorization model | Tenant-boundary models are supported (store partition chosen by TenantContext::scope); user/role/project models within a tenant are not: `self.task_store.list(&params)` receives no caller, and there is no post-filter hook between store and response. |
-| high | PARTIAL | §13.1 (line 3089) | Even when contextId or other filter parameters are not specified in requests, implementations MUST scope results to the caller's authorized… | An unfiltered ListTasks (ListTasksParams::default()) is scoped to the tenant partition only; any authenticated caller in the same/default tenant gets every task in it. |
-| high | PARTIAL | §13.1 (line 3099) | List Tasks: MUST only return tasks visible to the authenticated client according to the agent's authorization model | Tenant-scoped only (store-level tests, no handler/wire-level cross-tenant ListTasks test found). No way to restrict visibility per principal inside a tenant: two callers authenticated by BearerTokenAuthInterceptor::with_labelled_tokens in the default tenant s… |
-| high | PARTIAL | §13.1 (line 3100) | Get Task: MUST verify the authenticated client has access to the requested task according to the agent's authorization model | A task in another tenant partition is TaskNotFound (good, no existence leak). Within a partition, `self.task_store.get(&task_id)` is returned to any caller who passed the interceptor chain; the interceptor cannot see params.id (CallContext has method/headers/… |
-| high | PARTIAL | §13.1 (line 3101) | Task-related operations (Cancel, Subscribe, Push Notification Config): MUST verify the client has appropriate access rights according to th… | Same as GetTask: tenant partition enforced for cancel/subscribe/push-config CRUD; no per-principal ownership check (any caller in the partition can cancel, subscribe to, or register a webhook on another caller's task). |
 | medium | GAP | proto:SendMessageConfiguration.accepted_output_modes (proto… | Agents SHOULD use this to tailor their output. | RequestContext (fields message, task_id, context_id, stored_task, metadata, cancellation_token, call_context, approval) carries no SendMessageConfiguration, and `grep accepted_output_modes crates/a2a-protocol-server/src` hits only tests: the executor can neve… |
 | medium | GAP | proto:Artifact.artifact_id (proto line 281) | It must be unique within a task. | Only append=true merges by id; a non-append ArtifactUpdate whose artifactId already exists falls through to `artifacts.push(update.artifact.clone())` (comment says 'Artifact ID not found' but the branch also covers found-without-append), so the persisted Task… |
 | medium | GAP | §3.1.9 (line 377) | TaskNotFoundError: The task ID does not exist or is not accessible. (ListTaskPushNotificationConfigs) | on_list_push_configs never checks the task store; a nonexistent task returns 200 with an empty list, and rest_edge_tests asserts that deviation ('not 404 — configs are task-agnostic'). |
@@ -149,7 +143,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | low | PARTIAL | proto:SubscribeToTaskRequest.id (proto line 753) | string id = 2 [(google.api.field_behavior) = REQUIRED]; | JSON-RPC/WS absent `id` -> -32602 (REST takes it from the path, empty segment never routes here). But gRPC absent id (== "") and JSON `"id":""` are not validated (no validate_id call outside SendMessage) and fall through to the store, answering TaskNotFound (… |
 | low | PARTIAL | §3.1.2 (line 210) | The stream MUST close when the task reaches a terminal state (COMPLETED, FAILED, CANCELED, REJECTED). | The reader ends on broadcast-channel Closed, i.e. when the executor returns and drops its writer; a terminal event does not itself end the stream and the writer does not refuse post-terminal writes, so an executor that keeps running (or writes more) after a t… |
 | low | PARTIAL | §3.1.6 (line 309) | The stream MUST terminate when the task reaches a terminal state | Stream stays open across turns and synthesizes the terminal frame (STREAM-SUB-002 fix), but the reattach hook returns `Reattached::End` after `subscribe_max_idle` (default 300 s) while the task is still non-terminal, closing early by design (and pinned by a t… |
-| low | PARTIAL | §3.1.8 (line 360) | The operation MUST fail if the configuration does not exist or the client lacks access. | Non-existence is enforced and tested; 'lacks access' is only tenant-granular (needs a TenantResolver + tenant-aware push store) and otherwise left to an interceptor; any caller in the same tenant can read any config by (taskId, id). |
 | low | PARTIAL | §3.2.6 (line 479) | Custom protocol bindings MUST specify how service parameters are transmitted in their binding specification. | The SDK ships two custom bindings. SLIMRPC has a written binding spec section (slimrpc.md §3 'Service Parameter Transmission'). The WebSocket binding's only specification is rustdoc: service params are the upgrade request's HTTP headers, captured once per con… |
 | low | PARTIAL | §3.3.2 (line 544) | Well-known types from the google.rpc error model (e.g., ErrorInfo, BadRequest) SHOULD be used where applicable | ErrorInfo for every A2A-specific error; standard JSON-RPC errors (InvalidParams etc.) carry no details at all, so validation failures get no BadRequest.FieldViolation. |
 | low | PARTIAL | §3.6.2 (line 739) | Agents MUST interpret empty value as 0.3 version. | Empty means 0.3 and is refused on every binding including axum. Only the explicit opt-outs (accept_missing_version_header, gRPC require_version_header=false) serve it as 1.0, by the deployer's choice. |

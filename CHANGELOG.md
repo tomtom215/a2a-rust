@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-caller task isolation** (server; spec §13.1):
+  `RequestHandlerBuilder::isolate_tasks_by_caller`. Tasks were scoped by
+  tenant only, so two callers authenticated as different identities in one
+  tenant, or in the default single-tenant deployment, could get, list,
+  cancel and subscribe to each other's tasks and register webhooks on them.
+  With this, the identity an authenticating interceptor sets selects the
+  records a request can reach: another caller's task is `TaskNotFound`, the
+  same answer as an unknown id, and `ListTasks` returns only the caller's
+  own. The tenant-aware stores key by `TenantContext::partition` (the tenant,
+  plus the caller when isolating); the halt switch, quotas, audit chains and
+  metrics still see the tenant. `build()` refuses the setting over stores
+  that do not partition by tenant and over a chain with no authenticating
+  interceptor. Off by default: sharing within a tenant is still the
+  behaviour unless a deployment asks for this. A tenant containing U+001F,
+  the separator in a partition key, is now refused.
+  `tests/caller_isolation.rs` covers every operation that names a task,
+  lists, webhooks, background completion, and SQLite; a no-op isolation
+  fails three of its tests, and a background spawn that drops the caller
+  fails the completion test. The caller is recorded in a per-request slot
+  once the interceptors have run, rather than by scoping the rest of each
+  method in a second future, which had pushed request futures to 29-34 KB.
 - **A requirement-level compliance ledger** (`docs/compliance/spec-ledger.json`,
   rendered as `spec-ledger.md`). Every RFC 2119 statement in the A2A
   specification (`main` at `12e9d2fb`, v1.0.1 plus editorial fixes and
