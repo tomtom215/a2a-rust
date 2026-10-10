@@ -257,6 +257,26 @@ async fn http_request(
     (status, body)
 }
 
+/// Drives a task into being through `message:send` and returns its id: the
+/// push-config operations answer `TaskNotFound` for a task that does not
+/// exist (spec §3.1.7-§3.1.10).
+async fn create_task(addr: SocketAddr) -> String {
+    let body = serde_json::to_string(&make_send_params()).unwrap();
+    let (status, _headers, resp) = http_request_full(
+        addr,
+        "POST",
+        "/message:send",
+        Some(&body),
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, 200, "{resp}");
+    match serde_json::from_str::<SendMessageResponse>(&resp).expect("parse") {
+        SendMessageResponse::Task(t) => t.id.0,
+        other => panic!("expected Task variant, got {other:?}"),
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // CORS integration tests — covers lines 72-75, 90-93, 107, 116, 161
 // ══════════════════════════════════════════════════════════════════════════════
@@ -546,11 +566,12 @@ async fn get_push_config_nonexistent_returns_error() {
 #[tokio::test]
 async fn list_push_configs_empty_returns_200() {
     let (addr, _handle) = start_rest_server().await;
+    let task_id = create_task(addr).await;
 
     let (status, body) = http_request(
         addr,
         "GET",
-        "/tasks/task-1/pushNotificationConfigs",
+        &format!("/tasks/{task_id}/pushNotificationConfigs"),
         None,
         None,
     )
@@ -565,11 +586,12 @@ async fn list_push_configs_empty_returns_200() {
 #[tokio::test]
 async fn delete_push_config_nonexistent_returns_200() {
     let (addr, _handle) = start_rest_server().await;
+    let task_id = create_task(addr).await;
 
     let (status, _body) = http_request(
         addr,
         "DELETE",
-        "/tasks/task-1/pushNotificationConfigs/nonexistent-id",
+        &format!("/tasks/{task_id}/pushNotificationConfigs/nonexistent-id"),
         None,
         None,
     )
@@ -583,11 +605,12 @@ async fn list_push_configs_no_push_sender_still_works() {
     // Handler without push sender — list still uses push_config_store (default in-memory).
     let handler = make_handler_no_push();
     let (addr, _handle) = start_rest_server_with_cors(handler, None).await;
+    let task_id = create_task(addr).await;
 
     let (status, body) = http_request(
         addr,
         "GET",
-        "/tasks/task-1/pushNotificationConfigs",
+        &format!("/tasks/{task_id}/pushNotificationConfigs"),
         None,
         None,
     )
@@ -606,11 +629,12 @@ async fn list_push_configs_no_push_sender_still_works() {
 async fn delete_push_config_no_push_sender_still_works() {
     let handler = make_handler_no_push();
     let (addr, _handle) = start_rest_server_with_cors(handler, None).await;
+    let task_id = create_task(addr).await;
 
     let (status, _body) = http_request(
         addr,
         "DELETE",
-        "/tasks/task-1/pushNotificationConfigs/some-id",
+        &format!("/tasks/{task_id}/pushNotificationConfigs/some-id"),
         None,
         None,
     )

@@ -227,6 +227,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **Listing or deleting push configs of an unknown task is `TaskNotFound`**
+  (server; spec §3.1.9, §3.1.10). Listing answered an empty list and
+  deleting succeeded, which a peer cannot tell from a known task with no
+  webhooks. REST answers 404, JSON-RPC -32001, gRPC `NOT_FOUND`, as the
+  reference SDK does. Deleting a config that is already gone on a task that
+  exists still succeeds: the operation is idempotent.
+- **A non-append artifact update for an id the task already holds replaces
+  that artifact** (server). The proto says an artifact id "must be unique
+  within a task", and the task stored a second artifact with the same id.
+  Both the blocking and background paths replace in place now, as the
+  reference SDK does.
+- **`ROLE_UNSPECIFIED` is refused with `InvalidParams`** (server). The JSON
+  bindings already refused a message without a role; over gRPC an absent
+  role decodes as `ROLE_UNSPECIFIED` and was accepted.
+
 - **Agent Card signatures canonicalize with protobuf field presence** (types,
   `signing` feature; spec §8.4.1 rule 1). A field that holds its default
   value is now left out of the signed bytes unless it is `REQUIRED` or
@@ -294,6 +309,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`GetExtendedAgentCard` enforces required extensions** (§3.3.4), as
+  every other operation already did.
 - **A card whose OAuth flow has no scopes parses** (types). ProtoJSON, which
   every official SDK emits, leaves an empty map out even where the proto
   marks it `REQUIRED`, and the five flows' `scopes` had no

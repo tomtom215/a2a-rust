@@ -2301,6 +2301,25 @@ async fn an_empty_message_id_is_refused() {
     }
 }
 
+/// a2a.proto marks `Message.role` REQUIRED; over gRPC an absent role decodes
+/// as `ROLE_UNSPECIFIED`, which must be refused as the JSON bindings refuse
+/// a missing one.
+#[tokio::test]
+async fn an_unspecified_role_is_refused() {
+    let handler = make_handler();
+    let mut params = make_params(None);
+    params.message.role = a2a_protocol_types::message::MessageRole::Unspecified;
+
+    let err = handler
+        .on_send_message(params, false, None)
+        .await
+        .expect_err("ROLE_UNSPECIFIED must be refused");
+    match err {
+        ServerError::InvalidParams(msg) => assert!(msg.contains("message.role"), "{msg}"),
+        other => panic!("expected InvalidParams, got {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn an_over_long_message_id_is_refused() {
     let handler = make_handler();

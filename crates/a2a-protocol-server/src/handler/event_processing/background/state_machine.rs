@@ -287,6 +287,49 @@ pub(super) async fn process_event_with(
                 .await;
                 return Outcome::Persisted;
             }
+            // A non-append update for an artifact the task already holds
+            // replaces it. An artifact id "must be unique within a task"
+            // (a2a.proto, `Artifact.artifact_id`), and until 2026-10-10 this
+            // pushed a second artifact with the same id. The reference SDK
+            // replaces in place too. A full `save` rather than a delta:
+            // replacing is rare, and `ArtifactDelta` has no variant for it.
+            if update.append != Some(true)
+                && let Some(index) = artifacts.iter().position(|a| a.id == update.artifact.id)
+            {
+                let previous = std::mem::replace(&mut artifacts[index], update.artifact.clone());
+                if let Err(e) = task_store.save(last_task).await {
+                    if let Some(refused) = refusal(&e) {
+                        return refused;
+                    }
+                    trace_error!(
+                        task_id = %task_id,
+                        error = %e,
+                        "background processor: task store save failed for artifact replace; reverting"
+                    );
+                    metrics.on_persistence_error(
+                        persistence_operation::ARTIFACT_PUSH,
+                        e.metric_label(),
+                    );
+                    if let Some(slot) = last_task
+                        .artifacts
+                        .as_mut()
+                        .and_then(|arts| arts.get_mut(index))
+                    {
+                        *slot = previous;
+                    }
+                    return Outcome::NotPersisted;
+                }
+                deliver_push_bg(
+                    task_id,
+                    stream_resp,
+                    push_config_store,
+                    push_sender,
+                    limits,
+                    metrics,
+                )
+                .await;
+                return Outcome::Persisted;
+            }
             // Artifact ID not found — fall through to push as new artifact.
 
             if artifacts.len() >= limits.max_artifacts_per_task {

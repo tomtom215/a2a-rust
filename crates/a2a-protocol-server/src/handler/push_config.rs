@@ -18,6 +18,15 @@ use super::RequestHandler;
 use super::helpers::build_call_context;
 
 impl RequestHandler {
+    /// `TaskNotFound` unless `task_id` names a task this request can reach.
+    async fn require_task(&self, task_id: &str) -> ServerResult<()> {
+        let id = TaskId::new(task_id);
+        match self.task_store.get(&id).await? {
+            Some(_) => Ok(()),
+            None => Err(ServerError::TaskNotFound(id)),
+        }
+    }
+
     /// Validates a push notification config and writes it to the store.
     ///
     /// Shared by `CreateTaskPushNotificationConfig` and by the inline
@@ -312,6 +321,11 @@ impl RequestHandler {
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
+                    // SPEC §3.1.9: TaskNotFoundError when "the task ID does not
+                    // exist or is not accessible". An unknown task answered an
+                    // empty list until 2026-10-10, which a peer cannot tell
+                    // from a known task with no webhooks.
+                    self.require_task(task_id).await?;
                     let configs = self.push_config_store.list(task_id).await?;
                     Ok(configs)
                 }
@@ -374,6 +388,10 @@ impl RequestHandler {
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
+                    // SPEC §3.1.10: TaskNotFoundError when the task does not
+                    // exist; deleting a config that is already gone still
+                    // succeeds, since the operation MUST be idempotent.
+                    self.require_task(&params.task_id).await?;
                     self.push_config_store
                         .delete(&params.task_id, &params.id)
                         .await?;
@@ -1028,23 +1046,54 @@ mod tests {
 
     // ── on_list_push_configs ─────────────────────────────────────────────────
 
+    /// §3.1.9: an unknown task is `TaskNotFound`, not an empty list, which
+    /// a peer could not tell from a known task with no webhooks.
     #[tokio::test]
-    async fn list_push_configs_empty_returns_empty_vec() {
+    async fn list_push_configs_for_an_unknown_task_is_task_not_found() {
         let handler = make_handler();
-        let result = handler
-            .on_list_push_configs("no-task", None, None)
-            .await
-            .expect("list should succeed on empty store");
+        let result = handler.on_list_push_configs("no-task", None, None).await;
         assert!(
-            result.is_empty(),
-            "listing configs for an unknown task should return an empty vec"
+            matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
+            "expected TaskNotFound, got: {result:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn list_push_configs_of_a_task_without_any_is_empty() {
+        let handler = make_handler();
+        save_task(&handler, "t-empty").await;
+        let result = handler
+            .on_list_push_configs("t-empty", None, None)
+            .await
+            .expect("a known task lists");
+        assert!(result.is_empty(), "{result:?}");
     }
 
     // ── on_delete_push_config ────────────────────────────────────────────────
 
+    /// §3.1.10: deleting is idempotent, so a config that is already gone on
+    /// a task that exists is still a success.
     #[tokio::test]
     async fn delete_push_config_nonexistent_returns_ok() {
+        use a2a_protocol_types::params::DeletePushConfigParams;
+
+        let handler = make_handler();
+        save_task(&handler, "t-del").await;
+        let params = DeletePushConfigParams {
+            tenant: None,
+            task_id: "t-del".to_owned(),
+            id: "no-id".to_owned(),
+        };
+        let result = handler.on_delete_push_config(params, None).await;
+        assert!(
+            result.is_ok(),
+            "deleting a non-existent push config should return Ok, got: {result:?}"
+        );
+    }
+
+    /// §3.1.10: the task itself must exist.
+    #[tokio::test]
+    async fn delete_push_config_of_an_unknown_task_is_task_not_found() {
         use a2a_protocol_types::params::DeletePushConfigParams;
 
         let handler = make_handler();
@@ -1053,12 +1102,10 @@ mod tests {
             task_id: "no-task".to_owned(),
             id: "no-id".to_owned(),
         };
-        // The in-memory store's delete is idempotent: deleting a non-existent
-        // config returns Ok(()) rather than an error.
         let result = handler.on_delete_push_config(params, None).await;
         assert!(
-            result.is_ok(),
-            "deleting a non-existent push config should return Ok, got: {result:?}"
+            matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
+            "expected TaskNotFound, got: {result:?}"
         );
     }
 

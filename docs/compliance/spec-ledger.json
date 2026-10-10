@@ -1011,17 +1011,19 @@
    "keyword": "MUST (implied, Errors list)",
    "binds": "server",
    "requirement": "TaskNotFoundError: The task ID does not exist or is not accessible. (ListTaskPushNotificationConfigs)",
-   "status": "GAP",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:313"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/rest_edge_tests.rs:233 list_push_configs_for_nonexistent_task"
+    "crates/a2a-protocol-server/src/handler/push_config.rs list_push_configs_for_an_unknown_task_is_task_not_found",
+    "crates/a2a-protocol-server/tests/rest_edge_tests.rs list_push_configs_for_nonexistent_task"
    ],
-   "notes": "on_list_push_configs never checks the task store; a nonexistent task returns 200 with an empty list, and rest_edge_tests asserts that deviation ('not 404 — configs are task-agnostic').",
+   "notes": "RequestHandler::require_task checks the task before listing; an unknown task is TaskNotFound (REST 404, JSON-RPC -32001), as in the reference SDK. A test that asserted the old empty list was corrected.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 381,
@@ -1083,17 +1085,19 @@
    "keyword": "MUST (implied, Errors list)",
    "binds": "server",
    "requirement": "TaskNotFoundError: The task ID does not exist. (DeleteTaskPushNotificationConfig)",
-   "status": "GAP",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:375"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/dispatch_rest_coverage.rs:566 delete_push_config_nonexistent_returns_200"
+    "crates/a2a-protocol-server/src/handler/push_config.rs delete_push_config_of_an_unknown_task_is_task_not_found",
+    "crates/a2a-protocol-server/src/handler/push_config.rs delete_push_config_nonexistent_returns_ok"
    ],
-   "notes": "No task-existence check before delete; deleting under a nonexistent task id succeeds. Low because idempotent delete of a config is also required and the error list is not RFC-keyworded.",
+   "notes": "The task must exist (TaskNotFound otherwise); deleting a config that is already gone on an existing task still succeeds, keeping the operation idempotent.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 402,
@@ -1939,8 +1943,8 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "When a server requests use of an extension marked as `required: true` ... but the client does not declare support for it, the agent MUST return ExtensionSupportRequiredError",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:84",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:219",
@@ -1948,12 +1952,12 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:33"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/capability.rs:274 missing_required_extension_is_rejected",
-    "crates/a2a-protocol-server/src/handler/capability.rs:384 get_task_enforces_required_extension"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs get_extended_agent_card_enforces_required_extensions"
    ],
-   "notes": "Enforced on Send/Get/List/Cancel/Subscribe/all push-config ops, but on_get_extended_agent_card (extended_card.rs:33-35) never calls ensure_required_extensions.",
+   "notes": "Every operation now refuses a client that does not declare a required extension; GetExtendedAgentCard was the one that skipped it.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 578,
@@ -7983,8 +7987,8 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "Role role = 4 [(google.api.field_behavior) = REQUIRED];",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/message.rs:109",
     "crates/a2a-protocol-types/src/message.rs:76",
@@ -7992,10 +7996,13 @@
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:155",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:27"
    ],
-   "test_evidence": [],
-   "notes": "JSON-RPC/REST/WS reject an absent `role` (serde required field -> -32602 / 400), but nothing rejects ROLE_UNSPECIFIED: gRPC role=0 (i.e. missing) maps `pb::Role::Unspecified => Self::Unspecified` and validate_send_params never inspects role, so a gRPC SendMessage without a role is accepted, as is JSON `\"role\":\"ROLE_UNSPECIFIED\"`. No test sends a role-less message on any binding.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/messaging/tests.rs an_unspecified_role_is_refused"
+   ],
+   "notes": "validate_send_params refuses ROLE_UNSPECIFIED (what an absent gRPC enum decodes to) with InvalidParams, as the JSON bindings refuse a missing role.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 270,
@@ -8023,18 +8030,22 @@
    "keyword": "must",
    "binds": "agent-application",
    "requirement": "It must be unique within a task.",
-   "status": "GAP",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:404",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:463",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:289",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:299"
    ],
-   "test_evidence": [],
-   "notes": "Only append=true merges by id; a non-append ArtifactUpdate whose artifactId already exists falls through to `artifacts.push(update.artifact.clone())` (comment says 'Artifact ID not found' but the branch also covers found-without-append), so the persisted Task (GetTask/ListTasks) can carry two artifacts with the same artifactId. SDK neither replaces nor rejects.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/event_processing_tests/sync_mode.rs a_repeated_artifact_id_replaces_on_the_blocking_path",
+    "crates/a2a-protocol-server/tests/event_processing_tests/sync_mode.rs a_repeated_artifact_id_replaces_on_the_background_path"
+   ],
+   "notes": "A non-append update for an artifact id the task already holds replaces it in place (full save), on the blocking and background paths, as the reference SDK does; it used to store a second artifact with the same id.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 282,
@@ -9602,9 +9613,10 @@
     "crates/a2a-protocol-server/src/push/config_store.rs:487"
    ],
    "test_evidence": [],
-   "notes": "JSON absent -> -32602, but gRPC (absent == \"\") and JSON empty string are passed straight to push_config_store.delete, which treats a missing config as Ok (delete_nonexistent_is_ok): the server answers success to a request missing a REQUIRED field instead of INVALID_ARGUMENT.",
+   "notes": "JSON absent -> -32602, but gRPC (absent == \"\") and JSON empty string are passed straight to push_config_store.delete, which treats a missing config as Ok (delete_nonexistent_is_ok): the server answers success to a request missing a REQUIRED field instead of INVALID_ARGUMENT. Since 2026-10-10 an empty or unknown task_id is TaskNotFound (the task is checked first), no longer a silent success; InvalidParams for the empty string specifically is still open.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 744,
@@ -9622,9 +9634,10 @@
     "crates/a2a-protocol-server/src/push/config_store.rs:487"
    ],
    "test_evidence": [],
-   "notes": "JSON absent -> -32602, but gRPC (absent == \"\") and JSON empty string are passed straight to push_config_store.delete, which treats a missing config as Ok (delete_nonexistent_is_ok): the server answers success to a request missing a REQUIRED field instead of INVALID_ARGUMENT.",
+   "notes": "JSON absent -> -32602, but gRPC (absent == \"\") and JSON empty string are passed straight to push_config_store.delete, which treats a missing config as Ok (delete_nonexistent_is_ok): the server answers success to a request missing a REQUIRED field instead of INVALID_ARGUMENT. Unchanged on 2026-10-10 for this field: an empty config `id` on an existing task still deletes nothing and succeeds; only the task_id is now checked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 749,
@@ -9705,9 +9718,10 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:313"
    ],
    "test_evidence": [],
-   "notes": "JSON absent -> -32602; gRPC absent (\"\") / JSON empty returns an empty list successfully (no validation, no task-existence check) instead of InvalidParams.",
+   "notes": "JSON absent -> -32602; gRPC absent (\"\") / JSON empty returns an empty list successfully (no validation, no task-existence check) instead of InvalidParams. Since 2026-10-10 an empty or unknown task_id is TaskNotFound (the task is checked first), no longer a silent success; InvalidParams for the empty string specifically is still open.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 773,

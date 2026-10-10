@@ -962,6 +962,12 @@ area. This branch answers both.
 7. `docs(compliance):` `docs/compliance/spec-ledger.json` (512 entries) and
    `scripts/check_spec_ledger.py` in `ci.yml`, proven by
    `prove_gates_fail.sh`.
+8. `feat(server):` per-caller task isolation (§13.1),
+   `RequestHandlerBuilder::isolate_tasks_by_caller`; design below.
+9. `fix(server):` push-config list/delete of an unknown task is
+   `TaskNotFound`; `GetExtendedAgentCard` enforces required extensions; a
+   repeated non-append `artifactId` replaces the artifact; `ROLE_UNSPECIFIED`
+   is refused.
 
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
@@ -978,9 +984,10 @@ before acting on it, as this branch did.
 - In-repo TCK against a2a-go 2.5.0 (Go 1.26.9, patched deps) and a2a-java
   1.3.0 (Quarkus 3.37.0 with netty and jackson BOMs): all pass on JSON-RPC and
   REST with tck.yml's one REST skip.
-- `cargo test --workspace --all-features --no-fail-fast`: 4,447 passed before
-  the last two test fixes (one delegation test and deploy-agent's helper,
-  both relying on behaviour this branch corrected); both pass now.
+- `cargo test --workspace --all-features --no-fail-fast` after the
+  isolation commit: 168 binaries, 4,459 passed, 0 failed, 115 ignored. (An
+  earlier run, after the delegation-test fix, failed only deploy-agent's
+  helper, which relied on the axum router's missing version check.)
 - Workspace clippy `-D warnings`: clean. `prove_workflow_gates_fail.py`: 28
   proven, 0 unproven, 21 exempt.
 
@@ -1002,25 +1009,34 @@ before acting on it, as this branch did.
 1. Read the first CI run of this branch. New or changed gates: the ledger
    check, the proto upstream check, Go 1.26 in tck/ci/pin-freshness, the Java
    peer's BOM overrides.
-2. §13.1 per-caller authorization is the largest open item (six high
-   entries). In progress at the time of writing; see the next paragraph.
-3. Then the ledger's medium entries: §3.1.9 listing push configs of an unknown
-   task returns an empty list (a test pins it); rate limiting answers -32603 /
-   500 instead of a 429-shaped error; a duplicate non-append `artifactId` is
-   stored twice; `GetExtendedAgentCard` skips the required-extension check;
-   mid-stream JSON-RPC errors carry `data` that is not an `@type` array;
-   SLIMRPC's status codes and metadata-key case; `ROLE_UNSPECIFIED` accepted
-   over gRPC; the client never checks card capabilities before streaming.
+2. The ledger's remaining medium entries (`docs/compliance/spec-ledger.md`
+   lists every open one, most severe first). The ones read and confirmed
+   this session but not yet fixed: rate limiting answers -32603 / 500 rather
+   than a 429-shaped error; mid-stream JSON-RPC errors carry a `data` object
+   (`streamLagged`) where §9.5 requires an array of `@type` objects, and the
+   marker is a public wire contract, so changing it needs the client's
+   predicate to accept both shapes first; SLIMRPC's status codes and
+   metadata-key case; the client never checks card capabilities before
+   streaming (a SHOULD, and checking would refuse servers that stream without
+   declaring it).
+3. Run the Postgres store suite against the partition change
+   (`A2A_TEST_POSTGRES_URL`, see environment notes); this session ran SQLite
+   only. The Postgres stores took the same mechanical edit.
 4. Put `card_signature_interop.py` in CI beside `python_client_vs_rust.py`.
 
-**§13.1, the design chosen.** Opt-in caller partitions: after the
-interceptors authenticate a caller, the tenant-aware stores key by tenant plus
-caller identity, so another caller's task is `TaskNotFound` and lists are
-scoped, while `TenantContext::current()` stays the tenant for the halt switch,
-quotas, audit chains and metric labels. A composite tenant string was
-rejected: it would have put each caller in its own halt scope, so halting a
-tenant would not stop its callers. A general `TaskAuthorizer` hook was
-deferred: it needs ownership stored server-side in all four stores.
+**§13.1, as built.** Opt-in caller partitions: `RequestHandler::admit` runs
+the interceptors and then records the caller in a per-request slot
+(`TenantContext::scope_request` / `set_caller`), and the tenant-aware stores
+key by `TenantContext::partition` (tenant, or tenant + U+001F + caller).
+`TenantContext::current()` stays the tenant for the halt switch, quotas, audit
+chains and metric labels. Spawned work re-enters both through
+`TenantContext::capture()`. Rejected: a composite tenant string (each caller
+would get its own halt scope, so halting a tenant would not stop its callers);
+a nested future per method (clippy `large_futures`: 29-34 KB); a general
+`TaskAuthorizer` hook (ownership would have to be stored in all four stores).
+A maintainer decision remains: whether isolation should become the default
+when an authenticating interceptor is installed. That is a breaking change for
+deployments that share tasks within a tenant on purpose.
 
 **Environment notes, new this session.**
 - `pkill -f` / `pgrep -f` with a pattern from your own command killed the

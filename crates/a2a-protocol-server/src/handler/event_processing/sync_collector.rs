@@ -461,6 +461,28 @@ impl SyncCollector {
                     state.record_for_push(self.push_sender.is_some(), stream_resp);
                     return Ok(());
                 }
+                // A non-append update for an artifact the task already holds
+                // replaces it, as the background processor does: an artifact
+                // id is unique within a task (a2a.proto).
+                if update.append != Some(true)
+                    && let Some(index) = artifacts.iter().position(|a| a.id == update.artifact.id)
+                {
+                    let previous =
+                        std::mem::replace(&mut artifacts[index], update.artifact.clone());
+                    if let Err(e) = self.task_store.save(last_task).await {
+                        if let Some(slot) = last_task
+                            .artifacts
+                            .as_mut()
+                            .and_then(|arts| arts.get_mut(index))
+                        {
+                            *slot = previous;
+                        }
+                        return Err(ServerError::from(e));
+                    }
+                    state.saw_task_shaped_event = true;
+                    state.record_for_push(self.push_sender.is_some(), stream_resp);
+                    return Ok(());
+                }
                 // Artifact ID not found — fall through to push as new.
 
                 if artifacts.len() >= self.limits.max_artifacts_per_task {

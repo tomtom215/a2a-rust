@@ -240,10 +240,12 @@ async fn list_push_configs_for_nonexistent_task() {
         None,
     )
     .await;
-    // Should return 200 with empty list (not 404 — configs are task-agnostic).
-    assert_eq!(status, 200);
-    // The body should be an empty array or contain an empty list.
-    assert!(body.contains("[]") || body.contains("configs"));
+    // §3.1.9: TaskNotFound (404), "the task ID does not exist or is not
+    // accessible". This asserted 200 with an empty list until 2026-10-10, on
+    // the reasoning that configs are task-agnostic; the specification lists
+    // the error, and an empty list cannot be told from a known task with no
+    // webhooks.
+    assert_eq!(status, 404, "{body}");
 }
 
 // ── Agent card endpoint ─────────────────────────────────────────────────────
