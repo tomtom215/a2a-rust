@@ -3,6 +3,14 @@
 
 # A2A v1.0 spec-compliance traceability matrix
 
+**The requirement-level view is [`docs/compliance/spec-ledger.md`](docs/compliance/spec-ledger.md)**:
+every RFC 2119 statement in the specification and every `REQUIRED` proto
+field, one entry each, with what is open, at what severity, and which test
+says so. CI (`scripts/check_spec_ledger.py`) fails when it misses a
+requirement of the vendored specification or cites a test that does not
+exist. This matrix is the area-level summary; where they disagree, the ledger
+is the finer-grained record.
+
 This document maps each normative area of the
 [A2A v1.0 specification](https://a2a-protocol.org/v1.0.0/specification) to
 its implementation in this repository and to the test evidence that proves
@@ -34,7 +42,7 @@ from either direction (`grep -rn "§3.4.3" crates/`).
 | Spec area | Implementation | Evidence |
 |---|---|---|
 | §3.1 `SendMessage` (create/continue task) | `handler/messaging/` (`mod.rs` orchestrates; `create.rs`, `continuation.rs`) | TCK `send_message_*`; interop send checks |
-| §3.1.2 Streaming send | `handler/messaging/`, `streaming/` | TCK `streaming_send_message`; interop streaming checks; ITK streaming scenarios |
+| §3.1.2 Streaming send: a message-only stream is exactly one `Message`; a task stream begins with the `Task` | `handler/messaging/respond.rs`; `streaming/event_queue/in_memory.rs` (`set_provisional_task`: the executor's first event decides) | `a_message_only_stream_is_exactly_one_message`, `a_task_lifecycle_stream_begins_with_the_task`, `a_dropped_first_read_still_*`; TCK `streaming_send_message`; ITK streaming scenarios. Until 2026-10-10 every stream began with a `Task`, so a message-only answer was `[Task, Message]` |
 | §3.1.4 `ListTasks` — order by `status.timestamp` desc, `statusTimestampAfter` filter | `handler/lifecycle/list_tasks.rs`; all four task stores (`store/`) | `list_tasks_*` unit tests; `statusTimestampAfter` store tests; ms-precision timestamps (`utc_now_iso8601`) |
 | §3.4.2 Unknown `taskId` → `TaskNotFound` | `handler/messaging/continuation.rs`, `handler/lifecycle/get_task.rs` | TCK `get_unknown_task_returns_error` (portable across all official SDKs) |
 | §3.4.3 `taskId`-only continuation infers `contextId` | `handler/messaging/continuation.rs` | `messaging` continuation tests |
@@ -61,7 +69,8 @@ the compliance claim is worse than no matrix.
 | §3.6 Wire version is `Major.Minor` (`"1.0"`, no patch) | `A2A_VERSION` (`lib.rs`) | version-constant tests; agent-card fixtures |
 | §3.6.1 Clients send `A2A-Version` | client transports (jsonrpc/rest/websocket) | TCK sends the header on every request; client transport tests |
 | §3.6.2 Absent/empty header ⇒ 0.3 ⇒ rejected by v1.0 server | `dispatch/mod.rs::validate_version_header`; jsonrpc/rest/websocket dispatchers | `jsonrpc_missing_version_header_rejected`, `rest_missing_version_header_rejected_but_card_discovery_versionless`, `ws_*` handshake tests; opt-out `accept_missing_version_header` |
-| §3.6.2 Unsupported version → `VersionNotSupported` (all bindings) | dispatchers + `dispatch/grpc/helpers.rs::validated_metadata` | version-mismatch tests per binding |
+| §3.6.2 Unsupported version → `VersionNotSupported` (all bindings) | dispatchers + `dispatch/grpc/helpers.rs::validated_metadata`; the axum adapter's `validate_a2a_request` (it had no check until 2026-10-10, so "all bindings" was not true of it) | version-mismatch tests per binding; `axum_enforces_the_protocol_version_except_for_discovery` |
+| §3.6.1 Version as a request parameter (`?A2A-Version=1.0`) | `dispatch::requested_version` (JSON-RPC, REST, WebSocket upgrade, axum) | `rest_version_request_parameter_is_honoured`, `jsonrpc_version_request_parameter_is_honoured` |
 
 ## §4 — Data model
 
@@ -85,7 +94,7 @@ the compliance claim is worse than no matrix.
 |---|---|---|
 | Bearer / API-key / JWT interceptors | `auth/` (`auth-jwt` feature) | `auth_jwt_e2e`, JWKS/OIDC discovery e2e tests; live-TLS JWKS test |
 | JWKS parsing (remote keys) | `auth/jwt.rs::Jwks::from_json` | unit tests; `fuzz/jwks_parse` |
-| §7.6.4 `TASK_STATE_AUTH_REQUIRED` is not itself an authorization (added upstream 2026-07-30, `6550d34`) | `ServerInterceptor` runs before every method regardless of task state; no server code reads `AuthRequired` for any decision (`grep -rn AuthRequired crates/a2a-protocol-server/src` returns **no lines**; the only mentions in the server crate are under `crates/a2a-protocol-server/tests/`) | `auth_required_state_tests.rs`: a continuation of an `AUTH_REQUIRED` task without credentials is rejected by the interceptor exactly as the first request was |
+| §7.6.4 `TASK_STATE_AUTH_REQUIRED` is not itself an authorization (added upstream 2026-07-30, `6550d34`) | `ServerInterceptor` runs before every method regardless of task state; no server code reads `AuthRequired` for any decision. `grep -rn AuthRequired crates/a2a-protocol-server/src` matches three files, none deciding access: the span label (`rpc_span/a2a.rs`), and the interrupted-state lists in `handler/messaging/terminal.rs` and `store/terminal.rs`. (This row said the grep returned no lines; corrected 2026-10-10.) | `auth_required_state_tests.rs`: a continuation of an `AUTH_REQUIRED` task without credentials is rejected by the interceptor exactly as the first request was |
 
 ## §8 — Agent discovery
 

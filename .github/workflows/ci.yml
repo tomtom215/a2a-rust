@@ -180,6 +180,14 @@ jobs:
       - name: Compliance map cites only tests that exist
         run: python3 scripts/check_compliance_map.py --check
 
+      # docs/compliance/spec-ledger.json records what this SDK does about every
+      # RFC 2119 statement in the A2A specification and the proto's REQUIRED
+      # fields. It rots two ways nobody would notice: the vendored
+      # specification gains a requirement the ledger never heard of, or a test
+      # it cites is renamed. This fails on both.
+      - name: Spec ledger covers every requirement and cites only tests that exist
+        run: python3 scripts/check_spec_ledger.py
+
       # `Metrics` callbacks default to no-ops, so one the bundled OTLP exporter
       # forgets is discarded with no compile error and no failing test — the
       # exporter's own tests run against a noop meter, which a no-op override
