@@ -145,26 +145,13 @@ impl RestDispatcher {
             return resp;
         }
 
-        // Validate Content-Type for POST/PUT/PATCH requests.
-        if (method == "POST" || method == "PUT" || method == "PATCH")
-            && let Some(ct) = req.headers().get("content-type")
-        {
-            let ct_str = ct.to_str().unwrap_or("");
-            if !ct_str.starts_with("application/json")
-                && !ct_str.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE)
-            {
-                // 400, not 415. `ContentTypeNotSupportedError` is the
-                // A2A error this is, and §5.4 assigns it 400 — even
-                // though 415 is the more descriptive HTTP status, and
-                // this answered 415 until the table was re-read on
-                // 2026-08-30.
-                return error_json_response(
-                    a2a_protocol_types::ErrorCode::ContentTypeNotSupported.http_status(),
-                    &format!(
-                        "unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"
-                    ),
-                );
-            }
+        // Validate Content-Type for POST/PUT/PATCH requests. 400, not 415:
+        // `ContentTypeNotSupportedError` is the A2A error this is, §5.4
+        // assigns it 400, and it carries its `ErrorInfo` like every other
+        // A2A error (§11.6). It went out as a bare 400 with no details until
+        // 2026-10-10.
+        if let Err(err) = super::check_request_content_type(req.method(), req.headers()) {
+            return server_error_to_response(&crate::error::ServerError::Protocol(err));
         }
 
         // Reject path traversal attempts (check both raw and percent-decoded forms).
@@ -187,13 +174,11 @@ impl RestDispatcher {
         // default (reference-SDK parity); any 1.x is accepted. Rejections
         // produce the real VersionNotSupportedError (with its ErrorInfo
         // detail), not an anonymous 400.
-        let version_value = req
-            .headers()
-            .get(a2a_protocol_types::A2A_VERSION_HEADER)
-            .and_then(|v| v.to_str().ok());
-        if let Err(err) =
-            super::validate_version_header(version_value, self.config.require_version_header)
-        {
+        let version_value = super::requested_version(req.headers(), req.uri());
+        if let Err(err) = super::validate_version_header(
+            version_value.as_deref(),
+            self.config.require_version_header,
+        ) {
             return server_error_to_response(&crate::error::ServerError::Protocol(err));
         }
 

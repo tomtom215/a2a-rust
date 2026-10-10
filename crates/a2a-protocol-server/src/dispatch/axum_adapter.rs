@@ -144,6 +144,7 @@ impl A2aRouter {
         // (2 MiB) and silently ignores `max_request_body_size`, so the knob that
         // works on the JSON-RPC/REST dispatchers would be a no-op here.
         let max_body = self.config.max_request_body_size;
+        let require_version = self.config.require_version_header;
         let state = A2aState {
             handler: self.handler,
             config: Arc::new(self.config),
@@ -169,8 +170,39 @@ impl A2aRouter {
             .route("/ready", get(handle_ready))
             .with_state(state)
             .layer(axum::extract::DefaultBodyLimit::max(max_body))
+            .layer(axum::middleware::from_fn_with_state(
+                require_version,
+                validate_a2a_request,
+            ))
             .layer(axum::middleware::from_fn(negotiate_media_type))
     }
+}
+
+/// The protocol checks `RestDispatcher` makes before routing, made here too.
+///
+/// Until 2026-10-10 this router made neither: it served `A2A-Version: 2.0`
+/// (and an absent version) with 1.0 semantics, against §3.6.2's MUST to
+/// answer `VersionNotSupportedError`, and it accepted any request media type.
+/// Discovery and the probes stay versionless, exactly as on the REST
+/// dispatcher, so a client can read the card before it knows what to send.
+async fn validate_a2a_request(
+    State(require_version): State<bool>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = req.uri().path();
+    let versionless = req.method() == axum::http::Method::GET
+        && matches!(path, "/.well-known/agent-card.json" | "/health" | "/ready");
+    if !versionless {
+        if let Err(err) = super::check_request_content_type(req.method(), req.headers()) {
+            return handler_error_to_response(&crate::error::ServerError::Protocol(err));
+        }
+        let version = super::requested_version(req.headers(), req.uri());
+        if let Err(err) = super::validate_version_header(version.as_deref(), require_version) {
+            return handler_error_to_response(&crate::error::ServerError::Protocol(err));
+        }
+    }
+    next.run(req).await
 }
 
 /// Labels the response `application/a2a+json` for a client that asks for it,

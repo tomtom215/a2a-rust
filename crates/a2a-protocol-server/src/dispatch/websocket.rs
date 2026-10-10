@@ -692,7 +692,8 @@ fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
     map
 }
 
-/// Validates the `A2A-Version` header on the upgrade request, mirroring the
+/// Validates the `A2A-Version` header (or `?A2A-Version=` parameter, §3.6.1)
+/// on the upgrade request, mirroring the
 /// JSON-RPC dispatcher: absent or empty is interpreted as protocol 0.3 per
 /// spec §3.6.2 and rejected under the strict default; any `1.x` is
 /// accepted; other major versions are rejected with HTTP 400 during the
@@ -701,11 +702,10 @@ fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
 // trait contract — it cannot be boxed or shrunk here.
 #[allow(clippy::result_large_err)]
 fn check_a2a_version(req: &WsUpgradeRequest, require: bool) -> Result<(), ErrorResponse> {
-    let value = req
-        .headers()
-        .get(a2a_protocol_types::A2A_VERSION_HEADER)
-        .and_then(|v| v.to_str().ok());
-    let v = value.unwrap_or("").trim();
+    // A browser cannot set headers on a WebSocket upgrade, so the §3.6.1
+    // request parameter is the only way it can name a version at all.
+    let value = super::requested_version(req.headers(), req.uri());
+    let v = value.as_deref().unwrap_or("").trim();
     if v.is_empty() {
         if !require {
             return Ok(());

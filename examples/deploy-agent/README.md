@@ -30,6 +30,7 @@ curl localhost:8080/.well-known/agent-card.json
 
 curl -X POST localhost:8080/message:send \
   -H 'content-type: application/json' \
+  -H 'A2A-Version: 1.0' \
   -d '{"message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"Ada"}]}}'
 ```
 

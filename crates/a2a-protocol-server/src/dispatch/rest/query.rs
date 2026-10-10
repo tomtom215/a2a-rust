@@ -58,7 +58,7 @@ pub(super) fn parse_query_param_u32(query: &str, key: &str) -> Option<u32> {
 }
 
 /// Parses a single query parameter value as a string, with percent-decoding.
-pub(super) fn parse_query_param(query: &str, key: &str) -> Option<String> {
+pub fn parse_query_param(query: &str, key: &str) -> Option<String> {
     query.split('&').find_map(|pair| {
         let (k, v) = pair.split_once('=')?;
         if k == key {

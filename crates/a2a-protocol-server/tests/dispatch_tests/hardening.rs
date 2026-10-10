@@ -37,10 +37,18 @@ async fn rest_rejects_wrong_content_type_on_post() {
         "wrong content type should be refused per §5.4"
     );
     let body = resp.into_body().collect().await.unwrap().to_bytes();
-    let body = String::from_utf8_lossy(&body);
+    let v: serde_json::Value = serde_json::from_slice(&body).expect("json body");
     assert!(
-        body.contains("unsupported Content-Type"),
-        "the Content-Type must be what refused this: {body}"
+        v["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("unsupported Content-Type")),
+        "the Content-Type must be what refused this: {v}"
+    );
+    // §11.6: an A2A error carries its `ErrorInfo`. This one went out as a
+    // bare 400 with no details until 2026-10-10.
+    assert_eq!(
+        v["error"]["details"][0]["reason"], "CONTENT_TYPE_NOT_SUPPORTED",
+        "{v}"
     );
 }
 

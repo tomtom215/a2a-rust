@@ -161,11 +161,22 @@ fn make_send_body(text: &str) -> String {
     .to_string()
 }
 
-/// Helper: HTTP GET with hyper client.
+/// Helper: HTTP GET with hyper client, as a v1.0 client sends it.
 async fn http_get(url: &str) -> (u16, Bytes) {
+    http_get_with(url, Some("1.0")).await
+}
+
+/// Helper: HTTP GET with the given `A2A-Version` header, or none.
+async fn http_get_with(url: &str, version: Option<&str>) -> (u16, Bytes) {
     let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
-    let uri: hyper::Uri = url.parse().unwrap();
-    let resp = client.get(uri).await.unwrap();
+    let mut req = hyper::Request::builder().method("GET").uri(url);
+    if let Some(v) = version {
+        req = req.header("a2a-version", v);
+    }
+    let resp = client
+        .request(req.body(Empty::new()).unwrap())
+        .await
+        .unwrap();
     let status = resp.status().as_u16();
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     (status, body)
@@ -196,6 +207,53 @@ async fn axum_health_endpoint() {
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["status"], "ok");
+}
+
+/// §3.6.2: an unsupported version is `VersionNotSupportedError`, and an
+/// absent one means 0.3, which a 1.0 server refuses. This router served both
+/// with 1.0 semantics until 2026-10-10. Discovery and the probes stay
+/// versionless, as on `RestDispatcher`.
+#[tokio::test]
+async fn axum_enforces_the_protocol_version_except_for_discovery() {
+    let base = start_test_server().await;
+    for version in [None, Some("2.0")] {
+        let (status, body) = http_get_with(&format!("{base}/tasks"), version).await;
+        assert_eq!(status, 400, "version {version:?}");
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            v["error"]["details"][0]["reason"], "VERSION_NOT_SUPPORTED",
+            "version {version:?}: {v}"
+        );
+    }
+    let (status, _) = http_get_with(&format!("{base}/tasks?A2A-Version=1.0"), None).await;
+    assert_eq!(status, 200, "the §3.6.1 request parameter is a version too");
+    for path in ["/.well-known/agent-card.json", "/health"] {
+        let (status, _) = http_get_with(&format!("{base}{path}"), None).await;
+        assert_eq!(status, 200, "{path} must not need a version");
+    }
+}
+
+/// §11.1: a body in a media type A2A does not define is
+/// `ContentTypeNotSupportedError` (HTTP 400, §5.4) with its `ErrorInfo`.
+#[tokio::test]
+async fn axum_refuses_an_unsupported_request_media_type() {
+    let base = start_test_server().await;
+    let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("{base}/message:send"))
+        .header("content-type", "text/plain")
+        .header("a2a-version", "1.0")
+        .body(Full::new(Bytes::from(make_send_body("hi"))))
+        .unwrap();
+    let resp = client.request(req).await.unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        v["error"]["details"][0]["reason"], "CONTENT_TYPE_NOT_SUPPORTED",
+        "{v}"
+    );
 }
 
 #[tokio::test]
