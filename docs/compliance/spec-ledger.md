@@ -32,7 +32,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §5 | 22 | 2 | 2 |  | 3 |  | 6 |  | 35 |
 | §7 | 6 | 13 | 2 |  |  | 1 |  |  | 22 |
 | §8 | 24 | 5 | 5 | 2 |  | 1 | 6 | 2 | 45 |
-| §9 | 8 |  |  | 1 |  |  | 4 |  | 13 |
+| §9 | 10 |  |  |  |  |  | 3 |  | 13 |
 | §10 | 6 |  |  |  |  |  |  |  | 6 |
 | §11 | 12 |  |  | 3 |  |  | 2 | 2 | 19 |
 | §12 | 5 | 1 | 1 |  | 1 |  | 10 | 1 | 19 |
@@ -40,7 +40,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 4 | 5 | 3 |  |  | 1 | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
 | proto `REQUIRED` fields | 43 | 10 | 6 |  | 8 | 26 | 9 | 4 | 106 |
-| **All** | **225** | **88** | **43** | **14** | **22** | **46** | **58** | **16** | **512** |
+| **All** | **227** | **88** | **43** | **13** | **22** | **46** | **57** | **16** | **512** |
 
 ## Open items, most severe first
 
@@ -70,8 +70,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | medium | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts (inbound) and Artifact.parts (executor output). Not enforced for AgentCard.skills/defaultInputModes/defaultOutputModes or AgentSkill.tags: AgentCard::validate and the builder check only name/supportedInterfaces, so the server will p… |
 | medium | PARTIAL | §8.1 (line 1980) | A2A Servers **MUST** make an Agent Card available. | JSON-RPC, REST and axum serve GET /.well-known/agent-card.json when a card is configured, but RequestHandlerBuilder's agent_card defaults to None and build() accepts that, serving 404 (pinned by a test); the WebSocket and gRPC dispatchers serve no well-known … |
 | medium | PARTIAL | §8.4.3 (line 2132) | 2. Retrieve the public key using the `kid` and `jku` (or from a trusted key store) | kid-based lookup in a caller-supplied JWKS is implemented and tested; jku is decoded but never followed (deliberately: fetch_jwks takes a caller-trusted URL), so jku retrieval is left to the application. |
-| medium | PARTIAL | §9.5 (line 2447) | Error Details: Mapped to error.data (array of objects, each containing a @type key, using ProtoJSON Any representation) | Unary errors put an array `[ErrorInfo]` in error.data. But the mid-stream JSON-RPC error frame copies A2aError.data verbatim (sse.rs:226 `jsonrpc_error.data.clone_from(&err.data)`), so the stream-lag error goes out as `"data":{"streamLagged":N}` - an object, … |
-| medium | PARTIAL | §9.5 (line 2465) | Each object in the data array MUST include a @type key that identifies the object's type | Unary/pre-stream: data = [{"@type":"type.googleapis.com/google.rpc.ErrorInfo",reason,domain}], so this holds there. The mid-stream SSE error frame breaks it: it sends `data:{"streamLagged":N}` with no @type (sse.rs:224-226). |
 | medium | PARTIAL | §12 (line 2985) | Custom bindings MUST comply with all requirements defined in Section 5 | SLIMRPC maps PushNotificationNotSupported, UnsupportedOperation and VersionNotSupported to UNIMPLEMENTED (error.rs:110-113), while §5.4 (spec lines 1184-1190) and this repo's gRPC table (types error.rs:217-246) say FAILED_PRECONDITION. The comment at error.rs… |
 | medium | PARTIAL | §12.4 (line 3024) | 2. Preserve Error Information: Ensure error details are accessible to clients | WebSocket error responses carry only code and message: no `data` and no ErrorInfo, unlike the JSON-RPC HTTP binding that it otherwise mirrors (jsonrpc/response.rs:160-164). Any mid-stream error is rewritten to code -32000 with `e.to_string()`, discarding the … |
 | medium | PARTIAL | §12.4 (line 3025) | 3. Use Appropriate Codes: Map to protocol-native error codes where applicable | SLIMRPC status codes match neither reference. Against the binding's own spec table: ContentTypeNotSupported is sent as INVALID_ARGUMENT (spec: UNIMPLEMENTED), JSONParseError as INVALID_ARGUMENT (spec: INTERNAL), and unknown errors as INTERNAL (spec: UNKNOWN).… |
@@ -151,6 +149,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | low | PARTIAL | §8.6.2 (line 2235) | Clients **SHOULD** honor HTTP caching semantics as defined in RFC 9111 when fetching Agent Cards | CachingCardResolver stores ETag/Last-Modified and always revalidates, but never parses Cache-Control (no max-age freshness, stores even under no-store); the plain resolve_agent_card path does no caching. |
 | low | PARTIAL | §9.5 (line 2461) | A2A-specific errors use codes in the range -32001 to -32099 (§5.4 mapping) | Unary paths are compliant. The WebSocket binding sends -32000 for mid-stream and over-capacity errors (websocket.rs:1118-1121). That code is in the JSON-RPC server-error range, not the A2A range; see the §12.4 entry. (Re-graded from TESTED on 2026-10-10: the … |
 | low | PARTIAL | §9.5 (line 2465) | Implementations SHOULD use well-known types such as google.rpc.ErrorInfo ..., or google.rpc.BadRequest to attach structured data to validat… | A2A errors get ErrorInfo. google.rpc.BadRequest is used nowhere in the repository (rg BadRequest/fieldViolations finds no match). InvalidParams (-32602) is sent without `data`, unlike the spec example at lines 2474-2486. |
+| low | PARTIAL | §9.5 (line 2465) | Additional error context MAY be included as further objects in the data array | Mid-stream SSE error frames (both bindings) append A2aError.data as a google.protobuf.Struct detail after ErrorInfo. Unary JSON-RPC, REST and gRPC responses still call `error_info_data(None)` and drop A2aError.data, so context a handler attaches with A2aError… |
 | low | PARTIAL | §11.1 (line 2758) | Content-Type: application/a2a+json SHOULD be used for requests and responses | Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2843-2844 and 2929-2930 are not matched by … |
 | low | PARTIAL | §11.3 (line 2795) | REST URL patterns: POST /message:send, /message:stream; GET /tasks/{id}; GET /tasks; POST /tasks/{id}:cancel; POST /tasks/{id}:subscribe; p… | Every route exists on server and client, plus tolerated aliases: GET :subscribe, /tasks/{id}/cancel, singular pushNotificationConfig, POST .../{id}/delete. Mismatch: the client percent-encodes path ids (request.rs:68 `encode_query_value`), but the server matc… |
 | low | PARTIAL | §12.1 (line 2994) | 4. Document Completely: Provide comprehensive documentation of the binding specification | SLIMRPC has a full vendored binding spec. WebSocket has only a short protocol bullet list in the book and rustdoc: no data-type mapping, error format, event ordering or reconnection sections, and the rustdoc and book contradict each other on v0.3 method names. |

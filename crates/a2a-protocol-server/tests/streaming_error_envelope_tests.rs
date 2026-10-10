@@ -124,12 +124,22 @@ async fn jsonrpc_stream_error_is_a_jsonrpc_error_response() {
 
     // The lag error's machine-readable marker must survive the wrapping,
     // since that is how a client tells truncation from an executor failure.
-    let err = &data["error"];
+    // §9.5: JSON-RPC error `data` is an array of objects that each carry
+    // `@type`; the marker rides in a flat `google.protobuf.Struct` detail.
+    let details = data["error"]["data"]
+        .as_array()
+        .unwrap_or_else(|| panic!("§9.5: error data must be an array; body:\n{body}"));
     assert!(
-        err.get("data")
-            .and_then(|d| d.get("streamLagged"))
-            .is_some(),
-        "the streamLagged marker must survive enveloping; body:\n{body}"
+        details.iter().all(|d| d.get("@type").is_some()),
+        "§9.5: every detail must carry @type; body:\n{body}"
+    );
+    let structured = details
+        .iter()
+        .find(|d| d["@type"] == "type.googleapis.com/google.protobuf.Struct")
+        .unwrap_or_else(|| panic!("no Struct detail; body:\n{body}"));
+    assert!(
+        structured["streamLagged"].as_u64().is_some_and(|n| n > 0),
+        "the streamLagged marker and its count must survive enveloping; body:\n{body}"
     );
 }
 

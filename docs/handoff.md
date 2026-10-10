@@ -1012,10 +1012,7 @@ before acting on it, as this branch did.
 2. The ledger's remaining medium entries (`docs/compliance/spec-ledger.md`
    lists every open one, most severe first). The ones read and confirmed
    this session but not yet fixed: rate limiting answers -32603 / 500 rather
-   than a 429-shaped error; mid-stream JSON-RPC errors carry a `data` object
-   (`streamLagged`) where §9.5 requires an array of `@type` objects, and the
-   marker is a public wire contract, so changing it needs the client's
-   predicate to accept both shapes first; SLIMRPC's status codes and
+   than a 429-shaped error; SLIMRPC's status codes and
    metadata-key case; the client never checks card capabilities before
    streaming (a SHOULD, and checking would refuse servers that stream without
    declaring it).
@@ -1023,7 +1020,14 @@ before acting on it, as this branch did.
    67 passed against postgres:16, including
    `caller_isolation_holds_on_the_tenant_postgres_stores`, which fails with
    the Postgres store keyed by tenant alone.
-4. Put `card_signature_interop.py` in CI beside `python_client_vs_rust.py`.
+4. Done: `card_signature_interop.py` runs in CI (`tck.yml`, job
+   `card-signature-interop`). Done: §9.5 mid-stream JSON-RPC error `data`
+   is an array of typed details, and the client's lag predicates accept the
+   old object shape too. Still open from that ledger area: the WebSocket
+   binding (not a spec binding) sends errors with no `data` at all and
+   rewrites every mid-stream error to -32000, dropping the code and the lag
+   marker (ledger §12.4, spec line 3024, PARTIAL/medium); and unary
+   responses drop `A2aError::data` (§9.5 MAY, PARTIAL/low).
 
 **§13.1, as built.** Opt-in caller partitions: `RequestHandler::admit` runs
 the interceptors and then records the caller in a per-request slot

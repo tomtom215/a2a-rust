@@ -434,16 +434,28 @@ impl A2aError {
     /// ```
     #[must_use]
     pub fn is_stream_lagged(&self) -> bool {
-        self.data
-            .as_ref()
-            .is_some_and(|d| d.get(STREAM_LAGGED_MARKER).is_some())
+        self.lag_marker().is_some()
+    }
+
+    /// The marker's value, wherever a server put it: at the top of `data`
+    /// (how this SDK's servers sent it on JSON-RPC until 2026-10-10, and how
+    /// the REST client decodes a `Struct` detail), or in one of the typed
+    /// detail objects of a `data` array (how §9.5 requires JSON-RPC error
+    /// data to be shaped, and how servers send it since).
+    fn lag_marker(&self) -> Option<&serde_json::Value> {
+        match self.data.as_ref()? {
+            serde_json::Value::Array(details) => {
+                details.iter().find_map(|d| d.get(STREAM_LAGGED_MARKER))
+            }
+            data => data.get(STREAM_LAGGED_MARKER),
+        }
     }
 
     /// Returns how many events were dropped, when this is a consumer-lag
     /// signal (see [`A2aError::is_stream_lagged`]); `None` otherwise.
     #[must_use]
     pub fn dropped_event_count(&self) -> Option<u64> {
-        self.data.as_ref()?.get(STREAM_LAGGED_MARKER)?.as_u64()
+        self.lag_marker()?.as_u64()
     }
 
     /// Builds the consumer-lag signal carrying `dropped`.
@@ -1234,6 +1246,39 @@ mod tests {
             Some(42),
             "the dropped count must round-trip through the marker"
         );
+    }
+
+    /// §9.5 shapes JSON-RPC error `data` as an array of typed details, so
+    /// the marker a server sends now arrives inside a `Struct` detail. The
+    /// object form older servers sent must still be recognised.
+    #[test]
+    fn the_lag_marker_is_found_in_either_data_shape() {
+        let array = A2aError::with_data(
+            ErrorCode::InternalError,
+            "lagged",
+            serde_json::json!([
+                {"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "X"},
+                {"@type": "type.googleapis.com/google.protobuf.Struct", "streamLagged": 42}
+            ]),
+        );
+        assert!(array.is_stream_lagged());
+        assert_eq!(array.dropped_event_count(), Some(42));
+
+        let object = A2aError::with_data(
+            ErrorCode::InternalError,
+            "lagged",
+            serde_json::json!({"streamLagged": 42}),
+        );
+        assert!(object.is_stream_lagged());
+        assert_eq!(object.dropped_event_count(), Some(42));
+
+        let unmarked = A2aError::with_data(
+            ErrorCode::InternalError,
+            "boom",
+            serde_json::json!([{"@type": "type.googleapis.com/google.protobuf.Struct"}]),
+        );
+        assert!(!unmarked.is_stream_lagged());
+        assert_eq!(unmarked.dropped_event_count(), None);
     }
 
     #[test]

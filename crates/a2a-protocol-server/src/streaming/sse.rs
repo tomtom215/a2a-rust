@@ -222,9 +222,17 @@ fn stream_error_payload(
         || serde_json::to_string(&rest_stream_error(err)),
         |id| {
             let mut jsonrpc_error = JsonRpcError::new(err.code.as_i32(), err.message.clone());
-            // Preserve `data`: it carries the `streamLagged` marker a client
-            // uses to tell truncation from an executor failure.
-            jsonrpc_error.data.clone_from(&err.data);
+            // §9.5: `data` is an array, and each object in it MUST carry
+            // `@type`. The same details the REST frame carries: `ErrorInfo`
+            // for an A2A error, and `A2aError::data` (the `streamLagged`
+            // marker a client uses to tell truncation from an executor
+            // failure) as a `Struct`. Until 2026-10-10 this copied `data`
+            // through as a bare object, which no conformant client could
+            // read as error details.
+            let details = error_details(err);
+            if !details.is_empty() {
+                jsonrpc_error.data = Some(serde_json::Value::Array(details));
+            }
             serde_json::to_string(&JsonRpcErrorResponse::new(id.clone(), jsonrpc_error))
         },
     )
@@ -250,6 +258,22 @@ const STRUCT_DETAIL_TYPE: &str = "type.googleapis.com/google.protobuf.Struct";
 /// written flat (`{"@type":…,"streamLagged":6}`) the way a2a-go writes and
 /// reads one (`errordetails.Typed`); a non-object value goes under `value`.
 fn rest_stream_error(err: &a2a_protocol_types::error::A2aError) -> serde_json::Value {
+    let details = error_details(err);
+    let mut status = serde_json::json!({
+        "code": err.code.http_status(),
+        "status": err.code.grpc_status(),
+        "message": err.message,
+    });
+    if !details.is_empty() {
+        status["details"] = serde_json::Value::Array(details);
+    }
+    serde_json::json!({ "error": status })
+}
+
+/// A stream error's typed details, shared by both bindings' frames: the
+/// `ErrorInfo` an A2A error carries, then `A2aError::data` as a
+/// `google.protobuf.Struct`, written flat.
+fn error_details(err: &a2a_protocol_types::error::A2aError) -> Vec<serde_json::Value> {
     let mut details = match err.error_info_data(None) {
         serde_json::Value::Array(items) => items,
         _ => Vec::new(),
@@ -266,15 +290,7 @@ fn rest_stream_error(err: &a2a_protocol_types::error::A2aError) -> serde_json::V
         detail.insert("@type".into(), STRUCT_DETAIL_TYPE.into());
         details.push(serde_json::Value::Object(detail));
     }
-    let mut status = serde_json::json!({
-        "code": err.code.http_status(),
-        "status": err.code.grpc_status(),
-        "message": err.message,
-    });
-    if !details.is_empty() {
-        status["details"] = serde_json::Value::Array(details);
-    }
-    serde_json::json!({ "error": status })
+    details
 }
 
 // ── build_sse_response ───────────────────────────────────────────────────────

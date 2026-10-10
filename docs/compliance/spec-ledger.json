@@ -5400,21 +5400,24 @@
    "keyword": "MUST (implied mapping)",
    "binds": "server",
    "requirement": "Error Details: Mapped to error.data (array of objects, each containing a @type key, using ProtoJSON Any representation)",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:155-182",
     "crates/a2a-protocol-types/src/error.rs:518-533",
-    "crates/a2a-protocol-server/src/streaming/sse.rs:217-230",
-    "crates/a2a-protocol-types/src/error.rs:456-463"
+    "crates/a2a-protocol-server/src/streaming/sse.rs:232-235",
+    "crates/a2a-protocol-server/src/streaming/sse.rs:276"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/error.rs:1135 error_info_data_for_a2a_error_has_expected_shape",
-    "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs:98 jsonrpc_stream_error_is_a_jsonrpc_error_response"
+    "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs jsonrpc_stream_error_is_a_jsonrpc_error_response",
+    "crates/a2a-protocol-client/tests/jsonrpc_stream_lag_tests.rs a_lagged_jsonrpc_stream_is_recognised_as_lagged",
+    "crates/a2a-protocol-types/src/error.rs the_lag_marker_is_found_in_either_data_shape"
    ],
-   "notes": "Unary errors put an array `[ErrorInfo]` in error.data. But the mid-stream JSON-RPC error frame copies A2aError.data verbatim (sse.rs:226 `jsonrpc_error.data.clone_from(&err.data)`), so the stream-lag error goes out as `\"data\":{\"streamLagged\":N}` - an object, not an array of @type objects; streaming_error_envelope_tests.rs:127-132 asserts that non-compliant shape. The REST path wraps the same marker as a typed google.protobuf.Struct detail (sse.rs:252-283), so the JSON-RPC path could do the same.",
+   "notes": "Unary errors put an array `[ErrorInfo]` in error.data. The mid-stream JSON-RPC error frame now carries the same typed details as the REST frame (sse.rs error_details): ErrorInfo when the code has an A2A reason, then A2aError.data (the streamLagged marker) as a flat google.protobuf.Struct detail. Until 2026-10-10 it copied A2aError.data through as a bare object. Clients recognise the marker in either shape (A2aError::lag_marker). The WebSocket binding, which is not a spec binding, sends no data at all; see its own entry.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 2451,
@@ -5463,22 +5466,26 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Each object in the data array MUST include a @type key that identifies the object's type",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:518-533",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:57-66",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:155-165",
-    "crates/a2a-protocol-server/src/streaming/sse.rs:217-230"
+    "crates/a2a-protocol-server/src/streaming/sse.rs:232-235",
+    "crates/a2a-protocol-server/src/streaming/sse.rs:276"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:293 unsupported_content_type_returns_content_type_not_supported",
     "crates/a2a-protocol-server/tests/streaming_prestream_errors.rs:139 subscribe_to_unknown_task_is_a_plain_json_error",
-    "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs:98 jsonrpc_stream_error_is_a_jsonrpc_error_response"
+    "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs jsonrpc_stream_error_is_a_jsonrpc_error_response",
+    "crates/a2a-protocol-client/tests/jsonrpc_stream_lag_tests.rs a_lagged_jsonrpc_stream_is_recognised_as_lagged",
+    "crates/a2a-protocol-types/src/error.rs the_lag_marker_is_found_in_either_data_shape"
    ],
-   "notes": "Unary/pre-stream: data = [{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",reason,domain}], so this holds there. The mid-stream SSE error frame breaks it: it sends `data:{\"streamLagged\":N}` with no @type (sse.rs:224-226).",
+   "notes": "Unary/pre-stream: data = [{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",reason,domain}]. Mid-stream: every element carries @type (ErrorInfo, or google.protobuf.Struct for the streamLagged marker); the server test asserts every element has @type.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 2465,
@@ -5505,16 +5512,20 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Additional error context MAY be included as further objects in the data array",
-   "status": "NOT_SUPPORTED",
-   "severity": null,
+   "status": "PARTIAL",
+   "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:59",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:160"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:160",
+    "crates/a2a-protocol-server/src/streaming/sse.rs:276"
    ],
-   "test_evidence": [],
-   "notes": "Dispatchers always call `error_info_data(None)` and drop `A2aError.data`. Any context a handler or executor attaches through a ServerError::Protocol(A2aError::with_data(..)) is silently discarded on unary JSON-RPC, REST and gRPC responses. ErrorInfo.metadata (spec example taskId/timestamp) is never populated.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs jsonrpc_stream_error_is_a_jsonrpc_error_response"
+   ],
+   "notes": "Mid-stream SSE error frames (both bindings) append A2aError.data as a google.protobuf.Struct detail after ErrorInfo. Unary JSON-RPC, REST and gRPC responses still call `error_info_data(None)` and drop A2aError.data, so context a handler attaches with A2aError::with_data is discarded there; ErrorInfo.metadata is never populated.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 2528,

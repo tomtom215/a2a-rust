@@ -227,6 +227,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A mid-stream JSON-RPC error's `data` is an array of typed details**
+  (server; spec §9.5). The SSE error frame copied `A2aError::data` through
+  as an object, so the stream-lag signal went out as
+  `"data":{"streamLagged":N}`, where §9.5 requires an array whose objects
+  each carry `@type`. It now carries the same details as the REST frame:
+  `ErrorInfo` when the error has an A2A reason, then the data as a flat
+  `google.protobuf.Struct` detail
+  (`[{"@type":"type.googleapis.com/google.protobuf.Struct","streamLagged":N}]`).
+  `A2aError::is_stream_lagged` and `dropped_event_count` find the marker in
+  either shape, so clients of this release read old and new servers alike;
+  a client of an earlier release reading a server of this one does not see
+  the lag marker and gets an ordinary internal error, which still ends its
+  stream. Code that reads `data["streamLagged"]` by hand should switch to
+  the predicates.
 - **Listing or deleting push configs of an unknown task is `TaskNotFound`**
   (server; spec §3.1.9, §3.1.10). Listing answered an empty list and
   deleting succeeded, which a peer cannot tell from a known task with no
