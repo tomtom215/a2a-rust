@@ -22,4 +22,4 @@ tracing-subscriber = { workspace = true, features = ["registry", "env-filter"] }
 # with no network and no keys.
 opentelemetry         = { version = "0.32" }
 opentelemetry_sdk     = { version = "0.32", features = ["trace", "testing"] }
-tracing-opentelemetry = { version = ">=0.33, <0.34", default-features = false }
+tracing-opentelemetry = { version = ">=0.33, <0.35", default-features = false }

@@ -124,7 +124,7 @@ opentelemetry     = { version = "0.32", optional = true }
 # call runs in can take the caller's `traceparent` as its remote parent and
 # the id sent downstream names a span the exporter has (ADR 0013). 0.33 is the
 # release built on opentelemetry 0.32 (`opentelemetry = "^0.32"`, crates.io).
-tracing-opentelemetry = { version = ">=0.33, <0.34", optional = true, default-features = false }
+tracing-opentelemetry = { version = ">=0.33, <0.35", optional = true, default-features = false }
 # `experimental_metrics_custom_reader` exposes `ManualReader` + the `MetricReader`
 # trait for the unit tests in `src/otel/mod.rs` that verify instrument emission
 # end-to-end. The feature only *adds* API surface — it does not change runtime
