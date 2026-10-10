@@ -10,9 +10,11 @@
 # would have noticed upstream adding a method, renaming one, or changing the
 # wire format underneath the binding.
 #
-# The gRPC binding never had that problem — `proto/a2a_v1/a2a.proto` is
-# vendored and `check_proto_copies.sh` keeps every copy byte-identical. This is
-# the missing half of that symmetry.
+# The A2A proto is vendored too, and `check_proto_copies.sh` keeps every copy
+# byte-identical — but byte-identical to each other is not identical to
+# upstream, and all six copies sat on A2A v1.0.0's text for five months after
+# v1.0.1 changed it. `check_a2a_proto_upstream.sh` is that check's equivalent
+# of this one.
 #
 # What the first version could not see, and why this one clones. It fetched two
 # named files by URL and hash-compared them. That verifies the two documents it

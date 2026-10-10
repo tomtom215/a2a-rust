@@ -657,6 +657,18 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "exits 3 rather than reporting agreement when upstream is unreachable"
     )
 
+    # Same shape as the SLIMRPC check above: it compares against a live
+    # upstream. Its failure paths were verified by hand on 2026-10-10, each
+    # restored afterwards: the vendored copy set to v1.0.0's text, the pin
+    # moved back to v1.0.0 (a newer release with a different proto), and a
+    # pinned commit the tag no longer names all exit 1; the clean tree exits
+    # 0; an unreachable proxy exits 3.
+    reg["official-tck.yml::official-tck::Vendored A2A proto is the latest release's"] = Exempt(
+        "requires a live fetch of upstream A2A release tags; verified by hand "
+        "against three injected defects, and it exits 3 rather than reporting "
+        "agreement when upstream is unreachable"
+    )
+
     # Needs the full commit history and a manifest measured at the release
     # commit, neither of which a fixture tree can supply. Verified by hand on
     # 2026-08-26 against four separate defects, each restored afterwards: a

@@ -82,6 +82,27 @@ for copy in "${COPIES[@]}"; do
     done < <(find "$copy/a2a_v1" -type f -name '*.proto' 2>/dev/null | sort)
 done
 
+# The reference must also be the upstream release it claims to be. Until
+# 2026-10-10 nothing checked that: every copy agreed with every other while all
+# six were still A2A v1.0.0's text, five months after v1.0.1 rewrote the tenant
+# comments. `proto/UPSTREAM` records the release; this is the offline half of
+# the check (`check_a2a_proto_upstream.sh` is the online half).
+PIN_FILE="proto/UPSTREAM"
+pinned_sha=$(sed -n 's/^sha256=//p' "$PIN_FILE")
+if [ -z "$pinned_sha" ]; then
+    printf 'MISSING  sha256= in %s\n' "$PIN_FILE" >&2
+    missing=1
+else
+    for copy in "$REFERENCE/a2a_v1/a2a.proto" docs/implementation/a2a.proto; do
+        actual=$(sha256sum "$copy" | cut -d' ' -f1)
+        if [ "$actual" != "$pinned_sha" ]; then
+            printf 'DRIFT    %s hashes to %s; %s pins %s\n' \
+                "$copy" "$actual" "$PIN_FILE" "$pinned_sha" >&2
+            fail=1
+        fi
+    done
+fi
+
 if [ "$missing" -ne 0 ]; then
     printf '\ncheck_proto_copies: a vendored copy is incomplete. Copy the missing\n' >&2
     printf 'file(s) from %s, or drop the tree from COPIES if it is gone.\n' "$REFERENCE" >&2
@@ -96,5 +117,6 @@ if [ "$fail" -ne 0 ]; then
     exit 1
 fi
 
-printf 'check_proto_copies: %d file(s) x %d cop(ies) — all identical\n' \
-    "${#REFERENCE_FILES[@]}" "${#COPIES[@]}"
+printf 'check_proto_copies: %d file(s) x %d cop(ies) — all identical, a2a.proto = %s %s\n' \
+    "${#REFERENCE_FILES[@]}" "${#COPIES[@]}" \
+    "$(sed -n 's/^tag=//p' "$PIN_FILE")" "$pinned_sha"

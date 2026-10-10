@@ -138,6 +138,13 @@ jobs:
       - name: Vendored SLIMRPC spec still matches upstream
         run: ./scripts/check_slimrpc_spec.sh
 
+      # The same question for the proto every binding compiles from. Copies
+      # agreeing with each other (check_proto_copies.sh, offline) said nothing
+      # about agreeing with the specification, and all six stayed on A2A
+      # v1.0.0's text for five months after v1.0.1 changed it.
+      - name: Vendored A2A proto is the latest release's
+        run: ./scripts/check_a2a_proto_upstream.sh
+
       - name: Start the SUT
         run: |
           # The SUT serves JSON-RPC and HTTP+JSON on :9999 and gRPC on :9998,
