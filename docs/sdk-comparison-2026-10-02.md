@@ -361,7 +361,7 @@ Nothing has been filed upstream.
 | R1 | High | Default configuration ignores `tenant` and leaks across tenants (§5.1). | **Fixed after this report:** a server whose stores cannot isolate now refuses any request naming a tenant (`-32004`); the same probe against the fixed build records `refused`. See CHANGELOG, Unreleased. |
 | R2 | Medium | 1.17–1.62× slower than a2a-rs per request (§4.1). | Mostly fixed after this report. On jemalloc for both (G4 in `swarm-orchestration.md`): one core 1.65× → 1.13×, two cores unary 1.15× → 1.09×, streaming 1.21× with about a third of that traced to the terminal gate. On glibc much of the difference is glibc in a bounded heap; the book now recommends jemalloc. |
 | R3 | Medium | Cancelling a task does not reach the tasks it delegated to. This is a protocol gap, but this SDK offers no helper for it either (`swarm-orchestration.md` G1). | Open. Measured in `examples/swarm`. |
-| R4 | Low | ACTS `REST-CT-001`: REST content type is `application/json`, not `application/a2a+json`. | Open. |
+| R4 | Low | ACTS `REST-CT-001`: REST content type is `application/json`, not `application/a2a+json`. | **Fixed after this report** (2026-10-08): HTTP+JSON responses negotiate the media type; ACTS HTTP+JSON 94/94 against a2a-itk `82458cea` (`acts/reports/2026-10-08/`), and `go_sdk_interop.sh` still passes. |
 | R5 | Low | The SLIMRPC binding is advertised in the README but not on crates.io. | Open. |
 | R6 | Low | `A2aClient` is not `Clone`; sharing one client needs an `Arc`. | Noted. |
 

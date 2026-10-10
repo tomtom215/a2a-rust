@@ -182,6 +182,7 @@ async fn seed_cancelled_tokens(handler: &RequestHandler, n: usize) -> Vec<TaskId
                 turn: std::sync::Arc::default(),
                 token,
                 created_at: Instant::now(),
+                tenant: String::new(),
             },
         );
         ids.push(id);
@@ -1946,6 +1947,7 @@ async fn a_live_token_alone_refuses_a_resend() {
             turn: std::sync::Arc::default(),
             token: tokio_util::sync::CancellationToken::new(),
             created_at: Instant::now(),
+            tenant: String::new(),
         },
     );
 
@@ -1989,6 +1991,7 @@ async fn a_cancelled_token_alone_does_not_refuse_a_resend() {
             turn: std::sync::Arc::default(),
             token,
             created_at: Instant::now(),
+            tenant: String::new(),
         },
     );
 
@@ -2091,6 +2094,7 @@ async fn seed_aged_token(handler: &RequestHandler, id: &str) -> TaskId {
             created_at: Instant::now()
                 .checked_sub(std::time::Duration::from_secs(2))
                 .expect("two seconds ago is representable on any booted host"),
+            tenant: String::new(),
         },
     );
     id
@@ -2162,6 +2166,7 @@ fn second_send_blocked_iff_token_live() {
         turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: Instant::now(),
+        tenant: String::new(),
     };
     assert!(
         second_send_blocked(&live),
@@ -2174,6 +2179,7 @@ fn second_send_blocked_iff_token_live() {
         turn: std::sync::Arc::default(),
         token,
         created_at: Instant::now(),
+        tenant: String::new(),
     };
     assert!(
         !second_send_blocked(&cancelled),
@@ -2223,6 +2229,7 @@ fn token_still_evictable_spares_fresh_live_token() {
         turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
+        tenant: String::new(),
     };
     assert!(
         !token_still_evictable(&fresh, now, max_age),
@@ -2234,6 +2241,7 @@ fn token_still_evictable_spares_fresh_live_token() {
         turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
+        tenant: String::new(),
     };
     cancelled.token.cancel();
     assert!(token_still_evictable(&cancelled, now, max_age));
@@ -2248,6 +2256,7 @@ fn token_still_evictable_spares_fresh_live_token() {
         turn: std::sync::Arc::default(),
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
+        tenant: String::new(),
     };
     let later = now
         .checked_add(max_age)

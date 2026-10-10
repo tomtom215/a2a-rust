@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: Apache-2.0
+# OpenPGP primary-key fingerprints (40 hex digits) trusted to sign release tags.
+# Each must have its public key beside this file as *.asc. See README.md here.

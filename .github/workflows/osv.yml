@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# OSV-Scanner: every tracked lockfile against the OSV database.
+#
+# # Why this exists beside cargo-deny
+#
+# cargo-deny (ci.yml `deny`, and the binding's own step) audits the Rust graph
+# cargo *resolves*, for the root workspace and the SLIMRPC binding. It never
+# looked at the other five Cargo.lock files this repository tracks, nor at the
+# Go, Java, JavaScript and Python lockfiles of the conformance peers. On
+# 2026-10-08 a first osv-scanner run found `itk/Cargo.lock` and
+# `fuzz/Cargo.lock` still pinning h2 0.4.15 (RUSTSEC-2026-0258) months after
+# the root workspace moved to a fixed h2, and dozens of advisories in the
+# peers' lockfiles. Nothing in CI could have said so.
+#
+# # Two scopes, two verdicts
+#
+# * **Rust lockfiles — blocking.** The eight Cargo.lock files. A finding here
+#   is ours to fix, or to waive in the `osv-scanner.toml` beside the lockfile
+#   with a reason and an `ignoreUntil` date, as `deny.toml` does.
+# * **Conformance peers — reported, not blocking.** The Go, Java, JavaScript
+#   and Python agents under `itk/` and `benches/` pin the official SDKs at the
+#   versions `tck.yml` grades; their transitive dependencies are those SDKs'
+#   choices, and they run only on CI runners against loopback. Their findings
+#   go to code scanning, where they are visible, without turning the build red
+#   over a dependency this repository does not ship.
+#
+# On a pull request only *newly introduced* findings fail (the PR variant
+# compares the head against the base), so an advisory published against an
+# unchanged lockfile reddens the next scheduled run, not an unrelated PR.
+#
+# The PR variant scans the base with the same arguments, and a lockfile the
+# base does not have yet fails that scan, which fails the job. So a new
+# lockfile goes in `rust` first and joins `rust-pr` in a later pull request,
+# once it is on main. `verification/loom-halt/Cargo.lock` is in that state.
+
+name: OSV-Scanner
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '27 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-pr:
+    name: Rust lockfiles (new findings)
+    if: github.event_name == 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    with:
+      results-file-name: osv-rust.sarif
+      fail-on-vuln: true
+      scan-args: |-
+        --lockfile=Cargo.lock
+        --lockfile=bindings/a2a-protocol-slimrpc/Cargo.lock
+        --lockfile=itk/Cargo.lock
+        --lockfile=fuzz/Cargo.lock
+        --lockfile=benches/sdk-comparison/harness/agent-a2a-rs/Cargo.lock
+        --lockfile=benches/sdk-comparison/harness/agent-a2a-rust/Cargo.lock
+        --lockfile=benches/sdk-comparison/harness/loadgen/Cargo.lock
+
+  rust:
+    name: Rust lockfiles
+    if: github.event_name != 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    with:
+      results-file-name: osv-rust.sarif
+      fail-on-vuln: true
+      scan-args: |-
+        --lockfile=Cargo.lock
+        --lockfile=bindings/a2a-protocol-slimrpc/Cargo.lock
+        --lockfile=itk/Cargo.lock
+        --lockfile=fuzz/Cargo.lock
+        --lockfile=benches/sdk-comparison/harness/agent-a2a-rs/Cargo.lock
+        --lockfile=benches/sdk-comparison/harness/agent-a2a-rust/Cargo.lock
+        --lockfile=benches/sdk-comparison/harness/loadgen/Cargo.lock
+        --lockfile=verification/loom-halt/Cargo.lock
+
+  peers:
+    name: Conformance peers (informational)
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    with:
+      results-file-name: osv-peers.sarif
+      fail-on-vuln: false
+      scan-args: |-
+        --lockfile=itk/agents/go-agent/go.mod
+        --lockfile=itk/agents/go-sdk/go.mod
+        --lockfile=itk/interop/go-sdk-client/go.mod
+        --lockfile=itk/agents/java-agent/pom.xml
+        --lockfile=itk/agents/java-sdk/pom.xml
+        --lockfile=itk/agents/js-sdk/package-lock.json
+        --lockfile=itk/agents/python/requirements.txt
+        --lockfile=benches/requirements-cross-language.txt

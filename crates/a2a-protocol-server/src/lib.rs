@@ -116,6 +116,9 @@ mod trace;
 mod rpc_span;
 
 pub mod agent_card;
+pub mod approval;
+#[cfg(feature = "audit")]
+pub mod audit;
 pub mod auth;
 pub mod builder;
 pub mod call_context;
@@ -126,6 +129,8 @@ pub mod executor_helpers;
 pub mod handler;
 pub mod interceptor;
 pub mod metrics;
+#[cfg(feature = "audit")]
+pub mod profile;
 pub mod push;
 pub mod rate_limit;
 pub mod request_context;
@@ -187,8 +192,8 @@ pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use executor_helpers::{EventEmitter, boxed_future};
 pub use handler::{
-    HandlerLimits, InFlightReport, InboundTracePolicy, RequestHandler, SendMessageResult,
-    ShutdownReport,
+    HaltReport, HaltScope, HandlerLimits, InFlightReport, InboundTracePolicy, RequestHandler,
+    SendMessageResult, ShutdownReport,
 };
 pub use interceptor::{CallOutcome, ServerInterceptor, ServerInterceptorChain};
 pub use metrics::{ConnectionPoolStats, Metrics, RpcCall};

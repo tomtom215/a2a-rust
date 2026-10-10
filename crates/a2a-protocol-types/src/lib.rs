@@ -49,7 +49,8 @@ struct ReadmeDoctests;
 pub const A2A_VERSION: &str = "1.0";
 
 /// The registered A2A media type (spec §14.1.1), accepted on ingress by the
-/// HTTP bindings alongside [`JSON_CONTENT_TYPE`].
+/// HTTP bindings alongside [`JSON_CONTENT_TYPE`], and sent on HTTP+JSON
+/// responses to a client that asks for it (§11.1).
 pub const A2A_CONTENT_TYPE: &str = "application/a2a+json";
 
 /// This project's identifier for its §12 WebSocket binding, as
@@ -83,14 +84,17 @@ pub const A2A_CONTENT_TYPE: &str = "application/a2a+json";
 /// same binding may still emit.
 pub const WEBSOCKET_BINDING_URI: &str = "https://a2a-rust.com/bindings/websocket/v1";
 
-/// Content type emitted by the JSON-RPC and REST bindings.
+/// Content type emitted by the JSON-RPC binding, and by the HTTP+JSON binding
+/// to a client that does not ask for [`A2A_CONTENT_TYPE`].
 ///
 /// §9.1 specifies `application/json` for JSON-RPC. For HTTP+JSON, §11.1 says
-/// `application/a2a+json` SHOULD be used; this SDK keeps `application/json`
-/// there deliberately, because the official Go SDK's client reads error
-/// bodies only under `application/json` (audit N38, and the book's
-/// conformance history, "Deliberate deviations"). [`A2A_CONTENT_TYPE`] is
-/// accepted on ingress by both.
+/// `application/a2a+json` SHOULD be used; this SDK negotiates it: a client
+/// whose `Accept` prefers it, or whose request body is labelled with it, gets
+/// it back, and every other client gets `application/json`. Released a2a-go
+/// (v2.6.0) sends `Accept: application/json` and reads an error body only
+/// under that type, so labelling every response the A2A way would cost a Go
+/// client every error's identity (audit N38, and the book's conformance
+/// history). [`A2A_CONTENT_TYPE`] is accepted on ingress by both bindings.
 pub const JSON_CONTENT_TYPE: &str = "application/json";
 
 /// HTTP header name for the A2A protocol version.
@@ -105,7 +109,10 @@ pub const A2A_VERSION_HEADER: &str = "A2A-Version";
 pub const A2A_EXTENSIONS_HEADER: &str = "A2A-Extensions";
 
 pub mod agent_card;
+pub mod approval;
 pub mod artifact;
+#[cfg(feature = "audit")]
+pub mod audit;
 pub mod auth_rejection;
 pub mod error;
 pub mod events;
@@ -118,6 +125,7 @@ pub mod method;
 pub mod params;
 #[cfg(feature = "proto")]
 pub mod proto;
+pub mod provenance;
 pub mod push;
 pub mod responses;
 pub mod security;
@@ -126,6 +134,9 @@ pub mod serde_helpers;
 pub mod signing;
 pub mod task;
 pub mod trace_context;
+
+#[cfg(kani)]
+mod kani_proofs;
 
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 

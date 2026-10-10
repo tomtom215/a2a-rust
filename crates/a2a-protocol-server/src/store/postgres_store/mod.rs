@@ -21,7 +21,7 @@
 mod artifact_delta;
 pub(super) mod event_log;
 pub(super) mod idempotency;
-mod pool;
+pub(crate) mod pool;
 mod store_impl;
 
 use a2a_protocol_types::error::A2aResult;

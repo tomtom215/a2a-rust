@@ -170,6 +170,13 @@ impl ServerInterceptorChain {
         self.interceptors.push(interceptor);
     }
 
+    /// Puts an interceptor at the front of the chain, so its `before` runs
+    /// first and its `after` and `on_complete` run last.
+    #[cfg(feature = "audit")]
+    pub(crate) fn push_front(&mut self, interceptor: Arc<dyn ServerInterceptor>) {
+        self.interceptors.insert(0, interceptor);
+    }
+
     /// Runs all `before` hooks in insertion order.
     ///
     /// Stops at the first error and returns it.

@@ -132,15 +132,16 @@ fn parse_header(raw: &str) -> Result<Header, String> {
 /// The commands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Fetch the agent card and print it.
+    /// Fetch the agent card and print it; or sign or verify a card.
     ///
-    /// `URL` is the agent's base URL; the card is read from
+    /// `a2a card URL`: `URL` is the agent's base URL; the card is read from
     /// `URL`/.well-known/agent-card.json. A `URL` that already ends in
     /// `agent-card.json` is fetched as-is.
-    Card {
-        /// Agent base URL, for example `http://127.0.0.1:3000`.
-        url: String,
-    },
+    Card(CardArgs),
+
+    /// Verify an exported audit chain (offline).
+    #[command(subcommand)]
+    Audit(AuditCommand),
 
     /// Send one text message (`SendMessage`) and print the task or message.
     Send(SendArgs),
@@ -152,6 +153,76 @@ pub enum Command {
     /// Inspect, cancel or list tasks.
     #[command(subcommand)]
     Task(TaskCommand),
+}
+
+/// `a2a card URL`, or `a2a card sign|verify ...`.
+#[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
+pub struct CardArgs {
+    /// Agent base URL, for example `http://127.0.0.1:3000`.
+    #[arg(required = true)]
+    pub url: Option<String>,
+
+    /// Sign or verify instead of fetching.
+    #[command(subcommand)]
+    pub action: Option<CardCommand>,
+}
+
+/// `a2a card sign|verify`
+#[derive(Debug, Subcommand)]
+pub enum CardCommand {
+    /// Sign a card file and print it with the signature added (offline).
+    Sign {
+        /// The agent card, as JSON.
+        card: std::path::PathBuf,
+        /// The private key, PKCS#8 DER (`openssl pkcs8 -topk8 -nocrypt -outform DER`).
+        #[arg(long, value_name = "FILE")]
+        key: std::path::PathBuf,
+        /// The algorithm the key is for.
+        #[arg(long, value_enum)]
+        alg: SignAlg,
+        /// The key id to put in the signature header, as the JWK Set names it.
+        #[arg(long, value_name = "KID")]
+        kid: String,
+    },
+    /// Verify a card's signatures against a JWK Set; exits 1 unless one
+    /// verifies.
+    Verify {
+        /// The card: an agent URL (fetched as `a2a card URL` does) or a file.
+        card: String,
+        /// The JWK Set: an `https://` URL you trust, or a file. Not the
+        /// card's own `jku`, which is unverified until a signature is.
+        #[arg(long, value_name = "URL|FILE")]
+        jwks: String,
+    },
+}
+
+/// Signature algorithms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SignAlg {
+    /// ECDSA P-256 with SHA-256.
+    Es256,
+    /// Ed25519.
+    Eddsa,
+}
+
+/// `a2a audit ...`
+#[derive(Debug, Subcommand)]
+pub enum AuditCommand {
+    /// Verify an exported chain: hashes, order, anchors and signed
+    /// checkpoints. Prints the report; exits 1 unless the chain is intact.
+    Verify {
+        /// The records, a JSON array in `seq` order (`AuditLog::export`).
+        records: std::path::PathBuf,
+        /// The checkpoints, a JSON array (`AuditStore::checkpoints`).
+        #[arg(long, value_name = "FILE")]
+        checkpoints: Option<std::path::PathBuf>,
+        /// The public keys you trust to have signed checkpoints, as a JWK
+        /// Set file. Obtain it independently of the machine that wrote the
+        /// records.
+        #[arg(long, value_name = "FILE")]
+        keys: Option<std::path::PathBuf>,
+    },
 }
 
 /// Arguments shared by `send` and `stream`.

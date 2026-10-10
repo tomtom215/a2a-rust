@@ -13,9 +13,9 @@
 //!
 //! # Algorithm support
 //!
-//! Currently supports ES256 (ECDSA with P-256 and SHA-256) as the signing
-//! algorithm, which is the most commonly used algorithm for JWS in the A2A
-//! specification.
+//! ES256 (ECDSA with P-256 and SHA-256) and `EdDSA` (Ed25519, RFC 8037), both
+//! through `ring`. Keys are accepted raw, as `SubjectPublicKeyInfo` DER, or
+//! as a JWK from a JWK Set ([`Jwks`]), selected by the signature's `kid`.
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -27,6 +27,10 @@ use ring::signature::{self, EcdsaKeyPair};
 use crate::agent_card::AgentCard;
 use crate::error::{A2aError, A2aResult};
 use crate::extensions::AgentCardSignature;
+
+pub(crate) mod keys;
+
+pub use keys::{Jwk, Jwks, VerifyingKey};
 
 // ── RFC 8785 JSON Canonicalization ──────────────────────────────────────────
 
@@ -339,6 +343,42 @@ pub fn sign_agent_card(
     })
 }
 
+/// Signs an [`AgentCard`] with Ed25519 (JWS `EdDSA`, RFC 8037), detached
+/// payload, as [`sign_agent_card`] does for ES256.
+///
+/// `pkcs8_key` is a PKCS#8 v1 or v2 Ed25519 private key; OpenSSL writes v1
+/// (`openssl genpkey -algorithm ed25519 -outform DER`).
+///
+/// # Errors
+///
+/// Returns an error if canonicalization fails or the key is not Ed25519
+/// PKCS#8.
+pub fn sign_agent_card_ed25519(
+    card: &AgentCard,
+    pkcs8_key: &[u8],
+    key_id: Option<&str>,
+) -> A2aResult<AgentCardSignature> {
+    let key_pair = signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(pkcs8_key)
+        .map_err(|e| A2aError::internal(format!("invalid Ed25519 key: {e}")))?;
+    let mut header = serde_json::json!({ "alg": "EdDSA" });
+    if let Some(kid) = key_id {
+        header["kid"] = serde_json::Value::String(kid.to_owned());
+    }
+    let header_json = serde_json::to_vec(&header)
+        .map_err(|e| A2aError::internal(format!("header serialization: {e}")))?;
+    let protected = URL_SAFE_NO_PAD.encode(&header_json);
+    let signing_input = format!(
+        "{protected}.{}",
+        URL_SAFE_NO_PAD.encode(canonicalize_card(card)?)
+    );
+    let signature = URL_SAFE_NO_PAD.encode(key_pair.sign(signing_input.as_bytes()).as_ref());
+    Ok(AgentCardSignature {
+        protected,
+        signature,
+        header: None,
+    })
+}
+
 // ── JWS protected header ────────────────────────────────────────────────────
 
 /// The decoded JWS protected header of an [`AgentCardSignature`].
@@ -352,7 +392,8 @@ pub fn sign_agent_card(
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SignatureHeader {
-    /// The JWS algorithm (`alg`). Only `ES256` is verifiable by this module.
+    /// The JWS algorithm (`alg`). `ES256` and `EdDSA` are verifiable by this
+    /// module.
     pub alg: String,
     /// The key identifier (`kid`), when the signer supplied one.
     pub kid: Option<String>,
@@ -447,40 +488,104 @@ pub fn signature_header(sig: &AgentCardSignature) -> A2aResult<SignatureHeader> 
 ///
 /// * `card` — The agent card that was signed.
 /// * `sig` — The signature to verify.
-/// * `public_key_der` — DER-encoded public key (`SubjectPublicKeyInfo`),
-///   already established by the caller to be currently valid.
+/// * `public_key` — the public key for the header's `alg`, already
+///   established by the caller to be currently valid: for ES256 the 65-byte
+///   uncompressed P-256 point or its `SubjectPublicKeyInfo` DER, for `EdDSA`
+///   the 32-byte Ed25519 key or its SPKI DER. Until 2026-10-09 this said
+///   SPKI DER while only the raw point verified; both now do. With a JWK
+///   Set, use [`verify_agent_card_with_jwks`].
 ///
 /// # Errors
 ///
 /// Returns an error if canonicalization fails, the protected header is
-/// malformed, the algorithm is not `ES256`, or the signature is invalid.
+/// malformed, the algorithm is neither `ES256` nor `EdDSA`, the key is not a
+/// key for it, or the signature is invalid.
 pub fn verify_agent_card(
     card: &AgentCard,
     sig: &AgentCardSignature,
-    public_key_der: &[u8],
+    public_key: &[u8],
+) -> A2aResult<()> {
+    let alg = signature_header(sig)?.alg;
+    let key = VerifyingKey::from_bytes(&alg, public_key)?;
+    verify_with(card, sig, &alg, &key)
+}
+
+/// Verifies an [`AgentCardSignature`] against the keys of a JWK Set: those
+/// with the signature's `kid` (every key, when it names none) whose type is
+/// for its `alg`. Succeeds when one of them verifies.
+///
+/// This is spec §8.4.3 step 2 done against a set the caller supplies. Where
+/// the set comes from — a trusted store, or a `jku` the caller independently
+/// trusts, fetched over HTTPS — and whether its keys are current, remain the
+/// caller's decision, for the reasons [`verify_agent_card`] gives. Removing a
+/// key from the set is how it is revoked: a caller that re-fetches the set
+/// stops accepting signatures by it.
+///
+/// # Errors
+///
+/// Returns an error if the header is malformed, the set has no candidate key,
+/// or no candidate verifies.
+pub fn verify_agent_card_with_jwks(
+    card: &AgentCard,
+    sig: &AgentCardSignature,
+    jwks: &Jwks,
+) -> A2aResult<()> {
+    let header = signature_header(sig)?;
+    let candidates = jwks.candidates(header.kid.as_deref(), &header.alg);
+    if candidates.is_empty() {
+        return Err(A2aError::invalid_params(format!(
+            "no {} key in the set with kid {:?}",
+            header.alg, header.kid
+        )));
+    }
+    if candidates
+        .iter()
+        .any(|k| verify_with(card, sig, &header.alg, k).is_ok())
+    {
+        Ok(())
+    } else {
+        Err(A2aError::internal("signature verification failed"))
+    }
+}
+
+/// Verifies a card against a JWK Set.
+///
+/// Succeeds when any of the card's `signatures` verifies under a key of the
+/// set. Spec §8.4.3 allows several signatures, for key rotation, and asks a
+/// verifier to try each.
+///
+/// # Errors
+///
+/// Returns an error when the card carries no signature, or none verifies.
+pub fn verify_card_with_jwks(card: &AgentCard, jwks: &Jwks) -> A2aResult<()> {
+    let sigs = card.signatures.as_deref().unwrap_or_default();
+    if sigs.is_empty() {
+        return Err(A2aError::invalid_params("the agent card is not signed"));
+    }
+    if sigs
+        .iter()
+        .any(|sig| verify_agent_card_with_jwks(card, sig, jwks).is_ok())
+    {
+        Ok(())
+    } else {
+        Err(A2aError::invalid_params(
+            "no signature on the agent card verifies under the key set",
+        ))
+    }
+}
+
+fn verify_with(
+    card: &AgentCard,
+    sig: &AgentCardSignature,
+    alg: &str,
+    key: &VerifyingKey,
 ) -> A2aResult<()> {
     let canonical = canonicalize_card(card)?;
-
-    // Reconstruct the signing input.
-    let payload_b64 = URL_SAFE_NO_PAD.encode(&canonical);
-    let signing_input = format!("{}.{}", sig.protected, payload_b64);
-
-    // Decode the signature.
+    let signing_input = format!("{}.{}", sig.protected, URL_SAFE_NO_PAD.encode(&canonical));
     let sig_bytes = URL_SAFE_NO_PAD
         .decode(&sig.signature)
         .map_err(|e| A2aError::internal(format!("invalid signature encoding: {e}")))?;
-
-    // Determine algorithm from the protected header.
-    let alg = signature_header(sig)?.alg;
-    if alg != "ES256" {
-        return Err(A2aError::internal(format!("unsupported algorithm: {alg}")));
-    }
-
-    // Verify with ES256.
-    let public_key =
-        signature::UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_FIXED, public_key_der);
-    public_key
-        .verify(signing_input.as_bytes(), &sig_bytes)
+    key.verify(alg, signing_input.as_bytes(), &sig_bytes)
         .map_err(|_| A2aError::internal("signature verification failed"))
 }
 

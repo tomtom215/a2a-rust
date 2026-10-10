@@ -12,6 +12,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`profile::Profile::Auditable`** (server, `audit` feature; book, "Audit
+  Trail"). `RequestHandlerBuilder::with_profile` turns on the audit trail and
+  an approval gate in one call. `build()` refuses the configuration, naming
+  what is missing, when:
+  - the log is not required;
+  - the log signs no checkpoints;
+  - no authenticating interceptor is installed.
+- **`a2a` CLI offline commands** (`tools/a2a-cli`). These need no agent,
+  print JSON, and exit 1 when the check fails:
+  - `a2a card sign` signs a card file with ES256 or EdDSA;
+  - `a2a card verify` checks a card from a URL or a file against a JWK Set
+    from an HTTPS URL or a file;
+  - `a2a audit verify` checks an exported audit chain against a JWK Set and
+    prints the chain report.
+
+  The CLI now carries the release version (0.14.1), and `release.yml` checks
+  it against the tag with the four library crates, so a release binary
+  reports what it is.
+- **Release binaries for the CLI, off until switched on** (`release.yml`,
+  `cli-binaries`). When the repository variable `PUBLISH_CLI_BINARIES` is
+  `true`, each tag builds `a2a` natively for x86_64 and aarch64 Linux,
+  aarch64 macOS and x86_64 Windows. Each archive gets a SHA-256 file and
+  SLSA build provenance, and is attached to the GitHub release. Homebrew and
+  winget manifests are drafted under `packaging/`; they have not been
+  submitted or validated.
+- **The provenance extension: AI-generated marker and signed content**
+  (types; `https://a2a-rust.com/extensions/provenance/v1`; book,
+  "Provenance and Signatures").
+  - `mark_ai_generated` marks a message or artifact as AI-generated and
+    names its generator, in machine-readable metadata (EU AI Act Article
+    50(2)).
+  - With `signing`, `sign_content` signs the whole content, marker included,
+    with ES256 or EdDSA, and `verify_content` checks it against a JWK Set.
+    Changing the text, the marker or other metadata after signing breaks the
+    signature. A signed artifact still verifies after a round trip through a
+    server, and a file part's bytes, including a C2PA manifest inside them,
+    come back unchanged (`tests/content_provenance_e2e.rs`).
+- **Card verification with EdDSA and JWK Sets** (types and client;
+  `signing`).
+  - `sign_agent_card_ed25519` signs with Ed25519, and verification accepts
+    EdDSA as well as ES256.
+  - `signing::{Jwk, Jwks, VerifyingKey}` and `verify_agent_card_with_jwks`
+    select keys by `kid`. A key is only ever tried under the algorithm its
+    type is for.
+  - `verify_card_with_jwks` tries every signature on a card, which covers
+    key rotation.
+  - The client's new `jwks::fetch_jwks` fetches a set from a URL the caller
+    trusts. It requires HTTPS (or HTTP to loopback), caps the body at 256
+    KiB, and gives the whole fetch one time budget.
+  - Checked against RFC 8037's Ed25519 example and against keys generated
+    by OpenSSL.
+- **`RequestHandler::halt` / `resume`: stop one tenant or the whole server**
+  (server; book, "Human Oversight"). While a scope is halted, new sends are
+  refused with the new `ServerError::Halted` (HTTP `503` and gRPC
+  `UNAVAILABLE`; JSON-RPC answers an internal error reading
+  `halted: <reason>`). Every running task's cancellation token fires, and an
+  executor that returns on it without a terminal state has its task ended
+  `canceled`, as on shutdown. Reads and cancels are still served. A send
+  racing the halt is either refused or stopped; with the second check
+  removed, the race test failed. With `audit`, each halt and resume is a
+  `halt` record naming the operator and the tasks stopped. A halt holds in
+  one process and is not persisted.
+- **The approval extension, and `approval::ApprovalGate`** (types and
+  server; `https://a2a-rust.com/extensions/approval/v1`; book, "Human
+  Oversight"). An executor asks with `EventEmitter::request_approval`,
+  naming the action by the SHA-256 digest of its canonical JSON
+  (`approval::action_digest`, `signing` feature). The server records who
+  asked. With a gate installed, a continuation carrying a decision reaches
+  the executor (`RequestContext::approval`) only if all of these hold:
+  - it answers the pending request and echoes its digest;
+  - it comes from an authenticated approver the gate allows;
+  - by default, the approver is not the caller whose run asked.
+
+  Otherwise it is refused before anything runs. Without a gate,
+  `RequestContext::approval` is always `None`. With `audit`, each admitted
+  decision is an `approval` record naming the approver. The card declares
+  the extension when a gate is installed.
+- **`delegation::Delegation`: cancellation that follows a task to the agents
+  it delegated to** (client; book, "Delegating to Another Agent"). It sends a
+  child task as a stream and learns the child's id from its first event. It
+  cancels the child, in the tenant it was sent to, when the parent cancels,
+  when the child's stream is lost, or when the handle is dropped first. A
+  dropped handle is what an aborted parent future leaves behind. A child that
+  reaches `input-required` or `auth-required` is handed back, not cancelled.
+  `detach()` keeps a child running. Outcomes are typed: completed, failed
+  with its failure class, canceled, interrupted, message, lost, cancel
+  requested, cancel failed, unreachable. `examples/swarm` now uses it in
+  place of its hand-written cascade; its cancel gate still finds 0 of 256
+  children running 5 s after the roots are cancelled, against 256 of 256 in
+  the control arm (debug build, 2026-10-08). It does not cover a parent that
+  crashes (gap G1-B in `docs/swarm-orchestration.md`).
+- **A tamper-evident audit trail** (`audit` feature on the server, types and
+  SDK crates; ADR 0015; book, "Audit Trail").
+  `RequestHandlerBuilder::with_audit(Arc<AuditLog>)` records every call —
+  refused ones included — every run of a task with the caller who started
+  it, every event the agent emits with the run it belongs to, and every
+  cancel request, in a SHA-256 hash chain per tenant. Each record carries
+  the authenticated subject and scheme, the tenant and the W3C trace and span
+  ids; content is recorded only as digests of its RFC 8785 canonical JSON.
+  `CheckpointSigner` (ES256 or Ed25519 through `ring`, PKCS#8 as OpenSSL
+  writes it) signs checkpoints that make truncation of a chain's tail
+  detectable, and `a2a_protocol_types::audit::verify_chain` checks a chain
+  and its checkpoints offline, reporting the first edit, gap, reordering,
+  foreign record, missing start or removed tail. Stores: in memory, SQLite
+  and PostgreSQL (`SqliteAuditStore`, `PostgresAuditStore`); replicas sharing
+  one store interleave on a chain without forking it. Retention:
+  `AuditLog::purge` with `AuditRetention::six_months()` (184 days; a shorter
+  floor must be asked for by name), legal holds, and a signed anchor so a
+  purged chain still verifies. `AuditLog::require_record(true)` refuses a
+  call that cannot be recorded. A failed write is counted by
+  `AuditLog::failures` and reported as `audit_append` through
+  `Metrics::on_persistence_error`. Measured cost, release build on a 4-vCPU
+  Xeon @ 2.10 GHz: 9.2 µs per record in memory, 272 µs on a SQLite file
+  (medians of five runs).
+- **`CallContext::auth_scheme` / `set_auth_scheme`** (server). The bundled
+  API-key, bearer and JWT interceptors now record how they authenticated a
+  caller (`"api-key"`, `"bearer"`, `"jwt"`) beside the identity; a custom
+  interceptor can do the same.
+
 - **`otel::Telemetry`: one entry point for traces, metrics and logs** (server,
   `otel` feature; ADR 0013 option 5). It reads the `OTEL_*` environment as the
   OpenTelemetry specification defines it — `OTEL_SDK_DISABLED`, the
@@ -93,9 +212,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `TracePropagationInterceptor` in a `CurrentTrace` scope; the server
   span a call causes is now the child of the client's span rather than of
   the caller's. Opt out with `ClientBuilder::with_trace_propagation(false)`.
+- **HTTP+JSON responses negotiate their media type** (server; both
+  `RestDispatcher` and the axum adapter). A client whose `Accept` prefers
+  `application/a2a+json`, or whose request body is labelled with it and whose
+  `Accept` is absent or a wildcard, now receives `application/a2a+json`, as
+  spec §11.1 says SHOULD be used; every other client still receives
+  `application/json`. Successes and errors are labelled alike; the agent card
+  and `/health` and `/ready` are unchanged. A client that sends an A2A body
+  and parses responses only under `application/json` must send
+  `Accept: application/json`. Released a2a-go (v2.6.0) already does and is
+  unaffected (`go_sdk_interop.sh`, every check passing). ACTS `REST-CT-001`,
+  the only failure on earlier runs, now passes: HTTP+JSON 94/94 against
+  a2a-itk `82458cea` (`acts/reports/2026-10-08/`).
 
 ### Fixed
 
+- **`verify_agent_card` accepts the key form its documentation named.** Its
+  docs said `SubjectPublicKeyInfo` DER, but only the raw 65-byte point
+  verified, so a key exported with `openssl pkey -pubout -outform DER` was
+  refused. Both forms now verify, and the docs say so.
 - **A blocking `SendMessage` could lose events.** Its collector read the
   task's broadcast queue, which overwrites what a slow reader has not
   reached. An executor writing more than the queue's capacity (256) faster
@@ -179,6 +314,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Stored secrets are wiped on drop** (`zeroize`, already in the
+  dependency graph through rustls, so no new crate). This covers the HS256
+  secret held by `JwtValidator`, including one refused as too short, and the
+  client secret held by `OAuth2ClientCredentials`. The copies a request
+  makes while it is in flight are not wiped: `ring`'s HMAC key, the token
+  request body, and hyper's buffers. The documentation on each field says
+  so.
 - **A server whose stores cannot isolate tenants now refuses requests that
   name one.** The default `RequestHandlerBuilder` store ignored the `tenant`
   field, so a request carrying one was served from records every tenant
@@ -190,6 +332,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tenant — named by the client or derived by a resolver — is refused with
   `UnsupportedOperation` unless both stores answer `true`. Requests without
   a tenant are unaffected.
+- **`JwtValidator` refuses an HS256 secret shorter than 32 bytes** (server,
+  `auth-jwt` feature). RFC 7518 §3.2 requires an HS256 key at least as long
+  as the hash output; `with_hs256_secret` accepted any length, down to one
+  byte, so a guessable secret let anyone who guessed it mint tokens the
+  server accepted. `with_hs256_secret` now fails closed for a short secret:
+  it logs an error and stores nothing, so every HS256 token is rejected. The
+  new `try_with_hs256_secret` returns an error instead, for refusing the
+  secret at startup, and `MIN_HS256_SECRET_LEN` names the bound. A
+  deployment configured with a short secret stops accepting HS256 tokens on
+  upgrade and must move to a secret of at least 32 bytes. RS256 keys under
+  2048 bits were already refused by `ring`. The book's example, which taught
+  a 13-byte secret, and `examples/genai-agent` now use
+  `try_with_hs256_secret`.
 
 ### Changed
 
@@ -212,6 +367,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RequestHandlerBuilder::accept_unisolated_tenants()`. A custom store that
   partitions by tenant must now say so by overriding `isolates_tenants()`;
   a wrapper store must forward it.
+
+### Internal
+
+- **Proofs, not only tests** (`verification.yml`).
+  - Kani proves the task state machine whole, in
+    `crates/a2a-protocol-types/src/kani_proofs.rs`:
+    - terminal states are final;
+    - every unfinished task can be cancelled;
+    - nothing re-enters `Submitted`;
+    - terminal and interrupted states are disjoint.
+  - Kani also proves the ES256 and EdDSA key parsers safe and exact over
+    every byte string up to their SPKI length.
+  - A loom model in `verification/loom-halt`, outside the workspace, checks
+    the halt/admission protocol in every interleaving.
+  - Each proof was shown able to fail. A weakened Kani assertion produced a
+    counterexample, and the loom model with the second check removed finds
+    the escaping interleaving.
+- **ACTS is a merge gate, and a release attests it** (`acts.yml`,
+  `scripts/acts_predicate.py`).
+  - The A2A project's conformance suite runs on every pull request, at a
+    pinned a2a-itk revision, over JSON-RPC, gRPC and HTTP+JSON.
+  - It fails on any failed or errored test at any level. That is stricter
+    than upstream's MUST-only `--require-conformant`.
+  - `release.yml` runs it on the tag and attests the summary onto each
+    `.crate`. The GitHub release waits on it.
+  - The nightly also runs ACTS and publishes `acts_rust.json`.
+  - `prove_workflow_gates_fail.py` proves the gate can fail: a report with
+    one failed test fails it, and so does no report at all.
+- **Upstream drafts, not sent:**
+  - `docs/upstream/a2a-itk-dashboard-enrolment-draft.md` asks the ITK
+    dashboard to list this SDK. It also reports that the shared driver
+    hard-codes the `a2aproject` org in its history URLs, so this
+    repository's nightly history never accumulates.
+  - `docs/upstream/a2a-oversight-provenance-extensions-draft.md` proposes the
+    approval and provenance extensions.
+- **Supply-chain workflows: OSV-Scanner, CodeQL and OpenSSF Scorecard.**
+  `osv.yml` scans all seven tracked `Cargo.lock` files on every pull request
+  (blocking on findings the PR introduces) and daily (blocking on any), and
+  reports, without blocking, the Go, Java, JavaScript and Python lockfiles of
+  the conformance peers. Its first run found `itk/Cargo.lock` and
+  `fuzz/Cargo.lock` still on h2 0.4.15 (RUSTSEC-2026-0258), which the root
+  workspace had left behind; both now pin 0.4.20. The two documented
+  waivers — `rsa` in the root lockfile, which no build resolves, and the
+  SLIMRPC binding's RUSTSEC-2026-0285 — are recorded in an
+  `osv-scanner.toml` beside each lockfile with a reason and an expiry; the binding's waiver was re-checked with `cargo update -p rustls --precise 0.23.45` on 2026-10-08 and is still blocked upstream.
+  `codeql.yml` runs `security-extended` over the Rust sources, the workflows
+  and the gate scripts; `scorecard.yml` publishes the Scorecard result for
+  the README badge. `docs/openssf-best-practices.md` answers all 67
+  passing-level criteria of the OpenSSF Best Practices badge with evidence,
+  ready for the maintainer to register.
+- **A regulatory control map, checked in CI.** `docs/compliance/control-map.md`,
+  generated from `docs/compliance/controls.toml`, maps 27 provisions of the
+  EU AI Act, the Cyber Resilience Act, the GDPR, OWASP's agentic Top 10 and
+  ISO/IEC 42001 onto what the SDK provides, each with the tests or CI steps
+  that prove it and what is missing. It states plainly that the AI Act places
+  no obligation on this SDK. `scripts/check_compliance_map.py --check`, a
+  static-checks gate proven by `prove_gates_fail.sh`, fails when a cited test
+  no longer exists or is not a test, when a cited file or CI step is gone, or
+  when the Markdown is stale.
+- **Release tags must be signed** (`release.yml`). A tag must point at a
+  commit on `main` and carry an SSH or OpenPGP signature that verifies
+  against a key in `.github/release-signers/` as it stands on `main`
+  (`scripts/verify_tag_signature.sh`, whose `--self-test` the same step runs
+  and which proves ten verdicts). It fails closed: no key is committed yet,
+  so no release passes until the maintainer adds one. See `RELEASING.md`.
+- **`SECURITY.md` states the support period and has a section for EU Cyber
+  Resilience Act integrators**: a line is supported exactly while it is the
+  latest minor; Article 13(5) due-diligence material, the Article 13(6)
+  reporting route, and that a reporter's legal notification duties take
+  precedence over the coordinated-disclosure embargo.
+- **The README's official-TCK badge said 88/114 MUST with 4 failing**, from
+  before CORE-SEND-003 joined the baseline on 2026-09-26. It now says 87 and
+  5, as the README's own text and `tck/conformance-baseline.json` do.
 
 ## [0.14.1] - 2026-09-30
 

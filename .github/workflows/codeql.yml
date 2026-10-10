@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# CodeQL static analysis (SAST), uploaded to code scanning.
+#
+# Three languages, each for its own reason:
+#
+# * `rust` — the four published crates and everything else in the tree.
+#   `build-mode: none` extracts from source without compiling, which GitHub
+#   supports for Rust; nothing here depends on generated code CodeQL would
+#   miss except the protobuf types, whose sources are the vendored `.proto`.
+# * `actions` — this repository's workflows. They run on pull requests,
+#   check out untrusted heads, and hold a crates.io publishing identity
+#   (`release.yml`); workflow injection is the attack on that, and CodeQL's
+#   `actions` queries look for it.
+# * `python` — the gate scripts under `scripts/`, which CI runs on every
+#   pull request against the pull request's own content.
+#
+# Findings appear under Security → Code scanning. Whether a new alert blocks
+# a merge is a branch-protection setting (code scanning merge protection),
+# not something this file can impose; the workflow itself fails only when
+# analysis cannot run.
+
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '13 4 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [rust, actions, python]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: /language:${{ matrix.language }}

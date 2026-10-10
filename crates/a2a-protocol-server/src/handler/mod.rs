@@ -22,6 +22,7 @@
 mod capability;
 mod concurrency;
 mod event_processing;
+mod halt;
 pub(crate) mod helpers;
 pub(crate) mod input_modes;
 mod introspection;
@@ -33,6 +34,7 @@ mod messaging;
 mod push_config;
 mod shutdown;
 
+pub use halt::{HaltReport, HaltScope};
 pub use helpers::InboundTracePolicy;
 pub(crate) use shutdown::InFlight;
 pub use shutdown::{InFlightReport, ShutdownReport};
@@ -139,6 +141,13 @@ pub struct RequestHandler {
     /// every executor and background processor is spawned on. See
     /// [`RequestHandler::cancel_in_flight`].
     pub(crate) in_flight: shutdown::InFlight,
+    /// The halts in force; see [`RequestHandler::halt`].
+    pub(crate) halts: std::sync::RwLock<halt::Halts>,
+    /// Checks approval decisions on continuations; see [`crate::approval`].
+    pub(crate) approval_gate: Option<crate::approval::ApprovalGate>,
+    /// The audit log, when the handler was built with one.
+    #[cfg(feature = "audit")]
+    pub(crate) audit: Option<Arc<crate::audit::AuditLog>>,
 }
 
 /// Entry in the cancellation token map, tracking creation time for eviction.
@@ -153,6 +162,9 @@ pub(crate) struct CancellationEntry {
     /// finished. Admission reads it to tell a continuation racing the end of
     /// a turn from a send into a task that is genuinely still working (N21).
     pub(crate) turn: Arc<ExecutorTurn>,
+    /// The tenant the task belongs to (`""` without one), so a
+    /// [`halt`](RequestHandler::halt) of one tenant finds its tasks.
+    pub(crate) tenant: String,
 }
 
 /// The state of one executor turn, shared by the executor's writer, its
@@ -166,12 +178,27 @@ pub(crate) struct ExecutorTurn {
     /// Cancelled once the executor's queue and token have been released —
     /// the moment a continuation can be admitted.
     pub(crate) finished: tokio_util::sync::CancellationToken,
+    /// A [`halt`](RequestHandler::halt) stopped this turn. Set before the
+    /// task's token is cancelled, so an executor that returns on the token
+    /// sees it, and its task is ended `Canceled` as on shutdown.
+    pub(crate) halted: std::sync::atomic::AtomicBool,
 }
 
 impl ExecutorTurn {
     /// Whether the executor's latest state asks the client for input.
     pub(crate) fn is_parked(&self) -> bool {
         self.parked.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Marks the turn halted; the caller cancels its token next.
+    pub(crate) fn halt(&self) {
+        self.halted
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Whether a halt stopped this turn.
+    pub(crate) fn is_halted(&self) -> bool {
+        self.halted.load(std::sync::atomic::Ordering::Acquire)
     }
 }
 

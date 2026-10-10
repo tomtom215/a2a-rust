@@ -57,6 +57,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use a2a_protocol_types::approval::ApprovalRequest;
 use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
@@ -270,6 +271,55 @@ impl<'a> EventEmitter<'a> {
                 metadata: None,
             }))
             .await
+    }
+
+    /// Parks the task at `input-required` asking a person to approve
+    /// `request`, and returns the request as sent.
+    ///
+    /// The request is recorded on the status message with the question as
+    /// its text, and `requested_by` is set to this run's caller, so an
+    /// [`ApprovalGate`](crate::approval::ApprovalGate) can refuse that caller
+    /// approving their own action. Return after calling it; the answer
+    /// arrives as the next run of the task, at
+    /// [`RequestContext::approval`](crate::RequestContext::approval).
+    ///
+    /// ```rust,ignore
+    /// let action = serde_json::json!({ "tool": "refund", "order": 1182, "amount": "40.00" });
+    /// let digest = a2a_protocol_types::approval::action_digest(&action)?;
+    /// emit.request_approval(
+    ///     ApprovalRequest::new(uuid::Uuid::new_v4().to_string(), "Refund EUR 40 to order 1182", digest),
+    ///     "May I issue this refund?",
+    /// ).await?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event queue write fails.
+    pub async fn request_approval(
+        &self,
+        mut request: ApprovalRequest,
+        question: impl Into<String>,
+    ) -> A2aResult<ApprovalRequest> {
+        request.requested_by = self.ctx.caller_identity().map(str::to_owned);
+        let mut note = Message::agent(
+            uuid::Uuid::new_v4().to_string(),
+            vec![Part::text(question.into())],
+        );
+        note.task_id = Some(self.ctx.task_id.clone());
+        note.context_id = Some(ContextId::new(self.ctx.context_id.clone()));
+        request.attach(&mut note);
+
+        let mut status = TaskStatus::new(TaskState::InputRequired);
+        status.message = Some(note);
+        self.queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: self.ctx.task_id.clone(),
+                context_id: ContextId::new(self.ctx.context_id.clone()),
+                status,
+                metadata: None,
+            }))
+            .await?;
+        Ok(request)
     }
 
     /// Emits an artifact update event.

@@ -125,9 +125,12 @@ pub mod auth;
 pub mod builder;
 pub mod client;
 pub mod config;
+pub mod delegation;
 pub mod discovery;
 pub mod error;
 pub mod interceptor;
+#[cfg(feature = "signing")]
+pub mod jwks;
 pub mod methods;
 pub mod retry;
 pub mod streaming;

@@ -57,6 +57,10 @@ pub struct CallContext {
     /// instead of letting the last one silently win.
     caller_identity: OnceLock<String>,
 
+    /// How the caller was authenticated (`"jwt"`, `"api-key"`, `"bearer"`),
+    /// write-once for the same reason as `caller_identity`.
+    auth_scheme: OnceLock<String>,
+
     /// Extension URIs active for this request.
     extensions: Vec<String>,
 
@@ -111,6 +115,7 @@ impl std::fmt::Debug for CallContext {
         f.debug_struct("CallContext")
             .field("method", &self.method)
             .field("caller_identity", &self.caller_identity)
+            .field("auth_scheme", &self.auth_scheme)
             .field("extensions", &self.extensions)
             .field("request_id", &self.request_id)
             .field("http_header_names", &names)
@@ -162,6 +167,24 @@ impl CallContext {
         self.caller_identity.set(identity.into()).is_ok()
     }
 
+    /// Returns how the caller was authenticated, once something has said.
+    ///
+    /// The bundled interceptors set `"api-key"`, `"bearer"` and `"jwt"`. The
+    /// audit log records it beside the identity, so a record says not only
+    /// who but on what evidence.
+    #[must_use]
+    pub fn auth_scheme(&self) -> Option<&str> {
+        self.auth_scheme.get().map(String::as_str)
+    }
+
+    /// Records how the caller was authenticated, if nothing has yet; returns
+    /// whether this call set it. Set it beside
+    /// [`set_caller_identity`](Self::set_caller_identity) in a custom
+    /// authentication interceptor.
+    pub fn set_auth_scheme(&self, scheme: impl Into<String>) -> bool {
+        self.auth_scheme.set(scheme.into()).is_ok()
+    }
+
     /// Returns the active extension URIs.
     #[must_use]
     pub fn extensions(&self) -> &[String] {
@@ -211,6 +234,7 @@ impl CallContext {
         Self {
             method: method.into(),
             caller_identity: OnceLock::new(),
+            auth_scheme: OnceLock::new(),
             extensions: Vec::new(),
             request_id: None,
             http_headers: HashMap::new(),

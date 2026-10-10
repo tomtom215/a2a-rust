@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# DRAFT — not submitted. See packaging/README.md.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.9.0.schema.json
+PackageIdentifier: TomF.A2ACli
+PackageVersion: "@VERSION@"
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.9.0

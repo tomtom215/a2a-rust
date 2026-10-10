@@ -68,6 +68,10 @@ pub struct RequestContext {
     /// [`activated_extensions`](Self::activated_extensions)) over matching on
     /// this directly.
     pub call_context: Option<CallContext>,
+
+    /// The approval decision this continuation carries, once an
+    /// [`ApprovalGate`](crate::approval::ApprovalGate) has checked it.
+    pub(crate) approval: Option<crate::approval::VerifiedApproval>,
 }
 
 impl RequestContext {
@@ -82,6 +86,7 @@ impl RequestContext {
             metadata: None,
             cancellation_token: CancellationToken::new(),
             call_context: None,
+            approval: None,
         }
     }
 
@@ -97,6 +102,16 @@ impl RequestContext {
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = Some(metadata);
         self
+    }
+
+    /// The approval decision this continuation carries, checked by the
+    /// handler's [`ApprovalGate`](crate::approval::ApprovalGate): the
+    /// request it answers, approve or deny, and who decided. `None` when the
+    /// message carries no decision, and always `None` on a handler built
+    /// without a gate — a decision nothing checked is not reported here.
+    #[must_use]
+    pub const fn approval(&self) -> Option<&crate::approval::VerifiedApproval> {
+        self.approval.as_ref()
     }
 
     /// Attaches the [`CallContext`] this execution was requested under.

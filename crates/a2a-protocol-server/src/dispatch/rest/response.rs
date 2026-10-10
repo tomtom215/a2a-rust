@@ -50,17 +50,10 @@ pub(super) fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
 
 /// Builds a JSON HTTP response with the given status and body.
 ///
-/// `application/json`, a deliberate deviation from §11.1, which says
-/// `application/a2a+json` SHOULD be used for requests and responses (this
-/// comment cited §11.1 for `application/json` until 2026-09-25, from the
-/// 2026-03-31 specification snapshot, which said so). The official Go SDK's
-/// client (a2a-go v2.5.0, `internal/rest.FromRESTError`) decodes an error
-/// body only when its Content-Type starts with `application/json`: labelled
-/// `application/a2a+json`, every HTTP+JSON error reached it as a bare
-/// "server error", which `go_sdk_interop.sh` caught. a2a-go's server and the
-/// official Rust SDK's send `application/json` too. ACTS REST-CT-001 (a
-/// SHOULD) fails for this reason. The A2A media type stays accepted on
-/// ingress.
+/// Labelled `application/json` here; the dispatcher relabels it
+/// `application/a2a+json` on the way out for a client that asks for that
+/// type (§11.1; see `dispatch::rest::media_type` for the rule and why it is not
+/// the unconditional default).
 pub(super) fn build_json_response(
     status: u16,
     body: Vec<u8>,

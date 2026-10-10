@@ -328,6 +328,12 @@ impl RequestHandler {
         // `find_task_by_context` cannot see. Everywhere else this is a no-op
         // and `stored_task` stays exactly what it was.
         let stored_task = resolution.continues.or(stored_task);
+        // A decision is checked against the request pending on the task it
+        // continues, before anything is claimed; see `crate::approval`.
+        let approval = match &self.approval_gate {
+            Some(gate) => gate.check(stored_task.as_ref(), &params.message, call_ctx)?,
+            None => None,
+        };
 
         // An idempotency key, if the send carries one, is claimed here: after
         // everything that can reject the request on its own terms, and before
@@ -360,6 +366,9 @@ impl RequestHandler {
         // clippy's `large_futures` threshold — the same reason the inline
         // push-config branch inside it is boxed.
         let started = Box::pin(async move {
+            // A halted tenant takes no new work (`halt`); a halt that lands
+            // after this check is caught once the token is registered.
+            self.refuse_if_halted()?;
             // Under the still-held per-context lock, so it is atomic with the
             // token insert below.
             self.reject_in_flight_send(&task_id).await?;
@@ -386,6 +395,7 @@ impl RequestHandler {
             // A child of the handler's shutdown token, so shutdown reaches this
             // task too — even if it began a moment ago (`cancel_in_flight`).
             ctx.cancellation_token = self.in_flight.task_token();
+            ctx.approval = approval;
 
             // From here on there is something to release on failure: the queue
             // first, then the token, then the row.
@@ -396,7 +406,22 @@ impl RequestHandler {
                 .register_cancellation_token(&task_id, ctx.cancellation_token.clone())
                 .await;
             guard_ref.registered(&turn);
+            // A halt that landed after the check above may have walked the
+            // tokens before this one was inserted; it has set its flag by
+            // now, so stop this turn the way the walk would have (`halt`).
+            self.stop_if_halted(&turn, &ctx.cancellation_token);
             self.persist_initial_task(&task).await?;
+            #[cfg(feature = "audit")]
+            if let (Some(log), Some(approval)) = (&self.audit, ctx.approval.as_ref()) {
+                Box::pin(crate::audit::record_approval(
+                    log,
+                    &*self.metrics,
+                    call_ctx,
+                    &task_id,
+                    approval,
+                ))
+                .await;
+            }
 
             // Boxed, and with every local confined to the helper, so this cold
             // branch does not enlarge the send future for every send — inline it

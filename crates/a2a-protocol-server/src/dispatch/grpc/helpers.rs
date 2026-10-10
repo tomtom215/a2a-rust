@@ -85,6 +85,9 @@ fn grpc_code(err: &ServerError, a2a_code: a2a_protocol_types::error::ErrorCode) 
     if matches!(err, ServerError::Overloaded(_)) {
         return tonic::Code::ResourceExhausted;
     }
+    if matches!(err, ServerError::Halted(_)) {
+        return tonic::Code::Unavailable;
+    }
     // A refused credential has its own codes (N36); `status_name` is the
     // one place that names them.
     match err.status_name() {
@@ -268,6 +271,13 @@ mod tests {
                 "standard error unexpectedly carried ErrorInfo: {err:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_halt_is_unavailable() {
+        let status = server_error_to_status(&ServerError::Halted("incident".into()));
+        assert_eq!(status.code(), tonic::Code::Unavailable);
+        assert_eq!(status.message(), "halted: incident");
     }
 
     // extract_metadata

@@ -96,6 +96,33 @@ jobs:
       # Release-time rather than per-commit on purpose: every commit moves
       # these counts, so a per-commit gate would fail constantly and be routed
       # around. The release is the only moment the figures are cited.
+      # Annotation records who cut the tag; nothing proves it. Since
+      # 2026-10-08 the tag must also be signed by a key committed under
+      # .github/release-signers/ (SSH or OpenPGP). The script fails closed —
+      # no configured key, no signature, an untrusted or expired key all
+      # refuse — and its --self-test proves each of those verdicts.
+      #
+      # The trusted keys are read from `main`, not from the tagged tree, and
+      # the tagged commit must be on `main` (every release from v0.10.0 to
+      # v0.14.1 is): otherwise a commit that adds its author's own key could
+      # be tagged and would vouch for itself. What no step here can stop is a
+      # tag on an unreviewed commit whose *workflow* has been edited, because
+      # this file runs from the tagged tree; that is what a repository rule
+      # restricting `v*` tag creation is for (.github/release-signers/README.md).
+      - name: Tag is on main and signed by a release key
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git fetch --no-tags --quiet origin '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag '$TAG' points at ${GITHUB_SHA}, which is not on main."
+            exit 1
+          fi
+          signers=$(mktemp -d)
+          git archive origin/main .github/release-signers | tar -x -C "$signers"
+          scripts/verify_tag_signature.sh --self-test
+          SIGNERS_DIR="$signers/.github/release-signers" scripts/verify_tag_signature.sh "$TAG"
+
       - name: Provenance manifest describes the commit being released
         run: ./scripts/check_provenance_manifest.py "$GITHUB_SHA"
 
@@ -157,7 +184,7 @@ jobs:
           FAILED=0
 
           echo "::group::Version consistency"
-          for toml in crates/a2a-protocol-types/Cargo.toml crates/a2a-protocol-client/Cargo.toml crates/a2a-protocol-server/Cargo.toml crates/a2a-protocol-sdk/Cargo.toml; do
+          for toml in crates/a2a-protocol-types/Cargo.toml crates/a2a-protocol-client/Cargo.toml crates/a2a-protocol-server/Cargo.toml crates/a2a-protocol-sdk/Cargo.toml tools/a2a-cli/Cargo.toml; do
             CARGO_VER=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
             if [[ "$CARGO_VER" != "$TAG_VER" ]]; then
               echo "::error file=$toml::$toml version ($CARGO_VER) != tag ($TAG_VER)."
@@ -449,6 +476,45 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
+# ── Job 4b: Conformance on the tagged commit, signed onto the crates ──────────
+# The A2A project's suite (ACTS) runs against the tagged code; its reports are
+# summarised by scripts/acts_predicate.py, which fails on any failed or
+# errored test, and the summary is attested onto each .crate:
+#   gh attestation verify <crate>.crate -R tomtom215/a2a-rust \
+#     --predicate-type https://a2a-rust.com/attestations/acts-conformance/v1
+# github-release (and so publish) waits on it: a tag that is not conformant
+# is not released.
+  conformance:
+    name: ACTS conformance (tagged commit)
+    needs: [validate]
+    uses: ./.github/workflows/acts.yml
+
+  attest-conformance:
+    name: Attest conformance onto the crates
+    needs: [package, conformance]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write      # OIDC token for the signed attestation
+      attestations: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-artifacts
+          path: target/package
+      - name: Download ACTS reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: acts-reports
+          path: acts
+      - name: Attest ACTS conformance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: target/package/*.crate
+          predicate-type: https://a2a-rust.com/attestations/acts-conformance/v1
+          predicate-path: acts/acts-predicate.json
+
 # ── Job 5: Package verification (validates packages are publishable) ──────────
   publish-dry-run:
     name: Package verification
@@ -476,7 +542,7 @@ jobs:
 # ── Job 6: Create GitHub release with artifacts & release notes ───────────────
   github-release:
     name: Create GitHub release
-    needs: [validate, package, publish-dry-run]
+    needs: [validate, package, publish-dry-run, attest-conformance]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # create release, upload assets
@@ -585,6 +651,69 @@ jobs:
             echo "### Next step"
             echo "Approve the **crates-io** deployment environment to publish to crates.io."
           } >> "$GITHUB_STEP_SUMMARY"
+
+# ── Job 6b: The `a2a` CLI as release binaries (opt-in) ────────────────────────
+# Off until the maintainer sets the repository variable
+# PUBLISH_CLI_BINARIES=true: a new kind of public artifact is theirs to
+# decide on (handoff, "Decisions the maintainer made"). When on, each target
+# is built natively, archived with its SHA-256, given SLSA build provenance,
+# and attached to the GitHub release the job above created.
+  cli-binaries:
+    name: CLI binary (${{ matrix.target }})
+    needs: [validate, github-release]
+    if: vars.PUBLISH_CLI_BINARIES == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, archive: tar.gz }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, archive: tar.gz }
+          - { os: macos-latest, target: aarch64-apple-darwin, archive: tar.gz }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, archive: zip }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write      # upload to the release
+      id-token: write      # OIDC token for the provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master 2026-09-03
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      # Cold, like the .crate archives: nothing restored from routine CI.
+      - name: Build
+        run: cargo build --release --locked -p a2a-cli --target ${{ matrix.target }}
+      - name: Archive with its checksum
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          name="a2a-${TAG}-${TARGET}"
+          mkdir -p "dist/$name"
+          exe=a2a; [ "$ARCHIVE" = zip ] && exe=a2a.exe
+          cp "target/$TARGET/release/$exe" README.md LICENSE "dist/$name/"
+          cd dist
+          if [ "$ARCHIVE" = zip ]; then
+            7z a -tzip "$name.zip" "$name" >/dev/null
+          else
+            tar -czf "$name.tar.gz" "$name"
+          fi
+          sha256sum "$name.$ARCHIVE" 2>/dev/null > "$name.$ARCHIVE.sha256" \
+            || shasum -a 256 "$name.$ARCHIVE" > "$name.$ARCHIVE.sha256"
+          cat "$name.$ARCHIVE.sha256"
+      - name: Attest build provenance (SLSA)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/a2a-*.${{ matrix.archive }}
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" dist/a2a-*.${{ matrix.archive }} dist/a2a-*.sha256 --clobber
 
 # ── Job 7: Publish to crates.io (protected environment, requires approval) ────
   publish:

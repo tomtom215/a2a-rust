@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# DRAFT — not submitted. See packaging/README.md.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+PackageIdentifier: TomF.A2ACli
+PackageVersion: "@VERSION@"
+PackageLocale: en-US
+Publisher: Tom F.
+PublisherUrl: https://github.com/tomtom215
+PackageName: a2a (A2A command-line client)
+PackageUrl: https://a2a-rust.com
+License: Apache-2.0
+LicenseUrl: https://github.com/tomtom215/a2a-rust/blob/main/LICENSE
+ShortDescription: Command-line client for A2A agents
+Description: Call A2A agents, sign and verify agent cards, and verify exported audit chains offline.
+Tags:
+  - a2a
+  - agents
+  - cli
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

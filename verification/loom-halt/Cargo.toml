@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# A loom model of the halt/admission protocol in
+# crates/a2a-protocol-server/src/handler/halt.rs. Outside the workspace so
+# that loom and its dependencies never enter the published crates' graph.
+# Run: cd verification/loom-halt && cargo test --release
+
+[package]
+name = "a2a-loom-halt"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[dev-dependencies]
+loom = "0.7"
+
+[workspace]

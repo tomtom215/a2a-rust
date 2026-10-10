@@ -88,6 +88,7 @@ async fn shutdown_clears_cancellation_tokens() {
                 turn: std::sync::Arc::default(),
                 token: tokio_util::sync::CancellationToken::new(),
                 created_at: Instant::now(),
+                tenant: String::new(),
             },
         );
     }
@@ -130,6 +131,7 @@ async fn shutdown_with_timeout_clears_cancellation_tokens() {
                 turn: std::sync::Arc::default(),
                 token: tokio_util::sync::CancellationToken::new(),
                 created_at: Instant::now(),
+                tenant: String::new(),
             },
         );
     }
@@ -158,6 +160,7 @@ async fn shutdown_with_timeout_cancels_tokens() {
                 turn: std::sync::Arc::default(),
                 token: token_clone,
                 created_at: Instant::now(),
+                tenant: String::new(),
             },
         );
     }

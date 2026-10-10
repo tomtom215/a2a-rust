@@ -119,10 +119,22 @@ the path and the body disagree the path wins, as a path variable does under
 The REST dispatcher accepts both `application/json` and `application/a2a+json`.
 A `POST` with any other `Content-Type` is refused with 400.
 
-Responses are `application/json` on both HTTP bindings. For HTTP+JSON this is a
-deliberate deviation from §11.1's SHOULD of `application/a2a+json`, because
-a2a-go's client cannot read an error labelled that way; JSON-RPC's
-`application/json` is what §9.1 requires.
+JSON-RPC responses are `application/json`, as §9.1 requires. HTTP+JSON
+responses are negotiated, following §11.1's SHOULD of `application/a2a+json`
+without breaking clients that cannot read it:
+
+- an `Accept` header that names `application/a2a+json` with a `q` at least as
+  high as `application/json`'s gets `application/a2a+json`;
+- an `Accept` that prefers `application/json` gets `application/json`;
+- with no `Accept`, or only wildcards such as `*/*`, the response mirrors the
+  request's `Content-Type`;
+- anything else gets `application/json`.
+
+Successes and errors are labelled alike. The agent card (a §8.2 well-known
+resource, not an HTTP+JSON operation) and `/health` and `/ready` keep their
+own `application/json`. The default is not the A2A type
+because released a2a-go (v2.6.0) sends `Accept: application/json` and decodes
+an error body only under that type.
 
 ### Security
 

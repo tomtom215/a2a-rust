@@ -172,6 +172,14 @@ jobs:
       - name: Every fuzz target is both built and run
         run: python3 scripts/check_fuzz_matrix.py
 
+      # docs/compliance/control-map.md cites a test for every control it calls
+      # supported. A citation that outlives its test is a claim with nothing
+      # behind it that reads like one with something behind it, so the map is
+      # generated from controls.toml and every cited test, file and CI step is
+      # checked to exist on each push.
+      - name: Compliance map cites only tests that exist
+        run: python3 scripts/check_compliance_map.py --check
+
       # `Metrics` callbacks default to no-ops, so one the bundled OTLP exporter
       # forgets is discarded with no compile error and no failing test — the
       # exporter's own tests run against a noop meter, which a no-op override

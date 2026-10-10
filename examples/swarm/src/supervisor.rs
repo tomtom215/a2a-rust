@@ -7,9 +7,7 @@
 //! across its worker pool with at most `max_inflight` outstanding, and answers
 //! with one artifact — a JSON summary of what happened to every job.
 //!
-//! Everything a swarm needs from the layer below is written out here by hand,
-//! deliberately, because that is the measurement: what an orchestrator has to
-//! build itself on top of A2A today.
+//! What a swarm needs from the layer below:
 //!
 //! * **Retry by class.** A child that fails [`FailureClass::Transient`] is
 //!   re-sent once, to a *different* worker, with the fault removed. Any other
@@ -17,8 +15,10 @@
 //!   than a guess about an error string.
 //! * **Cancellation is not inherited.** A2A has no parent/child link between
 //!   tasks, so cancelling this task does nothing to the tasks it created unless
-//!   this code cancels each one. It watches its own cancellation token and
-//!   sends `CancelTask` to every child still open.
+//!   this code cancels each one. Until 2026-10-08 that cascade was written out
+//!   here by hand; it is now [`Delegation`], which follows each child and
+//!   cancels it when this task's cancellation token fires. The control arm
+//!   detaches instead, to show what A2A does about children on its own.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -27,14 +27,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use a2a_protocol_client::A2aClient;
+use a2a_protocol_client::delegation::{self, Delegation};
 use a2a_protocol_server::{AgentExecutor, EventEmitter, EventQueueWriter, RequestContext};
-use a2a_protocol_types::failure::{FailureClass, class_of};
-use a2a_protocol_types::{A2aResult, Message, MessageSendParams, Part, StreamResponse, TaskState};
+use a2a_protocol_types::failure::FailureClass;
+use a2a_protocol_types::{A2aResult, Message, MessageSendParams, Part, TaskState};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
 pub struct Supervisor {
-    pub workers: Arc<Vec<A2aClient>>,
+    pub workers: Arc<Vec<Arc<A2aClient>>>,
     pub max_inflight: usize,
     pub next: Arc<AtomicUsize>,
     /// `false` turns off the hand-written cancel fan-out: the control arm of the
@@ -61,7 +62,7 @@ struct Ran {
 /// Sends one job to one worker and follows it to a terminal state, cancelling
 /// the child if `stop` fires first.
 async fn run_once(
-    worker: &A2aClient,
+    worker: &Arc<A2aClient>,
     job: &str,
     stop: &CancellationToken,
     propagate: bool,
@@ -70,8 +71,8 @@ async fn run_once(
         uuid::Uuid::new_v4().to_string(),
         vec![Part::text(job)],
     ));
-    let mut stream = match worker.stream_message(params).await {
-        Ok(s) => s,
+    let child = match Delegation::start(Arc::clone(worker), params).await {
+        Ok(d) => d,
         Err(e) => {
             if std::env::var_os("SWARM_DEBUG").is_some() {
                 eprintln!("stream_message failed: {e}");
@@ -79,51 +80,45 @@ async fn run_once(
             return Outcome::Lost;
         }
     };
-    let mut child: Option<String> = None;
-    loop {
-        let next = tokio::select! {
-            ev = stream.next() => ev,
-            () = stop.cancelled() => {
-                if let (true, Some(id)) = (propagate, &child) {
-                    // Best-effort: the child may finish between the signal
-                    // and the request, and that race is not an error.
-                    let _ = worker.cancel_task(id.clone()).await;
+    let done = if propagate {
+        child.wait(stop.cancelled()).await
+    } else {
+        // The control arm: on the stop signal, walk away from the child
+        // without cancelling it, as an orchestrator that wrote no cascade
+        // would.
+        let mut child = child;
+        loop {
+            tokio::select! {
+                ev = child.next_event() => {
+                    if child.is_settled() {
+                        break child.wait(std::future::pending()).await;
+                    }
+                    if ev.is_none() {
+                        let _ = child.detach();
+                        return Outcome::Lost;
+                    }
                 }
-                return Outcome::Canceled;
+                () = stop.cancelled() => {
+                    let _ = child.detach();
+                    return Outcome::Canceled;
+                }
             }
-        };
-        let Some(Ok(ev)) = next else {
-            return Outcome::Lost;
-        };
-        let status = match ev {
-            StreamResponse::Task(t) => {
-                child = Some(t.id.to_string());
-                t.status
-            }
-            StreamResponse::StatusUpdate(u) => {
-                child.get_or_insert_with(|| u.task_id.to_string());
-                u.status
-            }
-            _ => continue,
-        };
-        match status.state {
-            TaskState::Completed => return Outcome::Completed,
-            TaskState::Canceled => return Outcome::Canceled,
-            TaskState::Failed | TaskState::Rejected => {
-                let class = status
-                    .message
-                    .as_ref()
-                    .and_then(class_of)
-                    .unwrap_or(FailureClass::Internal);
-                return Outcome::Failed(class);
-            }
-            _ => {}
         }
+    };
+    match done.outcome {
+        delegation::Outcome::Completed(_) => Outcome::Completed,
+        delegation::Outcome::Failed { class, .. } => Outcome::Failed(class),
+        // The parent stopped: the child was cancelled, or asked to be.
+        delegation::Outcome::Canceled(_)
+        | delegation::Outcome::CancelRequested(_)
+        | delegation::Outcome::CancelFailed(_)
+        | delegation::Outcome::Unreachable => Outcome::Canceled,
+        _ => Outcome::Lost,
     }
 }
 
 async fn run_job(
-    workers: Arc<Vec<A2aClient>>,
+    workers: Arc<Vec<Arc<A2aClient>>>,
     start: usize,
     job: String,
     stop: CancellationToken,

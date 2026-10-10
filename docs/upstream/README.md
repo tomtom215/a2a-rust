@@ -17,3 +17,5 @@ sent until the maintainer sends it; nothing here is posted automatically.
 | `opentelemetry-rust-shutdown-result-report.md` | `open-telemetry/opentelemetry-rust` | Draft, not sent |
 | `tracing-opentelemetry-duplicate-attributes-report.md` | `tokio-rs/tracing-opentelemetry` | Draft, not sent |
 | `langfuse-docs-a2a-rust-page.md` | `langfuse/langfuse-docs` | Draft, not sent |
+| `a2a-oversight-provenance-extensions-draft.md` | `a2aproject/A2A` (discussion) | Draft, not sent |
+| `a2a-itk-dashboard-enrolment-draft.md` | `a2aproject/a2a-itk` | Draft, not sent |

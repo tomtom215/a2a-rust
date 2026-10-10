@@ -71,11 +71,12 @@ new example silently breaks packaging — which is what
 # Create a release branch
 git checkout -b release/vX.Y.Z main
 
-# Update version in all 4 crate Cargo.toml files (must all match)
+# Update version in all 4 crate Cargo.toml files and the CLI's (must all match)
 # crates/a2a-protocol-types/Cargo.toml
 # crates/a2a-protocol-client/Cargo.toml
 # crates/a2a-protocol-server/Cargo.toml
 # crates/a2a-protocol-sdk/Cargo.toml
+# tools/a2a-cli/Cargo.toml  (unpublished; its release binaries report this)
 #
 # ...and the inter-crate *dependency pins*, which are eight further version
 # strings in those same four files and are NOT what release.yml checks — it
@@ -166,9 +167,17 @@ git add -A && git commit -m "chore: prepare release vX.Y.Z"
 
 ```bash
 git checkout main && git pull
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git tag -s vX.Y.Z -m "Release vX.Y.Z"   # signed; -s implies -a
+scripts/verify_tag_signature.sh vX.Y.Z   # the check release.yml will run
 git push origin vX.Y.Z
 ```
+
+**The tag must be signed** (since 2026-10-08), by an SSH or OpenPGP key
+listed in [`.github/release-signers/`](.github/release-signers/README.md) on
+`main`, and must point at a commit on `main`. `release.yml` refuses anything
+else before building. The directory holds no key until the maintainer commits
+one, so the first signed release starts with that pull request; the README
+there has the commands.
 
 > **Known gap — the first ten tags do not match this step.** Ten release
 > tags (`v0.2.0` … `v0.7.0`) are *lightweight*: bare refs to a commit,
@@ -203,10 +212,19 @@ git push origin vX.Y.Z
 > both annotated tag objects, the first two in this project's history that
 > record a tagger and a date. Neither is signed; that half is still open.
 >
-> That check deliberately does **not** require a signature. A gate for a key
-> that does not exist could never fail, and would read as signing coverage
-> this project does not have. When the key decision above is made, tightening
-> this check to `git tag -v` is the one-line follow-up.
+> That check deliberately did **not** require a signature: a gate for a key
+> that did not exist could never fail, and would have read as signing
+> coverage this project did not have.
+>
+> **Superseded 2026-10-08: signatures are required.** The maintainer chose
+> their own SSH or OpenPGP key over keyless signing or provenance alone.
+> `scripts/verify_tag_signature.sh` verifies the tag against
+> `.github/release-signers/` as it stands on `main`, failing closed when no
+> key is configured; its `--self-test`, run by the same step, proves it
+> refuses an unsigned tag, a lightweight tag, a tag signed by any other key,
+> and an OpenPGP key that is present but not listed by fingerprint. The ten
+> lightweight and the annotated-but-unsigned tags before this stay as they
+> are; re-tagging published releases would move refs downstreams pin.
 
 This triggers the release workflow (`.github/workflows/release.yml`) which:
 
@@ -214,9 +232,15 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
    exists, and that the tag publishes what its notes describe (below)
 2. **Runs CI** (fmt, clippy, test, doc, MSRV check) and **security audit** (cargo-deny)
 3. **Packages** all crates with SLSA build provenance attestation
-4. **Runs a publish dry run** to verify packages are publishable
-5. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts
-6. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval; authenticates with Trusted Publishing, falling back to the environment secret)
+4. **Runs the A2A conformance suite (ACTS)** on the tagged commit over every
+   binding (`acts.yml`), fails on any failed or errored test, and attests the
+   summary onto each `.crate` (predicate type
+   `https://a2a-rust.com/attestations/acts-conformance/v1`; verify with
+   `gh attestation verify <crate>.crate -R tomtom215/a2a-rust --predicate-type …`).
+   The GitHub release, and so the publish, waits on it
+5. **Runs a publish dry run** to verify packages are publishable
+6. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts
+7. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval; authenticates with Trusted Publishing, falling back to the environment secret)
 
 ### The tag must be the release-preparation commit
 

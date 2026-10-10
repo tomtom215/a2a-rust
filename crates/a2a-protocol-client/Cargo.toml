@@ -70,6 +70,9 @@ serde_json     = { workspace = true }
 # Tiny, zero transitive deps; also already in-tree via the types crate's
 # `signing` feature.
 base64         = "0.23"
+# Wipes the stored OAuth client secret on drop. Already in the graph through
+# rustls; no new crate.
+zeroize        = { version = ">=1.8, <2", default-features = false, features = ["alloc"] }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util     = { workspace = true }

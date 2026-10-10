@@ -3,7 +3,9 @@
 
 [package]
 name        = "a2a-cli"
-version     = "0.0.0"
+# The release's version, checked against the tag with the four library
+# crates (release.yml), so a release binary reports what it is.
+version     = "0.14.1"
 description = "Command-line client for A2A agents, built on a2a-protocol-client"
 # Unpublished, like the examples: it depends on the client crate by bare
 # `path`, and it exists to exercise the SDK from the outside — a released
@@ -19,12 +21,14 @@ name = "a2a"
 path = "src/main.rs"
 
 [dependencies]
-a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
+# `signing` and `audit` for the offline commands: `card sign`/`verify` and
+# `audit verify`.
+a2a-protocol-types  = { path = "../../crates/a2a-protocol-types", features = ["signing", "audit"] }
 # All four bindings, unconditionally: `--binding` offers each of them, and a
 # flag the binary rejects at runtime with "requires feature X" would be a
 # `--help` that lies. `grpc-tls` because the client's default policy dials a
 # bare non-loopback gRPC address over TLS and refuses to without the feature.
-a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc", "grpc-tls"] }
+a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc", "grpc-tls", "signing"] }
 # Pinned in the workspace style. `derive` for the declarative definitions;
 # the default feature set (help, suggestions, color) is what a user-facing
 # binary wants. Reviewed against `cargo deny check` on 2026-09-10: `clap`
@@ -44,3 +48,4 @@ a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
 hyper      = { workspace = true }
 hyper-util = { workspace = true, features = ["server", "server-auto"] }
+http-body-util = { workspace = true }

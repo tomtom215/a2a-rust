@@ -128,9 +128,10 @@ request runs an incremental `--in-diff` mutation gate on the changed lines.
 | 0012 | An append-only event log, with the snapshot kept as the record (Accepted) |
 | 0013 | Spans, metrics and one telemetry entry point (the file's status is **Proposed**; its open question on making `tracing` a default feature records the maintainer's decision of 2026-09-23: yes) |
 | 0014 | A refused credential answers each binding's own status: HTTP `401`/`403`, gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED` (Accepted; supersedes ADR 0010's `InvalidRequest` mapping) |
+| 0015 | A tamper-evident audit trail: calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, content by digest, signed checkpoints and anchors, a six-month retention floor and legal holds (Accepted) |
 
 Only ADRs 0001–0008 have a section above; the table is the summary for all
-fourteen.
+fifteen.
 
 The full ADR documents are in the [`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr) directory.
 

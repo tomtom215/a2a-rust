@@ -78,7 +78,7 @@ struct Target {
 }
 
 /// The `--header` values as a map.
-fn header_map(opts: &GlobalOpts) -> HashMap<String, String> {
+pub(crate) fn header_map(opts: &GlobalOpts) -> HashMap<String, String> {
     opts.headers
         .iter()
         .map(|h| (h.name.clone(), h.value.clone()))

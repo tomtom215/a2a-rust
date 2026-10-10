@@ -53,7 +53,7 @@ directly answers "can it be controlled".
 | **B. Lease extension.** The child is sent a deadline and a renewal interval, declared as an extension the way idempotency and failure class are. A child whose lease lapses cancels itself. | Parent crash and network partition: the cases A cannot reach. | Medium. Server-side enforcement, an extension URI, and a renewal path. |
 | **C. Lineage in the protocol.** A `parentTaskId`, and server-side cascade. | Cross-SDK, but only once other SDKs adopt it. | Large, and only meaningful upstream. |
 
-**Recommendation: A now, B next, C only if the A2A project wants it.** A
+**Recommendation: A now, B next, C only if the A2A project wants it.** A shipped on 2026-10-08 as `a2a_protocol_client::delegation`. A
 removes the hand-written cascade the measurement shows every orchestrator
 needs. B is what makes a long-horizon tree safe against the failure that will
 certainly happen over hours: a node that disappears.
@@ -297,9 +297,11 @@ the two-hop runs measured here.
 
 ## Next, in order
 
-1. **G1-A** — the delegation handle in `a2a-protocol-client`, with the swarm
-   example rewritten on top of it. The example's own CI gate then proves
-   the handle cascades.
+1. ~~**G1-A**~~ — done 2026-10-08: `a2a_protocol_client::delegation`, with
+   the swarm example rewritten on top of it. The example's cancel gate still
+   finds every child cancelled, and the control arm, which detaches instead,
+   still finds every child running. `crates/a2a-protocol-client/tests/delegation_tests.rs`
+   checks each way a delegation ends against the server.
 2. **G3** — decide fail-closed or not. Either answer is small to implement.
 3. **G2** — durable child records plus reattach, exercised by a swarm run
    that kills a supervisor partway through.

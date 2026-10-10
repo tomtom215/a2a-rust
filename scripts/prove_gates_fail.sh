@@ -344,6 +344,8 @@ injection_for() {
             echo "otel_coverage" ;;
         *"check_fuzz_matrix.py"*)
             echo "fuzz_matrix" ;;
+        *"check_compliance_map.py"*)
+            echo "compliance_map" ;;
         *"check_package_excludes.py"*)
             echo "package_excludes" ;;
         # The binding's packaging gate is a wrapper, not a bare `cargo package`
@@ -503,6 +505,7 @@ expected_marker() {
         # workflow lists a target Cargo.toml lacks would prove the loud half,
         # which the runner's own build already catches.
         fuzz_matrix)      echo "no runner ever executes it" ;;
+        compliance_map)   echo "no \`fn verify_rejects_tampered_card\`" ;;
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         block_scalars)    echo "MISMATCH" ;;
@@ -793,6 +796,22 @@ old = "          - jwks_parse\n"
 if s.count(old) != 1:
     sys.exit(f"expected exactly one jwks_parse matrix entry; found {s.count(old)}")
 p.write_text(s.replace(old, ""))
+PY
+            ;;
+        compliance_map)
+            # Rename a test the control map cites, leaving the map alone. That is
+            # the defect verbatim: a refactor renames a test, everything else
+            # still builds and passes, and the map goes on calling the control
+            # supported on the strength of a test that no longer exists.
+            note_touched "crates/a2a-protocol-types/src/signing.rs"
+            python3 - <<'PY'
+import pathlib, sys
+p = pathlib.Path("crates/a2a-protocol-types/src/signing.rs")
+s = p.read_text()
+old = "fn verify_rejects_tampered_card()"
+if s.count(old) != 1:
+    sys.exit(f"expected exactly one verify_rejects_tampered_card; found {s.count(old)}")
+p.write_text(s.replace(old, "fn verify_rejects_tampered_card_renamed()"))
 PY
             ;;
         gate_reachability)

@@ -10,6 +10,7 @@
 //! convention defined in the A2A protocol.
 
 mod error_response;
+pub(crate) mod media_type;
 pub(crate) mod query;
 mod response;
 
@@ -82,8 +83,27 @@ impl RestDispatcher {
     }
 
     /// Dispatches an HTTP request to the appropriate handler method.
-    #[allow(clippy::too_many_lines)]
+    ///
+    /// The response's media type is negotiated (§11.1):
+    /// `application/a2a+json` for a client whose `Accept` prefers it, or
+    /// whose request body is labelled with it; `application/json` otherwise.
+    /// The agent card and the health probes are always `application/json`.
     pub async fn dispatch(
+        &self,
+        req: hyper::Request<Incoming>,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let media = media_type::ResponseMediaType::from_headers(req.headers());
+        let negotiable = media_type::is_negotiable_path(req.uri().path());
+        let mut resp = self.dispatch_unlabelled(req).await;
+        if negotiable {
+            media.apply(resp.headers_mut());
+        }
+        resp
+    }
+
+    /// [`dispatch`](Self::dispatch) before media-type negotiation.
+    #[allow(clippy::too_many_lines)]
+    async fn dispatch_unlabelled(
         &self,
         req: hyper::Request<Incoming>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {

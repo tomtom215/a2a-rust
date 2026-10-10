@@ -107,9 +107,11 @@ async fn rest_and_axum_answer_the_same_failures_identically() {
 }
 
 /// Both dispatchers answer an operation, success or error, with the same
-/// headers: `application/json` (see `build_json_response` for why not §11.1's
-/// `application/a2a+json`) and `A2A-Version`. Before 2026-09-25 the axum
-/// adapter's successes went out through `axum::Json`, with no version.
+/// headers: `application/json` to a client that does not ask for
+/// `application/a2a+json` (see `dispatch::rest::media_type` for why the
+/// default is not §11.1's `application/a2a+json`) and `A2A-Version`. Before
+/// 2026-09-25 the axum adapter's successes went out through `axum::Json`,
+/// with no version.
 #[tokio::test]
 async fn rest_and_axum_answer_operations_with_the_same_headers() {
     let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
@@ -152,6 +154,127 @@ async fn rest_and_axum_answer_operations_with_the_same_headers() {
         assert_eq!(
             a, r,
             "GET {path}: the adapter disagrees with RestDispatcher"
+        );
+    }
+}
+
+/// §11.1 media-type negotiation, on both HTTP+JSON dispatchers.
+///
+/// ACTS `REST-CT-001` sends an `application/a2a+json` body with httpx's
+/// `Accept: */*` and expects the A2A type back; released a2a-go (v2.6.0)
+/// sends `Accept: application/json` and reads an error body only under
+/// `application/json`. Both must hold at once, on successes and errors alike,
+/// and the agent card keeps `application/json` whatever was asked.
+#[tokio::test]
+async fn rest_and_axum_negotiate_the_response_media_type() {
+    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
+        .await
+        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let axum_addr = listener.local_addr().unwrap();
+    let app = A2aRouter::new(handler()).into_router();
+    tokio::spawn(async move { axum::serve(listener, app).await });
+
+    let content_type = |addr: std::net::SocketAddr,
+                        method: &'static str,
+                        path: &'static str,
+                        body: &'static str,
+                        ct: Option<&'static str>,
+                        accept: Option<&'static str>| async move {
+        let client =
+            hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+                .build_http::<Full<Bytes>>();
+        let mut req = hyper::Request::builder()
+            .method(method)
+            .uri(format!("http://{addr}{path}"))
+            .header("a2a-version", "1.0")
+            .header("authorization", "Bearer good");
+        if let Some(ct) = ct {
+            req = req.header("content-type", ct);
+        }
+        if let Some(a) = accept {
+            req = req.header("accept", a);
+        }
+        let resp = client
+            .request(
+                req.body(Full::new(Bytes::from_static(body.as_bytes())))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        (
+            resp.status().as_u16(),
+            resp.headers()
+                .get("content-type")
+                .map(|v| v.to_str().unwrap().to_owned()),
+        )
+    };
+
+    const SEND: &str =
+        r#"{"message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"hi"}]}}"#;
+    const A2A: &str = "application/a2a+json";
+    const JSON: &str = "application/json";
+    /// Method, path, body, `Content-Type`, `Accept`, expected status and
+    /// expected response `Content-Type`.
+    type Case = (
+        &'static str,
+        &'static str,
+        &'static str,
+        Option<&'static str>,
+        Option<&'static str>,
+        u16,
+        &'static str,
+    );
+    let cases: [Case; 7] = [
+        // ACTS REST-CT-001's request: an A2A body, a wildcard Accept.
+        (
+            "POST",
+            "/message:send",
+            SEND,
+            Some(A2A),
+            Some("*/*"),
+            200,
+            A2A,
+        ),
+        // a2a-go v2.6.0's request headers, on a success and on an error.
+        (
+            "POST",
+            "/message:send",
+            SEND,
+            Some(JSON),
+            Some(JSON),
+            200,
+            JSON,
+        ),
+        ("GET", "/tasks/nope", "", Some(JSON), Some(JSON), 404, JSON),
+        // An error answered to a client that asked for the A2A type.
+        ("GET", "/tasks/nope", "", None, Some(A2A), 404, A2A),
+        // A body that is not JSON, sent as A2A: the 400 is A2A too.
+        ("POST", "/message:send", "{", Some(A2A), None, 400, A2A),
+        // No preference stated anywhere: application/json.
+        ("GET", "/tasks", "", None, None, 200, JSON),
+        // The card is not an operation payload and is never relabelled.
+        (
+            "GET",
+            "/.well-known/agent-card.json",
+            "",
+            None,
+            Some(A2A),
+            404,
+            JSON,
+        ),
+    ];
+    for (method, path, body, ct, accept, status, want) in cases {
+        let r = content_type(rest, method, path, body, ct, accept).await;
+        let a = content_type(axum_addr, method, path, body, ct, accept).await;
+        assert_eq!(
+            r,
+            (status, Some(want.to_owned())),
+            "{method} {path} ct={ct:?} accept={accept:?}: RestDispatcher"
+        );
+        assert_eq!(
+            a, r,
+            "{method} {path} ct={ct:?} accept={accept:?}: the adapter disagrees"
         );
     }
 }

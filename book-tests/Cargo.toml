@@ -37,6 +37,9 @@ a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = [
     # The authentication page's JWT section: `JwtAuthInterceptor` and
     # `JwtValidator` exist only under this feature.
     "auth-jwt",
+    # The audit-trail page: `AuditLog`, the stores and `with_audit` exist only
+    # under this feature.
+    "audit",
     "axum",
     # Added with the testing page's conformance section, for the same reason
     # as `otel` and `postgres` below: without it that block could only be

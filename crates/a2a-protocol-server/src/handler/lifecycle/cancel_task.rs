@@ -64,6 +64,18 @@ impl RequestHandler {
                     }
                 }
 
+                #[cfg(feature = "audit")]
+                if let Some(log) = &self.audit {
+                    crate::audit::record_cancel_requested(
+                        log,
+                        &*self.metrics,
+                        &call_ctx,
+                        &task_id,
+                        &task.context_id,
+                    )
+                    .await;
+                }
+
                 // Build a request context for the cancel call.
                 let ctx = RequestContext::new(
                     a2a_protocol_types::message::Message {
