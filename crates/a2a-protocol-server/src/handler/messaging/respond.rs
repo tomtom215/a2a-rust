@@ -127,10 +127,11 @@ impl RequestHandler {
             .await;
         shape_response_history(&mut snapshot, response_history_length);
         if streaming {
-            // SPEC §3.1.2: The first event in a streaming response MUST be a
-            // Task object representing the current state.
+            // SPEC §3.1.2: a task-lifecycle stream MUST begin with the Task,
+            // and a message-only stream MUST be exactly one Message. Which one
+            // this is, the executor's first event decides.
             let mut reader = reader;
-            reader.set_first_event(StreamResponse::Task(snapshot));
+            reader.set_provisional_task(StreamResponse::Task(snapshot));
             SendMessageResult::Stream(reader)
         } else {
             // return_immediately: hand back the initial snapshot; the
