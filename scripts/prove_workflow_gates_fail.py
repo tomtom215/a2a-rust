@@ -669,6 +669,17 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "agreement when upstream is unreachable"
     )
 
+    # Needs the official SDK from PyPI and a built CLI, which this harness does
+    # not provide. Verified by hand on 2026-10-10: run against the CLI built
+    # from main before the §8.4.1 fix, the card with implicit defaults fails
+    # (Rust signs, Python rejects) and the script exits 1; the fixed CLI exits
+    # 0. Expected divergences are asserted too, so an SDK change that makes
+    # them agree also exits 1.
+    reg["tck.yml::card-signature-interop::Sign and verify both ways"] = Exempt(
+        "requires the official a2a-sdk from PyPI and a built a2a CLI; verified "
+        "by hand against the pre-fix CLI (exit 1) and the fixed one (exit 0)"
+    )
+
     # Needs the full commit history and a manifest measured at the release
     # commit, neither of which a fixture tree can supply. Verified by hand on
     # 2026-08-26 against four separate defects, each restored afterwards: a
