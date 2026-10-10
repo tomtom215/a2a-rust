@@ -968,6 +968,15 @@ area. This branch answers both.
    `TaskNotFound`; `GetExtendedAgentCard` enforces required extensions; a
    repeated non-append `artifactId` replaces the artifact; `ROLE_UNSPECIFIED`
    is refused.
+10. `fix(streaming):` mid-stream JSON-RPC error `data` is an array of typed
+    details (§9.5); the client's lag predicates read both shapes.
+11. `fix(rate-limit):` `A2aError::rate_limited`: 429 + `Retry-After`,
+    `RESOURCE_EXHAUSTED`, `RetryInfo` (§13.4); an overload's REST body names
+    `RESOURCE_EXHAUSTED`.
+12. `fix(slimrpc):` the binding spec's §6.1 status table; case-insensitive
+    metadata keys.
+13. `fix(server):` empty or scheme-less push `url` refused; tests for
+    §3.1.4, §3.3.4 (streaming capability on the wire) and §3.5.2.
 
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
@@ -984,10 +993,16 @@ before acting on it, as this branch did.
 - In-repo TCK against a2a-go 2.5.0 (Go 1.26.9, patched deps) and a2a-java
   1.3.0 (Quarkus 3.37.0 with netty and jackson BOMs): all pass on JSON-RPC and
   REST with tck.yml's one REST skip.
-- `cargo test --workspace --all-features --no-fail-fast` after the
-  isolation commit: 168 binaries, 4,459 passed, 0 failed, 115 ignored. (An
-  earlier run, after the delegation-test fix, failed only deploy-agent's
-  helper, which relied on the axum router's missing version check.)
+- `cargo test --workspace --all-features --no-fail-fast` after item 13:
+  172 binaries, 4,478 passed, 0 failed, 116 ignored. Run it with
+  `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`:
+  with debuginfo the all-features build passed 21 GiB and filled this
+  container's disk allowance (ENOSPC mid-run). The SLIMRPC binding is
+  outside the workspace; its `cargo test -- --test-threads=1` passed after
+  item 12.
+- Ledger after item 13: TESTED 235, PARTIAL 55, IMPLEMENTED_UNTESTED 43,
+  GAP 14, NOT_SUPPORTED 12, SUPPORTED 43, NOT_APPLICABLE 22,
+  APPLICATION 88 (`scripts/check_spec_ledger.py`).
 - Workspace clippy `-D warnings`: clean. `prove_workflow_gates_fail.py`: 28
   proven, 0 unproven, 21 exempt.
 
@@ -1036,6 +1051,10 @@ before acting on it, as this branch did.
    retried. Over JSON-RPC it is `Protocol(InternalError)` with the `RetryInfo`
    in `data`, which the retry layer does not retry. Open: decide whether the
    JSON-RPC client should read `RetryInfo`.
+   Done: SLIMRPC status table and key case; §3.1.4, §3.3.4 and §3.5.2
+   tests; empty push `url`. The §12 PARTIAL that remains is a conflict
+   between the SLIMRPC table and A2A §5.4 (push/unsupported-operation
+   codes), which is upstream's to resolve.
 
 **§13.1, as built.** Opt-in caller partitions: `RequestHandler::admit` runs
 the interceptors and then records the caller in a per-request slot

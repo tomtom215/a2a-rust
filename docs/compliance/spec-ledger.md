@@ -27,7 +27,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | §1 |  |  |  |  | 4 | 2 | 1 |  | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 |  | 3 |
-| §3 | 73 | 21 | 18 | 3 | 3 | 9 | 9 | 1 | 137 |
+| §3 | 76 | 21 | 18 | 3 | 3 | 6 | 9 | 1 | 137 |
 | §4 | 3 | 5 | 2 |  | 1 | 1 | 3 |  | 15 |
 | §5 | 22 | 2 | 2 |  | 3 |  | 6 |  | 35 |
 | §7 | 6 | 13 | 2 |  |  | 1 |  |  | 22 |
@@ -39,8 +39,8 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §13 | 21 | 26 | 3 | 4 |  | 5 | 5 | 5 | 69 |
 | §14 | 4 | 5 | 3 |  |  | 1 | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
-| proto `REQUIRED` fields | 43 | 10 | 6 |  | 8 | 26 | 9 | 4 | 106 |
-| **All** | **231** | **88** | **43** | **12** | **22** | **46** | **56** | **14** | **512** |
+| proto `REQUIRED` fields | 44 | 10 | 6 |  | 8 | 26 | 8 | 4 | 106 |
+| **All** | **235** | **88** | **43** | **12** | **22** | **43** | **55** | **14** | **512** |
 
 ## Open items, most severe first
 
@@ -52,10 +52,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | medium | GAP | §8.3.2 (line 2008) | 2. Prefer earlier entries in the ordered list when multiple options are supported | Caller preference overrides the agent's ordering by design (a2a-go parity); card order is only a tie-break within the same preference rank. |
 | medium | GAP | §11.1 (line 2758) | Content-Type: application/a2a+json SHOULD be used for requests | REST client always sends `Content-Type: application/json` (also on bodiless GET/DELETE) and `Accept: application/json`. It never uses application/a2a+json, and the test pins Accept=application/json. |
 | medium | GAP | §11.6 (line 2914) | Implementations SHOULD use well-known types such as google.rpc.BadRequest to attach structured data to validation errors | No BadRequest detail anywhere in the repository. REST body and params validation failures answer error_json_response(400, serde message) with no details at all. |
-| medium | IMPLEMENTED_UNTESTED | §3.1.4 (line 240) | When `includeArtifacts` is false (the default), the artifacts field MUST be omitted entirely from each Task object in the response. | Handler sets `task.artifacts = None` unless includeArtifacts==true, and serde skips None, so all bindings omit it. No test lists a task that has artifacts without includeArtifacts and asserts their absence (tests only set include_artifacts=Some(true)). |
-| medium | IMPLEMENTED_UNTESTED | §3.3.4 (line 574) | If AgentCard.capabilities.streaming is false or not present, SendStreamingMessage or SubscribeToTask MUST return UnsupportedOperationError | Only the predicate ensure_streaming_supported is unit tested; no test drives on_send_message(streaming=true) or on_resubscribe against a non-streaming card, nor checks the wire error on any binding. |
-| medium | IMPLEMENTED_UNTESTED | §3.5.2 (line 693) | Closing one stream MUST NOT affect other active streams for the same task | Readers are independent broadcast::Receivers with no Drop hook that closes the queue; but no test drops one subscriber/HTTP stream and asserts another continues receiving. |
-| medium | PARTIAL | proto:TaskPushNotificationConfig.url (proto line 479) | string url = 4 [(google.api.field_behavior) = REQUIRED]; | JSON-RPC/WS: absent `url` -> -32602; REST -> 400. Empty url (and gRPC, where absent == "") is rejected only by validate_webhook_url, which runs only `if !sender.allows_private_urls()`; with private URLs allowed an empty url is stored and returned. TaskPushNot… |
 | medium | PARTIAL | §1.4 (line 107) | SDK language bindings, schemas, and any other derived forms MUST be regenerated from the proto (directly or via code generation) rather tha… | Only the prost message types (feature `proto`, build.rs) are generated from a2a.proto; the primary public serde types (Task, Message, TaskListResponse, AgentCard ...) are hand-written structs, guarded by golden fixtures/proptests rather than generated. proto_… |
 | medium | PARTIAL | §3.3.4 (line 571) | When clients attempt to use operations or features that require capabilities not declared ... the agent MUST return an appropriate error re… | Summary of 573-576 below. All checks are skipped when no AgentCard is configured on the RequestHandler (capability.rs:16-18, 189). |
 | medium | PARTIAL | §3.4.1 (line 591) | If an agent generates a new contextId, it MUST be included in the response (either Task or Message) | Task responses always carry context_id. A direct Message response is returned exactly as the executor wrote it (respond.rs:198-202); the SDK neither stamps the server-generated contextId into it nor offers a message helper that does, so an executor that omits… |

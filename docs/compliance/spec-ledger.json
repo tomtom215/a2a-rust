@@ -540,16 +540,20 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "When `includeArtifacts` is false (the default), the artifacts field MUST be omitted entirely from each Task object in the response.",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:78",
     "crates/a2a-protocol-types/src/task.rs:429"
    ],
-   "test_evidence": [],
-   "notes": "Handler sets `task.artifacts = None` unless includeArtifacts==true, and serde skips None, so all bindings omit it. No test lists a task that has artifacts without includeArtifacts and asserts their absence (tests only set include_artifacts=Some(true)).",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/list_tasks_artifacts.rs artifacts_are_omitted_unless_asked_for",
+    "crates/a2a-protocol-server/tests/list_tasks_artifacts.rs the_rest_listing_omits_artifacts_by_default"
+   ],
+   "notes": "Handler sets task.artifacts = None unless includeArtifacts is true, and serde skips None, so the field is absent. Tested on a task that has an artifact, for includeArtifacts absent and false, at the handler and on the REST wire; shown to fail with the default flipped.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 246,
@@ -1912,19 +1916,21 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "If AgentCard.capabilities.streaming is false or not present, SendStreamingMessage or SubscribeToTask MUST return UnsupportedOperationError",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:39",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:284",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:321"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/capability.rs:196 card_without_streaming_rejects_streaming"
+    "crates/a2a-protocol-server/src/handler/capability.rs:196 card_without_streaming_rejects_streaming",
+    "crates/a2a-protocol-server/tests/streaming_contract.rs streaming_methods_are_refused_when_the_card_does_not_declare_streaming"
    ],
-   "notes": "Only the predicate ensure_streaming_supported is unit tested; no test drives on_send_message(streaming=true) or on_resubscribe against a non-streaming card, nor checks the wire error on any binding.",
+   "notes": "ensure_streaming_supported refuses SendStreamingMessage and SubscribeToTask unless capabilities.streaming is true. Tested over JSON-RPC for streaming false and absent (code -32004 on both methods, against an existing task); shown to fail with the check disabled. A no-op when no card is configured.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 575,
@@ -2454,15 +2460,18 @@
    "keyword": "MUST NOT",
    "binds": "server",
    "requirement": "Closing one stream MUST NOT affect other active streams for the same task",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:547"
    ],
-   "test_evidence": [],
-   "notes": "Readers are independent broadcast::Receivers with no Drop hook that closes the queue; but no test drops one subscriber/HTTP stream and asserts another continues receiving.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/streaming_contract.rs closing_one_stream_leaves_the_other_streaming"
+   ],
+   "notes": "Readers are independent broadcast::Receivers and nothing cancels a task when a stream closes. The test drops the originating SendStreamingMessage stream and checks a SubscribeToTask stream still reaches the terminal event. Not injection-proven: no single-point code fault produces the violation today; the test guards against adding one (e.g. cancel-on-disconnect).",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 708,
@@ -8771,20 +8780,18 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "string url = 4 [(google.api.field_behavior) = REQUIRED];",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/push.rs:86",
-    "crates/a2a-protocol-types/src/push.rs:136",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:69",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:70",
-    "crates/a2a-protocol-server/src/push/sender.rs:468",
-    "crates/a2a-protocol-types/src/proto/convert/requests.rs:49"
+    "crates/a2a-protocol-server/src/handler/push_config.rs validate_and_store_push_config (TaskPushNotificationConfig::validate)"
    ],
-   "test_evidence": [],
-   "notes": "JSON-RPC/WS: absent `url` -> -32602; REST -> 400. Empty url (and gRPC, where absent == \"\") is rejected only by validate_webhook_url, which runs only `if !sender.allows_private_urls()`; with private URLs allowed an empty url is stored and returned. TaskPushNotificationConfig::validate (which rejects empty) is never called by the server. No test sends an empty/absent url.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/push_config.rs set_push_config_rejects_an_empty_or_schemeless_url_when_private_urls_are_allowed"
+   ],
+   "notes": "Absent url: JSON-RPC/WS -32602, REST 400. Empty or scheme-less url (and gRPC, where absent == \"\") is refused with InvalidParams by TaskPushNotificationConfig::validate, which validate_and_store_push_config now calls whatever the sender's private-URL policy. Until 2026-10-10 that check ran only when private URLs were refused.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 482,

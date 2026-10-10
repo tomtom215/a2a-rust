@@ -227,6 +227,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A push config with an empty or scheme-less `url` is refused** (server;
+  the proto marks `url` REQUIRED). The host check that refused it runs only
+  when private URLs are refused, so a sender that allows them stored an
+  empty URL and listed it back. `TaskPushNotificationConfig::validate` now
+  runs on every create, answering InvalidParams.
 - **SLIMRPC status codes follow the SLIMRPC specification's table**
   (`a2a-protocol-slimrpc`; `spec/slimrpc_v1/slimrpc.md` §6.1, a MUST). The
   binding claimed to copy the gRPC binding's mapping and matched neither:
@@ -519,6 +524,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Tests for four spec requirements that were implemented but untested**:
+  §3.1.4 `includeArtifacts` omission (`list_tasks_artifacts.rs`), §3.3.4
+  streaming refused without the capability on the JSON-RPC wire and §3.5.2
+  one closed stream leaving another streaming (`streaming_contract.rs`). Each
+  but the last is shown to fail with its check removed; the §3.5.2 test has
+  no single-point fault to inject and guards against adding one.
 - **The vendored proto is A2A v1.0.1's, and CI checks that it stays the
   latest release's.** All six copies were v1.0.0's text; v1.0.1 changed only
   comments, the normative `tenant` rules among them, and nothing compared the

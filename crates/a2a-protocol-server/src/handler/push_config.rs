@@ -78,6 +78,10 @@ impl RequestHandler {
         if !sender.allows_private_urls() {
             crate::push::sender::validate_webhook_url(&config.url)?;
         }
+        // The proto marks `url` REQUIRED. The host check above runs only
+        // when private URLs are refused, so with them allowed an empty or
+        // scheme-less URL was stored, and listed back, until 2026-10-10.
+        config.validate().map_err(ServerError::InvalidParams)?;
 
         // Enforce the per-task config cap here so it holds for EVERY store
         // backend (the SQL stores do not self-enforce). Creating a new
@@ -920,6 +924,32 @@ mod tests {
             security_requirements: None,
             signatures: None,
         }
+    }
+
+    /// The proto marks `url` REQUIRED. With private URLs allowed the host
+    /// check is skipped, and an empty or scheme-less URL must still be
+    /// refused rather than stored.
+    #[tokio::test]
+    async fn set_push_config_rejects_an_empty_or_schemeless_url_when_private_urls_are_allowed() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        for url in ["", "example.com/hook"] {
+            let mut config = make_push_config("t-1");
+            config.url = url.to_owned();
+            let result = handler.on_set_push_config(config, None).await;
+            assert!(
+                matches!(result, Err(crate::error::ServerError::InvalidParams(_))),
+                "url {url:?}: expected InvalidParams, got {result:?}"
+            );
+        }
+        let stored = handler
+            .on_list_push_configs("t-1", None, None)
+            .await
+            .expect("list");
+        assert!(stored.is_empty(), "nothing may be stored: {stored:?}");
     }
 
     /// SPEC §3.1.7: creating a push config for a task that does not exist must
