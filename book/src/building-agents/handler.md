@@ -32,7 +32,7 @@ This gives you sensible defaults:
 # struct MyExecutor;
 # agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
 # use a2a_protocol_sdk::server::{HttpPushSender, TaskStoreConfig};
-# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")) }
+# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"])) }
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
 use std::time::Duration;
 

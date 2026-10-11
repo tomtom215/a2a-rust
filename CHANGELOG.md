@@ -242,6 +242,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **Breaking: an agent card the spec forbids is not published** (types,
+  server; spec §5.7). `AgentCard::validate` now refuses empty
+  `defaultInputModes`, `defaultOutputModes` or `skills`, and a skill with no
+  `tags`; `RequestHandlerBuilder::build` runs it (it checked only the
+  interface list), a `DynamicAgentCardHandler` answers `500` for an invalid
+  produced card, and `HotReloadAgentCardHandler::reload_from_json` refuses one
+  and keeps the current card. `AgentCard::new` now starts both mode lists at
+  `["text/plain"]`; its docs no longer claim the bare card is valid. The
+  `hello-agent`, `langfuse-agent` and `swarm` examples, the SDK README and
+  two book pages published skill-less cards and now declare a skill. See the
+  upgrading guide.
 - **One JSON-RPC error shape on every surface** (server; spec §9.5, §12.4).
   HTTP responses, SSE frames and WebSocket messages now build the error the
   same way: the A2A code, and `data` as the typed-details array. On WebSocket

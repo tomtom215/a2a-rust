@@ -100,9 +100,11 @@ pub(super) fn card() -> a2a_protocol_types::AgentCard {
         capabilities: AgentCapabilities::none(),
         security_schemes: None,
         security_requirements: None,
-        default_input_modes: vec![],
-        default_output_modes: vec![],
-        skills: vec![],
+        default_input_modes: vec!["text/plain".into()],
+        default_output_modes: vec!["text/plain".into()],
+        skills: vec![
+            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+        ],
         signatures: None,
     }
 }

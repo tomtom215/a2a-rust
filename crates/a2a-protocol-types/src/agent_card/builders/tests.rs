@@ -15,14 +15,23 @@ use super::*;
 
 /// The invariant the whole shape rests on: what `new` requires is exactly what
 /// `validate` checks, so a constructed card is never invalid.
+/// Spec §5.7: a card needs at least one skill, each with a tag. `new`
+/// cannot invent one, so its card validates once a skill is added, and not
+/// before. Until 2026-10-11 `validate` did not check skills and this test
+/// asserted the bare card was valid.
 #[test]
-fn new_produces_a_card_that_validates() {
+fn new_produces_a_card_that_validates_once_it_has_a_skill() {
     let card = AgentCard::new(
         "my-agent",
         "1.0.0",
         AgentInterface::jsonrpc("http://localhost:3000"),
     );
-    assert!(card.validate().is_ok(), "new must not need repair");
+    assert_eq!(
+        card.validate(),
+        Err("agent card must declare at least one skill")
+    );
+    let card = card.with_skill(AgentSkill::new("s", "S", "a skill").with_tags(["s"]));
+    assert!(card.validate().is_ok());
 }
 
 /// The point of the whole module: the constructors must produce byte-identical
@@ -100,16 +109,18 @@ fn the_literal_it_replaces() -> AgentCard {
     }
 }
 
-/// Everything `new` does not take starts empty or `None`. Stated as a test
-/// because a future field defaulting to something else would be a silent wire
-/// change for every caller that never mentions it.
+/// Everything `new` does not take starts empty or `None`, except the mode
+/// lists, which start as `["text/plain"]` (spec §5.7: required arrays are
+/// non-empty). Stated as a test because a future field defaulting to
+/// something else would be a silent wire change for every caller that never
+/// mentions it.
 #[test]
 fn new_leaves_every_optional_field_unset() {
     let card = AgentCard::new("a", "1.0.0", AgentInterface::jsonrpc("http://x"));
     assert!(card.url.is_none());
     assert_eq!(card.description, "");
-    assert_eq!(card.default_input_modes, [] as [std::string::String; 0]);
-    assert_eq!(card.default_output_modes, [] as [std::string::String; 0]);
+    assert_eq!(card.default_input_modes, ["text/plain"]);
+    assert_eq!(card.default_output_modes, ["text/plain"]);
     assert!(card.skills.is_empty());
     assert!(card.provider.is_none());
     assert!(card.icon_url.is_none());

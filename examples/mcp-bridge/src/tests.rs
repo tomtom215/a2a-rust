@@ -38,7 +38,7 @@ use crate::mapping::{self, MappingError};
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
 fn skill(id: &str) -> AgentSkill {
-    AgentSkill::new(id, format!("{id} skill"), format!("does {id}"))
+    AgentSkill::new(id, format!("{id} skill"), format!("does {id}")).with_tags([id])
 }
 
 fn card_with(url: &str, skills: Vec<AgentSkill>) -> AgentCard {
@@ -247,6 +247,30 @@ impl AgentExecutor for TestAgent {
     }
 }
 
+/// Serves, once, an agent card with no skills: what a non-conformant agent
+/// would publish. A fixed HTTP/1.1 response on a bare socket, since the
+/// SDK's own server will not serve it.
+async fn serve_raw_card_without_skills() -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("an ephemeral port");
+    let url = format!("http://{}", listener.local_addr().expect("a bound address"));
+    let body = serde_json::to_string(&card_with(&url, vec![])).expect("card json");
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut buf = [0_u8; 4096];
+            let _ = stream.read(&mut buf).await;
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(resp.as_bytes()).await;
+        }
+    });
+    url
+}
+
 /// Starts a real A2A agent on localhost with the given skills.
 async fn start_agent(skills: Vec<AgentSkill>) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -391,8 +415,10 @@ async fn an_unknown_tool_and_a_missing_argument_are_both_refused() {
 #[tokio::test]
 async fn a_card_the_bridge_cannot_map_refuses_to_start() {
     // An MCP server that came up with an empty tool list would look, to its
-    // caller, exactly like an agent with nothing to offer.
-    let url = start_agent(vec![]).await;
+    // caller, exactly like an agent with nothing to offer. This SDK's server
+    // refuses to publish such a card (spec §5.7), so the card comes from a
+    // bare socket, as a non-conformant third-party agent would serve it.
+    let url = serve_raw_card_without_skills().await;
     match A2aBridge::connect(&url).await {
         Err(BridgeError::Mapping(MappingError::NoSkills)) => {}
         Err(other) => panic!("wrong refusal: {other}"),

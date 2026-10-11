@@ -38,7 +38,7 @@ pub async fn test_backpressure_lagged(_ctx: &TestContext) -> TestResult {
             id: "bp-test".into(),
             name: "Backpressure Test".into(),
             description: "Tests lagged events".into(),
-            tags: vec![],
+            tags: vec!["test".into()],
             examples: None,
             input_modes: None,
             output_modes: None,

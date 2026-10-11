@@ -136,9 +136,14 @@ impl HotReloadAgentCardHandler {
     ///
     /// # Errors
     ///
-    /// Returns [`ServerError::Serialization`] if `json` is not valid agent card JSON.
+    /// Returns [`ServerError::Serialization`] if `json` is not valid agent card
+    /// JSON, and [`ServerError::InvalidParams`] if it parses but is not a
+    /// card this server may publish ([`AgentCard::validate`]; spec §5.7). In
+    /// both cases the current card stays in place.
     pub fn reload_from_json(&self, json: &str) -> ServerResult<()> {
         let card: AgentCard = serde_json::from_str(json)?;
+        card.validate()
+            .map_err(|why| ServerError::InvalidParams(why.into()))?;
         self.update(card);
         Ok(())
     }
@@ -491,6 +496,19 @@ mod tests {
         let result = handler.reload_from_json("not valid json {{{");
         assert!(result.is_err());
         // Original card should be unchanged.
+        assert_eq!(handler.current().name, "Test Agent");
+    }
+
+    /// §5.7: a reload that parses but is not a valid card is refused, and
+    /// the card being served stays.
+    #[test]
+    fn reload_from_json_refuses_an_invalid_card() {
+        let handler = HotReloadAgentCardHandler::new(minimal_agent_card());
+        let mut skillless = minimal_agent_card();
+        skillless.name = "No Skills".into();
+        skillless.skills.clear();
+        let json = serde_json::to_string(&skillless).unwrap();
+        assert!(handler.reload_from_json(&json).is_err());
         assert_eq!(handler.current().name, "Test Agent");
     }
 

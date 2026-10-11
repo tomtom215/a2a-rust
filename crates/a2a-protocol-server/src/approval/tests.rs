@@ -306,7 +306,7 @@ async fn the_card_declares_the_extension_only_with_a_gate() {
         "name": "refunds", "description": "d", "version": "1",
         "supportedInterfaces": [{"url": "http://localhost", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}],
         "capabilities": {}, "defaultInputModes": ["text/plain"], "defaultOutputModes": ["text/plain"],
-        "skills": []
+        "skills": [{"id": "refund", "name": "Refund", "description": "Issues refunds", "tags": ["refunds"]}]
     }))
     .expect("card");
     for (gate, declared) in [(Some(ApprovalGate::new()), true), (None, false)] {

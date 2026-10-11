@@ -948,9 +948,12 @@ mod tests {
                 protocol_version: "1.0.0".into(),
                 tenant: None,
             }],
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![
+                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                    .with_tags(["test"]),
+            ],
             capabilities: caps,
             provider: None,
             icon_url: None,

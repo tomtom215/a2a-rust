@@ -125,7 +125,7 @@ mod tests {
     agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 
     fn card(default: &[&str], skill: Option<&[&str]>) -> AgentCard {
-        let mut s = AgentSkill::new("s", "S", "a skill");
+        let mut s = AgentSkill::new("s", "S", "a skill").with_tags(["s"]);
         if let Some(modes) = skill {
             s = s.with_input_modes(modes.iter().copied());
         }
@@ -223,13 +223,15 @@ mod tests {
     #[test]
     fn nothing_is_enforced_without_a_card_or_a_declaration_or_when_opted_out() {
         assert!(check(None, false, Some("application/x-unsupported")).is_ok());
+        // A card that declares no input modes at all used to be served, and
+        // enforced nothing. It is no longer a card this server will publish
+        // (spec §5.7: defaultInputModes is a required, non-empty array), so
+        // the case is now the build refusing it.
         assert!(
-            check(
-                Some(card(&[], None)),
-                false,
-                Some("application/x-unsupported")
-            )
-            .is_ok()
+            RequestHandlerBuilder::new(DummyExecutor)
+                .with_agent_card(card(&[], None))
+                .build()
+                .is_err()
         );
         assert!(
             check(

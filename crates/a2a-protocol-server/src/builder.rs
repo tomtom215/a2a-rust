@@ -595,13 +595,14 @@ impl RequestHandlerBuilder {
     /// - Zero executor timeout (would cause immediate timeouts)
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
-        // Validate agent card if provided.
+        // A card this server would publish must be valid: a name, and every
+        // repeated field the proto marks REQUIRED non-empty (spec §5.7).
+        // Until 2026-10-11 only the interface list was checked, so a card
+        // with no skills or modes was served as it was.
         if let Some(ref card) = self.agent_card
-            && card.supported_interfaces.is_empty()
+            && let Err(why) = card.validate()
         {
-            return Err(crate::error::ServerError::InvalidParams(
-                "agent card must have at least one supported interface".into(),
-            ));
+            return Err(crate::error::ServerError::InvalidParams(why.into()));
         }
 
         #[cfg(feature = "audit")]
@@ -970,9 +971,12 @@ mod tests {
             capabilities: AgentCapabilities::none(),
             security_schemes: None,
             security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![
+                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                    .with_tags(["test"]),
+            ],
             signatures: None,
         };
 
@@ -1003,9 +1007,12 @@ mod tests {
             capabilities: AgentCapabilities::none(),
             security_schemes: None,
             security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![
+                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                    .with_tags(["test"]),
+            ],
             signatures: None,
         };
 
@@ -1153,6 +1160,9 @@ mod tests {
             "t",
             "0.0.0",
             a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
+        )
+        .with_skill(
+            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
         );
         let handler = RequestHandlerBuilder::new(TestExecutor)
             .with_agent_card(card)
@@ -1188,6 +1198,9 @@ mod tests {
             "t",
             "0.0.0",
             a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
+        )
+        .with_skill(
+            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
         );
         let mut mine = AgentExtension::new(FAILURE_EXTENSION_URI);
         mine.required = Some(true);
@@ -1221,6 +1234,9 @@ mod tests {
             "t",
             "0.0.0",
             a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
+        )
+        .with_skill(
+            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
         )
     }
 

@@ -240,27 +240,31 @@ impl AgentSkill {
 // ── AgentCard ─────────────────────────────────────────────────────────────────
 
 impl AgentCard {
-    /// A card carrying the three things [`AgentCard::validate`] requires and
-    /// nothing else: a name, a version, and one interface.
+    /// A card with a name, a version and one interface, accepting and
+    /// producing `text/plain` by default.
     ///
-    /// `description` starts empty, the mode lists and skills start empty, every
+    /// Not yet publishable: spec §5.7 requires at least one skill, each with
+    /// at least one tag, and [`AgentCard::validate`] (which the server's
+    /// builder runs) refuses a card without one. Add it with
+    /// [`with_skill`](Self::with_skill). `description` starts empty, every
     /// optional field starts `None`, and capabilities start unset
-    /// ([`AgentCapabilities::none`]). Set what you need with the `with_*`
-    /// methods below.
+    /// ([`AgentCapabilities::none`]); [`with_input_modes`](Self::with_input_modes)
+    /// and [`with_output_modes`](Self::with_output_modes) replace the default
+    /// modes.
     ///
     /// ```
-    /// use a2a_protocol_types::agent_card::{AgentCard, AgentInterface};
+    /// use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
     ///
     /// let card = AgentCard::new(
     ///     "my-agent",
     ///     "1.0.0",
     ///     AgentInterface::jsonrpc("http://localhost:3000"),
     /// );
+    /// assert!(card.validate().is_err(), "no skill yet");
     ///
-    /// // Valid by construction — the three fields `validate` checks are the
-    /// // three `new` requires.
+    /// let card = card.with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
     /// assert!(card.validate().is_ok());
-    /// assert_eq!(card.supported_interfaces.len(), 1);
+    /// assert_eq!(card.default_input_modes, ["text/plain"]);
     /// ```
     #[must_use]
     pub fn new(
@@ -274,8 +278,8 @@ impl AgentCard {
             description: String::new(),
             version: version.into(),
             supported_interfaces: vec![interface],
-            default_input_modes: Vec::new(),
-            default_output_modes: Vec::new(),
+            default_input_modes: vec!["text/plain".to_owned()],
+            default_output_modes: vec!["text/plain".to_owned()],
             skills: Vec::new(),
             capabilities: AgentCapabilities::none(),
             provider: None,

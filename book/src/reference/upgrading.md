@@ -134,6 +134,51 @@ Enums follow the same rule: `ClientError`, and the protocol enums that can
 grow with the specification, are `#[non_exhaustive]`, so a `match` on one
 already carries a wildcard arm and a new variant does not break it.
 
+## 0.14 → next (unreleased)
+
+These come from making the SDK follow the A2A 1.0 specification where it did
+not. CHANGELOG.md has every item; these are the ones an existing deployment can
+trip over.
+
+### `build()` refuses an agent card the spec does not allow
+
+Spec §5.7: a required array MUST contain at least one element.
+`RequestHandlerBuilder::build` now runs `AgentCard::validate`, which checks
+`defaultInputModes`, `defaultOutputModes`, `skills`, and every skill's `tags`, as
+well as the name and interfaces it checked before. A card missing any of them
+used to be served as it was. Add a skill:
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# let url = "http://localhost:3000";
+let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc(url))
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
+# assert!(card.validate().is_ok());
+```
+
+`AgentCard::new` now starts both mode lists at `["text/plain"]`, so a card
+built with it only needs the skill. A `DynamicAgentCardHandler` whose producer
+returns an invalid card answers `500`, and `HotReloadAgentCardHandler` refuses
+to reload one and keeps serving the previous card.
+
+### Push configs the server cannot honour are refused at creation
+
+A push config with an empty or scheme-less `url`, or with an authentication
+scheme other than Bearer or Basic, answers `InvalidParams`. The second used to
+be stored and then delivered with no credentials at all.
+
+### Error codes some clients may match on
+
+- A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with
+  `Retry-After` and gRPC `RESOURCE_EXHAUSTED`, not `500` / `INTERNAL`. The
+  JSON-RPC code is still `-32603`.
+- On WebSocket, errors carry their A2A code and typed `data`: a lagged
+  stream is `-32603` with the `streamLagged` marker, and an over-capacity
+  request `-32603`, where both were `-32000`.
+- SLIMRPC status codes follow the SLIMRPC specification's table:
+  `JSONParseError` is `INTERNAL`, `ContentTypeNotSupportedError`
+  `UNIMPLEMENTED`, `VersionNotSupportedError` `FAILED_PRECONDITION`.
+
 ## 0.13 → 0.14
 
 0.14.0 makes a failure read the same on every binding, and a refused credential

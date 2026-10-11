@@ -223,6 +223,26 @@ fn validate_empty_name_returns_error() {
     assert!(err.contains("name"), "error should mention name: {err}");
 }
 
+/// Breaks one required array of a card.
+type Breaker = fn(&mut AgentCard);
+
+/// Spec §5.7: every repeated field the proto marks REQUIRED is non-empty.
+#[test]
+fn validate_refuses_each_empty_required_array() {
+    let cases: [(&str, Breaker); 4] = [
+        ("defaultInputModes", |c| c.default_input_modes.clear()),
+        ("defaultOutputModes", |c| c.default_output_modes.clear()),
+        ("at least one skill", |c| c.skills.clear()),
+        ("tag", |c| c.skills[0].tags.clear()),
+    ];
+    for (needle, break_it) in cases {
+        let mut card = minimal_card();
+        break_it(&mut card);
+        let err = card.validate().unwrap_err();
+        assert!(err.contains(needle), "{needle}: {err}");
+    }
+}
+
 #[test]
 fn validate_empty_supported_interfaces_returns_error() {
     let mut card = minimal_card();

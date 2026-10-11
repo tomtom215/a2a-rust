@@ -3656,22 +3656,23 @@
    "binds": "both",
    "requirement": "Arrays marked as required MUST contain at least one element.",
    "status": "PARTIAL",
-   "severity": "medium",
+   "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:61",
-    "crates/a2a-protocol-types/src/artifact.rs:155",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:194",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:324",
-    "crates/a2a-protocol-server/src/builder.rs:549",
-    "crates/a2a-protocol-types/src/responses.rs:54"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs AgentCard::validate",
+    "crates/a2a-protocol-server/src/builder.rs build",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs valid_card",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:230 reject_empty_parts",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:982 artifact_with_empty_parts_is_dropped_when_not_appending"
+    "crates/a2a-protocol-types/src/agent_card/tests.rs validate_refuses_each_empty_required_array",
+    "crates/a2a-protocol-server/src/handler/input_modes.rs nothing_is_enforced_without_a_card_or_a_declaration_or_when_opted_out",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs an_invalid_produced_card_is_not_served",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json_refuses_an_invalid_card"
    ],
-   "notes": "Enforced for Message.parts (inbound) and Artifact.parts (executor output). Not enforced for AgentCard.skills/defaultInputModes/defaultOutputModes or AgentSkill.tags: AgentCard::validate and the builder check only name/supportedInterfaces, so the server will publish a card with empty required arrays. ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty — a spec-level contradiction; SDK returns empty lists.",
+   "notes": "Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid produced card, hot reload refuses one. Remaining, why PARTIAL/low: (1) ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty for a listing with no matches, a contradiction inside the specification; the SDK returns the empty list. (2) HotReloadAgentCardHandler::new and update are infallible and do not validate (a change would break their signatures). Client-side parsing stays tolerant on purpose.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 1275,

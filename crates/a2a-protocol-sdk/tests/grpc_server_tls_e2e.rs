@@ -77,7 +77,7 @@ fn card(grpc_url: &str) -> AgentCard {
             id: "noop".into(),
             name: "Noop".into(),
             description: "Completes immediately".into(),
-            tags: vec![],
+            tags: vec!["test".into()],
             examples: None,
             input_modes: None,
             output_modes: None,

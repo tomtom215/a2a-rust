@@ -135,9 +135,12 @@ pub async fn test_otel_metrics_integration(ctx: &TestContext) -> TestResult {
         capabilities: AgentCapabilities::none(),
         security_schemes: None,
         security_requirements: None,
-        default_input_modes: vec![],
-        default_output_modes: vec![],
-        skills: vec![],
+        default_input_modes: vec!["text/plain".into()],
+        default_output_modes: vec!["text/plain".into()],
+        skills: vec![
+            a2a_protocol_types::AgentSkill::new("analyze", "Analyze", "Analyzes code")
+                .with_tags(["code"]),
+        ],
         signatures: None,
     };
 

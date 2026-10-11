@@ -320,13 +320,33 @@ impl AgentCard {
     ///
     /// Returns an error if:
     /// - `name` is empty
-    /// - `supported_interfaces` is empty (spec requires at least one interface)
+    /// - a repeated field the proto marks REQUIRED is empty (spec §5.7:
+    ///   arrays marked as required MUST contain at least one element):
+    ///   `supported_interfaces`, `default_input_modes`, `default_output_modes`,
+    ///   `skills`, or any skill's `tags`
     pub const fn validate(&self) -> Result<(), &'static str> {
         if self.name.is_empty() {
             return Err("agent card name must not be empty");
         }
         if self.supported_interfaces.is_empty() {
             return Err("agent card must have at least one supported interface");
+        }
+        if self.default_input_modes.is_empty() {
+            return Err("agent card defaultInputModes must not be empty");
+        }
+        if self.default_output_modes.is_empty() {
+            return Err("agent card defaultOutputModes must not be empty");
+        }
+        if self.skills.is_empty() {
+            return Err("agent card must declare at least one skill");
+        }
+        let skills = self.skills.as_slice();
+        let mut i = 0;
+        while i < skills.len() {
+            if skills[i].tags.is_empty() {
+                return Err("every agent skill must have at least one tag");
+            }
+            i += 1;
         }
         Ok(())
     }

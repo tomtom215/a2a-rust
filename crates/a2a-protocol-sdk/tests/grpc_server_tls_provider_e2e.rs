@@ -71,7 +71,10 @@ async fn serving_tls_installs_a_default_provider_when_none_is_installed() {
                 }],
                 default_input_modes: vec!["text/plain".into()],
                 default_output_modes: vec!["text/plain".into()],
-                skills: vec![],
+                skills: vec![
+                    a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                        .with_tags(["test"]),
+                ],
                 capabilities: AgentCapabilities::none(),
                 provider: None,
                 icon_url: None,

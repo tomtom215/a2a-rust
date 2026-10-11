@@ -50,6 +50,11 @@ agent_executor!(HelloAgent, |ctx, queue| async {
 fn card(url: &str) -> AgentCard {
     AgentCard::new("hello-agent", "0.0.0", AgentInterface::jsonrpc(url))
         .with_description("Greets whoever sends it a message")
+        // Spec §5.7: a card publishes at least one skill, each with a tag.
+        .with_skill(
+            AgentSkill::new("hello", "Hello", "Greets whoever sends it a message")
+                .with_tags(["greeting"]),
+        )
 }
 
 #[tokio::main]
