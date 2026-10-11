@@ -26,10 +26,7 @@ pub fn bad_request_response(
             "code": 400,
             "status": "INVALID_ARGUMENT",
             "message": description,
-            "details": [{
-                "@type": "type.googleapis.com/google.rpc.BadRequest",
-                "fieldViolations": [{ "field": field, "description": description }]
-            }]
+            "details": [crate::streaming::sse::bad_request_detail(field, description)]
         }
     });
     serde_json::to_vec(&body).map_or_else(
@@ -140,7 +137,7 @@ pub fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<By
     // answers 413 and 503 (audit N20).
     let status = err.http_status();
     let grpc_status = err.status_name();
-    let details = a2a_err.error_info_data(None);
+    let details = crate::streaming::sse::error_details(&a2a_err);
 
     let mut error_obj = serde_json::json!({
         "error": {
@@ -149,8 +146,8 @@ pub fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<By
             "message": a2a_err.message
         }
     });
-    if !details.is_null() {
-        error_obj["error"]["details"] = details;
+    if !details.is_empty() {
+        error_obj["error"]["details"] = serde_json::Value::Array(details);
     }
 
     serde_json::to_vec(&error_obj).map_or_else(

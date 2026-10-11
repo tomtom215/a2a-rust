@@ -242,6 +242,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **One JSON-RPC error shape on every surface** (server; spec §9.5, §12.4).
+  HTTP responses, SSE frames and WebSocket messages now build the error the
+  same way: the A2A code, and `data` as the typed-details array. On WebSocket
+  this is new: unary errors carried no `data`, mid-stream errors were all
+  rewritten to `-32000` (losing the code and the `streamLagged` marker), and
+  the over-capacity answer was `-32000` where the HTTP binding sends an
+  overload as `-32603`. Unary JSON-RPC and HTTP+JSON responses now keep an
+  error's own `data` as a detail. Invalid params answer with a
+  `google.rpc.BadRequest` naming the field on JSON-RPC (HTTP and WebSocket)
+  and gRPC, as HTTP+JSON already did.
 - **The extended agent card is cacheable** (server; spec §13.3). `GET
   /extendedAgentCard` on `RestDispatcher` and the axum router sends
   `Cache-Control: private, no-cache`, `Vary: Authorization` and an `ETag`, and

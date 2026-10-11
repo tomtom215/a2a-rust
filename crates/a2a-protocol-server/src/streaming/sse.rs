@@ -221,21 +221,62 @@ fn stream_error_payload(
     jsonrpc_envelope_id.map_or_else(
         || serde_json::to_string(&rest_stream_error(err)),
         |id| {
-            let mut jsonrpc_error = JsonRpcError::new(err.code.as_i32(), err.message.clone());
-            // §9.5: `data` is an array, and each object in it MUST carry
-            // `@type`. The same details the REST frame carries: `ErrorInfo`
-            // for an A2A error, and `A2aError::data` (the `streamLagged`
-            // marker a client uses to tell truncation from an executor
-            // failure) as a `Struct`. Until 2026-10-10 this copied `data`
-            // through as a bare object, which no conformant client could
-            // read as error details.
-            let details = error_details(err);
-            if !details.is_empty() {
-                jsonrpc_error.data = Some(serde_json::Value::Array(details));
-            }
-            serde_json::to_string(&JsonRpcErrorResponse::new(id.clone(), jsonrpc_error))
+            serde_json::to_string(&JsonRpcErrorResponse::new(
+                id.clone(),
+                jsonrpc_error_from(err),
+            ))
         },
     )
+}
+
+/// The JSON-RPC error object for `err`, the same on every JSON-RPC surface:
+/// HTTP responses, SSE frames and WebSocket messages.
+///
+/// §9.5: `data` is an array, and each object in it MUST carry `@type`. The
+/// same details the REST frame carries: `ErrorInfo` for an A2A error, and
+/// `A2aError::data` (the `streamLagged` marker a client uses to tell
+/// truncation from an executor failure) as a `Struct`. Until 2026-10-10 the
+/// SSE frame copied `data` through as a bare object; until 2026-10-11 the
+/// WebSocket binding sent no `data` at all and the HTTP response dropped
+/// `A2aError::data`.
+pub(crate) fn jsonrpc_error_from(err: &a2a_protocol_types::error::A2aError) -> JsonRpcError {
+    let mut jsonrpc_error = JsonRpcError::new(err.code.as_i32(), err.message.clone());
+    let details = error_details(err);
+    if !details.is_empty() {
+        jsonrpc_error.data = Some(serde_json::Value::Array(details));
+    }
+    jsonrpc_error
+}
+
+/// A `google.rpc.BadRequest` detail with one field violation (§9.5, §11.6).
+/// `field` is the path of the offending field, `""` for the request itself.
+pub(crate) fn bad_request_detail(field: &str, description: &str) -> serde_json::Value {
+    serde_json::json!({
+        "@type": "type.googleapis.com/google.rpc.BadRequest",
+        "fieldViolations": [{ "field": field, "description": description }]
+    })
+}
+
+/// `InvalidParams` for parameters that did not deserialize as `T`, carrying a
+/// [`bad_request_detail`] that names the field. Re-parses `params` with path
+/// tracking, so call it on the failure path only.
+pub(crate) fn invalid_params_for<T: serde::de::DeserializeOwned>(
+    params: &serde_json::Value,
+    err: &serde_json::Error,
+) -> crate::error::ServerError {
+    let (field, description) = match serde_path_to_error::deserialize::<_, T>(params) {
+        Err(e) => {
+            let path = e.path().to_string();
+            let field = if path == "." { String::new() } else { path };
+            (field, e.inner().to_string())
+        }
+        Ok(_) => (String::new(), err.to_string()),
+    };
+    crate::error::ServerError::Protocol(a2a_protocol_types::error::A2aError::with_data(
+        a2a_protocol_types::error::ErrorCode::InvalidParams,
+        format!("invalid params: {err}"),
+        bad_request_detail(&field, &description),
+    ))
 }
 
 /// `@type` of a `google.protobuf.Struct` error detail.
@@ -270,15 +311,22 @@ fn rest_stream_error(err: &a2a_protocol_types::error::A2aError) -> serde_json::V
     serde_json::json!({ "error": status })
 }
 
-/// A stream error's typed details, shared by both bindings' frames: the
-/// `ErrorInfo` an A2A error carries, then `A2aError::data` as a
-/// `google.protobuf.Struct`, written flat.
-fn error_details(err: &a2a_protocol_types::error::A2aError) -> Vec<serde_json::Value> {
+/// An error's typed details, shared by every binding's error body and stream
+/// frame: the `ErrorInfo` an A2A error carries (and `RetryInfo` for a rate
+/// limit), then `A2aError::data`. A `data` object that already names its
+/// `@type` (a `google.rpc.BadRequest`, say) is a typed detail and goes as it
+/// is; any other value is wrapped as a `google.protobuf.Struct`, written
+/// flat.
+pub(crate) fn error_details(err: &a2a_protocol_types::error::A2aError) -> Vec<serde_json::Value> {
     let mut details = match err.error_info_data(None) {
         serde_json::Value::Array(items) => items,
         _ => Vec::new(),
     };
     if let Some(data) = &err.data {
+        if data.get("@type").is_some_and(serde_json::Value::is_string) {
+            details.push(data.clone());
+            return details;
+        }
         let mut detail = match data {
             serde_json::Value::Object(fields) => fields.clone(),
             other => {

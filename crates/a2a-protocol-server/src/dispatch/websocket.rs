@@ -523,14 +523,7 @@ impl WebSocketDispatcher {
                         // already in memory and ≤ 4 MiB) so the client can
                         // correlate the rejection instead of waiting for its
                         // request timeout on an unroutable null-id error.
-                        let err_resp = JsonRpcErrorResponse::new(
-                            best_effort_request_id(&text),
-                            JsonRpcError::new(
-                                -32000,
-                                "server busy: too many concurrent requests".to_string(),
-                            ),
-                        );
-                        send_json(writer, &err_resp).await;
+                        send_json(writer, &busy_response(&text)).await;
                         continue;
                     };
 
@@ -886,10 +879,7 @@ async fn process_ws_message(
         "GetTask" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::TaskQueryParams =
-                        serde_json::from_value(p).map_err(|e| {
-                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
-                        })?;
+                    let params: a2a_protocol_types::params::TaskQueryParams = ws_params(&p)?;
                     h.on_get_task(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -901,10 +891,7 @@ async fn process_ws_message(
         "ListTasks" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::ListTasksParams =
-                        serde_json::from_value(p).map_err(|e| {
-                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
-                        })?;
+                    let params: a2a_protocol_types::params::ListTasksParams = ws_params(&p)?;
                     h.on_list_tasks(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -916,10 +903,7 @@ async fn process_ws_message(
         "CancelTask" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::CancelTaskParams =
-                        serde_json::from_value(p).map_err(|e| {
-                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
-                        })?;
+                    let params: a2a_protocol_types::params::CancelTaskParams = ws_params(&p)?;
                     h.on_cancel_task(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -948,9 +932,7 @@ async fn process_ws_message(
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::push::TaskPushNotificationConfig =
-                        serde_json::from_value(p).map_err(|e| {
-                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
-                        })?;
+                        ws_params(&p)?;
                     h.on_set_push_config(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -962,10 +944,7 @@ async fn process_ws_message(
         "GetTaskPushNotificationConfig" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::GetPushConfigParams =
-                        serde_json::from_value(p).map_err(|e| {
-                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
-                        })?;
+                    let params: a2a_protocol_types::params::GetPushConfigParams = ws_params(&p)?;
                     h.on_get_push_config(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -977,10 +956,7 @@ async fn process_ws_message(
         "ListTaskPushNotificationConfigs" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::ListPushConfigsParams =
-                        serde_json::from_value(p).map_err(|e| {
-                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
-                        })?;
+                    let params: a2a_protocol_types::params::ListPushConfigsParams = ws_params(&p)?;
                     h.on_list_push_configs(&params.task_id, params.tenant.as_deref(), Some(hdr))
                         .await
                         .map(|configs| {
@@ -998,10 +974,7 @@ async fn process_ws_message(
         "DeleteTaskPushNotificationConfig" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::DeletePushConfigParams =
-                        serde_json::from_value(p).map_err(|e| {
-                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
-                        })?;
+                    let params: a2a_protocol_types::params::DeletePushConfigParams = ws_params(&p)?;
                     h.on_delete_push_config(params, Some(hdr))
                         .await
                         .map(|()| serde_json::json!({}))
@@ -1113,8 +1086,14 @@ async fn stream_events(
                 writer.activity.touch();
             }
             Err(e) => {
-                let err_resp =
-                    JsonRpcErrorResponse::new(id.clone(), JsonRpcError::new(-32000, e.to_string()));
+                // The error's own code and details, as the SSE binding sends
+                // them. It was rewritten to -32000 with `e.to_string()`,
+                // which lost the A2A code and the `streamLagged` marker
+                // (§12.4: preserve error information).
+                let err_resp = JsonRpcErrorResponse::new(
+                    id.clone(),
+                    crate::streaming::sse::jsonrpc_error_from(&e),
+                );
                 send_json(writer, &err_resp).await;
                 return;
             }
@@ -1167,7 +1146,7 @@ async fn dispatch_simple<'a, F>(
         }
         Err(e) => {
             let err_resp =
-                JsonRpcErrorResponse::new(id, JsonRpcError::new(e.code.as_i32(), e.message));
+                JsonRpcErrorResponse::new(id, crate::streaming::sse::jsonrpc_error_from(&e));
             send_json(writer, &err_resp).await;
         }
     }
@@ -1184,12 +1163,33 @@ async fn send_json<T: serde::Serialize + Sync>(writer: &WsSink, value: &T) {
 
 /// Sends a server error as a JSON-RPC error response.
 async fn send_error(writer: &WsSink, id: JsonRpcId, err: &ServerError) {
-    let a2a_err = err.to_a2a_error();
     let resp = JsonRpcErrorResponse::new(
         id,
-        JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message),
+        crate::streaming::sse::jsonrpc_error_from(&err.to_a2a_error()),
     );
     send_json(writer, &resp).await;
+}
+
+/// The answer to a request over the per-connection concurrency cap: an
+/// overload, sent as the JSON-RPC HTTP binding sends one (-32603). It was
+/// -32000, a code no other binding used for this (§9.5 / §12.4).
+fn busy_response(text: &str) -> JsonRpcErrorResponse {
+    JsonRpcErrorResponse::new(
+        best_effort_request_id(text),
+        crate::streaming::sse::jsonrpc_error_from(
+            &ServerError::Overloaded("server busy: too many concurrent requests".to_owned())
+                .to_a2a_error(),
+        ),
+    )
+}
+
+/// Parses one method's params; a shape error is `InvalidParams` with a
+/// `google.rpc.BadRequest` naming the field (§9.5), as on the HTTP binding.
+fn ws_params<T: serde::de::DeserializeOwned>(
+    p: &serde_json::Value,
+) -> Result<T, a2a_protocol_types::error::A2aError> {
+    T::deserialize(p)
+        .map_err(|e| crate::streaming::sse::invalid_params_for::<T>(p, &e).to_a2a_error())
 }
 
 /// Parses params from an optional JSON value.
@@ -1197,8 +1197,7 @@ fn parse_params<T: serde::de::DeserializeOwned>(
     params: Option<&serde_json::Value>,
 ) -> Result<T, ServerError> {
     let value = params.cloned().unwrap_or(serde_json::Value::Null);
-    serde_json::from_value(value)
-        .map_err(|e| ServerError::InvalidParams(format!("invalid params: {e}")))
+    T::deserialize(&value).map_err(|e| crate::streaming::sse::invalid_params_for::<T>(&value, &e))
 }
 
 #[cfg(test)]
@@ -2338,6 +2337,62 @@ mod tests {
         assert!(v.get("result").is_some(), "delete push config failed: {v}");
     }
 
+    // 17b. §12.4 / §9.5: a unary error carries its typed details, as the
+    // JSON-RPC HTTP binding's does. It sent code and message only until
+    // 2026-10-11.
+    #[tokio::test]
+    async fn ws_unary_error_carries_error_info() {
+        let addr = spawn_ws_server().await;
+        let mut ws = ws_connect(addr).await;
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "GetTask",
+                "id": "gt-missing",
+                "params": {"id": "no-such-task"}
+            }),
+        )
+        .await;
+        let err = v.get("error").expect("expected an error response");
+        assert_eq!(err["code"], -32001, "{v}");
+        let info = err["data"]
+            .as_array()
+            .and_then(|d| {
+                d.iter()
+                    .find(|x| x["@type"] == "type.googleapis.com/google.rpc.ErrorInfo")
+            })
+            .unwrap_or_else(|| panic!("no ErrorInfo detail: {v}"));
+        assert_eq!(info["reason"], "TASK_NOT_FOUND", "{v}");
+    }
+
+    // 17c. §9.5: invalid params carry a google.rpc.BadRequest naming the field.
+    #[tokio::test]
+    async fn ws_invalid_params_name_the_field() {
+        let addr = spawn_ws_server().await;
+        let mut ws = ws_connect(addr).await;
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "GetTask",
+                "id": "gt-bad",
+                "params": {"id": 5}
+            }),
+        )
+        .await;
+        let err = v.get("error").expect("expected an error response");
+        assert_eq!(err["code"], -32602, "{v}");
+        let bad = err["data"]
+            .as_array()
+            .and_then(|d| {
+                d.iter()
+                    .find(|x| x["@type"] == "type.googleapis.com/google.rpc.BadRequest")
+            })
+            .unwrap_or_else(|| panic!("no BadRequest detail: {v}"));
+        assert_eq!(bad["fieldViolations"][0]["field"], "id", "{v}");
+    }
+
     // 18. GetExtendedAgentCard is routed (an unconfigured card is a domain
     // error, NOT MethodNotFound).
     #[tokio::test]
@@ -2533,8 +2588,8 @@ mod tests {
     // 20d. A lagged stream is reported to the client as a JSON-RPC error
     // frame, with the server-error code.
     //
-    // Kills `delete -` on `JsonRpcError::new(-32000, ..)` in `stream_events`,
-    // which turns the code into a positive 32000. Existing tests assert
+    // Written to kill `delete -` on the `-32000` `stream_events` used to send;
+    // it now pins the lag error's own code and marker instead. Existing tests assert
     // -32700 and -32601 elsewhere, but nothing reached this arm at all: it
     // fires only when the reader yields `Err`, and the only producer of that
     // is the consumer-lag error.
@@ -2543,6 +2598,7 @@ mod tests {
     // far more events than the socket consumer can drain overflows the
     // broadcast ring for this subscriber, which is exactly the production
     // condition the frame exists to report.
+    #[allow(clippy::too_many_lines)]
     #[tokio::test]
     async fn ws_lagged_stream_reports_server_error_code() {
         struct FloodExec;
@@ -2593,20 +2649,30 @@ mod tests {
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
                     continue;
                 };
-                if let Some(code) = v["error"]["code"].as_i64() {
-                    return Some(code);
+                if v.get("error").is_some() {
+                    return Some(v["error"].clone());
                 }
             }
             None
         })
         .await
-        .expect("the lagged stream must produce an error frame within 10s");
+        .expect("the lagged stream must produce an error frame within 10s")
+        .expect("an error frame");
 
-        assert_eq!(
-            found,
-            Some(-32000),
-            "a lagged stream must be reported with the JSON-RPC server-error \
-             code -32000, not a positive code"
+        // The lag error's own code and its marker, as the SSE binding sends
+        // them (§12.4: preserve error information). Until 2026-10-11 this
+        // frame was rewritten to -32000 with no `data`, so a WebSocket client
+        // could not tell truncation from any other server error.
+        assert_eq!(found["code"], -32603, "{found}");
+        let lagged = found["data"]
+            .as_array()
+            .and_then(|d| d.iter().find_map(|x| x["streamLagged"].as_u64()));
+        assert!(lagged.is_some_and(|n| n > 0), "{found}");
+        assert!(
+            found["data"]
+                .as_array()
+                .is_some_and(|d| d.iter().all(|x| x.get("@type").is_some())),
+            "§9.5: every detail carries @type: {found}"
         );
     }
 
@@ -2678,9 +2744,9 @@ mod tests {
 
         assert_eq!(
             code,
-            Some(-32000),
-            "back-pressure must be reported with the JSON-RPC server-error \
-             code -32000, not a positive code"
+            Some(-32603),
+            "back-pressure is an overload, reported as the JSON-RPC HTTP \
+             binding reports one (-32603), not a positive code"
         );
     }
 

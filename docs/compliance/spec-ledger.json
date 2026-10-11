@@ -5465,18 +5465,20 @@
    "keyword": "MUST (implied)",
    "binds": "server",
    "requirement": "A2A-specific errors use codes in the range -32001 to -32099 (§5.4 mapping)",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:40-64",
     "crates/a2a-protocol-types/src/error.rs:250-275"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:555 error_code_roundtrip"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_lagged_stream_reports_server_error_code",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_unary_error_carries_error_info"
    ],
-   "notes": "Unary paths are compliant. The WebSocket binding sends -32000 for mid-stream and over-capacity errors (websocket.rs:1118-1121). That code is in the JSON-RPC server-error range, not the A2A range; see the §12.4 entry. (Re-graded from TESTED on 2026-10-10: the note describes a deviation, so the entry is PARTIAL.)",
+   "notes": "A2A errors use -32001..-32099 on every JSON-RPC surface. The WebSocket binding's -32000 (mid-stream and over-capacity) is gone: mid-stream errors keep their own code, and over-capacity is sent as an overload (-32603), as the JSON-RPC HTTP binding sends one.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 2465,
@@ -5511,18 +5513,22 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Implementations SHOULD use well-known types such as google.rpc.ErrorInfo ..., or google.rpc.BadRequest to attach structured data to validation errors",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:518-533",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68-82"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1135 error_info_data_for_a2a_error_has_expected_shape"
+    "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs jsonrpc_invalid_params_name_the_field",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_invalid_params_name_the_field",
+    "crates/a2a-protocol-server/tests/bad_request_details.rs the_rest_dispatcher_names_the_bad_field",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs bad_request_maps_to_invalid_argument"
    ],
-   "notes": "A2A errors get ErrorInfo. google.rpc.BadRequest is used nowhere in the repository (rg BadRequest/fieldViolations finds no match). InvalidParams (-32602) is sent without `data`, unlike the spec example at lines 2474-2486.",
+   "notes": "A2A errors carry ErrorInfo. Params that do not deserialize answer InvalidParams with a google.rpc.BadRequest naming the field path, on JSON-RPC (HTTP and WebSocket), HTTP+JSON and gRPC (from ConvertError's field).",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 2465,
@@ -5530,20 +5536,21 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Additional error context MAY be included as further objects in the data array",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:59",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:160",
     "crates/a2a-protocol-server/src/streaming/sse.rs:276"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs jsonrpc_stream_error_is_a_jsonrpc_error_response"
+    "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs unary_errors_keep_their_data",
+    "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs"
    ],
-   "notes": "Mid-stream SSE error frames (both bindings) append A2aError.data as a google.protobuf.Struct detail after ErrorInfo. Unary JSON-RPC, REST and gRPC responses still call `error_info_data(None)` and drop A2aError.data, so context a handler attaches with A2aError::with_data is discarded there; ErrorInfo.metadata is never populated.",
+   "notes": "A2aError::data reaches the client as a further detail (a Struct, or as is when it names its @type) on JSON-RPC and HTTP+JSON unary responses and on both bindings' stream frames, and on WebSocket. gRPC unary responses carry ErrorInfo, RetryInfo and BadRequest but not arbitrary data.",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 2528,
@@ -6268,19 +6275,20 @@
    "binds": "server",
    "requirement": "2. Preserve Error Information: Ensure error details are accessible to clients",
    "status": "PARTIAL",
-   "severity": "medium",
+   "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1163-1167",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1186-1193",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1116-1121",
-    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:407-420"
+    "crates/a2a-protocol-server/src/streaming/sse.rs jsonrpc_error_from",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs stream_events / send_error / ws_params / busy_response"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2547 ws_lagged_stream_reports_server_error_code"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_unary_error_carries_error_info",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_lagged_stream_reports_server_error_code",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_invalid_params_name_the_field"
    ],
-   "notes": "WebSocket error responses carry only code and message: no `data` and no ErrorInfo, unlike the JSON-RPC HTTP binding that it otherwise mirrors (jsonrpc/response.rs:160-164). Any mid-stream error is rewritten to code -32000 with `e.to_string()`, discarding the original code and the streamLagged marker. SLIMRPC keeps identity through the `TypeNameError:` message prefix, but drops details and its mid-stream errors become `InternalError:`.",
+   "notes": "WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker instead of -32000. Remaining (why PARTIAL/low): SLIMRPC keeps identity through its TypeNameError: message prefix but carries no details, as its spec defines no details encoding.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 3025,

@@ -55,13 +55,10 @@ pub(super) fn success_response_bytes<T: serde::Serialize>(id: JsonRpcId, result:
 ///
 /// Per Section 9.5, A2A errors MUST include `google.rpc.ErrorInfo` in the data array.
 pub(super) fn error_response_bytes(id: JsonRpcId, err: &ServerError) -> Vec<u8> {
-    let a2a_err = err.to_a2a_error();
-    let data = a2a_err.error_info_data(None);
-    let mut error = JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message);
-    if !data.is_null() {
-        error.data = Some(data);
-    }
-    let resp = JsonRpcErrorResponse::new(id, error);
+    let resp = JsonRpcErrorResponse::new(
+        id,
+        crate::streaming::sse::jsonrpc_error_from(&err.to_a2a_error()),
+    );
     serde_json::to_vec(&resp).unwrap_or_default()
 }
 
@@ -76,7 +73,7 @@ where
     // From the borrowed tree: `&Value` is a deserializer, and the clone
     // `from_value` needed copied every string in the params once more.
     let parsed = T::deserialize(params)
-        .map_err(|e| ServerError::InvalidParams(format!("invalid params: {e}")))?;
+        .map_err(|e| crate::streaming::sse::invalid_params_for::<T>(params, &e))?;
     warn_unrecognized_params::<T>(&rpc_req.method, params);
     Ok(parsed)
 }
@@ -156,13 +153,10 @@ pub(super) fn error_response(
     id: JsonRpcId,
     err: &ServerError,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let a2a_err = err.to_a2a_error();
-    let data = a2a_err.error_info_data(None);
-    let mut error = JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message);
-    if !data.is_null() {
-        error.data = Some(data);
-    }
-    let resp = JsonRpcErrorResponse::new(id.clone(), error);
+    let resp = JsonRpcErrorResponse::new(
+        id.clone(),
+        crate::streaming::sse::jsonrpc_error_from(&err.to_a2a_error()),
+    );
     // A refused credential answers 401/403 over HTTP, the body unchanged
     // (N36): JSON-RPC runs over HTTP, and a client refreshes a token on the
     // status, not on a -32600 it cannot tell from a malformed request.
