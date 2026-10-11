@@ -196,10 +196,12 @@ impl Default for PushRetryPolicy {
 }
 
 impl PushRetryPolicy {
-    /// Sets the maximum number of delivery attempts.
+    /// Sets the maximum number of delivery attempts. `0` is taken as `1`:
+    /// spec §4.3.3 requires at least one attempt per webhook, and a zero made
+    /// the retry loop run no attempt at all.
     #[must_use]
     pub const fn with_max_attempts(mut self, max: usize) -> Self {
-        self.max_attempts = max;
+        self.max_attempts = if max == 0 { 1 } else { max };
         self
     }
 
@@ -783,7 +785,7 @@ impl PushSender for HttpPushSender {
     /// arithmetic here has to match that loop or the number it reports is a
     /// second thing to keep in step by hand.
     fn max_delivery_duration(&self) -> Option<std::time::Duration> {
-        let attempts = self.retry_policy.max_attempts;
+        let attempts = self.retry_policy.max_attempts.max(1);
         if attempts == 0 {
             return Some(std::time::Duration::ZERO);
         }
@@ -892,7 +894,9 @@ impl PushSender for HttpPushSender {
 
             let mut last_err = String::new();
 
-            for attempt in 0..self.retry_policy.max_attempts {
+            // At least one attempt even if the public field was set to 0
+            // directly (§4.3.3).
+            for attempt in 0..self.retry_policy.max_attempts.max(1) {
                 // §4.3.3 fixes the webhook request's Content-Type as
                 // `application/a2a+json`, and unlike §9's JSON-RPC binding —
                 // which specifies `application/json` — this one is the A2A

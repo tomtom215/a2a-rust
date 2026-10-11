@@ -124,8 +124,12 @@ async fn deliver_push_bg_with_failing_store_returns_silently() {
     .await;
 }
 
+/// Spec §4.3.3: every webhook gets at least one attempt. 50 configs at 2s
+/// each, a 3s bound and the 30s budget: 10 rounds of 3s fit, so 5 run at a
+/// time and all 50 are sent. This test asserted fewer than 50 until
+/// 2026-10-11, when the budget skipped whatever it did not reach.
 #[tokio::test(start_paused = true)]
-async fn deliver_push_bg_respects_total_deadline() {
+async fn deliver_push_bg_attempts_every_config_within_the_deadline() {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
@@ -155,8 +159,7 @@ async fn deliver_push_bg_respects_total_deadline() {
     let task_id = TaskId::new("t-deadline");
     let event = make_status_event("t-deadline", TaskState::Working);
 
-    // Register many configs. With 2s per delivery and a 30s cap,
-    // at most ~15 can complete.
+    // Register many configs: more than one-at-a-time would reach in 30s.
     for i in 0..50 {
         let config = TaskPushNotificationConfig {
             tenant: None,
@@ -175,6 +178,7 @@ async fn deliver_push_bg_respects_total_deadline() {
     };
     let limits = HandlerLimits::default().with_push_delivery_timeout(Duration::from_secs(3));
 
+    let started = tokio::time::Instant::now();
     deliver_push_bg(
         &task_id,
         &event,
@@ -185,29 +189,18 @@ async fn deliver_push_bg_respects_total_deadline() {
     )
     .await;
 
-    // With 30s total cap and 2s per send (bounded by 3s timeout), not all 50 should fire.
-    let count = send_count.load(Ordering::Relaxed);
-    assert!(
-        count < 50,
-        "deadline should prevent all 50 deliveries, got {count}"
+    assert_eq!(
+        send_count.load(Ordering::Relaxed),
+        50,
+        "every config is sent"
     );
     assert!(
-        count > 0,
-        "at least some deliveries should have fired, got {count}"
+        started.elapsed() <= Duration::from_secs(30),
+        "within the budget: {:?}",
+        started.elapsed()
     );
 }
 
-/// Every config the budget never reaches is counted, not just traced.
-///
-/// The deadline branch used to emit one `trace_warn!` and nothing else, and
-/// `trace_warn!` expands to nothing without the non-default `tracing`
-/// feature — so in a default build the 94-of-100 case produced no
-/// observable output at all. This pins the count, and pins that it is the
-/// *remaining* configs rather than the whole list.
-///
-/// Runs on paused time: there is no socket here, only `sleep`, so the
-/// 30-second budget costs no wall clock. (Addendum 4's rule is that paused
-/// time and a *real socket* do not mix.)
 /// A sender that always takes exactly `push_delivery_timeout`'s worth of time.
 struct SlowPushSender;
 

@@ -79,7 +79,6 @@ a2a.server.push_deliveries{outcome="delivered"}   the webhook accepted it
 a2a.server.push_deliveries{outcome="failed"}      reached, and refused it — or the sender errored
 a2a.server.push_deliveries{outcome="timeout"}     the webhook did not answer in time
 a2a.server.push_deliveries{outcome="timeout_truncated"}  push_delivery_timeout cut the retry schedule short
-a2a.server.push_deliveries{outcome="skipped"}     nothing was attempted
 ```
 
 `timeout_truncated` is the one that surprises people, because it is **not a
@@ -89,10 +88,10 @@ delivery was cut short with attempts still left on the schedule. Nothing was
 wrong with the webhook, and nothing will be, however many times you restart it:
 either raise `push_delivery_timeout` or shorten the sender's schedule.
 
-`skipped` means the per-event delivery budget ran out before this config was
-reached, so nothing was sent to it — look at the arithmetic between
-`max_push_configs_per_task`, `push_delivery_timeout` and the 30-second
-per-event budget.
+Every registered config is attempted for every event (spec §4.3.3). The
+per-event budget sets how many deliveries run at once, not which are made, so
+there is no "skipped" outcome any more; servers older than this release could
+report one when a slow webhook estate exhausted the budget.
 
 If the counter shows no datapoints at all under any label, the delivery path
 was never reached — check that a push config was actually registered for the

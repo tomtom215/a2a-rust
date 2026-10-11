@@ -7,7 +7,6 @@
 
 use std::sync::Arc;
 
-use crate::metrics::push_outcome;
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
@@ -628,53 +627,30 @@ impl SyncPushJob {
         if configs.is_empty() {
             return;
         }
-        // The amplification cap, covering every event of this request
-        // against every config. See `HandlerLimits::push_delivery_budget`.
-        let deadline = tokio::time::Instant::now() + self.push_delivery_budget;
-        for (event_index, event) in self.events.iter().enumerate() {
-            for (reached, config) in configs.iter().enumerate() {
-                if tokio::time::Instant::now() >= deadline {
-                    trace_warn!(
-                        task_id = %self.task_id,
-                        "push delivery deadline exceeded; skipping remaining"
-                    );
-                    // One count per (event, config) pair that will not be
-                    // contacted: the rest of this event's configs, then every
-                    // config of every later event.
-                    let remaining = (configs.len() - reached)
-                        + configs.len() * (self.events.len() - event_index - 1);
-                    for _ in 0..remaining {
-                        self.metrics.on_push_delivery(push_outcome::SKIPPED);
-                    }
-                    return;
-                }
-                let outcome = match tokio::time::timeout(
-                    self.push_delivery_timeout,
-                    self.sender.send(&config.url, event, config),
-                )
-                .await
-                {
-                    Ok(Ok(())) => push_outcome::DELIVERED,
-                    Ok(Err(_err)) => {
-                        trace_warn!(
-                            task_id = %self.task_id,
-                            url = %config.url,
-                            error = %_err,
-                            "push notification delivery failed"
-                        );
-                        push_outcome::FAILED
-                    }
-                    Err(_) => {
-                        trace_warn!(
-                            task_id = %self.task_id,
-                            url = %config.url,
-                            "push notification delivery timed out"
-                        );
-                        self.timeout_label
-                    }
-                };
-                self.metrics.on_push_delivery(outcome);
-            }
+        // Spec §4.3.3: every config is attempted for every event, events in
+        // order so a webhook never sees a later one first. The budget, which
+        // covers this request's whole batch, sets how many deliveries of an
+        // event run at once (`delivery_concurrency`); it no longer decides
+        // which are reached. Until 2026-10-11 they ran one at a time and the
+        // budget skipped the rest.
+        let concurrency = super::background::delivery_concurrency(
+            configs.len(),
+            self.events.len(),
+            self.push_delivery_timeout,
+            self.push_delivery_budget,
+        );
+        for event in &self.events {
+            super::background::deliver_to_every_config(
+                &self.task_id,
+                self.sender.as_ref(),
+                &configs,
+                event,
+                self.push_delivery_timeout,
+                concurrency,
+                self.metrics.as_ref(),
+                self.timeout_label,
+            )
+            .await;
         }
     }
 }
@@ -1669,10 +1645,13 @@ mod tests {
     /// configs at one second each, and reports how many were contacted
     /// before `budget` ran out. Paused time: the caller's runtime must be
     /// `start_paused`.
-    async fn configs_reached_with_budget(budget: std::time::Duration) -> u64 {
+    /// How long the blocking path takes to deliver one event to 10 configs
+    /// whose webhooks answer in 1s, under `budget` (5s per-delivery bound),
+    /// and how many it delivered.
+    async fn delivery_with_budget(budget: std::time::Duration) -> (std::time::Duration, u64) {
         use crate::handler::HandlerLimits;
         use crate::push::{InMemoryPushConfigStore, PushConfigStore};
-        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::atomic::AtomicU64;
 
         let store = InMemoryPushConfigStore::new();
         for i in 0..10 {
@@ -1688,10 +1667,11 @@ mod tests {
                 .await
                 .unwrap();
         }
-        let sent = Arc::new(AtomicU64::new(0));
+        let outcomes = Arc::new(PushOutcomes::default());
         let handler = RequestHandlerBuilder::new(DummyExecutor)
             .with_push_config_store(store)
-            .with_push_sender(OneSecondSender(Arc::clone(&sent)))
+            .with_push_sender(OneSecondSender(Arc::new(AtomicU64::new(0))))
+            .with_metrics(Arc::clone(&outcomes))
             .with_handler_limits(
                 HandlerLimits::default()
                     .with_push_delivery_timeout(std::time::Duration::from_secs(5))
@@ -1699,14 +1679,31 @@ mod tests {
             )
             .build()
             .unwrap();
+        let started = tokio::time::Instant::now();
         handler.sync_collector().spawn_push_delivery(
             TaskId::new("t-budget"),
             vec![make_status_event("t-budget", TaskState::Working)],
         );
-        // Let the spawned delivery run to its deadline: 10 configs at 1s
-        // each is longer than any budget a caller passes.
-        tokio::time::sleep(std::time::Duration::from_secs(12)).await;
-        sent.load(Ordering::Relaxed)
+        // Paused clock: step until all ten outcomes are in.
+        loop {
+            let total: u64 = outcomes.0.lock().unwrap().values().sum();
+            if total == 10 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let delivered = outcomes
+            .0
+            .lock()
+            .unwrap()
+            .get(push_outcome::DELIVERED)
+            .copied()
+            .unwrap_or(0);
+        // Whole seconds: the 10ms poll step lands just after completion.
+        (
+            std::time::Duration::from_secs(started.elapsed().as_secs()),
+            delivered,
+        )
     }
 
     /// Counts `Metrics::on_push_delivery` labels.
@@ -1778,23 +1775,114 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_secs(25)).await;
 
         let counts = outcomes.0.lock().unwrap().clone();
-        assert_eq!(counts.get(push_outcome::DELIVERED), Some(&4), "{counts:?}");
-        assert_eq!(counts.get(push_outcome::SKIPPED), Some(&8), "{counts:?}");
-        assert_eq!(counts.values().sum::<u64>(), 12, "{counts:?}");
+        // §4.3.3: all 12 (event, config) deliveries are attempted. A 4s
+        // budget is under one 5s timeout per event, so each event's three
+        // deliveries run at once. Until 2026-10-11 the budget skipped 8.
+        assert_eq!(counts.get(push_outcome::DELIVERED), Some(&12), "{counts:?}");
+        assert_eq!(counts.get(push_outcome::SKIPPED), None, "{counts:?}");
     }
 
-    /// The blocking path's push deliveries stop at `push_delivery_budget`,
-    /// not at a literal. With a 1s per-delivery cost, a 3s budget reaches 3
-    /// configs and a 6s budget reaches 6.
+    /// Records, per webhook URL, the order events reached it; every send
+    /// takes 1s.
+    struct OrderRecorder(Arc<std::sync::Mutex<Vec<(String, String)>>>);
+
+    impl crate::push::PushSender for OrderRecorder {
+        fn send<'a>(
+            &'a self,
+            url: &'a str,
+            event: &'a StreamResponse,
+            _config: &'a a2a_protocol_types::push::TaskPushNotificationConfig,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            let state = match event {
+                StreamResponse::StatusUpdate(u) => format!("{:?}", u.status.state),
+                _ => "other".to_owned(),
+            };
+            self.0.lock().unwrap().push((url.to_owned(), state));
+            Box::pin(async {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                Ok(())
+            })
+        }
+    }
+
+    /// Concurrent across webhooks, in order per webhook: each webhook sees
+    /// the request's events in the order they happened, even though a
+    /// webhook's deliveries for one event run beside the others'.
+    #[tokio::test(start_paused = true)]
+    async fn each_webhook_sees_events_in_order() {
+        use crate::handler::HandlerLimits;
+        use crate::push::{InMemoryPushConfigStore, PushConfigStore};
+
+        let store = InMemoryPushConfigStore::new();
+        for i in 0..3 {
+            store
+                .set(a2a_protocol_types::push::TaskPushNotificationConfig {
+                    tenant: None,
+                    id: Some(format!("cfg-{i}")),
+                    task_id: Some("t-order".to_owned()),
+                    url: format!("https://example.com/hook{i}"),
+                    token: None,
+                    authentication: None,
+                })
+                .await
+                .unwrap();
+        }
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_config_store(store)
+            .with_push_sender(OrderRecorder(Arc::clone(&seen)))
+            .with_handler_limits(
+                HandlerLimits::default()
+                    .with_push_delivery_timeout(std::time::Duration::from_secs(5))
+                    .with_push_delivery_budget(std::time::Duration::from_secs(1)),
+            )
+            .build()
+            .unwrap();
+        handler.sync_collector().spawn_push_delivery(
+            TaskId::new("t-order"),
+            vec![
+                make_status_event("t-order", TaskState::Submitted),
+                make_status_event("t-order", TaskState::Working),
+                make_status_event("t-order", TaskState::Completed),
+            ],
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 9, "{seen:?}");
+        for i in 0..3 {
+            let url = format!("https://example.com/hook{i}");
+            let order: Vec<&str> = seen
+                .iter()
+                .filter(|(u, _)| *u == url)
+                .map(|(_, s)| s.as_str())
+                .collect();
+            assert_eq!(order, ["Submitted", "Working", "Completed"], "{url}");
+        }
+    }
+
+    /// The blocking path reads `push_delivery_budget`, not a literal: a 10s
+    /// budget fits 2 rounds of the 5s bound, so 5 run at once and the 10
+    /// configs take 2s; a 50s budget fits 10 rounds, so they run one at a
+    /// time and take 10s. Every config is delivered either way (§4.3.3).
     #[tokio::test(start_paused = true)]
     async fn the_sync_push_budget_is_the_configured_one() {
         use std::time::Duration;
 
-        assert_eq!(configs_reached_with_budget(Duration::from_secs(3)).await, 3);
         assert_eq!(
-            configs_reached_with_budget(Duration::from_secs(6)).await,
-            6,
-            "a raised budget reaches more configs: the field, not a literal, is the bound"
+            delivery_with_budget(Duration::from_secs(10)).await,
+            (Duration::from_secs(2), 10)
+        );
+        assert_eq!(
+            delivery_with_budget(Duration::from_secs(50)).await,
+            (Duration::from_secs(10), 10),
+            "the field, not a literal, sets the pace"
         );
     }
 

@@ -73,91 +73,147 @@ pub(super) async fn deliver_push_bg(
         return;
     };
 
-    // The per-event amplification cap. With 100 configs × 5s timeout × 3
-    // retries, unbounded delivery could take 25+ minutes; the budget bounds it.
-    // A `Duration::from_secs(30)` literal until 0.12 — now
-    // `HandlerLimits::push_delivery_budget`, so the term that decides how many
-    // of an operator's webhooks are called is a knob they can turn.
-    let deadline = tokio::time::Instant::now() + limits.push_delivery_budget;
+    // Spec §4.3.3: agents MUST attempt delivery at least once for each
+    // configured webhook. Every config is attempted; `push_delivery_budget`
+    // decides how many run at once, not which are reached. See
+    // `deliver_to_every_config`.
+    let concurrency = delivery_concurrency(
+        configs.len(),
+        1,
+        limits.push_delivery_timeout,
+        limits.push_delivery_budget,
+    );
+    let timeout_label = timeout_outcome(sender, limits);
+    deliver_to_every_config(
+        task_id,
+        sender,
+        &configs,
+        event,
+        limits.push_delivery_timeout,
+        concurrency,
+        metrics,
+        timeout_label,
+    )
+    .await;
+}
 
-    // There is no concurrency to limit. Deliveries below run one after another,
-    // so the only bound that does anything is `deadline`. A `Semaphore::new(16)`
-    // used to be built here per event, with a comment describing it as a cap on
-    // "hundreds of concurrent HTTP requests" — a mitigation for a shape this
-    // loop has never had. It was removed 2026-08-19 rather than left standing:
-    // scaffolding that describes a protection nobody has is worse than no
-    // comment, because it answers the question a reader came to ask.
-    //
-    // The arithmetic that does hold, and that operators need:
-    //
-    //     configs_reached  ==  min(len, budget / push_delivery_timeout)
-    //
-    // At the defaults — `max_push_configs_per_task` 100, `push_delivery_timeout`
-    // 5s, budget 30s — a webhook estate that is timing out reaches 6 configs of
-    // 100 per event. The other 94 are now counted (`push_outcome::SKIPPED`)
-    // instead of collapsing into one trace line that a default build compiles
-    // away. Making delivery genuinely concurrent is the fix that would raise
-    // the ceiling; it needs a joiner this crate does not currently depend on,
-    // so it is recorded as work rather than done badly here.
+/// How many deliveries run at once so that `events` rounds of `width`
+/// deliveries, each bounded by `timeout`, finish within `budget`: never fewer
+/// than one, never more than `width`.
+///
+/// Until 2026-10-11 deliveries ran one after another and the budget decided
+/// which configs were reached at all: at the defaults (100 configs, a 5s
+/// timeout, a 30s budget) a slow webhook estate reached 6 configs per event
+/// and skipped 94, against spec §4.3.3's MUST of at least one attempt each.
+/// Now the budget sets the concurrency: `ceil(width / rounds)`, where
+/// `rounds = budget / (events × timeout)` is how many timeouts fit in each
+/// event's share. When not even one fits, every delivery of an event runs at
+/// once and the event takes one timeout, past the budget; the MUST wins.
+/// `max_push_configs_per_task` still caps `width`, and with it the most
+/// concurrent requests one event can make.
+pub fn delivery_concurrency(
+    width: usize,
+    events: usize,
+    timeout: std::time::Duration,
+    budget: std::time::Duration,
+) -> usize {
+    if width == 0 {
+        return 1;
+    }
+    let per_event = timeout.saturating_mul(u32::try_from(events.max(1)).unwrap_or(u32::MAX));
+    let rounds = if per_event.is_zero() {
+        width
+    } else {
+        usize::try_from(budget.as_nanos() / per_event.as_nanos()).unwrap_or(usize::MAX)
+    };
+    if rounds == 0 {
+        width
+    } else {
+        width.div_ceil(rounds).clamp(1, width)
+    }
+}
 
-    // `reached` is the index of the config under consideration, and so also the
-    // number already contacted. It used to be `_delivered`, underscored because
-    // its only reader was `trace_warn!` — which expands to nothing without the
-    // `tracing` feature, leaving the binding genuinely unused in a default
-    // build. Now the metrics loop below reads it in every configuration, so the
-    // underscore (and the `unused_enumerate_index` allow that went with it) are
-    // both gone.
-    for (reached, config) in configs.iter().enumerate() {
-        // Check if we've exceeded the total push delivery budget.
-        if tokio::time::Instant::now() >= deadline {
-            // `configs.len() - reached`, not `configs.len()`: this fires
-            // partway through the list, so the total is never the remainder.
-            // Reporting the total made the one telemetry signal for push
-            // amplification overstate the shortfall — at the extreme, a
-            // deadline hit on the very last config claimed every config had
-            // been skipped.
+/// Delivers `event` to every config, at most `concurrency` at a time, each
+/// bounded by `timeout`, and reports every outcome. Shared by the background
+/// and blocking paths, which differ only in how many events they deliver.
+#[allow(clippy::too_many_arguments)]
+pub async fn deliver_to_every_config(
+    task_id: &TaskId,
+    sender: &dyn PushSender,
+    configs: &[a2a_protocol_types::push::TaskPushNotificationConfig],
+    event: &StreamResponse,
+    push_delivery_timeout: std::time::Duration,
+    concurrency: usize,
+    metrics: &dyn Metrics,
+    timeout_label: &'static str,
+) {
+    use futures_util::StreamExt as _;
+    // A window of at most `concurrency` deliveries, refilled as each one
+    // finishes. A loop rather than `stream::iter(..).map(..)
+    // .buffer_unordered(..)`, whose closure is generic over the borrowed
+    // config's lifetime and defeats rustc's `Send` inference once spawned.
+    let mut pending = configs.iter();
+    let mut in_flight = futures_util::stream::FuturesUnordered::new();
+    for config in pending.by_ref().take(concurrency.max(1)) {
+        in_flight.push(deliver_once(
+            task_id,
+            sender,
+            config,
+            event,
+            push_delivery_timeout,
+            timeout_label,
+        ));
+    }
+    while let Some(outcome) = in_flight.next().await {
+        metrics.on_push_delivery(outcome);
+        if let Some(config) = pending.next() {
+            in_flight.push(deliver_once(
+                task_id,
+                sender,
+                config,
+                event,
+                push_delivery_timeout,
+                timeout_label,
+            ));
+        }
+    }
+}
+
+/// One delivery to one config, bounded by `timeout`; its outcome label.
+///
+async fn deliver_once(
+    task_id: &TaskId,
+    sender: &dyn PushSender,
+    config: &a2a_protocol_types::push::TaskPushNotificationConfig,
+    event: &StreamResponse,
+    push_delivery_timeout: std::time::Duration,
+    timeout_label: &'static str,
+) -> &'static str {
+    let _ = task_id;
+    match tokio::time::timeout(
+        push_delivery_timeout,
+        sender.send(&config.url, event, config),
+    )
+    .await
+    {
+        Ok(Ok(())) => push_outcome::DELIVERED,
+        Ok(Err(_err)) => {
             trace_warn!(
                 task_id = %task_id,
-                remaining_configs = configs.len() - reached,
-                "push delivery deadline exceeded; skipping remaining configs"
+                url = %config.url,
+                error = %_err,
+                "push notification delivery failed"
             );
-            // One count per config that will not be contacted. A single trace
-            // line was the whole signal here, and `trace_warn!` compiles to
-            // nothing without the (non-default) `tracing` feature — so in the
-            // build most people run, 94 webhooks going unnotified produced
-            // exactly zero observable output.
-            for _ in reached..configs.len() {
-                metrics.on_push_delivery(push_outcome::SKIPPED);
-            }
-            break;
+            push_outcome::FAILED
         }
-
-        let result = tokio::time::timeout(
-            limits.push_delivery_timeout,
-            sender.send(&config.url, event, config),
-        )
-        .await;
-        match result {
-            Ok(Err(_err)) => {
-                trace_warn!(
-                    task_id = %task_id,
-                    url = %config.url,
-                    error = %_err,
-                    "push notification delivery failed (background)"
-                );
-                metrics.on_push_delivery(push_outcome::FAILED);
-            }
-            Err(_) => {
-                let outcome = timeout_outcome(sender, limits);
-                trace_warn!(
-                    task_id = %task_id,
-                    url = %config.url,
-                    outcome,
-                    "push notification delivery timed out (background)"
-                );
-                metrics.on_push_delivery(outcome);
-            }
-            Ok(Ok(())) => metrics.on_push_delivery(push_outcome::DELIVERED),
+        Err(_) => {
+            trace_warn!(
+                task_id = %task_id,
+                url = %config.url,
+                outcome = timeout_label,
+                "push notification delivery timed out"
+            );
+            timeout_label
         }
     }
 }

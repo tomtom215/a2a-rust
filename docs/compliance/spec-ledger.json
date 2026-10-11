@@ -2868,21 +2868,26 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Agents MUST attempt delivery at least once for each configured webhook",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:116",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:132",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:611",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:223",
-    "crates/a2a-protocol-server/src/push/sender.rs:192"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs delivery_concurrency / deliver_to_every_config",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs SyncPushJob::run",
+    "crates/a2a-protocol-server/src/push/sender.rs PushRetryPolicy::with_max_attempts"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/budget.rs:17 configs_the_deadline_never_reaches_are_counted_as_skipped"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/budget.rs every_config_is_attempted_within_the_budget",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/budget.rs the_budget_sets_how_many_deliveries_run_at_once",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/budget.rs delivery_concurrency_fits_the_budget_and_never_drops_a_config",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/mod.rs deliver_push_bg_attempts_every_config_within_the_deadline",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs the_sync_push_budget_is_the_configured_one",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs each_webhook_sees_events_in_order",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs zero_attempts_still_sends_once"
    ],
-   "notes": "Deliveries are sequential under a per-event `push_delivery_budget` (default 30s); once spent, remaining configs are never contacted (counted as push_outcome::SKIPPED). The test asserts 94 of 100 configs skipped at defaults when webhooks are slow. Also `PushRetryPolicy::with_max_attempts(0)` is accepted unguarded, making the retry loop (sender.rs:847) attempt zero times.",
+   "notes": "Every configured webhook is attempted for every event, on the background and blocking paths. push_delivery_budget now sets concurrency: ceil(configs / (budget / timeout)), at least 1, at most configs (17 at the defaults); events go in order per webhook. Until 2026-10-11 deliveries were sequential and the budget skipped the rest (6 of 100 reached at defaults). PushRetryPolicy max_attempts 0 is taken as 1 (setter and loop). Not covered: a webhook whose single attempt exceeds push_delivery_timeout is cut off, which is an attempt, not a skip.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 885,

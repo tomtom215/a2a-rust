@@ -41,7 +41,7 @@ sqlite = ["dep:sqlx"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
 postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
-websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
+websocket = ["dep:tokio-tungstenite"]
 ## Enable gRPC transport via `tonic`. Serves the canonical `lf.a2a.v1.A2AService`
 ## (protobuf-native, wire-compatible with the official Go/Python/Java A2A SDKs).
 grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-types", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
@@ -128,7 +128,7 @@ base64         = { version = "0.23", optional = true }
 zeroize        = { version = ">=1.8, <2", optional = true, default-features = false, features = ["alloc"] }
 sqlx           = { workspace = true, optional = true }
 tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
-futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
+futures-util      = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink", "alloc"] }
 tonic             = { workspace = true, optional = true }
 tonic-prost       = { workspace = true, optional = true }
 tonic-types       = { workspace = true, optional = true }

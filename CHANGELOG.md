@@ -242,6 +242,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **Every push webhook is attempted** (server; spec §4.3.3). Deliveries ran
+  one after another and `push_delivery_budget` skipped whatever it did not
+  reach: at the defaults a slow webhook estate reached 6 of 100 configs per
+  event. Now every config is attempted, and the budget sets how many
+  deliveries of an event run at once (17 at the defaults), events in order
+  per webhook. `push_outcome::SKIPPED` is no longer reported.
+  `PushRetryPolicy::with_max_attempts(0)` is taken as 1.
 - **Breaking: an agent card the spec forbids is not published** (types,
   server; spec §5.7). `AgentCard::validate` now refuses empty
   `defaultInputModes`, `defaultOutputModes` or `skills`, and a skill with no

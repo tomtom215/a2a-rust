@@ -13,20 +13,23 @@
 
 use super::*;
 
+/// Spec §4.3.3: every configured webhook gets at least one attempt. With
+/// the shipped defaults (5s per delivery, a 30s budget) and 100 configs
+/// whose webhooks each take the full 5s, all 100 are attempted, 17 at a
+/// time, in exactly the 30s budget. Until 2026-10-11 deliveries ran one at a
+/// time: 6 were reached and 94 skipped.
 #[tokio::test(start_paused = true)]
-async fn configs_the_deadline_never_reaches_are_counted_as_skipped() {
+async fn every_config_is_attempted_within_the_budget() {
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
-    let task_id = TaskId::new("t-skip");
-    let event = make_status_event("t-skip", TaskState::Working);
-    // The shipped default for `max_push_configs_per_task`.
-    let store = store_with_configs("t-skip", 100).await;
-
+    let task_id = TaskId::new("t-all");
+    let event = make_status_event("t-all", TaskState::Working);
+    let store = store_with_configs("t-all", 100).await;
     let metrics = CountingMetrics::default();
-    // The shipped default: 5s per delivery against a 30s per-event budget.
     let limits = HandlerLimits::default().with_push_delivery_timeout(Duration::from_secs(5));
 
+    let started = tokio::time::Instant::now();
     deliver_push_bg(
         &task_id,
         &event,
@@ -37,30 +40,10 @@ async fn configs_the_deadline_never_reaches_are_counted_as_skipped() {
     )
     .await;
 
-    let delivered = metrics.delivered.load(Ordering::Relaxed);
-    let skipped = metrics.skipped.load(Ordering::Relaxed);
-    assert_eq!(
-        delivered + skipped,
-        100,
-        "every config must be accounted for: {delivered} delivered, {skipped} skipped"
-    );
-    assert!(
-        skipped > 0,
-        "the 30s budget cannot reach 100 configs at 5s each; nothing was reported skipped"
-    );
-    // 30s budget / 5s each. The deadline is checked before each send, so the
-    // sixth send starts at t=25s and finishes at t=30s; the seventh is the
-    // first to find the budget spent.
-    assert_eq!(
-        delivered, 6,
-        "budget / per-delivery cost is the reachable count"
-    );
-    assert_eq!(skipped, 94, "the rest are skipped, and are now counted");
-    assert_eq!(
-        metrics.other.load(Ordering::Relaxed),
-        0,
-        "no delivery failed or timed out in this scenario"
-    );
+    assert_eq!(metrics.delivered.load(Ordering::Relaxed), 100);
+    assert_eq!(metrics.skipped.load(Ordering::Relaxed), 0);
+    assert_eq!(metrics.other.load(Ordering::Relaxed), 0);
+    assert_eq!(started.elapsed(), Duration::from_secs(30));
 }
 
 /// Never answers. Reports a schedule longer than any bound in these tests.
@@ -223,10 +206,11 @@ async fn a_sender_that_wants_exactly_the_bound_is_not_reported_as_truncated() {
 }
 
 /// The per-event budget is `HandlerLimits::push_delivery_budget`, not a
-/// literal: doubling it doubles the configs a slow estate reaches. Kills the
+/// literal: doubling it halves how many deliveries run at once, so the same
+/// 100 configs take 60s instead of 30s, every one still attempted. Kills the
 /// mutant that replaces the field read with the old constant.
 #[tokio::test(start_paused = true)]
-async fn a_raised_budget_reaches_more_configs() {
+async fn the_budget_sets_how_many_deliveries_run_at_once() {
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
@@ -238,6 +222,7 @@ async fn a_raised_budget_reaches_more_configs() {
         .with_push_delivery_budget(Duration::from_secs(60));
 
     let metrics = CountingMetrics::default();
+    let started = tokio::time::Instant::now();
     deliver_push_bg(
         &task_id,
         &event,
@@ -248,8 +233,27 @@ async fn a_raised_budget_reaches_more_configs() {
     )
     .await;
 
-    // 60s / 5s: the twelfth send starts at t=55s and ends at t=60s; the
-    // thirteenth finds the budget spent.
-    assert_eq!(metrics.delivered.load(Ordering::Relaxed), 12);
-    assert_eq!(metrics.skipped.load(Ordering::Relaxed), 88);
+    // 60s / 5s = 12 rounds; ceil(100 / 12) = 9 at once; ceil(100 / 9) = 12
+    // rounds of 5s.
+    assert_eq!(metrics.delivered.load(Ordering::Relaxed), 100);
+    assert_eq!(metrics.skipped.load(Ordering::Relaxed), 0);
+    assert_eq!(started.elapsed(), Duration::from_secs(60));
+}
+
+/// The concurrency rule at its edges.
+#[test]
+fn delivery_concurrency_fits_the_budget_and_never_drops_a_config() {
+    use crate::handler::event_processing::background::delivery_concurrency;
+    use std::time::Duration;
+    let s = Duration::from_secs;
+    // Defaults: 100 configs, one event, 5s, 30s -> 6 rounds -> 17 at once.
+    assert_eq!(delivery_concurrency(100, 1, s(5), s(30)), 17);
+    // A budget below one timeout: everything at once, never zero.
+    assert_eq!(delivery_concurrency(100, 1, s(5), s(1)), 100);
+    // A budget larger than needed: one at a time.
+    assert_eq!(delivery_concurrency(3, 1, s(5), s(3600)), 1);
+    // Several events share the budget: 4 events x 5s = 20s per round.
+    assert_eq!(delivery_concurrency(10, 4, s(5), s(40)), 5);
+    // No configs: a harmless 1.
+    assert_eq!(delivery_concurrency(0, 1, s(5), s(30)), 1);
 }

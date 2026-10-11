@@ -17,6 +17,7 @@
 mod processor;
 mod push_delivery;
 pub use push_delivery::timeout_outcome;
+pub use push_delivery::{deliver_to_every_config, delivery_concurrency};
 mod state_machine;
 
 use std::sync::Arc;

@@ -110,7 +110,7 @@ The `HandlerLimits` struct configures per-handler bounds:
 | `max_cancellation_tokens` | `usize` | 10,000 | Max cancellation token map entries before cleanup |
 | `max_token_age` | `Duration` | 1 hour | Maximum age for cancellation tokens |
 | `push_delivery_timeout` | `Duration` | 5 seconds | Timeout for individual push webhook deliveries |
-| `push_delivery_budget` | `Duration` | 30 seconds | Total push-delivery time per event across every registered config (per request batch on the blocking path); the rest are counted `skipped` |
+| `push_delivery_budget` | `Duration` | 30 seconds | Target push-delivery time per event (per request batch on the blocking path). Every config is attempted; the budget sets how many deliveries run at once |
 | `executor_drain_timeout` | `Duration` | 5 seconds | How long a blocking `SendMessage` waits for the event queue to close after the executor finished; then answers with the task as collected |
 | `max_artifacts_per_task` | `usize` | 1000 | Maximum artifacts per task (prevents unbounded growth) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |

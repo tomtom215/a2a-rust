@@ -39,6 +39,7 @@ dependencies = [
  "a2a-protocol-types",
  "base64",
  "bytes",
+ "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",

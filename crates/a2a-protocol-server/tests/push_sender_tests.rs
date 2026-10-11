@@ -784,3 +784,31 @@ async fn the_host_allowlist_refuses_other_hosts_before_connecting() {
     .await;
     handle.abort();
 }
+
+/// §4.3.3: at least one attempt per webhook. A policy of zero attempts, set
+/// through the setter or straight on the public field, still sends once; the
+/// retry loop used to run no attempt at all.
+#[tokio::test]
+async fn zero_attempts_still_sends_once() {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let (addr, handle) = mock_server(200, Arc::clone(&counter)).await;
+    let url = format!("http://{addr}/webhook");
+    let config = base_config(&url);
+
+    let by_setter = a2a_protocol_server::push::PushRetryPolicy::default().with_max_attempts(0);
+    assert_eq!(by_setter.max_attempts, 1);
+    let mut by_field = a2a_protocol_server::push::PushRetryPolicy::default();
+    by_field.max_attempts = 0;
+
+    for policy in [by_setter, by_field] {
+        let before = counter.load(Ordering::SeqCst);
+        HttpPushSender::new()
+            .allow_private_urls()
+            .with_retry_policy(policy)
+            .send(&url, &status_event(), &config)
+            .await
+            .expect("one attempt, answered 200");
+        assert_eq!(counter.load(Ordering::SeqCst) - before, 1);
+    }
+    handle.abort();
+}

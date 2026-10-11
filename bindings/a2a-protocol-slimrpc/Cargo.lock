@@ -24,6 +24,7 @@ version = "0.14.1"
 dependencies = [
  "a2a-protocol-types",
  "bytes",
+ "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
