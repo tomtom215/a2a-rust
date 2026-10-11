@@ -286,18 +286,20 @@
    "keyword": "MUST (implied, Errors list)",
    "binds": "server",
    "requirement": "UnsupportedOperationError: Streaming is not supported by the agent",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:284",
     "crates/a2a-protocol-server/src/handler/capability.rs:39"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/capability.rs:196 card_without_streaming_rejects_streaming"
+    "crates/a2a-protocol-server/src/handler/capability.rs:196 card_without_streaming_rejects_streaming",
+    "crates/a2a-protocol-server/tests/streaming_contract.rs streaming_methods_are_refused_when_the_card_does_not_declare_streaming"
    ],
-   "notes": "The guard is unit-tested, but no in-repo test drives SendStreamingMessage (handler or any binding) against a card with streaming!=true; also a no-op when no card is configured. Docs claim official TCK CORE-CAP-002 passes (external).",
+   "notes": "SendStreamingMessage against a card whose streaming capability is false or absent answers UnsupportedOperationError (-32004) over JSON-RPC (test added 2026-10-10, shown to fail with the check disabled). No-op when no card is configured; see §8.1 line 1980.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 200,
@@ -746,18 +748,20 @@
    "keyword": "MUST (implied, Errors list)",
    "binds": "server",
    "requirement": "SubscribeToTask UnsupportedOperationError: Streaming is not supported by the agent",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:321",
     "crates/a2a-protocol-server/src/handler/capability.rs:39"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/capability.rs:196 card_without_streaming_rejects_streaming"
+    "crates/a2a-protocol-server/src/handler/capability.rs:196 card_without_streaming_rejects_streaming",
+    "crates/a2a-protocol-server/tests/streaming_contract.rs streaming_methods_are_refused_when_the_card_does_not_declare_streaming"
    ],
-   "notes": "Guard unit-tested; no test calls on_resubscribe (or a binding) with a non-streaming card. No-op when no card configured.",
+   "notes": "SubscribeToTask against a card whose streaming capability is false or absent answers UnsupportedOperationError (-32004) over JSON-RPC (test added 2026-10-10, shown to fail with the check disabled). No-op when no card is configured; see §8.1 line 1980.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 304,
@@ -3027,16 +3031,19 @@
    "keyword": "MUST NOT",
    "binds": "server",
    "requirement": "It MUST NOT fall back to a previous version of the extension automatically.",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:95",
     "crates/a2a-protocol-server/src/handler/capability.rs:124"
    ],
-   "test_evidence": [],
-   "notes": "Matching is exact string equality (`d == uri`), so no version fallback is possible; no test asserts that a v2 request is not matched to a declared v1.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/capability.rs another_version_of_an_extension_does_not_stand_in"
+   ],
+   "notes": "Extension URIs match by exact string equality: a client declaring .../v2 neither satisfies a required .../v1 nor activates an optional one. Shown to fail with version-agnostic matching injected.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 1149,
@@ -3754,16 +3761,19 @@
    "keyword": "MUST",
    "binds": "both",
    "requirement": "UTF-8 encoding MUST be used for JSON text",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:228",
     "crates/a2a-protocol-server/src/push/sender.rs:840"
    ],
-   "test_evidence": [],
-   "notes": "serde_json emits UTF-8 and from_slice rejects invalid UTF-8; no test sends a non-UTF-8 body.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/utf8_bodies.rs a_body_that_is_not_utf8_is_refused_on_both_http_bindings"
+   ],
+   "notes": "serde_json emits UTF-8 and rejects invalid UTF-8. A body with a Latin-1 byte answers -32700 on JSON-RPC and 400 on HTTP+JSON; shown to fail with lossy decoding injected.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 3251,
@@ -7748,17 +7758,19 @@
    "keyword": "MUST",
    "binds": "spec-authors",
    "requirement": "Custom bindings MUST document authentication integration and credential transmission",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "SUPPORTED",
+   "severity": null,
    "impl_evidence": [
-    "book/src/concepts/transport-layers.md:188",
-    "book/src/building-agents/authentication.md:132",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:24"
+    "book/src/concepts/transport-layers.md:188 (WebSocket: credentials at connect as upgrade headers)",
+    "book/src/bindings/slimrpc.md (SLIMRPC: credentials as session metadata; transport identity)",
+    "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs metadata_from",
+    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs a2a_headers"
    ],
    "test_evidence": [],
-   "notes": "Documented in the book (credentials supplied at connect via WebSocketTransport::connect_with_config as upgrade headers; rejection is body -32600 only). Doc-only requirement; there is no standalone binding spec at the advertised URI in the repo.",
+   "notes": "Documentation requirement. WebSocket: credentials ride the upgrade request's headers. SLIMRPC: since 2026-10-11 the book says per-call headers (authorization included) become session metadata of the same name, lowercased by the server and read as request headers, as the code does (client metadata_from, server a2a_headers, read 2026-10-11). No test checks documentation. No standalone document at the WebSocket binding URI.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 85,

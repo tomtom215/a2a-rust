@@ -316,6 +316,28 @@ mod tests {
         assert!(handler.ensure_required_extensions(&ctx).is_ok());
     }
 
+    /// §4.6.3: a version of an extension MUST NOT fall back to another one
+    /// automatically. A client declaring v2 neither satisfies a required v1
+    /// nor activates the optional v1.
+    #[tokio::test]
+    async fn another_version_of_an_extension_does_not_stand_in() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_agent_card(card_with_extensions())
+            .build()
+            .unwrap();
+        let ctx = ctx_with_extensions(&[
+            "https://example.com/ext/required/v2",
+            "https://example.com/ext/optional/v2",
+        ]);
+        assert!(handler.ensure_required_extensions(&ctx).is_err());
+        assert_eq!(
+            handler.activated_extensions_header_value(Some(
+                "https://example.com/ext/required/v2,https://example.com/ext/optional/v2"
+            )),
+            None
+        );
+    }
+
     #[tokio::test]
     async fn no_card_no_required_extensions() {
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();

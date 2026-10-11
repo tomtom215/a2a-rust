@@ -27,8 +27,8 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | §1 |  |  |  |  | 4 | 2 | 1 |  | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 |  | 3 |
-| §3 | 77 | 21 | 18 | 3 | 3 | 6 | 8 | 1 | 137 |
-| §4 | 5 | 5 | 2 |  | 1 | 1 | 1 |  | 15 |
+| §3 | 79 | 21 | 18 | 3 | 3 | 4 | 8 | 1 | 137 |
+| §4 | 6 | 5 | 2 |  | 1 |  | 1 |  | 15 |
 | §5 | 24 | 2 | 2 |  | 3 |  | 4 |  | 35 |
 | §7 | 6 | 13 | 2 |  |  | 1 |  |  | 22 |
 | §8 | 24 | 5 | 5 | 2 |  | 1 | 6 | 2 | 45 |
@@ -36,11 +36,11 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §10 | 6 |  |  |  |  |  |  |  | 6 |
 | §11 | 13 |  |  | 4 |  |  | 2 |  | 19 |
 | §12 | 7 | 1 | 1 |  | 1 |  | 9 |  | 19 |
-| §13 | 27 | 26 | 3 | 4 |  | 5 | 4 |  | 69 |
-| §14 | 4 | 5 | 3 |  |  | 1 | 2 |  | 15 |
+| §13 | 27 | 26 | 4 | 4 |  | 4 | 4 |  | 69 |
+| §14 | 5 | 5 | 3 |  |  |  | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
 | proto `REQUIRED` fields | 47 | 11 | 6 |  | 8 | 26 | 8 |  | 106 |
-| **All** | **253** | **89** | **43** | **13** | **22** | **43** | **46** | **3** | **512** |
+| **All** | **257** | **89** | **44** | **13** | **22** | **38** | **46** | **3** | **512** |
 
 ## Open items, most severe first
 
@@ -84,21 +84,16 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | low | IMPLEMENTED_UNTESTED | proto:DeviceCodeOAuthFlow.token_url (proto line 640) | token_url [(google.api.field_behavior) = REQUIRED] | Non-optional field, always emitted when the scheme/flow is present; client JSON refuses a card where it is missing. Values are author-supplied and not validated (e.g. non-empty, URL form). |
 | low | IMPLEMENTED_UNTESTED | §1.4 (line 114) | SDKs and JSON Schemas SHOULD provide deprecated alias types/definitions to maintain backward compatibility. | The only proto-deprecated members (ImplicitOAuthFlow, PasswordOAuthFlow) are retained, but are documented as deprecated in prose only, with no #[deprecated] attribute (grep finds no #[deprecated] in a2a-protocol-types). No renamed-field aliases exist in v1.0 … |
 | low | IMPLEMENTED_UNTESTED | §1.4 (line 115) | A deprecated name SHOULD NOT be removed earlier than the next major version after introduction of its replacement. | Deprecated OAuth flows are still present; nothing pins their continued presence other than the serde wire test. |
-| low | IMPLEMENTED_UNTESTED | §3.1.2 (line 199) | UnsupportedOperationError: Streaming is not supported by the agent | The guard is unit-tested, but no in-repo test drives SendStreamingMessage (handler or any binding) against a card with streaming!=true; also a no-op when no card is configured. Docs claim official TCK CORE-CAP-002 passes (external). |
-| low | IMPLEMENTED_UNTESTED | §3.1.6 (line 303) | SubscribeToTask UnsupportedOperationError: Streaming is not supported by the agent | Guard unit-tested; no test calls on_resubscribe (or a binding) with a non-streaming card. No-op when no card configured. |
 | low | IMPLEMENTED_UNTESTED | §3.3.2 (line 500) | Servers ... SHOULD provide actionable information to help clients resolve issues. | Error messages name the field/extension/version (e.g. 'this agent requires extension support the client did not declare (send them in the A2A-Extensions header): ...'); no test asserts message content generally. |
 | low | IMPLEMENTED_UNTESTED | §3.3.2 (line 520) | Servers SHOULD specify which parameter(s) failed validation and why | Messages name the field ("message.id", "request metadata exceeds maximum size"), but only as free text: no google.rpc.BadRequest field violation detail is emitted; tests assert the variant, not the field name. |
 | low | IMPLEMENTED_UNTESTED | §3.3.2 (line 521) | Servers SHOULD provide guidance on valid parameter values or formats | Some messages state the limit/expected value (max bytes, 'this server supports 1.x'); not systematic, not tested. |
 | low | IMPLEMENTED_UNTESTED | §3.3.2 (line 534) | Servers SHOULD log system errors for diagnostic purposes | Failures are recorded on the RPC span (error.type, otel.status_code=ERROR) and in metrics.on_error; trace_error! for executor panics. Behind the `tracing` feature; no test asserts that an Internal error is logged. |
-| low | IMPLEMENTED_UNTESTED | §4.6.3 (line 1141) | It MUST NOT fall back to a previous version of the extension automatically. | Matching is exact string equality (`d == uri`), so no version fallback is possible; no test asserts that a v2 request is not matched to a declared v1. |
 | low | IMPLEMENTED_UNTESTED | §7.1 (line 1879) | Implementations **SHOULD** use modern TLS configurations (TLS 1.3+ recommended) with strong cipher suites. | Client uses rustls `with_safe_default_protocol_versions()` (TLS 1.2 + 1.3, rustls' safe suite list only); TLS 1.2 remains enabled. No test asserts the negotiated version/suite set. |
 | low | IMPLEMENTED_UNTESTED | §8.6.2 (line 2236) | When a cached Agent Card has expired, clients **SHOULD** use conditional requests (`If-None-Match` with the stored `ETag`, or `If-Modified-… | Headers sent and 304 handled, but the 304 tests' mock servers answer 304 unconditionally and never assert that If-None-Match / If-Modified-Since was actually sent. |
 | low | IMPLEMENTED_UNTESTED | §13.2 (line 3137) | Webhook URLs SHOULD use HTTPS to protect payload confidentiality in transit | HTTPS delivery supported (tls-rustls feature, on by default via sdk); plain http also accepted with no warning or opt-in. No test or option enforcing https-only. |
 | low | IMPLEMENTED_UNTESTED | §13.4 (line 3182) | Implementations SHOULD use modern TLS configurations (TLS 1.3+ recommended) with strong cipher suites | rustls + ring with_safe_default_protocol_versions (TLS1.3 and 1.2) and rustls default suites; no test pins negotiated version/suites. |
 | low | IMPLEMENTED_UNTESTED | §13.4 (line 3184) | Implementations SHOULD disable support for deprecated SSL/TLS versions (SSLv3, TLS 1.0, TLS 1.1) | By construction: rustls implements only TLS 1.2/1.3. No test, but none needed beyond dependency choice. |
 | low | IMPLEMENTED_UNTESTED | §13.4 (line 3198) | Agents SHOULD implement rate limiting to prevent brute-force attacks | RateLimitInterceptor exists (opt-in) but counts per caller_identity/IP only for requests that reach it; if registered after the auth interceptor, failed authentications are never counted. No test of brute-force throttling of failed auth. |
-| low | IMPLEMENTED_UNTESTED | §13.4 (line 3224) | Custom bindings MUST document authentication integration and credential transmission | Documented in the book (credentials supplied at connect via WebSocketTransport::connect_with_config as upgrade headers; rejection is body -32600 only). Doc-only requirement; there is no standalone binding spec at the advertised URI in the repo. |
-| low | IMPLEMENTED_UNTESTED | §14 (line 3246) | UTF-8 encoding MUST be used for JSON text | serde_json emits UTF-8 and from_slice rejects invalid UTF-8; no test sends a non-UTF-8 body. |
 | low | PARTIAL | proto:Task.context_id (proto line 173) | string context_id = 2; (not REQUIRED in proto) | Proto marks Task.context_id optional, but the JSON type has `pub context_id: ContextId` with no serde(default): a JSON-RPC/REST/WS peer Task without contextId makes the whole response fail with ClientError::Serialization, while gRPC tolerates it (ContextId(va… |
 | low | PARTIAL | proto:Artifact.parts (proto line 287) | The content of the artifact. Must contain at least one part. | Empty-parts non-append artifacts are dropped from persistence, but InMemoryQueueWriter::write broadcasts every event to live SSE/gRPC/WS subscribers before/independently of the processor, so streaming clients still receive an artifactUpdate with `parts: []`; … |
 | low | PARTIAL | proto:AuthenticationInfo.scheme (proto line 329) | string scheme = 1 [(google.api.field_behavior) = REQUIRED]; | JSON bindings reject an authentication object without `scheme` (serde required -> -32602/400). gRPC empty scheme is stored at create time unchecked; it is only caught at delivery by validate_header_value. No test. |

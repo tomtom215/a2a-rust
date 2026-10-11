@@ -123,6 +123,16 @@ let client = ClientBuilder::new("slim://org/demo/echo_agent")
 Retries, interceptors, auth and the typed method surface behave exactly as they
 do over JSON-RPC. Only the wire underneath changes.
 
+Credentials travel as SLIMRPC session metadata, which is how the SLIMRPC
+specification (§3) carries A2A service parameters. Every per-call header the
+client sends, including the `authorization` value a `BearerAuthInterceptor`
+adds, becomes a metadata entry of the same name, beside `a2a-version`. The
+server lowercases the keys (they are case-insensitive) and hands them to the
+`RequestHandler` as request headers, so its authentication interceptors and
+tenant resolvers read them as they would over HTTP. This is separate from the
+SLIM transport identity below (SPIFFE/MLS or a static token), which
+authenticates the app to the SLIM fabric, not the caller to the agent.
+
 ## Why the code blocks on this page are not compiled
 
 Every other Rust block in this book is compiled as a doctest by the
