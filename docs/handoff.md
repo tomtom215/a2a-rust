@@ -1017,6 +1017,11 @@ before acting on it, as this branch did.
   APPLICATION 89 (`scripts/check_spec_ledger.py`).
 - Workspace tests after item 17: 177 binaries, 4,497 passed, 0 failed,
   116 ignored; clippy clean.
+- CI lesson 2: run the whole static-checks job locally before pushing (its
+  29 `run:` lines in `ci.yml`, all scripts, no build). `56f8d61` failed only
+  `check_inert_bounds.py`, which no test or clippy run catches: a new
+  `Dispatcher` (the `Hsts` wrapper) needed allowlist entries saying it
+  delegates the request bounds to the dispatcher it wraps.
 - CI lesson: every push to this branch cancels the previous run
   (concurrency), so commits pushed minutes apart never finished CI. Two real
   failures (Documentation, Go interop) sat hidden behind cancellations from
