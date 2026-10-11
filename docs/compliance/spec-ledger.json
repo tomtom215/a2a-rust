@@ -7745,17 +7745,20 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Agents SHOULD use this to tailor their output.",
-   "status": "GAP",
-   "severity": "medium",
+   "status": "APPLICATION",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/request_context.rs:38",
-    "crates/a2a-protocol-server/src/request_context.rs:40",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:27"
+    "crates/a2a-protocol-server/src/request_context.rs RequestContext::accepted_output_modes",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs (set from SendMessageConfiguration)"
    ],
-   "test_evidence": [],
-   "notes": "RequestContext (fields message, task_id, context_id, stored_task, metadata, cancellation_token, call_context, approval) carries no SendMessageConfiguration, and `grep accepted_output_modes crates/a2a-protocol-server/src` hits only tests: the executor can never see acceptedOutputModes, so the SDK makes this SHOULD impossible to honour (no hook).",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/accepted_output_modes.rs the_executor_sees_the_accepted_output_modes",
+    "crates/a2a-protocol-server/tests/accepted_output_modes.rs no_configuration_means_no_preference"
+   ],
+   "notes": "RequestContext::accepted_output_modes() now carries SendMessageConfiguration.acceptedOutputModes to the executor (empty = no preference); tailoring the output is the agent's job. Until 2026-10-10 the executor could not see the field at all.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 148,

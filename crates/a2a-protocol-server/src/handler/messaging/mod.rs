@@ -396,6 +396,9 @@ impl RequestHandler {
             // task too — even if it began a moment ago (`cancel_in_flight`).
             ctx.cancellation_token = self.in_flight.task_token();
             ctx.approval = approval;
+            if let Some(config) = params.configuration.as_ref() {
+                ctx = ctx.with_accepted_output_modes(config.accepted_output_modes.clone());
+            }
 
             // From here on there is something to release on failure: the queue
             // first, then the token, then the row.

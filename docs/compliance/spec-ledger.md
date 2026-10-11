@@ -39,14 +39,13 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §13 | 22 | 26 | 3 | 4 |  | 5 | 4 | 5 | 69 |
 | §14 | 4 | 5 | 3 |  |  | 1 | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
-| proto `REQUIRED` fields | 44 | 10 | 6 |  | 8 | 26 | 8 | 4 | 106 |
-| **All** | **240** | **88** | **43** | **13** | **22** | **43** | **50** | **13** | **512** |
+| proto `REQUIRED` fields | 44 | 11 | 6 |  | 8 | 26 | 8 | 3 | 106 |
+| **All** | **240** | **89** | **43** | **13** | **22** | **43** | **50** | **12** | **512** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
-| medium | GAP | proto:SendMessageConfiguration.accepted_output_modes (proto… | Agents SHOULD use this to tailor their output. | RequestContext (fields message, task_id, context_id, stored_task, metadata, cancellation_token, call_context, approval) carries no SendMessageConfiguration, and `grep accepted_output_modes crates/a2a-protocol-server/src` hits only tests: the executor can neve… |
 | medium | GAP | §3.3.4 (line 578) | Clients SHOULD validate capability support by examining the Agent Card before attempting operations that require optional capabilities | Client reads card.capabilities only for the idempotency extension (builder/mod.rs:203); stream/subscribe/push-config calls are sent regardless of capabilities.streaming/pushNotifications (no such check in crates/a2a-protocol-client/src). |
 | medium | GAP | §8.3.2 (line 2007) | Clients MUST: 1. Parse `supportedInterfaces` if present, and select the first supported transport | from_card ranks interfaces by ClientConfig::default().preferred_bindings = ["JSONRPC"] (config.rs:261) before card order (selection.rs `usable.sort_by_key(rank)`), so a card listing [HTTP+JSON, JSONRPC] — both supported by the default client — yields JSONRPC,… |
 | medium | GAP | §8.3.2 (line 2008) | 2. Prefer earlier entries in the ordered list when multiple options are supported | Caller preference overrides the agent's ordering by design (a2a-go parity); card order is only a tie-break within the same preference rank. |

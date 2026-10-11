@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`RequestContext::accepted_output_modes()`** (server). The proto says an
+  agent SHOULD use `SendMessageConfiguration.acceptedOutputModes` to tailor
+  its output, and the executor had no way to see it. Empty means no
+  preference.
 - **Per-caller task isolation** (server; spec §13.1):
   `RequestHandlerBuilder::isolate_tasks_by_caller`. Tasks were scoped by
   tenant only, so two callers authenticated as different identities in one

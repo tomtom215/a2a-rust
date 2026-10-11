@@ -981,6 +981,8 @@ area. This branch answers both.
     direct reply; §5.6.1 executor timestamps normalised to UTC or refused.
 15. `fix(server):` a push config whose auth scheme the sender cannot write
     (anything but Bearer/Basic) is refused at creation (§4.3.3, §13.2).
+16. `feat(server):` `RequestContext::accepted_output_modes()`; ledger records
+    why the REST client keeps `application/json` (a2a-java refuses others).
 
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
@@ -1004,10 +1006,10 @@ before acting on it, as this branch did.
   container's disk allowance (ENOSPC mid-run). The SLIMRPC binding is
   outside the workspace; its `cargo test -- --test-threads=1` passed after
   item 12.
-- Ledger after item 15: TESTED 240, PARTIAL 50, IMPLEMENTED_UNTESTED 43,
-  GAP 14, NOT_SUPPORTED 12, SUPPORTED 43, NOT_APPLICABLE 22,
-  APPLICATION 88 (`scripts/check_spec_ledger.py`).
-- Workspace tests after item 15: 173 binaries, 4,483 passed, 0 failed,
+- Ledger after item 16: TESTED 240, PARTIAL 50, IMPLEMENTED_UNTESTED 43,
+  GAP 12, NOT_SUPPORTED 13, SUPPORTED 43, NOT_APPLICABLE 22,
+  APPLICATION 89 (`scripts/check_spec_ledger.py`).
+- Workspace tests after item 16: 174 binaries, 4,485 passed, 0 failed,
   116 ignored; clippy clean.
 - CI lesson: every push to this branch cancels the previous run
   (concurrency), so commits pushed minutes apart never finished CI. Two real
@@ -1018,6 +1020,16 @@ before acting on it, as this branch did.
   proven, 0 unproven, 21 exempt.
 
 **Decisions waiting on the maintainer.**
+- *Interface order (ledger §8.3.2, lines 2007-2008, GAP).* The spec says a
+  client MUST select the first supported interface in the card's order.
+  `ClientBuilder::from_card` ranks by `ClientConfig::default()`'s
+  `preferred_bindings = ["JSONRPC"]` first, so a card listing
+  `[HTTP+JSON, JSONRPC]` gets JSONRPC; `from_card_applies_the_default_preference_list`
+  pins that on purpose (a2a-go parity). Following the spec means `from_card`
+  passes no preference (card order, with the existing fallback past an
+  interface it cannot build) while `from_card_preferring` keeps the caller's
+  explicit ranking. Not changed: it reverses a recorded decision and changes
+  which binding default clients use.
 - *Upstream candidate, not filed: a2a-java and `application/a2a+json`.*
   a2a-java 1.3.0.Final's REST server refuses any request Content-Type not
   starting with `application/json` (`A2AServerRoutes.validateContentType`,
