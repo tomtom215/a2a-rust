@@ -82,6 +82,20 @@ impl RequestHandler {
         // when private URLs are refused, so with them allowed an empty or
         // scheme-less URL was stored, and listed back, until 2026-10-10.
         config.validate().map_err(ServerError::InvalidParams)?;
+        // §4.3.3 / §13.2: deliveries MUST carry the credentials the config
+        // specifies. The sender can write only `Bearer` and `Basic` (a2a-go
+        // v2.5.0 the same); any other scheme used to be stored and then
+        // delivered without credentials, with only a log line to say so.
+        if let Some(auth) = &config.authentication
+            && !auth.scheme.eq_ignore_ascii_case("bearer")
+            && !auth.scheme.eq_ignore_ascii_case("basic")
+        {
+            return Err(ServerError::InvalidParams(format!(
+                "push notification authentication scheme {:?} is not supported; \
+                 this server can send Bearer or Basic",
+                auth.scheme
+            )));
+        }
 
         // Enforce the per-task config cap here so it holds for EVERY store
         // backend (the SQL stores do not self-enforce). Creating a new
@@ -950,6 +964,40 @@ mod tests {
             .await
             .expect("list");
         assert!(stored.is_empty(), "nothing may be stored: {stored:?}");
+    }
+
+    /// §4.3.3: a delivery MUST carry the configured credentials, so a scheme
+    /// the sender cannot write is refused at creation, not stored and then
+    /// sent without credentials. Bearer and Basic, in any case, are kept.
+    #[tokio::test]
+    async fn set_push_config_refuses_an_auth_scheme_it_cannot_send() {
+        use a2a_protocol_types::push::AuthenticationInfo;
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        let with_scheme = |scheme: &str| {
+            let mut config = make_push_config("t-1");
+            config.authentication = Some(AuthenticationInfo {
+                scheme: scheme.to_owned(),
+                credentials: Some("secret".to_owned()),
+            });
+            config
+        };
+        let refused = handler
+            .on_set_push_config(with_scheme("Digest"), None)
+            .await;
+        assert!(
+            matches!(&refused, Err(crate::error::ServerError::InvalidParams(m)) if m.contains("Digest")),
+            "{refused:?}"
+        );
+        for scheme in ["Bearer", "basic"] {
+            handler
+                .on_set_push_config(with_scheme(scheme), None)
+                .await
+                .unwrap_or_else(|e| panic!("{scheme} must be accepted: {e}"));
+        }
     }
 
     /// SPEC §3.1.7: creating a push config for a task that does not exist must

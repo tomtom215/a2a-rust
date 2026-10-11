@@ -2782,21 +2782,20 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "The agent MUST include authentication credentials in the request headers as specified in the TaskPushNotificationConfig.authentication field.",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:870",
-    "crates/a2a-protocol-server/src/push/sender.rs:896",
-    "crates/a2a-protocol-server/src/push/sender.rs:902"
+    "crates/a2a-protocol-server/src/handler/push_config.rs validate_and_store_push_config (scheme check)",
+    "crates/a2a-protocol-server/src/push/sender.rs (Authorization: Bearer|Basic)"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:416 bearer_auth_header_is_sent",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:509 basic_auth_header_is_sent",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:481 unknown_scheme_sends_no_auth_header"
+    "crates/a2a-protocol-server/src/handler/push_config.rs set_push_config_refuses_an_auth_scheme_it_cannot_send",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs basic_auth_header_is_sent"
    ],
-   "notes": "Only Bearer/Basic produce `authorization: {scheme} {credentials}`; any other IANA scheme (proto a2a.proto:327 names `Digest` as an example) is dropped with a trace_warn and the webhook is called WITHOUT credentials; the test unknown_scheme_sends_no_auth_header pins that drop. Config creation does not reject such schemes, so the omission is silent to the client.",
+   "notes": "The sender writes Authorization for Bearer and Basic (case-insensitive), as a2a-go v2.5.0 does. A config naming any other scheme is now refused at creation with InvalidParams, so no webhook is called without the credentials its config specifies. Until 2026-10-10 such a config was stored and delivered without credentials (a2a-go still does that). The sender's runtime drop remains for configs stored before.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 877,
@@ -6654,21 +6653,20 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Agents MUST include authentication credentials in webhook requests as specified in PushNotificationConfig.authentication",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:872",
-    "crates/a2a-protocol-server/src/push/sender.rs:893",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:40"
+    "crates/a2a-protocol-server/src/handler/push_config.rs validate_and_store_push_config (scheme check)",
+    "crates/a2a-protocol-server/src/push/sender.rs (Authorization: Bearer|Basic)"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:416 bearer_auth_header_is_sent",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:509 basic_auth_header_is_sent",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:481 unknown_scheme_sends_no_auth_header"
+    "crates/a2a-protocol-server/src/handler/push_config.rs set_push_config_refuses_an_auth_scheme_it_cannot_send",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs basic_auth_header_is_sent"
    ],
-   "notes": "Only Bearer and Basic (case-insensitive) produce an Authorization header; any other IANA scheme (e.g. Digest, or a custom one) is accepted at config creation (validate_and_store_push_config does not check scheme) and then delivered WITHOUT credentials with only a trace_warn — a test asserts this behaviour. Silent credential omission rather than rejecting the config.",
+   "notes": "The sender writes Authorization for Bearer and Basic (case-insensitive), as a2a-go v2.5.0 does. A config naming any other scheme is now refused at creation with InvalidParams, so no webhook is called without the credentials its config specifies. Until 2026-10-10 such a config was stored and delivered without credentials (a2a-go still does that). The sender's runtime drop remains for configs stored before.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 3118,

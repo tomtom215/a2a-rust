@@ -979,6 +979,8 @@ area. This branch answers both.
     §3.1.4, §3.3.4 (streaming capability on the wire) and §3.5.2.
 14. `fix:` CI repairs (setup-go 1.26.9, rustdoc links); §3.4.1 context in a
     direct reply; §5.6.1 executor timestamps normalised to UTC or refused.
+15. `fix(server):` a push config whose auth scheme the sender cannot write
+    (anything but Bearer/Basic) is refused at creation (§4.3.3, §13.2).
 
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
@@ -1002,10 +1004,10 @@ before acting on it, as this branch did.
   container's disk allowance (ENOSPC mid-run). The SLIMRPC binding is
   outside the workspace; its `cargo test -- --test-threads=1` passed after
   item 12.
-- Ledger after item 14: TESTED 238, PARTIAL 52, IMPLEMENTED_UNTESTED 43,
+- Ledger after item 15: TESTED 240, PARTIAL 50, IMPLEMENTED_UNTESTED 43,
   GAP 14, NOT_SUPPORTED 12, SUPPORTED 43, NOT_APPLICABLE 22,
   APPLICATION 88 (`scripts/check_spec_ledger.py`).
-- Workspace tests after item 14: 173 binaries, 4,482 passed, 0 failed,
+- Workspace tests after item 15: 173 binaries, 4,483 passed, 0 failed,
   116 ignored; clippy clean.
 - CI lesson: every push to this branch cancels the previous run
   (concurrency), so commits pushed minutes apart never finished CI. Two real

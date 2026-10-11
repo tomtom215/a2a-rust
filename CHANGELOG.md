@@ -227,6 +227,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A push config with an authentication scheme other than Bearer or Basic
+  is refused** (server; spec §4.3.3, §13.2). The sender can write only those
+  two, and any other scheme was stored and then delivered without
+  credentials. Creating one now answers InvalidParams naming the scheme.
 - **A direct `Message` reply names its context** (server; spec §3.4.1). When
   the executor answers with a `Message` and leaves `contextId` empty, the
   reply now carries the task's `contextId`, on the blocking path and on a

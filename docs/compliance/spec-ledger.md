@@ -28,7 +28,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §1 |  |  |  |  | 4 | 2 | 1 |  | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 |  | 3 |
 | §3 | 77 | 21 | 18 | 3 | 3 | 6 | 8 | 1 | 137 |
-| §4 | 3 | 5 | 2 |  | 1 | 1 | 3 |  | 15 |
+| §4 | 4 | 5 | 2 |  | 1 | 1 | 2 |  | 15 |
 | §5 | 24 | 2 | 2 |  | 3 |  | 4 |  | 35 |
 | §7 | 6 | 13 | 2 |  |  | 1 |  |  | 22 |
 | §8 | 24 | 5 | 5 | 2 |  | 1 | 6 | 2 | 45 |
@@ -36,11 +36,11 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §10 | 6 |  |  |  |  |  |  |  | 6 |
 | §11 | 12 |  |  | 3 |  |  | 2 | 2 | 19 |
 | §12 | 7 | 1 | 1 |  | 1 |  | 9 |  | 19 |
-| §13 | 21 | 26 | 3 | 4 |  | 5 | 5 | 5 | 69 |
+| §13 | 22 | 26 | 3 | 4 |  | 5 | 4 | 5 | 69 |
 | §14 | 4 | 5 | 3 |  |  | 1 | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
 | proto `REQUIRED` fields | 44 | 10 | 6 |  | 8 | 26 | 8 | 4 | 106 |
-| **All** | **238** | **88** | **43** | **12** | **22** | **43** | **52** | **14** | **512** |
+| **All** | **240** | **88** | **43** | **12** | **22** | **43** | **50** | **14** | **512** |
 
 ## Open items, most severe first
 
@@ -56,14 +56,12 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | medium | PARTIAL | §3.3.4 (line 571) | When clients attempt to use operations or features that require capabilities not declared ... the agent MUST return an appropriate error re… | Summary of 573-576 below. All checks are skipped when no AgentCard is configured on the RequestHandler (capability.rs:16-18, 189). |
 | medium | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | Order is preserved, but a subscriber that falls behind the bounded broadcast buffer loses the overwritten events (surfaced as an explicit 'streamLagged' error), so a slow stream does not receive the same events as a fast one. |
 | medium | PARTIAL | §3.6.2 (line 737) | Agents MUST process requests using the semantics of the requested A2A-Version (matching Major.Minor). | Open decision, not changed: the server accepts any 1.x and serves 1.0 semantics. The official Python SDK does the same: a2a/utils/version_validator.py `_is_version_compatible` compares only the major version, although its docstring says major and minor. Rejec… |
-| medium | PARTIAL | §4.3.3 (line 873) | The agent MUST include authentication credentials in the request headers as specified in the TaskPushNotificationConfig.authentication fiel… | Only Bearer/Basic produce `authorization: {scheme} {credentials}`; any other IANA scheme (proto a2a.proto:327 names `Digest` as an example) is dropped with a trace_warn and the webhook is called WITHOUT credentials; the test unknown_scheme_sends_no_auth_heade… |
 | medium | PARTIAL | §4.3.3 (line 884) | Agents MUST attempt delivery at least once for each configured webhook | Deliveries are sequential under a per-event `push_delivery_budget` (default 30s); once spent, remaining configs are never contacted (counted as push_outcome::SKIPPED). The test asserts 94 of 100 configs skipped at defaults when webhooks are slow. Also `PushRe… |
 | medium | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts (inbound) and Artifact.parts (executor output). Not enforced for AgentCard.skills/defaultInputModes/defaultOutputModes or AgentSkill.tags: AgentCard::validate and the builder check only name/supportedInterfaces, so the server will p… |
 | medium | PARTIAL | §8.1 (line 1980) | A2A Servers **MUST** make an Agent Card available. | JSON-RPC, REST and axum serve GET /.well-known/agent-card.json when a card is configured, but RequestHandlerBuilder's agent_card defaults to None and build() accepts that, serving 404 (pinned by a test); the WebSocket and gRPC dispatchers serve no well-known … |
 | medium | PARTIAL | §8.4.3 (line 2132) | 2. Retrieve the public key using the `kid` and `jku` (or from a trusted key store) | kid-based lookup in a caller-supplied JWKS is implemented and tested; jku is decoded but never followed (deliberately: fetch_jwks takes a caller-trusted URL), so jku retrieval is left to the application. |
 | medium | PARTIAL | §12 (line 2985) | Custom bindings MUST comply with all requirements defined in Section 5 | SLIMRPC sends PushNotificationNotSupported and UnsupportedOperation as UNIMPLEMENTED where A2A §5.4's gRPC column says FAILED_PRECONDITION. This is the SLIMRPC spec's own §6.1 'canonical mapping' (a MUST), which the binding now follows exactly; the conflict i… |
 | medium | PARTIAL | §12.4 (line 3024) | 2. Preserve Error Information: Ensure error details are accessible to clients | WebSocket error responses carry only code and message: no `data` and no ErrorInfo, unlike the JSON-RPC HTTP binding that it otherwise mirrors (jsonrpc/response.rs:160-164). Any mid-stream error is rewritten to code -32000 with `e.to_string()`, discarding the … |
-| medium | PARTIAL | §13.2 (line 3117) | Agents MUST include authentication credentials in webhook requests as specified in PushNotificationConfig.authentication | Only Bearer and Basic (case-insensitive) produce an Authorization header; any other IANA scheme (e.g. Digest, or a custom one) is accepted at config creation (validate_and_store_push_config does not check scheme) and then delivered WITHOUT credentials with on… |
 | medium | PARTIAL | §14 (line 3352) | Clients SHOULD verify signatures when present | Verification functions exist (verify_agent_card_with_jwks, fetch_jwks), but client discovery/ClientBuilder never call them; a signed card is accepted unverified unless the application verifies explicitly. |
 | low | GAP | proto:DeleteTaskPushNotificationConfigRequest.task_id (prot… | task_id [(google.api.field_behavior) = REQUIRED] | JSON absent -> -32602, but gRPC (absent == "") and JSON empty string are passed straight to push_config_store.delete, which treats a missing config as Ok (delete_nonexistent_is_ok): the server answers success to a request missing a REQUIRED field instead of I… |
 | low | GAP | proto:DeleteTaskPushNotificationConfigRequest.id (proto lin… | id [(google.api.field_behavior) = REQUIRED] | JSON absent -> -32602, but gRPC (absent == "") and JSON empty string are passed straight to push_config_store.delete, which treats a missing config as Ok (delete_nonexistent_is_ok): the server answers success to a request missing a REQUIRED field instead of I… |
