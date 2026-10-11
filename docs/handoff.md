@@ -1018,6 +1018,13 @@ before acting on it, as this branch did.
   proven, 0 unproven, 21 exempt.
 
 **Decisions waiting on the maintainer.**
+- *Upstream candidate, not filed: a2a-java and `application/a2a+json`.*
+  a2a-java 1.3.0.Final's REST server refuses any request Content-Type not
+  starting with `application/json` (`A2AServerRoutes.validateContentType`,
+  read from the jar's bytecode), so a client following §11.1's SHOULD gets
+  `ContentTypeNotSupportedError` from it. This client keeps sending
+  `application/json`; ledger line 2758 records why. A public issue on
+  a2a-java is the maintainer's call.
 - *Minor-version matching (ledger §3.6.2, line 737).* The spec says requests
   are processed with the semantics of the requested `Major.Minor` and an
   unsupported one is `VersionNotSupportedError`. This server accepts any

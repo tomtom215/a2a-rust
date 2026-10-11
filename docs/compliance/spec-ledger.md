@@ -34,13 +34,13 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §8 | 24 | 5 | 5 | 2 |  | 1 | 6 | 2 | 45 |
 | §9 | 10 |  |  |  |  |  | 3 |  | 13 |
 | §10 | 6 |  |  |  |  |  |  |  | 6 |
-| §11 | 12 |  |  | 3 |  |  | 2 | 2 | 19 |
+| §11 | 12 |  |  | 4 |  |  | 2 | 1 | 19 |
 | §12 | 7 | 1 | 1 |  | 1 |  | 9 |  | 19 |
 | §13 | 22 | 26 | 3 | 4 |  | 5 | 4 | 5 | 69 |
 | §14 | 4 | 5 | 3 |  |  | 1 | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
 | proto `REQUIRED` fields | 44 | 10 | 6 |  | 8 | 26 | 8 | 4 | 106 |
-| **All** | **240** | **88** | **43** | **12** | **22** | **43** | **50** | **14** | **512** |
+| **All** | **240** | **88** | **43** | **13** | **22** | **43** | **50** | **13** | **512** |
 
 ## Open items, most severe first
 
@@ -50,7 +50,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | medium | GAP | §3.3.4 (line 578) | Clients SHOULD validate capability support by examining the Agent Card before attempting operations that require optional capabilities | Client reads card.capabilities only for the idempotency extension (builder/mod.rs:203); stream/subscribe/push-config calls are sent regardless of capabilities.streaming/pushNotifications (no such check in crates/a2a-protocol-client/src). |
 | medium | GAP | §8.3.2 (line 2007) | Clients MUST: 1. Parse `supportedInterfaces` if present, and select the first supported transport | from_card ranks interfaces by ClientConfig::default().preferred_bindings = ["JSONRPC"] (config.rs:261) before card order (selection.rs `usable.sort_by_key(rank)`), so a card listing [HTTP+JSON, JSONRPC] — both supported by the default client — yields JSONRPC,… |
 | medium | GAP | §8.3.2 (line 2008) | 2. Prefer earlier entries in the ordered list when multiple options are supported | Caller preference overrides the agent's ordering by design (a2a-go parity); card order is only a tie-break within the same preference rank. |
-| medium | GAP | §11.1 (line 2758) | Content-Type: application/a2a+json SHOULD be used for requests | REST client always sends `Content-Type: application/json` (also on bodiless GET/DELETE) and `Accept: application/json`. It never uses application/a2a+json, and the test pins Accept=application/json. |
 | medium | GAP | §11.6 (line 2914) | Implementations SHOULD use well-known types such as google.rpc.BadRequest to attach structured data to validation errors | No BadRequest detail anywhere in the repository. REST body and params validation failures answer error_json_response(400, serde message) with no details at all. |
 | medium | PARTIAL | §1.4 (line 107) | SDK language bindings, schemas, and any other derived forms MUST be regenerated from the proto (directly or via code generation) rather tha… | Only the prost message types (feature `proto`, build.rs) are generated from a2a.proto; the primary public serde types (Task, Message, TaskListResponse, AgentCard ...) are hand-written structs, guarded by golden fixtures/proptests rather than generated. proto_… |
 | medium | PARTIAL | §3.3.4 (line 571) | When clients attempt to use operations or features that require capabilities not declared ... the agent MUST return an appropriate error re… | Summary of 573-576 below. All checks are skipped when no AgentCard is configured on the RequestHandler (capability.rs:16-18, 189). |
