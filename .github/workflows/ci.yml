@@ -1125,6 +1125,6 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
       - name: a2a-go client against this server, and this client against an a2a-go server
         run: ./scripts/go_sdk_interop.sh

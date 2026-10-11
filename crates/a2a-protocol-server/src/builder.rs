@@ -453,7 +453,7 @@ impl RequestHandlerBuilder {
     ///
     /// Models that share tasks between callers (roles, groups, projects) are
     /// not this: map the group to a tenant with a
-    /// [`TenantResolver`](crate::tenant_resolver::TenantResolver) instead.
+    /// [`TenantResolver`] instead.
     ///
     /// # Build errors
     ///

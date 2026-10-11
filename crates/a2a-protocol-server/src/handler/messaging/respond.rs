@@ -206,7 +206,12 @@ impl RequestHandler {
         // task tracking)". An agent that emitted a message and nothing
         // else is doing exactly that, so answer with the message. The task
         // row still exists and is still fetchable by `GetTask`.
-        if let Some(message) = collected.direct_message {
+        if let Some(mut message) = collected.direct_message {
+            // §3.4.1: a contextId the server generated MUST be in the
+            // response. The executor's reply may not carry one.
+            message
+                .context_id
+                .get_or_insert_with(|| collected.task.context_id.clone());
             return Ok(SendMessageResult::Response(SendMessageResponse::Message(
                 message,
             )));

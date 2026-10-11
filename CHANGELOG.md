@@ -227,6 +227,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A direct `Message` reply names its context** (server; spec §3.4.1). When
+  the executor answers with a `Message` and leaves `contextId` empty, the
+  reply now carries the task's `contextId`, on the blocking path and on a
+  message-only stream. A `contextId` the executor set is kept.
+- **Executor status timestamps are UTC** (server; spec §5.6.1). A timestamp
+  with an offset other than `Z` is rewritten to the same instant in UTC, at
+  millisecond precision; one that does not parse as ISO 8601 makes the write
+  fail, as an oversized event does. Both used to go out unchanged on the
+  JSON bindings, while gRPC refused the malformed one at encoding.
 - **A push config with an empty or scheme-less `url` is refused** (server;
   the proto marks `url` REQUIRED). The host check that refused it runs only
   when private URLs are refused, so a sender that allows them stored an
@@ -357,6 +366,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CI on this branch** (`ci.yml`, `tck.yml`, `pin-freshness.yml`):
+  `setup-go` asked for `1.26`, which resolved to the runner's cached 1.26.8,
+  while the Go peers' `go.mod` require 1.26.9, so the Go interop job failed
+  before building. It now asks for `1.26.9`. A redundant intra-doc link in
+  `RequestHandlerBuilder` failed `cargo doc -D warnings`, and the SLIMRPC
+  binding's own docs had two unresolved links and one redundant one (CI does
+  not build those).
 - **`GetExtendedAgentCard` enforces required extensions** (§3.3.4), as
   every other operation already did.
 - **A card whose OAuth flow has no scopes parses** (types). ProtoJSON, which

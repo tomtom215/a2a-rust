@@ -472,7 +472,9 @@ impl EventQueueWriter for InMemoryQueueWriter {
         mut event: StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         // Before anything persists or broadcasts it (N35).
-        super::status_stamp::stamp_status(&mut event);
+        if let Err(e) = super::status_stamp::stamp_status(&mut event) {
+            return Box::pin(std::future::ready(Err(e)));
+        }
         if let Err(e) = self.check_event_size(&event) {
             return Box::pin(std::future::ready(Err(e)));
         }
@@ -791,11 +793,18 @@ impl EventQueueReader for InMemoryQueueReader {
                 return Some(first);
             }
             if self.provisional.is_some() {
-                let first = self.next_live().await;
+                let mut first = self.next_live().await;
                 let snapshot = self.provisional.take()?;
-                if let Some(Ok(ev)) = &first
-                    && matches!(ev.event, StreamResponse::Message(_))
+                if let Some(Ok(ev)) = &mut first
+                    && let StreamResponse::Message(message) = &mut ev.event
                 {
+                    // §3.4.1: a contextId the server generated MUST be in
+                    // the response; the snapshot holds the task's.
+                    if message.context_id.is_none()
+                        && let StreamResponse::Task(task) = &snapshot
+                    {
+                        message.context_id = Some(task.context_id.clone());
+                    }
                     self.finished = true;
                     return first;
                 }

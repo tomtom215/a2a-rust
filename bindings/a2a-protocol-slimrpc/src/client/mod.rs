@@ -5,7 +5,7 @@
 // Do no harm. Respect others. Be honest. Be evidence-driven and fact-based. Never guess — test
 // and verify. Security hardening and best practices are non-negotiable. — Tom F.
 
-//! A [`Transport`] that speaks A2A over SLIMRPC.
+//! A [`Transport`](a2a_protocol_client::Transport) that speaks A2A over SLIMRPC.
 //!
 //! Plugs into `A2aClient` through `with_custom_transport`, so retries,
 //! interceptors, auth and the typed method surface all work exactly as they do
@@ -186,7 +186,7 @@ impl SlimRpcTransportBuilder {
     }
 }
 
-/// An A2A [`Transport`] over SLIMRPC.
+/// An A2A [`Transport`](a2a_protocol_client::Transport) over SLIMRPC.
 ///
 /// # Message size
 ///
@@ -212,7 +212,7 @@ impl SlimRpcTransportBuilder {
 ///
 /// Neither is settable from here. The limit belongs to a tonic client the
 /// datapath constructs internally, and no layer in between exposes it. Adding
-/// a length check to [`Pb`](crate::codec::Pb) would not change this: by the
+/// a length check to [`Pb`] would not change this: by the
 /// time the codec is called tonic has already accepted the bytes and enforced
 /// its own limit, so the check could only reject what was already admitted and
 /// buffered. Raising the receive cap needs the bound widened upstream, in

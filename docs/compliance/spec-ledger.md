@@ -27,9 +27,9 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | §1 |  |  |  |  | 4 | 2 | 1 |  | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 |  | 3 |
-| §3 | 76 | 21 | 18 | 3 | 3 | 6 | 9 | 1 | 137 |
+| §3 | 77 | 21 | 18 | 3 | 3 | 6 | 8 | 1 | 137 |
 | §4 | 3 | 5 | 2 |  | 1 | 1 | 3 |  | 15 |
-| §5 | 22 | 2 | 2 |  | 3 |  | 6 |  | 35 |
+| §5 | 24 | 2 | 2 |  | 3 |  | 4 |  | 35 |
 | §7 | 6 | 13 | 2 |  |  | 1 |  |  | 22 |
 | §8 | 24 | 5 | 5 | 2 |  | 1 | 6 | 2 | 45 |
 | §9 | 10 |  |  |  |  |  | 3 |  | 13 |
@@ -40,7 +40,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 4 | 5 | 3 |  |  | 1 | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
 | proto `REQUIRED` fields | 44 | 10 | 6 |  | 8 | 26 | 8 | 4 | 106 |
-| **All** | **235** | **88** | **43** | **12** | **22** | **43** | **55** | **14** | **512** |
+| **All** | **238** | **88** | **43** | **12** | **22** | **43** | **52** | **14** | **512** |
 
 ## Open items, most severe first
 
@@ -54,13 +54,10 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | medium | GAP | §11.6 (line 2914) | Implementations SHOULD use well-known types such as google.rpc.BadRequest to attach structured data to validation errors | No BadRequest detail anywhere in the repository. REST body and params validation failures answer error_json_response(400, serde message) with no details at all. |
 | medium | PARTIAL | §1.4 (line 107) | SDK language bindings, schemas, and any other derived forms MUST be regenerated from the proto (directly or via code generation) rather tha… | Only the prost message types (feature `proto`, build.rs) are generated from a2a.proto; the primary public serde types (Task, Message, TaskListResponse, AgentCard ...) are hand-written structs, guarded by golden fixtures/proptests rather than generated. proto_… |
 | medium | PARTIAL | §3.3.4 (line 571) | When clients attempt to use operations or features that require capabilities not declared ... the agent MUST return an appropriate error re… | Summary of 573-576 below. All checks are skipped when no AgentCard is configured on the RequestHandler (capability.rs:16-18, 189). |
-| medium | PARTIAL | §3.4.1 (line 591) | If an agent generates a new contextId, it MUST be included in the response (either Task or Message) | Task responses always carry context_id. A direct Message response is returned exactly as the executor wrote it (respond.rs:198-202); the SDK neither stamps the server-generated contextId into it nor offers a message helper that does, so an executor that omits… |
 | medium | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | Order is preserved, but a subscriber that falls behind the bounded broadcast buffer loses the overwritten events (surfaced as an explicit 'streamLagged' error), so a slow stream does not receive the same events as a fast one. |
 | medium | PARTIAL | §3.6.2 (line 737) | Agents MUST process requests using the semantics of the requested A2A-Version (matching Major.Minor). | Open decision, not changed: the server accepts any 1.x and serves 1.0 semantics. The official Python SDK does the same: a2a/utils/version_validator.py `_is_version_compatible` compares only the major version, although its docstring says major and minor. Rejec… |
 | medium | PARTIAL | §4.3.3 (line 873) | The agent MUST include authentication credentials in the request headers as specified in the TaskPushNotificationConfig.authentication fiel… | Only Bearer/Basic produce `authorization: {scheme} {credentials}`; any other IANA scheme (proto a2a.proto:327 names `Digest` as an example) is dropped with a trace_warn and the webhook is called WITHOUT credentials; the test unknown_scheme_sends_no_auth_heade… |
 | medium | PARTIAL | §4.3.3 (line 884) | Agents MUST attempt delivery at least once for each configured webhook | Deliveries are sequential under a per-event `push_delivery_budget` (default 30s); once spent, remaining configs are never contacted (counted as push_outcome::SKIPPED). The test asserts 94 of 100 configs skipped at defaults when webhooks are slow. Also `PushRe… |
-| medium | PARTIAL | §5.6.1 (line 1230) | When serialized to JSON ... timestamps MUST be represented as ISO 8601 formatted strings in UTC timezone. | TaskStatus.timestamp is a free String. SDK-generated stamps are UTC 'Z' ms; but an executor-set timestamp is passed through verbatim on JSON bindings ("A timestamp the executor set is kept as it is"), with no validation/normalisation, while gRPC normalises/re… |
-| medium | PARTIAL | §5.6.1 (line 1255) | Timestamps MUST NOT include timezone offsets other than 'Z' (all times are UTC) | SDK-generated and gRPC-emitted (time::Rfc3339 of UTC OffsetDateTime) timestamps use Z; an executor-supplied `+02:00` timestamp is emitted unchanged on JSON-RPC/REST/WebSocket (stamp_status only fills None; has_valid_timestamp is never called and only checks l… |
 | medium | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts (inbound) and Artifact.parts (executor output). Not enforced for AgentCard.skills/defaultInputModes/defaultOutputModes or AgentSkill.tags: AgentCard::validate and the builder check only name/supportedInterfaces, so the server will p… |
 | medium | PARTIAL | §8.1 (line 1980) | A2A Servers **MUST** make an Agent Card available. | JSON-RPC, REST and axum serve GET /.well-known/agent-card.json when a card is configured, but RequestHandlerBuilder's agent_card defaults to None and build() accepts that, serving 404 (pinned by a test); the WebSocket and gRPC dispatchers serve no well-known … |
 | medium | PARTIAL | §8.4.3 (line 2132) | 2. Retrieve the public key using the `kid` and `jku` (or from a trusted key store) | kid-based lookup in a caller-supplied JWKS is implemented and tested; jku is decoded but never followed (deliberately: fetch_jwks takes a caller-trusted URL), so jku retrieval is left to the application. |

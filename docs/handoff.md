@@ -977,6 +977,8 @@ area. This branch answers both.
     metadata keys.
 13. `fix(server):` empty or scheme-less push `url` refused; tests for
     §3.1.4, §3.3.4 (streaming capability on the wire) and §3.5.2.
+14. `fix:` CI repairs (setup-go 1.26.9, rustdoc links); §3.4.1 context in a
+    direct reply; §5.6.1 executor timestamps normalised to UTC or refused.
 
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
@@ -1000,9 +1002,16 @@ before acting on it, as this branch did.
   container's disk allowance (ENOSPC mid-run). The SLIMRPC binding is
   outside the workspace; its `cargo test -- --test-threads=1` passed after
   item 12.
-- Ledger after item 13: TESTED 235, PARTIAL 55, IMPLEMENTED_UNTESTED 43,
+- Ledger after item 14: TESTED 238, PARTIAL 52, IMPLEMENTED_UNTESTED 43,
   GAP 14, NOT_SUPPORTED 12, SUPPORTED 43, NOT_APPLICABLE 22,
   APPLICATION 88 (`scripts/check_spec_ledger.py`).
+- Workspace tests after item 14: 173 binaries, 4,482 passed, 0 failed,
+  116 ignored; clippy clean.
+- CI lesson: every push to this branch cancels the previous run
+  (concurrency), so commits pushed minutes apart never finished CI. Two real
+  failures (Documentation, Go interop) sat hidden behind cancellations from
+  `c482314` and `b2a7746` until a run was left to finish. Push, then let the
+  run complete before pushing again.
 - Workspace clippy `-D warnings`: clean. `prove_workflow_gates_fail.py`: 28
   proven, 0 unproven, 21 exempt.
 

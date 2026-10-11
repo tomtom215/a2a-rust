@@ -2014,19 +2014,20 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "If an agent generates a new contextId, it MUST be included in the response (either Task or Message)",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:198",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:489",
-    "crates/a2a-protocol-server/src/executor_helpers.rs:330"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs (direct_message context stamp)",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs (message-only stream context stamp)"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:803 empty_context_id_is_unset_and_a_context_is_generated"
+    "crates/a2a-protocol-server/tests/context_id_in_reply.rs a_blocking_direct_reply_carries_the_generated_context",
+    "crates/a2a-protocol-server/tests/context_id_in_reply.rs a_streamed_direct_reply_carries_the_generated_context"
    ],
-   "notes": "Task responses always carry context_id. A direct Message response is returned exactly as the executor wrote it (respond.rs:198-202); the SDK neither stamps the server-generated contextId into it nor offers a message helper that does, so an executor that omits context_id yields a response without it.",
+   "notes": "Task responses always carry context_id. A direct Message reply whose contextId the executor left empty now gets the task's contextId, on the blocking path and on a message-only stream; a contextId the executor set is kept. Until 2026-10-10 such a reply named no context.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 592,
@@ -3501,20 +3502,20 @@
    "keyword": "MUST",
    "binds": "both",
    "requirement": "When serialized to JSON ... timestamps MUST be represented as ISO 8601 formatted strings in UTC timezone.",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/task.rs:360",
-    "crates/a2a-protocol-types/src/lib.rs:184",
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:21"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs stamp_status"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:57 a_status_without_a_timestamp_is_stamped_in_iso_8601_utc",
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:68 a_timestamp_the_executor_set_is_kept"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs an_offset_timestamp_is_rewritten_in_utc",
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_timestamp_that_is_not_iso_8601_is_refused",
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_status_without_a_timestamp_is_stamped_in_iso_8601_utc"
    ],
-   "notes": "TaskStatus.timestamp is a free String. SDK-generated stamps are UTC 'Z' ms; but an executor-set timestamp is passed through verbatim on JSON bindings (\"A timestamp the executor set is kept as it is\"), with no validation/normalisation, while gRPC normalises/rejects via rfc3339_to_timestamp — so a non-UTC or malformed value reaches JSON clients.",
+   "notes": "Every executor event passes the queue writer, which stamps an empty status timestamp with UTC now, rewrites one with a non-Z offset to the same instant in UTC (millisecond precision), and refuses one that does not parse as ISO 8601. Until 2026-10-10 an executor-set value went out unchanged on JSON-RPC/REST/WebSocket. Not covered: a Task an application writes straight to the task store, bypassing the queue.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 1236,
@@ -3582,19 +3583,20 @@
    "keyword": "MUST NOT",
    "binds": "server",
    "requirement": "Timestamps MUST NOT include timezone offsets other than 'Z' (all times are UTC)",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:27",
-    "crates/a2a-protocol-types/src/task.rs:393",
-    "crates/a2a-protocol-types/src/proto/convert/mod.rs:151"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs stamp_status"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:68 a_timestamp_the_executor_set_is_kept"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs an_offset_timestamp_is_rewritten_in_utc",
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_timestamp_that_is_not_iso_8601_is_refused",
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_status_without_a_timestamp_is_stamped_in_iso_8601_utc"
    ],
-   "notes": "SDK-generated and gRPC-emitted (time::Rfc3339 of UTC OffsetDateTime) timestamps use Z; an executor-supplied `+02:00` timestamp is emitted unchanged on JSON-RPC/REST/WebSocket (stamp_status only fills None; has_valid_timestamp is never called and only checks len>=19 and 'T').",
+   "notes": "Every executor event passes the queue writer, which stamps an empty status timestamp with UTC now, rewrites one with a non-Z offset to the same instant in UTC (millisecond precision), and refuses one that does not parse as ISO 8601. Until 2026-10-10 an executor-set value went out unchanged on JSON-RPC/REST/WebSocket. Not covered: a Task an application writes straight to the task store, bypassing the queue.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
    "spec_line": 1259,
