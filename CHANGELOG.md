@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`dispatch::Hsts`** (server; spec §13.4). Wraps any `Dispatcher` and adds
+  `Strict-Transport-Security` to every response. Opt-in: the built-in
+  listener is plaintext, and the header only takes effect behind a TLS
+  terminator.
+- **`HttpPushSender::with_allowed_hosts`** (server; spec §13.2). An opt-in
+  allowlist of webhook hosts, enforced when a push config is created and
+  again before each delivery. `PushSender::allows_webhook_url` (default
+  `true`) lets a custom sender do the same.
+- **`CachingCardResolver::install_extended_card` / `clear_extended_card`**
+  (client; spec §13.3). Serves the extended card in place of the public one
+  for an authenticated session; `invalidate` clears both.
 - **`RequestContext::accepted_output_modes()`** (server). The proto says an
   agent SHOULD use `SendMessageConfiguration.acceptedOutputModes` to tailor
   its output, and the executor had no way to see it. Empty means no
@@ -231,6 +242,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **The extended agent card is cacheable** (server; spec §13.3). `GET
+  /extendedAgentCard` on `RestDispatcher` and the axum router sends
+  `Cache-Control: private, no-cache`, `Vary: Authorization` and an `ETag`, and
+  answers `304` to a matching `If-None-Match`.
+- **A request body of the wrong shape names the field** (server; spec §11.6).
+  The HTTP+JSON 400 now carries a `google.rpc.BadRequest` detail whose field
+  violation is the path, for example `message.parts[0].text`. Malformed JSON is
+  still a plain 400. New dependency: `serde_path_to_error` (MIT OR
+  Apache-2.0), already in the lockfile through axum.
+- **Empty push-config ids are InvalidParams** (server). Get, list and delete
+  refused an absent id at parse but passed an empty one (gRPC's absent
+  string) to the store, where list and delete answered success.
 - **A push config with an authentication scheme other than Bearer or Basic
   is refused** (server; spec §4.3.3, §13.2). The sender can write only those
   two, and any other scheme was stored and then delivered without

@@ -17,6 +17,17 @@ use crate::error::{ServerError, ServerResult};
 use super::RequestHandler;
 use super::helpers::build_call_context;
 
+/// `InvalidParams` when a field the proto marks REQUIRED is empty. On gRPC
+/// an absent string arrives as `""`, and JSON can send `""` outright; both
+/// used to reach the store, where an empty id on delete or list matched
+/// nothing and answered success.
+fn require_field(name: &str, value: &str) -> ServerResult<()> {
+    if value.is_empty() {
+        return Err(ServerError::InvalidParams(format!("{name} is required")));
+    }
+    Ok(())
+}
+
 impl RequestHandler {
     /// `TaskNotFound` unless `task_id` names a task this request can reach.
     async fn require_task(&self, task_id: &str) -> ServerResult<()> {
@@ -77,6 +88,11 @@ impl RequestHandler {
         // privately is stored but never delivered to.
         if !sender.allows_private_urls() {
             crate::push::sender::validate_webhook_url(&config.url)?;
+        }
+        if !sender.allows_webhook_url(&config.url) {
+            return Err(ServerError::InvalidParams(
+                "push notification URL's host is not in the server's webhook allowlist".into(),
+            ));
         }
         // The proto marks `url` REQUIRED. The host check above runs only
         // when private URLs are refused, so with them allowed an empty or
@@ -273,6 +289,8 @@ impl RequestHandler {
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
 
+                    require_field("taskId", &params.task_id)?;
+                    require_field("id", &params.id)?;
                     // SPEC §3.1.8: a missing push notification configuration MUST be
                     // reported as TaskNotFoundError, not InvalidParams.
                     let config = self
@@ -343,6 +361,7 @@ impl RequestHandler {
                     // exist or is not accessible". An unknown task answered an
                     // empty list until 2026-10-10, which a peer cannot tell
                     // from a known task with no webhooks.
+                    require_field("taskId", task_id)?;
                     self.require_task(task_id).await?;
                     let configs = self.push_config_store.list(task_id).await?;
                     Ok(configs)
@@ -409,6 +428,8 @@ impl RequestHandler {
                     // SPEC §3.1.10: TaskNotFoundError when the task does not
                     // exist; deleting a config that is already gone still
                     // succeeds, since the operation MUST be idempotent.
+                    require_field("taskId", &params.task_id)?;
+                    require_field("id", &params.id)?;
                     self.require_task(&params.task_id).await?;
                     self.push_config_store
                         .delete(&params.task_id, &params.id)
@@ -998,6 +1019,71 @@ mod tests {
                 .await
                 .unwrap_or_else(|e| panic!("{scheme} must be accepted: {e}"));
         }
+    }
+
+    /// The proto marks `taskId` and `id` REQUIRED on get, list and delete.
+    /// gRPC delivers an absent string as `""`; it is `InvalidParams`, not a
+    /// lookup that finds nothing (list, delete) or `TaskNotFound`.
+    #[tokio::test]
+    async fn empty_required_ids_are_invalid_params() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        let get = |task_id: &str, id: &str| GetPushConfigParams {
+            tenant: None,
+            task_id: task_id.to_owned(),
+            id: id.to_owned(),
+        };
+        let del = |task_id: &str, id: &str| DeletePushConfigParams {
+            tenant: None,
+            task_id: task_id.to_owned(),
+            id: id.to_owned(),
+        };
+        for (task_id, id) in [("", "cfg-1"), ("t-1", "")] {
+            let r = handler.on_get_push_config(get(task_id, id), None).await;
+            assert!(
+                matches!(r, Err(crate::error::ServerError::InvalidParams(_))),
+                "get {task_id:?}/{id:?}: {r:?}"
+            );
+            let r = handler.on_delete_push_config(del(task_id, id), None).await;
+            assert!(
+                matches!(r, Err(crate::error::ServerError::InvalidParams(_))),
+                "delete {task_id:?}/{id:?}: {r:?}"
+            );
+        }
+        let r = handler.on_list_push_configs("", None, None).await;
+        assert!(
+            matches!(r, Err(crate::error::ServerError::InvalidParams(_))),
+            "list: {r:?}"
+        );
+    }
+
+    /// §13.2: a config naming a host outside the sender's allowlist is
+    /// refused at creation, not stored and then refused at every delivery.
+    #[tokio::test]
+    async fn set_push_config_refuses_a_host_outside_the_allowlist() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(
+                crate::push::HttpPushSender::new().with_allowed_hosts(["hooks.example.com"]),
+            )
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        let mut config = make_push_config("t-1");
+        config.url = "https://other.example.com/hook".into();
+        let refused = handler.on_set_push_config(config, None).await;
+        assert!(
+            matches!(&refused, Err(crate::error::ServerError::InvalidParams(m)) if m.contains("allowlist")),
+            "{refused:?}"
+        );
+        let mut config = make_push_config("t-1");
+        config.url = "https://hooks.example.com/hook".into();
+        handler
+            .on_set_push_config(config, None)
+            .await
+            .expect("a listed host is accepted");
     }
 
     /// SPEC §3.1.7: creating a push config for a task that does not exist must

@@ -556,7 +556,9 @@ async fn handle_extended_card(
         &hdrs,
         async {
             match state.handler.on_get_extended_agent_card(Some(&hdrs)).await {
-                Ok(card) => a2a_json(&card),
+                Ok(card) => {
+                    hyper_to_axum(crate::dispatch::rest::extended_card_response(&card, &hdrs))
+                }
                 Err(e) => handler_error_to_response(&e),
             }
         },
@@ -620,11 +622,11 @@ async fn handle_send_inner(
     hdrs: &HashMap<String, String>,
     body: Bytes,
 ) -> axum::response::Response {
-    let params: a2a_protocol_types::params::MessageSendParams = match serde_json::from_slice(&body)
-    {
-        Ok(p) => p,
-        Err(e) => return bad_body(&e),
-    };
+    let params: a2a_protocol_types::params::MessageSendParams =
+        match crate::dispatch::rest::params_from_slice(&body) {
+            Ok(p) => p,
+            Err(resp) => return hyper_to_axum(resp),
+        };
     match state
         .handler
         .on_send_message(params, streaming, Some(hdrs))
@@ -708,9 +710,9 @@ async fn handle_create_push_config_inner(
             .or_insert_with(|| serde_json::Value::String(task_id.to_owned()));
     }
     let config: a2a_protocol_types::push::TaskPushNotificationConfig =
-        match serde_json::from_value(value) {
+        match crate::dispatch::rest::params_from_value(value) {
             Ok(c) => c,
-            Err(e) => return bad_body(&e),
+            Err(resp) => return hyper_to_axum(resp),
         };
     match state.handler.on_set_push_config(config, Some(hdrs)).await {
         Ok(result) => a2a_json(&result),

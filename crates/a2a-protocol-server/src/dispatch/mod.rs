@@ -10,6 +10,7 @@ pub mod axum_adapter;
 pub mod cors;
 #[cfg(feature = "grpc")]
 pub mod grpc;
+pub mod hsts;
 pub mod jsonrpc;
 pub mod rest;
 #[cfg(feature = "websocket")]
@@ -18,6 +19,7 @@ pub mod websocket;
 pub use cors::CorsConfig;
 #[cfg(feature = "grpc")]
 pub use grpc::{GrpcConfig, GrpcDispatcher};
+pub use hsts::Hsts;
 pub use jsonrpc::JsonRpcDispatcher;
 pub use rest::RestDispatcher;
 #[cfg(feature = "websocket")]

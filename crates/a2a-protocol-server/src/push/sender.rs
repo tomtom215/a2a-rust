@@ -106,6 +106,15 @@ pub trait PushSender: Send + Sync + 'static {
         false
     }
 
+    /// Whether this sender will deliver to `url` at all, checked when a push
+    /// config is created so a URL the sender would refuse is rejected then,
+    /// not stored. Default: `true`. [`HttpPushSender`] answers from its
+    /// [`with_allowed_hosts`](HttpPushSender::with_allowed_hosts) allowlist.
+    fn allows_webhook_url(&self, url: &str) -> bool {
+        let _ = url;
+        true
+    }
+
     /// The longest a single [`send`](Self::send) can take, if this sender can
     /// say — its whole retry schedule, not one attempt.
     ///
@@ -247,6 +256,8 @@ pub struct HttpPushSender {
     dns_timeout: std::time::Duration,
     /// Whether to skip SSRF URL validation (for testing only).
     allow_private_urls: bool,
+    /// Lowercased hostnames webhooks may target; `None` allows any.
+    allowed_hosts: Option<Vec<String>>,
 }
 
 impl Default for HttpPushSender {
@@ -273,6 +284,7 @@ impl HttpPushSender {
             retry_policy: PushRetryPolicy::default(),
             dns_timeout: DEFAULT_DNS_LOOKUP_TIMEOUT,
             allow_private_urls: false,
+            allowed_hosts: None,
         }
     }
 
@@ -295,6 +307,7 @@ impl HttpPushSender {
             retry_policy: PushRetryPolicy::default(),
             dns_timeout: DEFAULT_DNS_LOOKUP_TIMEOUT,
             allow_private_urls: false,
+            allowed_hosts: None,
         }
     }
 
@@ -329,6 +342,37 @@ impl HttpPushSender {
     pub const fn allow_private_urls(mut self) -> Self {
         self.allow_private_urls = true;
         self
+    }
+
+    /// Delivers only to webhooks whose host is one of `hosts` (spec §13.2:
+    /// implement URL allowlists where appropriate). Hosts compare exactly,
+    /// ignoring ASCII case, against the URL's host without its port; no
+    /// wildcards. A push config naming any other host is refused when it is
+    /// created, and a delivery to one is refused before any connection is
+    /// made. The SSRF checks still apply to allowed hosts.
+    #[must_use]
+    pub fn with_allowed_hosts<I, S>(mut self, hosts: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.allowed_hosts = Some(
+            hosts
+                .into_iter()
+                .map(|h| h.as_ref().to_ascii_lowercase())
+                .collect(),
+        );
+        self
+    }
+
+    fn host_allowed(&self, url: &str) -> bool {
+        let Some(allowed) = &self.allowed_hosts else {
+            return true;
+        };
+        url.parse::<hyper::Uri>()
+            .ok()
+            .and_then(|uri| uri.host().map(str::to_ascii_lowercase))
+            .is_some_and(|host| allowed.contains(&host))
     }
 }
 
@@ -766,6 +810,10 @@ impl PushSender for HttpPushSender {
         self.allow_private_urls
     }
 
+    fn allows_webhook_url(&self, url: &str) -> bool {
+        self.host_allowed(url)
+    }
+
     fn send<'a>(
         &'a self,
         url: &'a str,
@@ -778,6 +826,12 @@ impl PushSender for HttpPushSender {
             let target = super::webhook::origin_for_log(url);
             let _ = &target;
             trace_info!(target = %target, "delivering push notification");
+
+            if !self.host_allowed(url) {
+                return Err(A2aError::invalid_params(format!(
+                    "webhook host of {target} is not in this sender's allowlist"
+                )));
+            }
 
             let is_https = url
                 .split_once("://")

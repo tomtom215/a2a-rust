@@ -96,6 +96,12 @@ serde           = { workspace = true }
 # cargo-mutants builds the library outside `cfg(test)`.
 mutants         = { version = ">=0.0.4, <0.1" }
 serde_json     = { workspace = true }
+# The field path of a request that does not deserialize, for the
+# google.rpc.BadRequest detail §11.6 asks for. MIT OR Apache-2.0, by the
+# serde_json author; its own dependencies (itoa, serde_core) are already in
+# every build through serde_json. Path tracking over a serde Deserializer is
+# not a 100-line in-tree job (CONTRIBUTING's dependency policy, rule 3).
+serde_path_to_error = { version = ">=0.1.20, <0.2" }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util     = { workspace = true, features = ["server", "server-auto", "server-graceful"] }

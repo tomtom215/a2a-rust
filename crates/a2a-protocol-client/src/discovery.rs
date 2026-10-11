@@ -235,6 +235,9 @@ struct CachedCard {
 pub struct CachingCardResolver {
     url: String,
     cache: Arc<RwLock<Option<CachedCard>>>,
+    /// The extended card for an authenticated session; see
+    /// [`install_extended_card`](Self::install_extended_card).
+    extended: Arc<RwLock<Option<AgentCard>>>,
 }
 
 impl CachingCardResolver {
@@ -249,6 +252,7 @@ impl CachingCardResolver {
         Ok(Self {
             url,
             cache: Arc::new(RwLock::new(None)),
+            extended: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -262,6 +266,7 @@ impl CachingCardResolver {
         Ok(Self {
             url,
             cache: Arc::new(RwLock::new(None)),
+            extended: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -275,6 +280,10 @@ impl CachingCardResolver {
     ///
     /// Same conditions as [`resolve_agent_card`].
     pub async fn resolve(&self) -> ClientResult<AgentCard> {
+        let extended = self.extended.read().await.clone();
+        if let Some(card) = extended {
+            return Ok(card);
+        }
         trace_info!(url = %self.url, "resolving agent card (cached)");
         let cached = self.cache.read().await.clone();
         let (card, etag, last_modified) =
@@ -294,10 +303,26 @@ impl CachingCardResolver {
         Ok(card)
     }
 
-    /// Clears the internal cache.
+    /// Clears the internal cache, the extended card included.
     pub async fn invalidate(&self) {
-        let mut cache = self.cache.write().await;
-        *cache = None;
+        *self.cache.write().await = None;
+        *self.extended.write().await = None;
+    }
+
+    /// Uses `card`, the extended card from `GetExtendedAgentCard`, in place
+    /// of the public one until [`clear_extended_card`](Self::clear_extended_card)
+    /// (spec §13.3: clients SHOULD replace their cached public card with the
+    /// extended version for the duration of their authenticated session).
+    /// While it is installed, [`resolve`](Self::resolve) returns it without
+    /// fetching.
+    pub async fn install_extended_card(&self, card: AgentCard) {
+        *self.extended.write().await = Some(card);
+    }
+
+    /// Ends the authenticated session's view: [`resolve`](Self::resolve)
+    /// goes back to the public card.
+    pub async fn clear_extended_card(&self) {
+        *self.extended.write().await = None;
     }
 }
 
@@ -824,6 +849,50 @@ mod tests {
         assert_eq!(entry.card.name, "resolver-test");
         assert_eq!(entry.etag, Some("\"res-etag\"".into()));
         drop(cached);
+    }
+
+    /// §13.3: an installed extended card stands in for the public one, with
+    /// no fetch, until it is cleared or the cache is invalidated. The URL is
+    /// a closed port, so any fetch fails and the test sees whether one ran.
+    #[tokio::test]
+    async fn an_installed_extended_card_is_served_until_cleared() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard};
+
+        let closed = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap()
+        };
+        let resolver = CachingCardResolver::new(&format!("http://{closed}")).unwrap();
+        let extended = AgentCard {
+            url: None,
+            name: "extended".into(),
+            version: "1.0".into(),
+            description: "for authenticated callers".into(),
+            supported_interfaces: vec![],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+
+        resolver.install_extended_card(extended.clone()).await;
+        assert_eq!(resolver.resolve().await.unwrap().name, "extended");
+
+        resolver.clear_extended_card().await;
+        assert!(resolver.resolve().await.is_err(), "cleared: fetches again");
+
+        resolver.install_extended_card(extended).await;
+        resolver.invalidate().await;
+        assert!(
+            resolver.resolve().await.is_err(),
+            "invalidated: fetches again"
+        );
     }
 
     /// Test `CachingCardResolver::resolve` returns error when server is unreachable.

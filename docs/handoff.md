@@ -983,6 +983,12 @@ area. This branch answers both.
     (anything but Bearer/Basic) is refused at creation (§4.3.3, §13.2).
 16. `feat(server):` `RequestContext::accepted_output_modes()`; ledger records
     why the REST client keeps `application/json` (a2a-java refuses others).
+17. GAP sweep: empty push-config ids; extended-card caching headers;
+    `HttpPushSender::with_allowed_hosts`; opt-in `dispatch::Hsts`;
+    `BadRequest` field violations on HTTP+JSON; the caching resolver can
+    hold the extended card. Three GAPs remain, all maintainer decisions
+    (below). PARTIAL (50) and IMPLEMENTED_UNTESTED (43) entries are not yet
+    worked through.
 
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
@@ -1006,10 +1012,10 @@ before acting on it, as this branch did.
   container's disk allowance (ENOSPC mid-run). The SLIMRPC binding is
   outside the workspace; its `cargo test -- --test-threads=1` passed after
   item 12.
-- Ledger after item 16: TESTED 240, PARTIAL 50, IMPLEMENTED_UNTESTED 43,
-  GAP 12, NOT_SUPPORTED 13, SUPPORTED 43, NOT_APPLICABLE 22,
+- Ledger after item 17: TESTED 249, PARTIAL 50, IMPLEMENTED_UNTESTED 43,
+  GAP 3, NOT_SUPPORTED 13, SUPPORTED 43, NOT_APPLICABLE 22,
   APPLICATION 89 (`scripts/check_spec_ledger.py`).
-- Workspace tests after item 16: 174 binaries, 4,485 passed, 0 failed,
+- Workspace tests after item 17: 177 binaries, 4,497 passed, 0 failed,
   116 ignored; clippy clean.
 - CI lesson: every push to this branch cancels the previous run
   (concurrency), so commits pushed minutes apart never finished CI. Two real

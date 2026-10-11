@@ -747,3 +747,40 @@ fn http_push_sender_debug_impl() {
     let dbg = format!("{sender:?}");
     assert!(dbg.contains("HttpPushSender"));
 }
+
+/// §13.2: with an allowlist, a webhook on another host is refused before any
+/// connection, and one on a listed host is delivered (host compared without
+/// its port, ignoring case).
+#[tokio::test]
+async fn the_host_allowlist_refuses_other_hosts_before_connecting() {
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
+
+    let refused = HttpPushSender::new()
+        .allow_private_urls()
+        .with_allowed_hosts(["hooks.example.com"]);
+    let url = format!("http://{addr}/webhook");
+    let err = refused
+        .send(&url, &status_event(), &base_config(&url))
+        .await
+        .expect_err("127.0.0.1 is not on the list");
+    assert!(err.message.contains("allowlist"), "{err}");
+    assert!(!refused.allows_webhook_url(&url));
+    // `send` refuses before connecting, so had it sent anything it would
+    // have awaited the response first: the capture is final here.
+    assert!(captured.lock().unwrap().is_empty(), "nothing may be sent");
+
+    let allowed = HttpPushSender::new()
+        .allow_private_urls()
+        .with_allowed_hosts(["HOOKS.example.com", "127.0.0.1"]);
+    assert!(allowed.allows_webhook_url("https://hooks.example.com:8443/x"));
+    allowed
+        .send(&url, &status_event(), &base_config(&url))
+        .await
+        .expect("a listed host is delivered");
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
+    handle.abort();
+}

@@ -36,6 +36,48 @@ pub fn json_ok_response<T: serde::Serialize>(
     }
 }
 
+/// The extended agent card, with caching headers (spec §13.3).
+///
+/// The card depends on who asked, so `private` keeps it out of shared
+/// caches and `Vary: Authorization` keys a client's cache by credential.
+/// `no-cache` makes the client revalidate on every use, and the `ETag`
+/// (the public card's validator, over the serialized card) makes that
+/// revalidation a `304` until the card changes, which is how a change, a
+/// new `version` included, reaches a client that cached the old one. Until
+/// 2026-10-10 the response carried none of these.
+pub fn extended_card_response(
+    card: &a2a_protocol_types::AgentCard,
+    headers: &HashMap<String, String>,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    let Ok(body) = serde_json::to_vec(card) else {
+        return internal_error_response();
+    };
+    let etag = crate::agent_card::caching::make_etag(&body);
+    let not_modified = headers
+        .get("if-none-match")
+        .is_some_and(|inm| crate::agent_card::caching::etag_matches(inm, &etag));
+    let mut resp = if not_modified {
+        let mut resp = build_json_response(304, Vec::new());
+        resp.headers_mut().remove(hyper::header::CONTENT_TYPE);
+        resp
+    } else {
+        build_json_response(200, body)
+    };
+    let h = resp.headers_mut();
+    h.insert(
+        hyper::header::CACHE_CONTROL,
+        hyper::header::HeaderValue::from_static("private, no-cache"),
+    );
+    h.insert(
+        hyper::header::VARY,
+        hyper::header::HeaderValue::from_static("Authorization"),
+    );
+    if let Ok(v) = hyper::header::HeaderValue::from_str(&etag) {
+        h.insert(hyper::header::ETAG, v);
+    }
+    resp
+}
+
 /// Fallback when serialization itself fails.
 pub(super) fn internal_error_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
     let body = br#"{"error":{"code":500,"message":"internal serialization error"}}"#;

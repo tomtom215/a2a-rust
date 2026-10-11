@@ -5973,16 +5973,19 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Implementations SHOULD use well-known types such as google.rpc.BadRequest to attach structured data to validation errors",
-   "status": "GAP",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:563-566",
-    "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22-42"
+    "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs bad_request_response / params_from_value / params_from_slice"
    ],
-   "test_evidence": [],
-   "notes": "No BadRequest detail anywhere in the repository. REST body and params validation failures answer error_json_response(400, serde message) with no details at all.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/bad_request_details.rs the_rest_dispatcher_names_the_bad_field",
+    "crates/a2a-protocol-server/tests/bad_request_details.rs the_axum_router_names_the_bad_field"
+   ],
+   "notes": "A request body that is valid JSON of the wrong shape answers 400 INVALID_ARGUMENT with a google.rpc.BadRequest detail whose fieldViolation names the path (e.g. message.parts[0].text), on RestDispatcher (send, cancel, subscribe, create push config) and the axum router (send, create push config). Malformed JSON stays a plain 400. Not covered: query-string parameter errors and the JSON-RPC binding's -32602.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 2914,
@@ -6806,16 +6809,21 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Implement URL allowlists where appropriate",
-   "status": "GAP",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:240",
-    "crates/a2a-protocol-server/src/push/sender.rs:329"
+    "crates/a2a-protocol-server/src/push/sender.rs HttpPushSender::with_allowed_hosts",
+    "crates/a2a-protocol-server/src/push/sender.rs PushSender::allows_webhook_url",
+    "crates/a2a-protocol-server/src/handler/push_config.rs validate_and_store_push_config"
    ],
-   "test_evidence": [],
-   "notes": "HttpPushSender has no host/URL allowlist option (fields: request_timeout, retry_policy, dns_timeout, allow_private_urls); an operator must write a custom PushSender. 'Where appropriate' makes this soft.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs the_host_allowlist_refuses_other_hosts_before_connecting",
+    "crates/a2a-protocol-server/src/handler/push_config.rs set_push_config_refuses_a_host_outside_the_allowlist"
+   ],
+   "notes": "Opt-in HttpPushSender::with_allowed_hosts: exact host match, ignoring case and port, no wildcards. Enforced at config creation (InvalidParams) and again at delivery before any connection. Custom senders can answer PushSender::allows_webhook_url (default true).",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 3128,
@@ -7042,16 +7050,19 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Agents SHOULD implement appropriate caching headers to control client-side caching of extended cards",
-   "status": "GAP",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:768",
-    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:57"
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs extended_card_response"
    ],
-   "test_evidence": [],
-   "notes": "REST /extendedAgentCard uses json_ok_response -> build_json_response, which sets only content-type and A2A-Version; no Cache-Control (e.g. private/no-store) or ETag, unlike the public card's StaticAgentCardHandler.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/extended_card_caching.rs the_rest_extended_card_is_cacheable_and_revalidates",
+    "crates/a2a-protocol-server/tests/extended_card_caching.rs the_axum_extended_card_is_cacheable_and_revalidates"
+   ],
+   "notes": "GET /extendedAgentCard (RestDispatcher and the axum router) sends Cache-Control: private, no-cache, Vary: Authorization and an ETag over the serialized card, and answers 304 to a matching If-None-Match. JSON-RPC, gRPC and WebSocket fetch the card over POST or a stream, where HTTP caching headers do not apply.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 3157,
@@ -7155,16 +7166,18 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients retrieving extended cards SHOULD replace their cached public Agent Card with the extended version for the duration of their authenticated session",
-   "status": "GAP",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/extended_card.rs:28",
-    "crates/a2a-protocol-client/src/discovery.rs:235"
+    "crates/a2a-protocol-client/src/discovery.rs CachingCardResolver::install_extended_card / clear_extended_card"
    ],
-   "test_evidence": [],
-   "notes": "get_extended_agent_card just returns the card; CachingCardResolver has only resolve()/invalidate(), no way to install the extended card, and A2aClient keeps no card. Left to the application.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/src/discovery.rs an_installed_extended_card_is_served_until_cleared"
+   ],
+   "notes": "CachingCardResolver::install_extended_card serves the extended card from resolve() without fetching until clear_extended_card() or invalidate(). The application still decides when the session starts and ends; A2aClient keeps no card of its own.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 3167,
@@ -7172,15 +7185,18 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Agents SHOULD version extended cards appropriately and honor client cache invalidation",
-   "status": "GAP",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:57"
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs extended_card_response"
    ],
-   "test_evidence": [],
-   "notes": "card.version is operator-set; the extended-card endpoint has no ETag/If-None-Match/Cache-Control handling (public card endpoint does, agent_card/static_handler.rs).",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/extended_card_caching.rs the_rest_extended_card_is_cacheable_and_revalidates"
+   ],
+   "notes": "card.version stays operator-set. Cache invalidation is honoured through revalidation: no-cache makes the client check every use, and the ETag changes whenever the card does (a new version included, tested), so a stale cached card is replaced on the next request.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 3172,
@@ -7263,15 +7279,19 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Agents SHOULD enforce HSTS (HTTP Strict Transport Security) headers when using HTTP-based bindings",
-   "status": "GAP",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:57"
+    "crates/a2a-protocol-server/src/dispatch/hsts.rs Hsts"
    ],
-   "test_evidence": [],
-   "notes": "No Strict-Transport-Security header anywhere (grep -i 'strict-transport|hsts' over crates: no hits); consistent with the built-in listener being plaintext, but no opt-in either.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/hsts_wire.rs every_response_carries_the_header_on_both_http_bindings",
+    "crates/a2a-protocol-server/tests/hsts_wire.rs without_the_wrapper_there_is_no_header"
+   ],
+   "notes": "Opt-in dispatch::Hsts wraps any Dispatcher and sets Strict-Transport-Security on every response, errors included. The built-in listener is plaintext and browsers ignore HSTS over plain HTTP (RFC 6797 §8.1), so it takes effect behind a TLS terminator; axum users add it with their own middleware. Not on by default: a header claiming HTTPS on a plaintext deployment would be wrong.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 3184,
@@ -9639,20 +9659,18 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "task_id [(google.api.field_behavior) = REQUIRED]",
-   "status": "GAP",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/params/mod.rs:230",
-    "crates/a2a-protocol-types/src/proto/convert/requests.rs:323",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:343",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:373",
-    "crates/a2a-protocol-server/src/push/config_store.rs:487"
+    "crates/a2a-protocol-server/src/handler/push_config.rs require_field"
    ],
-   "test_evidence": [],
-   "notes": "JSON absent -> -32602, but gRPC (absent == \"\") and JSON empty string are passed straight to push_config_store.delete, which treats a missing config as Ok (delete_nonexistent_is_ok): the server answers success to a request missing a REQUIRED field instead of INVALID_ARGUMENT. Since 2026-10-10 an empty or unknown task_id is TaskNotFound (the task is checked first), no longer a silent success; InvalidParams for the empty string specifically is still open.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/push_config.rs empty_required_ids_are_invalid_params"
+   ],
+   "notes": "An empty value (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup, on get, list and delete; absent in JSON is still -32602 / 400 at parse. Until 2026-10-11 an empty id reached the store and delete/list answered success or TaskNotFound.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 744,
@@ -9660,20 +9678,18 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "id [(google.api.field_behavior) = REQUIRED]",
-   "status": "GAP",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/params/mod.rs:230",
-    "crates/a2a-protocol-types/src/proto/convert/requests.rs:323",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:343",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:373",
-    "crates/a2a-protocol-server/src/push/config_store.rs:487"
+    "crates/a2a-protocol-server/src/handler/push_config.rs require_field"
    ],
-   "test_evidence": [],
-   "notes": "JSON absent -> -32602, but gRPC (absent == \"\") and JSON empty string are passed straight to push_config_store.delete, which treats a missing config as Ok (delete_nonexistent_is_ok): the server answers success to a request missing a REQUIRED field instead of INVALID_ARGUMENT. Unchanged on 2026-10-10 for this field: an empty config `id` on an existing task still deletes nothing and succeeds; only the task_id is now checked.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/push_config.rs empty_required_ids_are_invalid_params"
+   ],
+   "notes": "An empty value (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup, on get, list and delete; absent in JSON is still -32602 / 400 at parse. Until 2026-10-11 an empty id reached the store and delete/list answered success or TaskNotFound.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 749,
@@ -9746,18 +9762,18 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "string task_id = 1 [(google.api.field_behavior) = REQUIRED];",
-   "status": "GAP",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/params/mod.rs:248",
-    "crates/a2a-protocol-types/src/proto/convert/requests.rs:356",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:313"
+    "crates/a2a-protocol-server/src/handler/push_config.rs require_field"
    ],
-   "test_evidence": [],
-   "notes": "JSON absent -> -32602; gRPC absent (\"\") / JSON empty returns an empty list successfully (no validation, no task-existence check) instead of InvalidParams. Since 2026-10-10 an empty or unknown task_id is TaskNotFound (the task is checked first), no longer a silent success; InvalidParams for the empty string specifically is still open.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/push_config.rs empty_required_ids_are_invalid_params"
+   ],
+   "notes": "An empty value (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup, on get, list and delete; absent in JSON is still -32602 / 400 at parse. Until 2026-10-11 an empty id reached the store and delete/list answered success or TaskNotFound.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 773,

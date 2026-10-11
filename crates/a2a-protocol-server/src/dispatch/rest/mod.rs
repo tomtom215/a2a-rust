@@ -16,8 +16,10 @@ mod response;
 
 // The axum adapter answers errors through these, so the two HTTP+JSON
 // dispatchers send one error shape (audit N37).
-pub(crate) use error_response::{error_json_response, server_error_to_response};
-pub(crate) use response::json_ok_response;
+#[cfg(feature = "axum")]
+pub(crate) use error_response::params_from_slice;
+pub(crate) use error_response::{error_json_response, params_from_value, server_error_to_response};
+pub(crate) use response::{extended_card_response, json_ok_response};
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -546,9 +548,9 @@ impl RestDispatcher {
             Err(resp) => return resp,
         };
         let params: a2a_protocol_types::params::MessageSendParams =
-            match serde_json::from_value(body_value) {
+            match params_from_value(body_value) {
                 Ok(p) => p,
-                Err(e) => return error_json_response(400, &e.to_string()),
+                Err(resp) => return resp,
             };
         match self
             .handler
@@ -616,9 +618,9 @@ impl RestDispatcher {
             Err(resp) => return resp,
         };
         let params: a2a_protocol_types::params::CancelTaskParams =
-            match serde_json::from_value(body_value) {
+            match params_from_value(body_value) {
                 Ok(p) => p,
-                Err(e) => return error_json_response(400, &e.to_string()),
+                Err(resp) => return resp,
             };
         match self.handler.on_cancel_task(params, Some(headers)).await {
             Ok(task) => json_ok_response(&task),
@@ -643,11 +645,10 @@ impl RestDispatcher {
             Ok(v) => v,
             Err(resp) => return resp,
         };
-        let params: a2a_protocol_types::params::TaskIdParams =
-            match serde_json::from_value(body_value) {
-                Ok(p) => p,
-                Err(e) => return error_json_response(400, &e.to_string()),
-            };
+        let params: a2a_protocol_types::params::TaskIdParams = match params_from_value(body_value) {
+            Ok(p) => p,
+            Err(resp) => return resp,
+        };
         match self.handler.on_resubscribe(params, Some(headers)).await {
             Ok(reader) => build_sse_response(
                 reader,
@@ -678,9 +679,9 @@ impl RestDispatcher {
             Err(resp) => return resp,
         };
         let config: a2a_protocol_types::push::TaskPushNotificationConfig =
-            match serde_json::from_value(body_value) {
+            match params_from_value(body_value) {
                 Ok(c) => c,
-                Err(e) => return error_json_response(400, &e.to_string()),
+                Err(resp) => return resp,
             };
         match self.handler.on_set_push_config(config, Some(headers)).await {
             Ok(result) => json_ok_response(&result),
@@ -755,7 +756,7 @@ impl RestDispatcher {
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         match self.handler.on_get_extended_agent_card(Some(headers)).await {
-            Ok(card) => json_ok_response(&card),
+            Ok(card) => extended_card_response(&card, headers),
             Err(e) => server_error_to_response(&e),
         }
     }
