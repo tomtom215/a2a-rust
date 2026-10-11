@@ -97,6 +97,10 @@ pub(crate) const fn exceeds_card_body_size(len: u64, max: u64) -> bool {
 pub struct CardFetchOptions {
     headers: HashMap<String, String>,
     timeout: Duration,
+    /// Keys a signed card must verify against; see
+    /// [`with_signature_keys`](Self::with_signature_keys).
+    #[cfg(feature = "signing")]
+    signature_keys: Option<a2a_protocol_types::signing::Jwks>,
 }
 
 impl Default for CardFetchOptions {
@@ -105,6 +109,8 @@ impl Default for CardFetchOptions {
         Self {
             headers: HashMap::new(),
             timeout: CARD_FETCH_BUDGET,
+            #[cfg(feature = "signing")]
+            signature_keys: None,
         }
     }
 }
@@ -115,6 +121,23 @@ impl CardFetchOptions {
     #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.insert(name.into(), value.into());
+        self
+    }
+
+    /// Verifies a signed card against `keys` before returning it (spec §14:
+    /// clients SHOULD verify signatures when present). A card that carries
+    /// signatures is returned only if at least one verifies against a key in
+    /// `keys`, matched by `kid`; otherwise the fetch fails with
+    /// [`ClientError::Protocol`]. An unsigned card is returned as it is.
+    ///
+    /// The keys are the caller's trust decision: from a trusted store, or
+    /// from [`fetch_jwks`](crate::jwks::fetch_jwks) on a URL the caller
+    /// trusts. A `jku` named inside the card is not followed, since the card
+    /// being checked cannot vouch for its own keys.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn with_signature_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
+        self.signature_keys = Some(keys);
         self
     }
 
@@ -490,7 +513,35 @@ async fn fetch_card_with_metadata(
 
     let card =
         serde_json::from_slice::<AgentCard>(&body_bytes).map_err(ClientError::Serialization)?;
+    #[cfg(feature = "signing")]
+    verify_card_signatures(&card, options)?;
     Ok((card, etag, last_modified))
+}
+
+/// Spec §14: verify a card's signatures when the caller supplied keys. One
+/// valid signature suffices (JWS allows several signers); none valid, or no
+/// matching key, fails the fetch.
+#[cfg(feature = "signing")]
+fn verify_card_signatures(card: &AgentCard, options: &CardFetchOptions) -> ClientResult<()> {
+    let (Some(keys), Some(signatures)) = (&options.signature_keys, &card.signatures) else {
+        return Ok(());
+    };
+    if signatures.is_empty() {
+        return Ok(());
+    }
+    let mut last = None;
+    for sig in signatures {
+        match a2a_protocol_types::signing::verify_agent_card_with_jwks(card, sig, keys) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = Some(e),
+        }
+    }
+    let why = last.map_or_else(String::new, |e| e.message);
+    Err(ClientError::Protocol(
+        a2a_protocol_types::error::A2aError::invalid_params(format!(
+            "agent card signature did not verify against the supplied keys: {why}"
+        )),
+    ))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

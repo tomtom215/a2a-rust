@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`CardFetchOptions::with_signature_keys`** (client, feature `signing`;
+  spec §14: clients SHOULD verify signatures when present). Card discovery
+  with these options returns a signed card only if one of its signatures
+  verifies against the supplied JWK Set; a tampered card, or one with no
+  matching key, fails the fetch. An unsigned card is returned as it is.
 - **`dispatch::Hsts`** (server; spec §13.4). Wraps any `Dispatcher` and adds
   `Strict-Transport-Security` to every response. Opt-in: the built-in
   listener is plaintext, and the header only takes effect behind a TLS

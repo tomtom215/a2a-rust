@@ -3970,16 +3970,17 @@
    "binds": "client",
    "requirement": "Clients SHOULD verify signatures when present",
    "status": "PARTIAL",
-   "severity": "medium",
+   "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:528",
-    "crates/a2a-protocol-client/src/jwks.rs:58",
-    "crates/a2a-protocol-client/src/discovery.rs:1"
+    "crates/a2a-protocol-client/src/discovery.rs CardFetchOptions::with_signature_keys / verify_card_signatures"
    ],
-   "test_evidence": [],
-   "notes": "Verification functions exist (verify_agent_card_with_jwks, fetch_jwks), but client discovery/ClientBuilder never call them; a signed card is accepted unverified unless the application verifies explicitly.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs a_signed_card_is_verified_when_keys_are_supplied"
+   ],
+   "notes": "With CardFetchOptions::with_signature_keys (feature signing), resolve_agent_card_with_options and fetch_card_from_url_with_options return a signed card only if one signature verifies against the caller's keys; a tampered card or one with no matching key fails the fetch; an unsigned card is returned. Why PARTIAL/low: verification needs keys only the application can trust, so it is opt-in, not default; CachingCardResolver and ClientBuilder::from_card do not take keys yet; jku is never followed (the card cannot vouch for its own keys, §8.4.3 line 2132).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
    "spec_line": 3353,
