@@ -33,6 +33,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::task::{ContextId, TaskId};
 use tokio::sync::{broadcast, mpsc};
 
 use super::{EventQueueReader, EventQueueWriter, StreamEvent};
@@ -163,6 +164,10 @@ pub struct InMemoryQueueWriter {
     /// collide with the first turn's positions — the continuation's events
     /// would be silently dropped.
     seq: Arc<AtomicU64>,
+    /// The task and context this writer's events belong to, once the send
+    /// path has bound them ([`bind_identity`](Self::bind_identity)); shared
+    /// by every clone. See `check_identity`.
+    identity: Arc<std::sync::OnceLock<(TaskId, ContextId)>>,
     /// Holds a terminal event back until the background processor has ruled
     /// on it. `None` unless the send path enabled it; see
     /// [`TerminalGate`](super::terminal_gate::TerminalGate).
@@ -198,6 +203,7 @@ impl InMemoryQueueWriter {
             write_timeout,
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
+            identity: Arc::new(std::sync::OnceLock::new()),
             terminal_gate: None,
             collected: false,
         }
@@ -217,6 +223,7 @@ impl InMemoryQueueWriter {
             write_timeout,
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
+            identity: Arc::new(std::sync::OnceLock::new()),
             terminal_gate: None,
             collected: false,
         }
@@ -231,6 +238,45 @@ impl InMemoryQueueWriter {
     /// new turn.
     pub(crate) fn seed_seq(&self, last: u64) {
         self.seq.store(last, Ordering::Relaxed);
+    }
+
+    /// Binds this writer to the task and context its events belong to. From
+    /// then on a status update, artifact update or task snapshot with an
+    /// empty `taskId` or `contextId` gets these, and one naming another task
+    /// or context is refused (proto: both REQUIRED; an executor writing an
+    /// event by hand could otherwise send subscribers of this task an event
+    /// labelled as another's). The first binding wins.
+    pub(crate) fn bind_identity(&self, task_id: TaskId, context_id: ContextId) {
+        let _ = self.identity.set((task_id, context_id));
+    }
+
+    /// Fills empty ids from the binding and refuses foreign ones. A writer
+    /// that was never bound checks nothing.
+    fn check_identity(&self, event: &mut StreamResponse) -> A2aResult<()> {
+        let Some((task, context)) = self.identity.get() else {
+            return Ok(());
+        };
+        let (task_id, context_id) = match event {
+            StreamResponse::StatusUpdate(u) => (&mut u.task_id, &mut u.context_id),
+            StreamResponse::ArtifactUpdate(u) => (&mut u.task_id, &mut u.context_id),
+            StreamResponse::Task(t) => (&mut t.id, &mut t.context_id),
+            _ => return Ok(()),
+        };
+        if task_id.0.is_empty() {
+            *task_id = task.clone();
+        } else if task_id != task {
+            return Err(A2aError::invalid_params(format!(
+                "event names task {task_id}, but this executor is running task {task}"
+            )));
+        }
+        if context_id.0.is_empty() {
+            *context_id = context.clone();
+        } else if context_id != context {
+            return Err(A2aError::invalid_params(format!(
+                "event names context {context_id}, but task {task} is in context {context}"
+            )));
+        }
+        Ok(())
     }
 
     /// The highest position this writer has assigned so far.
@@ -472,6 +518,9 @@ impl EventQueueWriter for InMemoryQueueWriter {
         mut event: StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         // Before anything persists or broadcasts it (N35).
+        if let Err(e) = self.check_identity(&mut event) {
+            return Box::pin(std::future::ready(Err(e)));
+        }
         if let Err(e) = super::status_stamp::stamp_status(&mut event) {
             return Box::pin(std::future::ready(Err(e)));
         }

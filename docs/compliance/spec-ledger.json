@@ -82,17 +82,21 @@
    "keyword": "SHOULD",
    "binds": "both",
    "requirement": "SDKs and JSON Schemas SHOULD provide deprecated alias types/definitions to maintain backward compatibility.",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:394",
+    "crates/a2a-protocol-types/src/security.rs:406",
+    "crates/a2a-protocol-types/src/security.rs:419",
     "crates/a2a-protocol-types/src/security.rs:465",
     "crates/a2a-protocol-types/src/security.rs:485"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-types/src/security.rs:402 implicit",
+    "crates/a2a-protocol-types/src/security.rs:415 password",
     "crates/a2a-protocol-types/src/security.rs:662 wire_format_password_oauth_flow"
    ],
-   "notes": "The only proto-deprecated members (ImplicitOAuthFlow, PasswordOAuthFlow) are retained, but are documented as deprecated in prose only, with no #[deprecated] attribute (grep finds no #[deprecated] in a2a-protocol-types). No renamed-field aliases exist in v1.0 to alias.",
+   "notes": "The two proto-deprecated OAuth flows (implicit, password) are kept so cards declaring them parse, and since 2026-10-11 carry #[deprecated] as the proto fields do. Two compile_fail doctests deny(deprecated) on each variant; removing the attribute makes the doctest compile and fail (shown). No v1.0 field was renamed, so no renamed-field aliases are needed.",
    "auditor": "A",
    "source": "spec"
   },
@@ -102,16 +106,20 @@
    "keyword": "SHOULD NOT",
    "binds": "both",
    "requirement": "A deprecated name SHOULD NOT be removed earlier than the next major version after introduction of its replacement.",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:394",
-    "crates/a2a-protocol-types/src/security.rs:398"
+    "crates/a2a-protocol-types/src/security.rs:398",
+    "crates/a2a-protocol-types/src/security.rs:406",
+    "crates/a2a-protocol-types/src/security.rs:419"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-types/src/security.rs:402 implicit",
+    "crates/a2a-protocol-types/src/security.rs:415 password",
     "crates/a2a-protocol-types/src/security.rs:662 wire_format_password_oauth_flow"
    ],
-   "notes": "Deprecated OAuth flows are still present; nothing pins their continued presence other than the serde wire test.",
+   "notes": "Both deprecated flows remain in the public enum and on the wire (wire_format_password_oauth_flow round-trips one); removal would be a semver-major change, which cargo-semver-checks gates in CI.",
    "auditor": "A",
    "source": "spec"
   },
@@ -1481,15 +1489,17 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Servers ... SHOULD provide actionable information to help clients resolve issues.",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:44",
     "crates/a2a-protocol-server/src/handler/capability.rs:98",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:247"
    ],
-   "test_evidence": [],
-   "notes": "Error messages name the field/extension/version (e.g. 'this agent requires extension support the client did not declare (send them in the A2A-Extensions header): ...'); no test asserts message content generally.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/actionable_errors.rs:58 each_refusal_names_the_parameter_and_what_is_accepted"
+   ],
+   "notes": "Refusals name the parameter and the accepted form or limit; the wire test pins six (message.id empty and too long, no parts, metadata over the size limit and not an object, unsupported A2A-Version). Shown to fail with the message.id label changed.",
    "auditor": "B",
    "source": "spec"
   },
@@ -1641,14 +1651,16 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Servers SHOULD specify which parameter(s) failed validation and why",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:44",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:98"
    ],
-   "test_evidence": [],
-   "notes": "Messages name the field (\"message.id\", \"request metadata exceeds maximum size\"), but only as free text: no google.rpc.BadRequest field violation detail is emitted; tests assert the variant, not the field name.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/actionable_errors.rs:58 each_refusal_names_the_parameter_and_what_is_accepted"
+   ],
+   "notes": "Each handler validation message names the parameter (message.id, message, request metadata, A2A version); body-shape errors also carry a google.rpc.BadRequest field violation (jsonrpc_error_details.rs). The handler's own validation errors name the field in text only, not as a BadRequest detail: ServerError::InvalidParams carries a String, and changing it would break callers that match it.",
    "auditor": "B",
    "source": "spec"
   },
@@ -1658,14 +1670,16 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Servers SHOULD provide guidance on valid parameter values or formats",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:98",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:257"
    ],
-   "test_evidence": [],
-   "notes": "Some messages state the limit/expected value (max bytes, 'this server supports 1.x'); not systematic, not tested.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/actionable_errors.rs:58 each_refusal_names_the_parameter_and_what_is_accepted"
+   ],
+   "notes": "Messages state the limit or accepted value (\"got 5000, max ...\", \"max 1048576\", \"must be a JSON object\", \"this server supports 1.x\"); pinned by the wire test.",
    "auditor": "B",
    "source": "spec"
   },
@@ -4134,15 +4148,17 @@
    "keyword": "SHOULD",
    "binds": "both",
    "requirement": "Implementations **SHOULD** use modern TLS configurations (TLS 1.3+ recommended) with strong cipher suites.",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/tls.rs:60",
     "crates/a2a-protocol-client/src/tls.rs:62",
     "crates/a2a-protocol-client/Cargo.toml:87"
    ],
-   "test_evidence": [],
-   "notes": "Client uses rustls `with_safe_default_protocol_versions()` (TLS 1.2 + 1.3, rustls' safe suite list only); TLS 1.2 remains enabled. No test asserts the negotiated version/suite set.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/tls_versions.rs:73 the_client_negotiates_tls13_with_forward_secret_aead_suites"
+   ],
+   "notes": "rustls 0.23.45 implements only TLS 1.2 and 1.3 (its versions.rs defines no other SupportedProtocolVersion), so SSL 3.0 and TLS 1.0/1.1 cannot be offered. The client's config negotiates TLS 1.3 with a server that has it and enables only forward-secret AEAD suites (TLS13_* and TLS_ECDHE_*_GCM/CHACHA20_POLY1305); shown to fail with the client limited to TLS 1.2. TLS 1.2 stays enabled for peers without 1.3. The push sender's default config (push/sender.rs) uses the same builder chain; it is read, not handshake-tested.",
    "auditor": "D",
    "source": "spec"
   },
@@ -5251,16 +5267,17 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "When a cached Agent Card has expired, clients **SHOULD** use conditional requests (`If-None-Match` with the stored `ETag`, or `If-Modified-Since`)",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:364",
     "crates/a2a-protocol-client/src/discovery.rs:390"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:636 fetch_card_with_metadata_304_returns_cached"
+    "crates/a2a-protocol-client/src/discovery.rs:636 fetch_card_with_metadata_304_returns_cached",
+    "crates/a2a-protocol-client/tests/card_revalidation.rs:65 a_cached_card_is_revalidated_with_its_validators"
    ],
-   "notes": "Headers sent and 304 handled, but the 304 tests' mock servers answer 304 unconditionally and never assert that If-None-Match / If-Modified-Since was actually sent.",
+   "notes": "CachingCardResolver revalidates on every resolve with If-None-Match and If-Modified-Since from the cached response; a server that answers 304 only to a request carrying both validators sees them on the second fetch. Shown to fail with the If-None-Match header removed.",
    "auditor": "D",
    "source": "spec"
   },
@@ -7285,16 +7302,17 @@
    "keyword": "SHOULD",
    "binds": "both",
    "requirement": "Implementations SHOULD use modern TLS configurations (TLS 1.3+ recommended) with strong cipher suites",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/tls.rs:61",
     "crates/a2a-protocol-server/src/push/sender.rs:49"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/tls.rs:145 default_tls_config_creates_valid_config"
+    "crates/a2a-protocol-client/src/tls.rs:145 default_tls_config_creates_valid_config",
+    "crates/a2a-protocol-client/tests/tls_versions.rs:73 the_client_negotiates_tls13_with_forward_secret_aead_suites"
    ],
-   "notes": "rustls + ring with_safe_default_protocol_versions (TLS1.3 and 1.2) and rustls default suites; no test pins negotiated version/suites.",
+   "notes": "rustls 0.23.45 implements only TLS 1.2 and 1.3 (its versions.rs defines no other SupportedProtocolVersion), so SSL 3.0 and TLS 1.0/1.1 cannot be offered. The client's config negotiates TLS 1.3 with a server that has it and enables only forward-secret AEAD suites (TLS13_* and TLS_ECDHE_*_GCM/CHACHA20_POLY1305); shown to fail with the client limited to TLS 1.2. TLS 1.2 stays enabled for peers without 1.3. The push sender's default config (push/sender.rs) uses the same builder chain; it is read, not handshake-tested.",
    "auditor": "F",
    "source": "spec"
   },
@@ -7324,15 +7342,17 @@
    "keyword": "SHOULD",
    "binds": "both",
    "requirement": "Implementations SHOULD disable support for deprecated SSL/TLS versions (SSLv3, TLS 1.0, TLS 1.1)",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/tls.rs:62",
     "crates/a2a-protocol-server/src/push/sender.rs:49",
     "crates/a2a-protocol-client/Cargo.toml:87"
    ],
-   "test_evidence": [],
-   "notes": "By construction: rustls implements only TLS 1.2/1.3. No test, but none needed beyond dependency choice.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/tls_versions.rs:73 the_client_negotiates_tls13_with_forward_secret_aead_suites"
+   ],
+   "notes": "rustls 0.23.45 implements only TLS 1.2 and 1.3 (its versions.rs defines no other SupportedProtocolVersion), so SSL 3.0 and TLS 1.0/1.1 cannot be offered. The client's config negotiates TLS 1.3 with a server that has it and enables only forward-secret AEAD suites (TLS13_* and TLS_ECDHE_*_GCM/CHACHA20_POLY1305); shown to fail with the client limited to TLS 1.2. TLS 1.2 stays enabled for peers without 1.3. The push sender's default config (push/sender.rs) uses the same builder chain; it is read, not handshake-tested.",
    "auditor": "F",
    "source": "spec"
   },
@@ -7497,7 +7517,7 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Agents SHOULD implement rate limiting to prevent brute-force attacks",
-   "status": "IMPLEMENTED_UNTESTED",
+   "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/rate_limit/mod.rs:302",
@@ -7506,7 +7526,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/rate_limit/tests.rs:127 rejects_requests_over_limit"
    ],
-   "notes": "RateLimitInterceptor exists (opt-in) but counts per caller_identity/IP only for requests that reach it; if registered after the auth interceptor, failed authentications are never counted. No test of brute-force throttling of failed auth.",
+   "notes": "RateLimitInterceptor limits throughput per caller, but nothing throttles failed authentication: the docs say to register the limiter after the auth interceptor (so it can key by identity), and a refused credential never reaches it. Registering it first keys unauthenticated callers by trusted x-forwarded-for hops or one shared 'anonymous' bucket, which lets one attacker exhaust everyone's budget. Per-source throttling of auth failures needs the peer address, which CallContext does not carry. Recorded for the maintainer: plumb the peer address into CallContext and count auth failures per source.",
    "auditor": "F",
    "source": "spec"
   },
@@ -8200,19 +8220,23 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "task_id [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/events.rs:39",
-    "crates/a2a-protocol-types/src/events.rs:43",
     "crates/a2a-protocol-server/src/executor_helpers.rs:226",
     "crates/a2a-protocol-server/src/executor_helpers.rs:339",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:407",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:255",
+    "crates/a2a-protocol-types/src/events.rs:39",
+    "crates/a2a-protocol-types/src/events.rs:43",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:335"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:834 tck_stream_response_status_update_variant"
    ],
-   "notes": "Non-optional field, always serialized; EventEmitter fills it from RequestContext, but an executor writing the event by hand can put any value (incl. \"\" or another task's id) and the server neither validates nor overwrites it. Client JSON refuses an event missing it (stream yields ClientError::Serialization), gRPC tolerates \"\". Wire tests round-trip the field but none asserts the server stamps/validates it.",
+   "notes": "A missing key does not parse over JSON. On the server, the queue writer is bound to the running task: an event whose id is empty (gRPC's absent string) gets the task's id, and one naming another task or context is refused with InvalidParams before it is persisted or delivered. Over gRPC on the client, an empty id still converts; the proto3 wire cannot tell absent from empty.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8222,19 +8246,23 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "context_id [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/events.rs:39",
-    "crates/a2a-protocol-types/src/events.rs:43",
     "crates/a2a-protocol-server/src/executor_helpers.rs:226",
     "crates/a2a-protocol-server/src/executor_helpers.rs:339",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:407",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:255",
+    "crates/a2a-protocol-types/src/events.rs:39",
+    "crates/a2a-protocol-types/src/events.rs:43",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:335"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:834 tck_stream_response_status_update_variant"
    ],
-   "notes": "Non-optional field, always serialized; EventEmitter fills it from RequestContext, but an executor writing the event by hand can put any value (incl. \"\" or another task's id) and the server neither validates nor overwrites it. Client JSON refuses an event missing it (stream yields ClientError::Serialization), gRPC tolerates \"\". Wire tests round-trip the field but none asserts the server stamps/validates it.",
+   "notes": "A missing key does not parse over JSON. On the server, the queue writer is bound to the running task: an event whose id is empty (gRPC's absent string) gets the task's id, and one naming another task or context is refused with InvalidParams before it is persisted or delivered. Over gRPC on the client, an empty id still converts; the proto3 wire cannot tell absent from empty.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8244,17 +8272,20 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "TaskStatus status = 3 [(google.api.field_behavior) = REQUIRED];",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:21",
     "crates/a2a-protocol-types/src/events.rs:46",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:337",
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:21"
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:339"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:126 a_grpc_update_event_without_its_status_or_artifact_is_refused",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:834 tck_stream_response_status_update_variant"
    ],
-   "notes": "Always serialized; gRPC decode of a status-less event -> ConvertError::missing(\"statusUpdate.status\") -> ClientError (refuse). No test of the missing-status gRPC path.",
+   "notes": "Missing over JSON does not parse; absent over gRPC is ConvertError statusUpdate.status. Tests shown to fail with the conversion check replaced by a default.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8264,19 +8295,23 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "task_id [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/events.rs:64",
-    "crates/a2a-protocol-types/src/events.rs:68",
     "crates/a2a-protocol-server/src/executor_helpers.rs:226",
     "crates/a2a-protocol-server/src/executor_helpers.rs:339",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:407",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:255",
+    "crates/a2a-protocol-types/src/events.rs:64",
+    "crates/a2a-protocol-types/src/events.rs:68",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:335"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:860 tck_stream_response_artifact_update_variant"
    ],
-   "notes": "Non-optional field, always serialized; EventEmitter fills it from RequestContext, but an executor writing the event by hand can put any value (incl. \"\" or another task's id) and the server neither validates nor overwrites it. Client JSON refuses an event missing it (stream yields ClientError::Serialization), gRPC tolerates \"\". Wire tests round-trip the field but none asserts the server stamps/validates it.",
+   "notes": "A missing key does not parse over JSON. On the server, the queue writer is bound to the running task: an event whose id is empty (gRPC's absent string) gets the task's id, and one naming another task or context is refused with InvalidParams before it is persisted or delivered. Over gRPC on the client, an empty id still converts; the proto3 wire cannot tell absent from empty.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8286,19 +8321,23 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "context_id [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/events.rs:64",
-    "crates/a2a-protocol-types/src/events.rs:68",
     "crates/a2a-protocol-server/src/executor_helpers.rs:226",
     "crates/a2a-protocol-server/src/executor_helpers.rs:339",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:407",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:255",
+    "crates/a2a-protocol-types/src/events.rs:64",
+    "crates/a2a-protocol-types/src/events.rs:68",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:335"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:860 tck_stream_response_artifact_update_variant"
    ],
-   "notes": "Non-optional field, always serialized; EventEmitter fills it from RequestContext, but an executor writing the event by hand can put any value (incl. \"\" or another task's id) and the server neither validates nor overwrites it. Client JSON refuses an event missing it (stream yields ClientError::Serialization), gRPC tolerates \"\". Wire tests round-trip the field but none asserts the server stamps/validates it.",
+   "notes": "A missing key does not parse over JSON. On the server, the queue writer is bound to the running task: an event whose id is empty (gRPC's absent string) gets the task's id, and one naming another task or context is refused with InvalidParams before it is persisted or delivered. Over gRPC on the client, an empty id still converts; the proto3 wire cannot tell absent from empty.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8308,16 +8347,19 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "Artifact artifact = 3 [(google.api.field_behavior) = REQUIRED];",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/events.rs:71",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:366"
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:366",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:368"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:126 a_grpc_update_event_without_its_status_or_artifact_is_refused",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:860 tck_stream_response_artifact_update_variant"
    ],
-   "notes": "Always serialized; gRPC missing -> ConvertError::missing(\"artifactUpdate.artifact\"); JSON missing -> serde error. No test of the missing path.",
+   "notes": "Missing over JSON does not parse; absent over gRPC is ConvertError artifactUpdate.artifact. Shown to fail with the check replaced by a stand-in artifact.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8382,16 +8424,20 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "url [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:38",
-    "crates/a2a-protocol-server/src/builder.rs:547",
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
-    "crates/a2a-protocol-client/src/discovery.rs:467"
+    "crates/a2a-protocol-client/src/discovery.rs:467",
+    "crates/a2a-protocol-server/src/builder.rs:547",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:38"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional String, always emitted (possibly as \"\"; the builder does not check non-empty). Client JSON refuses a card whose interface lacks the key (whole card fails to parse); for protocolVersion the client treats \"\" as compatible (selection.rs is_compatible). TCK test_agent_card_required_fields checks only top-level card keys, not interface keys.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8401,16 +8447,20 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "protocol_binding [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:51",
-    "crates/a2a-protocol-server/src/builder.rs:547",
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
-    "crates/a2a-protocol-client/src/discovery.rs:467"
+    "crates/a2a-protocol-client/src/discovery.rs:467",
+    "crates/a2a-protocol-server/src/builder.rs:547",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:51"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional String, always emitted (possibly as \"\"; the builder does not check non-empty). Client JSON refuses a card whose interface lacks the key (whole card fails to parse); for protocolVersion the client treats \"\" as compatible (selection.rs is_compatible). TCK test_agent_card_required_fields checks only top-level card keys, not interface keys.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8448,16 +8498,20 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "protocol_version [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:57",
-    "crates/a2a-protocol-server/src/builder.rs:547",
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
-    "crates/a2a-protocol-client/src/discovery.rs:467"
+    "crates/a2a-protocol-client/src/discovery.rs:467",
+    "crates/a2a-protocol-server/src/builder.rs:547",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:57"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional String, always emitted (possibly as \"\"; the builder does not check non-empty). Client JSON refuses a card whose interface lacks the key (whole card fails to parse); for protocolVersion the client treats \"\" as compatible (selection.rs is_compatible). TCK test_agent_card_required_fields checks only top-level card keys, not interface keys.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8622,13 +8676,17 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "url [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:140"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:140",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional String: always emitted when provider is set; client JSON refuses a provider object missing it (fails the whole card). No test of either direction.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8638,13 +8696,17 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "organization [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:137"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:137",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional String: always emitted when provider is set; client JSON refuses a provider object missing it (fails the whole card). No test of either direction.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8673,13 +8735,17 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "id [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:155"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:155",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
    ],
-   "test_evidence": [],
-   "notes": "Always serialized (tags as [] even when empty). Client refuses a skill missing id/name/description; tolerates missing tags (serde default). Not validated non-empty on the server; no test.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8689,13 +8755,17 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "name [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:158"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:158",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
    ],
-   "test_evidence": [],
-   "notes": "Always serialized (tags as [] even when empty). Client refuses a skill missing id/name/description; tolerates missing tags (serde default). Not validated non-empty on the server; no test.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8705,13 +8775,17 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "description [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:161"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:161",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
    ],
-   "test_evidence": [],
-   "notes": "Always serialized (tags as [] even when empty). Client refuses a skill missing id/name/description; tolerates missing tags (serde default). Not validated non-empty on the server; no test.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8721,13 +8795,16 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "tags [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:169"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:169",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
    ],
-   "test_evidence": [],
-   "notes": "Always serialized (tags as [] even when empty). Client refuses a skill missing id/name/description; tolerates missing tags (serde default). Not validated non-empty on the server; no test.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:271 validate_refuses_each_empty_required_array"
+   ],
+   "notes": "A missing tags key parses as empty on purpose (ProtoJSON printers omit empty repeated fields, so official SDKs send skills without it); AgentCard::validate refuses an empty list, so this SDK never publishes one.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8751,13 +8828,17 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "protected [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332",
     "crates/a2a-protocol-types/src/extensions.rs:64"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional String; always emitted when a signature is present; client refuses a signature entry missing it. No dedicated missing-field test.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8781,13 +8862,17 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "signature [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:332",
     "crates/a2a-protocol-types/src/extensions.rs:67"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional String; always emitted when a signature is present; client refuses a signature entry missing it. No dedicated missing-field test.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8878,7 +8963,7 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "location [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
+   "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:301",
@@ -8888,8 +8973,10 @@
     "crates/a2a-protocol-types/src/security.rs:447",
     "crates/a2a-protocol-types/src/security.rs:504"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional field, always emitted when the scheme/flow is present; client JSON refuses a card where it is missing. Values are author-supplied and not validated (e.g. non-empty, URL form).",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8899,7 +8986,7 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "name [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
+   "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:301",
@@ -8909,8 +8996,10 @@
     "crates/a2a-protocol-types/src/security.rs:447",
     "crates/a2a-protocol-types/src/security.rs:504"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional field, always emitted when the scheme/flow is present; client JSON refuses a card where it is missing. Values are author-supplied and not validated (e.g. non-empty, URL form).",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8936,7 +9025,7 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "scheme [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
+   "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:301",
@@ -8946,8 +9035,10 @@
     "crates/a2a-protocol-types/src/security.rs:447",
     "crates/a2a-protocol-types/src/security.rs:504"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional field, always emitted when the scheme/flow is present; client JSON refuses a card where it is missing. Values are author-supplied and not validated (e.g. non-empty, URL form).",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8992,7 +9083,7 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "open_id_connect_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
+   "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:301",
@@ -9002,8 +9093,10 @@
     "crates/a2a-protocol-types/src/security.rs:447",
     "crates/a2a-protocol-types/src/security.rs:504"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional field, always emitted when the scheme/flow is present; client JSON refuses a card where it is missing. Values are author-supplied and not validated (e.g. non-empty, URL form).",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9013,7 +9106,7 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "authorization_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
+   "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:301",
@@ -9023,8 +9116,10 @@
     "crates/a2a-protocol-types/src/security.rs:447",
     "crates/a2a-protocol-types/src/security.rs:504"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional field, always emitted when the scheme/flow is present; client JSON refuses a card where it is missing. Values are author-supplied and not validated (e.g. non-empty, URL form).",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9034,7 +9129,7 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "token_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
+   "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:301",
@@ -9044,8 +9139,10 @@
     "crates/a2a-protocol-types/src/security.rs:447",
     "crates/a2a-protocol-types/src/security.rs:504"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional field, always emitted when the scheme/flow is present; client JSON refuses a card where it is missing. Values are author-supplied and not validated (e.g. non-empty, URL form).",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9107,7 +9204,7 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "token_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
+   "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:301",
@@ -9117,8 +9214,10 @@
     "crates/a2a-protocol-types/src/security.rs:447",
     "crates/a2a-protocol-types/src/security.rs:504"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional field, always emitted when the scheme/flow is present; client JSON refuses a card where it is missing. Values are author-supplied and not validated (e.g. non-empty, URL form).",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9258,7 +9357,7 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "device_authorization_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
+   "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:301",
@@ -9268,8 +9367,10 @@
     "crates/a2a-protocol-types/src/security.rs:447",
     "crates/a2a-protocol-types/src/security.rs:504"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional field, always emitted when the scheme/flow is present; client JSON refuses a card where it is missing. Values are author-supplied and not validated (e.g. non-empty, URL form).",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9279,7 +9380,7 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "token_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "IMPLEMENTED_UNTESTED",
+   "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:301",
@@ -9289,8 +9390,10 @@
     "crates/a2a-protocol-types/src/security.rs:447",
     "crates/a2a-protocol-types/src/security.rs:504"
    ],
-   "test_evidence": [],
-   "notes": "Non-optional field, always emitted when the scheme/flow is present; client JSON refuses a card where it is missing. Values are author-supplied and not validated (e.g. non-empty, URL form).",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+   ],
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
    "auditor": "G",
    "source": "proto"
   },

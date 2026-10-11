@@ -404,6 +404,10 @@ impl RequestHandler {
             // first, then the token, then the row.
             let (writer, reader, persistence_rx) =
                 self.lease_event_queue(&task_id, use_background).await?;
+            writer.bind_identity(
+                task_id.clone(),
+                a2a_protocol_types::task::ContextId::new(ctx.context_id.clone()),
+            );
             guard_ref.leased();
             let turn = self
                 .register_cancellation_token(&task_id, ctx.cancellation_token.clone())

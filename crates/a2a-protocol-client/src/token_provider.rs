@@ -939,6 +939,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // an implicit-flow card is still a card a client may meet
     fn from_agent_card_wrong_flow_errors() {
         use a2a_protocol_types::security::{ImplicitFlow, OAuthFlows};
         let card = card_with_oauth2(OAuthFlows::Implicit(ImplicitFlow {

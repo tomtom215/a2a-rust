@@ -265,6 +265,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hello-agent`, `langfuse-agent` and `swarm` examples, the SDK README and
   two book pages published skill-less cards and now declare a skill. See the
   upgrading guide.
+- **`AgentCard::validate` refuses empty required strings** (types; proto
+  `REQUIRED`): an interface's `url`, `protocolBinding` or
+  `protocolVersion`; the provider's `organization` or `url`; a skill's
+  `id`, `name` or `description`; a signature's `protected` or `signature`.
+  Over gRPC an empty string is the absent value. Security-scheme fields are
+  not yet checked (the const `validate` cannot walk the scheme map).
+- **An executor's events are bound to its task** (server; proto
+  `REQUIRED` `taskId`/`contextId`). A status, artifact or task event written
+  with an empty task or context id gets the running task's; one naming
+  another task or context is refused with `InvalidParams` before it is
+  stored or sent. The server used to pass whatever the executor wrote.
 - **One JSON-RPC error shape on every surface** (server; spec §9.5, §12.4).
   HTTP responses, SSE frames and WebSocket messages now build the error the
   same way: the A2A code, and `data` as the typed-details array. On WebSocket
@@ -474,6 +485,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forbids. Use `sign_card_es256` and `sign_card_ed25519`: the same signature
   with `key_id: &str`. They remain and still sign; removal follows the
   deprecation window in `STABILITY.md` §3.
+- **`OAuthFlows::Implicit` and `OAuthFlows::Password`** (types), as the A2A
+  1.0 proto marks both fields `deprecated`. They remain, parse and serialize
+  as before (spec §1.4 keeps deprecated definitions until the next major
+  version); code that names them now gets a deprecation warning.
 
 ### Performance
 

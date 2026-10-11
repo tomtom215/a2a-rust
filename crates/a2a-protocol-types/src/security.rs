@@ -392,9 +392,31 @@ pub enum OAuthFlows {
     DeviceCode(DeviceCodeFlow),
 
     /// Implicit flow (deprecated — use Authorization Code + PKCE instead).
+    ///
+    /// Kept so cards that still declare it parse (spec §1.4: deprecated
+    /// definitions stay until the next major version), and marked
+    /// `#[deprecated]` as the proto marks the field:
+    ///
+    /// ```compile_fail
+    /// #[deny(deprecated)]
+    /// fn implicit(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
+    ///     matches!(f, a2a_protocol_types::security::OAuthFlows::Implicit(_))
+    /// }
+    /// ```
+    #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE")]
     Implicit(ImplicitFlow),
 
     /// Resource owner password credentials flow (deprecated).
+    ///
+    /// Kept and marked as [`Implicit`](Self::Implicit) is:
+    ///
+    /// ```compile_fail
+    /// #[deny(deprecated)]
+    /// fn password(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
+    ///     matches!(f, a2a_protocol_types::security::OAuthFlows::Password(_))
+    /// }
+    /// ```
+    #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code")]
     Password(PasswordOAuthFlow),
 }
 
@@ -703,6 +725,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // the deprecated flow stays on the wire (§1.4)
     fn wire_format_password_oauth_flow() {
         let flows = OAuthFlows::Password(PasswordOAuthFlow {
             token_url: "https://auth.example.com/token".into(),

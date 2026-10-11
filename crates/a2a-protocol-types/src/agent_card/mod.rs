@@ -324,6 +324,11 @@ impl AgentCard {
     ///   arrays marked as required MUST contain at least one element):
     ///   `supported_interfaces`, `default_input_modes`, `default_output_modes`,
     ///   `skills`, or any skill's `tags`
+    /// - a string field the proto marks REQUIRED is empty (proto3 cannot tell
+    ///   an empty string from an absent one): an interface's `url`,
+    ///   `protocol_binding` or `protocol_version`; the provider's
+    ///   `organization` or `url`; a skill's `id`, `name` or `description`; a
+    ///   signature's `protected` or `signature`
     pub const fn validate(&self) -> Result<(), &'static str> {
         if self.name.is_empty() {
             return Err("agent card name must not be empty");
@@ -340,13 +345,44 @@ impl AgentCard {
         if self.skills.is_empty() {
             return Err("agent card must declare at least one skill");
         }
+        let interfaces = self.supported_interfaces.as_slice();
+        let mut i = 0;
+        while i < interfaces.len() {
+            let it = &interfaces[i];
+            if it.url.is_empty() || it.protocol_binding.is_empty() || it.protocol_version.is_empty()
+            {
+                return Err(
+                    "every supported interface needs a url, protocolBinding and protocolVersion",
+                );
+            }
+            i += 1;
+        }
+        if let Some(provider) = &self.provider
+            && (provider.organization.is_empty() || provider.url.is_empty())
+        {
+            return Err("the agent provider needs an organization and a url");
+        }
         let skills = self.skills.as_slice();
         let mut i = 0;
         while i < skills.len() {
-            if skills[i].tags.is_empty() {
+            let skill = &skills[i];
+            if skill.id.is_empty() || skill.name.is_empty() || skill.description.is_empty() {
+                return Err("every agent skill needs an id, name and description");
+            }
+            if skill.tags.is_empty() {
                 return Err("every agent skill must have at least one tag");
             }
             i += 1;
+        }
+        if let Some(signatures) = &self.signatures {
+            let signatures = signatures.as_slice();
+            let mut i = 0;
+            while i < signatures.len() {
+                if signatures[i].protected.is_empty() || signatures[i].signature.is_empty() {
+                    return Err("every card signature needs its protected header and signature");
+                }
+                i += 1;
+            }
         }
         Ok(())
     }

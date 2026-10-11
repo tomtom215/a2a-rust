@@ -987,8 +987,27 @@ area. This branch answers both.
     `HttpPushSender::with_allowed_hosts`; opt-in `dispatch::Hsts`;
     `BadRequest` field violations on HTTP+JSON; the caching resolver can
     hold the extended card. Three GAPs remain, all maintainer decisions
-    (below). PARTIAL (50) and IMPLEMENTED_UNTESTED (43) entries are not yet
-    worked through.
+    (below).
+18. `ef31df9` one JSON-RPC error shape on HTTP, SSE and WebSocket (§9.5,
+    §12.4); `51b93ad` the `Hsts` inert-bounds allowlist entries.
+19. `2d20696` (breaking) `AgentCard::validate` refuses empty required
+    arrays and `build`, the dynamic card handler and hot reload run it.
+20. `f7cb779` every push webhook is attempted; the budget sets concurrency
+    (§4.3.3). `7260a8f` `CardFetchOptions::with_signature_keys` (§14).
+    `f400818` tests for four untested MUSTs; SLIMRPC credentials documented.
+21. Proto `REQUIRED` sweep: `validate` refuses empty required strings; the
+    queue writer binds events to the running task (empty ids filled,
+    foreign ones refused); `tests/required_fields.rs` removes each
+    REQUIRED card and event key and the gRPC status/artifact. Security-
+    scheme strings are refused only when absent, not when empty (PARTIAL:
+    `validate` is const and cannot walk the scheme map).
+22. SHOULD-level tests: TLS 1.3 negotiated with forward-secret AEAD suites
+    only; card revalidation sends both validators; refusals name the
+    parameter and the accepted value; `#[deprecated]` on the implicit and
+    password OAuth flows. §13 brute-force throttling (spec line 3198) is
+    PARTIAL: a refused credential never reaches the rate limiter, and
+    per-source counting needs the peer address, which `CallContext` lacks.
+    Maintainer decision.
 
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
@@ -1012,9 +1031,15 @@ before acting on it, as this branch did.
   container's disk allowance (ENOSPC mid-run). The SLIMRPC binding is
   outside the workspace; its `cargo test -- --test-threads=1` passed after
   item 12.
-- Ledger after item 17: TESTED 249, PARTIAL 50, IMPLEMENTED_UNTESTED 43,
-  GAP 3, NOT_SUPPORTED 13, SUPPORTED 43, NOT_APPLICABLE 22,
-  APPLICATION 89 (`scripts/check_spec_ledger.py`).
+- Ledger after item 22: TESTED 283, PARTIAL 56, IMPLEMENTED_UNTESTED 2,
+  GAP 3, NOT_SUPPORTED 13, SUPPORTED 44, NOT_APPLICABLE 22,
+  APPLICATION 89 (`scripts/check_spec_ledger.py`). PARTIAL rose because nine
+  security-scheme REQUIRED entries and the brute-force SHOULD moved there
+  from IMPLEMENTED_UNTESTED. The two left untested: system errors are
+  logged (534) and webhook URLs should be HTTPS (3137).
+- Workspace tests after item 21: 182 binaries, 4,517 passed, 0 failed,
+  116 ignored. Item 22's four new tests were run on their own and each shown
+  to fail with its fix removed.
 - Workspace tests after item 17: 177 binaries, 4,497 passed, 0 failed,
   116 ignored; clippy clean.
 - CI lesson 2: run the whole static-checks job locally before pushing (its
