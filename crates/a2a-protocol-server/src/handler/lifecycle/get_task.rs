@@ -9,12 +9,12 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use a2a_protocol_types::params::TaskQueryParams;
-use a2a_protocol_types::task::{Task, TaskId};
+use a2a_protocol_types::task::Task;
 
 use crate::error::{ServerError, ServerResult};
 
 use super::super::RequestHandler;
-use super::super::helpers::{build_call_context, truncate_history};
+use super::super::helpers::{build_call_context, task_id_param, truncate_history};
 
 impl RequestHandler {
     /// Handles `GetTask`. Returns [`ServerError::TaskNotFound`] if missing.
@@ -44,7 +44,7 @@ impl RequestHandler {
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
 
-                    let task_id = TaskId::new(&params.id);
+                    let task_id = task_id_param(&params.id, self.limits.max_id_length)?;
                     let mut task = self
                         .task_store
                         .get(&task_id)

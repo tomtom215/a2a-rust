@@ -975,7 +975,9 @@ mod tests {
     /// Kills `replace != with ==` on the `append != Some(true)` validation
     /// gate. Under that mutant only *appending* updates are validated, so a
     /// non-appending artifact with no parts — a spec violation — is stored
-    /// instead of dropped.
+    /// instead of dropped. The in-memory writer refuses such an event since
+    /// 2026-10-11, so this sends it straight to the collector's channel, as
+    /// any other `EventQueueWriter` could.
     #[tokio::test]
     async fn artifact_with_empty_parts_is_dropped_when_not_appending() {
         use a2a_protocol_types::artifact::{Artifact, ArtifactId};
@@ -993,31 +995,33 @@ mod tests {
             .build()
             .unwrap();
 
-        let (writer, reader) = collected_queue();
-        writer
-            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: TaskId::new("t-empty"),
-                context_id: ContextId::new("ctx-1"),
-                // Built as a struct literal on purpose: `Artifact::new`
-                // debug_asserts on empty parts, so an empty artifact can only
-                // reach this code by deserialization — which is exactly the
-                // path the validation guards, and exactly what a buggy or
-                // hostile peer sends.
-                artifact: Artifact {
-                    id: ArtifactId::new("art-empty"),
-                    name: None,
-                    description: None,
-                    parts: vec![],
-                    extensions: None,
-                    metadata: None,
-                },
-                append: None,
-                last_chunk: Some(true),
+        let (tx, reader) = tokio::sync::mpsc::channel(1);
+        let event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: TaskId::new("t-empty"),
+            context_id: ContextId::new("ctx-1"),
+            // Built as a struct literal on purpose: `Artifact::new`
+            // debug_asserts on empty parts, so an empty artifact can only
+            // reach this code by deserialization — which is exactly the
+            // path the validation guards, and exactly what a buggy or
+            // hostile peer sends.
+            artifact: Artifact {
+                id: ArtifactId::new("art-empty"),
+                name: None,
+                description: None,
+                parts: vec![],
+                extensions: None,
                 metadata: None,
-            }))
-            .await
-            .unwrap();
-        drop(writer);
+            },
+            append: None,
+            last_chunk: Some(true),
+            metadata: None,
+        });
+        tx.send(Arc::new(Ok(
+            crate::streaming::event_queue::StreamEvent::at(1, event),
+        )))
+        .await
+        .unwrap();
+        drop(tx);
 
         let collected = handler
             .collect_events(reader, task_id.clone(), tokio::spawn(async {}))

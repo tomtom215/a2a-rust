@@ -17,7 +17,7 @@ use crate::error::{ServerError, ServerResult};
 use crate::streaming::{InMemoryQueueReader, Reattached};
 
 use super::super::RequestHandler;
-use super::super::helpers::build_call_context;
+use super::super::helpers::{build_call_context, task_id_param};
 
 /// The `Last-Event-ID` a resuming subscriber sent back, when it names a
 /// position this server could have issued.
@@ -320,7 +320,7 @@ impl RequestHandler {
                     // `capabilities.streaming == true`. (No-op when no card is configured.)
                     self.ensure_streaming_supported()?;
 
-                    let task_id = TaskId::new(&params.id);
+                    let task_id = task_id_param(&params.id, self.limits.max_id_length)?;
 
                     // Verify the task exists.
                     let task = self

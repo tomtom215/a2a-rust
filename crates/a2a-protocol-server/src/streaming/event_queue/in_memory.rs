@@ -524,6 +524,15 @@ impl EventQueueWriter for InMemoryQueueWriter {
         if let Err(e) = super::status_stamp::stamp_status(&mut event) {
             return Box::pin(std::future::ready(Err(e)));
         }
+        // a2a.proto: an artifact "Must contain at least one part". Persistence
+        // already dropped one that did not, but live subscribers were sent it.
+        // An appending chunk may be empty, as the processors allow.
+        if let StreamResponse::ArtifactUpdate(u) = &event
+            && u.append != Some(true)
+            && let Err(e) = u.artifact.validate()
+        {
+            return Box::pin(std::future::ready(Err(e)));
+        }
         if let Err(e) = self.check_event_size(&event) {
             return Box::pin(std::future::ready(Err(e)));
         }

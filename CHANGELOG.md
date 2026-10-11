@@ -276,6 +276,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with an empty task or context id gets the running task's; one naming
   another task or context is refused with `InvalidParams` before it is
   stored or sent. The server used to pass whatever the executor wrote.
+- **An empty task id is `InvalidParams`** (server; proto `REQUIRED`).
+  GetTask, CancelTask and SubscribeToTask answered `TaskNotFound` for an
+  empty or whitespace-only id (gRPC's absent string, or JSON `""`).
+- **An artifact with no parts is refused at the event queue** (server;
+  proto: an artifact must contain at least one part). Persistence dropped
+  it, but live subscribers had already been sent it. The executor's write
+  now returns `InvalidParams`. An appending chunk may still be empty.
 - **One JSON-RPC error shape on every surface** (server; spec §9.5, §12.4).
   HTTP responses, SSE frames and WebSocket messages now build the error the
   same way: the A2A code, and `data` as the typed-details array. On WebSocket
@@ -441,6 +448,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The axum router's agent card is cacheable** (server; spec §8.6.1). It
+  served the JSON alone; it now sends the same `ETag`, `Last-Modified` and
+  `Cache-Control: public, max-age=3600` as the JSON-RPC and REST
+  dispatchers, and answers `304` to a matching `If-None-Match`.
 - **CI on this branch** (`ci.yml`, `tck.yml`, `pin-freshness.yml`):
   `setup-go` asked for `1.26`, which resolved to the runner's cached 1.26.8,
   while the Go peers' `go.mod` require 1.26.9, so the Go interop job failed

@@ -1016,6 +1016,12 @@ mod tests {
             matches!(&refused, Err(crate::error::ServerError::InvalidParams(m)) if m.contains("Digest")),
             "{refused:?}"
         );
+        // The proto marks `scheme` REQUIRED; gRPC delivers an absent one as "".
+        let refused = handler.on_set_push_config(with_scheme(""), None).await;
+        assert!(
+            matches!(&refused, Err(crate::error::ServerError::InvalidParams(_))),
+            "{refused:?}"
+        );
         for scheme in ["Bearer", "basic"] {
             handler
                 .on_set_push_config(with_scheme(scheme), None)

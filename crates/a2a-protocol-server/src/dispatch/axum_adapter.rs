@@ -145,9 +145,11 @@ impl A2aRouter {
         // works on the JSON-RPC/REST dispatchers would be a no-op here.
         let max_body = self.config.max_request_body_size;
         let require_version = self.config.require_version_header;
+        let card_handler = card_handler(&self.handler);
         let state = A2aState {
             handler: self.handler,
             config: Arc::new(self.config),
+            card_handler,
         };
 
         Router::new()
@@ -273,6 +275,19 @@ impl axum::extract::FromRequest<A2aState> for TimedBody {
 struct A2aState {
     handler: Arc<RequestHandler>,
     config: Arc<super::DispatchConfig>,
+    /// The public card with its `ETag`, `Last-Modified` and `Cache-Control`,
+    /// as the JSON-RPC and REST dispatchers serve it (spec §8.6).
+    card_handler: Option<Arc<crate::agent_card::StaticAgentCardHandler>>,
+}
+
+fn card_handler(
+    handler: &RequestHandler,
+) -> Option<Arc<crate::agent_card::StaticAgentCardHandler>> {
+    handler
+        .agent_card
+        .as_ref()
+        .and_then(|card| crate::agent_card::StaticAgentCardHandler::new(card).ok())
+        .map(Arc::new)
 }
 
 // ── Helper: extract headers as HashMap ───────────────────────────────────────
@@ -566,10 +581,13 @@ async fn handle_extended_card(
     .await
 }
 
-async fn handle_agent_card(State(state): State<A2aState>) -> axum::response::Response {
-    state.handler.agent_card.as_ref().map_or_else(
+async fn handle_agent_card(
+    State(state): State<A2aState>,
+    req: axum::extract::Request,
+) -> axum::response::Response {
+    state.card_handler.as_ref().map_or_else(
         || plain_error(404, "agent card not configured"),
-        |card| axum::Json(card).into_response(),
+        |h| h.handle(&req).map(Body::new),
     )
 }
 
@@ -811,6 +829,7 @@ mod tests {
             .unwrap(),
         );
         A2aState {
+            card_handler: card_handler(&handler),
             handler,
             config: Arc::new(super::super::DispatchConfig::default()),
         }
@@ -1294,6 +1313,7 @@ mod readiness_tests {
         A2aState {
             handler: Arc::new(builder.build().expect("build handler")),
             config: Arc::new(super::super::DispatchConfig::default()),
+            card_handler: None,
         }
     }
 

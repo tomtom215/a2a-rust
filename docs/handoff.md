@@ -1008,6 +1008,16 @@ area. This branch answers both.
     PARTIAL: a refused credential never reaches the rate limiter, and
     per-source counting needs the peer address, which `CallContext` lacks.
     Maintainer decision.
+23. PARTIAL sweep: empty task ids on get/cancel/subscribe are
+    `InvalidParams`; an artifact with no parts is refused at the queue
+    write; an empty push auth scheme is covered by the Bearer/Basic check;
+    731/733 were already fixed in `56f8d61`; the axum router's public card
+    gets the same caching headers as JSON-RPC and REST. Left for the
+    maintainer: the 5 s `push_delivery_timeout` default, below §4.3.3's
+    recommended 10-30 s (raising it doubles per-event concurrency at the
+    defaults and the blocking path's worst-case wait; 886, 3118);
+    empty appending chunks (287), §13.3 extended card with no card
+    configured (3172, tied to 1980).
 
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
@@ -1031,12 +1041,14 @@ before acting on it, as this branch did.
   container's disk allowance (ENOSPC mid-run). The SLIMRPC binding is
   outside the workspace; its `cargo test -- --test-threads=1` passed after
   item 12.
-- Ledger after item 22: TESTED 283, PARTIAL 56, IMPLEMENTED_UNTESTED 2,
+- Ledger after item 23: TESTED 291, PARTIAL 48, IMPLEMENTED_UNTESTED 2,
   GAP 3, NOT_SUPPORTED 13, SUPPORTED 44, NOT_APPLICABLE 22,
-  APPLICATION 89 (`scripts/check_spec_ledger.py`). PARTIAL rose because nine
-  security-scheme REQUIRED entries and the brute-force SHOULD moved there
-  from IMPLEMENTED_UNTESTED. The two left untested: system errors are
-  logged (534) and webhook URLs should be HTTPS (3137).
+  APPLICATION 89 (`scripts/check_spec_ledger.py`). Items 21-22 moved ten
+  entries from IMPLEMENTED_UNTESTED to PARTIAL (nine security-scheme
+  REQUIRED strings and the brute-force SHOULD); item 23 moved eight PARTIAL
+  entries to TESTED. The
+  two left untested: system errors are logged (534) and webhook URLs
+  should be HTTPS (3137).
 - Workspace tests after item 21: 182 binaries, 4,517 passed, 0 failed,
   116 ignored. Item 22's four new tests were run on their own and each shown
   to fail with its fix removed.

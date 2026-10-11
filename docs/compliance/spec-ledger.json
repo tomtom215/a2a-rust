@@ -1841,9 +1841,10 @@
     "crates/a2a-protocol-types/src/error.rs:99"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:73 jsonrpc_invalid_params_name_the_field",
     "crates/a2a-protocol-types/src/error.rs:893 a2a_reason_all_a2a_variants_distinct_and_non_empty"
    ],
-   "notes": "ErrorInfo for every A2A-specific error; standard JSON-RPC errors (InvalidParams etc.) carry no details at all, so validation failures get no BadRequest.FieldViolation.",
+   "notes": "ErrorInfo on every A2A-specific error. Since ef31df9 a body or params that do not deserialize carry google.rpc.BadRequest with the field path (jsonrpc_error_details.rs, bad_request_details.rs). Remaining: the handler's own validation failures (empty message.id, no parts, oversize metadata) name the field in the message only, because ServerError::InvalidParams carries a String.",
    "auditor": "B",
    "source": "spec"
   },
@@ -5173,12 +5174,15 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
+    "crates/a2a-protocol-client/src/discovery.rs:277",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:81",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:535",
-    "crates/a2a-protocol-client/src/discovery.rs:277"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:584"
    ],
-   "test_evidence": [],
-   "notes": "Server: JSON-RPC/REST yes, axum no. Client: only CachingCardResolver; resolve_agent_card/fetch_card_from_url do no caching. See 2229-2237.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:78 the_axum_agent_card_is_cacheable_like_the_rest_one"
+   ],
+   "notes": "Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching, and nothing honours max-age or no-store (see 2235).",
    "auditor": "D",
    "source": "spec"
   },
@@ -5188,19 +5192,21 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Agent Card HTTP endpoints **SHOULD** include a `Cache-Control` response header with a `max-age` directive appropriate for the agent's expected update frequency",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:88",
     "crates/a2a-protocol-server/src/agent_card/caching.rs:190",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:66",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:535"
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:88",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:535",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:584",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:66"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:110 static_handler_returns_etag_and_cache_headers",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:185 static_handler_custom_max_age"
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:185 static_handler_custom_max_age",
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:78 the_axum_agent_card_is_cacheable_like_the_rest_one"
    ],
-   "notes": "JSON-RPC/REST serve `public, max-age=3600` via StaticAgentCardHandler built with the default (not configurable through the dispatchers); the axum adapter's handle_agent_card returns `axum::Json(card)` with no Cache-Control.",
+   "notes": "JSON-RPC, REST and (since 2026-10-11) the axum router serve the public card with Cache-Control: public, max-age=3600 from StaticAgentCardHandler. The max-age is set on StaticAgentCardHandler::with_max_age; the dispatchers build theirs with the default and do not expose it. The axum test fails without the fix (no cache-control).",
    "auditor": "D",
    "source": "spec"
   },
@@ -5210,18 +5216,20 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Agent Card HTTP endpoints **SHOULD** include an `ETag` response header derived from the Agent Card's `version` field or a hash of the card content",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/caching.rs:21",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:43",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:535"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:535",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:584"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:126 static_handler_304_on_matching_etag",
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:78 the_axum_agent_card_is_cacheable_like_the_rest_one",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:395 same_card_produces_same_etag"
    ],
-   "notes": "Weak FNV-1a content-hash ETag on JSON-RPC/REST; absent on the axum adapter.",
+   "notes": "Content-hash ETag (and Last-Modified) on all three HTTP card routes; If-None-Match answers 304. The axum route had neither until 2026-10-11.",
    "auditor": "D",
    "source": "spec"
   },
@@ -8181,18 +8189,20 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/artifact.rs:88",
-    "crates/a2a-protocol-types/src/artifact.rs:153",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:394",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:192",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:470"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:394",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:470",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:532",
+    "crates/a2a-protocol-types/src/artifact.rs:153",
+    "crates/a2a-protocol-types/src/artifact.rs:88"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:982 artifact_with_empty_parts_is_dropped_when_not_appending",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1371 empty_parts_are_rejected_only_when_not_appending",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:982 artifact_with_empty_parts_is_dropped_when_not_appending",
+    "crates/a2a-protocol-server/tests/artifact_parts.rs:61 an_artifact_with_no_parts_is_not_streamed",
     "crates/a2a-protocol-server/tests/audit_tests/public_api.rs:129 artifact_validate_rejects_empty_parts"
    ],
-   "notes": "Empty-parts non-append artifacts are dropped from persistence, but InMemoryQueueWriter::write broadcasts every event to live SSE/gRPC/WS subscribers before/independently of the processor, so streaming clients still receive an artifactUpdate with `parts: []`; append=true with empty parts is accepted everywhere. Artifact::new only debug_asserts.",
+   "notes": "A non-appending artifact with no parts is refused at the event-queue write (InvalidParams to the executor) so live subscribers never see it; persistence also drops one from any other writer (sync_collector test). Remaining: an appending chunk (append=true) with no parts is accepted everywhere, as the processors were written to allow; the proto's rule has no such exception. Maintainer call whether to refuse it.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8389,15 +8399,18 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "string scheme = 1 [(google.api.field_behavior) = REQUIRED];",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/push.rs:31",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:106",
+    "crates/a2a-protocol-server/src/push/sender.rs:829",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:25",
-    "crates/a2a-protocol-server/src/push/sender.rs:829"
+    "crates/a2a-protocol-types/src/push.rs:31"
    ],
-   "test_evidence": [],
-   "notes": "JSON bindings reject an authentication object without `scheme` (serde required -> -32602/400). gRPC empty scheme is stored at create time unchecked; it is only caught at delivery by validate_header_value. No test.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/push_config.rs:997 set_push_config_refuses_an_auth_scheme_it_cannot_send"
+   ],
+   "notes": "Creation refuses any scheme the sender cannot write (only Bearer and Basic, since item 15), which covers an empty scheme: gRPC's absent value. The test's empty-scheme case is shown to fail with empty schemes exempted.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9492,22 +9505,24 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "string id = 2 [(google.api.field_behavior) = REQUIRED];",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:79",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:329",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:40",
+    "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:46",
     "crates/a2a-protocol-types/src/params/mod.rs:108",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
-    "crates/a2a-protocol-types/src/proto/convert/requests.rs:168",
-    "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:46",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:329",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:79"
+    "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:341 parse_params_missing_returns_invalid_params",
-    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:75 (GetTask params {\"id\":7} -> -32602)"
+    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:75 (GetTask params {\"id\":7} -> -32602)",
+    "crates/a2a-protocol-server/tests/empty_task_ids.rs:19 an_empty_task_id_is_invalid_params"
    ],
-   "notes": "JSON-RPC/WS absent `id` -> -32602 (REST takes it from the path, empty segment never routes here). But gRPC absent id (== \"\") and JSON `\"id\":\"\"` are not validated (no validate_id call outside SendMessage) and fall through to the store, answering TaskNotFound (-32001 / NOT_FOUND) instead of InvalidParams/INVALID_ARGUMENT.",
+   "notes": "An empty or whitespace-only id (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup; it used to reach the store and answer TaskNotFound. JSON absent is -32602 as before. Shown to fail with the check removed from each of the three handlers.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9689,22 +9704,24 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "string id = 2 [(google.api.field_behavior) = REQUIRED];",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:79",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:329",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:40",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:53",
     "crates/a2a-protocol-types/src/params/mod.rs:108",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
-    "crates/a2a-protocol-types/src/proto/convert/requests.rs:168",
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:53",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:329",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:79"
+    "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:341 parse_params_missing_returns_invalid_params",
-    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:75 (GetTask params {\"id\":7} -> -32602)"
+    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:75 (GetTask params {\"id\":7} -> -32602)",
+    "crates/a2a-protocol-server/tests/empty_task_ids.rs:19 an_empty_task_id_is_invalid_params"
    ],
-   "notes": "JSON-RPC/WS absent `id` -> -32602 (REST takes it from the path, empty segment never routes here). But gRPC absent id (== \"\") and JSON `\"id\":\"\"` are not validated (no validate_id call outside SendMessage) and fall through to the store, answering TaskNotFound (-32001 / NOT_FOUND) instead of InvalidParams/INVALID_ARGUMENT.",
+   "notes": "An empty or whitespace-only id (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup; it used to reach the store and answer TaskNotFound. JSON absent is -32602 as before. Shown to fail with the check removed from each of the three handlers.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9734,15 +9751,18 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "string task_id = 2 [(google.api.field_behavior) = REQUIRED];",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/handler/push_config.rs:253",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:292",
     "crates/a2a-protocol-types/src/params/mod.rs:212",
-    "crates/a2a-protocol-types/src/proto/convert/requests.rs:303",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:253"
+    "crates/a2a-protocol-types/src/proto/convert/requests.rs:303"
    ],
-   "test_evidence": [],
-   "notes": "JSON absent -> -32602; gRPC/JSON empty -> TaskNotFound rather than InvalidParams.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1037 empty_required_ids_are_invalid_params"
+   ],
+   "notes": "Empty taskId is InvalidParams before any lookup (require_field, since 56f8d61); this entry had not been updated.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9752,14 +9772,17 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "string id = 3 [(google.api.field_behavior) = REQUIRED];",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/params/mod.rs:215",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:215"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:215",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:292",
+    "crates/a2a-protocol-types/src/params/mod.rs:215"
    ],
-   "test_evidence": [],
-   "notes": "JSON absent -> -32602; gRPC/JSON empty -> not-found error rather than InvalidParams.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1037 empty_required_ids_are_invalid_params"
+   ],
+   "notes": "Empty id is InvalidParams before any lookup (require_field, since 56f8d61); this entry had not been updated.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9847,22 +9870,24 @@
    "keyword": "REQUIRED",
    "binds": "server",
    "requirement": "string id = 2 [(google.api.field_behavior) = REQUIRED];",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:79",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:329",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:40",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:330",
     "crates/a2a-protocol-types/src/params/mod.rs:108",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
-    "crates/a2a-protocol-types/src/proto/convert/requests.rs:168",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:330",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:329",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:79"
+    "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:341 parse_params_missing_returns_invalid_params",
-    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:75 (GetTask params {\"id\":7} -> -32602)"
+    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:75 (GetTask params {\"id\":7} -> -32602)",
+    "crates/a2a-protocol-server/tests/empty_task_ids.rs:19 an_empty_task_id_is_invalid_params"
    ],
-   "notes": "JSON-RPC/WS absent `id` -> -32602 (REST takes it from the path, empty segment never routes here). But gRPC absent id (== \"\") and JSON `\"id\":\"\"` are not validated (no validate_id call outside SendMessage) and fall through to the store, answering TaskNotFound (-32001 / NOT_FOUND) instead of InvalidParams/INVALID_ARGUMENT.",
+   "notes": "An empty or whitespace-only id (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup; it used to reach the store and answer TaskNotFound. JSON absent is -32602 as before. Shown to fail with the check removed from each of the three handlers.",
    "auditor": "G",
    "source": "proto"
   },
