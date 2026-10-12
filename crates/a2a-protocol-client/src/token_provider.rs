@@ -700,27 +700,25 @@ fn build_token_http_client() -> TokenHttpClient {
     }
 }
 
+/// Fails an `https://` endpoint early when this build cannot reach it. With
+/// TLS compiled in, every endpoint is reachable.
+#[cfg(feature = "tls-rustls")]
+#[allow(clippy::unnecessary_wraps)]
+const fn check_endpoint_reachable(_url: &str, _what: &str) -> ClientResult<()> {
+    Ok(())
+}
+
 /// Fails an `https://` endpoint early when this build cannot reach it.
-#[cfg_attr(
-    feature = "tls-rustls",
-    allow(
-        clippy::unnecessary_wraps,
-        unused_variables,
-        clippy::missing_const_for_fn
-    )
-)]
+#[cfg(not(feature = "tls-rustls"))]
 fn check_endpoint_reachable(url: &str, what: &str) -> ClientResult<()> {
-    #[cfg(not(feature = "tls-rustls"))]
-    {
-        let is_https = url
-            .split_once("://")
-            .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"));
-        if is_https {
-            return Err(ClientError::Transport(format!(
-                "{what} URL {url} is https:// but this build has no TLS; enable the \
-                 `tls-rustls` feature (on by default)"
-            )));
-        }
+    let is_https = url
+        .split_once("://")
+        .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"));
+    if is_https {
+        return Err(ClientError::Transport(format!(
+            "{what} URL {url} is https:// but this build has no TLS; enable the \
+             `tls-rustls` feature (on by default)"
+        )));
     }
     Ok(())
 }
