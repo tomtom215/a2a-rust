@@ -59,15 +59,23 @@ impl RequestHandler {
     /// so a retained queue means a drain loop that never ends. Waiting here
     /// costs one store read per interval on an idle stream and leaves the send
     /// path untouched.
+    ///
+    /// The hook runs while the stream is read, outside the request that built
+    /// it, so it re-enters that request's tenant and caller, captured here. A
+    /// store that partitions by tenant or caller finds the task only in the
+    /// partition it was created in; without the capture the hook read the
+    /// default one, found nothing, and ended the stream at the first turn
+    /// boundary without a terminal state.
     pub(crate) fn subscribe_reattach_hook(&self, task_id: TaskId) -> crate::streaming::ReattachFn {
         let queues = self.event_queue_manager.clone();
         let store = std::sync::Arc::clone(&self.task_store);
         let interval = self.limits.subscribe_reattach_interval;
         let max_idle = self.limits.subscribe_max_idle;
+        let partition = crate::store::tenant::TenantContext::capture();
 
         std::sync::Arc::new(move || {
             let (queues, store, task_id) = (queues.clone(), store.clone(), task_id.clone());
-            Box::pin(async move {
+            Box::pin(partition.clone().scope(async move {
                 let deadline = tokio::time::Instant::now() + max_idle;
                 loop {
                     match store.get(&task_id).await {
@@ -117,7 +125,7 @@ impl RequestHandler {
                     }
                     tokio::time::sleep(interval).await;
                 }
-            }) as std::pin::Pin<Box<dyn std::future::Future<Output = _> + Send>>
+            })) as std::pin::Pin<Box<dyn std::future::Future<Output = _> + Send>>
         })
     }
 
@@ -536,6 +544,71 @@ mod tests {
             .await
             .expect("stream must end after the terminal frame");
         assert!(ended.is_none(), "expected clean EOF, got: {ended:?}");
+    }
+
+    /// The reattach hook runs while the stream is read, outside the request
+    /// that opened it, so it must re-enter that request's tenant and caller:
+    /// on a store that partitions by tenant, a lookup in the default
+    /// partition finds nothing, and the stream ended at the first turn
+    /// boundary without ever reporting the terminal state (`STREAM-SUB-002`
+    /// again). A tenant-partitioned store is the default whenever an
+    /// authenticating interceptor is registered (§13.1).
+    #[tokio::test]
+    async fn the_reattach_hook_reads_the_task_in_the_subscribers_tenant() {
+        use crate::store::tenant::TenantContext;
+        use crate::streaming::event_queue::EventQueueReader as _;
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
+            .with_handler_limits(
+                crate::handler::HandlerLimits::default()
+                    .with_subscribe_reattach_interval(std::time::Duration::from_millis(10))
+                    .with_subscribe_max_idle(std::time::Duration::from_secs(10)),
+            )
+            .build()
+            .unwrap();
+        let mut task = Task {
+            id: TaskId::new("t-tenant-reattach"),
+            context_id: ContextId::new("ctx-1"),
+            status: TaskStatus::new(TaskState::Working),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        TenantContext::scope("acme", handler.task_store.save(&task))
+            .await
+            .unwrap();
+
+        let params = TaskIdParams {
+            tenant: Some("acme".to_owned()),
+            id: "t-tenant-reattach".to_owned(),
+        };
+        let mut reader = handler.on_resubscribe(params, None).await.unwrap();
+        let first = reader.read().await.unwrap().unwrap();
+        assert!(matches!(
+            first.event,
+            a2a_protocol_types::events::StreamResponse::Task(_)
+        ));
+
+        task.status = TaskStatus::new(TaskState::Completed);
+        TenantContext::scope("acme", handler.task_store.save(&task))
+            .await
+            .unwrap();
+
+        // Read outside any tenant scope, as a binding reads the stream.
+        let final_frame = tokio::time::timeout(std::time::Duration::from_secs(5), reader.read())
+            .await
+            .expect("the stream must report the terminal state promptly")
+            .expect("the stream ended without reporting the terminal state")
+            .expect("the final frame must not be an error");
+        match final_frame.event {
+            a2a_protocol_types::events::StreamResponse::StatusUpdate(u) => {
+                assert_eq!(u.status.state, TaskState::Completed);
+            }
+            other => panic!("expected a terminal StatusUpdate, got: {other:?}"),
+        }
     }
 
     /// The idle bound ends a stream whose task never progresses.

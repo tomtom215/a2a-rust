@@ -609,6 +609,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `SubscribeToTask` stream on a tenant- or caller-partitioned task store
+  stays open across turns** (server; spec §3.1.6: the stream MUST terminate
+  when the task reaches a terminal state). The hook that reattaches the
+  stream to the next turn's queue reads the task store while the stream is
+  read, outside the request that opened it, so it read the default
+  partition, found no task, and ended the stream at the first turn boundary
+  without a terminal state. It now re-enters the subscriber's tenant and
+  caller. Since an authenticating interceptor now isolates callers by
+  default (§13.1, above), this reached every authenticated server.
 - **The site's brand fonts load.** `theme/custom.css` asked for
   `fonts/…`, which resolves to `theme/fonts/` and answered 404 on the live
   site, so Space Grotesk and JetBrains Mono never loaded; it asks for

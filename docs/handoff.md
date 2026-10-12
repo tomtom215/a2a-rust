@@ -1034,6 +1034,13 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     (maintainer's choice of three hardening options).
 33. `feat(server):` §13.4 — `AuthFailureThrottle`, opt-in, and
     `CallContext::peer_addr`, which every binding now records (item 12).
+34. `fix(server):` §3.1.6 — the subscribe reattach hook re-enters the
+    subscriber's tenant and caller (`TenantContext::capture`). It ran
+    while the stream was read, outside the request, so on a partitioned
+    store it found no task and ended the stream at the first turn boundary.
+    Found while designing §3.5.2's catch-up; item 21's caller isolation
+    made it reach every authenticated server. Any hook a reader runs later
+    (the §3.5.2 catch-up included) needs the same capture.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 314,
 PARTIAL 22, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
