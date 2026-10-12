@@ -46,6 +46,13 @@ the rate limiter's `"anonymous"` bucket. To give each credential an identity
 `ApiKeyAuthInterceptor::with_labelled_keys(…)`; the label, not the secret, is
 what reaches rate limiting, logs and metrics.
 
+An identity also scopes tasks (spec §13.1): with an authenticating
+interceptor, each identified caller gets a partition of its own, and another
+caller's task is `TaskNotFound`. Callers `new` leaves unnamed keep sharing the
+tenant's records. To let identified callers share, call
+`RequestHandlerBuilder::share_tasks_across_callers()`; see
+[Multi-tenancy](../deployment/multi-tenancy.md#callers-within-one-tenant).
+
 ### JWT (HS256 / RS256 / ES256)
 
 Enable the `auth-jwt` feature. `JwtAuthInterceptor` verifies the token's

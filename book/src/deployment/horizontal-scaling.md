@@ -105,6 +105,15 @@ The label is separate from the credential on purpose. A caller key reaches the
 rate-limit table your replicas share, and can reach logs and metrics; a bearer
 token or API key belongs in none of those.
 
+An identity does more than key the limiter: it also gives the caller a task
+partition of its own (spec §13.1; the default with an authenticating
+interceptor since 0.15), which only stores that partition by tenant can hold.
+With identified callers, use `TenantAwarePostgresTaskStore` and
+`TenantAwarePostgresPushConfigStore` in place of the plain stores above, or
+call `share_tasks_across_callers()` if callers are meant to see each other's
+tasks. `build()` refuses the plain stores until you choose. See
+[Multi-tenancy](./multi-tenancy.md#callers-within-one-tenant).
+
 **Register authentication before the limiter.** The chain runs interceptors in
 registration order over one context, so a limiter registered first reads an
 identity nothing has set yet and buckets every caller together. Nothing rejects

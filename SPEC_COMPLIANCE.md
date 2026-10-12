@@ -131,7 +131,7 @@ the compliance claim is worse than no matrix.
 
 | Spec area | Implementation | Evidence |
 |---|---|---|
-| §13.1 Results scoped to the caller's authorization boundaries | Tenant partitions (`TenantResolver`, `TenantAware*` stores); per caller within a tenant with `RequestHandlerBuilder::isolate_tasks_by_caller` (`TenantContext::partition`, `RequestHandler::admit`). Off by default: callers in one tenant share its tasks unless the deployment asks otherwise | `tests/caller_isolation.rs` (every task-naming operation, lists, webhooks, background completion, SQLite) |
+| §13.1 Results scoped to the caller's authorization boundaries | Tenant partitions (`TenantResolver`, `TenantAware*` stores); per caller within a tenant (`TenantContext::partition`, `RequestHandler::admit`), the default since 0.15 for every caller an authenticating interceptor identifies; callers it names nobody for keep the tenant's shared records (`RequestHandlerBuilder::share_tasks_across_callers` opts out, `isolate_tasks_by_caller` refuses unidentified callers) | `tests/caller_isolation.rs` (every task-naming operation, lists, webhooks, background completion, SQLite; by default and explicitly), `tests/caller_isolation_default.rs` (when the default applies, unidentified callers, the build refusals) |
 | §13.3 Extended-card auth (see §8 row) | — | — |
 | Push webhook SSRF defense (DNS-resolve + pin) | `push/sender.rs` (`tls-rustls`) | push-sender e2e; live-TLS rebinding test |
 | Push webhook auth scheme (RFC 9110 case-insensitive) | `push/sender.rs` | push auth-scheme tests |

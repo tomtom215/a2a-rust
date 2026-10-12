@@ -222,6 +222,48 @@ let client = ClientBuilder::from_card(&card)?
 The CLI's equivalent is `--no-capability-check`. A client built for a bare
 endpoint with `ClientBuilder::new` has no card and checks nothing.
 
+### An authenticating interceptor isolates tasks by caller
+
+Spec §13.1: results are scoped to the caller's authorization boundaries. A
+handler with an authenticating interceptor now gives each caller it
+identifies (a labelled token or key, a JWT's `sub`, or a custom interceptor's
+`set_caller_identity`) a partition of its own, and another caller's task is
+`TaskNotFound`. Callers it does not name keep sharing the tenant's records, so
+a deployment on unlabelled tokens or keys sees no change in what each caller
+can reach; its default stores do become the tenant-aware in-memory ones.
+Their capacity (`with_task_store_config`, 10,000 tasks by default) now applies
+to each caller's partition, up to 1,000 partitions; supply a
+`TenantAwareInMemoryTaskStore` with your own `TenantStoreConfig` to bound the
+total differently.
+
+Three configurations that built before now fail `build()`, each naming its
+remedy: an authenticating interceptor with a task or push-config store you
+supplied that does not partition by tenant (use the `TenantAware*` stores);
+an approval gate that wants an approver other than the requester, including
+the one `Profile::Auditable` installs (or let requesters approve with
+`ApprovalGate::allowing_self_approval()`); and, as before, an explicit
+`isolate_tasks_by_caller()` without an authenticating interceptor. Where
+callers are meant to see each other's tasks, say so:
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::server::InMemoryTaskStore;
+# struct MyAgent;
+# a2a_protocol_sdk::server::agent_executor!(MyAgent, |_ctx, _q| async { Ok(()) });
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_task_store(InMemoryTaskStore::new())
+    .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
+        ("token-a", "alice"),
+        ("token-b", "bob"),
+    ]))
+    .share_tasks_across_callers()
+    .build()?;
+# drop(handler);
+# Ok(())
+# }
+```
+
 ### Push webhook timeouts: 10 s per request, 30 s per delivery
 
 `HttpPushSender`'s request timeout goes from 30 s to 10 s and

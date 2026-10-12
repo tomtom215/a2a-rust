@@ -83,7 +83,11 @@ missing:
 - a log that is not required, which would serve calls it cannot record;
 - a log that signs no checkpoints, whose chains could lose their end
   without trace;
-- no authenticating interceptor, which leaves the records naming no caller.
+- no authenticating interceptor, which leaves the records naming no caller;
+- tasks isolated by caller, the default with an authenticating interceptor,
+  which would keep the gate's approver from the requester's task. Call
+  `share_tasks_across_callers()`, or set a gate that allows self-approval
+  (see [Human oversight](./oversight.md#the-gate)).
 
 ```rust,no_run
 use std::sync::Arc;
@@ -100,6 +104,7 @@ let log = AuditLog::new(Arc::new(SqliteAuditStore::new("sqlite:audit.db?mode=rwc
 let handler = RequestHandlerBuilder::new(MyAgent)
     .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([("t", "billing-agent")]))
     .with_profile(Profile::Auditable(Arc::new(log)))
+    .share_tasks_across_callers()
     .build()?;
 # let _ = handler;
 # Ok(())

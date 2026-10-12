@@ -79,9 +79,9 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | Method | Default | Description |
 |--------|---------|-------------|
 | `with_agent_card(AgentCard)` | None | Discovery card for `/.well-known/agent-card.json` |
-| `with_task_store(impl TaskStore)` | `InMemoryTaskStore` | Custom task storage backend |
-| `with_task_store_config(TaskStoreConfig)` | 1hr TTL, 10k capacity | TTL and capacity for the default store |
-| `with_push_config_store(impl PushConfigStore)` | `InMemoryPushConfigStore` | Custom push config storage |
+| `with_task_store(impl TaskStore)` | `InMemoryTaskStore`; `TenantAwareInMemoryTaskStore` when tasks are isolated by caller | Custom task storage backend |
+| `with_task_store_config(TaskStoreConfig)` | 1hr TTL, 10k capacity | TTL and capacity for the default store; per caller partition when tasks are isolated by caller, so the store holds up to 1,000 times the capacity |
+| `with_push_config_store(impl PushConfigStore)` | `InMemoryPushConfigStore`; the tenant-aware one when the task store partitions by tenant | Custom push config storage |
 | `with_push_sender(impl PushSender)` | None | Webhook delivery implementation |
 | `with_interceptor(impl ServerInterceptor)` | Empty chain | Add a server interceptor |
 | `with_executor_timeout(Duration)` | 1 hour | Timeout for executor completion |
@@ -95,6 +95,8 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_tenant_resolver(impl TenantResolver)` | None | Multi-tenant tenant extraction |
 | `with_tenant_config(PerTenantConfig)` | None | Per-tenant concurrency, executor timeout and queue capacity. `rate_limit_rps` additionally needs the same config on `RateLimitInterceptor::with_tenant_config` |
 | `require_resolved_tenant()` | off | Refuse a request the configured tenant resolver cannot place, instead of using the shared default partition |
+| `isolate_tasks_by_caller()` | on with an authenticating interceptor | A partition per caller within a tenant (spec §13.1). On by default for the callers an authenticating interceptor identifies; calling it also refuses a request with no identity. See [Multi-tenancy](../deployment/multi-tenancy.md#callers-within-one-tenant) |
+| `share_tasks_across_callers()` | off | Every caller in a tenant sees its tasks, and stores that do not partition by tenant are accepted |
 | `with_inbound_trace_policy(InboundTracePolicy)` | `Continue` | What to do with a `traceparent` sent by a not-yet-authenticated peer (`Continue`, `Restart` or `Drop`) |
 | `allow_unauthenticated_extended_card()` | off | Serve `GetExtendedAgentCard` even when no authenticating interceptor is registered (spec §13.3 requires one) |
 | `allow_undeclared_input_modes()` | off (enforced) | When the card declares `defaultInputModes` or any skill's `inputModes`, `SendMessage` refuses a part whose explicit `mediaType` is outside them with `ContentTypeNotSupportedError` (-32005, HTTP 400). Parts without a `mediaType`, and cards declaring no modes, are not checked. This turns the check off |

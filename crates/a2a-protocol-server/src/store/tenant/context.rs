@@ -33,8 +33,8 @@ pub const CALLER_SEPARATOR: char = '\u{1f}';
 /// per-tenant policy reads: the halt switch, concurrency quotas, audit chains,
 /// metric labels. The **partition** ([`partition`](Self::partition)) is what
 /// the tenant-aware stores key records by. They are the same unless the
-/// handler isolates callers
-/// ([`RequestHandlerBuilder::isolate_tasks_by_caller`](crate::RequestHandlerBuilder::isolate_tasks_by_caller)),
+/// handler isolates callers (the default with an authenticating interceptor;
+/// see [`RequestHandlerBuilder::isolate_tasks_by_caller`](crate::RequestHandlerBuilder::isolate_tasks_by_caller)),
 /// in which case the partition also names the authenticated caller, so one
 /// caller's tasks are not another's (spec §13.1) while a tenant stays one
 /// tenant for everything else.

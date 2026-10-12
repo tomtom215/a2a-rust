@@ -101,7 +101,8 @@ pub struct RequestHandler {
     pub(crate) refuse_unisolated_tenants: bool,
 
     /// Whether each authenticated caller gets a partition of its own within
-    /// the tenant (spec §13.1). See
+    /// the tenant (spec §13.1), as `build()` resolved it: per identified
+    /// caller by default with an authenticating interceptor. See
     /// [`isolate_tasks_by_caller`](crate::RequestHandlerBuilder::isolate_tasks_by_caller).
     pub(crate) caller_isolation: crate::builder::CallerIsolation,
 
@@ -342,24 +343,37 @@ impl RequestHandler {
     /// the caller's own. Everything that is per tenant — the halt switch,
     /// quotas, audit chains, metric labels — still reads the tenant.
     ///
+    /// A request no interceptor identified stays in the tenant's shared
+    /// records under the default isolation, which therefore changes nothing
+    /// for a deployment whose credentials name nobody. That partition is the
+    /// bare tenant, which `isolatable` keeps free of the separator every
+    /// caller partition contains, so the two never meet.
+    ///
     /// # Errors
     ///
-    /// `PermissionDenied` when isolation is on and no interceptor established
-    /// who the caller is: there is then no partition that is safe to serve.
-    /// `Internal` if the request has no caller slot to fill, which would mean
-    /// a handler entry point that does not open one.
+    /// `PermissionDenied` when isolation was asked for explicitly
+    /// ([`isolate_tasks_by_caller`](crate::RequestHandlerBuilder::isolate_tasks_by_caller))
+    /// and no interceptor established who the caller is: there is then no
+    /// partition that is safe to serve. `Internal` if the request has no
+    /// caller slot to fill, which would mean a handler entry point that does
+    /// not open one.
     pub(crate) fn enter_caller_partition(
         &self,
         call_ctx: &crate::call_context::CallContext,
     ) -> ServerResult<()> {
-        if self.caller_isolation == crate::builder::CallerIsolation::Shared {
+        use crate::builder::CallerIsolation;
+        if self.caller_isolation == CallerIsolation::Shared {
             return Ok(());
         }
         let Some(caller) = call_ctx.caller_identity() else {
+            if self.caller_isolation == CallerIsolation::IdentifiedCallers {
+                return Ok(());
+            }
             return Err(crate::error::ServerError::Protocol(
                 a2a_protocol_types::error::A2aError::permission_denied(
                     "this agent isolates tasks by caller, and no authenticating \
-                     interceptor identified the caller of this request",
+                     interceptor identified the caller of this request (an \
+                     interceptor must call CallContext::set_caller_identity)",
                 ),
             ));
         };

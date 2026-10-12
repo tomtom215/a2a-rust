@@ -165,27 +165,48 @@ If you set `max_stored_tasks` and wondered why nothing was capped: that is why.
 ## Callers within one tenant
 
 A tenant is a boundary between organisations, not between the people in one.
-By default every caller who passes the interceptors in a tenant, or in the
-default single-tenant deployment, sees the same tasks: Bob can read, list,
-cancel and subscribe to Alice's, and register a webhook on them. Spec §13.1
-requires results scoped to the caller's authorization boundaries, so when
-callers are not meant to share, say so:
+Spec §13.1 requires results scoped to the caller's authorization boundaries,
+so **a handler with an authenticating interceptor gives each caller it
+identifies a partition of its own by default** (since 0.15; before it, every
+caller in a tenant saw the same tasks, and Bob could read, list, cancel and
+subscribe to Alice's, and register a webhook on them):
 
-* `RequestHandlerBuilder::isolate_tasks_by_caller()` gives each caller a
-  partition of its own, chosen by the identity an authenticating interceptor
-  sets (`BearerTokenAuthInterceptor::with_labelled_tokens`,
-  `ApiKeyAuthInterceptor::with_labelled_keys`, the JWT interceptor's subject).
-  Another caller's task is then `TaskNotFound`, the same answer as an id that
-  does not exist, so its existence is not revealed, and `ListTasks` returns only
-  the caller's own.
+* The partition is chosen by the identity the authenticating interceptor sets
+  (`BearerTokenAuthInterceptor::with_labelled_tokens`,
+  `ApiKeyAuthInterceptor::with_labelled_keys`, the JWT interceptor's subject;
+  a custom interceptor calls `CallContext::set_caller_identity`). Another
+  caller's task is `TaskNotFound`, the same answer as an id that does not
+  exist, so its existence is not revealed, and `ListTasks` returns only the
+  caller's own.
+* A request the interceptor lets through without naming anyone (an unlabelled
+  token or key, a JWT without `sub`) keeps the tenant's shared records, as
+  before. Those records are never an identified caller's, and an identified
+  caller's are never theirs.
 * The halt switch, the tenant limits above, audit chains and metrics still see
-  one tenant. Each caller's partition counts against the store's tenant limit.
-* `build()` refuses it over stores that do not partition by tenant, and over a
-  chain with no authenticating interceptor, since nothing could then keep
-  callers apart or say who they are.
-* Callers who are meant to share some tasks (a team, a project) are not this
-  model: make the group the tenant, with a resolver that reads it from the
-  verified identity.
+  one tenant. Each caller's partition counts against the store's tenant limit:
+  the in-memory store refuses new partitions past `max_tenants` (1,000 by
+  default) until old ones empty; the SQL tenant stores have no such limit.
+  Each partition also gets the whole per-tenant capacity (10,000 tasks by
+  default, or what `with_task_store_config` sets), so the default in-memory
+  store holds up to 1,000 times that. To bound it otherwise, supply a
+  `TenantAwareInMemoryTaskStore` with your own `TenantStoreConfig`, or use a
+  SQL store.
+* Isolation needs stores that partition by tenant. Left unset they default to
+  the tenant-aware in-memory stores; `build()` refuses a store you supplied
+  that does not partition, naming the two ways out.
+* `isolate_tasks_by_caller()` says it explicitly and requires every caller to
+  be identified: a request with no identity is refused, and `build()` refuses
+  a chain with no authenticating interceptor.
+* An [approval gate](./oversight.md) that wants an approver other than the
+  requester cannot work while tasks are isolated, since the approver could
+  never reach the requester's task; `build()` refuses the pair and names the
+  two ways out (share tasks, or allow self-approval).
+* Callers who are meant to share tasks call `share_tasks_across_callers()`.
+  Where the sharing group is known (a team, a project), make the group the
+  tenant instead, with a resolver that reads it from the verified identity,
+  so other groups stay out.
+* A handler with no authenticating interceptor has no identities to keep apart
+  and shares, as before.
 
 ## What is not isolated
 

@@ -81,13 +81,24 @@ enum TenantIsolation {
 }
 
 /// Whether callers in one tenant share its tasks or each get their own.
+///
+/// Unset on the builder means [`IdentifiedCallers`](Self::IdentifiedCallers)
+/// when an interceptor authenticates and [`Shared`](Self::Shared) otherwise;
+/// [`RequestHandlerBuilder::build`] resolves it to one of these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CallerIsolation {
-    /// One set of records per tenant. The default.
+    /// One set of records per tenant:
+    /// [`RequestHandlerBuilder::share_tasks_across_callers`], or no
+    /// authenticating interceptor.
     Shared,
-    /// A partition per authenticated caller:
-    /// [`RequestHandlerBuilder::isolate_tasks_by_caller`].
-    PerCaller,
+    /// A partition per identified caller; a request no interceptor identified
+    /// (an unlabelled bearer token or API key, a JWT without `sub`) stays in
+    /// the tenant's shared records, as it would with no isolation. The
+    /// default with an authenticating interceptor.
+    IdentifiedCallers,
+    /// A partition per caller, and a request no interceptor identified is
+    /// refused: [`RequestHandlerBuilder::isolate_tasks_by_caller`].
+    EveryCaller,
 }
 
 /// Fluent builder for [`RequestHandler`].
@@ -100,7 +111,14 @@ pub(crate) enum CallerIsolation {
 ///
 /// # Optional (with defaults)
 ///
-/// - `task_store`: defaults to [`InMemoryTaskStore`].
+/// - `task_store`: defaults to [`InMemoryTaskStore`], or to
+///   [`TenantAwareInMemoryTaskStore`](crate::store::TenantAwareInMemoryTaskStore)
+///   when tasks are isolated by caller.
+/// - Callers: with an interceptor that
+///   [`authenticates`](crate::interceptor::ServerInterceptor::authenticates),
+///   each caller it identifies gets a partition of its own (spec §13.1); see
+///   [`isolate_tasks_by_caller`](Self::isolate_tasks_by_caller) and
+///   [`share_tasks_across_callers`](Self::share_tasks_across_callers).
 /// - `push_config_store`: defaults to [`InMemoryPushConfigStore`], or to
 ///   [`TenantAwareInMemoryPushConfigStore`](crate::push::TenantAwareInMemoryPushConfigStore)
 ///   when the task store partitions by tenant.
@@ -135,7 +153,7 @@ pub struct RequestHandlerBuilder {
     tenant_config: Option<PerTenantConfig>,
     require_resolved_tenant: bool,
     tenant_isolation: TenantIsolation,
-    caller_isolation: CallerIsolation,
+    caller_isolation: Option<CallerIsolation>,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
     span_settings: crate::rpc_span::SpanSettings,
     allow_unauthenticated_extended_card: bool,
@@ -172,7 +190,7 @@ impl RequestHandlerBuilder {
             tenant_config: None,
             require_resolved_tenant: false,
             tenant_isolation: TenantIsolation::Required,
-            caller_isolation: CallerIsolation::Shared,
+            caller_isolation: None,
             inbound_trace_policy: crate::handler::InboundTracePolicy::Continue,
             span_settings: crate::rpc_span::SpanSettings {
                 agent: true,
@@ -206,6 +224,15 @@ impl RequestHandlerBuilder {
     }
 
     /// Configures the default [`InMemoryTaskStore`] with custom TTL and capacity settings.
+    ///
+    /// When tasks are isolated by caller (the default with an authenticating
+    /// interceptor; see [`isolate_tasks_by_caller`](Self::isolate_tasks_by_caller)),
+    /// the default store is a
+    /// [`TenantAwareInMemoryTaskStore`](crate::store::TenantAwareInMemoryTaskStore)
+    /// and these settings apply to each caller's partition, so it holds up to
+    /// [`max_tenants`](crate::store::TenantStoreConfig::max_tenants) (1,000)
+    /// times the capacity. To bound the total otherwise, supply that store with
+    /// your own [`TenantStoreConfig`](crate::store::TenantStoreConfig).
     ///
     /// # Panics
     ///
@@ -432,41 +459,72 @@ impl RequestHandlerBuilder {
     }
 
     /// Gives every authenticated caller a partition of its own within its
-    /// tenant (spec §13.1).
+    /// tenant (spec §13.1), and refuses a request whose caller no interceptor
+    /// identified.
     ///
-    /// The SDK otherwise scopes tasks by tenant only: two callers who pass
-    /// the interceptors as different identities in the same tenant (or in the
-    /// default single-tenant deployment) can get, list, cancel and subscribe
-    /// to each other's tasks, and register webhooks on them. §13.1 requires
-    /// results scoped to the caller's authorization boundaries; this is the
-    /// user-identity model of it. With it, the identity an authenticating
-    /// interceptor sets ([`CallContext::set_caller_identity`]) selects the
-    /// records a request can reach: another caller's task is `TaskNotFound`,
-    /// exactly as an unknown id is, so its existence is not revealed, and
-    /// `ListTasks` returns only the caller's own.
+    /// Partitioning is already **the default whenever an interceptor
+    /// [`authenticates`](crate::interceptor::ServerInterceptor::authenticates)**,
+    /// with one difference: by default a request no interceptor identified (an
+    /// unlabelled bearer token or API key, a JWT without `sub`) keeps the
+    /// tenant's shared records, as it would with no isolation, so credentials
+    /// that name nobody behave as before. Call this when every caller must be
+    /// identified: such a request is then refused with `PermissionDenied`, and
+    /// `build()` refuses a chain with no authenticating interceptor.
+    ///
+    /// Without isolation the SDK scopes tasks by tenant only: two callers who
+    /// pass the interceptors as different identities in the same tenant (or in
+    /// the default single-tenant deployment) can get, list, cancel and
+    /// subscribe to each other's tasks, and register webhooks on them. §13.1
+    /// requires results scoped to the caller's authorization boundaries; this
+    /// is the user-identity model of it. With it, the identity an
+    /// authenticating interceptor sets ([`CallContext::set_caller_identity`])
+    /// selects the records a request can reach: another caller's task is
+    /// `TaskNotFound`, exactly as an unknown id is, so its existence is not
+    /// revealed, and `ListTasks` returns only the caller's own.
     ///
     /// Per-tenant policy is unchanged: the halt switch, concurrency quotas,
     /// audit chains and metrics still see one tenant. Each caller's partition
     /// counts against the store's tenant limit
-    /// ([`TenantStoreConfig::max_tenants`](crate::store::TenantStoreConfig::max_tenants)
-    /// for the in-memory store).
+    /// ([`TenantStoreConfig::max_tenants`](crate::store::TenantStoreConfig::max_tenants),
+    /// 1,000 by default, for the in-memory store; once reached, new callers
+    /// are refused until partitions empty). The SQL tenant stores have no such
+    /// limit.
     ///
     /// Models that share tasks between callers (roles, groups, projects) are
-    /// not this: map the group to a tenant with a
-    /// [`TenantResolver`] instead.
+    /// not this: map the group to a tenant with a [`TenantResolver`] instead,
+    /// or call [`share_tasks_across_callers`](Self::share_tasks_across_callers).
     ///
-    /// # Build errors
+    /// # Stores and build errors
     ///
-    /// `build()` refuses the configuration when the task or push-config store
-    /// does not partition by tenant, since nothing would then keep callers
-    /// apart, or when no interceptor
-    /// [`authenticates`](crate::interceptor::ServerInterceptor::authenticates),
-    /// since every request would then be refused for want of an identity.
+    /// Isolation, by default or by this call, needs a task store and a
+    /// push-config store that partition by tenant. Left unset, both default to
+    /// the tenant-aware in-memory stores. `build()` refuses a store you
+    /// supplied that does not partition, since nothing would then keep callers
+    /// apart, and refuses this call with no authenticating interceptor, since
+    /// every request would then be refused for want of an identity.
     ///
     /// [`CallContext::set_caller_identity`]: crate::CallContext::set_caller_identity
     #[must_use]
     pub const fn isolate_tasks_by_caller(mut self) -> Self {
-        self.caller_isolation = CallerIsolation::PerCaller;
+        self.caller_isolation = Some(CallerIsolation::EveryCaller);
+        self
+    }
+
+    /// Keeps one set of records per tenant, shared by every caller in it, even
+    /// when an interceptor authenticates.
+    ///
+    /// Spec §13.1 leaves the authorization model to the agent; this is the
+    /// model in which every authenticated caller of a tenant may see every
+    /// task in it, and it lets `build()` accept stores that do not partition
+    /// by tenant. Without this call a handler with an authenticating
+    /// interceptor isolates tasks by identified caller (see
+    /// [`isolate_tasks_by_caller`](Self::isolate_tasks_by_caller)). Where the
+    /// sharing group is known (a team, a project), mapping it to a tenant with
+    /// a [`TenantResolver`] keeps other groups out and is usually the better
+    /// fit.
+    #[must_use]
+    pub const fn share_tasks_across_callers(mut self) -> Self {
+        self.caller_isolation = Some(CallerIsolation::Shared);
         self
     }
 
@@ -635,11 +693,32 @@ impl RequestHandlerBuilder {
                 "push_delivery_timeout must be greater than zero".into(),
             ));
         }
+        // Spec §13.1: with an authenticating interceptor, each caller it
+        // identifies gets a partition of its own, unless the builder said
+        // otherwise.
+        let caller_isolation = self.caller_isolation.unwrap_or_else(|| {
+            if self.interceptors.has_authenticator() {
+                CallerIsolation::IdentifiedCallers
+            } else {
+                CallerIsolation::Shared
+            }
+        });
+        let isolate_callers = caller_isolation != CallerIsolation::Shared;
+
         // Resolve the store before the card is read: whether it can honour an
         // idempotency key is what decides whether the card may advertise one.
-        let task_store = self
-            .task_store
-            .unwrap_or_else(|| Arc::new(InMemoryTaskStore::with_config(self.task_store_config)));
+        // Isolation needs a store that partitions, so an unset one is the
+        // tenant-aware kind then.
+        let task_store_config = self.task_store_config;
+        let task_store = self.task_store.unwrap_or_else(|| {
+            if isolate_callers {
+                Arc::new(crate::store::TenantAwareInMemoryTaskStore::with_config(
+                    crate::store::TenantStoreConfig::default().with_per_tenant(task_store_config),
+                ))
+            } else {
+                Arc::new(InMemoryTaskStore::with_config(task_store_config))
+            }
+        });
         #[cfg_attr(not(feature = "audit"), allow(unused_mut))]
         let mut interceptors = self.interceptors;
         #[cfg(feature = "audit")]
@@ -788,14 +867,19 @@ impl RequestHandlerBuilder {
         let stores_isolate = task_store.isolates_tenants() && push_config_store.isolates_tenants();
         let refuse_unisolated_tenants =
             !stores_isolate && self.tenant_isolation == TenantIsolation::Required;
-        let isolate_callers = self.caller_isolation == CallerIsolation::PerCaller;
         if isolate_callers && !stores_isolate {
-            return Err(crate::error::ServerError::InvalidParams(
+            let why = if self.caller_isolation.is_none() {
+                "an authenticating interceptor makes this handler isolate tasks by caller \
+                 (spec §13.1), which needs a task store and a push-config store that \
+                 partition by tenant (the TenantAware* stores); these do not, so every \
+                 caller would share one set of records. Use those stores, or call \
+                 share_tasks_across_callers() to keep one set of records per tenant"
+            } else {
                 "isolate_tasks_by_caller needs a task store and a push-config store that \
                  partition by tenant (the TenantAware* stores); these do not, so every \
                  caller would share one set of records"
-                    .to_owned(),
-            ));
+            };
+            return Err(crate::error::ServerError::InvalidParams(why.to_owned()));
         }
         if isolate_callers && !interceptors.has_authenticator() {
             return Err(crate::error::ServerError::InvalidParams(
@@ -803,6 +887,27 @@ impl RequestHandlerBuilder {
                  callers; without one every request would be refused"
                     .to_owned(),
             ));
+        }
+        if isolate_callers
+            && self
+                .approval_gate
+                .as_ref()
+                .is_some_and(crate::approval::ApprovalGate::needs_another_caller)
+        {
+            let why = if self.caller_isolation.is_none() {
+                "an authenticating interceptor makes this handler isolate tasks by caller \
+                 (spec §13.1), and the approval gate needs a caller other than the \
+                 requester to answer, who could then never reach the requester's task. \
+                 Call share_tasks_across_callers(), or let requesters answer their own \
+                 runs with ApprovalGate::allowing_self_approval()"
+            } else {
+                "isolate_tasks_by_caller keeps every caller from another's tasks, and the \
+                 approval gate needs a caller other than the requester to answer, so no \
+                 decision could ever be admitted. Call share_tasks_across_callers() \
+                 instead, or let requesters answer their own runs with \
+                 ApprovalGate::allowing_self_approval()"
+            };
+            return Err(crate::error::ServerError::InvalidParams(why.to_owned()));
         }
 
         Ok(RequestHandler {
@@ -832,7 +937,7 @@ impl RequestHandlerBuilder {
             tenant_resolver: self.tenant_resolver,
             require_resolved_tenant: self.require_resolved_tenant,
             refuse_unisolated_tenants,
-            caller_isolation: self.caller_isolation,
+            caller_isolation,
             inbound_trace_policy: self.inbound_trace_policy,
             span_settings: self.span_settings,
             allow_unauthenticated_extended_card: self.allow_unauthenticated_extended_card,

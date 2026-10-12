@@ -9,11 +9,13 @@ Complete reference of all configuration options across a2a-rust crates.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `with_agent_card` | `AgentCard` | None | Discovery card for `/.well-known/agent-card.json` |
-| `with_task_store` | `impl TaskStore` | `InMemoryTaskStore` | Custom task storage backend |
-| `with_task_store_config` | `TaskStoreConfig` | 1hr TTL, 10k capacity | TTL and capacity for default store |
-| `with_push_config_store` | `impl PushConfigStore` | `InMemoryPushConfigStore` | Custom push config storage |
+| `with_task_store` | `impl TaskStore` | `InMemoryTaskStore`; `TenantAwareInMemoryTaskStore` when tasks are isolated by caller | Custom task storage backend |
+| `with_task_store_config` | `TaskStoreConfig` | 1hr TTL, 10k capacity | TTL and capacity for default store; per caller partition when tasks are isolated by caller, so the store holds up to 1,000 times the capacity |
+| `with_push_config_store` | `impl PushConfigStore` | `InMemoryPushConfigStore`; the tenant-aware one when the task store partitions by tenant | Custom push config storage |
 | `with_push_sender` | `impl PushSender` | None | Webhook delivery implementation |
 | `with_interceptor` | `impl ServerInterceptor` | Empty chain | Server middleware |
+| `isolate_tasks_by_caller()` | — | On, with an authenticating interceptor | A partition per caller within a tenant (spec §13.1). On by default for the callers an authenticating interceptor identifies; calling it also refuses a request with no identity. See [Multi-tenancy](../deployment/multi-tenancy.md#callers-within-one-tenant) |
+| `share_tasks_across_callers()` | — | Off | Every caller in a tenant sees its tasks, and stores that do not partition by tenant are accepted |
 | `with_executor_timeout` | `Duration` | 1 hour | Max time for executor completion (`DEFAULT_EXECUTOR_TIMEOUT`); `without_executor_timeout()` removes the bound |
 | `with_event_queue_capacity` | `usize` | 256 | Bounded channel size per stream. Increased from 64 to push the per-event cost inflection from ~52 to ~252 events. Increase further for tasks producing >250 events. |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |

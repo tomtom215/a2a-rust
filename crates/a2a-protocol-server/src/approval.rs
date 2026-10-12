@@ -76,6 +76,13 @@ impl ApprovalGate {
         self
     }
 
+    /// Whether a caller other than the requester has to answer, which
+    /// isolating tasks by caller makes impossible: the requester's task is
+    /// then in a partition no other caller reaches.
+    pub(crate) const fn needs_another_caller(&self) -> bool {
+        self.distinct_from_requester
+    }
+
     /// The decision `message` carries, checked against the request pending
     /// on `stored`; `None` when the message carries no decision.
     pub(crate) fn check(

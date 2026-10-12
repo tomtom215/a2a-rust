@@ -620,9 +620,9 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs with_isolation_another_callers_task_is_not_found_by_any_operation"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, the agent author turns it on (off by default: sharing within a tenant stays the default). Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Visibility is scoped only by tenant, and only when the deployer installs a TenantResolver bound to authentication plus TenantAware* stores; without a resolver the client-supplied tenant (or the shared default partition) is used (`client_tenant.unwrap_or_default()`), and there is no per-principal scoping within a tenant. Hooks: TenantResolver, ServerInterceptor.",
+   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Visibility is scoped only by tenant, and only when the deployer installs a TenantResolver bound to authentication plus TenantAware* stores; without a resolver the client-supplied tenant (or the shared default partition) is used (`client_tenant.unwrap_or_default()`), and there is no per-principal scoping within a tenant. Hooks: TenantResolver, ServerInterceptor.",
    "auditor": "A",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -686,10 +686,10 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs with_isolation_another_callers_task_is_not_found_by_any_operation",
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation",
     "crates/a2a-protocol-server/tests/caller_isolation.rs isolation_holds_on_the_sqlite_stores"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, the agent author turns it on (off by default: sharing within a tenant stays the default). Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: SDK supplies tenant-granular scoping (resolver + strict mode + TenantAware stores); per-user authorization within a tenant is left to the agent author's ServerInterceptor. Default build has no scoping at all.",
+   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: SDK supplies tenant-granular scoping (resolver + strict mode + TenantAware stores); per-user authorization within a tenant is left to the agent author's ServerInterceptor. Default build has no scoping at all.",
    "auditor": "A",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -1000,9 +1000,9 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs with_isolation_another_callers_task_is_not_found_by_any_operation"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, the agent author turns it on (off by default: sharing within a tenant stays the default). Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Non-existence is enforced and tested; 'lacks access' is only tenant-granular (needs a TenantResolver + tenant-aware push store) and otherwise left to an interceptor; any caller in the same tenant can read any config by (taskId, id).",
+   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Non-existence is enforced and tested; 'lacks access' is only tenant-granular (needs a TenantResolver + tenant-aware push store) and otherwise left to an interceptor; any caller in the same tenant can read any config by (taskId, id).",
    "auditor": "A",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -1622,9 +1622,9 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs with_isolation_another_callers_task_is_not_found_by_any_operation"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, the agent author turns it on (off by default: sharing within a tenant stays the default). Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Cross-tenant lookups miss and return TaskNotFound (indistinguishable). Within one tenant there is no per-principal ownership: any caller passing the interceptors can Get/Cancel/Subscribe any task id; per-user scoping (spec's 'task created by another user' example) requires a custom TaskStore/tenant resolver.",
+   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Cross-tenant lookups miss and return TaskNotFound (indistinguishable). Within one tenant there is no per-principal ownership: any caller passing the interceptors can Get/Cancel/Subscribe any task id; per-user scoping (spec's 'task created by another user' example) requires a custom TaskStore/tenant resolver.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -6552,11 +6552,11 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs with_isolation_another_callers_task_is_not_found_by_any_operation",
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation",
     "crates/a2a-protocol-server/tests/caller_isolation.rs background_work_stays_in_the_callers_partition",
     "crates/a2a-protocol-server/tests/caller_isolation.rs isolation_holds_on_the_sqlite_stores"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, the agent author turns it on (off by default: sharing within a tenant stays the default). Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: The only scoping the SDK performs is the tenant partition (TenantContext task-local + TenantAware* stores, resolver-derived tenant). Within a tenant (and in the default single-tenant deployment) there is no principal scoping and no hook to add one: TaskStore::get/list take only the id/params, CallContext carries no task id or params, and the authenticated caller_identity is not visible to the store; the only workaround is to make each principal a tenant via a credential-verifying TenantResolver.",
+   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: The only scoping the SDK performs is the tenant partition (TenantContext task-local + TenantAware* stores, resolver-derived tenant). Within a tenant (and in the default single-tenant deployment) there is no principal scoping and no hook to add one: TaskStore::get/list take only the id/params, CallContext carries no task id or params, and the authenticated caller_identity is not visible to the store; the only workaround is to make each principal a tenant via a credential-verifying TenantResolver.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -6604,9 +6604,9 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs with_isolation_another_callers_task_is_not_found_by_any_operation"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, the agent author turns it on (off by default: sharing within a tenant stays the default). Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Tenant-boundary models are supported (store partition chosen by TenantContext::scope); user/role/project models within a tenant are not: `self.task_store.list(&params)` receives no caller, and there is no post-filter hook between store and response.",
+   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Tenant-boundary models are supported (store partition chosen by TenantContext::scope); user/role/project models within a tenant are not: `self.task_store.list(&params)` receives no caller, and there is no post-filter hook between store and response.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -6625,9 +6625,9 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs with_isolation_another_callers_task_is_not_found_by_any_operation"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, the agent author turns it on (off by default: sharing within a tenant stays the default). Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: An unfiltered ListTasks (ListTasksParams::default()) is scoped to the tenant partition only; any authenticated caller in the same/default tenant gets every task in it.",
+   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: An unfiltered ListTasks (ListTasksParams::default()) is scoped to the tenant partition only; any authenticated caller in the same/default tenant gets every task in it.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -6645,7 +6645,7 @@
     "crates/a2a-protocol-server/src/call_context.rs:137"
    ],
    "test_evidence": [],
-   "notes": "MAY: multi-tenant model SUPPORTED (TenantResolver + TenantAware stores); user/role/project models only expressible as tenants or as method-level allow/deny in an interceptor; no resource-level hook. (Re-graded on 2026-10-10: a MAY takes SUPPORTED/NOT_SUPPORTED; the tenant model is supported, and the missing per-principal hook is the §13.1 entries at lines 3083-3101.) The user-identity model is now supported too: isolate_tasks_by_caller.",
+   "notes": "MAY: multi-tenant model SUPPORTED (TenantResolver + TenantAware stores); user/role/project models only expressible as tenants or as method-level allow/deny in an interceptor; no resource-level hook. (Re-graded on 2026-10-10: a MAY takes SUPPORTED/NOT_SUPPORTED; the tenant model is supported, and the missing per-principal hook is the §13.1 entries at lines 3083-3101.) The user-identity model is now supported too: isolate_tasks_by_caller, the default with an authenticating interceptor since 2026-10-12.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -6664,10 +6664,10 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs with_isolation_another_callers_task_is_not_found_by_any_operation",
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation",
     "crates/a2a-protocol-server/tests/caller_isolation.rs isolation_holds_on_the_sqlite_stores"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, the agent author turns it on (off by default: sharing within a tenant stays the default). Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Tenant-scoped only (store-level tests, no handler/wire-level cross-tenant ListTasks test found). No way to restrict visibility per principal inside a tenant: two callers authenticated by BearerTokenAuthInterceptor::with_labelled_tokens in the default tenant see each other's tasks.",
+   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Tenant-scoped only (store-level tests, no handler/wire-level cross-tenant ListTasks test found). No way to restrict visibility per principal inside a tenant: two callers authenticated by BearerTokenAuthInterceptor::with_labelled_tokens in the default tenant see each other's tasks.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -6686,9 +6686,9 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs with_isolation_another_callers_task_is_not_found_by_any_operation"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, the agent author turns it on (off by default: sharing within a tenant stays the default). Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: A task in another tenant partition is TaskNotFound (good, no existence leak). Within a partition, `self.task_store.get(&task_id)` is returned to any caller who passed the interceptor chain; the interceptor cannot see params.id (CallContext has method/headers/identity/tenant only), so a per-task access check has no SDK hook.",
+   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: A task in another tenant partition is TaskNotFound (good, no existence leak). Within a partition, `self.task_store.get(&task_id)` is returned to any caller who passed the interceptor chain; the interceptor cannot see params.id (CallContext has method/headers/identity/tenant only), so a per-task access check has no SDK hook.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -6707,9 +6707,9 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs with_isolation_another_callers_task_is_not_found_by_any_operation"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, the agent author turns it on (off by default: sharing within a tenant stays the default). Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Same as GetTask: tenant partition enforced for cancel/subscribe/push-config CRUD; no per-principal ownership check (any caller in the partition can cancel, subscribe to, or register a webhook on another caller's task).",
+   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Same as GetTask: tenant partition enforced for cancel/subscribe/push-config CRUD; no per-principal ownership check (any caller in the partition can cancel, subscribe to, or register a webhook on another caller's task).",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"

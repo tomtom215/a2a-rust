@@ -140,9 +140,18 @@ let handler = RequestHandlerBuilder::new(MyAgent)
     ]))
     // Only these two may approve, and never the caller whose run asked.
     .with_approval_gate(ApprovalGate::new().with_approvers(["alice", "bob"]))
+    // The approver has to reach the requester's task.
+    .share_tasks_across_callers()
     .build();
 # let _ = handler;
 ```
+
+An approver answers by continuing the requester's task, so the two must
+share it. With an authenticating interceptor, tasks are isolated by caller
+unless the builder says otherwise, and `build()` refuses a gate that wants a
+second caller until it does: call `share_tasks_across_callers()`, as above,
+or let requesters answer their own runs with
+`ApprovalGate::allowing_self_approval()`.
 
 A continuation that carries a decision is refused before anything runs when:
 

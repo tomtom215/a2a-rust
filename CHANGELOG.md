@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI's `--no-capability-check`: see Behaviour Changes. The error names the
   method that was not sent and the card field that would have declared it;
   it is not retryable.
+- **`RequestHandlerBuilder::share_tasks_across_callers`** (server; spec
+  §13.1): keeps one set of records per tenant, shared by every caller in it,
+  now that an authenticating interceptor isolates callers by default. See
+  Behaviour Changes.
 - **`CardFetchOptions::with_signature_keys`** (client, feature `signing`;
   spec §14: clients SHOULD verify signatures when present). Card discovery
   with these options returns a signed card only if one of its signatures
@@ -317,6 +321,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event's deliveries all run at once rather than 17 at a time; every config
   was attempted before and is now, and the event still finishes inside the
   budget. Both values remain configurable.
+- **Breaking: an authenticating interceptor isolates tasks by caller**
+  (server; spec §13.1: results scoped to the caller's authorization
+  boundaries). Callers in one tenant shared its tasks unless the builder
+  called `isolate_tasks_by_caller`, so with labelled tokens, labelled keys or
+  JWT, Bob could read, list, cancel and subscribe to Alice's tasks and
+  register webhooks on them. Now each caller an authenticating interceptor
+  identifies gets a partition of its own, where another caller's task is
+  `TaskNotFound`. A request it lets through without an identity (an
+  unlabelled token or key, a JWT without `sub`) keeps the tenant's shared
+  records, as before; `isolate_tasks_by_caller` still refuses one. Unset
+  stores default to the tenant-aware in-memory ones: up to 1,000 partitions,
+  each with the whole `with_task_store_config` capacity (10,000 tasks by
+  default), so that store's bound is per caller now. `build()` now refuses, naming the remedies, a supplied task or
+  push-config store that does not partition by tenant, and an approval gate
+  that needs a second approver, including the one `Profile::Auditable`
+  installs: under isolation that approver could never reach the requester's
+  task. `share_tasks_across_callers()` restores the old behaviour. A handler
+  with no authenticating interceptor is unaffected. See the upgrading guide.
 - **Breaking for the `otel` feature: OpenTelemetry 0.33** (server, client,
   sdk). `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`,
   `opentelemetry-http`, `opentelemetry-appender-tracing` 0.32 to 0.33.1 and

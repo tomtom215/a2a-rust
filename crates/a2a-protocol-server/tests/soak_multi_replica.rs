@@ -225,6 +225,9 @@ async fn spawn_replica(
                 (0..WORKERS).map(|w| (format!("soak-key-{w}"), format!("caller-{w}"))),
             ))
             .with_interceptor(limiter)
+            // What this soak measures is the rate-limit buckets, not task
+            // isolation, which would need the tenant-aware Postgres stores.
+            .share_tasks_across_callers()
             .build()
             .expect("handler builds"),
     );

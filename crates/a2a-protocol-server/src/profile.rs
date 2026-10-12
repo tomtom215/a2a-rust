@@ -31,7 +31,14 @@ pub enum Profile {
     /// * the log signs checkpoints ([`AuditLog::with_signer`]): without them
     ///   the end of a chain can be cut off without trace;
     /// * an interceptor that authenticates is installed: records otherwise
-    ///   name no caller.
+    ///   name no caller;
+    /// * the builder says how callers relate to each other's tasks. The
+    ///   gate's default approver is someone other than the requester, who
+    ///   cannot reach the requester's task when tasks are isolated by caller,
+    ///   which is the default with an authenticating interceptor. Call
+    ///   [`share_tasks_across_callers`](crate::RequestHandlerBuilder::share_tasks_across_callers),
+    ///   or set a gate that
+    ///   [allows self-approval](crate::approval::ApprovalGate::allowing_self_approval).
     ///
     /// Retention is not configured here — purging is a job the deployment
     /// schedules ([`AuditLog::purge`]), with a floor it chooses.
@@ -90,6 +97,7 @@ mod tests {
         let h = RequestHandlerBuilder::new(Idle)
             .with_profile(Profile::Auditable(log(true, true)))
             .with_interceptor(authenticated())
+            .share_tasks_across_callers()
             .build()
             .expect("everything it needs is there");
         assert!(h.approval_gate.is_some());
@@ -111,6 +119,13 @@ mod tests {
         let anonymous =
             RequestHandlerBuilder::new(Idle).with_profile(Profile::Auditable(log(true, true)));
         assert!(refusal(anonymous).contains("authenticating interceptor"));
+
+        let undecided = RequestHandlerBuilder::new(Idle)
+            .with_interceptor(authenticated())
+            .with_profile(Profile::Auditable(log(true, true)));
+        let why = refusal(undecided);
+        assert!(why.contains("share_tasks_across_callers()"), "{why}");
+        assert!(why.contains("allowing_self_approval()"), "{why}");
     }
 
     #[test]
@@ -120,6 +135,7 @@ mod tests {
             .with_approval_gate(gate)
             .with_profile(Profile::Auditable(log(true, true)))
             .with_interceptor(authenticated())
+            .share_tasks_across_callers()
             .build()
             .unwrap();
         assert!(format!("{:?}", h.approval_gate).contains("carol"));
