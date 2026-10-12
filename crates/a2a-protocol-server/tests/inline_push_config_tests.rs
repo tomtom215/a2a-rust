@@ -49,7 +49,9 @@ fn push_card() -> AgentCard {
         }],
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
-        skills: vec![],
+        skills: vec![
+            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+        ],
         // Spec §3.3.4 rejects push operations unless the card advertises them.
         capabilities: AgentCapabilities::none().with_push_notifications(true),
         provider: None,

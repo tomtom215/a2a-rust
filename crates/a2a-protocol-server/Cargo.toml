@@ -41,7 +41,7 @@ sqlite = ["dep:sqlx"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
 postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
-websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
+websocket = ["dep:tokio-tungstenite"]
 ## Enable gRPC transport via `tonic`. Serves the canonical `lf.a2a.v1.A2AService`
 ## (protobuf-native, wire-compatible with the official Go/Python/Java A2A SDKs).
 grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-types", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
@@ -96,6 +96,12 @@ serde           = { workspace = true }
 # cargo-mutants builds the library outside `cfg(test)`.
 mutants         = { version = ">=0.0.4, <0.1" }
 serde_json     = { workspace = true }
+# The field path of a request that does not deserialize, for the
+# google.rpc.BadRequest detail §11.6 asks for. MIT OR Apache-2.0, by the
+# serde_json author; its own dependencies (itoa, serde_core) are already in
+# every build through serde_json. Path tracking over a serde Deserializer is
+# not a 100-line in-tree job (CONTRIBUTING's dependency policy, rule 3).
+serde_path_to_error = { version = ">=0.1.20, <0.2" }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util     = { workspace = true, features = ["server", "server-auto", "server-graceful"] }
@@ -122,7 +128,7 @@ base64         = { version = "0.23", optional = true }
 zeroize        = { version = ">=1.8, <2", optional = true, default-features = false, features = ["alloc"] }
 sqlx           = { workspace = true, optional = true }
 tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
-futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
+futures-util      = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink", "alloc"] }
 tonic             = { workspace = true, optional = true }
 tonic-prost       = { workspace = true, optional = true }
 tonic-types       = { workspace = true, optional = true }

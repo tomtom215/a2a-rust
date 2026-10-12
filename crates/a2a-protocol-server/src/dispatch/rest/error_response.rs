@@ -13,6 +13,69 @@ use http_body_util::combinators::BoxBody;
 use super::response::{build_json_response, internal_error_response};
 use crate::error::ServerError;
 
+/// A 400 whose AIP-193 body carries a `google.rpc.BadRequest` detail with
+/// one field violation (spec §11.6: implementations SHOULD use well-known
+/// types such as `BadRequest` for validation errors). `field` is the path of
+/// the offending field, `""` when the request itself is the problem.
+pub fn bad_request_response(
+    field: &str,
+    description: &str,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    let body = serde_json::json!({
+        "error": {
+            "code": 400,
+            "status": "INVALID_ARGUMENT",
+            "message": description,
+            "details": [crate::streaming::sse::bad_request_detail(field, description)]
+        }
+    });
+    serde_json::to_vec(&body).map_or_else(
+        |_| internal_error_response(),
+        |bytes| build_json_response(400, bytes),
+    )
+}
+
+/// The request field a data error is about, as `serde_path_to_error` spells
+/// the path (`message.parts[0].text`); `""` at the top level.
+fn violation_field(path: &serde_path_to_error::Path) -> String {
+    let field = path.to_string();
+    if field == "." { String::new() } else { field }
+}
+
+/// Deserializes request parameters from a parsed body. A value of the wrong
+/// shape answers [`bad_request_response`] naming the field.
+#[allow(clippy::result_large_err)] // the error is the response, as in `read_body_with_path_fields`
+pub fn params_from_value<T: serde::de::DeserializeOwned>(
+    value: serde_json::Value,
+) -> Result<T, hyper::Response<BoxBody<Bytes, Infallible>>> {
+    serde_path_to_error::deserialize(value)
+        .map_err(|e| bad_request_response(&violation_field(e.path()), &e.inner().to_string()))
+}
+
+/// Deserializes request parameters from raw body bytes. Malformed JSON is a
+/// plain 400 as before; well-formed JSON of the wrong shape is re-parsed with
+/// path tracking, on the failure path only, to name the field.
+#[cfg(feature = "axum")]
+#[allow(clippy::result_large_err)] // the error is the response, as in `read_body_with_path_fields`
+pub fn params_from_slice<T: serde::de::DeserializeOwned>(
+    body: &[u8],
+) -> Result<T, hyper::Response<BoxBody<Bytes, Infallible>>> {
+    match serde_json::from_slice(body) {
+        Ok(v) => Ok(v),
+        Err(e) if e.classify() != serde_json::error::Category::Data => {
+            Err(error_json_response(400, &e.to_string()))
+        }
+        Err(e) => {
+            let mut de = serde_json::Deserializer::from_slice(body);
+            let tracked: Result<T, _> = serde_path_to_error::deserialize(&mut de);
+            Err(match tracked {
+                Err(t) => bad_request_response(&violation_field(t.path()), &t.inner().to_string()),
+                Ok(_) => bad_request_response("", &e.to_string()),
+            })
+        }
+    }
+}
+
 /// Builds an AIP-193 compliant error response.
 ///
 /// Per Section 11.6, HTTP error responses use the format:
@@ -74,7 +137,7 @@ pub fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<By
     // answers 413 and 503 (audit N20).
     let status = err.http_status();
     let grpc_status = err.status_name();
-    let details = a2a_err.error_info_data(None);
+    let details = crate::streaming::sse::error_details(&a2a_err);
 
     let mut error_obj = serde_json::json!({
         "error": {
@@ -83,8 +146,8 @@ pub fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<By
             "message": a2a_err.message
         }
     });
-    if !details.is_null() {
-        error_obj["error"]["details"] = details;
+    if !details.is_empty() {
+        error_obj["error"]["details"] = serde_json::Value::Array(details);
     }
 
     serde_json::to_vec(&error_obj).map_or_else(
@@ -92,6 +155,13 @@ pub fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<By
         |body| {
             let mut resp = build_json_response(status, body);
             crate::dispatch::add_auth_challenge(resp.headers_mut(), err);
+            if let Some(delay) = err.retry_after() {
+                // Whole seconds: `A2aError::rate_limited` rounds up to them.
+                resp.headers_mut().insert(
+                    hyper::header::RETRY_AFTER,
+                    hyper::header::HeaderValue::from(delay.as_secs()),
+                );
+            }
             resp
         },
     )

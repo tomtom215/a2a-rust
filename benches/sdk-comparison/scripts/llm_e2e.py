@@ -79,7 +79,8 @@ for rnd in range(ROUNDS):
         for who in order[k:] + order[:k]:
             r = direct(p) if who == "direct" else via_agent(AGENTS[who], p)
             r.update({"who": who, "round": rnd, "prompt": pi}); rows.append(r)
-json.dump(rows, open("llm_rows.json", "w"), indent=1)
+with open("llm_rows.json", "w") as f:
+    json.dump(rows, f, indent=1)
 
 ref = {(r["round"], r["prompt"]): r["text"] for r in rows if r["who"] == "direct"}
 print("who        n  ttft_med_ms ttft_p90_ms total_med_ms  text==direct  completed")

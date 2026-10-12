@@ -93,7 +93,7 @@ impl PushConfigStore for TenantAwarePostgresPushConfigStore {
         mut config: TaskPushNotificationConfig,
     ) -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             // A config cannot be stored without its routing key. The handler
             // rejects this earlier; guard here too so a missing taskId maps to
             // a proper invalid-params error instead of a NOT NULL violation.
@@ -135,7 +135,7 @@ impl PushConfigStore for TenantAwarePostgresPushConfigStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + 'a>>
     {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let row: Option<(serde_json::Value,)> = sqlx::query_as(
                 "SELECT data FROM tenant_push_configs WHERE tenant_id = $1 AND task_id = $2 AND id = $3",
             )
@@ -162,7 +162,7 @@ impl PushConfigStore for TenantAwarePostgresPushConfigStore {
         task_id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let rows: Vec<(serde_json::Value,)> = sqlx::query_as(
                 "SELECT data FROM tenant_push_configs WHERE tenant_id = $1 AND task_id = $2",
             )
@@ -187,7 +187,7 @@ impl PushConfigStore for TenantAwarePostgresPushConfigStore {
         id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             sqlx::query(
                 "DELETE FROM tenant_push_configs WHERE tenant_id = $1 AND task_id = $2 AND id = $3",
             )
@@ -204,7 +204,7 @@ impl PushConfigStore for TenantAwarePostgresPushConfigStore {
     fn count(&self) -> Pin<Box<dyn Future<Output = A2aResult<Option<usize>>> + Send + '_>> {
         Box::pin(async move {
             // Per-tenant count: yields a per-tenant global ceiling.
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let (total,): (i64,) =
                 sqlx::query_as("SELECT COUNT(*) FROM tenant_push_configs WHERE tenant_id = $1")
                     .bind(&tenant)

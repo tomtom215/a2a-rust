@@ -53,6 +53,9 @@ fn run_once(
         "2.0.1",
         AgentInterface::jsonrpc("http://127.0.0.1"),
     )
+    .with_skill(
+        a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+    )
     .with_description("Echoes what it is sent");
     let handler = Arc::new(
         build(RequestHandlerBuilder::new(Echo).with_agent_card(card))

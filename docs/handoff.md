@@ -11,10 +11,8 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-10-09 — `claude/bold-gauss-9qc9dc`: compliance and
-oversight. It adds the HTTP+JSON media-type fix, OSV/CodeQL/Scorecard,
-signed-tag verification, the compliance control map, the audit trail, the
-delegation handle, the halt switch, and the approval gate. `git log -1 --format='%ci %s' --
+Last updated 2026-10-10 — `claude/nifty-fermat-roj04f`: a requirement-level
+spec ledger and the conformance fixes it found. `git log -1 --format='%ci %s' --
 docs/handoff.md` remains the authority on this line.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
@@ -936,6 +934,268 @@ delegation handle)~~ landed on `claude/bold-gauss-9qc9dc` (below); next in
 * Measure throughput on one pinned core with `/proc/<pid>/stat` user and
   system time; two-core runs are latency-bound and the VM's noise is ±5–10%
   there. Use 6 interleaved runs and compare medians.
+
+## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
+
+The maintainer asked to keep closing the gap to full A2A compliance. The first
+`main` runs of the workflows #163 added were all green (2026-10-10, `f824b03`),
+but green hid two things: Scorecard scored 5.8/10 with "58 existing
+vulnerabilities", and nothing graded the specification below the level of an
+area. This branch answers both.
+
+**What landed, in commit order.**
+1. `ci:` least-privilege workflow tokens; the conformance peers' advisories
+   (122 unique by a local osv-scanner run) fixed without moving any graded SDK;
+   setup-go 1.25 to 1.26; `osv.yml`'s PR job scans the loom lockfile.
+2. `proto:` all six copies of `a2a.proto` were A2A v1.0.0's text. Now v1.0.1's,
+   pinned in `proto/UPSTREAM`, checked offline (`check_proto_copies.sh`) and
+   online (`check_a2a_proto_upstream.sh` in `official-tck.yml`).
+3. `fix(signing):` §8.4.1 field presence in card canonicalization; §8.4.2
+   `kid` required (`sign_card_es256`/`sign_card_ed25519`; the `Option` forms
+   are deprecated) and `typ: "JOSE"`. `itk/interop/card_signature_interop.py`
+   proves interop both ways against the official Python SDK, not yet in CI.
+4. `fix(server):` a message-only streaming answer is one `Message` (§3.1.2).
+5. `fix(server):` `?A2A-Version=` honoured (§3.6.1); the axum adapter checks
+   the version and the request media type; REST's
+   `ContentTypeNotSupportedError` carries `ErrorInfo` (§11.6).
+6. `fix(types):` OAuth flows whose empty `scopes` map is omitted parse.
+7. `docs(compliance):` `docs/compliance/spec-ledger.json` (512 entries) and
+   `scripts/check_spec_ledger.py` in `ci.yml`, proven by
+   `prove_gates_fail.sh`.
+8. `feat(server):` per-caller task isolation (§13.1),
+   `RequestHandlerBuilder::isolate_tasks_by_caller`; design below.
+9. `fix(server):` push-config list/delete of an unknown task is
+   `TaskNotFound`; `GetExtendedAgentCard` enforces required extensions; a
+   repeated non-append `artifactId` replaces the artifact; `ROLE_UNSPECIFIED`
+   is refused.
+10. `fix(streaming):` mid-stream JSON-RPC error `data` is an array of typed
+    details (§9.5); the client's lag predicates read both shapes.
+11. `fix(rate-limit):` `A2aError::rate_limited`: 429 + `Retry-After`,
+    `RESOURCE_EXHAUSTED`, `RetryInfo` (§13.4); an overload's REST body names
+    `RESOURCE_EXHAUSTED`.
+12. `fix(slimrpc):` the binding spec's §6.1 status table; case-insensitive
+    metadata keys.
+13. `fix(server):` empty or scheme-less push `url` refused; tests for
+    §3.1.4, §3.3.4 (streaming capability on the wire) and §3.5.2.
+14. `fix:` CI repairs (setup-go 1.26.9, rustdoc links); §3.4.1 context in a
+    direct reply; §5.6.1 executor timestamps normalised to UTC or refused.
+15. `fix(server):` a push config whose auth scheme the sender cannot write
+    (anything but Bearer/Basic) is refused at creation (§4.3.3, §13.2).
+16. `feat(server):` `RequestContext::accepted_output_modes()`; ledger records
+    why the REST client keeps `application/json` (a2a-java refuses others).
+17. GAP sweep: empty push-config ids; extended-card caching headers;
+    `HttpPushSender::with_allowed_hosts`; opt-in `dispatch::Hsts`;
+    `BadRequest` field violations on HTTP+JSON; the caching resolver can
+    hold the extended card. Three GAPs remain, all maintainer decisions
+    (below).
+18. `ef31df9` one JSON-RPC error shape on HTTP, SSE and WebSocket (§9.5,
+    §12.4); `51b93ad` the `Hsts` inert-bounds allowlist entries.
+19. `2d20696` (breaking) `AgentCard::validate` refuses empty required
+    arrays and `build`, the dynamic card handler and hot reload run it.
+20. `f7cb779` every push webhook is attempted; the budget sets concurrency
+    (§4.3.3). `7260a8f` `CardFetchOptions::with_signature_keys` (§14).
+    `f400818` tests for four untested MUSTs; SLIMRPC credentials documented.
+21. Proto `REQUIRED` sweep: `validate` refuses empty required strings; the
+    queue writer binds events to the running task (empty ids filled,
+    foreign ones refused); `tests/required_fields.rs` removes each
+    REQUIRED card and event key and the gRPC status/artifact. Security-
+    scheme strings are refused only when absent, not when empty (PARTIAL:
+    `validate` is const and cannot walk the scheme map).
+22. SHOULD-level tests: TLS 1.3 negotiated with forward-secret AEAD suites
+    only; card revalidation sends both validators; refusals name the
+    parameter and the accepted value; `#[deprecated]` on the implicit and
+    password OAuth flows. §13 brute-force throttling (spec line 3198) is
+    PARTIAL: a refused credential never reaches the rate limiter, and
+    per-source counting needs the peer address, which `CallContext` lacks.
+    Maintainer decision.
+23. PARTIAL sweep: empty task ids on get/cancel/subscribe are
+    `InvalidParams`; an artifact with no parts is refused at the queue
+    write; an empty push auth scheme is covered by the Bearer/Basic check;
+    731/733 were already fixed in `56f8d61`; the axum router's public card
+    gets the same caching headers as JSON-RPC and REST. Left for the
+    maintainer: the 5 s `push_delivery_timeout` default, below §4.3.3's
+    recommended 10-30 s (raising it doubles per-event concurrency at the
+    defaults and the blocking path's worst-case wait; 886, 3118);
+    empty appending chunks (287), §13.3 extended card with no card
+    configured (3172, tied to 1980).
+
+24. WebSocket binding specification (`book/src/bindings/websocket.md`),
+    pinned by `websocket_binding_spec.rs`; the WebSocket `message/stream`
+    alias removed; HTTP+JSON path ids decoded (REST) and routed raw
+    (axum); a task without `contextId` parses; `no-store` cards are not
+    cached. Recorded for the maintainer: an opt-in `Origin` allowlist on
+    the WebSocket upgrade (3222).
+
+25. Streams end at the terminal state (§3.1.2, §3.1.6): the reader
+    closes once the terminal event is delivered, not when the executor
+    drops its writer. The conformance harness now reads the raw channel.
+    CI note: `9aacd7a`'s Windows job failed once in
+    `keep_alive_comments_reset_the_idle_bound` (client SSE timing, 100 ms
+    heartbeats against a 1 s bound on a current-thread runtime; file
+    unchanged since 2026-09-22); the job was re-run once. Left for the
+    maintainer: legacy-name warnings (3429, needs custom deserializers),
+    encrypted push-credential storage (3139, needs a key design).
+
+26. Code-scanning alerts (132 open on `main`, 2026-10-12). This session's
+    token cannot read the alerts API (403), so each tool was rerun locally on
+    `main` and on this branch: osv-scanner 2.2.3, Scorecard v5.4.0 (built
+    from the Go proxy; local mode reproduced main's seven Token-Permissions
+    findings at the alerts' exact lines), CodeQL 2.27.2 with the
+    workflow's suites. Fixed on this branch: peer dependency advisories
+    (recursive osv-scanner: 0), Pinned-Dependencies (23 to 0: image digests,
+    hash-locked pip under `.github/requirements/`, npm lockfile), osv.yml's
+    three Token-Permissions findings, the four `jwt.rs` cleartext-logging
+    test messages, 45 Python quality findings. Alerts close only when this
+    reaches `main`. Left for the maintainer, in the alert UI: dismiss the
+    four `contents: write` Token-Permissions alerts (release.yml x2,
+    benchmarks.yml, itk-nightly.yml; each needs the grant), and Code-Review
+    / Branch-Protection, which are repository settings. Disk note: the
+    CodeQL Rust database (deps included) needs ~10 GB; `target/` was
+    deleted to make room. Noticed, not fixed: `scripts/adversarial/
+    probe_push.py` "hang" mode closes the socket it means to hold (its
+    `finally: c.close()` runs after appending to `_held`).
+
+**How the ledger was made, and how far to trust it.** Seven read-only audit
+agents, one per specification region plus one over the proto's `REQUIRED`
+fields, each opened the code and tests for every RFC 2119 line. Their entries
+are model output. Every entry this branch changed was re-verified by
+reproducing the defect and showing the new test fail without the fix; the
+others are recorded as found. Treat an unchanged entry as a lead, and verify it
+before acting on it, as this branch did.
+
+**Measured, not assumed.**
+- Official TCK, local run of this branch: identical to CI's on `main` (83
+  MUST passing, 5 failing, all baselined, 5 skipped, 21 untested; gate exit 0).
+  ROADMAP's "87 passing" did not add up and is corrected.
+- In-repo TCK against a2a-go 2.5.0 (Go 1.26.9, patched deps) and a2a-java
+  1.3.0 (Quarkus 3.37.0 with netty and jackson BOMs): all pass on JSON-RPC and
+  REST with tck.yml's one REST skip.
+- `cargo test --workspace --all-features --no-fail-fast` after item 13:
+  172 binaries, 4,478 passed, 0 failed, 116 ignored. Run it with
+  `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`:
+  with debuginfo the all-features build passed 21 GiB and filled this
+  container's disk allowance (ENOSPC mid-run). The SLIMRPC binding is
+  outside the workspace; its `cargo test -- --test-threads=1` passed after
+  item 12.
+- Ledger after item 25: TESTED 295, PARTIAL 36, SUPPORTED 52,
+  IMPLEMENTED_UNTESTED 2, GAP 3, NOT_SUPPORTED 13, NOT_APPLICABLE 22,
+  APPLICATION 89 (`scripts/check_spec_ledger.py`). Items 21-22 moved ten
+  entries from IMPLEMENTED_UNTESTED to PARTIAL (nine security-scheme
+  REQUIRED strings and the brute-force SHOULD); item 23 moved eight PARTIAL
+  entries to TESTED; item 24 moved eight WebSocket documentation entries to
+  SUPPORTED and three to TESTED; item 25 moved one to TESTED. The two left untested: system errors are
+  logged (534) and webhook URLs should be HTTPS (3137).
+- Workspace tests after item 21: 182 binaries, 4,517 passed, 0 failed,
+  116 ignored. Item 22's four new tests were run on their own and each shown
+  to fail with its fix removed.
+- Workspace tests after item 17: 177 binaries, 4,497 passed, 0 failed,
+  116 ignored; clippy clean.
+- CI lesson 2: run the whole static-checks job locally before pushing (its
+  29 `run:` lines in `ci.yml`, all scripts, no build). `56f8d61` failed only
+  `check_inert_bounds.py`, which no test or clippy run catches: a new
+  `Dispatcher` (the `Hsts` wrapper) needed allowlist entries saying it
+  delegates the request bounds to the dispatcher it wraps.
+- CI lesson: every push to this branch cancels the previous run
+  (concurrency), so commits pushed minutes apart never finished CI. Two real
+  failures (Documentation, Go interop) sat hidden behind cancellations from
+  `c482314` and `b2a7746` until a run was left to finish. Push, then let the
+  run complete before pushing again.
+- Workspace clippy `-D warnings`: clean. `prove_workflow_gates_fail.py`: 28
+  proven, 0 unproven, 21 exempt.
+
+**Decisions waiting on the maintainer.**
+- *Interface order (ledger §8.3.2, lines 2007-2008, GAP).* The spec says a
+  client MUST select the first supported interface in the card's order.
+  `ClientBuilder::from_card` ranks by `ClientConfig::default()`'s
+  `preferred_bindings = ["JSONRPC"]` first, so a card listing
+  `[HTTP+JSON, JSONRPC]` gets JSONRPC; `from_card_applies_the_default_preference_list`
+  pins that on purpose (a2a-go parity). Following the spec means `from_card`
+  passes no preference (card order, with the existing fallback past an
+  interface it cannot build) while `from_card_preferring` keeps the caller's
+  explicit ranking. Not changed: it reverses a recorded decision and changes
+  which binding default clients use.
+- *Upstream candidate, not filed: a2a-java and `application/a2a+json`.*
+  a2a-java 1.3.0.Final's REST server refuses any request Content-Type not
+  starting with `application/json` (`A2AServerRoutes.validateContentType`,
+  read from the jar's bytecode), so a client following §11.1's SHOULD gets
+  `ContentTypeNotSupportedError` from it. This client keeps sending
+  `application/json`; ledger line 2758 records why. A public issue on
+  a2a-java is the maintainer's call.
+- *Minor-version matching (ledger §3.6.2, line 737).* The spec says requests
+  are processed with the semantics of the requested `Major.Minor` and an
+  unsupported one is `VersionNotSupportedError`. This server accepts any
+  `1.x`, and so does the official Python SDK: `_is_version_compatible`
+  compares only the major version, although its docstring says major and
+  minor. Rejecting `1.1` follows the text and breaks the first 1.1 client.
+- *Upstream report: the Python SDK's card canonicalization.* Its
+  `_clean_empty` drops a security requirement whose scope list is empty, so a
+  card's `securityRequirements` (the ordinary bearer case) are not covered by
+  its signature and can be removed from a signed card undetected. That is a
+  signature-coverage weakness in the reference SDK; it should go to
+  a2a-python's security contact, not a public issue. Nothing was filed.
+
+**What the next session should do first.**
+1. Read the first CI run of this branch. New or changed gates: the ledger
+   check, the proto upstream check, Go 1.26 in tck/ci/pin-freshness, the Java
+   peer's BOM overrides.
+2. The ledger's remaining medium entries (`docs/compliance/spec-ledger.md`
+   lists every open one, most severe first). The ones read and confirmed
+   this session but not yet fixed: the client never checks card capabilities before
+   streaming (a SHOULD, and checking would refuse servers that stream without
+   declaring it).
+3. Postgres was run this session too: `postgres_store_tests -- --ignored`,
+   67 passed against postgres:16, including
+   `caller_isolation_holds_on_the_tenant_postgres_stores`, which fails with
+   the Postgres store keyed by tenant alone.
+4. Done: `card_signature_interop.py` runs in CI (`tck.yml`, job
+   `card-signature-interop`). Done: §9.5 mid-stream JSON-RPC error `data`
+   is an array of typed details, and the client's lag predicates accept the
+   old object shape too. Still open from that ledger area: the WebSocket
+   binding (not a spec binding) sends errors with no `data` at all and
+   rewrites every mid-stream error to -32000, dropping the code and the lag
+   marker (ledger §12.4, spec line 3024, PARTIAL/medium); and unary
+   responses drop `A2aError::data` (§9.5 MAY, PARTIAL/low).
+   Done: §13.4 rate-limit refusals are `A2aError::rate_limited` (429 +
+   `Retry-After` / `RESOURCE_EXHAUSTED` / `RetryInfo`). How this SDK's client
+   takes it, read from the code and not tested end to end: over REST the body
+   has no `ErrorInfo` reason, so `parse_aip193_error` returns `None` and the
+   429 surfaces as `UnexpectedStatus` with `retry_after`, which
+   `ClientError::is_retryable` (`retry.rs`) retries; over gRPC
+   `RESOURCE_EXHAUSTED` maps to `UnexpectedStatus { 429 }` (`grpc.rs`), also
+   retried. Over JSON-RPC it is `Protocol(InternalError)` with the `RetryInfo`
+   in `data`, which the retry layer does not retry. Open: decide whether the
+   JSON-RPC client should read `RetryInfo`.
+   Done: SLIMRPC status table and key case; §3.1.4, §3.3.4 and §3.5.2
+   tests; empty push `url`. The §12 PARTIAL that remains is a conflict
+   between the SLIMRPC table and A2A §5.4 (push/unsupported-operation
+   codes), which is upstream's to resolve.
+
+**§13.1, as built.** Opt-in caller partitions: `RequestHandler::admit` runs
+the interceptors and then records the caller in a per-request slot
+(`TenantContext::scope_request` / `set_caller`), and the tenant-aware stores
+key by `TenantContext::partition` (tenant, or tenant + U+001F + caller).
+`TenantContext::current()` stays the tenant for the halt switch, quotas, audit
+chains and metric labels. Spawned work re-enters both through
+`TenantContext::capture()`. Rejected: a composite tenant string (each caller
+would get its own halt scope, so halting a tenant would not stop its callers);
+a nested future per method (clippy `large_futures`: 29-34 KB); a general
+`TaskAuthorizer` hook (ownership would have to be stored in all four stores).
+A maintainer decision remains: whether isolation should become the default
+when an authenticating interceptor is installed. That is a breaking change for
+deployments that share tasks within a tenant on purpose.
+
+**Environment notes, new this session.**
+- `pkill -f` / `pgrep -f` with a pattern from your own command killed the
+  shell twice more. Find processes with `ps -eo pid,comm,args` filtered on
+  `comm`, and kill by PID.
+- Maven Central answers `curl` and osv-scanner's pom resolution with 429
+  under load; `mvn` itself worked. A pom scan that cannot fetch the override
+  BOMs falls back to Quarkus's own versions and reports advisories the build
+  does not contain; check the packaged jars.
+- `prove_workflow_gates_fail.py` needs `ssh-keygen` (`apt-get install
+  openssh-client`) and free ports; a SUT left running fails it with
+  "Address already in use".
+- osv-scanner: `go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.2.3`.
 
 ## `claude/bold-gauss-9qc9dc` — compliance, audit and human oversight
 

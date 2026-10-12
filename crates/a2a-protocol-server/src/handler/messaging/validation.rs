@@ -57,6 +57,16 @@ impl RequestHandler {
             validate_id(&task_id.0, "task_id", self.limits.max_id_length)?;
         }
 
+        // a2a.proto marks `Message.role` REQUIRED. The JSON bindings already
+        // refuse a message without one, but over gRPC an absent enum decodes
+        // as 0, `ROLE_UNSPECIFIED`, and was accepted until 2026-10-10, so the
+        // bindings disagreed about the same request.
+        if params.message.role == a2a_protocol_types::message::MessageRole::Unspecified {
+            return Err(ServerError::InvalidParams(
+                "message.role is required: ROLE_USER or ROLE_AGENT".into(),
+            ));
+        }
+
         // SC-4: Reject messages with no parts.
         if params.message.parts.is_empty() {
             return Err(ServerError::InvalidParams(

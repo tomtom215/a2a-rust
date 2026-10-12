@@ -263,7 +263,9 @@ def runs_on(condition: str | None, event: str) -> bool | None:
     s = s.replace("||", " or ").replace("&&", " and ")
     s = re.sub(r"!(?!=)", " not ", s)
     s = re.sub(r"\b(?!(?:True|False|and|or|not)\b)[A-Za-z_][\w.\-\[\]]*", " True ", s)
-    if not re.fullmatch(r"[\sTrueFalseandornot()]+", s):
+    # Only the letters of True/False/and/or/not, parens and whitespace may
+    # remain before eval (each letter listed once).
+    if not re.fullmatch(r"[\s()FTadelnorstu]+", s):
         return None
     try:
         return bool(eval(s, {"__builtins__": {}}, {}))  # noqa: S307 - vetted charset

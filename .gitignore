@@ -39,7 +39,7 @@ __pycache__/
 # ITK agent build artifacts
 node_modules/
 itk/agents/go-agent/go-agent
-itk/agents/js-agent/package-lock.json
+# itk/agents/js-agent/package-lock.json is tracked: its Dockerfile runs `npm ci`.
 
 # cargo-mutants output
 mutants.out/

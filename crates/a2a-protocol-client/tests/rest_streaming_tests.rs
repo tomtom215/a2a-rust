@@ -103,7 +103,7 @@ fn agent_card(url: &str) -> AgentCard {
             id: "echo".into(),
             name: "Echo".into(),
             description: "Echoes input".into(),
-            tags: vec![],
+            tags: vec!["test".into()],
             examples: None,
             input_modes: None,
             output_modes: None,

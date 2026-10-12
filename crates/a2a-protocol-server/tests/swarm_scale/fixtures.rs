@@ -39,7 +39,7 @@ pub fn swarm_card() -> a2a_protocol_types::agent_card::AgentCard {
             id: "channel".into(),
             name: "Channel".into(),
             description: "Appends a post to a channel".into(),
-            tags: vec![],
+            tags: vec!["test".into()],
             examples: None,
             input_modes: None,
             output_modes: None,

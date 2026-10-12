@@ -81,7 +81,8 @@ pub(super) async fn jwt_auth() -> Check {
     let claims = |exp: u64| {
         format!(
             r#"{{"iss":"{ISSUER}","aud":"{AUDIENCE}","sub":"oncall@example.com","iat":{iat},"exp":{exp}}}"#,
-            iat = now.saturating_sub(60)
+            iat = now.saturating_sub(60),
+            exp = exp,
         )
     };
 

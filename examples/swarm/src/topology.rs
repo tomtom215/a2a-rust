@@ -11,7 +11,7 @@ use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::{
     AgentExecutor, JsonRpcDispatcher, RequestHandlerBuilder, serve_with_addr,
 };
-use a2a_protocol_types::{AgentCard, AgentInterface};
+use a2a_protocol_types::{AgentCard, AgentInterface, AgentSkill};
 
 /// Binds an ephemeral port, serves `executor` there over JSON-RPC, and
 /// returns the base URL. The card has to carry the port actually bound, and
@@ -23,7 +23,10 @@ pub async fn spawn_agent(name: &str, executor: impl AgentExecutor + 'static) -> 
     let addr = probe.local_addr().expect("local_addr");
     drop(probe);
     let url = format!("http://{addr}");
-    let card = AgentCard::new(name, "0.0.0", AgentInterface::jsonrpc(&url)).with_streaming(true);
+    // Spec §5.7: a published card has at least one skill, each with a tag.
+    let card = AgentCard::new(name, "0.0.0", AgentInterface::jsonrpc(&url))
+        .with_streaming(true)
+        .with_skill(AgentSkill::new(name, name, "A swarm member").with_tags(["swarm"]));
     let handler = Arc::new(
         RequestHandlerBuilder::new(executor)
             .with_agent_card(card)

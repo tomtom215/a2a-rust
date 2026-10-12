@@ -95,7 +95,7 @@ jobs:
       - name: a2a-inspector card validation
         continue-on-error: true
         run: |
-          pip install httpx
+          pip install --require-hashes -r .github/requirements/httpx.txt
           python itk/interop/inspector_card_check.py http://127.0.0.1:9090
 
   # ── All four bindings, against the purpose-built SUT ──────────────────────
@@ -338,7 +338,7 @@ jobs:
         if: matrix.sdk == 'go' || matrix.sdk == 'go-sdk'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.25'
+          go-version: '1.26.9'
 
       - name: Setup Java
         if: matrix.sdk == 'java' || matrix.sdk == 'java-sdk'
@@ -393,7 +393,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install official A2A Python SDK (client)
-        run: pip install 'a2a-sdk[http-server]' httpx
+        run: pip install --require-hashes -r .github/requirements/a2a-sdk-http.txt
 
       - name: Build and start our echo agent
         run: |
@@ -414,6 +414,37 @@ jobs:
       - name: Official Python client interop suite
         run: python itk/interop/python_client_vs_rust.py http://127.0.0.1:9090
 
+  # Agent Card signatures are only portable if every implementation
+  # canonicalizes a card to the same bytes (spec §8.4.1). This signs six cards
+  # with the official Python SDK and verifies them with `a2a card verify`, and
+  # the reverse with `a2a card sign`. Four must agree; two are the SDK's own
+  # departures from §8.4.1 and must still diverge, so an SDK release that
+  # changes either shows up here. Pinned for that reason: moving the pin is a
+  # decision, not a drift.
+  card-signature-interop:
+    name: Card signatures vs the official Python SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master 2026-09-03
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install the official A2A Python SDK with signing
+        run: pip install --require-hashes -r .github/requirements/a2a-sdk-signing.txt
+
+      - name: Build the a2a CLI
+        run: cargo build -p a2a-cli
+
+      - name: Sign and verify both ways
+        run: python itk/interop/card_signature_interop.py --cli target/debug/a2a
+
   grpc-wire-compat:
     name: gRPC wire compatibility (official Python SDK)
     runs-on: ubuntu-latest
@@ -430,7 +461,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install official A2A Python SDK
-        run: pip install a2a-sdk
+        run: pip install --require-hashes -r .github/requirements/a2a-sdk.txt
 
       # Guard against drift between our vendored a2a.proto and the schema
       # revision shipped by the official SDK: re-parse the corpus with the

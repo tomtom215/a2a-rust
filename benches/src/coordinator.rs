@@ -164,6 +164,7 @@ impl AgentExecutor for ChainHopExecutor {
                     Err(A2aError::internal(format!(
                         "{label}: downstream hop failed: {err}",
                         label = self.label,
+                        err = err,
                     )))
                 }
             }

@@ -58,22 +58,29 @@ pub(super) fn validated_metadata(
 /// clients get the same machine-readable error identity as the JSON-RPC
 /// (`error.data`) and REST (`error.details`) bindings.
 pub(super) fn server_error_to_status(err: &ServerError) -> Status {
+    use tonic_types::StatusExt as _;
     if let ServerError::Overloaded(msg) = err {
         return Status::new(tonic::Code::ResourceExhausted, msg.clone());
     }
     let a2a_err = err.to_a2a_error();
     let code = grpc_code(err, a2a_err.code);
-    if let Some(reason) = a2a_err.code.a2a_reason() {
-        use tonic_types::StatusExt as _;
-        let mut details = tonic_types::ErrorDetails::new();
+    let reason = a2a_err.code.a2a_reason();
+    let retry_after = a2a_err.retry_after();
+    if reason.is_none() && retry_after.is_none() {
+        return Status::new(code, a2a_err.message);
+    }
+    let mut details = tonic_types::ErrorDetails::new();
+    if let Some(reason) = reason {
         details.set_error_info(
             reason,
             a2a_protocol_types::error::A2A_ERROR_DOMAIN,
             HashMap::<String, String>::new(),
         );
-        return Status::with_error_details(code, a2a_err.message, details);
     }
-    Status::new(code, a2a_err.message)
+    if retry_after.is_some() {
+        details.set_retry_info(retry_after);
+    }
+    Status::with_error_details(code, a2a_err.message, details)
 }
 
 /// The gRPC status code this binding answers `err` with; `a2a_code` is
@@ -82,7 +89,7 @@ fn grpc_code(err: &ServerError, a2a_code: a2a_protocol_types::error::ErrorCode) 
     // Resource-limit rejections have no A2A/JSON-RPC code but map cleanly to the
     // gRPC RESOURCE_EXHAUSTED status (the retryable overload signal), so
     // special-case them before the code-based mapping.
-    if matches!(err, ServerError::Overloaded(_)) {
+    if matches!(err, ServerError::Overloaded(_)) || err.retry_after().is_some() {
         return tonic::Code::ResourceExhausted;
     }
     if matches!(err, ServerError::Halted(_)) {
@@ -186,6 +193,26 @@ mod tests {
     fn internal_error_maps_to_internal() {
         let status = server_error_to_status(&ServerError::Internal("oops".into()));
         assert_eq!(status.code(), tonic::Code::Internal);
+    }
+
+    /// §13.4: a rate-limit refusal is `RESOURCE_EXHAUSTED` with a
+    /// `RetryInfo` detail, not the `INTERNAL` its A2A code maps to.
+    #[test]
+    fn a_rate_limited_error_maps_to_resource_exhausted_with_retry_info() {
+        use tonic_types::StatusExt as _;
+        let err = ServerError::Protocol(a2a_protocol_types::error::A2aError::rate_limited(
+            "slow down",
+            std::time::Duration::from_secs(7),
+        ));
+        let status = server_error_to_status(&err);
+        assert_eq!(status.code(), tonic::Code::ResourceExhausted);
+        assert_eq!(grpc_status_name(&err), "RESOURCE_EXHAUSTED");
+        let retry = status
+            .get_error_details()
+            .retry_info()
+            .cloned()
+            .expect("a RetryInfo detail");
+        assert_eq!(retry.retry_delay, Some(std::time::Duration::from_secs(7)));
     }
 
     // ADR 0014 (N36): a refused credential answers its own gRPC codes, not the

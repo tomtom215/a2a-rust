@@ -90,18 +90,20 @@ pub struct HandlerLimits {
     /// Total time one event's push deliveries may take, across every
     /// registered config. Default: 30 seconds.
     ///
-    /// This is the amplification ceiling: a task with `max_push_configs_per_task`
-    /// webhooks that all time out would otherwise spend `configs x
-    /// push_delivery_timeout x attempts` per event. Deliveries run one after
-    /// another, so the configs an event reaches is
-    /// `min(configs, push_delivery_budget / push_delivery_timeout)`; the rest
-    /// are counted as [`push_outcome::SKIPPED`](crate::metrics::push_outcome::SKIPPED).
-    /// On the blocking send path the same budget covers the whole batch of
-    /// events a request produced, not each event, because that delivery is
-    /// spawned once per request.
+    /// Every configured webhook is attempted (spec §4.3.3: at least one
+    /// attempt each); the budget decides how many deliveries of one event run
+    /// at once, the fewest that fit every attempt into it:
+    /// `ceil(configs / (budget / push_delivery_timeout))`, at least one and at
+    /// most `configs`. At the defaults (100 configs, 5s, 30s) that is 17 at a
+    /// time. When not even one timeout fits, all of an event's deliveries run
+    /// at once and the event takes one timeout, past the budget.
+    /// `max_push_configs_per_task` caps how many there can be. On the blocking
+    /// send path the budget covers the whole batch of events a request
+    /// produced, delivered in order.
     ///
-    /// Until 0.12 this was a `Duration::from_secs(30)` literal in two places
-    /// and the term deciding which webhooks were called was not a knob.
+    /// Until 2026-10-11 deliveries ran one after another and the budget
+    /// decided which webhooks were reached: at the defaults a slow estate
+    /// reached 6 of 100 per event and skipped the rest.
     pub push_delivery_budget: Duration,
     /// How long the blocking send path waits, after the executor has
     /// finished, for the event queue to close. Default: 5 seconds.

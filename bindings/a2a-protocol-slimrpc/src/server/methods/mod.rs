@@ -88,10 +88,27 @@ fn headers_from(ctx: &Context) -> Result<std::collections::HashMap<String, Strin
 fn a2a_headers(
     metadata: std::collections::HashMap<String, String>,
 ) -> Result<std::collections::HashMap<String, String>, RpcError> {
-    let headers: std::collections::HashMap<String, String> = metadata
+    // Keys are case-insensitive (SLIMRPC spec §3) and the handler looks
+    // headers up by their lowercase names, as HTTP and gRPC deliver them, so
+    // they are lowercased here. Until 2026-10-10 they were not, and a peer
+    // sending `Authorization` or `A2A-Version` had it ignored. Two keys that
+    // differ only in case are joined with a comma, as HTTP combines a
+    // repeated field (RFC 9110 §5.3); sorting first makes the order fixed.
+    let mut pairs: Vec<(String, String)> = metadata
         .into_iter()
         .filter(|(key, _)| !is_transport_key(key))
         .collect();
+    pairs.sort_unstable();
+    let mut headers = std::collections::HashMap::<String, String>::new();
+    for (key, value) in pairs {
+        headers
+            .entry(key.to_ascii_lowercase())
+            .and_modify(|v| {
+                v.push_str(", ");
+                v.push_str(&value);
+            })
+            .or_insert(value);
+    }
 
     validate_version_metadata(&headers, false)
         .map_err(|e| server_error_to_rpc_error(&ServerError::Protocol(e)))?;

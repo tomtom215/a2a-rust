@@ -8,3 +8,8 @@
 a2a-sdk[http-server]==1.1.4
 uvicorn[standard]==0.53.0
 httpx==0.28.1
+# Transitive, pinned at their fixed versions: anyio < 4.14.2 has
+# CVE-2026-63374 / CVE-2026-64847 and h11 < 0.16.0 has CVE-2025-43859
+# (OSV, checked 2026-10-12), and OSV-Scanner reports the floors it resolves.
+anyio>=4.14.2
+h11>=0.16.0

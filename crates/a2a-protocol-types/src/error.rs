@@ -306,6 +306,17 @@ pub struct A2aError {
     /// binding answers it with its own status instead.
     #[serde(skip)]
     auth_rejection: Option<AuthRejection>,
+    /// Set when this error refuses a request for exceeding a rate limit; see
+    /// [`retry_after`](Self::retry_after). Not on the wire as a field: each
+    /// binding answers it with its own status and a `RetryInfo` detail.
+    ///
+    /// Whole seconds in a `NonZeroU32` rather than a `Duration`: it fits in
+    /// the padding beside the 4-byte `code`, so `A2aError` stays 96 bytes;
+    /// a `Duration` grew it past clippy's `result_large_err` threshold for
+    /// every `Result` that carries one. `Retry-After` counts whole seconds
+    /// anyway.
+    #[serde(skip)]
+    retry_after_secs: Option<std::num::NonZeroU32>,
 }
 
 impl A2aError {
@@ -327,6 +338,7 @@ impl A2aError {
             message: message.into(),
             data: None,
             auth_rejection: None,
+            retry_after_secs: None,
         }
     }
 
@@ -338,6 +350,7 @@ impl A2aError {
             message: message.into(),
             data: Some(data),
             auth_rejection: None,
+            retry_after_secs: None,
         }
     }
 
@@ -367,6 +380,39 @@ impl A2aError {
         let mut err = Self::new(ErrorCode::InvalidRequest, message);
         err.auth_rejection = Some(AuthRejection::permission_denied());
         err
+    }
+
+    /// Refuses a request because its caller exceeded a rate limit, and may
+    /// try again after `retry_after`. Spec §13.4: an agent SHOULD return an
+    /// appropriate error when a rate limit is exceeded, and §3.3.2 SHOULD
+    /// tell temporary failures from permanent ones. The code stays
+    /// `InternalError` (-32603), the code §3.3.2 gives as the JSON-RPC example
+    /// for "rate limit exceeded"; what marks it temporary is the binding's
+    /// status (HTTP `429` with `Retry-After`, gRPC `RESOURCE_EXHAUSTED`) and a
+    /// `google.rpc.RetryInfo` detail on every binding.
+    ///
+    /// `retry_after` is rounded up to whole seconds, at least one (retrying
+    /// a moment early would only be refused again), and saturates at
+    /// `u32::MAX` seconds.
+    #[must_use]
+    pub fn rate_limited(message: impl Into<String>, retry_after: std::time::Duration) -> Self {
+        let secs = retry_after
+            .as_secs()
+            .saturating_add(u64::from(retry_after.subsec_nanos() > 0));
+        let secs = u32::try_from(secs).unwrap_or(u32::MAX);
+        let mut err = Self::internal(message);
+        err.retry_after_secs =
+            Some(std::num::NonZeroU32::new(secs).unwrap_or(std::num::NonZeroU32::MIN));
+        err
+    }
+
+    /// How long a caller refused by [`rate_limited`](Self::rate_limited)
+    /// should wait before retrying; `None` for any other error. Never read
+    /// from the wire.
+    #[must_use]
+    pub fn retry_after(&self) -> Option<std::time::Duration> {
+        self.retry_after_secs
+            .map(|s| std::time::Duration::from_secs(u64::from(s.get())))
     }
 
     /// The credential refusal this error carries, if it is one. Set only by
@@ -434,16 +480,28 @@ impl A2aError {
     /// ```
     #[must_use]
     pub fn is_stream_lagged(&self) -> bool {
-        self.data
-            .as_ref()
-            .is_some_and(|d| d.get(STREAM_LAGGED_MARKER).is_some())
+        self.lag_marker().is_some()
+    }
+
+    /// The marker's value, wherever a server put it: at the top of `data`
+    /// (how this SDK's servers sent it on JSON-RPC until 2026-10-10, and how
+    /// the REST client decodes a `Struct` detail), or in one of the typed
+    /// detail objects of a `data` array (how §9.5 requires JSON-RPC error
+    /// data to be shaped, and how servers send it since).
+    fn lag_marker(&self) -> Option<&serde_json::Value> {
+        match self.data.as_ref()? {
+            serde_json::Value::Array(details) => {
+                details.iter().find_map(|d| d.get(STREAM_LAGGED_MARKER))
+            }
+            data => data.get(STREAM_LAGGED_MARKER),
+        }
     }
 
     /// Returns how many events were dropped, when this is a consumer-lag
     /// signal (see [`A2aError::is_stream_lagged`]); `None` otherwise.
     #[must_use]
     pub fn dropped_event_count(&self) -> Option<u64> {
-        self.data.as_ref()?.get(STREAM_LAGGED_MARKER)?.as_u64()
+        self.lag_marker()?.as_u64()
     }
 
     /// Builds the consumer-lag signal carrying `dropped`.
@@ -510,25 +568,41 @@ impl A2aError {
         Self::new(ErrorCode::VersionNotSupported, msg)
     }
 
-    /// Builds the `google.rpc.ErrorInfo` data array as required by the spec.
+    /// Builds the typed error-details array the bindings send: `error.data`
+    /// on JSON-RPC, `error.details` on HTTP+JSON. `Value::Null` when there
+    /// is nothing to send.
     ///
     /// Per Section 9.5, 10.6, and 11.6, A2A-specific errors MUST include
-    /// an `ErrorInfo` entry with `@type`, `reason`, `domain`, and optional `metadata`.
+    /// an `ErrorInfo` entry with `@type`, `reason`, `domain`, and optional
+    /// `metadata`. A [`rate_limited`](Self::rate_limited) error also carries
+    /// a `google.rpc.RetryInfo` entry, the well-known type (§3.3.2) that says
+    /// the failure is temporary and when to retry.
     #[must_use]
     pub fn error_info_data(&self, metadata: Option<serde_json::Value>) -> serde_json::Value {
-        self.code
-            .a2a_reason()
-            .map_or(serde_json::Value::Null, |reason| {
-                let mut info = serde_json::json!({
-                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                    "reason": reason,
-                    "domain": A2A_ERROR_DOMAIN
-                });
-                if let Some(meta) = metadata {
-                    info["metadata"] = meta;
-                }
-                serde_json::json!([info])
-            })
+        let mut details = Vec::new();
+        if let Some(reason) = self.code.a2a_reason() {
+            let mut info = serde_json::json!({
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": reason,
+                "domain": A2A_ERROR_DOMAIN
+            });
+            if let Some(meta) = metadata {
+                info["metadata"] = meta;
+            }
+            details.push(info);
+        }
+        if let Some(secs) = self.retry_after_secs {
+            // A `google.protobuf.Duration` in its `ProtoJSON` form.
+            details.push(serde_json::json!({
+                "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                "retryDelay": format!("{secs}s")
+            }));
+        }
+        if details.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::Array(details)
+        }
     }
 }
 
@@ -1234,6 +1308,75 @@ mod tests {
             Some(42),
             "the dropped count must round-trip through the marker"
         );
+    }
+
+    /// §9.5 shapes JSON-RPC error `data` as an array of typed details, so
+    /// the marker a server sends now arrives inside a `Struct` detail. The
+    /// object form older servers sent must still be recognised.
+    #[test]
+    fn the_lag_marker_is_found_in_either_data_shape() {
+        let array = A2aError::with_data(
+            ErrorCode::InternalError,
+            "lagged",
+            serde_json::json!([
+                {"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "X"},
+                {"@type": "type.googleapis.com/google.protobuf.Struct", "streamLagged": 42}
+            ]),
+        );
+        assert!(array.is_stream_lagged());
+        assert_eq!(array.dropped_event_count(), Some(42));
+
+        let object = A2aError::with_data(
+            ErrorCode::InternalError,
+            "lagged",
+            serde_json::json!({"streamLagged": 42}),
+        );
+        assert!(object.is_stream_lagged());
+        assert_eq!(object.dropped_event_count(), Some(42));
+
+        let unmarked = A2aError::with_data(
+            ErrorCode::InternalError,
+            "boom",
+            serde_json::json!([{"@type": "type.googleapis.com/google.protobuf.Struct"}]),
+        );
+        assert!(!unmarked.is_stream_lagged());
+        assert_eq!(unmarked.dropped_event_count(), None);
+    }
+
+    /// A rate-limit refusal keeps the code §3.3.2 gives for it and carries a
+    /// `RetryInfo` detail, in `ProtoJSON` `Duration` form; other errors carry
+    /// none.
+    #[test]
+    fn a_rate_limited_error_carries_retry_info() {
+        let err = A2aError::rate_limited("slow down", std::time::Duration::from_secs(12));
+        assert_eq!(err.code, ErrorCode::InternalError);
+        assert_eq!(err.retry_after(), Some(std::time::Duration::from_secs(12)));
+        assert_eq!(
+            err.error_info_data(None),
+            serde_json::json!([{
+                "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                "retryDelay": "12s"
+            }])
+        );
+        // Rounded up to whole seconds, never zero.
+        let fractional =
+            A2aError::rate_limited("slow down", std::time::Duration::from_millis(1500));
+        assert_eq!(
+            fractional.retry_after(),
+            Some(std::time::Duration::from_secs(2))
+        );
+        assert_eq!(fractional.error_info_data(None)[0]["retryDelay"], "2s");
+        let zero = A2aError::rate_limited("slow down", std::time::Duration::ZERO);
+        assert_eq!(zero.retry_after(), Some(std::time::Duration::from_secs(1)));
+
+        let plain = A2aError::internal("boom");
+        assert_eq!(plain.retry_after(), None);
+        assert!(plain.error_info_data(None).is_null());
+        // Not carried across the wire as a field: a deserialized error is not
+        // rate-limited, whatever its details say.
+        let round_trip: A2aError =
+            serde_json::from_str(&serde_json::to_string(&err).unwrap()).unwrap();
+        assert_eq!(round_trip.retry_after(), None);
     }
 
     #[test]

@@ -28,8 +28,7 @@ use crate::request_context::RequestContext;
 use a2a_protocol_types::error::A2aResult;
 
 use crate::streaming::event_queue::{
-    EventQueueReader, EventQueueWriter, InMemoryQueueReader, InMemoryQueueWriter,
-    new_in_memory_queue,
+    EventQueueWriter, InMemoryQueueWriter, Shared, new_in_memory_queue, unshare,
 };
 
 /// One drive of the executor, and what it produced.
@@ -83,17 +82,21 @@ pub(super) fn states(events: &[StreamResponse]) -> Vec<TaskState> {
 /// capacity lagged the reader, this loop stopped at the first error, and a
 /// perfectly conforming agent was graded as having emitted nothing at all.
 ///
-async fn drain(mut reader: InMemoryQueueReader) -> (Vec<StreamResponse>, bool) {
+/// Reads the raw channel, not a subscriber's reader: a reader closes at the
+/// terminal state (§3.1.2), and `nothing_after_terminal` has to see what an
+/// executor writes after it.
+async fn drain(mut rx: tokio::sync::broadcast::Receiver<Shared>) -> (Vec<StreamResponse>, bool) {
     let mut events = Vec::new();
-    let mut truncated = false;
-    while let Some(item) = reader.read().await {
-        let Ok(event) = item else {
-            truncated = true;
-            break;
-        };
-        events.push(event.event);
+    loop {
+        match rx.recv().await {
+            Ok(shared) => match unshare(shared) {
+                Ok(event) => events.push(event.event),
+                Err(_) => return (events, true),
+            },
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return (events, false),
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => return (events, true),
+        }
     }
-    (events, truncated)
 }
 
 /// Cancels a token inside the executor's *first* `write`, before the
@@ -166,7 +169,8 @@ impl Run {
         ctx: RequestContext,
         cancel_mid_run: bool,
     ) -> Self {
-        let (writer, reader) = new_in_memory_queue();
+        let (writer, _reader) = new_in_memory_queue();
+        let rx = writer.raw_subscribe();
         let writer = Arc::new(writer);
         let exec = Arc::clone(executor);
         let write_handle = Arc::clone(&writer);
@@ -185,7 +189,7 @@ impl Run {
         } else {
             tokio::spawn(async move { exec.execute(&ctx, write_handle.as_ref()).await })
         };
-        let drainer = tokio::spawn(drain(reader));
+        let drainer = tokio::spawn(drain(rx));
         let deadline = tokio::time::Instant::now() + RUN_TIMEOUT;
 
         let outcome = match tokio::time::timeout_at(deadline, &mut handle).await {
@@ -262,13 +266,14 @@ pub(super) async fn cancel_emits_a_terminal_state(
     call_context: Option<&CallContext>,
 ) -> CheckResult {
     const NAME: &str = "cancel_emits_terminal";
-    let (writer, reader) = new_in_memory_queue();
+    let (writer, _reader) = new_in_memory_queue();
+    let rx = writer.raw_subscribe();
     let writer = Arc::new(writer);
     let ctx = context(message, call_context);
     let exec = Arc::clone(executor);
     let write_handle = Arc::clone(&writer);
     let mut handle = tokio::spawn(async move { exec.cancel(&ctx, write_handle.as_ref()).await });
-    let drainer = tokio::spawn(drain(reader));
+    let drainer = tokio::spawn(drain(rx));
     let deadline = tokio::time::Instant::now() + RUN_TIMEOUT;
     let Ok(joined) = tokio::time::timeout_at(deadline, &mut handle).await else {
         handle.abort();

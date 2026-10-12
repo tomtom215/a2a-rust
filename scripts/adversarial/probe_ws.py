@@ -38,7 +38,6 @@ import os
 import socket
 import struct
 import sys
-import time
 
 WS_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 VER = "1.0"
@@ -71,6 +70,7 @@ def ws_handshake(host, port, version=VER, extra_headers=None, key=None,
                 break
             resp += b
     except socket.timeout:
+        # timeout ends the read; an empty/partial response is classified below
         pass
     status = resp.split(b"\r\n", 1)[0].decode("latin1") if resp else "(no response)"
     # A compliant 101 must echo the correct Sec-WebSocket-Accept.

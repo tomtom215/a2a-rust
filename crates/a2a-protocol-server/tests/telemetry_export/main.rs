@@ -189,19 +189,15 @@ fn https_without_the_private_ca_exports_nothing() {
 /// every test above that expects `Ok`.
 #[test]
 fn an_unreachable_collector_is_reported_by_shutdown() {
-    // A port bound and released: nothing listens on it.
-    let port = {
-        let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        l.local_addr().expect("addr").port()
-    };
-    let telemetry = builder(
-        &format!("http://127.0.0.1:{port}"),
-        OtlpProtocol::HttpProtobuf,
-    )
-    .with_metrics(false)
-    .with_logs(false)
-    .build()
-    .expect("build");
+    // Port 1: privileged and outside the ephemeral range, so nothing in the
+    // test run listens there. A port bound and released was reused by another
+    // test's server under full-suite load (observed 2026-10-11), and the
+    // export then succeeded.
+    let telemetry = builder("http://127.0.0.1:1", OtlpProtocol::HttpProtobuf)
+        .with_metrics(false)
+        .with_logs(false)
+        .build()
+        .expect("build");
     record_one_of_each(&telemetry);
     let err = telemetry.shutdown().expect_err("the export failed");
     assert!(err.to_string().contains("traces: 1 export(s)"), "{err}");

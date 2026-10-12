@@ -58,7 +58,7 @@ pub(super) fn parse_query_param_u32(query: &str, key: &str) -> Option<u32> {
 }
 
 /// Parses a single query parameter value as a string, with percent-decoding.
-pub(super) fn parse_query_param(query: &str, key: &str) -> Option<String> {
+pub fn parse_query_param(query: &str, key: &str) -> Option<String> {
     query.split('&').find_map(|pair| {
         let (k, v) = pair.split_once('=')?;
         if k == key {
@@ -79,6 +79,16 @@ pub(super) fn parse_query_param(query: &str, key: &str) -> Option<String> {
 /// percent-encoded non-ASCII tenant name or query value) into several garbage
 /// characters.
 pub(super) fn percent_decode(input: &str) -> String {
+    decode(input, true)
+}
+
+/// Decodes a path segment: `%XX` sequences only. In a path `+` is a literal
+/// (RFC 3986), not the form encoding's space.
+pub fn percent_decode_path(input: &str) -> String {
+    decode(input, false)
+}
+
+fn decode(input: &str, plus_is_space: bool) -> String {
     let mut rest = input.as_bytes();
     let mut bytes: Vec<u8> = Vec::with_capacity(rest.len());
     // Advance by consuming from the front of `rest` rather than tracking a
@@ -107,7 +117,7 @@ pub(super) fn percent_decode(input: &str) -> String {
                 bytes.push(b'%');
                 rest = tail;
             }
-            b'+' => {
+            b'+' if plus_is_space => {
                 bytes.push(b' ');
                 rest = tail;
             }
@@ -236,6 +246,12 @@ mod tests {
     #[test]
     fn percent_decode_plus_as_space() {
         assert_eq!(percent_decode("a+b"), "a b");
+    }
+
+    /// In a path `+` is a literal (RFC 3986); only the query is form-encoded.
+    #[test]
+    fn percent_decode_path_keeps_plus() {
+        assert_eq!(percent_decode_path("a+b%20c%2Bd%2F"), "a+b c+d/");
     }
 
     #[test]

@@ -77,7 +77,7 @@ impl TenantAwareInMemoryPushConfigStore {
 
     /// Returns the store for the current tenant, creating if needed.
     async fn get_store(&self) -> A2aResult<Arc<InMemoryPushConfigStore>> {
-        let tenant = TenantContext::current();
+        let tenant = TenantContext::partition();
 
         {
             let stores = self.stores.read().await;
@@ -113,7 +113,7 @@ impl TenantAwareInMemoryPushConfigStore {
     /// grow memory) by issuing reads for many never-seen tenant names, after
     /// which legitimate *new* tenants' writes fail with "tenant limit exceeded".
     async fn get_existing_store(&self) -> Option<Arc<InMemoryPushConfigStore>> {
-        let tenant = TenantContext::current();
+        let tenant = TenantContext::partition();
         self.stores.read().await.get(&tenant).map(Arc::clone)
     }
 

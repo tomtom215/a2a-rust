@@ -34,6 +34,10 @@ impl RequestHandler {
             let mut call = self.interceptors.begin(&call_ctx);
             let result = async {
                 call.before().await?;
+                // SPEC §3.3.4: as for every other operation, a client that
+                // does not declare an extension the card marks required is
+                // refused. This was the one operation that skipped it.
+                self.ensure_required_extensions(&call_ctx)?;
 
                 self.extended_card_for_this_call()
             }
@@ -118,9 +122,12 @@ mod tests {
                 protocol_version: "1.0.0".into(),
                 tenant: None,
             }],
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![
+                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                    .with_tags(["test"]),
+            ],
             capabilities: AgentCapabilities::none(),
             provider: None,
             icon_url: None,
@@ -220,6 +227,43 @@ mod tests {
             "authenticated request must be served, got: {authed:?}"
         );
         assert_eq!(authed.unwrap().name, "Test Agent");
+    }
+
+    /// §3.3.4: a required extension the client does not declare is
+    /// `ExtensionSupportRequired` here as on every other operation.
+    #[tokio::test]
+    async fn get_extended_agent_card_enforces_required_extensions() {
+        use a2a_protocol_types::extensions::AgentExtension;
+        let uri = "https://example.com/ext/required/v1";
+        let mut card = make_agent_card();
+        card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
+        card.capabilities.extensions = Some(vec![AgentExtension {
+            uri: uri.to_owned(),
+            description: None,
+            required: Some(true),
+            params: None,
+        }]);
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_agent_card(card)
+            .allow_unauthenticated_extended_card()
+            .build()
+            .unwrap();
+
+        let refused = handler.on_get_extended_agent_card(None).await;
+        assert!(
+            matches!(
+                refused,
+                Err(ServerError::Protocol(ref e))
+                    if e.code == a2a_protocol_types::error::ErrorCode::ExtensionSupportRequired
+            ),
+            "{refused:?}"
+        );
+        let headers =
+            std::collections::HashMap::from([("a2a-extensions".to_owned(), uri.to_owned())]);
+        handler
+            .on_get_extended_agent_card(Some(&headers))
+            .await
+            .expect("a client that declares the extension gets the card");
     }
 
     #[tokio::test]

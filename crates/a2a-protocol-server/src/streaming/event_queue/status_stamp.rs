@@ -12,21 +12,45 @@
 //!
 //! Stamping here, on the one writer every event passes through before it is
 //! persisted or broadcast, covers the helper and hand-written executors
-//! alike. A timestamp the executor set is kept as it is.
+//! alike.
+//!
+//! A timestamp the executor set is kept when it is already UTC (`Z`). One
+//! with another offset is rewritten to the same instant in UTC, at
+//! millisecond precision: §5.6.1 says timestamps MUST NOT carry an offset
+//! other than `Z`. One that does not parse is refused, as an oversized event
+//! is. Until 2026-10-10 both went out unchanged on the JSON bindings, while
+//! the gRPC binding refused the malformed one at encoding.
 
+use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
 
-/// Sets the status timestamp of a status update or a task snapshot to now,
-/// when the executor left it empty.
-pub(super) fn stamp_status(event: &mut StreamResponse) {
+/// Gives the status of a status update or a task snapshot a UTC timestamp:
+/// now when the executor left it empty, the same instant in UTC when it
+/// carries another offset.
+///
+/// # Errors
+///
+/// An internal error when the executor set a timestamp that is not ISO 8601.
+pub(super) fn stamp_status(event: &mut StreamResponse) -> A2aResult<()> {
     let status = match event {
         StreamResponse::StatusUpdate(update) => &mut update.status,
         StreamResponse::Task(task) => &mut task.status,
-        _ => return,
+        _ => return Ok(()),
     };
-    if status.timestamp.is_none() {
-        status.timestamp = Some(a2a_protocol_types::utc_now_iso8601());
+    match status.timestamp.as_deref() {
+        None => status.timestamp = Some(a2a_protocol_types::utc_now_iso8601()),
+        Some(ts) => {
+            let millis = a2a_protocol_types::parse_iso8601_to_unix_millis(ts).ok_or_else(|| {
+                A2aError::internal(format!(
+                    "status timestamp {ts:?} is not an ISO 8601 date-time (spec §5.6.1)"
+                ))
+            })?;
+            if !ts.trim_end().ends_with(['Z', 'z']) {
+                status.timestamp = Some(a2a_protocol_types::unix_millis_to_iso8601(millis));
+            }
+        }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -56,7 +80,7 @@ mod tests {
     #[test]
     fn a_status_without_a_timestamp_is_stamped_in_iso_8601_utc() {
         let mut event = update(TaskStatus::new(TaskState::Working));
-        stamp_status(&mut event);
+        stamp_status(&mut event).expect("stamps");
         let ts = timestamp(&event).expect("stamped");
         assert!(ts.ends_with('Z') && ts.contains('T'), "{ts}");
         assert!(
@@ -70,7 +94,7 @@ mod tests {
         let mut status = TaskStatus::new(TaskState::Completed);
         status.timestamp = Some("2026-01-02T03:04:05Z".into());
         let mut event = update(status);
-        stamp_status(&mut event);
+        stamp_status(&mut event).expect("stamps");
         assert_eq!(timestamp(&event), Some("2026-01-02T03:04:05Z"));
     }
 
@@ -84,11 +108,30 @@ mod tests {
             artifacts: None,
             metadata: None,
         });
-        stamp_status(&mut event);
+        stamp_status(&mut event).expect("stamps");
         let ts = timestamp(&event).expect("stamped");
         assert!(
             a2a_protocol_types::parse_iso8601_to_unix_millis(ts).is_some(),
             "{ts} parses"
         );
+    }
+
+    /// §5.6.1: no offset other than `Z`. The same instant, in UTC.
+    #[test]
+    fn an_offset_timestamp_is_rewritten_in_utc() {
+        let mut status = TaskStatus::new(TaskState::Completed);
+        status.timestamp = Some("2026-01-02T05:04:05+02:00".into());
+        let mut event = update(status);
+        stamp_status(&mut event).expect("stamps");
+        assert_eq!(timestamp(&event), Some("2026-01-02T03:04:05.000Z"));
+    }
+
+    #[test]
+    fn a_timestamp_that_is_not_iso_8601_is_refused() {
+        let mut status = TaskStatus::new(TaskState::Completed);
+        status.timestamp = Some("yesterday".into());
+        let mut event = update(status);
+        let err = stamp_status(&mut event).expect_err("refused");
+        assert!(err.message.contains("yesterday"), "{err}");
     }
 }

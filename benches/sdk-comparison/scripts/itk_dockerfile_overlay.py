@@ -13,7 +13,8 @@ import os, sys
 
 itk, proxy, _ca = sys.argv[1:4]
 noproxy = os.environ.get("NO_PROXY", "localhost,127.0.0.1")
-s = open(os.path.join(itk, "Dockerfile")).read()
+with open(os.path.join(itk, "Dockerfile")) as f:
+    s = f.read()
 ca = "/usr/local/share/ca-certificates/ccr-ca.crt"
 host, port = proxy.split("//")[1].rstrip("/").split(":")
 inject = f'''
@@ -40,4 +41,5 @@ s = s.replace(anchor, anchor + inject, 1)
 go = "# Install Go 1.25.0"
 assert s.count(go) == 1
 s = s.replace(go, f"RUN keytool -importcert -noprompt -alias ccr -file {ca} -cacerts -storepass changeit\n\n" + go, 1)
-open(os.path.join(itk, "Dockerfile.ccr"), "w").write(s)
+with open(os.path.join(itk, "Dockerfile.ccr"), "w") as f:
+    f.write(s)

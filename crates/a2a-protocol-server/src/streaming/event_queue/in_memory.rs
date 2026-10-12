@@ -33,6 +33,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::task::{ContextId, TaskId};
 use tokio::sync::{broadcast, mpsc};
 
 use super::{EventQueueReader, EventQueueWriter, StreamEvent};
@@ -163,6 +164,10 @@ pub struct InMemoryQueueWriter {
     /// collide with the first turn's positions — the continuation's events
     /// would be silently dropped.
     seq: Arc<AtomicU64>,
+    /// The task and context this writer's events belong to, once the send
+    /// path has bound them ([`bind_identity`](Self::bind_identity)); shared
+    /// by every clone. See `check_identity`.
+    identity: Arc<std::sync::OnceLock<(TaskId, ContextId)>>,
     /// Holds a terminal event back until the background processor has ruled
     /// on it. `None` unless the send path enabled it; see
     /// [`TerminalGate`](super::terminal_gate::TerminalGate).
@@ -198,6 +203,7 @@ impl InMemoryQueueWriter {
             write_timeout,
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
+            identity: Arc::new(std::sync::OnceLock::new()),
             terminal_gate: None,
             collected: false,
         }
@@ -217,6 +223,7 @@ impl InMemoryQueueWriter {
             write_timeout,
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
+            identity: Arc::new(std::sync::OnceLock::new()),
             terminal_gate: None,
             collected: false,
         }
@@ -231,6 +238,45 @@ impl InMemoryQueueWriter {
     /// new turn.
     pub(crate) fn seed_seq(&self, last: u64) {
         self.seq.store(last, Ordering::Relaxed);
+    }
+
+    /// Binds this writer to the task and context its events belong to. From
+    /// then on a status update, artifact update or task snapshot with an
+    /// empty `taskId` or `contextId` gets these, and one naming another task
+    /// or context is refused (proto: both REQUIRED; an executor writing an
+    /// event by hand could otherwise send subscribers of this task an event
+    /// labelled as another's). The first binding wins.
+    pub(crate) fn bind_identity(&self, task_id: TaskId, context_id: ContextId) {
+        let _ = self.identity.set((task_id, context_id));
+    }
+
+    /// Fills empty ids from the binding and refuses foreign ones. A writer
+    /// that was never bound checks nothing.
+    fn check_identity(&self, event: &mut StreamResponse) -> A2aResult<()> {
+        let Some((task, context)) = self.identity.get() else {
+            return Ok(());
+        };
+        let (task_id, context_id) = match event {
+            StreamResponse::StatusUpdate(u) => (&mut u.task_id, &mut u.context_id),
+            StreamResponse::ArtifactUpdate(u) => (&mut u.task_id, &mut u.context_id),
+            StreamResponse::Task(t) => (&mut t.id, &mut t.context_id),
+            _ => return Ok(()),
+        };
+        if task_id.0.is_empty() {
+            *task_id = task.clone();
+        } else if task_id != task {
+            return Err(A2aError::invalid_params(format!(
+                "event names task {task_id}, but this executor is running task {task}"
+            )));
+        }
+        if context_id.0.is_empty() {
+            *context_id = context.clone();
+        } else if context_id != context {
+            return Err(A2aError::invalid_params(format!(
+                "event names context {context_id}, but task {task} is in context {context}"
+            )));
+        }
+        Ok(())
     }
 
     /// The highest position this writer has assigned so far.
@@ -472,7 +518,21 @@ impl EventQueueWriter for InMemoryQueueWriter {
         mut event: StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         // Before anything persists or broadcasts it (N35).
-        super::status_stamp::stamp_status(&mut event);
+        if let Err(e) = self.check_identity(&mut event) {
+            return Box::pin(std::future::ready(Err(e)));
+        }
+        if let Err(e) = super::status_stamp::stamp_status(&mut event) {
+            return Box::pin(std::future::ready(Err(e)));
+        }
+        // a2a.proto: an artifact "Must contain at least one part". Persistence
+        // already dropped one that did not, but live subscribers were sent it.
+        // An appending chunk may be empty, as the processors allow.
+        if let StreamResponse::ArtifactUpdate(u) = &event
+            && u.append != Some(true)
+            && let Err(e) = u.artifact.validate()
+        {
+            return Box::pin(std::future::ready(Err(e)));
+        }
         if let Err(e) = self.check_event_size(&event) {
             return Box::pin(std::future::ready(Err(e)));
         }
@@ -581,6 +641,19 @@ pub struct InMemoryQueueReader {
     /// are assigned by one writer and strictly increase, so a live event at or
     /// below this mark is exactly a frame the replay already delivered.
     replayed_through: u64,
+    /// A `SendStreamingMessage` stream's `Task` snapshot, held until the
+    /// executor's first event says which §3.1.2 pattern the stream is.
+    ///
+    /// §3.1.2 allows exactly two: a message-only stream, "exactly one
+    /// `Message` object and then close immediately", or a task-lifecycle
+    /// stream that "MUST begin with the Task object". Leading with the
+    /// snapshot unconditionally, as this reader did until 2026-10-10, made a
+    /// message-only agent's stream `[Task, Message]`, which is neither. Taken
+    /// only once the first event has arrived, so a `read` dropped while it
+    /// waits leaves the decision for the next one.
+    provisional: Option<StreamResponse>,
+    /// Set once a message-only stream has delivered its one `Message`.
+    finished: bool,
 }
 
 // Hand-written because `ReattachFn` is a boxed closure, which cannot derive
@@ -593,6 +666,8 @@ impl std::fmt::Debug for InMemoryQueueReader {
             .field("pending", &self.pending.len())
             .field("reattach", &self.reattach.is_some())
             .field("saw_terminal", &self.saw_terminal)
+            .field("provisional", &self.provisional.is_some())
+            .field("finished", &self.finished)
             .finish()
     }
 }
@@ -656,6 +731,8 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             saw_terminal: false,
             replayed_through: 0,
+            provisional: None,
+            finished: false,
         }
     }
 
@@ -667,6 +744,18 @@ impl InMemoryQueueReader {
     pub fn set_first_event(&mut self, event: StreamResponse) {
         self.pending
             .push_front(Ok(StreamEvent::unpositioned(event)));
+    }
+
+    /// Leads a `SendStreamingMessage` stream with `snapshot` unless the
+    /// executor answers with a `Message`, in which case the stream is that
+    /// one `Message` and ends (spec §3.1.2, the message-only pattern).
+    ///
+    /// The executor's first event decides. A `Message` then is a direct
+    /// reply, which is how the reference SDK reads it too; anything else, or
+    /// the executor ending without an event, makes this a task-lifecycle
+    /// stream that begins with the snapshot, exactly as before.
+    pub(crate) fn set_provisional_task(&mut self, snapshot: StreamResponse) {
+        self.provisional = Some(snapshot);
     }
 
     /// Queues events replayed from the task's log, after anything already
@@ -698,6 +787,8 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             saw_terminal: false,
             replayed_through: 0,
+            provisional: None,
+            finished: false,
         }
     }
 
@@ -719,6 +810,8 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             saw_terminal: false,
             replayed_through: 0,
+            provisional: None,
+            finished: false,
         }
     }
 }
@@ -745,6 +838,9 @@ impl EventQueueReader for InMemoryQueueReader {
         &mut self,
     ) -> Pin<Box<dyn Future<Output = Option<A2aResult<StreamEvent>>> + Send + '_>> {
         Box::pin(async move {
+            if self.finished {
+                return None;
+            }
             // Drain anything queued ahead of the live channel: the
             // `SubscribeToTask` snapshot, then any events replayed from the
             // log for a client resuming at a `Last-Event-ID`.
@@ -754,6 +850,45 @@ impl EventQueueReader for InMemoryQueueReader {
                 }
                 return Some(first);
             }
+            // §3.1.2 / §3.1.6: the stream closes at the terminal state, once
+            // what is queued ahead of it is delivered. It used to end only
+            // when the executor dropped its writer, so one still running
+            // after its terminal status held the stream open.
+            if self.saw_terminal {
+                self.finished = true;
+                return None;
+            }
+            if self.provisional.is_some() {
+                let mut first = self.next_live().await;
+                let snapshot = self.provisional.take()?;
+                if let Some(Ok(ev)) = &mut first
+                    && let StreamResponse::Message(message) = &mut ev.event
+                {
+                    // §3.4.1: a contextId the server generated MUST be in
+                    // the response; the snapshot holds the task's.
+                    if message.context_id.is_none()
+                        && let StreamResponse::Task(task) = &snapshot
+                    {
+                        message.context_id = Some(task.context_id.clone());
+                    }
+                    self.finished = true;
+                    return first;
+                }
+                if let Some(event) = first {
+                    self.pending.push_back(event);
+                }
+                self.saw_terminal |= carries_terminal_state(&snapshot);
+                return Some(Ok(StreamEvent::unpositioned(snapshot)));
+            }
+            self.next_live().await
+        })
+    }
+}
+
+impl InMemoryQueueReader {
+    /// The next event from the live channel, reattaching across turns.
+    async fn next_live(&mut self) -> Option<A2aResult<StreamEvent>> {
+        {
             loop {
                 match self.rx.recv().await {
                     Ok(shared) => {
@@ -818,7 +953,7 @@ impl EventQueueReader for InMemoryQueueReader {
                     }
                 }
             }
-        })
+        }
     }
 }
 
@@ -844,6 +979,78 @@ mod tests {
             },
             metadata: None,
         })
+    }
+
+    // ── §3.1.2 provisional snapshot ──────────────────────────────────────
+    //
+    // The SSE writer races `read()` against its keep-alive timer and drops the
+    // loser, so the first `read` of a send stream is routinely dropped while
+    // it waits for the executor's first event. Neither the snapshot nor the
+    // decision may be lost when that happens.
+
+    fn reply() -> StreamResponse {
+        StreamResponse::Message(a2a_protocol_types::message::Message {
+            id: a2a_protocol_types::message::MessageId::new("reply"),
+            role: a2a_protocol_types::message::MessageRole::Agent,
+            parts: vec![a2a_protocol_types::message::Part::text("hi")],
+            task_id: None,
+            context_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        })
+    }
+
+    // The reader treats the snapshot as an opaque frame, so a `Submitted`
+    // status update stands in for the `Task` and keeps the assertions short.
+    async fn dropped_read(reader: &mut InMemoryQueueReader) {
+        let waited =
+            tokio::time::timeout(std::time::Duration::from_millis(20), reader.read()).await;
+        assert!(
+            waited.is_err(),
+            "nothing was written yet, so the read must still be waiting"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_dropped_first_read_still_ends_a_message_only_stream() {
+        let (writer, mut reader) = new_in_memory_queue();
+        reader.set_provisional_task(make_status_event("t-p", TaskState::Submitted));
+        dropped_read(&mut reader).await;
+
+        writer.write(reply()).await.unwrap();
+        let first = reader.read().await.unwrap().unwrap();
+        assert!(matches!(first.event, StreamResponse::Message(_)));
+        // The executor may write on; a message-only stream has already closed.
+        writer
+            .write(make_status_event("t-p", TaskState::Working))
+            .await
+            .unwrap();
+        assert!(
+            reader.read().await.is_none(),
+            "exactly one Message, then close"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_dropped_first_read_still_leads_a_task_stream_with_the_snapshot() {
+        let (writer, mut reader) = new_in_memory_queue();
+        reader.set_provisional_task(make_status_event("t-p", TaskState::Submitted));
+        dropped_read(&mut reader).await;
+
+        writer
+            .write(make_status_event("t-p", TaskState::Working))
+            .await
+            .unwrap();
+        drop(writer);
+        let mut seen = vec![];
+        while let Some(event) = reader.read().await {
+            match event.unwrap().event {
+                StreamResponse::StatusUpdate(u) => seen.push(u.status.state),
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        assert_eq!(seen, vec![TaskState::Submitted, TaskState::Working]);
     }
 
     // ── terminal-state tracking (`saw_terminal`) ─────────────────────────
@@ -1665,5 +1872,110 @@ mod tests {
             vec![None, Some(9)],
             "the snapshot leads, and carries no position"
         );
+    }
+
+    // ── identity binding on artifact updates and task snapshots ─────────
+    //
+    // `check_identity` has one arm per event kind that carries ids. Status
+    // updates are covered end to end in `tests/event_identity.rs`; these two
+    // arms are not reached there.
+
+    fn bound_writer() -> (InMemoryQueueWriter, InMemoryQueueReader) {
+        let (writer, reader) = new_in_memory_queue();
+        writer.bind_identity(TaskId::new("t-bound"), ContextId::new("ctx-bound"));
+        (writer, reader)
+    }
+
+    fn artifact_update(task_id: &str) -> StreamResponse {
+        use a2a_protocol_types::artifact::Artifact;
+        use a2a_protocol_types::events::TaskArtifactUpdateEvent;
+        use a2a_protocol_types::message::Part;
+        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: TaskId::new(task_id),
+            context_id: ContextId::new(""),
+            artifact: Artifact::new("a-1", vec![Part::text("x")]),
+            append: None,
+            last_chunk: None,
+            metadata: None,
+        })
+    }
+
+    fn task_snapshot(task_id: &str) -> StreamResponse {
+        use a2a_protocol_types::task::Task;
+        StreamResponse::Task(Task {
+            id: TaskId::new(task_id),
+            context_id: ContextId::new(""),
+            status: TaskStatus {
+                state: TaskState::Working,
+                message: None,
+                timestamp: None,
+            },
+            history: None,
+            artifacts: None,
+            metadata: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn a_bound_writer_fills_and_refuses_artifact_update_ids() {
+        let (writer, mut reader) = bound_writer();
+        assert!(
+            writer.write(artifact_update("t-other")).await.is_err(),
+            "an artifact update naming another task is refused"
+        );
+        writer.write(artifact_update("")).await.unwrap();
+        match reader.read().await.unwrap().unwrap().event {
+            StreamResponse::ArtifactUpdate(u) => {
+                assert_eq!(u.task_id, TaskId::new("t-bound"));
+                assert_eq!(u.context_id, ContextId::new("ctx-bound"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_bound_writer_fills_and_refuses_task_snapshot_ids() {
+        let (writer, mut reader) = bound_writer();
+        assert!(
+            writer.write(task_snapshot("t-other")).await.is_err(),
+            "a task snapshot naming another task is refused"
+        );
+        writer.write(task_snapshot("")).await.unwrap();
+        match reader.read().await.unwrap().unwrap().event {
+            StreamResponse::Task(t) => {
+                assert_eq!(t.id, TaskId::new("t-bound"));
+                assert_eq!(t.context_id, ContextId::new("ctx-bound"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    /// A provisional snapshot that is already terminal closes the stream once
+    /// the event read alongside it is delivered, with the writer still alive
+    /// (`replace |= with &=` on the provisional path leaves `saw_terminal`
+    /// false and the third read waits on the live channel instead).
+    #[tokio::test]
+    async fn a_terminal_provisional_snapshot_closes_the_stream() {
+        let (writer, mut reader) = new_in_memory_queue();
+        reader.set_provisional_task(make_status_event("t-p", TaskState::Completed));
+        writer
+            .write(make_status_event("t-p", TaskState::Working))
+            .await
+            .unwrap();
+
+        let mut seen = vec![];
+        for _ in 0..2 {
+            match reader.read().await.unwrap().unwrap().event {
+                StreamResponse::StatusUpdate(u) => seen.push(u.status.state),
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        assert_eq!(seen, vec![TaskState::Completed, TaskState::Working]);
+        let end = tokio::time::timeout(std::time::Duration::from_secs(2), reader.read()).await;
+        assert!(
+            matches!(end, Ok(None)),
+            "the stream ends at the terminal snapshot, not when the writer drops"
+        );
+        drop(writer);
     }
 }

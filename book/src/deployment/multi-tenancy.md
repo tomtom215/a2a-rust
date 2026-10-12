@@ -162,6 +162,31 @@ break; every use site now gets a compiler warning naming the replacement.
 
 If you set `max_stored_tasks` and wondered why nothing was capped: that is why.
 
+## Callers within one tenant
+
+A tenant is a boundary between organisations, not between the people in one.
+By default every caller who passes the interceptors in a tenant, or in the
+default single-tenant deployment, sees the same tasks: Bob can read, list,
+cancel and subscribe to Alice's, and register a webhook on them. Spec §13.1
+requires results scoped to the caller's authorization boundaries, so when
+callers are not meant to share, say so:
+
+* `RequestHandlerBuilder::isolate_tasks_by_caller()` gives each caller a
+  partition of its own, chosen by the identity an authenticating interceptor
+  sets (`BearerTokenAuthInterceptor::with_labelled_tokens`,
+  `ApiKeyAuthInterceptor::with_labelled_keys`, the JWT interceptor's subject).
+  Another caller's task is then `TaskNotFound`, the same answer as an id that
+  does not exist, so its existence is not revealed, and `ListTasks` returns only
+  the caller's own.
+* The halt switch, the tenant limits above, audit chains and metrics still see
+  one tenant. Each caller's partition counts against the store's tenant limit.
+* `build()` refuses it over stores that do not partition by tenant, and over a
+  chain with no authenticating interceptor, since nothing could then keep
+  callers apart or say who they are.
+* Callers who are meant to share some tasks (a team, a project) are not this
+  model: make the group the tenant, with a resolver that reads it from the
+  verified identity.
+
 ## What is not isolated
 
 * **CPU and memory are shared.** A tenant inside its task limit can still run

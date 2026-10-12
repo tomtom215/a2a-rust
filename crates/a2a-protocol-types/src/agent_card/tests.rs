@@ -223,6 +223,66 @@ fn validate_empty_name_returns_error() {
     assert!(err.contains("name"), "error should mention name: {err}");
 }
 
+/// Breaks one required array of a card.
+type Breaker = fn(&mut AgentCard);
+
+/// The proto's REQUIRED string fields are non-empty in a card this SDK will
+/// publish (proto3 cannot tell an empty string from an absent one).
+#[test]
+fn validate_refuses_each_empty_required_string() {
+    let cases: [(&str, Breaker); 7] = [
+        ("url, protocolBinding", |c| {
+            c.supported_interfaces[0].url.clear();
+        }),
+        ("protocolBinding", |c| {
+            c.supported_interfaces[0].protocol_binding.clear();
+        }),
+        ("protocolVersion", |c| {
+            c.supported_interfaces[0].protocol_version.clear();
+        }),
+        ("id, name and description", |c| c.skills[0].id.clear()),
+        ("id, name and description", |c| {
+            c.skills[0].description.clear();
+        }),
+        ("organization", |c| {
+            c.provider = Some(AgentProvider {
+                organization: String::new(),
+                url: "https://example.com".into(),
+            });
+        }),
+        ("protected header", |c| {
+            c.signatures = Some(vec![crate::extensions::AgentCardSignature {
+                protected: String::new(),
+                signature: "s".into(),
+                header: None,
+            }]);
+        }),
+    ];
+    for (needle, break_it) in cases {
+        let mut card = minimal_card();
+        break_it(&mut card);
+        let err = card.validate().unwrap_err();
+        assert!(err.contains(needle), "{needle}: {err}");
+    }
+}
+
+/// Spec §5.7: every repeated field the proto marks REQUIRED is non-empty.
+#[test]
+fn validate_refuses_each_empty_required_array() {
+    let cases: [(&str, Breaker); 4] = [
+        ("defaultInputModes", |c| c.default_input_modes.clear()),
+        ("defaultOutputModes", |c| c.default_output_modes.clear()),
+        ("at least one skill", |c| c.skills.clear()),
+        ("tag", |c| c.skills[0].tags.clear()),
+    ];
+    for (needle, break_it) in cases {
+        let mut card = minimal_card();
+        break_it(&mut card);
+        let err = card.validate().unwrap_err();
+        assert!(err.contains(needle), "{needle}: {err}");
+    }
+}
+
 #[test]
 fn validate_empty_supported_interfaces_returns_error() {
     let mut card = minimal_card();

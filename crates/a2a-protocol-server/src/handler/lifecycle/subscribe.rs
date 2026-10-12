@@ -17,7 +17,7 @@ use crate::error::{ServerError, ServerResult};
 use crate::streaming::{InMemoryQueueReader, Reattached};
 
 use super::super::RequestHandler;
-use super::super::helpers::build_call_context;
+use super::super::helpers::{build_call_context, task_id_param};
 
 /// The `Last-Event-ID` a resuming subscriber sent back, when it names a
 /// position this server could have issued.
@@ -303,14 +303,14 @@ impl RequestHandler {
         // Boxed: `SubscribeToTask` is a cold, once-per-stream path, and
         // inlining this body pushed the JSON-RPC and REST dispatch futures
         // past clippy's `large_futures` threshold.
-        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(
+        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope_request(
             tenant,
             Box::pin(async {
                 let call_ctx =
                     build_call_context("SubscribeToTask", headers, self.inbound_trace_policy);
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
-                    call.before().await?;
+                    self.admit(&mut call, &call_ctx).await?;
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
@@ -320,7 +320,7 @@ impl RequestHandler {
                     // `capabilities.streaming == true`. (No-op when no card is configured.)
                     self.ensure_streaming_supported()?;
 
-                    let task_id = TaskId::new(&params.id);
+                    let task_id = task_id_param(&params.id, self.limits.max_id_length)?;
 
                     // Verify the task exists.
                     let task = self

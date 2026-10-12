@@ -4,7 +4,8 @@
 Any cell with errors > 0 is flagged rather than averaged in."""
 import json, sys, statistics
 from collections import defaultdict
-rows = [json.loads(l) for l in open(sys.argv[1])]
+with open(sys.argv[1]) as f:
+    rows = [json.loads(l) for l in f]
 g = defaultdict(list)
 for r in rows:
     g[(r["mode"], r["connections"], r["server"])].append(r)

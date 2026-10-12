@@ -112,6 +112,14 @@ async fn serve(
         "1.0.0",
         AgentInterface::jsonrpc(format!("http://{addr}")),
     )
+    .with_skill(
+        AgentSkill::new(
+            "delegate",
+            "Delegate",
+            "Hands work to the next agent in the chain",
+        )
+        .with_tags(["delegation"]),
+    )
     .with_description(format!("The {name} of the langfuse-agent example"));
     let mut builder = RequestHandlerBuilder::new(executor)
         .with_agent_card(card.clone())

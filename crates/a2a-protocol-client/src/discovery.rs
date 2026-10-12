@@ -97,6 +97,10 @@ pub(crate) const fn exceeds_card_body_size(len: u64, max: u64) -> bool {
 pub struct CardFetchOptions {
     headers: HashMap<String, String>,
     timeout: Duration,
+    /// Keys a signed card must verify against; see
+    /// [`with_signature_keys`](Self::with_signature_keys).
+    #[cfg(feature = "signing")]
+    signature_keys: Option<a2a_protocol_types::signing::Jwks>,
 }
 
 impl Default for CardFetchOptions {
@@ -105,6 +109,8 @@ impl Default for CardFetchOptions {
         Self {
             headers: HashMap::new(),
             timeout: CARD_FETCH_BUDGET,
+            #[cfg(feature = "signing")]
+            signature_keys: None,
         }
     }
 }
@@ -115,6 +121,23 @@ impl CardFetchOptions {
     #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.insert(name.into(), value.into());
+        self
+    }
+
+    /// Verifies a signed card against `keys` before returning it (spec §14:
+    /// clients SHOULD verify signatures when present). A card that carries
+    /// signatures is returned only if at least one verifies against a key in
+    /// `keys`, matched by `kid`; otherwise the fetch fails with
+    /// [`ClientError::Protocol`]. An unsigned card is returned as it is.
+    ///
+    /// The keys are the caller's trust decision: from a trusted store, or
+    /// from [`fetch_jwks`](crate::jwks::fetch_jwks) on a URL the caller
+    /// trusts. A `jku` named inside the card is not followed, since the card
+    /// being checked cannot vouch for its own keys.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn with_signature_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
+        self.signature_keys = Some(keys);
         self
     }
 
@@ -235,6 +258,9 @@ struct CachedCard {
 pub struct CachingCardResolver {
     url: String,
     cache: Arc<RwLock<Option<CachedCard>>>,
+    /// The extended card for an authenticated session; see
+    /// [`install_extended_card`](Self::install_extended_card).
+    extended: Arc<RwLock<Option<AgentCard>>>,
 }
 
 impl CachingCardResolver {
@@ -249,6 +275,7 @@ impl CachingCardResolver {
         Ok(Self {
             url,
             cache: Arc::new(RwLock::new(None)),
+            extended: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -262,6 +289,7 @@ impl CachingCardResolver {
         Ok(Self {
             url,
             cache: Arc::new(RwLock::new(None)),
+            extended: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -275,16 +303,23 @@ impl CachingCardResolver {
     ///
     /// Same conditions as [`resolve_agent_card`].
     pub async fn resolve(&self) -> ClientResult<AgentCard> {
+        let extended = self.extended.read().await.clone();
+        if let Some(card) = extended {
+            return Ok(card);
+        }
         trace_info!(url = %self.url, "resolving agent card (cached)");
         let cached = self.cache.read().await.clone();
         let (card, etag, last_modified) =
             fetch_card_with_metadata(&self.url, cached.as_ref(), &CardFetchOptions::default())
                 .await?;
 
-        // Update cache with new metadata.
+        // Kept only with a validator to revalidate it by: without one no
+        // `304` can answer for it. A `no-store` response comes back with
+        // none (RFC 9111 §5.2.2.5: a cache MUST NOT store it), so it is not
+        // kept, and replaces what was.
         {
             let mut guard = self.cache.write().await;
-            *guard = Some(CachedCard {
+            *guard = (etag.is_some() || last_modified.is_some()).then(|| CachedCard {
                 card: card.clone(),
                 etag,
                 last_modified,
@@ -294,10 +329,26 @@ impl CachingCardResolver {
         Ok(card)
     }
 
-    /// Clears the internal cache.
+    /// Clears the internal cache, the extended card included.
     pub async fn invalidate(&self) {
-        let mut cache = self.cache.write().await;
-        *cache = None;
+        *self.cache.write().await = None;
+        *self.extended.write().await = None;
+    }
+
+    /// Uses `card`, the extended card from `GetExtendedAgentCard`, in place
+    /// of the public one until [`clear_extended_card`](Self::clear_extended_card)
+    /// (spec §13.3: clients SHOULD replace their cached public card with the
+    /// extended version for the duration of their authenticated session).
+    /// While it is installed, [`resolve`](Self::resolve) returns it without
+    /// fetching.
+    pub async fn install_extended_card(&self, card: AgentCard) {
+        *self.extended.write().await = Some(card);
+    }
+
+    /// Ends the authenticated session's view: [`resolve`](Self::resolve)
+    /// goes back to the public card.
+    pub async fn clear_extended_card(&self) {
+        *self.extended.write().await = None;
     }
 }
 
@@ -398,7 +449,15 @@ async fn fetch_card_with_metadata(
     }
     // No cached card but got 304 — shouldn't happen, fall through to error.
 
-    // Extract caching headers before consuming the response body.
+    // Extract caching headers before consuming the response body. A
+    // `no-store` response keeps no validators, so no cache holds it.
+    let no_store = resp
+        .headers()
+        .get_all(header::CACHE_CONTROL)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(','))
+        .any(|d| d.trim().eq_ignore_ascii_case("no-store"));
     let etag = resp
         .headers()
         .get("etag")
@@ -409,6 +468,11 @@ async fn fetch_card_with_metadata(
         .get("last-modified")
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
+    let (etag, last_modified) = if no_store {
+        (None, None)
+    } else {
+        (etag, last_modified)
+    };
 
     // FIX(H8): Check Content-Length before reading the body to prevent OOM
     // from a compromised card endpoint sending an arbitrarily large response.
@@ -465,7 +529,35 @@ async fn fetch_card_with_metadata(
 
     let card =
         serde_json::from_slice::<AgentCard>(&body_bytes).map_err(ClientError::Serialization)?;
+    #[cfg(feature = "signing")]
+    verify_card_signatures(&card, options)?;
     Ok((card, etag, last_modified))
+}
+
+/// Spec §14: verify a card's signatures when the caller supplied keys. One
+/// valid signature suffices (JWS allows several signers); none valid, or no
+/// matching key, fails the fetch.
+#[cfg(feature = "signing")]
+fn verify_card_signatures(card: &AgentCard, options: &CardFetchOptions) -> ClientResult<()> {
+    let (Some(keys), Some(signatures)) = (&options.signature_keys, &card.signatures) else {
+        return Ok(());
+    };
+    if signatures.is_empty() {
+        return Ok(());
+    }
+    let mut last = None;
+    for sig in signatures {
+        match a2a_protocol_types::signing::verify_agent_card_with_jwks(card, sig, keys) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = Some(e),
+        }
+    }
+    let why = last.map_or_else(String::new, |e| e.message);
+    Err(ClientError::Protocol(
+        a2a_protocol_types::error::A2aError::invalid_params(format!(
+            "agent card signature did not verify against the supplied keys: {why}"
+        )),
+    ))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -824,6 +916,50 @@ mod tests {
         assert_eq!(entry.card.name, "resolver-test");
         assert_eq!(entry.etag, Some("\"res-etag\"".into()));
         drop(cached);
+    }
+
+    /// §13.3: an installed extended card stands in for the public one, with
+    /// no fetch, until it is cleared or the cache is invalidated. The URL is
+    /// a closed port, so any fetch fails and the test sees whether one ran.
+    #[tokio::test]
+    async fn an_installed_extended_card_is_served_until_cleared() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard};
+
+        let closed = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap()
+        };
+        let resolver = CachingCardResolver::new(&format!("http://{closed}")).unwrap();
+        let extended = AgentCard {
+            url: None,
+            name: "extended".into(),
+            version: "1.0".into(),
+            description: "for authenticated callers".into(),
+            supported_interfaces: vec![],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+
+        resolver.install_extended_card(extended.clone()).await;
+        assert_eq!(resolver.resolve().await.unwrap().name, "extended");
+
+        resolver.clear_extended_card().await;
+        assert!(resolver.resolve().await.is_err(), "cleared: fetches again");
+
+        resolver.install_extended_card(extended).await;
+        resolver.invalidate().await;
+        assert!(
+            resolver.resolve().await.is_err(),
+            "invalidated: fetches again"
+        );
     }
 
     /// Test `CachingCardResolver::resolve` returns error when server is unreachable.

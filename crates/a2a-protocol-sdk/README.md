@@ -25,7 +25,9 @@ agent_executor!(Echo, |ctx, queue| async {
     emit.status(TaskState::Completed).await
 });
 
-let card = AgentCard::new("echo", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"));
+// A published card needs at least one skill, each with a tag (spec §5.7).
+let card = AgentCard::new("echo", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
 let handler = RequestHandlerBuilder::new(Echo).with_agent_card(card).build()?;
 let _dispatcher = JsonRpcDispatcher::new(std::sync::Arc::new(handler));
 

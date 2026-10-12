@@ -92,7 +92,8 @@ async fn main() -> std::io::Result<()> {
     let rest_port = port + 1000;
     let url = format!("http://127.0.0.1:{port}");
     let card = AgentCard::new("bench-a2a-rust", "0.0.0", AgentInterface::jsonrpc(&url))
-        .with_description("benchmark agent");
+        .with_description("benchmark agent")
+        .with_skill(AgentSkill::new("echo", "Echo", "Benchmark echo").with_tags(["bench"]));
     let mut card = card;
     card.capabilities.streaming = Some(true);
     card.supported_interfaces.push(AgentInterface::new(format!("http://127.0.0.1:{rest_port}"), "HTTP+JSON"));

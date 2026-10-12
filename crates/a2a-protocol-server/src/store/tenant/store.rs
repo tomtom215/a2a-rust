@@ -222,9 +222,15 @@ impl TenantAwareInMemoryTaskStore {
         self
     }
 
-    /// Returns the store for the current tenant, creating it if needed.
+    /// Returns the store for the current partition, creating it if needed.
+    ///
+    /// Records are kept per [`TenantContext::partition`], which is the tenant
+    /// or, when the handler isolates callers, the tenant and the caller; each
+    /// such partition takes a [`max_tenants`](TenantStoreConfig::max_tenants)
+    /// slot. Configuration overrides stay per tenant.
     async fn get_store(&self) -> A2aResult<Arc<InMemoryTaskStore>> {
-        let tenant = TenantContext::current();
+        let tenant = TenantContext::partition();
+        let config_tenant = TenantContext::current();
 
         // Fast path: check if store already exists.
         {
@@ -251,7 +257,7 @@ impl TenantAwareInMemoryTaskStore {
         let store = Arc::new(
             InMemoryTaskStore::with_config(
                 self.overrides
-                    .get(&tenant)
+                    .get(&config_tenant)
                     .unwrap_or(&self.config.per_tenant)
                     .clone(),
             )
@@ -268,7 +274,7 @@ impl TenantAwareInMemoryTaskStore {
     /// a new store (and consuming a tenant slot) when a nonexistent tenant is
     /// queried.
     async fn get_existing_store(&self) -> Option<Arc<InMemoryTaskStore>> {
-        let tenant = TenantContext::current();
+        let tenant = TenantContext::partition();
         let stores = self.stores.read().await;
         stores.get(&tenant).map(Arc::clone)
     }

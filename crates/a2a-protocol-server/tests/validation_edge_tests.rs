@@ -384,7 +384,7 @@ async fn builder_rejects_empty_interfaces_in_card() {
             id: "skill-1".into(),
             name: "test-skill".into(),
             description: "A skill".into(),
-            tags: vec![],
+            tags: vec!["test".into()],
             examples: None,
             input_modes: None,
             output_modes: None,

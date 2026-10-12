@@ -401,6 +401,11 @@ impl TaskStatus {
 
 // ── Task ──────────────────────────────────────────────────────────────────────
 
+/// `Task::context_id` when a peer leaves it out.
+const fn empty_context_id() -> ContextId {
+    ContextId(String::new())
+}
+
 /// A unit of work managed by an A2A agent.
 ///
 /// The wire `kind` field (`"task"`) is injected by enclosing discriminated
@@ -415,7 +420,11 @@ pub struct Task {
     pub id: TaskId,
 
     /// Conversation context this task belongs to.
-    #[serde(alias = "context_id")]
+    ///
+    /// The proto leaves `context_id` optional, and `ProtoJSON` printers omit an
+    /// empty string, so a peer's task may arrive without the key; it parses
+    /// as an empty id rather than failing the whole response.
+    #[serde(alias = "context_id", default = "empty_context_id")]
     pub context_id: ContextId,
 
     /// Current status of the task.

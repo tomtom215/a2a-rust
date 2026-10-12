@@ -10,8 +10,9 @@
 
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::extensions::AgentCardSignature;
+#[allow(deprecated)] // the kid-less tests below exercise it on purpose
 use a2a_protocol_types::signing::{
-    canonicalize, canonicalize_card, sign_agent_card, verify_agent_card,
+    canonicalize, canonicalize_card, sign_agent_card, sign_card_es256, verify_agent_card,
 };
 
 use base64::Engine;
@@ -316,14 +317,16 @@ fn sign_and_verify_roundtrip() {
     let card = minimal_card();
     let (pkcs8, pub_key) = generate_es256_keypair();
 
-    let sig = sign_agent_card(&card, &pkcs8, Some("test-key-1")).unwrap();
+    let sig = sign_card_es256(&card, &pkcs8, "test-key-1").unwrap();
     assert!(!sig.protected.is_empty());
     assert!(!sig.signature.is_empty());
 
     verify_agent_card(&card, &sig, &pub_key).unwrap();
 }
 
+/// A foreign signer may still omit `kid`; verification must not depend on it.
 #[test]
+#[allow(deprecated)]
 fn sign_and_verify_without_key_id() {
     let card = minimal_card();
     let (pkcs8, pub_key) = generate_es256_keypair();
@@ -333,7 +336,8 @@ fn sign_and_verify_without_key_id() {
 }
 
 #[test]
-fn protected_header_contains_alg() {
+#[allow(deprecated)]
+fn the_deprecated_signer_omits_kid_when_given_none() {
     let card = minimal_card();
     let (pkcs8, _) = generate_es256_keypair();
 
@@ -348,12 +352,29 @@ fn protected_header_contains_alg() {
     );
 }
 
+/// §8.4.2: the protected header MUST carry `alg` and `kid`, and `typ`
+/// SHOULD be `"JOSE"`.
+#[test]
+fn protected_header_carries_alg_typ_and_kid() {
+    let card = minimal_card();
+    let (pkcs8, _) = generate_es256_keypair();
+
+    let sig = sign_card_es256(&card, &pkcs8, "key-1").unwrap();
+
+    let header_bytes = URL_SAFE_NO_PAD.decode(&sig.protected).unwrap();
+    let header: serde_json::Value = serde_json::from_slice(&header_bytes).unwrap();
+    assert_eq!(
+        header,
+        serde_json::json!({"alg": "ES256", "typ": "JOSE", "kid": "key-1"})
+    );
+}
+
 #[test]
 fn protected_header_contains_kid_when_provided() {
     let card = minimal_card();
     let (pkcs8, _) = generate_es256_keypair();
 
-    let sig = sign_agent_card(&card, &pkcs8, Some("my-key-id")).unwrap();
+    let sig = sign_card_es256(&card, &pkcs8, "my-key-id").unwrap();
 
     let header_bytes = URL_SAFE_NO_PAD.decode(&sig.protected).unwrap();
     let header: serde_json::Value = serde_json::from_slice(&header_bytes).unwrap();
@@ -369,8 +390,8 @@ fn sign_produces_different_signatures_for_different_cards() {
 
     let (pkcs8, _) = generate_es256_keypair();
 
-    let sig1 = sign_agent_card(&card1, &pkcs8, None).unwrap();
-    let sig2 = sign_agent_card(&card2, &pkcs8, None).unwrap();
+    let sig1 = sign_card_es256(&card1, &pkcs8, "k1").unwrap();
+    let sig2 = sign_card_es256(&card2, &pkcs8, "k1").unwrap();
 
     // The signatures should differ because the payloads differ.
     // (ECDSA is randomized, so even same payload would differ, but the
@@ -385,7 +406,7 @@ fn verify_rejects_tampered_card() {
     let mut card = minimal_card();
     let (pkcs8, pub_key) = generate_es256_keypair();
 
-    let sig = sign_agent_card(&card, &pkcs8, None).unwrap();
+    let sig = sign_card_es256(&card, &pkcs8, "k1").unwrap();
 
     // Tamper with the card after signing.
     card.name = "Tampered Agent".into();
@@ -399,7 +420,7 @@ fn verify_rejects_tampered_signature_bytes() {
     let card = minimal_card();
     let (pkcs8, pub_key) = generate_es256_keypair();
 
-    let mut sig = sign_agent_card(&card, &pkcs8, None).unwrap();
+    let mut sig = sign_card_es256(&card, &pkcs8, "k1").unwrap();
 
     // Corrupt the signature by flipping a character.
     let mut sig_bytes = URL_SAFE_NO_PAD.decode(&sig.signature).unwrap();
@@ -419,7 +440,7 @@ fn verify_rejects_wrong_public_key() {
     let (pkcs8, _pub_key) = generate_es256_keypair();
     let (_pkcs8_other, pub_key_other) = generate_es256_keypair();
 
-    let sig = sign_agent_card(&card, &pkcs8, None).unwrap();
+    let sig = sign_card_es256(&card, &pkcs8, "k1").unwrap();
 
     // Verify with a different key pair's public key.
     let result = verify_agent_card(&card, &sig, &pub_key_other);
@@ -457,7 +478,7 @@ fn verify_rejects_modified_protected_header() {
     let card = minimal_card();
     let (pkcs8, pub_key) = generate_es256_keypair();
 
-    let mut sig = sign_agent_card(&card, &pkcs8, None).unwrap();
+    let mut sig = sign_card_es256(&card, &pkcs8, "k1").unwrap();
 
     // Replace the protected header with a different one (adds a kid).
     let new_header = serde_json::json!({"alg": "ES256", "kid": "injected"});

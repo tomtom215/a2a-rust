@@ -1590,7 +1590,11 @@ fn tck_agent_card_with_omitted_repeated_fields_parses() {
     assert!(card.skills[0].tags.is_empty());
     assert!(card.default_input_modes.is_empty());
     assert!(card.default_output_modes.is_empty());
-    card.validate().expect("card is otherwise valid");
+    // Parsing is tolerant, since a client reads cards from other servers,
+    // but such a card is not valid (spec §5.7: required arrays MUST be
+    // non-empty), and this SDK's server will not publish it. Until
+    // 2026-10-11 `validate` accepted it.
+    assert!(card.validate().is_err(), "§5.7: empty required arrays");
 
     // A card whose REQUIRED supportedInterfaces is absent still parses
     // (ProtoJSON cannot distinguish absent from empty) — the semantic

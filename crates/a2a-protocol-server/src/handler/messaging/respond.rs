@@ -127,10 +127,11 @@ impl RequestHandler {
             .await;
         shape_response_history(&mut snapshot, response_history_length);
         if streaming {
-            // SPEC §3.1.2: The first event in a streaming response MUST be a
-            // Task object representing the current state.
+            // SPEC §3.1.2: a task-lifecycle stream MUST begin with the Task,
+            // and a message-only stream MUST be exactly one Message. Which one
+            // this is, the executor's first event decides.
             let mut reader = reader;
-            reader.set_first_event(StreamResponse::Task(snapshot));
+            reader.set_provisional_task(StreamResponse::Task(snapshot));
             SendMessageResult::Stream(reader)
         } else {
             // return_immediately: hand back the initial snapshot; the
@@ -181,22 +182,20 @@ impl RequestHandler {
         // waits for it; in the tenant and span of this call, which
         // `tokio::spawn` would otherwise not carry.
         let collector = self.sync_collector();
-        let tenant = crate::store::tenant::TenantContext::current();
+        let tenant = crate::store::tenant::TenantContext::capture();
         let mut executor = executor.watch();
         let (answer, collected) = tokio::sync::oneshot::channel();
         self.in_flight
             .executors()
-            .spawn(crate::rpc_span::in_current_span(
-                crate::store::tenant::TenantContext::scope(tenant, async move {
-                    let result = collector
-                        .collect_events(events, task.id, &mut executor)
-                        .await;
-                    // The caller may have gone; the collection is done and
-                    // persisted either way.
-                    let _ = answer.send(result);
-                    executor.finish().await;
-                }),
-            ));
+            .spawn(crate::rpc_span::in_current_span(tenant.scope(async move {
+                let result = collector
+                    .collect_events(events, task.id, &mut executor)
+                    .await;
+                // The caller may have gone; the collection is done and
+                // persisted either way.
+                let _ = answer.send(result);
+                executor.finish().await;
+            })));
         let collected = collected.await.map_err(|_| {
             crate::error::ServerError::Internal("event collection ended abnormally".to_owned())
         })??;
@@ -207,7 +206,12 @@ impl RequestHandler {
         // task tracking)". An agent that emitted a message and nothing
         // else is doing exactly that, so answer with the message. The task
         // row still exists and is still fetchable by `GetTask`.
-        if let Some(message) = collected.direct_message {
+        if let Some(mut message) = collected.direct_message {
+            // §3.4.1: a contextId the server generated MUST be in the
+            // response. The executor's reply may not carry one.
+            message
+                .context_id
+                .get_or_insert_with(|| collected.task.context_id.clone());
             return Ok(SendMessageResult::Response(SendMessageResponse::Message(
                 message,
             )));

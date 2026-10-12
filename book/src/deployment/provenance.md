@@ -43,8 +43,13 @@ verify_card_with_jwks(&card, &keys)?; // any of its signatures, by `kid`
   `localhost` for development. It caps the set at 256 KiB, and the same time
   budget covers the whole fetch.
 
-To sign a card: `sign_agent_card` (ES256) or `sign_agent_card_ed25519`,
-with a PKCS#8 key.
+To sign a card: `sign_card_es256` or `sign_card_ed25519`, with a PKCS#8
+key and the key id a verifier will look the key up by. The protected header
+carries `alg`, `typ: "JOSE"` and `kid` (spec §8.4.2), and the card is
+canonicalized with protobuf field presence first (§8.4.1): a field holding
+its default value is left out unless it is `REQUIRED` or `optional`. The
+older `sign_agent_card` and `sign_agent_card_ed25519` take the key id as an
+`Option` and are deprecated, since leaving it out breaks §8.4.2.
 
 ## Marking and signing content
 

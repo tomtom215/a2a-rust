@@ -188,3 +188,85 @@ async fn streaming_mode_task_snapshot_in_stream() {
 
     assert!(saw_task, "should have seen Task snapshot in stream");
 }
+
+// ── §3.1.2: exactly two stream shapes ─────────────────────────────────────
+//
+// "If the agent returns a Message, the stream MUST contain exactly one Message
+// object and then close immediately." Until 2026-10-10 every streaming send led
+// with a Task snapshot, so a message-only agent streamed `[Task, Message]`,
+// which is neither shape §3.1.2 allows. The test above only asked whether a
+// Message appeared somewhere in the stream, which that defect passed.
+
+/// Replies with one `Message`, as a direct-reply agent does.
+struct ReplyOnlyExecutor;
+
+impl AgentExecutor for ReplyOnlyExecutor {
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            queue
+                .write(StreamResponse::Message(Message {
+                    id: MessageId::new("direct-reply"),
+                    role: MessageRole::Agent,
+                    parts: vec![Part::text("done")],
+                    task_id: None,
+                    context_id: None,
+                    reference_task_ids: None,
+                    extensions: None,
+                    metadata: None,
+                }))
+                .await
+        })
+    }
+}
+
+/// Collects the variant names of everything the stream yields.
+async fn shape_of(executor: impl AgentExecutor + 'static) -> Vec<&'static str> {
+    let handler = RequestHandlerBuilder::new(executor)
+        .build()
+        .expect("build handler");
+    let SendMessageResult::Stream(mut reader) = handler
+        .on_send_message(make_send_params(), true, None)
+        .await
+        .expect("send streaming")
+    else {
+        panic!("expected Stream");
+    };
+    let mut shape = vec![];
+    while let Some(event) = reader.read().await {
+        shape.push(match event.expect("no stream error").event {
+            StreamResponse::Task(_) => "Task",
+            StreamResponse::Message(_) => "Message",
+            StreamResponse::StatusUpdate(_) => "StatusUpdate",
+            StreamResponse::ArtifactUpdate(_) => "ArtifactUpdate",
+            _ => "unknown",
+        });
+    }
+    shape
+}
+
+#[tokio::test]
+async fn a_message_only_stream_is_exactly_one_message() {
+    assert_eq!(shape_of(ReplyOnlyExecutor).await, vec!["Message"]);
+}
+
+#[tokio::test]
+async fn a_task_lifecycle_stream_begins_with_the_task() {
+    assert_eq!(
+        shape_of(StatusExecutor).await,
+        vec!["Task", "StatusUpdate", "StatusUpdate"]
+    );
+    // A Message after the task is under way does not change the shape.
+    assert_eq!(
+        shape_of(MessageEventExecutor).await,
+        vec!["Task", "StatusUpdate", "Message", "StatusUpdate"]
+    );
+}
+
+#[tokio::test]
+async fn an_executor_that_emits_nothing_still_streams_its_task() {
+    assert_eq!(shape_of(EmptyExecutor).await, vec!["Task"]);
+}

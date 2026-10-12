@@ -17,7 +17,7 @@ use a2a_protocol_client::jwks::fetch_jwks;
 use a2a_protocol_types::AgentCard;
 use a2a_protocol_types::audit::{AuditRecord, Checkpoint, SigningAlg, TrustedKey, verify_chain};
 use a2a_protocol_types::signing::{
-    Jwks, VerifyingKey, sign_agent_card, sign_agent_card_ed25519, verify_card_with_jwks,
+    Jwks, VerifyingKey, sign_card_ed25519, sign_card_es256, verify_card_with_jwks,
 };
 
 use crate::cli::{GlobalOpts, SignAlg};
@@ -40,8 +40,8 @@ pub fn card_sign(card: &Path, key: &Path, alg: SignAlg, kid: &str) -> Result<(),
     let mut card: AgentCard = read_json(card, "an agent card")?;
     let key = read(key)?;
     let sig = match alg {
-        SignAlg::Es256 => sign_agent_card(&card, &key, Some(kid)),
-        SignAlg::Eddsa => sign_agent_card_ed25519(&card, &key, Some(kid)),
+        SignAlg::Es256 => sign_card_es256(&card, &key, kid),
+        SignAlg::Eddsa => sign_card_ed25519(&card, &key, kid),
     }
     .map_err(|e| CliError::Failed(format!("signing failed: {}", e.message)))?;
     card.signatures.get_or_insert_with(Vec::new).push(sig);

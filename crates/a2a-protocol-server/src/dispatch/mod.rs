@@ -10,6 +10,7 @@ pub mod axum_adapter;
 pub mod cors;
 #[cfg(feature = "grpc")]
 pub mod grpc;
+pub mod hsts;
 pub mod jsonrpc;
 pub mod rest;
 #[cfg(feature = "websocket")]
@@ -18,6 +19,7 @@ pub mod websocket;
 pub use cors::CorsConfig;
 #[cfg(feature = "grpc")]
 pub use grpc::{GrpcConfig, GrpcDispatcher};
+pub use hsts::Hsts;
 pub use jsonrpc::JsonRpcDispatcher;
 pub use rest::RestDispatcher;
 #[cfg(feature = "websocket")]
@@ -227,6 +229,59 @@ pub fn validate_version_metadata<S: std::hash::BuildHasher>(
         .find(|(k, _)| k.eq_ignore_ascii_case(A2A_VERSION_METADATA_KEY))
         .map(|(_, v)| v.as_str());
     validate_version_header(value, require)
+}
+
+/// Refuses a request body in a media type A2A does not define.
+///
+/// Spec §9.1/§11.1: `application/json`, or the registered
+/// `application/a2a+json` (§14.1). A `POST`, `PUT` or `PATCH` that names
+/// anything else is `ContentTypeNotSupportedError`, which §5.4 maps to HTTP
+/// 400; answered as that A2A error, with its `ErrorInfo`, rather than as an
+/// anonymous 400. A request that names no type is let through to the body
+/// parser, as before.
+pub(crate) fn check_request_content_type(
+    method: &hyper::Method,
+    headers: &hyper::HeaderMap,
+) -> Result<(), a2a_protocol_types::error::A2aError> {
+    if !matches!(
+        *method,
+        hyper::Method::POST | hyper::Method::PUT | hyper::Method::PATCH
+    ) {
+        return Ok(());
+    }
+    let Some(ct) = headers.get(hyper::header::CONTENT_TYPE) else {
+        return Ok(());
+    };
+    let ct = ct.to_str().unwrap_or("");
+    if ct.starts_with("application/json") || ct.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE) {
+        return Ok(());
+    }
+    Err(
+        a2a_protocol_types::error::A2aError::content_type_not_supported(format!(
+            "unsupported Content-Type: {ct}; expected application/json or application/a2a+json"
+        )),
+    )
+}
+
+/// The `A2A-Version` a request asks for: its header, or else the
+/// `A2A-Version` request parameter.
+///
+/// Spec §3.6.1: "Clients MAY provide the `A2A-Version` as a request parameter
+/// instead of a header", with `GET /tasks/task-123?A2A-Version=1.0` as the
+/// example. Until 2026-10-10 only the header was read, so a client doing
+/// exactly what the example shows was taken to be speaking 0.3 and refused.
+/// A non-empty header wins over the parameter; an empty or absent one falls
+/// back to it.
+pub(crate) fn requested_version(headers: &hyper::HeaderMap, uri: &hyper::Uri) -> Option<String> {
+    let header = headers
+        .get(a2a_protocol_types::A2A_VERSION_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .filter(|v| !v.trim().is_empty());
+    if let Some(v) = header {
+        return Some(v.to_owned());
+    }
+    uri.query()
+        .and_then(|q| rest::query::parse_query_param(q, a2a_protocol_types::A2A_VERSION_HEADER))
 }
 
 /// Validates an `A2A-Version` header value per spec §3.6.2.

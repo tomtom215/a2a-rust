@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_client::delegation::{Delegation, Outcome};
-use a2a_protocol_client::{A2aClient, ClientBuilder};
+use a2a_protocol_client::{A2aClient, ClientBuilder, ClientError};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::store::TenantAwareInMemoryTaskStore;
@@ -35,6 +35,8 @@ agent_executor!(Worker, |ctx, queue| async {
         }
         "fail" => emit.fail(FailureClass::Transient, "try again").await,
         "ask" => emit.status(TaskState::InputRequired).await,
+        // Starts the task, then returns without settling it.
+        "abandon" => emit.status(TaskState::Working).await,
         "reply" => {
             queue
                 .write(StreamResponse::Message(Message::new(
@@ -171,18 +173,42 @@ async fn an_interrupted_child_is_handed_back_not_cancelled() {
 
 #[tokio::test]
 async fn a_task_stream_that_ends_unsettled_is_lost_and_its_child_cancelled() {
-    // This server opens every stream with the task; an agent that then
-    // answers with a message and returns leaves the task unsettled when the
-    // stream closes. Nothing watches the child after that, so it is
+    // The agent starts a task and returns without settling it, so the
+    // stream closes with no final event, which the client reports as an
+    // incomplete stream. Nothing watches the child after that, so it is
     // cancelled.
+    let client = worker().await;
+    let d = Delegation::start(Arc::clone(&client), job("abandon"))
+        .await
+        .expect("start");
+    let done = d.wait(std::future::pending()).await;
+    assert!(
+        matches!(
+            done.outcome,
+            Outcome::Lost(Some(ClientError::IncompleteStream { .. }))
+        ),
+        "{done:?}"
+    );
+    let id = done.task_id.expect("named by the opening snapshot");
+    settles_to(&client, None, &id, TaskState::Canceled).await;
+}
+
+/// A direct reply is the message-only stream of spec §3.1.2: one `Message`
+/// and close. Until 2026-10-10 this server led every stream with a `Task`,
+/// so this outcome was unreachable against it and the test above used a
+/// reply to reach `Lost`.
+#[tokio::test]
+async fn a_direct_reply_is_a_message_outcome() {
     let client = worker().await;
     let d = Delegation::start(Arc::clone(&client), job("reply"))
         .await
         .expect("start");
     let done = d.wait(std::future::pending()).await;
-    assert!(matches!(done.outcome, Outcome::Lost(None)), "{done:?}");
-    let id = done.task_id.expect("named by the opening snapshot");
-    settles_to(&client, None, &id, TaskState::Canceled).await;
+    match done.outcome {
+        Outcome::Message(m) => assert_eq!(m.text(), Some("hello")),
+        other => panic!("expected Message, got {other:?}"),
+    }
+    assert_eq!(done.task_id, None, "a message-only answer names no task");
 }
 
 #[tokio::test]

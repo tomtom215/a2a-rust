@@ -486,7 +486,11 @@ impl OAuth2ClientCredentials {
     /// Fetches a fresh token from the endpoint, returning it and how long it
     /// may be served from cache.
     async fn refresh(&self) -> ClientResult<(String, Duration)> {
-        check_endpoint_reachable(&self.token_url, "token endpoint")?;
+        check_endpoint_reachable(
+            cfg!(feature = "tls-rustls"),
+            &self.token_url,
+            "token endpoint",
+        )?;
 
         let req = self.build_token_request()?;
         // One deadline for headers and body together. Until 2026-09-10 the
@@ -644,7 +648,7 @@ pub(crate) async fn discover_token_endpoint_within(
         "{}/.well-known/openid-configuration",
         issuer.trim_end_matches('/')
     );
-    check_endpoint_reachable(&url, "OIDC discovery")?;
+    check_endpoint_reachable(cfg!(feature = "tls-rustls"), &url, "OIDC discovery")?;
 
     let client = build_token_http_client();
     let req = hyper::Request::builder()
@@ -700,27 +704,20 @@ fn build_token_http_client() -> TokenHttpClient {
     }
 }
 
-/// Fails an `https://` endpoint early when this build cannot reach it.
-#[cfg_attr(
-    feature = "tls-rustls",
-    allow(
-        clippy::unnecessary_wraps,
-        unused_variables,
-        clippy::missing_const_for_fn
-    )
-)]
-fn check_endpoint_reachable(url: &str, what: &str) -> ClientResult<()> {
-    #[cfg(not(feature = "tls-rustls"))]
-    {
-        let is_https = url
-            .split_once("://")
-            .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"));
-        if is_https {
-            return Err(ClientError::Transport(format!(
-                "{what} URL {url} is https:// but this build has no TLS; enable the \
-                 `tls-rustls` feature (on by default)"
-            )));
-        }
+/// Fails an `https://` endpoint early when the build cannot reach it.
+///
+/// `tls` is whether TLS is compiled in; callers pass
+/// `cfg!(feature = "tls-rustls")`. Taking it as a value rather than
+/// compiling two versions lets one build test both answers.
+fn check_endpoint_reachable(tls: bool, url: &str, what: &str) -> ClientResult<()> {
+    let is_https = url
+        .split_once("://")
+        .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"));
+    if is_https && !tls {
+        return Err(ClientError::Transport(format!(
+            "{what} URL {url} is https:// but this build has no TLS; enable the \
+             `tls-rustls` feature (on by default)"
+        )));
     }
     Ok(())
 }
@@ -802,20 +799,27 @@ mod tests {
 
     /// Without `tls-rustls` an `https://` token endpoint cannot be reached, and
     /// the provider says why before dialling rather than failing inside the
-    /// connector with a scheme error. Only a build without the feature
-    /// compiles this; with it, `check_endpoint_reachable` is `Ok(())` (so its
-    /// "replace with `Ok(())`" mutant is equivalent under `--all-features`).
-    #[cfg(not(feature = "tls-rustls"))]
+    /// connector with a scheme error. With TLS every scheme is let through.
     #[test]
     fn https_endpoints_are_refused_by_a_build_without_tls() {
-        let err = check_endpoint_reachable("HTTPS://auth.example.com/token", "token endpoint")
-            .expect_err("no TLS in this build");
+        let err =
+            check_endpoint_reachable(false, "HTTPS://auth.example.com/token", "token endpoint")
+                .expect_err("no TLS");
         assert!(
             matches!(&err, ClientError::Transport(m) if m.contains("tls-rustls")),
             "{err:?}"
         );
         assert!(
-            check_endpoint_reachable("http://auth.example.com/token", "token endpoint").is_ok()
+            check_endpoint_reachable(false, "http://auth.example.com/token", "token endpoint")
+                .is_ok()
+        );
+        assert!(
+            check_endpoint_reachable(true, "https://auth.example.com/token", "token endpoint")
+                .is_ok()
+        );
+        assert!(
+            check_endpoint_reachable(true, "http://auth.example.com/token", "token endpoint")
+                .is_ok()
         );
     }
 
@@ -939,6 +943,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // an implicit-flow card is still a card a client may meet
     fn from_agent_card_wrong_flow_errors() {
         use a2a_protocol_types::security::{ImplicitFlow, OAuthFlows};
         let card = card_with_oauth2(OAuthFlows::Implicit(ImplicitFlow {

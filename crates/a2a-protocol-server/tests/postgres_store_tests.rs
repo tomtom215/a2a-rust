@@ -3023,3 +3023,89 @@ async fn replicas_starting_together_on_an_empty_database_all_come_up() {
         );
     }
 }
+
+// ── Caller isolation (spec §13.1) ────────────────────────────────────────
+
+struct IsolationWorker;
+a2a_protocol_server::agent_executor!(IsolationWorker, |ctx, queue| async {
+    let emit = a2a_protocol_server::EventEmitter::new(ctx, queue);
+    emit.status(TaskState::Working).await?;
+    ctx.cancellation_token.cancelled().await;
+    Ok(())
+});
+
+/// `isolate_tasks_by_caller` keys the tenant-aware Postgres stores by
+/// tenant and caller (`TenantContext::partition`), so Bob cannot reach the
+/// task Alice made, and a list holds only the caller's own. The in-memory
+/// and SQLite stores are covered in `caller_isolation.rs`.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn caller_isolation_holds_on_the_tenant_postgres_stores() {
+    use a2a_protocol_server::BearerTokenAuthInterceptor;
+    use a2a_protocol_server::builder::RequestHandlerBuilder;
+    use a2a_protocol_server::handler::SendMessageResult;
+    use a2a_protocol_types::params::{
+        MessageSendParams, SendMessageConfiguration, TaskQueryParams,
+    };
+    use a2a_protocol_types::responses::SendMessageResponse;
+
+    let db = TestDb::create("caller_isolation").await;
+    let handler = RequestHandlerBuilder::new(IsolationWorker)
+        .with_task_store(
+            TenantAwarePostgresTaskStore::new(&db.url)
+                .await
+                .expect("tenant task store"),
+        )
+        .with_push_config_store(
+            TenantAwarePostgresPushConfigStore::new(&db.url)
+                .await
+                .expect("tenant push store"),
+        )
+        .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
+            ("alice-token", "alice"),
+            ("bob-token", "bob"),
+        ]))
+        .isolate_tasks_by_caller()
+        .build()
+        .expect("handler");
+    let as_caller = |token: &str| {
+        std::collections::HashMap::from([("authorization".to_owned(), format!("Bearer {token}"))])
+    };
+
+    let params = MessageSendParams::new(a2a_protocol_types::Message::user_text("m-1", "work"))
+        .with_configuration(SendMessageConfiguration {
+            return_immediately: Some(true),
+            ..Default::default()
+        });
+    let id = match handler
+        .on_send_message(params, false, Some(&as_caller("alice-token")))
+        .await
+        .expect("alice sends")
+    {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t.id.0,
+        other => panic!("expected a task, got {other:?}"),
+    };
+
+    handler
+        .on_get_task(TaskQueryParams::new(&id), Some(&as_caller("alice-token")))
+        .await
+        .expect("Alice reads her task");
+    let bob = handler
+        .on_get_task(TaskQueryParams::new(&id), Some(&as_caller("bob-token")))
+        .await;
+    assert!(
+        matches!(
+            bob,
+            Err(a2a_protocol_server::error::ServerError::TaskNotFound(_))
+        ),
+        "{bob:?}"
+    );
+    let bobs = handler
+        .on_list_tasks(ListTasksParams::default(), Some(&as_caller("bob-token")))
+        .await
+        .expect("Bob lists");
+    assert!(bobs.tasks.is_empty(), "{bobs:?}");
+
+    drop(handler);
+    db.drop_db().await;
+}

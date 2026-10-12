@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::params::ListTasksParams;
-use a2a_protocol_types::task::Task;
+use a2a_protocol_types::task::{Task, TaskId};
 use a2a_protocol_types::trace_context::{TRACEPARENT_HEADER, TRACESTATE_HEADER, TraceContext};
 
 use crate::call_context::CallContext;
@@ -32,6 +32,14 @@ pub(super) fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerRes
         )));
     }
     Ok(())
+}
+
+/// The `id` of `GetTask`, `CancelTask` or `SubscribeToTask`, which a2a.proto marks
+/// REQUIRED. gRPC's absent string and JSON's `""` used to reach the store and
+/// answer `TaskNotFound`; they are `InvalidParams`.
+pub(super) fn task_id_param(raw: &str, max_length: usize) -> ServerResult<TaskId> {
+    validate_id(raw, "id", max_length)?;
+    Ok(TaskId::new(raw))
 }
 
 /// Rejects client-supplied `metadata` that is present but not a JSON object.

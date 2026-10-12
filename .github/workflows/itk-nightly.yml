@@ -38,9 +38,10 @@ on:
       - 'itk/src/**'
       - 'itk/protos/**'
 
-# Uploading to the rolling prerelease needs write access to releases.
+# Least privilege at the top; the one job below that uploads to the rolling
+# prerelease is granted write access to releases itself.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: itk-nightly
@@ -52,6 +53,8 @@ env:
 jobs:
   nightly:
     name: ITK nightly (current vs every peer)
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:

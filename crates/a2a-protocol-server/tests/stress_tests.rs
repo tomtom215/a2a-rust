@@ -123,7 +123,7 @@ fn minimal_agent_card() -> AgentCard {
             id: "stress".into(),
             name: "Stress".into(),
             description: "Stress test skill".into(),
-            tags: vec![],
+            tags: vec!["test".into()],
             examples: None,
             input_modes: None,
             output_modes: None,

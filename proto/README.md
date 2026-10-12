@@ -15,10 +15,21 @@ with the official A2A SDKs (Python, JS, Go, Java).
 
 Rules for this file:
 
-- It is **never edited** for codegen convenience. It is kept byte-identical
-  to the specification copy at `docs/implementation/a2a.proto`; the
-  `proto_schema_sync` test in `a2a-protocol-types` enforces this, along
-  with the per-crate copies under `crates/*/proto/a2a_v1/`.
+- It is **never edited** for codegen convenience. It is a byte-for-byte copy
+  of `specification/a2a.proto` from the A2A release named in
+  [`UPSTREAM`](UPSTREAM) (tag, commit and SHA-256; currently **v1.0.1**).
+  The `proto_schema_sync` tests in `a2a-protocol-types` and
+  `scripts/check_proto_copies.sh` (CI, offline) keep this file, the per-crate
+  copies under `crates/*/proto/a2a_v1/`, `tck/proto/` and
+  `docs/implementation/a2a.proto` identical, the script also holds them to
+  the pinned hash, and
+  `scripts/check_a2a_proto_upstream.sh` (`official-tck.yml`, online) fails
+  when a newer A2A release changes the file.
+- Until 2026-10-10 every copy here was A2A **v1.0.0**'s text. v1.0.1
+  (2026-05-28) changed only comments, but they are the normative `tenant`
+  rules, and nothing compared the copies with upstream, so the drift went
+  unnoticed for five months. That is why `UPSTREAM` and the upstream check
+  exist.
 - Wire compatibility is proven against the official A2A Python SDK
   (`a2a-sdk`): golden binary fixtures under `tck/fixtures/grpc/` are
   validated in both directions (prost decodes the official SDK's bytes;

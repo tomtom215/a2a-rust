@@ -398,3 +398,25 @@ fn a_halt_maps_to_unavailable_on_every_binding() {
     assert_eq!(wire.message, "halted: incident 42");
     assert_eq!(err.to_string(), "halted: incident 42");
 }
+
+/// §13.4: a rate-limit refusal answers `429` and `RESOURCE_EXHAUSTED` on the
+/// HTTP+JSON binding, keeping the `-32603` code §3.3.2 gives for it.
+#[test]
+fn a_rate_limit_refusal_is_429_resource_exhausted() {
+    let err = ServerError::Protocol(A2aError::rate_limited(
+        "slow down",
+        std::time::Duration::from_secs(3),
+    ));
+    assert_eq!(err.http_status(), 429);
+    assert_eq!(err.status_name(), "RESOURCE_EXHAUSTED");
+    assert_eq!(err.to_a2a_error().code, ErrorCode::InternalError);
+}
+
+/// An overload's AIP-193 body names the code the gRPC binding sends for it,
+/// not the permanent `INTERNAL` its A2A code maps to, under HTTP `503`.
+#[test]
+fn an_overload_body_names_resource_exhausted() {
+    let err = ServerError::Overloaded("at the stream cap".into());
+    assert_eq!(err.http_status(), 503);
+    assert_eq!(err.status_name(), "RESOURCE_EXHAUSTED");
+}

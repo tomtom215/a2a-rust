@@ -63,7 +63,7 @@ pub async fn test_real_auth_rejection(ctx: &TestContext) -> TestResult {
             id: "auth-test".into(),
             name: "Auth Test".into(),
             description: "Tests auth rejection".into(),
-            tags: vec![],
+            tags: vec!["test".into()],
             examples: None,
             input_modes: None,
             output_modes: None,
@@ -249,7 +249,10 @@ impl AgentCardProducer for CountingProducer {
                 }],
                 default_input_modes: vec!["text/plain".into()],
                 default_output_modes: vec!["text/plain".into()],
-                skills: vec![],
+                skills: vec![
+                    a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                        .with_tags(["test"]),
+                ],
                 capabilities: AgentCapabilities::none(),
                 provider: None,
                 icon_url: None,

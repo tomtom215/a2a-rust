@@ -554,6 +554,38 @@ async fn jsonrpc_missing_version_header_rejected() {
     );
 }
 
+/// Spec §3.6.1's request-parameter form of the version, on the JSON-RPC
+/// endpoint: accepted when it names 1.0, refused when it names 2.0.
+#[tokio::test]
+async fn jsonrpc_version_request_parameter_is_honoured() {
+    let (addr, _handle) = start_jsonrpc_server().await;
+    let client = http_client();
+
+    for (version, expect_error) in [("1.0", None), ("2.0", Some(-32009))] {
+        let rpc_req = a2a_protocol_types::JsonRpcRequest::with_params(
+            serde_json::json!(1),
+            "ListTasks",
+            serde_json::json!({}),
+        );
+        let req = hyper::Request::builder()
+            .method("POST")
+            .uri(format!("http://{addr}/?A2A-Version={version}"))
+            .header("content-type", "application/json")
+            .body(Full::new(Bytes::from(
+                serde_json::to_vec(&rpc_req).unwrap(),
+            )))
+            .unwrap();
+        let resp = client.request(req).await.expect("send");
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(
+            v["error"]["code"].as_i64(),
+            expect_error,
+            "version {version}: {v}"
+        );
+    }
+}
+
 /// The legacy v0.3-style method names are MethodNotFound in v1.0
 /// (reference-SDK parity — 0.3 compatibility is a separate adapter there
 /// and is not implemented here).

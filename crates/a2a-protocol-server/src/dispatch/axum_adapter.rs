@@ -80,7 +80,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use bytes::Bytes;
@@ -144,9 +144,12 @@ impl A2aRouter {
         // (2 MiB) and silently ignores `max_request_body_size`, so the knob that
         // works on the JSON-RPC/REST dispatchers would be a no-op here.
         let max_body = self.config.max_request_body_size;
+        let require_version = self.config.require_version_header;
+        let card_handler = card_handler(&self.handler);
         let state = A2aState {
             handler: self.handler,
             config: Arc::new(self.config),
+            card_handler,
         };
 
         Router::new()
@@ -169,8 +172,39 @@ impl A2aRouter {
             .route("/ready", get(handle_ready))
             .with_state(state)
             .layer(axum::extract::DefaultBodyLimit::max(max_body))
+            .layer(axum::middleware::from_fn_with_state(
+                require_version,
+                validate_a2a_request,
+            ))
             .layer(axum::middleware::from_fn(negotiate_media_type))
     }
+}
+
+/// The protocol checks `RestDispatcher` makes before routing, made here too.
+///
+/// Until 2026-10-10 this router made neither: it served `A2A-Version: 2.0`
+/// (and an absent version) with 1.0 semantics, against §3.6.2's MUST to
+/// answer `VersionNotSupportedError`, and it accepted any request media type.
+/// Discovery and the probes stay versionless, exactly as on the REST
+/// dispatcher, so a client can read the card before it knows what to send.
+async fn validate_a2a_request(
+    State(require_version): State<bool>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = req.uri().path();
+    let versionless = req.method() == axum::http::Method::GET
+        && matches!(path, "/.well-known/agent-card.json" | "/health" | "/ready");
+    if !versionless {
+        if let Err(err) = super::check_request_content_type(req.method(), req.headers()) {
+            return handler_error_to_response(&crate::error::ServerError::Protocol(err));
+        }
+        let version = super::requested_version(req.headers(), req.uri());
+        if let Err(err) = super::validate_version_header(version.as_deref(), require_version) {
+            return handler_error_to_response(&crate::error::ServerError::Protocol(err));
+        }
+    }
+    next.run(req).await
 }
 
 /// Labels the response `application/a2a+json` for a client that asks for it,
@@ -241,6 +275,19 @@ impl axum::extract::FromRequest<A2aState> for TimedBody {
 struct A2aState {
     handler: Arc<RequestHandler>,
     config: Arc<super::DispatchConfig>,
+    /// The public card with its `ETag`, `Last-Modified` and `Cache-Control`,
+    /// as the JSON-RPC and REST dispatchers serve it (spec §8.6).
+    card_handler: Option<Arc<crate::agent_card::StaticAgentCardHandler>>,
+}
+
+fn card_handler(
+    handler: &RequestHandler,
+) -> Option<Arc<crate::agent_card::StaticAgentCardHandler>> {
+    handler
+        .agent_card
+        .as_ref()
+        .and_then(|card| crate::agent_card::StaticAgentCardHandler::new(card).ok())
+        .map(Arc::new)
 }
 
 // ── Helper: extract headers as HashMap ───────────────────────────────────────
@@ -320,12 +367,18 @@ fn hyper_to_axum(
 async fn handle_tasks_catchall(
     State(state): State<A2aState>,
     method: axum::http::Method,
-    Path(rest): Path<String>,
+    uri: axum::http::Uri,
     headers: axum::http::HeaderMap,
     TimedBody(body): TimedBody,
 ) -> axum::response::Response {
     let hdrs = extract_headers(&headers);
+    // Routed on the raw path, then each id decoded, as the REST dispatcher
+    // does: an id this SDK's client encoded keeps its `/` and `:` inside it.
+    // `Path` decoded the whole tail first, so such an id was split or read as
+    // an action until 2026-10-12.
+    let rest = uri.path().strip_prefix("/tasks/").unwrap_or_default();
     let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+    let dec = super::rest::query::percent_decode_path;
 
     match (method.as_str(), segments.as_slice()) {
         // GET /tasks/{id} (no colon action)
@@ -335,7 +388,7 @@ async fn handle_tasks_catchall(
                 "GetTask",
                 (method.as_str(), "/tasks/{id}"),
                 &hdrs,
-                handle_get_task_inner(&state, id, &hdrs),
+                handle_get_task_inner(&state, &dec(id), &hdrs),
             )
             .await
         }
@@ -348,7 +401,7 @@ async fn handle_tasks_catchall(
                 "CancelTask",
                 (method.as_str(), "/tasks/{id}:cancel"),
                 &hdrs,
-                handle_cancel_task_inner(&state, id, &hdrs),
+                handle_cancel_task_inner(&state, &dec(id), &hdrs),
             )
             .await
         }
@@ -361,7 +414,7 @@ async fn handle_tasks_catchall(
                 "SubscribeToTask",
                 (method.as_str(), "/tasks/{id}:subscribe"),
                 &hdrs,
-                handle_subscribe_inner(&state, id, &hdrs),
+                handle_subscribe_inner(&state, &dec(id), &hdrs),
             )
             .await
         }
@@ -373,7 +426,7 @@ async fn handle_tasks_catchall(
                 "CreateTaskPushNotificationConfig",
                 (method.as_str(), "/tasks/{task_id}/pushNotificationConfigs"),
                 &hdrs,
-                handle_create_push_config_inner(&state, task_id, &hdrs, body),
+                handle_create_push_config_inner(&state, &dec(task_id), &hdrs, body),
             )
             .await
         }
@@ -385,7 +438,7 @@ async fn handle_tasks_catchall(
                 "ListTaskPushNotificationConfigs",
                 (method.as_str(), "/tasks/{task_id}/pushNotificationConfigs"),
                 &hdrs,
-                handle_list_push_configs_inner(&state, task_id, &hdrs),
+                handle_list_push_configs_inner(&state, &dec(task_id), &hdrs),
             )
             .await
         }
@@ -400,7 +453,7 @@ async fn handle_tasks_catchall(
                     "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
                 ),
                 &hdrs,
-                handle_get_push_config_inner(&state, task_id, config_id, &hdrs),
+                handle_get_push_config_inner(&state, &dec(task_id), &dec(config_id), &hdrs),
             )
             .await
         }
@@ -415,7 +468,7 @@ async fn handle_tasks_catchall(
                     "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
                 ),
                 &hdrs,
-                handle_delete_push_config_inner(&state, task_id, config_id, &hdrs),
+                handle_delete_push_config_inner(&state, &dec(task_id), &dec(config_id), &hdrs),
             )
             .await
         }
@@ -524,7 +577,9 @@ async fn handle_extended_card(
         &hdrs,
         async {
             match state.handler.on_get_extended_agent_card(Some(&hdrs)).await {
-                Ok(card) => a2a_json(&card),
+                Ok(card) => {
+                    hyper_to_axum(crate::dispatch::rest::extended_card_response(&card, &hdrs))
+                }
                 Err(e) => handler_error_to_response(&e),
             }
         },
@@ -532,10 +587,13 @@ async fn handle_extended_card(
     .await
 }
 
-async fn handle_agent_card(State(state): State<A2aState>) -> axum::response::Response {
-    state.handler.agent_card.as_ref().map_or_else(
+async fn handle_agent_card(
+    State(state): State<A2aState>,
+    req: axum::extract::Request,
+) -> axum::response::Response {
+    state.card_handler.as_ref().map_or_else(
         || plain_error(404, "agent card not configured"),
-        |card| axum::Json(card).into_response(),
+        |h| h.handle(&req).map(Body::new),
     )
 }
 
@@ -588,11 +646,11 @@ async fn handle_send_inner(
     hdrs: &HashMap<String, String>,
     body: Bytes,
 ) -> axum::response::Response {
-    let params: a2a_protocol_types::params::MessageSendParams = match serde_json::from_slice(&body)
-    {
-        Ok(p) => p,
-        Err(e) => return bad_body(&e),
-    };
+    let params: a2a_protocol_types::params::MessageSendParams =
+        match crate::dispatch::rest::params_from_slice(&body) {
+            Ok(p) => p,
+            Err(resp) => return hyper_to_axum(resp),
+        };
     match state
         .handler
         .on_send_message(params, streaming, Some(hdrs))
@@ -676,9 +734,9 @@ async fn handle_create_push_config_inner(
             .or_insert_with(|| serde_json::Value::String(task_id.to_owned()));
     }
     let config: a2a_protocol_types::push::TaskPushNotificationConfig =
-        match serde_json::from_value(value) {
+        match crate::dispatch::rest::params_from_value(value) {
             Ok(c) => c,
-            Err(e) => return bad_body(&e),
+            Err(resp) => return hyper_to_axum(resp),
         };
     match state.handler.on_set_push_config(config, Some(hdrs)).await {
         Ok(result) => a2a_json(&result),
@@ -777,6 +835,7 @@ mod tests {
             .unwrap(),
         );
         A2aState {
+            card_handler: card_handler(&handler),
             handler,
             config: Arc::new(super::super::DispatchConfig::default()),
         }
@@ -799,7 +858,7 @@ mod tests {
         let response = handle_tasks_catchall(
             State(state.clone()),
             axum::http::Method::from_bytes(method.as_bytes()).unwrap(),
-            Path(rest.to_owned()),
+            format!("/tasks/{rest}").parse().unwrap(),
             axum::http::HeaderMap::new(),
             TimedBody(Bytes::new()),
         )
@@ -1260,6 +1319,7 @@ mod readiness_tests {
         A2aState {
             handler: Arc::new(builder.build().expect("build handler")),
             config: Arc::new(super::super::DispatchConfig::default()),
+            card_handler: None,
         }
     }
 

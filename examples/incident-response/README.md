@@ -155,7 +155,7 @@ real socket, and **asserts** each one rather than narrating it:
 | `RateLimitInterceptor` | A limit that accepts everything, or one that accepts nothing |
 | `HandlerLimits` | An unbounded caller-supplied `context_id` the server allocates |
 | `RetryPolicy` (client) | A retry layer that retries a `502` on `SendMessage` — an ambiguous failure a gateway may already have forwarded, so the work can run twice |
-| `sign_agent_card` / `verify_agent_card` | A rewritten interface URL still verifying, which would let a signed card redirect callers to an impostor |
+| `sign_card_es256` / `verify_agent_card` | A rewritten interface URL still verifying, which would let a signed card redirect callers to an impostor |
 | `SqliteTaskStore` | A task that does not survive being read back through a *different* handler over the same file |
 | `TenantAwareSqliteTaskStore` | Partitions that look right in memory and share one table on disk, leaking the moment the process restarts |
 | `PostgresTaskStore` | A second SQL backend assumed correct because the first one is |

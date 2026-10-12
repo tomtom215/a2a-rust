@@ -876,6 +876,50 @@ async fn rest_missing_version_header_rejected_but_card_discovery_versionless() {
     );
 }
 
+/// Spec §3.6.1: "Clients MAY provide the `A2A-Version` as a request
+/// parameter instead of a header" — the spec's own example is
+/// `GET /tasks/task-123?A2A-Version=1.0`. Until 2026-10-10 only the header was
+/// read, so that request was taken to be 0.3 and refused.
+#[tokio::test]
+async fn rest_version_request_parameter_is_honoured() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+    let get = |uri: String, header: Option<&'static str>| {
+        let mut b = hyper::Request::builder().method("GET").uri(uri);
+        if let Some(v) = header {
+            b = b.header("A2A-Version", v);
+        }
+        b.body(Full::new(Bytes::new())).unwrap()
+    };
+
+    let resp = client
+        .request(get(format!("http://{addr}/tasks?A2A-Version=1.0"), None))
+        .await
+        .expect("send");
+    assert_eq!(
+        resp.status(),
+        200,
+        "the request parameter names version 1.0"
+    );
+
+    // The parameter is validated like the header, not merely accepted.
+    let resp = client
+        .request(get(format!("http://{addr}/tasks?A2A-Version=2.0"), None))
+        .await
+        .expect("send");
+    assert_eq!(resp.status(), 400, "an unsupported version is refused");
+
+    // A non-empty header wins over the parameter.
+    let resp = client
+        .request(get(
+            format!("http://{addr}/tasks?A2A-Version=2.0"),
+            Some("1.0"),
+        ))
+        .await
+        .expect("send");
+    assert_eq!(resp.status(), 200, "the header takes precedence");
+}
+
 /// The v0.3-style slash path aliases are gone: only the spec's
 /// colon-suffixed custom methods are routed (reference-SDK parity).
 #[tokio::test]

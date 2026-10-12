@@ -12,6 +12,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`CardFetchOptions::with_signature_keys`** (client, feature `signing`;
+  spec §14: clients SHOULD verify signatures when present). Card discovery
+  with these options returns a signed card only if one of its signatures
+  verifies against the supplied JWK Set; a tampered card, or one with no
+  matching key, fails the fetch. An unsigned card is returned as it is.
+- **`dispatch::Hsts`** (server; spec §13.4). Wraps any `Dispatcher` and adds
+  `Strict-Transport-Security` to every response. Opt-in: the built-in
+  listener is plaintext, and the header only takes effect behind a TLS
+  terminator.
+- **`HttpPushSender::with_allowed_hosts`** (server; spec §13.2). An opt-in
+  allowlist of webhook hosts, enforced when a push config is created and
+  again before each delivery. `PushSender::allows_webhook_url` (default
+  `true`) lets a custom sender do the same.
+- **`CachingCardResolver::install_extended_card` / `clear_extended_card`**
+  (client; spec §13.3). Serves the extended card in place of the public one
+  for an authenticated session; `invalidate` clears both.
+- **`RequestContext::accepted_output_modes()`** (server). The proto says an
+  agent SHOULD use `SendMessageConfiguration.acceptedOutputModes` to tailor
+  its output, and the executor had no way to see it. Empty means no
+  preference.
+- **Per-caller task isolation** (server; spec §13.1):
+  `RequestHandlerBuilder::isolate_tasks_by_caller`. Tasks were scoped by
+  tenant only, so two callers authenticated as different identities in one
+  tenant, or in the default single-tenant deployment, could get, list,
+  cancel and subscribe to each other's tasks and register webhooks on them.
+  With this, the identity an authenticating interceptor sets selects the
+  records a request can reach: another caller's task is `TaskNotFound`, the
+  same answer as an unknown id, and `ListTasks` returns only the caller's
+  own. The tenant-aware stores key by `TenantContext::partition` (the tenant,
+  plus the caller when isolating); the halt switch, quotas, audit chains and
+  metrics still see the tenant. `build()` refuses the setting over stores
+  that do not partition by tenant and over a chain with no authenticating
+  interceptor. Off by default: sharing within a tenant is still the
+  behaviour unless a deployment asks for this. A tenant containing U+001F,
+  the separator in a partition key, is now refused.
+  `tests/caller_isolation.rs` covers every operation that names a task,
+  lists, webhooks, background completion, and SQLite; a no-op isolation
+  fails three of its tests, and a background spawn that drops the caller
+  fails the completion test. The caller is recorded in a per-request slot
+  once the interceptors have run, rather than by scoping the rest of each
+  method in a second future, which had pushed request futures to 29-34 KB.
+- **A requirement-level compliance ledger** (`docs/compliance/spec-ledger.json`,
+  rendered as `spec-ledger.md`). Every RFC 2119 statement in the A2A
+  specification (`main` at `12e9d2fb`, v1.0.1 plus editorial fixes and
+  §7.6.4) and every `REQUIRED` field in the proto has an entry: who it binds,
+  whether it is tested, partial or open, at what severity, and the code and
+  test that say so. 512 entries; 220 tested, 19 gaps, 67 partial, 46
+  implemented without a test, the rest the agent author's or optional.
+  `scripts/check_spec_ledger.py` (CI) fails when the vendored specification
+  carries a requirement with no entry, an entry points at text that is no
+  longer normative, a cited test no longer exists, or the page is stale.
+  The entries were made by seven read-only audit passes over the code; the
+  ones this release changed were re-verified, and the ledger says so.
 - **`profile::Profile::Auditable`** (server, `audit` feature; book, "Audit
   Trail"). `RequestHandlerBuilder::with_profile` turns on the audit trail and
   an approval gate in one call. `build()` refuses the configuration, naming
@@ -194,6 +247,183 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **Every push webhook is attempted** (server; spec §4.3.3). Deliveries ran
+  one after another and `push_delivery_budget` skipped whatever it did not
+  reach: at the defaults a slow webhook estate reached 6 of 100 configs per
+  event. Now every config is attempted, and the budget sets how many
+  deliveries of an event run at once (17 at the defaults), events in order
+  per webhook. `push_outcome::SKIPPED` is no longer reported.
+  `PushRetryPolicy::with_max_attempts(0)` is taken as 1.
+- **Breaking: an agent card the spec forbids is not published** (types,
+  server; spec §5.7). `AgentCard::validate` now refuses empty
+  `defaultInputModes`, `defaultOutputModes` or `skills`, and a skill with no
+  `tags`; `RequestHandlerBuilder::build` runs it (it checked only the
+  interface list), a `DynamicAgentCardHandler` answers `500` for an invalid
+  produced card, and `HotReloadAgentCardHandler::reload_from_json` refuses one
+  and keeps the current card. `AgentCard::new` now starts both mode lists at
+  `["text/plain"]`; its docs no longer claim the bare card is valid. The
+  `hello-agent`, `langfuse-agent` and `swarm` examples, the SDK README and
+  two book pages published skill-less cards and now declare a skill. See the
+  upgrading guide.
+- **`AgentCard::validate` refuses empty required strings** (types; proto
+  `REQUIRED`): an interface's `url`, `protocolBinding` or
+  `protocolVersion`; the provider's `organization` or `url`; a skill's
+  `id`, `name` or `description`; a signature's `protected` or `signature`.
+  Over gRPC an empty string is the absent value. Security-scheme fields are
+  not yet checked (the const `validate` cannot walk the scheme map).
+- **An executor's events are bound to its task** (server; proto
+  `REQUIRED` `taskId`/`contextId`). A status, artifact or task event written
+  with an empty task or context id gets the running task's; one naming
+  another task or context is refused with `InvalidParams` before it is
+  stored or sent. The server used to pass whatever the executor wrote.
+- **An empty task id is `InvalidParams`** (server; proto `REQUIRED`).
+  GetTask, CancelTask and SubscribeToTask answered `TaskNotFound` for an
+  empty or whitespace-only id (gRPC's absent string, or JSON `""`).
+- **An artifact with no parts is refused at the event queue** (server;
+  proto: an artifact must contain at least one part). Persistence dropped
+  it, but live subscribers had already been sent it. The executor's write
+  now returns `InvalidParams`. An appending chunk may still be empty.
+- **The WebSocket binding no longer routes `message/stream`** (server; spec
+  §5.1). It was the one v0.3 method name still served there, and every other
+  binding refuses it; it is now `-32601` like the rest. The binding has a
+  written specification at `book/src/bindings/websocket.md`.
+- **A stream ends at the terminal state** (server; spec §3.1.2, §3.1.6).
+  Streams ended when the executor returned; one that kept running, or kept
+  writing, after its terminal status held every subscriber's stream open.
+  Readers now end once the terminal event is delivered; events an executor
+  writes after it are not streamed.
+- **One JSON-RPC error shape on every surface** (server; spec §9.5, §12.4).
+  HTTP responses, SSE frames and WebSocket messages now build the error the
+  same way: the A2A code, and `data` as the typed-details array. On WebSocket
+  this is new: unary errors carried no `data`, mid-stream errors were all
+  rewritten to `-32000` (losing the code and the `streamLagged` marker), and
+  the over-capacity answer was `-32000` where the HTTP binding sends an
+  overload as `-32603`. Unary JSON-RPC and HTTP+JSON responses now keep an
+  error's own `data` as a detail. Invalid params answer with a
+  `google.rpc.BadRequest` naming the field on JSON-RPC (HTTP and WebSocket)
+  and gRPC, as HTTP+JSON already did.
+- **The extended agent card is cacheable** (server; spec §13.3). `GET
+  /extendedAgentCard` on `RestDispatcher` and the axum router sends
+  `Cache-Control: private, no-cache`, `Vary: Authorization` and an `ETag`, and
+  answers `304` to a matching `If-None-Match`.
+- **A request body of the wrong shape names the field** (server; spec §11.6).
+  The HTTP+JSON 400 now carries a `google.rpc.BadRequest` detail whose field
+  violation is the path, for example `message.parts[0].text`. Malformed JSON is
+  still a plain 400. New dependency: `serde_path_to_error` (MIT OR
+  Apache-2.0), already in the lockfile through axum.
+- **Empty push-config ids are InvalidParams** (server). Get, list and delete
+  refused an absent id at parse but passed an empty one (gRPC's absent
+  string) to the store, where list and delete answered success.
+- **A push config with an authentication scheme other than Bearer or Basic
+  is refused** (server; spec §4.3.3, §13.2). The sender can write only those
+  two, and any other scheme was stored and then delivered without
+  credentials. Creating one now answers InvalidParams naming the scheme.
+- **A direct `Message` reply names its context** (server; spec §3.4.1). When
+  the executor answers with a `Message` and leaves `contextId` empty, the
+  reply now carries the task's `contextId`, on the blocking path and on a
+  message-only stream. A `contextId` the executor set is kept.
+- **Executor status timestamps are UTC** (server; spec §5.6.1). A timestamp
+  with an offset other than `Z` is rewritten to the same instant in UTC, at
+  millisecond precision; one that does not parse as ISO 8601 makes the write
+  fail, as an oversized event does. Both used to go out unchanged on the
+  JSON bindings, while gRPC refused the malformed one at encoding.
+- **A push config with an empty or scheme-less `url` is refused** (server;
+  the proto marks `url` REQUIRED). The host check that refused it runs only
+  when private URLs are refused, so a sender that allows them stored an
+  empty URL and listed it back. `TaskPushNotificationConfig::validate` now
+  runs on every create, answering InvalidParams.
+- **SLIMRPC status codes follow the SLIMRPC specification's table**
+  (`a2a-protocol-slimrpc`; `spec/slimrpc_v1/slimrpc.md` §6.1, a MUST). The
+  binding claimed to copy the gRPC binding's mapping and matched neither:
+  `JSONParseError` is now `INTERNAL` (was `INVALID_ARGUMENT`),
+  `ContentTypeNotSupportedError` `UNIMPLEMENTED` (was `INVALID_ARGUMENT`), and
+  `VersionNotSupportedError`, which the table does not list, takes A2A §5.4's
+  `FAILED_PRECONDITION` (was `UNIMPLEMENTED`). A rate-limit refusal is
+  `RESOURCE_EXHAUSTED`, as an overload already was. The error type name in
+  the message, which is what this SDK's client reads, is unchanged.
+- **SLIMRPC metadata keys are case-insensitive** (`a2a-protocol-slimrpc`;
+  SLIMRPC spec §3). The server passed keys through in the case the peer sent,
+  and the handler looks them up in lowercase, so `Authorization`,
+  `A2A-Extensions` or `A2A-Version` from a peer that capitalised them were
+  ignored, the last one skipping the version check. Keys are lowercased now;
+  two that differ only in case are joined with a comma.
+- **A rate-limit refusal says it is temporary, and when to retry** (server,
+  types; spec §13.4, §3.3.2). `RateLimitInterceptor` refused with a plain
+  internal error, which reached callers as HTTP `500` / gRPC `INTERNAL`,
+  indistinguishable from a server fault. It now refuses with the new
+  `A2aError::rate_limited(message, retry_after)`, retrying when the window
+  ends: HTTP+JSON answers `429` with status `RESOURCE_EXHAUSTED` and a
+  `Retry-After` header, gRPC `RESOURCE_EXHAUSTED`, and every binding carries a
+  `google.rpc.RetryInfo` detail. The JSON-RPC code stays `-32603`, the code
+  §3.3.2 gives as its example for "rate limit exceeded". `A2aError::retry_after`
+  reads the delay; it is whole seconds, so `A2aError` stays 96 bytes.
+- **An overload's HTTP+JSON error body names `RESOURCE_EXHAUSTED`** (server).
+  It answered `503` with `"status":"INTERNAL"`, naming a permanent failure
+  under a status that says to retry; it now names the code the gRPC binding
+  sends for the same error.
+- **A mid-stream JSON-RPC error's `data` is an array of typed details**
+  (server; spec §9.5). The SSE error frame copied `A2aError::data` through
+  as an object, so the stream-lag signal went out as
+  `"data":{"streamLagged":N}`, where §9.5 requires an array whose objects
+  each carry `@type`. It now carries the same details as the REST frame:
+  `ErrorInfo` when the error has an A2A reason, then the data as a flat
+  `google.protobuf.Struct` detail
+  (`[{"@type":"type.googleapis.com/google.protobuf.Struct","streamLagged":N}]`).
+  `A2aError::is_stream_lagged` and `dropped_event_count` find the marker in
+  either shape, so clients of this release read old and new servers alike;
+  a client of an earlier release reading a server of this one does not see
+  the lag marker and gets an ordinary internal error, which still ends its
+  stream. Code that reads `data["streamLagged"]` by hand should switch to
+  the predicates.
+- **Listing or deleting push configs of an unknown task is `TaskNotFound`**
+  (server; spec §3.1.9, §3.1.10). Listing answered an empty list and
+  deleting succeeded, which a peer cannot tell from a known task with no
+  webhooks. REST answers 404, JSON-RPC -32001, gRPC `NOT_FOUND`, as the
+  reference SDK does. Deleting a config that is already gone on a task that
+  exists still succeeds: the operation is idempotent.
+- **A non-append artifact update for an id the task already holds replaces
+  that artifact** (server). The proto says an artifact id "must be unique
+  within a task", and the task stored a second artifact with the same id.
+  Both the blocking and background paths replace in place now, as the
+  reference SDK does.
+- **`ROLE_UNSPECIFIED` is refused with `InvalidParams`** (server). The JSON
+  bindings already refused a message without a role; over gRPC an absent
+  role decodes as `ROLE_UNSPECIFIED` and was accepted.
+
+- **Agent Card signatures canonicalize with protobuf field presence** (types,
+  `signing` feature; spec §8.4.1 rule 1). A field that holds its default
+  value is now left out of the signed bytes unless it is `REQUIRED` or
+  declared `optional`: an empty `capabilities.extensions`, an extension's
+  `required: false` or empty `description`, an interface's empty `tenant`,
+  empty `securityRequirements`. Before, they were signed, so a card carrying
+  one canonicalized differently from the specification's own worked example
+  and its signature failed in any implementation that follows §8.4.1, and the
+  reverse. A signature made by an earlier release over such a card no longer
+  verifies here; re-sign it. `itk/interop/card_signature_interop.py` signs
+  and verifies six cards both ways against the official Python SDK: four
+  agree, and the two that do not are the SDK's own departures from §8.4.1
+  (`_clean_empty` drops `REQUIRED` empty fields, and drops a security
+  requirement whose scope list is empty, so its signature does not cover
+  that requirement). Against the previous release the same run fails the
+  card with defaults, which is the case this fixes.
+- **Card signatures carry `typ: "JOSE"`** in the protected header (§8.4.2
+  SHOULD).
+- **A streaming send whose agent answers with a `Message` streams that one
+  `Message` and closes** (server; spec §3.1.2). Every streaming send used to
+  lead with a `Task` snapshot, so a direct-reply agent's stream was
+  `[Task, Message]`, which is neither of the two shapes §3.1.2 allows. The
+  executor's first event now decides: a `Message` makes it the message-only
+  stream, anything else (or no event) the task-lifecycle stream that begins
+  with the `Task`, as before. An agent that wants a task stream and
+  narrates first must emit a status update before its first `Message`.
+- **The axum adapter enforces `A2A-Version` and the request media type**,
+  as `RestDispatcher` does: an absent version (0.3) or an unsupported one is
+  `VersionNotSupportedError`, and a body in a media type other than
+  `application/json` or `application/a2a+json` is
+  `ContentTypeNotSupportedError` (§3.6.2, §11.1). Discovery, `/health` and
+  `/ready` stay versionless. A client that called the axum router without
+  the header must now send it.
+
 - **The executor's span is `invoke_agent {card name}`** (server, `tracing`
   feature), the OpenTelemetry GenAI conventions' in-process agent span, with
   `gen_ai.operation.name = invoke_agent`, the agent's name, description and
@@ -227,6 +457,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTTP+JSON ids with reserved characters are found** (server; spec
+  §11.3). This SDK's client percent-encodes path ids; `RestDispatcher`
+  matched them encoded, so a push config whose id held a space, `+`, `:` or
+  `/` was created and never found. It now decodes ids (and the tenant) after
+  routing, with `+` literal as in any URL path. The axum router decoded the
+  whole tail before splitting it, so an encoded `/` or `:` broke the route;
+  it now routes on the raw path, as `RestDispatcher` does.
+- **A peer's task without `contextId` parses** (types). The proto leaves it
+  optional and ProtoJSON omits an empty string; the whole response failed.
+- **`CachingCardResolver` does not keep a `no-store` card** (client; RFC 9111
+  §5.2.2.5), nor one without a validator to revalidate it by.
+- **The axum router's agent card is cacheable** (server; spec §8.6.1). It
+  served the JSON alone; it now sends the same `ETag`, `Last-Modified` and
+  `Cache-Control: public, max-age=3600` as the JSON-RPC and REST
+  dispatchers, and answers `304` to a matching `If-None-Match`.
+- **CI on this branch** (`ci.yml`, `tck.yml`, `pin-freshness.yml`):
+  `setup-go` asked for `1.26`, which resolved to the runner's cached 1.26.8,
+  while the Go peers' `go.mod` require 1.26.9, so the Go interop job failed
+  before building. It now asks for `1.26.9`. A redundant intra-doc link in
+  `RequestHandlerBuilder` failed `cargo doc -D warnings`, and the SLIMRPC
+  binding's own docs had two unresolved links and one redundant one (CI does
+  not build those).
+- **`GetExtendedAgentCard` enforces required extensions** (§3.3.4), as
+  every other operation already did.
+- **A card whose OAuth flow has no scopes parses** (types). ProtoJSON, which
+  every official SDK emits, leaves an empty map out even where the proto
+  marks it `REQUIRED`, and the five flows' `scopes` had no
+  `#[serde(default)]`, so such a card failed to parse as a whole.
+- **The `A2A-Version` request parameter is honoured** (server: JSON-RPC,
+  REST, WebSocket upgrade, axum). Spec §3.6.1 lets a client send
+  `?A2A-Version=1.0` instead of the header; only the header was read, so such
+  a client was taken to speak 0.3 and refused. A non-empty header still wins.
+- **REST's `ContentTypeNotSupportedError` carries its `ErrorInfo`** (§11.6).
+  It was answered as a bare 400 with no `details`.
+- **Card signatures always name their key.** `sign_card_es256` and
+  `sign_card_ed25519` take the key id as `&str`, so the protected header
+  always has the `kid` §8.4.2 requires.
+
 - **`verify_agent_card` accepts the key form its documentation named.** Its
   docs said `SubjectPublicKeyInfo` DER, but only the raw 65-byte point
   verified, so a key exported with `openssl pkey -pubout -outform DER` was
@@ -240,6 +508,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   persistence channel the background processor already used, so a slow
   collector makes the executor wait (bounded by the write timeout) instead
   of dropping events. Measured after: 600 of 600 in 60 of 60 sends.
+
+### Deprecated
+
+- **`signing::sign_agent_card` and `signing::sign_agent_card_ed25519`**,
+  whose `key_id: Option<&str>` let a signature omit `kid`, which §8.4.2
+  forbids. Use `sign_card_es256` and `sign_card_ed25519`: the same signature
+  with `key_id: &str`. They remain and still sign; removal follows the
+  deprecation window in `STABILITY.md` §3.
+- **`OAuthFlows::Implicit` and `OAuthFlows::Password`** (types), as the A2A
+  1.0 proto marks both fields `deprecated`. They remain, parse and serialize
+  as before (spec §1.4 keeps deprecated definitions until the next major
+  version); code that names them now gets a deprecation warning.
 
 ### Performance
 
@@ -314,6 +594,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Code-scanning findings on `main` addressed** (OSV-Scanner, Scorecard,
+  CodeQL; reproduced locally with the same tools before and after).
+  - Test-peer dependencies: the Python peers floor `anyio>=4.14.2`
+    (CVE-2026-63374, CVE-2026-64847) and `h11>=0.16.0` (CVE-2025-43859);
+    the JavaScript echo agent moves `uuid` to `^11.1.1` (GHSA-w5hq-g745-h8pq)
+    and gains a lockfile. The Java peer manages the Netty and Jackson
+    artifacts the advisories name directly as well as through BOMs (Maven
+    already resolved the fixed versions; OSV's source mode did not). A
+    recursive `osv-scanner` over the tree finds no advisories.
+  - Every Docker base image is pinned by digest; the Python and JavaScript
+    agent images install from hash-locked files (`requirements.lock`,
+    `npm ci`); CI's `pip install` steps install from hash-locked files under
+    `.github/requirements/`. Scorecard Pinned-Dependencies: 23 findings to 0.
+  - `osv.yml`'s `rust` job runs the scanner inline so Scorecard sees its SARIF
+    upload: Token-Permissions 7 findings to 4 (the four remaining
+    `contents: write` grants create releases and push the benchmark
+    dashboard and the nightly prerelease, which need them).
+  - CodeQL `rust/cleartext-logging`: four `jwt.rs` test assertions no longer
+    format secret-derived values into their failure messages.
+  - CodeQL Python code quality: 45 findings in the gate and probe scripts
+    fixed (unclosed files, silent `except` blocks, unused imports).
+
 - **Stored secrets are wiped on drop** (`zeroize`, already in the
   dependency graph through rustls, so no new crate). This covers the HS256
   secret held by `JwtValidator`, including one refused as too short, and the
@@ -370,6 +672,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Tests for four spec requirements that were implemented but untested**:
+  §3.1.4 `includeArtifacts` omission (`list_tasks_artifacts.rs`), §3.3.4
+  streaming refused without the capability on the JSON-RPC wire and §3.5.2
+  one closed stream leaving another streaming (`streaming_contract.rs`). Each
+  but the last is shown to fail with its check removed; the §3.5.2 test has
+  no single-point fault to inject and guards against adding one.
+- **The vendored proto is A2A v1.0.1's, and CI checks that it stays the
+  latest release's.** All six copies were v1.0.0's text; v1.0.1 changed only
+  comments, the normative `tenant` rules among them, and nothing compared the
+  copies with upstream. `proto/UPSTREAM` pins the release (tag, commit,
+  SHA-256); `check_proto_copies.sh` holds every copy to that hash offline,
+  and `check_a2a_proto_upstream.sh` (`official-tck.yml`) fails when a newer
+  release changes the file.
+- **Workflow tokens are least-privilege at the top level.** `benchmarks.yml`
+  and `itk-nightly.yml` granted `contents: write` to every job; only the job
+  that pushes or uploads has it now. OpenSSF Scorecard's first run on `main`
+  (2026-10-10, 5.8/10) scored Token-Permissions 0 on these two grants.
+- **`osv.yml` scans `verification/loom-halt/Cargo.lock` on pull requests
+  too**, now that `main` has it.
 - **Proofs, not only tests** (`verification.yml`).
   - Kani proves the task state machine whole, in
     `crates/a2a-protocol-types/src/kani_proofs.rs`:

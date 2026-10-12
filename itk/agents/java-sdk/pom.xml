@@ -26,11 +26,60 @@
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <a2a.sdk.version>1.3.0.Final</a2a.sdk.version>
-    <quarkus.platform.version>3.35.2</quarkus.platform.version>
+    <quarkus.platform.version>3.37.0</quarkus.platform.version>
+    <!-- Ahead of the Quarkus BOM so they win: 3.37.0 still resolves
+         netty 4.1.135 and jackson-core 2.21.4, which carry advisories
+         osv.yml reports (2026-10-10). Drop each when the platform reaches it. -->
+    <netty.version>4.1.137.Final</netty.version>
+    <jackson.version>2.21.7</jackson.version>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <!-- The artifacts the advisories name, managed directly as well as
+           through the BOMs below. Maven already resolves these versions from
+           the BOM order (`mvn dependency:tree`, 2026-10-12), but OSV-Scanner's
+           source mode, which Scorecard's Vulnerabilities check uses, let the
+           Quarkus BOM win and reported the advisories anyway. -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-codec-http</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-codec-http2</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-codec-dns</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-handler</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-core</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-bom</artifactId>
+        <version>${netty.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson</groupId>
+        <artifactId>jackson-bom</artifactId>
+        <version>${jackson.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>io.quarkus</groupId>
         <artifactId>quarkus-bom</artifactId>

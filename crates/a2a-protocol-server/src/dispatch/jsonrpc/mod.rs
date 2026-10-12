@@ -183,13 +183,11 @@ impl JsonRpcDispatcher {
         // Validate the A2A-Version header per spec §3.6.2: an absent or
         // empty value is interpreted as protocol 0.3 and rejected under the
         // strict default (reference-SDK parity); any 1.x is accepted.
-        let version_value = req
-            .headers()
-            .get(a2a_protocol_types::A2A_VERSION_HEADER)
-            .and_then(|v| v.to_str().ok());
-        if let Err(err) =
-            super::validate_version_header(version_value, self.config.require_version_header)
-        {
+        let version_value = super::requested_version(req.headers(), req.uri());
+        if let Err(err) = super::validate_version_header(
+            version_value.as_deref(),
+            self.config.require_version_header,
+        ) {
             return self.refuse(started, &ServerError::Protocol(err));
         }
 

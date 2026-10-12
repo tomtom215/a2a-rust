@@ -17,7 +17,27 @@ use crate::error::{ServerError, ServerResult};
 use super::RequestHandler;
 use super::helpers::build_call_context;
 
+/// `InvalidParams` when a field the proto marks REQUIRED is empty. On gRPC
+/// an absent string arrives as `""`, and JSON can send `""` outright; both
+/// used to reach the store, where an empty id on delete or list matched
+/// nothing and answered success.
+fn require_field(name: &str, value: &str) -> ServerResult<()> {
+    if value.is_empty() {
+        return Err(ServerError::InvalidParams(format!("{name} is required")));
+    }
+    Ok(())
+}
+
 impl RequestHandler {
+    /// `TaskNotFound` unless `task_id` names a task this request can reach.
+    async fn require_task(&self, task_id: &str) -> ServerResult<()> {
+        let id = TaskId::new(task_id);
+        match self.task_store.get(&id).await? {
+            Some(_) => Ok(()),
+            None => Err(ServerError::TaskNotFound(id)),
+        }
+    }
+
     /// Validates a push notification config and writes it to the store.
     ///
     /// Shared by `CreateTaskPushNotificationConfig` and by the inline
@@ -68,6 +88,29 @@ impl RequestHandler {
         // privately is stored but never delivered to.
         if !sender.allows_private_urls() {
             crate::push::sender::validate_webhook_url(&config.url)?;
+        }
+        if !sender.allows_webhook_url(&config.url) {
+            return Err(ServerError::InvalidParams(
+                "push notification URL's host is not in the server's webhook allowlist".into(),
+            ));
+        }
+        // The proto marks `url` REQUIRED. The host check above runs only
+        // when private URLs are refused, so with them allowed an empty or
+        // scheme-less URL was stored, and listed back, until 2026-10-10.
+        config.validate().map_err(ServerError::InvalidParams)?;
+        // §4.3.3 / §13.2: deliveries MUST carry the credentials the config
+        // specifies. The sender can write only `Bearer` and `Basic` (a2a-go
+        // v2.5.0 the same); any other scheme used to be stored and then
+        // delivered without credentials, with only a log line to say so.
+        if let Some(auth) = &config.authentication
+            && !auth.scheme.eq_ignore_ascii_case("bearer")
+            && !auth.scheme.eq_ignore_ascii_case("basic")
+        {
+            return Err(ServerError::InvalidParams(format!(
+                "push notification authentication scheme {:?} is not supported; \
+                 this server can send Bearer or Basic",
+                auth.scheme
+            )));
         }
 
         // Enforce the per-task config cap here so it holds for EVERY store
@@ -157,36 +200,37 @@ impl RequestHandler {
                 config.tenant.as_deref(),
             )
             .await?;
-        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            // taskId is optional on the wire (a config nested in
-            // SendMessageConfiguration omits it), but a standalone create has
-            // no task context to infer it from — reject explicitly instead of
-            // storing an unroutable config.
-            if config.task_id.as_deref().unwrap_or("").is_empty() {
-                return Err(ServerError::InvalidParams(
-                    "taskId is required for CreateTaskPushNotificationConfig".into(),
-                ));
-            }
+        let result: ServerResult<_> =
+            crate::store::tenant::TenantContext::scope_request(tenant, async {
+                // taskId is optional on the wire (a config nested in
+                // SendMessageConfiguration omits it), but a standalone create has
+                // no task context to infer it from — reject explicitly instead of
+                // storing an unroutable config.
+                if config.task_id.as_deref().unwrap_or("").is_empty() {
+                    return Err(ServerError::InvalidParams(
+                        "taskId is required for CreateTaskPushNotificationConfig".into(),
+                    ));
+                }
 
-            let call_ctx = build_call_context(
-                "CreateTaskPushNotificationConfig",
-                headers,
-                self.inbound_trace_policy,
-            );
-            let mut call = self.interceptors.begin(&call_ctx);
-            let result = async {
-                call.before().await?;
-                // SPEC §3.3.4: reject clients that do not declare support for
-                // extensions the agent card marks required.
-                self.ensure_required_extensions(&call_ctx)?;
+                let call_ctx = build_call_context(
+                    "CreateTaskPushNotificationConfig",
+                    headers,
+                    self.inbound_trace_policy,
+                );
+                let mut call = self.interceptors.begin(&call_ctx);
+                let result = async {
+                    self.admit(&mut call, &call_ctx).await?;
+                    // SPEC §3.3.4: reject clients that do not declare support for
+                    // extensions the agent card marks required.
+                    self.ensure_required_extensions(&call_ctx)?;
 
-                let result = self.validate_and_store_push_config(config).await?;
-                Ok(result)
-            }
+                    let result = self.validate_and_store_push_config(config).await?;
+                    Ok(result)
+                }
+                .await;
+                call.finish(result).await
+            })
             .await;
-            call.finish(result).await
-        })
-        .await;
 
         let elapsed = start.elapsed();
         match &result {
@@ -229,35 +273,38 @@ impl RequestHandler {
                 params.tenant.as_deref(),
             )
             .await?;
-        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            // SPEC §3.3.4: reject when the agent card does not advertise push support.
-            self.ensure_push_supported()?;
-            let call_ctx = build_call_context(
-                "GetTaskPushNotificationConfig",
-                headers,
-                self.inbound_trace_policy,
-            );
-            let mut call = self.interceptors.begin(&call_ctx);
-            let result = async {
-                call.before().await?;
-                // SPEC §3.3.4: reject clients that do not declare support for
-                // extensions the agent card marks required.
-                self.ensure_required_extensions(&call_ctx)?;
+        let result: ServerResult<_> =
+            crate::store::tenant::TenantContext::scope_request(tenant, async {
+                // SPEC §3.3.4: reject when the agent card does not advertise push support.
+                self.ensure_push_supported()?;
+                let call_ctx = build_call_context(
+                    "GetTaskPushNotificationConfig",
+                    headers,
+                    self.inbound_trace_policy,
+                );
+                let mut call = self.interceptors.begin(&call_ctx);
+                let result = async {
+                    self.admit(&mut call, &call_ctx).await?;
+                    // SPEC §3.3.4: reject clients that do not declare support for
+                    // extensions the agent card marks required.
+                    self.ensure_required_extensions(&call_ctx)?;
 
-                // SPEC §3.1.8: a missing push notification configuration MUST be
-                // reported as TaskNotFoundError, not InvalidParams.
-                let config = self
-                    .push_config_store
-                    .get(&params.task_id, &params.id)
-                    .await?
-                    .ok_or_else(|| ServerError::TaskNotFound(TaskId::new(&params.task_id)))?;
+                    require_field("taskId", &params.task_id)?;
+                    require_field("id", &params.id)?;
+                    // SPEC §3.1.8: a missing push notification configuration MUST be
+                    // reported as TaskNotFoundError, not InvalidParams.
+                    let config = self
+                        .push_config_store
+                        .get(&params.task_id, &params.id)
+                        .await?
+                        .ok_or_else(|| ServerError::TaskNotFound(TaskId::new(&params.task_id)))?;
 
-                Ok(config)
-            }
+                    Ok(config)
+                }
+                .await;
+                call.finish(result).await
+            })
             .await;
-            call.finish(result).await
-        })
-        .await;
 
         let elapsed = start.elapsed();
         match &result {
@@ -296,7 +343,7 @@ impl RequestHandler {
             .resolve_tenant("ListTaskPushNotificationConfigs", headers, tenant)
             .await?;
         let result: ServerResult<_> =
-            crate::store::tenant::TenantContext::scope(tenant_owned, async {
+            crate::store::tenant::TenantContext::scope_request(tenant_owned, async {
                 // SPEC §3.3.4: reject when the agent card does not advertise push support.
                 self.ensure_push_supported()?;
                 let call_ctx = build_call_context(
@@ -306,10 +353,16 @@ impl RequestHandler {
                 );
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
-                    call.before().await?;
+                    self.admit(&mut call, &call_ctx).await?;
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
+                    // SPEC §3.1.9: TaskNotFoundError when "the task ID does not
+                    // exist or is not accessible". An unknown task answered an
+                    // empty list until 2026-10-10, which a peer cannot tell
+                    // from a known task with no webhooks.
+                    require_field("taskId", task_id)?;
+                    self.require_task(task_id).await?;
                     let configs = self.push_config_store.list(task_id).await?;
                     Ok(configs)
                 }
@@ -357,29 +410,36 @@ impl RequestHandler {
                 params.tenant.as_deref(),
             )
             .await?;
-        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            // SPEC §3.3.4: reject when the agent card does not advertise push support.
-            self.ensure_push_supported()?;
-            let call_ctx = build_call_context(
-                "DeleteTaskPushNotificationConfig",
-                headers,
-                self.inbound_trace_policy,
-            );
-            let mut call = self.interceptors.begin(&call_ctx);
-            let result = async {
-                call.before().await?;
-                // SPEC §3.3.4: reject clients that do not declare support for
-                // extensions the agent card marks required.
-                self.ensure_required_extensions(&call_ctx)?;
-                self.push_config_store
-                    .delete(&params.task_id, &params.id)
-                    .await?;
-                Ok(())
-            }
+        let result: ServerResult<_> =
+            crate::store::tenant::TenantContext::scope_request(tenant, async {
+                // SPEC §3.3.4: reject when the agent card does not advertise push support.
+                self.ensure_push_supported()?;
+                let call_ctx = build_call_context(
+                    "DeleteTaskPushNotificationConfig",
+                    headers,
+                    self.inbound_trace_policy,
+                );
+                let mut call = self.interceptors.begin(&call_ctx);
+                let result = async {
+                    self.admit(&mut call, &call_ctx).await?;
+                    // SPEC §3.3.4: reject clients that do not declare support for
+                    // extensions the agent card marks required.
+                    self.ensure_required_extensions(&call_ctx)?;
+                    // SPEC §3.1.10: TaskNotFoundError when the task does not
+                    // exist; deleting a config that is already gone still
+                    // succeeds, since the operation MUST be idempotent.
+                    require_field("taskId", &params.task_id)?;
+                    require_field("id", &params.id)?;
+                    self.require_task(&params.task_id).await?;
+                    self.push_config_store
+                        .delete(&params.task_id, &params.id)
+                        .await?;
+                    Ok(())
+                }
+                .await;
+                call.finish(result).await
+            })
             .await;
-            call.finish(result).await
-        })
-        .await;
 
         let elapsed = start.elapsed();
         match &result {
@@ -888,9 +948,12 @@ mod tests {
                 protocol_version: "1.0.0".into(),
                 tenant: None,
             }],
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![
+                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                    .with_tags(["test"]),
+            ],
             capabilities: caps,
             provider: None,
             icon_url: None,
@@ -899,6 +962,137 @@ mod tests {
             security_requirements: None,
             signatures: None,
         }
+    }
+
+    /// The proto marks `url` REQUIRED. With private URLs allowed the host
+    /// check is skipped, and an empty or scheme-less URL must still be
+    /// refused rather than stored.
+    #[tokio::test]
+    async fn set_push_config_rejects_an_empty_or_schemeless_url_when_private_urls_are_allowed() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        for url in ["", "example.com/hook"] {
+            let mut config = make_push_config("t-1");
+            config.url = url.to_owned();
+            let result = handler.on_set_push_config(config, None).await;
+            assert!(
+                matches!(result, Err(crate::error::ServerError::InvalidParams(_))),
+                "url {url:?}: expected InvalidParams, got {result:?}"
+            );
+        }
+        let stored = handler
+            .on_list_push_configs("t-1", None, None)
+            .await
+            .expect("list");
+        assert!(stored.is_empty(), "nothing may be stored: {stored:?}");
+    }
+
+    /// §4.3.3: a delivery MUST carry the configured credentials, so a scheme
+    /// the sender cannot write is refused at creation, not stored and then
+    /// sent without credentials. Bearer and Basic, in any case, are kept.
+    #[tokio::test]
+    async fn set_push_config_refuses_an_auth_scheme_it_cannot_send() {
+        use a2a_protocol_types::push::AuthenticationInfo;
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        let with_scheme = |scheme: &str| {
+            let mut config = make_push_config("t-1");
+            config.authentication = Some(AuthenticationInfo {
+                scheme: scheme.to_owned(),
+                credentials: Some("secret".to_owned()),
+            });
+            config
+        };
+        let refused = handler
+            .on_set_push_config(with_scheme("Digest"), None)
+            .await;
+        assert!(
+            matches!(&refused, Err(crate::error::ServerError::InvalidParams(m)) if m.contains("Digest")),
+            "{refused:?}"
+        );
+        // The proto marks `scheme` REQUIRED; gRPC delivers an absent one as "".
+        let refused = handler.on_set_push_config(with_scheme(""), None).await;
+        assert!(
+            matches!(&refused, Err(crate::error::ServerError::InvalidParams(_))),
+            "{refused:?}"
+        );
+        for scheme in ["Bearer", "basic"] {
+            handler
+                .on_set_push_config(with_scheme(scheme), None)
+                .await
+                .unwrap_or_else(|e| panic!("{scheme} must be accepted: {e}"));
+        }
+    }
+
+    /// The proto marks `taskId` and `id` REQUIRED on get, list and delete.
+    /// gRPC delivers an absent string as `""`; it is `InvalidParams`, not a
+    /// lookup that finds nothing (list, delete) or `TaskNotFound`.
+    #[tokio::test]
+    async fn empty_required_ids_are_invalid_params() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        let get = |task_id: &str, id: &str| GetPushConfigParams {
+            tenant: None,
+            task_id: task_id.to_owned(),
+            id: id.to_owned(),
+        };
+        let del = |task_id: &str, id: &str| DeletePushConfigParams {
+            tenant: None,
+            task_id: task_id.to_owned(),
+            id: id.to_owned(),
+        };
+        for (task_id, id) in [("", "cfg-1"), ("t-1", "")] {
+            let r = handler.on_get_push_config(get(task_id, id), None).await;
+            assert!(
+                matches!(r, Err(crate::error::ServerError::InvalidParams(_))),
+                "get {task_id:?}/{id:?}: {r:?}"
+            );
+            let r = handler.on_delete_push_config(del(task_id, id), None).await;
+            assert!(
+                matches!(r, Err(crate::error::ServerError::InvalidParams(_))),
+                "delete {task_id:?}/{id:?}: {r:?}"
+            );
+        }
+        let r = handler.on_list_push_configs("", None, None).await;
+        assert!(
+            matches!(r, Err(crate::error::ServerError::InvalidParams(_))),
+            "list: {r:?}"
+        );
+    }
+
+    /// §13.2: a config naming a host outside the sender's allowlist is
+    /// refused at creation, not stored and then refused at every delivery.
+    #[tokio::test]
+    async fn set_push_config_refuses_a_host_outside_the_allowlist() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(
+                crate::push::HttpPushSender::new().with_allowed_hosts(["hooks.example.com"]),
+            )
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        let mut config = make_push_config("t-1");
+        config.url = "https://other.example.com/hook".into();
+        let refused = handler.on_set_push_config(config, None).await;
+        assert!(
+            matches!(&refused, Err(crate::error::ServerError::InvalidParams(m)) if m.contains("allowlist")),
+            "{refused:?}"
+        );
+        let mut config = make_push_config("t-1");
+        config.url = "https://hooks.example.com/hook".into();
+        handler
+            .on_set_push_config(config, None)
+            .await
+            .expect("a listed host is accepted");
     }
 
     /// SPEC §3.1.7: creating a push config for a task that does not exist must
@@ -1025,23 +1219,54 @@ mod tests {
 
     // ── on_list_push_configs ─────────────────────────────────────────────────
 
+    /// §3.1.9: an unknown task is `TaskNotFound`, not an empty list, which
+    /// a peer could not tell from a known task with no webhooks.
     #[tokio::test]
-    async fn list_push_configs_empty_returns_empty_vec() {
+    async fn list_push_configs_for_an_unknown_task_is_task_not_found() {
         let handler = make_handler();
-        let result = handler
-            .on_list_push_configs("no-task", None, None)
-            .await
-            .expect("list should succeed on empty store");
+        let result = handler.on_list_push_configs("no-task", None, None).await;
         assert!(
-            result.is_empty(),
-            "listing configs for an unknown task should return an empty vec"
+            matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
+            "expected TaskNotFound, got: {result:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn list_push_configs_of_a_task_without_any_is_empty() {
+        let handler = make_handler();
+        save_task(&handler, "t-empty").await;
+        let result = handler
+            .on_list_push_configs("t-empty", None, None)
+            .await
+            .expect("a known task lists");
+        assert!(result.is_empty(), "{result:?}");
     }
 
     // ── on_delete_push_config ────────────────────────────────────────────────
 
+    /// §3.1.10: deleting is idempotent, so a config that is already gone on
+    /// a task that exists is still a success.
     #[tokio::test]
     async fn delete_push_config_nonexistent_returns_ok() {
+        use a2a_protocol_types::params::DeletePushConfigParams;
+
+        let handler = make_handler();
+        save_task(&handler, "t-del").await;
+        let params = DeletePushConfigParams {
+            tenant: None,
+            task_id: "t-del".to_owned(),
+            id: "no-id".to_owned(),
+        };
+        let result = handler.on_delete_push_config(params, None).await;
+        assert!(
+            result.is_ok(),
+            "deleting a non-existent push config should return Ok, got: {result:?}"
+        );
+    }
+
+    /// §3.1.10: the task itself must exist.
+    #[tokio::test]
+    async fn delete_push_config_of_an_unknown_task_is_task_not_found() {
         use a2a_protocol_types::params::DeletePushConfigParams;
 
         let handler = make_handler();
@@ -1050,12 +1275,10 @@ mod tests {
             task_id: "no-task".to_owned(),
             id: "no-id".to_owned(),
         };
-        // The in-memory store's delete is idempotent: deleting a non-existent
-        // config returns Ok(()) rather than an error.
         let result = handler.on_delete_push_config(params, None).await;
         assert!(
-            result.is_ok(),
-            "deleting a non-existent push config should return Ok, got: {result:?}"
+            matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
+            "expected TaskNotFound, got: {result:?}"
         );
     }
 

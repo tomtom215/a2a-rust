@@ -16,8 +16,10 @@ mod response;
 
 // The axum adapter answers errors through these, so the two HTTP+JSON
 // dispatchers send one error shape (audit N37).
-pub(crate) use error_response::{error_json_response, server_error_to_response};
-pub(crate) use response::json_ok_response;
+#[cfg(feature = "axum")]
+pub(crate) use error_response::params_from_slice;
+pub(crate) use error_response::{error_json_response, params_from_value, server_error_to_response};
+pub(crate) use response::{extended_card_response, json_ok_response};
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -35,7 +37,7 @@ use crate::streaming::build_sse_response;
 use error_response::not_found_response;
 use query::{
     contains_path_traversal, parse_list_tasks_query, parse_query_param, parse_query_param_u32,
-    percent_decode, strip_tenant_prefix,
+    percent_decode_path, strip_tenant_prefix,
 };
 use response::{extract_headers, health_response, inject_field_if_missing, read_body_limited};
 
@@ -145,26 +147,13 @@ impl RestDispatcher {
             return resp;
         }
 
-        // Validate Content-Type for POST/PUT/PATCH requests.
-        if (method == "POST" || method == "PUT" || method == "PATCH")
-            && let Some(ct) = req.headers().get("content-type")
-        {
-            let ct_str = ct.to_str().unwrap_or("");
-            if !ct_str.starts_with("application/json")
-                && !ct_str.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE)
-            {
-                // 400, not 415. `ContentTypeNotSupportedError` is the
-                // A2A error this is, and §5.4 assigns it 400 — even
-                // though 415 is the more descriptive HTTP status, and
-                // this answered 415 until the table was re-read on
-                // 2026-08-30.
-                return error_json_response(
-                    a2a_protocol_types::ErrorCode::ContentTypeNotSupported.http_status(),
-                    &format!(
-                        "unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"
-                    ),
-                );
-            }
+        // Validate Content-Type for POST/PUT/PATCH requests. 400, not 415:
+        // `ContentTypeNotSupportedError` is the A2A error this is, §5.4
+        // assigns it 400, and it carries its `ErrorInfo` like every other
+        // A2A error (§11.6). It went out as a bare 400 with no details until
+        // 2026-10-10.
+        if let Err(err) = super::check_request_content_type(req.method(), req.headers()) {
+            return server_error_to_response(&crate::error::ServerError::Protocol(err));
         }
 
         // Reject path traversal attempts (check both raw and percent-decoded forms).
@@ -187,23 +176,23 @@ impl RestDispatcher {
         // default (reference-SDK parity); any 1.x is accepted. Rejections
         // produce the real VersionNotSupportedError (with its ErrorInfo
         // detail), not an anonymous 400.
-        let version_value = req
-            .headers()
-            .get(a2a_protocol_types::A2A_VERSION_HEADER)
-            .and_then(|v| v.to_str().ok());
-        if let Err(err) =
-            super::validate_version_header(version_value, self.config.require_version_header)
-        {
+        let version_value = super::requested_version(req.headers(), req.uri());
+        if let Err(err) = super::validate_version_header(
+            version_value.as_deref(),
+            self.config.require_version_header,
+        ) {
             return server_error_to_response(&crate::error::ServerError::Protocol(err));
         }
 
         // Strip the optional tenant prefix — `/{tenant}/...` from the proto's
         // `additional_bindings`, or this SDK's explicit `/tenants/{tenant}/`.
         // The segment is a path variable, so a client that percent-encodes a
-        // reserved character in it (as ours does) is decoded here; task and
-        // config ids in the path are matched raw, as before.
+        // reserved character in it (as ours does) is decoded here, as task
+        // and config ids are once routed. They were matched raw until
+        // 2026-10-12, so an id this SDK's client encoded (a space, `:`, `/`)
+        // was looked up encoded and not found. `+` is a literal in a path.
         let (tenant, rest_path) = strip_tenant_prefix(&path);
-        let tenant = tenant.map(percent_decode);
+        let tenant = tenant.map(percent_decode_path);
         let tenant = tenant.as_deref();
 
         // Extract HTTP headers BEFORE consuming the request body.
@@ -561,9 +550,9 @@ impl RestDispatcher {
             Err(resp) => return resp,
         };
         let params: a2a_protocol_types::params::MessageSendParams =
-            match serde_json::from_value(body_value) {
+            match params_from_value(body_value) {
                 Ok(p) => p,
-                Err(e) => return error_json_response(400, &e.to_string()),
+                Err(resp) => return resp,
             };
         match self
             .handler
@@ -588,6 +577,8 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let id = percent_decode_path(id);
+        let id = id.as_str();
         let history_length = parse_query_param_u32(query, "historyLength");
         let params = a2a_protocol_types::params::TaskQueryParams {
             tenant: tenant.map(str::to_owned),
@@ -620,6 +611,8 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let id = percent_decode_path(id);
+        let id = id.as_str();
         // `CancelTaskRequest` is `body: "*"`: the body may carry `metadata`,
         // and — under the primary binding — the `tenant`. Until 2026-09-09
         // the body was never read, so both were dropped on this binding.
@@ -631,9 +624,9 @@ impl RestDispatcher {
             Err(resp) => return resp,
         };
         let params: a2a_protocol_types::params::CancelTaskParams =
-            match serde_json::from_value(body_value) {
+            match params_from_value(body_value) {
                 Ok(p) => p,
-                Err(e) => return error_json_response(400, &e.to_string()),
+                Err(resp) => return resp,
             };
         match self.handler.on_cancel_task(params, Some(headers)).await {
             Ok(task) => json_ok_response(&task),
@@ -648,6 +641,8 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let id = percent_decode_path(id);
+        let id = id.as_str();
         // A POST body, when present, may name the tenant (`SubscribeToTask
         // Request` under the primary binding); a GET has none and its
         // `?tenant=` was read by the caller.
@@ -658,11 +653,10 @@ impl RestDispatcher {
             Ok(v) => v,
             Err(resp) => return resp,
         };
-        let params: a2a_protocol_types::params::TaskIdParams =
-            match serde_json::from_value(body_value) {
-                Ok(p) => p,
-                Err(e) => return error_json_response(400, &e.to_string()),
-            };
+        let params: a2a_protocol_types::params::TaskIdParams = match params_from_value(body_value) {
+            Ok(p) => p,
+            Err(resp) => return resp,
+        };
         match self.handler.on_resubscribe(params, Some(headers)).await {
             Ok(reader) => build_sse_response(
                 reader,
@@ -681,6 +675,8 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let task_id = percent_decode_path(task_id);
+        let task_id = task_id.as_str();
         // The REST client may strip `taskId` from the body (it's already in the
         // URL path), and the tenant may only be in the path prefix. Inject
         // both before deserializing so the required field is always present
@@ -693,9 +689,9 @@ impl RestDispatcher {
             Err(resp) => return resp,
         };
         let config: a2a_protocol_types::push::TaskPushNotificationConfig =
-            match serde_json::from_value(body_value) {
+            match params_from_value(body_value) {
                 Ok(c) => c,
-                Err(e) => return error_json_response(400, &e.to_string()),
+                Err(resp) => return resp,
             };
         match self.handler.on_set_push_config(config, Some(headers)).await {
             Ok(result) => json_ok_response(&result),
@@ -710,6 +706,10 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let task_id = percent_decode_path(task_id);
+        let task_id = task_id.as_str();
+        let config_id = percent_decode_path(config_id);
+        let config_id = config_id.as_str();
         let params = a2a_protocol_types::params::GetPushConfigParams {
             tenant: tenant.map(str::to_owned),
             task_id: task_id.to_owned(),
@@ -727,6 +727,8 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let task_id = percent_decode_path(task_id);
+        let task_id = task_id.as_str();
         match self
             .handler
             .on_list_push_configs(task_id, tenant, Some(headers))
@@ -750,6 +752,10 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let task_id = percent_decode_path(task_id);
+        let task_id = task_id.as_str();
+        let config_id = percent_decode_path(config_id);
+        let config_id = config_id.as_str();
         let params = a2a_protocol_types::params::DeletePushConfigParams {
             tenant: tenant.map(str::to_owned),
             task_id: task_id.to_owned(),
@@ -770,7 +776,7 @@ impl RestDispatcher {
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         match self.handler.on_get_extended_agent_card(Some(headers)).await {
-            Ok(card) => json_ok_response(&card),
+            Ok(card) => extended_card_response(&card, headers),
             Err(e) => server_error_to_response(&e),
         }
     }

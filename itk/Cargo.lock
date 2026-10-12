@@ -31,6 +31,7 @@ version = "0.14.1"
 dependencies = [
  "a2a-protocol-types",
  "bytes",
+ "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -40,6 +41,7 @@ dependencies = [
  "protoc-bin-vendored",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -274,6 +276,7 @@ checksum = "a77a90a256fce34da66415271e30f94ee91c57b04b8a2c042d9cf3220179deaa"
 dependencies = [
  "futures-core",
  "futures-macro",
+ "futures-sink",
  "futures-task",
  "pin-project-lite",
  "slab",
@@ -863,6 +866,17 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_path_to_error"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10a9ff822e371bb5403e391ecd83e182e0e77ba7f6fe0160b795797109d1b457"
+dependencies = [
+ "itoa",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]

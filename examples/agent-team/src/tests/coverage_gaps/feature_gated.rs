@@ -18,7 +18,7 @@ use ring::signature::{self, EcdsaKeyPair, KeyPair};
 /// real agent card, verify the signature, then confirm tamper detection works.
 #[cfg(feature = "signing")]
 pub async fn test_agent_card_signing(_ctx: &TestContext) -> TestResult {
-    use a2a_protocol_types::signing::{sign_agent_card, verify_agent_card};
+    use a2a_protocol_types::signing::{sign_card_es256, verify_agent_card};
     use ring::rand::SystemRandom;
 
     let start = Instant::now();
@@ -41,7 +41,7 @@ pub async fn test_agent_card_signing(_ctx: &TestContext) -> TestResult {
     let card = crate::cards::code_analyzer_card("https://example.com/agent");
 
     // 3. Sign the card.
-    let sig = match sign_agent_card(&card, pkcs8.as_ref(), Some("e2e-test-key")) {
+    let sig = match sign_card_es256(&card, pkcs8.as_ref(), "e2e-test-key") {
         Ok(s) => s,
         Err(e) => {
             return TestResult::fail(
@@ -135,9 +135,12 @@ pub async fn test_otel_metrics_integration(ctx: &TestContext) -> TestResult {
         capabilities: AgentCapabilities::none(),
         security_schemes: None,
         security_requirements: None,
-        default_input_modes: vec![],
-        default_output_modes: vec![],
-        skills: vec![],
+        default_input_modes: vec!["text/plain".into()],
+        default_output_modes: vec!["text/plain".into()],
+        skills: vec![
+            a2a_protocol_types::AgentSkill::new("analyze", "Analyze", "Analyzes code")
+                .with_tags(["code"]),
+        ],
         signatures: None,
     };
 

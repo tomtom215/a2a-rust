@@ -185,8 +185,14 @@ it adds no framing of its own.
 
 ## Errors
 
-Status codes follow A2A §5.4, identical to the gRPC binding's mapping —
-`RpcCode` is the gRPC code set.
+Status codes follow the SLIMRPC specification's own table
+(`spec/slimrpc_v1/slimrpc.md` §6.1), which differs from the gRPC binding's:
+`PushNotificationNotSupportedError`, `UnsupportedOperationError` and
+`ContentTypeNotSupportedError` are `UNIMPLEMENTED`, and `JSONParseError` is
+`INTERNAL`. The three errors that table does not list
+(`ExtendedAgentCardNotConfiguredError`, `ExtensionSupportRequiredError`,
+`VersionNotSupportedError`) take A2A §5.4's gRPC code, `FAILED_PRECONDITION`.
+An overload or a rate-limit refusal is `RESOURCE_EXHAUSTED`.
 
 Where SLIMRPC differs is error *identity*. gRPC attaches `google.rpc.ErrorInfo`
 to `status.details`; SLIMRPC has no details protobuf, so the spec puts the A2A

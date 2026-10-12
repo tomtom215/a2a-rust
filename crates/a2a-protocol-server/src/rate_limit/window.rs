@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 
@@ -28,6 +28,24 @@ impl RateLimitInterceptor {
     /// Returns the current window number for the given timestamp.
     pub(super) const fn window_number(&self, now_secs: u64) -> u64 {
         now_secs / self.config.window_secs
+    }
+
+    /// A refusal that tells the caller to retry when the current window
+    /// ends: every count resets then, and a full bucket map can evict the
+    /// windows that have gone stale.
+    pub(super) fn refusal(&self, message: String) -> A2aError {
+        let now_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let remaining = Self::seconds_to_window_end(self.config.window_secs, now_secs);
+        A2aError::rate_limited(message, Duration::from_secs(remaining))
+    }
+
+    /// Whole seconds from `now_secs` to the end of its window, in
+    /// `1..=window_secs`. `window_secs` is never zero (`new` refuses it).
+    pub(super) const fn seconds_to_window_end(window_secs: u64, now_secs: u64) -> u64 {
+        window_secs - now_secs % window_secs
     }
 
     /// Removes buckets whose window is older than the previous window.
@@ -67,7 +85,7 @@ impl RateLimitInterceptor {
     pub(super) fn admit_within_window(&self, bucket: &CallerBucket, limit: u64) -> A2aResult<()> {
         let count = bucket.count.fetch_add(1, Ordering::Relaxed) + 1;
         if count > limit {
-            return Err(A2aError::internal(format!(
+            return Err(self.refusal(format!(
                 "rate limit exceeded: {limit} requests per {} seconds",
                 self.config.window_secs
             )));
@@ -129,7 +147,7 @@ impl RateLimitInterceptor {
             // Try to reclaim capacity from stale windows before rejecting.
             Self::evict_stale(&mut buckets, current_window);
             if buckets.len() >= self.config.max_buckets {
-                return Err(A2aError::internal(format!(
+                return Err(self.refusal(format!(
                     "rate limiter caller capacity exhausted ({} buckets); request rejected",
                     self.config.max_buckets
                 )));
@@ -154,7 +172,7 @@ impl RateLimitInterceptor {
     /// reachable from a test.
     pub(super) fn admit_shared_count(&self, count: u64, limit: u64) -> A2aResult<()> {
         if count > limit {
-            return Err(A2aError::internal(format!(
+            return Err(self.refusal(format!(
                 "rate limit exceeded: {limit} requests per {} seconds",
                 self.config.window_secs
             )));

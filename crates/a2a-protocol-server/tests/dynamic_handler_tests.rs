@@ -38,7 +38,7 @@ fn test_card() -> AgentCard {
             id: "test".into(),
             name: "Test".into(),
             description: "Test skill".into(),
-            tags: vec![],
+            tags: vec!["test".into()],
             examples: None,
             input_modes: None,
             output_modes: None,

@@ -1350,7 +1350,7 @@ mod tests {
         let v_dbg = format!("{validator:?}");
         assert!(
             v_dbg.contains("JwtValidator"),
-            "JwtValidator Debug: {v_dbg}"
+            "JwtValidator Debug must name the type"
         );
         assert!(v_dbg.contains("redacted"), "the secret must be redacted");
         assert!(
@@ -1502,7 +1502,7 @@ mod tests {
         let outcome = base_validator().validate(RS256_WRONG_KEY, &rsa_jwks());
         assert!(
             matches!(outcome, Err(ValidateOutcome::Rejected)),
-            "matched-kid bad-signature must be Rejected, got {outcome:?}"
+            "matched-kid bad-signature must be Rejected"
         );
     }
 
@@ -1518,7 +1518,7 @@ mod tests {
         let outcome = base_validator().validate(&token, &rsa_jwks());
         assert!(
             matches!(outcome, Err(ValidateOutcome::Rejected)),
-            "no-kid bad-signature must be Rejected, got {outcome:?}"
+            "no-kid bad-signature must be Rejected"
         );
     }
 
@@ -1528,7 +1528,7 @@ mod tests {
         let outcome = base_validator().validate(RS256_UNKNOWN_KID, &rsa_jwks());
         assert!(
             matches!(outcome, Err(ValidateOutcome::KeyMiss)),
-            "unknown-kid must be KeyMiss, got {outcome:?}"
+            "unknown-kid must be KeyMiss"
         );
     }
 

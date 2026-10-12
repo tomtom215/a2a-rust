@@ -72,7 +72,9 @@ fn make_agent_card() -> AgentCard {
         security_requirements: None,
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
-        skills: vec![],
+        skills: vec![
+            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+        ],
         signatures: None,
     }
 }
@@ -686,10 +688,12 @@ async fn list_push_configs_with_params() {
 
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    // Listing configs for a task should succeed with a result (possibly empty array).
-    assert!(
-        v.get("result").is_some(),
-        "ListTaskPushNotificationConfigs should return result, got: {v}"
+    // The params parsed and routed: `task-1` does not exist, which §3.1.9
+    // answers with TaskNotFound (-32001), not an empty list.
+    assert_eq!(
+        v["error"]["code"].as_i64(),
+        Some(-32001),
+        "ListTaskPushNotificationConfigs on an unknown task, got: {v}"
     );
 }
 

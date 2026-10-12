@@ -28,10 +28,15 @@ use crate::handler::{RequestHandler, SendMessageResult};
 type NativeStream =
     Pin<Box<dyn tokio_stream::Stream<Item = Result<apb::StreamResponse, Status>> + Send + 'static>>;
 
-/// Maps a request-side conversion failure to `INVALID_ARGUMENT`.
+/// Maps a request-side conversion failure to `INVALID_ARGUMENT`, with a
+/// `google.rpc.BadRequest` naming the field (spec §10.6 / §9.5: well-known
+/// detail types for validation errors), as the HTTP bindings now send.
 #[allow(clippy::needless_pass_by_value)]
 fn bad_request(err: ConvertError) -> Status {
-    Status::invalid_argument(err.to_string())
+    use tonic_types::StatusExt as _;
+    let mut details = tonic_types::ErrorDetails::new();
+    details.add_bad_request_violation(err.field, err.reason.clone());
+    Status::with_error_details(tonic::Code::InvalidArgument, err.to_string(), details)
 }
 
 /// Maps a response-side conversion failure to `INTERNAL` — the handler
@@ -391,12 +396,22 @@ mod tests {
 
     #[test]
     fn bad_request_maps_to_invalid_argument() {
+        use tonic_types::StatusExt as _;
         let status = bad_request(ConvertError {
             field: "message.role",
             reason: "unknown Role number 9".into(),
         });
         assert_eq!(status.code(), tonic::Code::InvalidArgument);
         assert!(status.message().contains("message.role"));
+        let violations = status
+            .get_error_details()
+            .bad_request()
+            .cloned()
+            .expect("a BadRequest detail")
+            .field_violations;
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].field, "message.role");
+        assert_eq!(violations[0].description, "unknown Role number 9");
     }
 
     #[test]

@@ -9,12 +9,12 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use a2a_protocol_types::params::TaskQueryParams;
-use a2a_protocol_types::task::{Task, TaskId};
+use a2a_protocol_types::task::Task;
 
 use crate::error::{ServerError, ServerResult};
 
 use super::super::RequestHandler;
-use super::super::helpers::{build_call_context, truncate_history};
+use super::super::helpers::{build_call_context, task_id_param, truncate_history};
 
 impl RequestHandler {
     /// Handles `GetTask`. Returns [`ServerError::TaskNotFound`] if missing.
@@ -34,34 +34,35 @@ impl RequestHandler {
         let tenant = self
             .resolve_tenant("GetTask", headers, params.tenant.as_deref())
             .await?;
-        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            let call_ctx = build_call_context("GetTask", headers, self.inbound_trace_policy);
-            let mut call = self.interceptors.begin(&call_ctx);
-            let result = async {
-                call.before().await?;
-                // SPEC §3.3.4: reject clients that do not declare support for
-                // extensions the agent card marks required.
-                self.ensure_required_extensions(&call_ctx)?;
+        let result: ServerResult<_> =
+            crate::store::tenant::TenantContext::scope_request(tenant, async {
+                let call_ctx = build_call_context("GetTask", headers, self.inbound_trace_policy);
+                let mut call = self.interceptors.begin(&call_ctx);
+                let result = async {
+                    self.admit(&mut call, &call_ctx).await?;
+                    // SPEC §3.3.4: reject clients that do not declare support for
+                    // extensions the agent card marks required.
+                    self.ensure_required_extensions(&call_ctx)?;
 
-                let task_id = TaskId::new(&params.id);
-                let mut task = self
-                    .task_store
-                    .get(&task_id)
-                    .await?
-                    .ok_or_else(|| ServerError::TaskNotFound(task_id))?;
+                    let task_id = task_id_param(&params.id, self.limits.max_id_length)?;
+                    let mut task = self
+                        .task_store
+                        .get(&task_id)
+                        .await?
+                        .ok_or_else(|| ServerError::TaskNotFound(task_id))?;
 
-                // Apply historyLength: truncate history to the requested number
-                // of most recent messages. A value of 0 means "no history".
-                if let Some(history_length) = params.history_length {
-                    task.history = truncate_history(task.history, history_length);
+                    // Apply historyLength: truncate history to the requested number
+                    // of most recent messages. A value of 0 means "no history".
+                    if let Some(history_length) = params.history_length {
+                        task.history = truncate_history(task.history, history_length);
+                    }
+
+                    Ok(task)
                 }
-
-                Ok(task)
-            }
+                .await;
+                call.finish(result).await
+            })
             .await;
-            call.finish(result).await
-        })
-        .await;
 
         #[cfg(feature = "tracing")]
         match &result {

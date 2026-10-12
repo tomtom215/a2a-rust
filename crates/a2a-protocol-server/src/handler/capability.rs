@@ -172,9 +172,12 @@ mod tests {
                 protocol_version: "1.0.0".into(),
                 tenant: None,
             }],
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![
+                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                    .with_tags(["test"]),
+            ],
             capabilities: caps,
             provider: None,
             icon_url: None,
@@ -311,6 +314,28 @@ mod tests {
             "https://other.example/uninvolved",
         ]);
         assert!(handler.ensure_required_extensions(&ctx).is_ok());
+    }
+
+    /// §4.6.3: a version of an extension MUST NOT fall back to another one
+    /// automatically. A client declaring v2 neither satisfies a required v1
+    /// nor activates the optional v1.
+    #[tokio::test]
+    async fn another_version_of_an_extension_does_not_stand_in() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_agent_card(card_with_extensions())
+            .build()
+            .unwrap();
+        let ctx = ctx_with_extensions(&[
+            "https://example.com/ext/required/v2",
+            "https://example.com/ext/optional/v2",
+        ]);
+        assert!(handler.ensure_required_extensions(&ctx).is_err());
+        assert_eq!(
+            handler.activated_extensions_header_value(Some(
+                "https://example.com/ext/required/v2,https://example.com/ext/optional/v2"
+            )),
+            None
+        );
     }
 
     #[tokio::test]

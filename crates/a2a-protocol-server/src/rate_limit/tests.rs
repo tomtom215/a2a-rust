@@ -1003,3 +1003,13 @@ mod tenant {
         .await;
     }
 }
+
+/// The `Retry-After` a refusal carries is the time left in the current
+/// window: a full window at its first second, one second at its last.
+#[test]
+fn retry_after_is_the_time_left_in_the_window() {
+    assert_eq!(RateLimitInterceptor::seconds_to_window_end(60, 0), 60);
+    assert_eq!(RateLimitInterceptor::seconds_to_window_end(60, 10), 50);
+    assert_eq!(RateLimitInterceptor::seconds_to_window_end(60, 59), 1);
+    assert_eq!(RateLimitInterceptor::seconds_to_window_end(60, 125), 55);
+}

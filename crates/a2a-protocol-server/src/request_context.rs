@@ -72,6 +72,9 @@ pub struct RequestContext {
     /// The approval decision this continuation carries, once an
     /// [`ApprovalGate`](crate::approval::ApprovalGate) has checked it.
     pub(crate) approval: Option<crate::approval::VerifiedApproval>,
+
+    /// See [`accepted_output_modes`](Self::accepted_output_modes).
+    accepted_output_modes: Vec<String>,
 }
 
 impl RequestContext {
@@ -87,6 +90,7 @@ impl RequestContext {
             cancellation_token: CancellationToken::new(),
             call_context: None,
             approval: None,
+            accepted_output_modes: Vec::new(),
         }
     }
 
@@ -112,6 +116,21 @@ impl RequestContext {
     #[must_use]
     pub const fn approval(&self) -> Option<&crate::approval::VerifiedApproval> {
         self.approval.as_ref()
+    }
+
+    /// Sets the output media types the caller accepts.
+    #[must_use]
+    pub fn with_accepted_output_modes(mut self, modes: Vec<String>) -> Self {
+        self.accepted_output_modes = modes;
+        self
+    }
+
+    /// The media types the caller will accept in the response
+    /// (`SendMessageConfiguration.acceptedOutputModes`), which the proto says
+    /// an agent SHOULD use to tailor its output. Empty means no preference.
+    #[must_use]
+    pub fn accepted_output_modes(&self) -> &[String] {
+        &self.accepted_output_modes
     }
 
     /// Attaches the [`CallContext`] this execution was requested under.

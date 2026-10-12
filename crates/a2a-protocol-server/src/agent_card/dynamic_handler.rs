@@ -41,6 +41,19 @@ pub struct DynamicAgentCardHandler<P> {
 }
 
 impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
+    /// The producer's card, refused when it is not one this server may
+    /// publish (spec §5.7: required arrays non-empty; see
+    /// [`AgentCard::validate`]). A refusal is answered as a producer failure,
+    /// `500`, since serving it would be the server's error, not the
+    /// caller's. Until 2026-10-11 a produced card was served unchecked.
+    async fn valid_card(&self) -> A2aResult<AgentCard> {
+        let card = self.producer.produce().await?;
+        card.validate().map_err(|why| {
+            a2a_protocol_types::error::A2aError::internal(format!("invalid agent card: {why}"))
+        })?;
+        Ok(card)
+    }
+
     /// Creates a new handler with the given producer.
     #[must_use]
     pub fn new(producer: P) -> Self {
@@ -79,7 +92,7 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned);
 
-        match self.producer.produce().await {
+        match self.valid_card().await {
             Ok(card) => match serde_json::to_vec(&card) {
                 Ok(json) => {
                     let etag = make_etag(&json);
@@ -120,7 +133,7 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
 
     /// Handles a request without conditional headers (legacy compatibility).
     pub async fn handle_unconditional(&self) -> hyper::Response<Full<Bytes>> {
-        match self.producer.produce().await {
+        match self.valid_card().await {
             Ok(card) => match serde_json::to_vec(&card) {
                 Ok(json) => {
                     let etag = make_etag(&json);
@@ -226,6 +239,32 @@ mod tests {
                 ))
             })
         }
+    }
+
+    /// A producer whose card has no skills.
+    struct SkilllessProducer;
+
+    impl AgentCardProducer for SkilllessProducer {
+        fn produce<'a>(
+            &'a self,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<AgentCard>> + Send + 'a>> {
+            Box::pin(async {
+                let mut card = minimal_agent_card();
+                card.skills.clear();
+                Ok(card)
+            })
+        }
+    }
+
+    /// §5.7: a produced card that is not valid is not served.
+    #[tokio::test]
+    async fn an_invalid_produced_card_is_not_served() {
+        let handler = DynamicAgentCardHandler::new(SkilllessProducer);
+        let req = hyper::Request::builder()
+            .body(Full::new(Bytes::new()))
+            .unwrap();
+        assert_eq!(handler.handle(&req).await.status(), 500);
+        assert_eq!(handler.handle_unconditional().await.status(), 500);
     }
 
     #[test]

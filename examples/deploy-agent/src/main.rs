@@ -328,8 +328,11 @@ mod tests {
         let mut stream = tokio::net::TcpStream::connect(authority)
             .await
             .expect("connect");
-        let mut req =
-            format!("{method} /{path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n");
+        // `A2A-Version` on every request, as a v1.0 client sends it: without
+        // it the router reads the request as 0.3 and refuses it (§3.6.2).
+        let mut req = format!(
+            "{method} /{path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\nA2A-Version: 1.0\r\n"
+        );
         if let Some(b) = body {
             req.push_str("content-type: application/json\r\n");
             req.push_str(&format!("content-length: {}\r\n", b.len()));

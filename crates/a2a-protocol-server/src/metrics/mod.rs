@@ -285,15 +285,13 @@ pub mod push_outcome {
     /// worth its own label because the fix is a config change, not a webhook
     /// investigation.
     pub const TIMEOUT_TRUNCATED: &str = "timeout_truncated";
-    /// The per-event delivery budget ran out before this config was reached,
-    /// so nothing was sent to it at all.
+    /// No longer reported.
     ///
-    /// Distinct from [`TIMEOUT`], which means a delivery was attempted and did
-    /// not finish. A skipped config was never contacted. The two need separate
-    /// labels because they call for different responses: a timeout points at
-    /// one webhook, a run of skips points at the arithmetic between
-    /// `max_push_configs_per_task`, `push_delivery_timeout` and the 30-second
-    /// per-event budget.
+    /// It counted configs the per-event delivery budget never reached; since
+    /// 2026-10-11 every config is attempted (spec §4.3.3) and the budget sets
+    /// concurrency instead, so nothing is skipped. Kept so code matching on
+    /// the label still compiles; removing a public constant is a semver break
+    /// (see RELEASING.md).
     pub const SKIPPED: &str = "skipped";
 }
 

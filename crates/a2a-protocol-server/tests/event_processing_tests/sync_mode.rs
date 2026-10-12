@@ -144,3 +144,119 @@ async fn sync_mode_no_push_calls_when_no_config() {
         "no push calls should be made when no push config is set"
     );
 }
+
+// ── An artifact id is unique within a task ───────────────────────────────
+
+/// Emits artifact `a1`, then a second, non-append update for `a1`.
+struct ReplacingArtifactExecutor;
+
+impl AgentExecutor for ReplacingArtifactExecutor {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            for text in ["first draft", "final"] {
+                queue
+                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                        task_id: ctx.task_id.clone(),
+                        context_id: ContextId::new(ctx.context_id.clone()),
+                        artifact: Artifact::new("a1", vec![Part::text(text)]),
+                        append: None,
+                        last_chunk: Some(true),
+                        metadata: None,
+                    }))
+                    .await?;
+            }
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::new(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await
+        })
+    }
+}
+
+fn only_artifact_text(task: &Task) -> Vec<(String, Option<String>)> {
+    task.artifacts
+        .iter()
+        .flatten()
+        .map(|a| {
+            (
+                a.id.0.clone(),
+                a.parts
+                    .first()
+                    .and_then(|p| p.text_content().map(str::to_owned)),
+            )
+        })
+        .collect()
+}
+
+/// a2a.proto: an artifact id "must be unique within a task". A non-append
+/// update for an id the task already holds replaces it, as the reference SDK
+/// does; until 2026-10-10 the task stored two artifacts named `a1`.
+#[tokio::test]
+async fn a_repeated_artifact_id_replaces_on_the_blocking_path() {
+    let handler = RequestHandlerBuilder::new(ReplacingArtifactExecutor)
+        .build()
+        .expect("build handler");
+    let task = match handler
+        .on_send_message(make_send_params(), false, None)
+        .await
+        .expect("send")
+    {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t,
+        _ => panic!("expected a task"),
+    };
+    let stored = handler
+        .on_get_task(
+            a2a_protocol_types::params::TaskQueryParams::new(&task.id.0),
+            None,
+        )
+        .await
+        .expect("get");
+    assert_eq!(
+        only_artifact_text(&stored),
+        vec![("a1".to_owned(), Some("final".to_owned()))]
+    );
+}
+
+#[tokio::test]
+async fn a_repeated_artifact_id_replaces_on_the_background_path() {
+    let handler = RequestHandlerBuilder::new(ReplacingArtifactExecutor)
+        .build()
+        .expect("build handler");
+    let mut params = make_send_params();
+    params.configuration = Some(a2a_protocol_types::params::SendMessageConfiguration {
+        return_immediately: Some(true),
+        ..Default::default()
+    });
+    let id = match handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("send")
+    {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t.id.0,
+        _ => panic!("expected a task"),
+    };
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    let stored = loop {
+        let t = handler
+            .on_get_task(a2a_protocol_types::params::TaskQueryParams::new(&id), None)
+            .await
+            .expect("get");
+        if t.status.state == TaskState::Completed {
+            break t;
+        }
+        assert!(tokio::time::Instant::now() < deadline, "never completed");
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    };
+    assert_eq!(
+        only_artifact_text(&stored),
+        vec![("a1".to_owned(), Some("final".to_owned()))]
+    );
+}

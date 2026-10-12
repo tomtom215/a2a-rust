@@ -34,8 +34,6 @@ import hmac
 import http.client
 import json
 import os
-import socket
-import struct
 import sys
 import time
 

@@ -145,6 +145,7 @@ class Target:
                         break
                     buf += b
             except socket.timeout:
+                # read timeout ends the capture; classify whatever bytes arrived
                 pass
             s.close()
         except Exception as e:

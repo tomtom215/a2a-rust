@@ -57,7 +57,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install self-test deps
-        run: pip install httpx grpcio-tools
+        run: pip install --require-hashes -r .github/requirements/itk-selftest.txt
 
       - name: Build the ITK current agent
         run: cargo build --release
@@ -127,7 +127,7 @@ jobs:
       # ITK's own environment synced from its pinned lockfile.
       - name: Install uv and sync the ITK environment
         run: |
-          python -m pip install --upgrade pip uv
+          python -m pip install --require-hashes -r "$GITHUB_WORKSPACE/.github/requirements/uv.txt"
           uv sync
         working-directory: /tmp/a2a-itk
 

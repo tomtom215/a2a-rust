@@ -54,7 +54,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         use sqlx::Row as _;
 
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             // One transaction, and `FOR UPDATE` on the read: without both, a
             // release landing between the losing insert and the read would
             // leave the claim seeing no holder, and a claim that neither
@@ -103,7 +103,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         key: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             sqlx::query(idem::PG_RELEASE)
                 .bind(&tenant)
                 .bind(key)
@@ -119,7 +119,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let id = task.id.0.as_str();
             let context_id = task.context_id.0.as_str();
             let state = task.status.state.to_string();
@@ -187,7 +187,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let row: Option<(serde_json::Value,)> =
                 sqlx::query_as("SELECT data FROM tenant_tasks WHERE tenant_id = $1 AND id = $2")
                     .bind(&tenant)
@@ -213,7 +213,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         params: &'a ListTasksParams,
     ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let mut conditions = vec!["tenant_id = $1".to_string()];
             let mut bind_values: Vec<String> = vec![tenant];
 
@@ -314,7 +314,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let id = task.id.0.as_str();
             let context_id = task.context_id.0.as_str();
             let state = task.status.state.to_string();
@@ -347,7 +347,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             // Explicit as well as cascaded, matching the SQLite store so the
             // two backends delete the same rows in the same order rather than
             // one of them relying on a constraint the other cannot.
@@ -379,7 +379,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         event: &'a a2a_protocol_types::events::StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let position = seq_to_i64(seq)?;
             let payload = encode_json(event)?;
             // `rows_affected()` was discarded here until 0.13; see
@@ -414,7 +414,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         task_id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let (max,): (i64,) = sqlx::query_as(evlog::PG_LAST_SEQ)
                 .bind(&tenant)
                 .bind(task_id.0.as_str())
@@ -430,7 +430,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         task_id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let (min,): (Option<i64>,) = sqlx::query_as(evlog::PG_EARLIEST_SEQ)
                 .bind(&tenant)
                 .bind(task_id.0.as_str())
@@ -448,7 +448,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         limit: usize,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let rows: Vec<(i64, serde_json::Value)> = sqlx::query_as(evlog::PG_SELECT_AFTER)
                 .bind(&tenant)
                 .bind(task_id.0.as_str())
@@ -463,7 +463,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
 
     fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
         Box::pin(async move {
-            let tenant = TenantContext::current();
+            let tenant = TenantContext::partition();
             let row: (i64,) =
                 sqlx::query_as("SELECT COUNT(*) FROM tenant_tasks WHERE tenant_id = $1")
                     .bind(&tenant)

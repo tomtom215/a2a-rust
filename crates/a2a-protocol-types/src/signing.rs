@@ -29,6 +29,7 @@ use crate::error::{A2aError, A2aResult};
 use crate::extensions::AgentCardSignature;
 
 pub(crate) mod keys;
+mod presence;
 
 pub use keys::{Jwk, Jwks, VerifyingKey};
 
@@ -65,8 +66,10 @@ const MAX_CANONICAL_DEPTH: usize = 256;
 
 /// Canonicalizes an [`AgentCard`] to bytes for signing.
 ///
-/// Serializes the card to a JSON value first (to normalize serde output),
-/// then produces the RFC 8785 canonical form.
+/// Serializes the card to a JSON value, removes `signatures` (§8.4.1 rule 3),
+/// applies protobuf field presence (§8.4.1 rule 1: a field holding its
+/// default value is omitted unless it is `REQUIRED` or `optional`), then
+/// produces the RFC 8785 canonical form.
 ///
 /// # Errors
 ///
@@ -79,10 +82,12 @@ pub fn canonicalize_card(card: &AgentCard) -> A2aResult<Vec<u8>> {
     // its `signatures` array populated; if that field were part of the
     // canonical bytes, the served card could never be verified against what was
     // signed (and multi-signature / key-rotation flows would sign over the
-    // wrong bytes). Removing it here fixes both `sign_agent_card` and
+    // wrong bytes). Removing it here fixes both `sign_card_es256` and
     // `verify_agent_card`, which share this canonicalizer.
     if let Some(obj) = value.as_object_mut() {
         obj.remove("signatures");
+        // §8.4.1 rule 1: the protobuf field-presence form, not serde's.
+        presence::prune(obj, "AgentCard");
     }
     canonicalize(&value)
 }
@@ -290,42 +295,31 @@ fn write_canonical_string(s: &str, buf: &mut Vec<u8>) {
 
 // ── JWS Signing ─────────────────────────────────────────────────────────────
 
-/// Signs an [`AgentCard`] using ES256 (ECDSA P-256 + SHA-256) with JWS
-/// compact serialization and a detached payload.
-///
-/// Returns an [`AgentCardSignature`] that can be added to the card's
-/// `signatures` field.
-///
-/// # Arguments
-///
-/// * `card` — The agent card to sign (will be canonicalized).
-/// * `pkcs8_key` — PKCS#8 DER-encoded private key for ES256.
-/// * `key_id` — Optional `kid` claim for the JWS protected header.
-///
-/// # Errors
-///
-/// Returns an error if canonicalization or signing fails.
-pub fn sign_agent_card(
-    card: &AgentCard,
-    pkcs8_key: &[u8],
-    key_id: Option<&str>,
-) -> A2aResult<AgentCardSignature> {
-    let canonical = canonicalize_card(card)?;
-
-    // Build the JWS protected header.
-    let mut header = serde_json::json!({ "alg": "ES256" });
+/// The JWS protected header for a card signature (§8.4.2): `alg` and `kid`
+/// MUST be present and `typ` SHOULD be `"JOSE"`. `kid` is optional here only
+/// for the deprecated entry points that always allowed omitting it.
+fn protected_header(alg: &str, key_id: Option<&str>) -> A2aResult<String> {
+    let mut header = serde_json::json!({ "alg": alg, "typ": "JOSE" });
     if let Some(kid) = key_id {
         header["kid"] = serde_json::Value::String(kid.to_owned());
     }
     let header_json = serde_json::to_vec(&header)
         .map_err(|e| A2aError::internal(format!("header serialization: {e}")))?;
-    let protected = URL_SAFE_NO_PAD.encode(&header_json);
+    Ok(URL_SAFE_NO_PAD.encode(&header_json))
+}
+
+fn sign_es256(
+    card: &AgentCard,
+    pkcs8_key: &[u8],
+    key_id: Option<&str>,
+) -> A2aResult<AgentCardSignature> {
+    let canonical = canonicalize_card(card)?;
+    let protected = protected_header("ES256", key_id)?;
 
     // JWS input: BASE64URL(header) || '.' || BASE64URL(payload)
     let payload_b64 = URL_SAFE_NO_PAD.encode(&canonical);
     let signing_input = format!("{protected}.{payload_b64}");
 
-    // Sign with ES256.
     let rng = SystemRandom::new();
     let key_pair =
         EcdsaKeyPair::from_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, pkcs8_key, &rng)
@@ -343,30 +337,14 @@ pub fn sign_agent_card(
     })
 }
 
-/// Signs an [`AgentCard`] with Ed25519 (JWS `EdDSA`, RFC 8037), detached
-/// payload, as [`sign_agent_card`] does for ES256.
-///
-/// `pkcs8_key` is a PKCS#8 v1 or v2 Ed25519 private key; OpenSSL writes v1
-/// (`openssl genpkey -algorithm ed25519 -outform DER`).
-///
-/// # Errors
-///
-/// Returns an error if canonicalization fails or the key is not Ed25519
-/// PKCS#8.
-pub fn sign_agent_card_ed25519(
+fn sign_ed25519(
     card: &AgentCard,
     pkcs8_key: &[u8],
     key_id: Option<&str>,
 ) -> A2aResult<AgentCardSignature> {
     let key_pair = signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(pkcs8_key)
         .map_err(|e| A2aError::internal(format!("invalid Ed25519 key: {e}")))?;
-    let mut header = serde_json::json!({ "alg": "EdDSA" });
-    if let Some(kid) = key_id {
-        header["kid"] = serde_json::Value::String(kid.to_owned());
-    }
-    let header_json = serde_json::to_vec(&header)
-        .map_err(|e| A2aError::internal(format!("header serialization: {e}")))?;
-    let protected = URL_SAFE_NO_PAD.encode(&header_json);
+    let protected = protected_header("EdDSA", key_id)?;
     let signing_input = format!(
         "{protected}.{}",
         URL_SAFE_NO_PAD.encode(canonicalize_card(card)?)
@@ -377,6 +355,88 @@ pub fn sign_agent_card_ed25519(
         signature,
         header: None,
     })
+}
+
+/// Signs an [`AgentCard`] with ES256 (ECDSA P-256 + SHA-256), JWS compact
+/// serialization with a detached payload (spec §8.4).
+///
+/// The protected header carries `alg`, `typ: "JOSE"` and `kid`, as §8.4.2
+/// requires. Add the returned [`AgentCardSignature`] to the card's
+/// `signatures` field.
+///
+/// * `card` — the card to sign; it is canonicalized per §8.4.1.
+/// * `pkcs8_key` — PKCS#8 DER-encoded P-256 private key.
+/// * `key_id` — the `kid` a verifier looks the public key up by.
+///
+/// # Errors
+///
+/// Returns an error if canonicalization or signing fails.
+pub fn sign_card_es256(
+    card: &AgentCard,
+    pkcs8_key: &[u8],
+    key_id: &str,
+) -> A2aResult<AgentCardSignature> {
+    sign_es256(card, pkcs8_key, Some(key_id))
+}
+
+/// Signs an [`AgentCard`] with Ed25519 (JWS `EdDSA`, RFC 8037), as
+/// [`sign_card_es256`] does for ES256.
+///
+/// `pkcs8_key` is a PKCS#8 v1 or v2 Ed25519 private key; OpenSSL writes v1
+/// (`openssl genpkey -algorithm ed25519 -outform DER`).
+///
+/// # Errors
+///
+/// Returns an error if canonicalization fails or the key is not Ed25519
+/// PKCS#8.
+pub fn sign_card_ed25519(
+    card: &AgentCard,
+    pkcs8_key: &[u8],
+    key_id: &str,
+) -> A2aResult<AgentCardSignature> {
+    sign_ed25519(card, pkcs8_key, Some(key_id))
+}
+
+/// Signs an [`AgentCard`] with ES256; `key_id` may be omitted.
+///
+/// Omitting it produces a protected header without `kid`, which spec §8.4.2
+/// forbids, so this is deprecated in favour of [`sign_card_es256`], whose
+/// `kid` is not optional.
+///
+/// # Errors
+///
+/// Returns an error if canonicalization or signing fails.
+#[deprecated(
+    since = "0.15.0",
+    note = "§8.4.2 requires `kid`; use `sign_card_es256`, whose key id is not optional"
+)]
+pub fn sign_agent_card(
+    card: &AgentCard,
+    pkcs8_key: &[u8],
+    key_id: Option<&str>,
+) -> A2aResult<AgentCardSignature> {
+    sign_es256(card, pkcs8_key, key_id)
+}
+
+/// Signs an [`AgentCard`] with Ed25519; `key_id` may be omitted.
+///
+/// Deprecated for the same reason as [`sign_agent_card`]; use
+/// [`sign_card_ed25519`].
+///
+/// # Errors
+///
+/// Returns an error if canonicalization fails or the key is not Ed25519
+/// PKCS#8.
+#[deprecated(
+    since = "0.15.0",
+    note = "§8.4.2 requires `kid`; use `sign_card_ed25519`, whose key id is not optional"
+)]
+pub fn sign_agent_card_ed25519(
+    card: &AgentCard,
+    pkcs8_key: &[u8],
+    key_id: Option<&str>,
+) -> A2aResult<AgentCardSignature> {
+    sign_ed25519(card, pkcs8_key, key_id)
 }
 
 // ── JWS protected header ────────────────────────────────────────────────────
@@ -726,7 +786,7 @@ mod tests {
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
             .unwrap();
 
-        let sig = sign_agent_card(&card, pkcs8.as_ref(), Some("test-key")).unwrap();
+        let sig = sign_card_es256(&card, pkcs8.as_ref(), "test-key").unwrap();
         assert_ne!(sig.protected, "");
         assert_ne!(sig.signature, "");
 
@@ -754,7 +814,7 @@ mod tests {
         let rng = SystemRandom::new();
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
             .unwrap();
-        let sig = sign_agent_card(&card, pkcs8.as_ref(), Some("test-key")).unwrap();
+        let sig = sign_card_es256(&card, pkcs8.as_ref(), "test-key").unwrap();
 
         let key_pair = EcdsaKeyPair::from_pkcs8(
             &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
@@ -779,7 +839,7 @@ mod tests {
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
             .unwrap();
 
-        let sig = sign_agent_card(&card, pkcs8.as_ref(), None).unwrap();
+        let sig = sign_card_es256(&card, pkcs8.as_ref(), "k1").unwrap();
 
         // Tamper with the card.
         card.name = "Tampered Agent".into();
@@ -846,7 +906,7 @@ mod tests {
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
             .unwrap();
 
-        let sig = sign_agent_card(&card, pkcs8.as_ref(), Some("my-key-id")).unwrap();
+        let sig = sign_card_es256(&card, pkcs8.as_ref(), "my-key-id").unwrap();
 
         let header_bytes = URL_SAFE_NO_PAD.decode(&sig.protected).unwrap();
         let header: serde_json::Value = serde_json::from_slice(&header_bytes).unwrap();
@@ -862,7 +922,7 @@ mod tests {
         let rng = SystemRandom::new();
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
             .unwrap();
-        let sig = sign_agent_card(&card, pkcs8.as_ref(), Some("my-key-id")).unwrap();
+        let sig = sign_card_es256(&card, pkcs8.as_ref(), "my-key-id").unwrap();
 
         let header = signature_header(&sig).unwrap();
         assert_eq!(header.alg, "ES256");
@@ -873,6 +933,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn signature_header_kid_is_none_when_unsigned_with_one() {
         let card = minimal_card();
         let rng = SystemRandom::new();

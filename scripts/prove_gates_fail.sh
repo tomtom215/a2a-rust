@@ -346,6 +346,8 @@ injection_for() {
             echo "fuzz_matrix" ;;
         *"check_compliance_map.py"*)
             echo "compliance_map" ;;
+        *"check_spec_ledger.py"*)
+            echo "spec_ledger" ;;
         *"check_package_excludes.py"*)
             echo "package_excludes" ;;
         # The binding's packaging gate is a wrapper, not a bare `cargo package`
@@ -506,6 +508,7 @@ expected_marker() {
         # which the runner's own build already catches.
         fuzz_matrix)      echo "no runner ever executes it" ;;
         compliance_map)   echo "no \`fn verify_rejects_tampered_card\`" ;;
+        spec_ledger)      echo "no \`fn a_message_only_stream_is_exactly_one_message\`" ;;
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         block_scalars)    echo "MISMATCH" ;;
@@ -812,6 +815,20 @@ old = "fn verify_rejects_tampered_card()"
 if s.count(old) != 1:
     sys.exit(f"expected exactly one verify_rejects_tampered_card; found {s.count(old)}")
 p.write_text(s.replace(old, "fn verify_rejects_tampered_card_renamed()"))
+PY
+            ;;
+        spec_ledger)
+            # Rename a test the spec ledger cites, leaving the ledger alone:
+            # the same defect as compliance_map's, against the other register.
+            note_touched "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs"
+            python3 - <<'PY'
+import pathlib, sys
+p = pathlib.Path("crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs")
+s = p.read_text()
+old = "fn a_message_only_stream_is_exactly_one_message()"
+if s.count(old) != 1:
+    sys.exit(f"expected exactly one a_message_only_stream_is_exactly_one_message; found {s.count(old)}")
+p.write_text(s.replace(old, "fn a_message_only_stream_is_exactly_one_message_renamed()"))
 PY
             ;;
         gate_reachability)

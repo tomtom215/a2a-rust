@@ -179,6 +179,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install PyYAML
-        run: python3 -m pip install --quiet pyyaml
+        run: python3 -m pip install --quiet --require-hashes -r .github/requirements/pyyaml.txt
       - name: Ignore patterns match nothing Codecov counts
         run: python3 scripts/check_codecov_ignores.py

@@ -140,7 +140,7 @@ pub fn check_conditional(
 ///
 /// Handles `*`, single `ETag` values, and comma-separated lists. Comparison
 /// is performed using weak comparison (RFC 7232 §2.3.2).
-fn etag_matches(header_value: &str, current: &str) -> bool {
+pub(crate) fn etag_matches(header_value: &str, current: &str) -> bool {
     let header_value = header_value.trim();
     if header_value == "*" {
         return true;

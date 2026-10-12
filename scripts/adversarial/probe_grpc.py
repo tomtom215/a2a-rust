@@ -56,7 +56,8 @@ def build_stubs():
     proto = os.path.normpath(proto)
     if not os.path.exists(proto):
         sys.exit("cannot find %s" % proto)
-    src = open(proto, encoding="utf-8").read()
+    with open(proto, encoding="utf-8") as f:
+        src = f.read()
     src = re.sub(r'^\s*import\s+"google/api/[^"]+";\s*$', "", src, flags=re.M)
     # brace-balanced `option (google.api...) = { ... };`
     out, i = [], 0
@@ -88,7 +89,8 @@ def build_stubs():
     tmp = tempfile.mkdtemp(prefix="a2a-grpc-stubs-")
     inc = os.path.dirname(proto)
     stripped = os.path.join(inc, "a2a_probe_stripped.proto")
-    open(stripped, "w", encoding="utf-8").write(src)
+    with open(stripped, "w", encoding="utf-8") as f:
+        f.write(src)
     try:
         rc = subprocess.run(
             [sys.executable, "-m", "grpc_tools.protoc", "-I", inc,

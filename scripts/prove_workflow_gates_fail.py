@@ -657,6 +657,29 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "exits 3 rather than reporting agreement when upstream is unreachable"
     )
 
+    # Same shape as the SLIMRPC check above: it compares against a live
+    # upstream. Its failure paths were verified by hand on 2026-10-10, each
+    # restored afterwards: the vendored copy set to v1.0.0's text, the pin
+    # moved back to v1.0.0 (a newer release with a different proto), and a
+    # pinned commit the tag no longer names all exit 1; the clean tree exits
+    # 0; an unreachable proxy exits 3.
+    reg["official-tck.yml::official-tck::Vendored A2A proto is the latest release's"] = Exempt(
+        "requires a live fetch of upstream A2A release tags; verified by hand "
+        "against three injected defects, and it exits 3 rather than reporting "
+        "agreement when upstream is unreachable"
+    )
+
+    # Needs the official SDK from PyPI and a built CLI, which this harness does
+    # not provide. Verified by hand on 2026-10-10: run against the CLI built
+    # from main before the §8.4.1 fix, the card with implicit defaults fails
+    # (Rust signs, Python rejects) and the script exits 1; the fixed CLI exits
+    # 0. Expected divergences are asserted too, so an SDK change that makes
+    # them agree also exits 1.
+    reg["tck.yml::card-signature-interop::Sign and verify both ways"] = Exempt(
+        "requires the official a2a-sdk from PyPI and a built a2a CLI; verified "
+        "by hand against the pre-fix CLI (exit 1) and the fixed one (exit 0)"
+    )
+
     # Needs the full commit history and a manifest measured at the release
     # commit, neither of which a fixture tree can supply. Verified by hand on
     # 2026-08-26 against four separate defects, each restored afterwards: a
@@ -1322,6 +1345,24 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "GRPC",
         "https://a2a-rust.com/bindings/websocket/v1",
     ]
+    # osv.yml's `rust` job runs the scanner inline (so Scorecard can see its
+    # SARIF upload) and keeps the reusable workflow's guard: a scanner that
+    # failed without writing results must fail the job, not report "clean".
+    def _osv_results(content: str | None) -> Setup:
+        def setup(d: Path) -> None:
+            if content is not None:
+                (d / "results.json").write_text(content)
+
+        return setup
+
+    reg["osv.yml::rust::Check that the scan completed"] = Probe(
+        healthy=_osv_results('{"results": []}'),
+        defects=[
+            Defect("no results file", _osv_results(None), "OSV-Scanner failed without writing"),
+            Defect("an empty results file", _osv_results(""), "OSV-Scanner failed without writing"),
+        ],
+    )
+
     reg["tck.yml::tck-all-bindings::Card advertises all four bindings"] = Probe(
         healthy=_card_fixture(ALL_FOUR),
         defects=[

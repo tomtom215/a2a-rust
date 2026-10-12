@@ -110,13 +110,13 @@ impl Drop for InterceptedCall<'_> {
             .cloned()
             .collect();
         let ctx = self.ctx.clone();
-        let tenant = crate::store::tenant::TenantContext::current();
-        drop(runtime.spawn(crate::rpc_span::in_current_span(
-            crate::store::tenant::TenantContext::scope(tenant, async move {
+        let tenant = crate::store::tenant::TenantContext::capture();
+        drop(
+            runtime.spawn(crate::rpc_span::in_current_span(tenant.scope(async move {
                 for interceptor in owed {
                     interceptor.on_complete(&ctx, CallOutcome::Cancelled).await;
                 }
-            }),
-        )));
+            }))),
+        );
     }
 }

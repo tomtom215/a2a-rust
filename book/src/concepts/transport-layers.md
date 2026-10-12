@@ -181,7 +181,7 @@ dispatcher.serve("0.0.0.0:3002").await?;
 
 - Client sends JSON-RPC 2.0 requests as text frames
 - Server responds with JSON-RPC 2.0 responses as text frames
-- The v1.0 method names the JSON-RPC HTTP binding routes; of the v0.3 `method/verb` aliases only `message/stream` is accepted, and the others are refused with `MethodNotFound`
+- The v1.0 method names the JSON-RPC HTTP binding routes; the v0.3 `method/verb` aliases are refused with `MethodNotFound` (see the [binding specification](../bindings/websocket.md))
 - For streaming methods (`SendStreamingMessage`, `SubscribeToTask`), the server sends multiple frames — one per event — followed by a `stream_complete` response
 - Ping/pong frames are handled automatically
 - Connection closes cleanly on WebSocket close frame

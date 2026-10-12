@@ -78,6 +78,10 @@ async fn serve(executor: impl AgentExecutor, name: &str) -> AgentCard {
         "3.1.4",
         AgentInterface::jsonrpc(format!("http://{addr}")),
     )
+    .with_skill(
+        a2a_protocol_sdk::types::AgentSkill::new("test", "Test", "A test skill")
+            .with_tags(["test"]),
+    )
     .with_description(format!("the {name}"))
     .with_capabilities(AgentCapabilities::none().with_streaming(true));
     let handler = Arc::new(
