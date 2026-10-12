@@ -489,6 +489,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The site's brand fonts load.** `theme/custom.css` asked for
+  `fonts/…`, which resolves to `theme/fonts/` and answered 404 on the live
+  site, so Space Grotesk and JetBrains Mono never loaded; it asks for
+  `../fonts/…`. Release books built before this keep the fault.
 - **`Telemetry` reports a lost export on either transport, and only a lost
   one** (server, feature `otel`). It counted failed HTTP responses, so over
   gRPC a lost export was only logged, and with 0.33's retries an export
