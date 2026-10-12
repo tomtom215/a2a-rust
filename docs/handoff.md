@@ -14,7 +14,8 @@ the repository commits to, move it there and delete it here.
 Last updated 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
 left after #165, OpenTelemetry 0.33, a versioned documentation site, the
 weekly mutation sweep, the ledger's last GAP (§3.3.4), push timeouts,
-JSON-RPC `RetryInfo`, and §13.1 caller isolation by default. `git log -1 --format='%ci %s' --
+JSON-RPC `RetryInfo`, §13.1 caller isolation by default, Dependabot #166
+and #167, and §8.1's required agent card. `git log -1 --format='%ci %s' --
 docs/handoff.md` remains the authority on this line.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
@@ -995,10 +996,18 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
 21. `feat(server)!:` §13.1 — an authenticating interceptor isolates tasks by
     caller by default; `share_tasks_across_callers()` opts out. See "§13.1,
     as built" below for the rules and what `build()` now refuses.
-22. `docs(handoff):` this update.
+22. `docs(handoff):` the §13.1 update.
+23. `deps:` Dependabot #167 and #166 folded (hyper 1.12, tokio 1.53.2 and
+    five more); the workspace lock's changed lines are #167's exactly, the
+    binding's lock is #166's file. Both PRs can be closed once this merges.
+24. `feat(server)!:` §8.1 — `build()` requires an agent card;
+    `without_agent_card()` opts out. Tests opt out (425 builders, by
+    script); docs set a card (hidden `card()` helper in 47 doc blocks, a
+    visible card in both quick starts).
+25. `docs(handoff):` this update.
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 301,
-PARTIAL 33, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 302,
+PARTIAL 32, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**
@@ -1053,11 +1062,11 @@ PARTIAL 33, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
    "accept failed". In that job it failed in the `sqlite` feature step,
    after passing in the five steps before it; the re-run of the job on the
    same commit passed (run attempt 2).
-7. Required agent card at `RequestHandlerBuilder::build` with a
-   `without_agent_card()` opt-out (§8.1, ledger lines 1980 and 571): decided
-   by the maintainer 2026-10-12 ("require a card, opt-out"), not yet built.
-   About 574 builder call sites, 151 of them with a card, so most of the work
-   is test churn.
+7. §8.1 stays PARTIAL (ledger line 1980, now low): the WebSocket and gRPC
+   dispatchers serve no well-known card, so a deployment on only those
+   bindings has no discovery endpoint from the SDK. Closing it means serving
+   the card beside them (an HTTP route a gRPC-only server can mount), which
+   is a design question, not a fix.
 
 ## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
 
