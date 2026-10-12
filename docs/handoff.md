@@ -11,8 +11,9 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-10-10 — `claude/nifty-fermat-roj04f`: a requirement-level
-spec ledger and the conformance fixes it found. `git log -1 --format='%ci %s' --
+Last updated 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
+left after #165, OpenTelemetry 0.33, a versioned documentation site, and the
+weekly mutation sweep. `git log -1 --format='%ci %s' --
 docs/handoff.md` remains the authority on this line.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
@@ -934,6 +935,83 @@ delegation handle)~~ landed on `claude/bold-gauss-9qc9dc` (below); next in
 * Measure throughput on one pinned core with `/proc/<pid>/stat` user and
   system time; two-core runs are latency-bound and the VM's noise is ±5–10%
   there. Use 6 interleaved runs and compare medians.
+
+## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
+
+Picked up after #165 merged (`6ce5dc9`); pull request #168. Commits are
+authored and signed off as the maintainer and carry **no** `Co-Authored-By`
+or session trailers, by the maintainer's instruction (DCO). CONTRIBUTING's
+note on AI-assisted changes suggests a `Co-Authored-By` trailer; the two
+disagree, and that is the maintainer's to reconcile — it was not edited.
+
+**What landed, in commit order.**
+1. `test(client):` the keep-alive liveness test tolerates a runner stall and
+   reports the stub's longest write gap.
+2. `fix(adversarial):` `probe_push.py` receivers work on Python 3.13+, and
+   hang mode holds its socket; two push-sender tests pin redirect and
+   flood behaviour.
+3. `ci:` Dependabot #164's action bumps.
+4. `deps(otel)!:` OpenTelemetry 0.33 (Dependabot #158-#161 together).
+   `opentelemetry-otlp` 0.33 retries a failed export (4 attempts), so export
+   losses are now counted once per export by a `Counting` wrapper around
+   each exporter rather than per HTTP attempt.
+5. `fix(client)!:` §8.3.2 — `from_card` takes the card's first supported
+   interface; `preferred_bindings` is deprecated.
+6. `fix(server)!:` §3.6.2 — only `A2A-Version` 1.0 (any patch) is served;
+   other minors get `VersionNotSupportedError`.
+7. `docs(handoff):` the private upstream report (no identifier here, by
+   design).
+8. `test:` clippy 1.99's `assert_is_empty` and `unused_async`.
+9. `test(server):` the unreachable-collector test uses an accept-and-drop
+   listener; Windows retries a closed port for ~2 s per attempt.
+10. `deps(slimrpc):` RUSTSEC-2024-0449 waived in the out-of-workspace binding,
+    with its dependency chain.
+11. `fix(book):` brand font URLs (the live site returned 404 for them).
+12. `feat(docs):` versioned site — `/` the latest release, `/vX.Y/` each
+    release line, `/dev/` main — built by `scripts/build_docs_site.py`,
+    deployed from `docs.yml` on pushes to main and after `Release` completes
+    (`workflow_run`, not a tag trigger).
+13. `test:` the weekly sweep's six survivors (2026-09-28 onward) killed or
+    retired; see `mutation-history.md`.
+14. `ci(mutants):` `a2a-server` dealt round-robin across 24 shards; the four
+    unrecorded sweeps since 2026-09-07 and the 2026-10-12 one get ledger rows.
+
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 298,
+PARTIAL 35, GAP 1, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
+23 exempt of 53. Static checks: 29 of 29 locally.
+
+**Lessons, new this session.**
+- CI's stable toolchain moves under you: 1.99 on 2026-10-12, two releases
+  ahead of the container's. Its new clippy lints failed every clippy job.
+  `rustup update stable` before the first local clippy run.
+- `#[deprecated]` warns inside the defining crate too; in-crate uses need
+  `#[allow(deprecated)]`.
+- The weekly sweep's cost is the *caught* mutants (≈206 s to build each,
+  against ≈26 s for an unviable one), and contiguous slices cluster them.
+  The model in `mutants.yml`'s matrix comment (sum of build + test time ÷ 4,
+  plus baseline) reproduced every finished shard within 1.1 minutes; reuse it
+  rather than guessing a shard count.
+- Four weekly sweeps went unrecorded because nothing prompts a row. Record
+  each one as `mutation-history.md` "How to add an entry" says, from the
+  run's `Mutants Summary`, the week it runs; a cancelled shard's report is
+  still uploaded, so an incomplete sweep can be counted too.
+- The versioned site is about 18 MB per release line (268 MB for 13 lines and
+  dev, measured); GitHub Pages caps a site at 1 GB.
+- Nightly cargo's `unused_dependencies` lint flags `book-tests`' dependencies,
+  which only its doctests use. A warning on the informational nightly job
+  today; it would need an allow if the lint stabilizes as-is.
+
+**What the next session should do first.**
+1. Read CI on the branch head.
+2. The first 24-shard sweep (next scheduled Monday, or dispatch it): compare
+   the slowest `a2a-server` shard with the ~110-minute projection, and give
+   the sweep its ledger row.
+3. After the next release, confirm `docs.yml` ran from `workflow_run` and
+   that `/`, `/vX.Y/` and `/dev/` are what `build_docs_site.py check`
+   accepted locally.
+4. The incremental mutation job still slices: run 37906246207 put one shard
+   at ~83 minutes while the other seven took 13-49. Round-robin is the likely
+   fix there too; measure it from that run's artifacts before changing it.
 
 ## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
 
