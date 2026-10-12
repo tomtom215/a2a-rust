@@ -27,7 +27,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | §1 | 2 |  |  |  | 4 |  | 1 |  | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 |  | 3 |
-| §3 | 82 | 21 | 19 | 3 | 3 | 1 | 7 | 1 | 137 |
+| §3 | 83 | 21 | 19 | 3 | 3 | 1 | 6 | 1 | 137 |
 | §4 | 6 | 5 | 2 |  | 1 |  | 1 |  | 15 |
 | §5 | 25 | 2 | 2 |  | 3 |  | 3 |  | 35 |
 | §7 | 7 | 13 | 2 |  |  |  |  |  | 22 |
@@ -40,7 +40,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 5 | 5 | 3 |  |  |  | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
 | proto `REQUIRED` fields | 71 | 11 | 6 |  | 8 |  | 10 |  | 106 |
-| **All** | **294** | **89** | **52** | **13** | **22** | **2** | **37** | **3** | **512** |
+| **All** | **295** | **89** | **52** | **13** | **22** | **2** | **36** | **3** | **512** |
 
 ## Open items, most severe first
 
@@ -68,8 +68,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | low | PARTIAL | proto:ClientCredentialsOAuthFlow.token_url (proto line 600) | token_url [(google.api.field_behavior) = REQUIRED] | A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const… |
 | low | PARTIAL | proto:DeviceCodeOAuthFlow.device_authorization_url (proto l… | device_authorization_url [(google.api.field_behavior) = REQUIRED] | A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const… |
 | low | PARTIAL | proto:DeviceCodeOAuthFlow.token_url (proto line 640) | token_url [(google.api.field_behavior) = REQUIRED] | A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const… |
-| low | PARTIAL | §3.1.2 (line 210) | The stream MUST close when the task reaches a terminal state (COMPLETED, FAILED, CANCELED, REJECTED). | The reader ends on broadcast-channel Closed, i.e. when the executor returns and drops its writer; a terminal event does not itself end the stream and the writer does not refuse post-terminal writes, so an executor that keeps running (or writes more) after a t… |
-| low | PARTIAL | §3.1.6 (line 309) | The stream MUST terminate when the task reaches a terminal state | Stream stays open across turns and synthesizes the terminal frame (STREAM-SUB-002 fix), but the reattach hook returns `Reattached::End` after `subscribe_max_idle` (default 300 s) while the task is still non-terminal, closing early by design (and pinned by a t… |
+| low | PARTIAL | §3.1.6 (line 309) | The stream MUST terminate when the task reaches a terminal state | SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still… |
 | low | PARTIAL | §3.3.2 (line 544) | Well-known types from the google.rpc error model (e.g., ErrorInfo, BadRequest) SHOULD be used where applicable | ErrorInfo on every A2A-specific error. Since ef31df9 a body or params that do not deserialize carry google.rpc.BadRequest with the field path (jsonrpc_error_details.rs, bad_request_details.rs). Remaining: the handler's own validation failures (empty message.i… |
 | low | PARTIAL | §3.6.2 (line 739) | Agents MUST interpret empty value as 0.3 version. | Empty means 0.3 and is refused on every binding including axum. Only the explicit opt-outs (accept_missing_version_header, gRPC require_version_header=false) serve it as 1.0, by the deployer's choice. |
 | low | PARTIAL | §4.3.3 (line 886) | Agents SHOULD include a reasonable timeout for webhook requests (recommended: 10-30 seconds) | Timeouts exist: per-request 30s in HttpPushSender, but the handler wraps each send in `push_delivery_timeout` = 5s default, below the recommended 10-30s and (as the code's own comment notes) truncating the sender's retry schedule to one attempt. |

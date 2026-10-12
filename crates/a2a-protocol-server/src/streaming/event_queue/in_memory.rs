@@ -850,6 +850,14 @@ impl EventQueueReader for InMemoryQueueReader {
                 }
                 return Some(first);
             }
+            // §3.1.2 / §3.1.6: the stream closes at the terminal state, once
+            // what is queued ahead of it is delivered. It used to end only
+            // when the executor dropped its writer, so one still running
+            // after its terminal status held the stream open.
+            if self.saw_terminal {
+                self.finished = true;
+                return None;
+            }
             if self.provisional.is_some() {
                 let mut first = self.next_live().await;
                 let snapshot = self.provisional.take()?;

@@ -454,17 +454,19 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "The stream MUST close when the task reaches a terminal state (COMPLETED, FAILED, CANCELED, REJECTED).",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:786",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:470",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:527"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:527",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:786",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:857"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:46 send_message_streaming_returns_reader"
+    "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:46 send_message_streaming_returns_reader",
+    "crates/a2a-protocol-server/tests/stream_closes_on_terminal.rs:34 the_stream_ends_at_the_terminal_status"
    ],
-   "notes": "The reader ends on broadcast-channel Closed, i.e. when the executor returns and drops its writer; a terminal event does not itself end the stream and the writer does not refuse post-terminal writes, so an executor that keeps running (or writes more) after a terminal status keeps the stream open. Tested only for a well-behaved executor.",
+   "notes": "Since 2026-10-12 a reader ends once it has delivered a terminal state (and whatever was queued ahead of it), instead of waiting for the executor to drop its writer; an executor still running, or writing, after its terminal status no longer holds the stream open. The conformance harness reads the raw channel so nothing_after_terminal still sees such writes. The test failed before the change (stream open after 5 s).",
    "auditor": "A",
    "source": "spec"
   },
@@ -816,16 +818,18 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:66",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:107",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:66",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:232",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:786",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:232"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:857"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:452 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:540 resubscribe_gives_up_after_the_idle_bound"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:540 resubscribe_gives_up_after_the_idle_bound",
+    "crates/a2a-protocol-server/tests/stream_closes_on_terminal.rs:34 the_stream_ends_at_the_terminal_status"
    ],
-   "notes": "Stream stays open across turns and synthesizes the terminal frame (STREAM-SUB-002 fix), but the reattach hook returns `Reattached::End` after `subscribe_max_idle` (default 300 s) while the task is still non-terminal, closing early by design (and pinned by a test); as with line 210, closure follows queue close, not the terminal event itself.",
+   "notes": "SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still non-terminal the reattach hook ends the stream early; the client resubscribes.",
    "auditor": "A",
    "source": "spec"
   },

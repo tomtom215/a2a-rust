@@ -1026,6 +1026,16 @@ area. This branch answers both.
     cached. Recorded for the maintainer: an opt-in `Origin` allowlist on
     the WebSocket upgrade (3222).
 
+25. Streams end at the terminal state (§3.1.2, §3.1.6): the reader
+    closes once the terminal event is delivered, not when the executor
+    drops its writer. The conformance harness now reads the raw channel.
+    CI note: `9aacd7a`'s Windows job failed once in
+    `keep_alive_comments_reset_the_idle_bound` (client SSE timing, 100 ms
+    heartbeats against a 1 s bound on a current-thread runtime; file
+    unchanged since 2026-09-22); the job was re-run once. Left for the
+    maintainer: legacy-name warnings (3429, needs custom deserializers),
+    encrypted push-credential storage (3139, needs a key design).
+
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
 fields, each opened the code and tests for every RFC 2119 line. Their entries
@@ -1048,13 +1058,13 @@ before acting on it, as this branch did.
   container's disk allowance (ENOSPC mid-run). The SLIMRPC binding is
   outside the workspace; its `cargo test -- --test-threads=1` passed after
   item 12.
-- Ledger after item 24: TESTED 294, PARTIAL 37, SUPPORTED 52,
+- Ledger after item 25: TESTED 295, PARTIAL 36, SUPPORTED 52,
   IMPLEMENTED_UNTESTED 2, GAP 3, NOT_SUPPORTED 13, NOT_APPLICABLE 22,
   APPLICATION 89 (`scripts/check_spec_ledger.py`). Items 21-22 moved ten
   entries from IMPLEMENTED_UNTESTED to PARTIAL (nine security-scheme
   REQUIRED strings and the brute-force SHOULD); item 23 moved eight PARTIAL
   entries to TESTED; item 24 moved eight WebSocket documentation entries to
-  SUPPORTED and three to TESTED. The two left untested: system errors are
+  SUPPORTED and three to TESTED; item 25 moved one to TESTED. The two left untested: system errors are
   logged (534) and webhook URLs should be HTTPS (3137).
 - Workspace tests after item 21: 182 binaries, 4,517 passed, 0 failed,
   116 ignored. Item 22's four new tests were run on their own and each shown

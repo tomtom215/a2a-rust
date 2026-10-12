@@ -287,6 +287,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   §5.1). It was the one v0.3 method name still served there, and every other
   binding refuses it; it is now `-32601` like the rest. The binding has a
   written specification at `book/src/bindings/websocket.md`.
+- **A stream ends at the terminal state** (server; spec §3.1.2, §3.1.6).
+  Streams ended when the executor returned; one that kept running, or kept
+  writing, after its terminal status held every subscriber's stream open.
+  Readers now end once the terminal event is delivered; events an executor
+  writes after it are not streamed.
 - **One JSON-RPC error shape on every surface** (server; spec §9.5, §12.4).
   HTTP responses, SSE frames and WebSocket messages now build the error the
   same way: the A2A code, and `data` as the typed-details array. On WebSocket
