@@ -143,7 +143,7 @@ take the same three through their own `with_completion_grace`,
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `with_protocol_binding` | `impl Into<String>` | `"JSONRPC"` (`new`); the card's interface chosen by `preferred_bindings` (`from_card`) | Transport: `"JSONRPC"`, `"HTTP+JSON"` (alias `"REST"`), or `"GRPC"` — the last needs `build_grpc()`; `build()` refuses it |
+| `with_protocol_binding` | `impl Into<String>` | `"JSONRPC"` (`new`); the card's first supported interface (`from_card`); the first ranked one the card offers (`from_card_preferring`) | Transport: `"JSONRPC"`, `"HTTP+JSON"` (alias `"REST"`), or `"GRPC"` — the last needs `build_grpc()`; `build()` refuses it |
 | `with_timeout` | `Duration` | 30s | Per-request timeout |
 | `with_connection_timeout` | `Duration` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout` | `Duration` | 30s | Establishing a stream: until the response headers (gRPC: until the call is accepted) |

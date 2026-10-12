@@ -53,7 +53,7 @@ Accepted before or after the subcommand.
 
 | Flag | Meaning |
 |---|---|
-| `--binding jsonrpc\|rest\|grpc\|websocket` | Which binding to speak to `<URL>` with. **Default: none given — the agent card is fetched from `<URL>/.well-known/agent-card.json` and the binding is chosen the way `ClientBuilder::from_card` does: `JSONRPC` if the card offers it, otherwise the card's first interface; the card's URL for that interface is used, not `<URL>`.** With the flag no card is fetched and `<URL>` is the endpoint of that binding: `http(s)://` for `jsonrpc` and `rest`, `ws(s)://` for `websocket`, `host:port` or `http(s)://` for `grpc`. |
+| `--binding jsonrpc\|rest\|grpc\|websocket` | Which binding to speak to `<URL>` with. **Default: none given — the agent card is fetched from `<URL>/.well-known/agent-card.json` and the binding is chosen the way `ClientBuilder::from_card` does: the first interface the card lists that this client supports (spec §8.3.2); the card's URL for that interface is used, not `<URL>`.** With the flag no card is fetched and `<URL>` is the endpoint of that binding: `http(s)://` for `jsonrpc` and `rest`, `ws(s)://` for `websocket`, `host:port` or `http(s)://` for `grpc`. |
 | `--timeout <SECS>` | Per-request timeout; also bounds establishing a stream. Default 30. The TCP connect timeout stays at the library's 10 s unless this is shorter. |
 | `--header K=V` | Extra header on every request; repeatable. Split at the first `=`, so `--header "Authorization=Bearer abc=="` keeps the padding. Over gRPC the headers become request metadata; over WebSocket they go on the upgrade request. |
 | `--tenant <ID>` | Tenant for multi-tenant agents. Overrides the tenant the card advertises for the chosen interface. |

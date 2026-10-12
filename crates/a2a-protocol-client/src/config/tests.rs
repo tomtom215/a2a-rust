@@ -3,6 +3,10 @@
 
 //! Tests for [`ClientConfig`](super::ClientConfig) and its defaults.
 
+// The defaults include the deprecated `preferred_bindings`, read here until
+// it is removed.
+#![allow(deprecated)]
+
 use super::*;
 
 #[test]

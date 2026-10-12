@@ -167,6 +167,31 @@ A push config with an empty or scheme-less `url`, or with an authentication
 scheme other than Bearer or Basic, answers `InvalidParams`. The second used to
 be stored and then delivered with no credentials at all.
 
+### `ClientBuilder::from_card` follows the card's interface order
+
+Spec §8.3.2: a client MUST select the first interface it supports, preferring
+earlier entries in the card's list. `from_card` used to prefer JSON-RPC
+wherever the card listed it; it now takes the card's first interface for
+protocol 1.x and falls back down the list past one it cannot build. A card
+listing `HTTP+JSON` before `JSONRPC` now gets HTTP+JSON. To keep the old
+choice, rank the bindings yourself:
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# fn main() -> Result<(), ClientError> {
+# let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::rest("http://localhost:3001"))
+#     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
+let client = ClientBuilder::from_card_preferring(&card, &["JSONRPC".into()])?.build()?;
+# drop(client);
+# Ok(())
+# }
+```
+
+`ClientConfig::preferred_bindings` and its setter are deprecated: nothing
+reads them. Use `from_card_preferring` to rank, and
+`ClientBuilder::chosen_interface` to see what was chosen.
+
+
 ### OpenTelemetry 0.33 for the `otel` feature
 
 `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp` and the rest of the

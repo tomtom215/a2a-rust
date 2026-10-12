@@ -31,7 +31,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §4 | 6 | 5 | 2 |  | 1 |  | 1 |  | 15 |
 | §5 | 25 | 2 | 2 |  | 3 |  | 3 |  | 35 |
 | §7 | 7 | 13 | 2 |  |  |  |  |  | 22 |
-| §8 | 27 | 5 | 5 | 2 |  |  | 4 | 2 | 45 |
+| §8 | 29 | 5 | 5 | 2 |  |  | 4 |  | 45 |
 | §9 | 13 |  |  |  |  |  |  |  | 13 |
 | §10 | 6 |  |  |  |  |  |  |  | 6 |
 | §11 | 14 |  |  | 4 |  |  | 1 |  | 19 |
@@ -40,15 +40,13 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 5 | 5 | 3 |  |  |  | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
 | proto `REQUIRED` fields | 71 | 11 | 6 |  | 8 |  | 10 |  | 106 |
-| **All** | **295** | **89** | **52** | **13** | **22** | **2** | **36** | **3** | **512** |
+| **All** | **297** | **89** | **52** | **13** | **22** | **2** | **36** | **1** | **512** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
 | medium | GAP | §3.3.4 (line 578) | Clients SHOULD validate capability support by examining the Agent Card before attempting operations that require optional capabilities | Client reads card.capabilities only for the idempotency extension (builder/mod.rs:203); stream/subscribe/push-config calls are sent regardless of capabilities.streaming/pushNotifications (no such check in crates/a2a-protocol-client/src). |
-| medium | GAP | §8.3.2 (line 2007) | Clients MUST: 1. Parse `supportedInterfaces` if present, and select the first supported transport | from_card ranks interfaces by ClientConfig::default().preferred_bindings = ["JSONRPC"] (config.rs:261) before card order (selection.rs `usable.sort_by_key(rank)`), so a card listing [HTTP+JSON, JSONRPC] — both supported by the default client — yields JSONRPC,… |
-| medium | GAP | §8.3.2 (line 2008) | 2. Prefer earlier entries in the ordered list when multiple options are supported | Caller preference overrides the agent's ordering by design (a2a-go parity); card order is only a tie-break within the same preference rank. |
 | medium | PARTIAL | §1.4 (line 107) | SDK language bindings, schemas, and any other derived forms MUST be regenerated from the proto (directly or via code generation) rather tha… | Only the prost message types (feature `proto`, build.rs) are generated from a2a.proto; the primary public serde types (Task, Message, TaskListResponse, AgentCard ...) are hand-written structs, guarded by golden fixtures/proptests rather than generated. proto_… |
 | medium | PARTIAL | §3.3.4 (line 571) | When clients attempt to use operations or features that require capabilities not declared ... the agent MUST return an appropriate error re… | Summary of 573-576 below. All checks are skipped when no AgentCard is configured on the RequestHandler (capability.rs:16-18, 189). |
 | medium | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | Order is preserved, but a subscriber that falls behind the bounded broadcast buffer loses the overwritten events (surfaced as an explicit 'streamLagged' error), so a slow stream does not receive the same events as a fast one. |

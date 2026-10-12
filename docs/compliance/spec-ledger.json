@@ -4622,19 +4622,20 @@
    "keyword": "MUST",
    "binds": "client",
    "requirement": "Clients MUST: 1. Parse `supportedInterfaces` if present, and select the first supported transport",
-   "status": "GAP",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/selection.rs:70",
-    "crates/a2a-protocol-client/src/builder/mod.rs:143",
-    "crates/a2a-protocol-client/src/config.rs:261"
+    "crates/a2a-protocol-client/src/builder/mod.rs:151",
+    "crates/a2a-protocol-client/src/builder/selection.rs:109"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:680 from_card_applies_the_default_preference_list"
+    "crates/a2a-protocol-client/src/builder/mod.rs:695 from_card_follows_the_cards_order",
+    "crates/a2a-protocol-client/src/builder/mod.rs:640 an_empty_preference_list_takes_the_cards_first_interface"
    ],
-   "notes": "from_card ranks interfaces by ClientConfig::default().preferred_bindings = [\"JSONRPC\"] (config.rs:261) before card order (selection.rs `usable.sort_by_key(rank)`), so a card listing [HTTP+JSON, JSONRPC] — both supported by the default client — yields JSONRPC, not the first supported entry; the test explicitly pins reaching past the card's first entry. Card order is honoured only with an empty preference list.",
+   "notes": "from_card applies no binding preference (it passed ClientConfig::default().preferred_bindings = [\"JSONRPC\"] until 2026-10-12, so a card listing [HTTP+JSON, JSONRPC] got JSONRPC). Among interfaces for protocol major 1 the card's order decides, and build() moves past one it cannot construct, which is what 'first supported' requires. from_card_preferring ranks bindings only when the caller asks it to.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 2008,
@@ -4642,19 +4643,20 @@
    "keyword": "MUST",
    "binds": "client",
    "requirement": "2. Prefer earlier entries in the ordered list when multiple options are supported",
-   "status": "GAP",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/selection.rs:76",
-    "crates/a2a-protocol-client/src/builder/mod.rs:184"
+    "crates/a2a-protocol-client/src/builder/mod.rs:151",
+    "crates/a2a-protocol-client/src/builder/selection.rs:109"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:588 from_card_prefers_the_callers_binding_order_over_the_cards",
-    "crates/a2a-protocol-client/src/builder/mod.rs:629 an_empty_preference_list_takes_the_cards_first_interface"
+    "crates/a2a-protocol-client/src/builder/mod.rs:695 from_card_follows_the_cards_order",
+    "crates/a2a-protocol-client/src/builder/mod.rs:640 an_empty_preference_list_takes_the_cards_first_interface"
    ],
-   "notes": "Caller preference overrides the agent's ordering by design (a2a-go parity); card order is only a tie-break within the same preference rank.",
+   "notes": "from_card keeps the card's order, earlier entries first, with the rest as build() fallbacks in that order. from_card_preferring lets a caller who explicitly ranks bindings override the agent's order (a2a-go parity); card order then breaks ties within a rank.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 2009,

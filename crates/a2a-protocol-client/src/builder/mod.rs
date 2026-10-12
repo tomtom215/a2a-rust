@@ -131,17 +131,25 @@ impl ClientBuilder {
         }
     }
 
-    /// Creates a builder pre-configured from an [`AgentCard`], preferring the
-    /// bindings in [`ClientConfig::preferred_bindings`] order.
+    /// Creates a builder pre-configured from an [`AgentCard`], using the
+    /// first interface the card lists that this client supports.
     ///
-    /// Selection follows [`from_card_preferring`](Self::from_card_preferring).
+    /// Spec §8.3.2: a client MUST select the first supported interface and
+    /// prefer earlier entries in the card's ordered list. So this applies no
+    /// binding preference of its own: among the card's interfaces for this
+    /// SDK's A2A protocol major, the card's order decides, and
+    /// [`build`](Self::build) moves past one it cannot construct (a gRPC
+    /// interface needs `build_grpc`, a binding this SDK does not implement, a
+    /// malformed URL). Until 0.15 this preferred JSON-RPC wherever the card
+    /// listed it; to rank bindings yourself, use
+    /// [`from_card_preferring`](Self::from_card_preferring).
     ///
     /// # Errors
     ///
     /// Returns [`ClientError::InvalidEndpoint`] if the card has no interfaces,
     /// or none for this SDK's A2A protocol major.
     pub fn from_card(card: &AgentCard) -> ClientResult<Self> {
-        Self::from_card_preferring(card, &ClientConfig::default().preferred_bindings)
+        Self::from_card_preferring(card, &[])
     }
 
     /// Creates a builder from an [`AgentCard`], choosing the first interface
@@ -181,6 +189,9 @@ impl ClientBuilder {
     /// or none for this SDK's A2A protocol major; the message lists what the
     /// card offers. Earlier releases accepted such a card with a warning, and
     /// it failed at the first call instead.
+    // Records the ranking in the deprecated `ClientConfig::preferred_bindings`
+    // for anyone reading it, until the field is removed.
+    #[allow(deprecated)]
     pub fn from_card_preferring(card: &AgentCard, preferences: &[String]) -> ClientResult<Self> {
         let mut candidates = selection::candidates(card, preferences)?.into_iter();
         let Some(first) = candidates.next() else {
@@ -676,23 +687,36 @@ mod tests {
         assert_eq!(builder.endpoint, "http://localhost:2222");
     }
 
+    /// Spec §8.3.2: the card's order decides. A card listing HTTP+JSON before
+    /// JSON-RPC gets HTTP+JSON, with JSON-RPC kept as the fallback, and no
+    /// ranking is recorded because none was applied.
     #[test]
-    fn from_card_applies_the_default_preference_list() {
-        // Card offers GRPC *first*. The default preference is JSONRPC, so a
-        // plain `from_card` must reach past the card's first entry.
+    #[allow(deprecated)] // reads `preferred_bindings`, deprecated in 0.15
+    fn from_card_follows_the_cards_order() {
         let card = card_with(vec![
-            iface(BINDING_GRPC, "http://localhost:2222"),
+            iface(BINDING_HTTP_JSON, "http://localhost:3333"),
             iface(BINDING_JSONRPC, "http://localhost:1111"),
         ]);
 
         let builder = ClientBuilder::from_card(&card).expect("from_card");
 
         assert_eq!(
-            builder.endpoint, "http://localhost:1111",
-            "from_card must honour ClientConfig's default preference (JSONRPC), \
-             not the card's own first entry (GRPC)"
+            builder.endpoint, "http://localhost:3333",
+            "from_card must take the card's first entry, not prefer JSON-RPC"
         );
-        assert_eq!(builder.preferred_binding.as_deref(), Some(BINDING_JSONRPC));
+        assert_eq!(
+            builder.preferred_binding.as_deref(),
+            Some(BINDING_HTTP_JSON)
+        );
+        assert_eq!(
+            builder
+                .fallback_interfaces
+                .iter()
+                .map(|i| i.protocol_binding.as_str())
+                .collect::<Vec<_>>(),
+            [BINDING_JSONRPC]
+        );
+        assert!(builder.config.preferred_bindings.is_empty());
     }
 
     #[test]
@@ -710,6 +734,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // reads `preferred_bindings`, deprecated in 0.15
     fn the_applied_preference_is_recorded_in_the_built_config() {
         // A config whose `preferred_bindings` does not describe the preference
         // that was actually applied is the same defect one layer down.

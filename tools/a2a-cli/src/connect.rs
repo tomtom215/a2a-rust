@@ -190,17 +190,17 @@ mod tests {
     }
 
     /// What the library reports as chosen is what `--help` says the default
-    /// is: JSONRPC when offered, even when the card lists it second. This
-    /// pins the tool's reading of the builder, not the builder's rule — that
-    /// is tested where it lives.
+    /// is: the card's first interface, even when JSONRPC is listed second
+    /// (spec §8.3.2). This pins the tool's reading of the builder, not the
+    /// builder's rule — that is tested where it lives.
     #[test]
-    fn prefers_jsonrpc_wherever_the_card_lists_it() {
+    fn takes_the_cards_first_interface_even_before_jsonrpc() {
         let c = card(
             AgentInterface::rest("http://r"),
             AgentInterface::jsonrpc("http://j"),
         );
         let b = ClientBuilder::from_card(&c).expect("card has interfaces");
-        assert_eq!(b.chosen_interface().expect("some").url, "http://j");
+        assert_eq!(b.chosen_interface().expect("some").url, "http://r");
     }
 
     #[test]

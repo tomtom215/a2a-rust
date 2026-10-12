@@ -60,7 +60,8 @@ pub struct A2aClient {
 impl A2aClient {
     /// Creates a client from an [`AgentCard`] using the recommended defaults.
     ///
-    /// Selects the transport based on the agent's preferred protocol.
+    /// Uses the first interface the card lists that this client supports,
+    /// as [`ClientBuilder::from_card`] does (spec §8.3.2).
     ///
     /// # Errors
     ///

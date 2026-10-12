@@ -111,10 +111,23 @@ pub use stream_defaults::{DEFAULT_STREAM_FIRST_EVENT_TIMEOUT, DEFAULT_STREAM_IDL
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ClientConfig {
-    /// Ordered list of preferred protocol bindings.
+    /// The binding ranking interface selection applied.
     ///
-    /// The client tries each in order, selecting the first one supported by the
-    /// target agent's card. Defaults to `["JSONRPC"]`.
+    /// Deprecated: nothing reads it. Until 0.15
+    /// [`ClientBuilder::from_card`](crate::ClientBuilder::from_card) ranked
+    /// the card's interfaces by this field's default, `["JSONRPC"]`; it now
+    /// follows the card's own order, as spec §8.3.2 requires. To rank
+    /// bindings, pass the ranking to
+    /// [`ClientBuilder::from_card_preferring`](crate::ClientBuilder::from_card_preferring),
+    /// which still records it here, and see which interface was chosen with
+    /// [`ClientBuilder::chosen_interface`](crate::ClientBuilder::chosen_interface).
+    /// Setting it changes nothing. It is removed in a later minor release
+    /// (`STABILITY.md`).
+    #[deprecated(
+        since = "0.15.0",
+        note = "nothing reads it: `from_card` follows the card's interface order (spec §8.3.2); \
+                pass a ranking to `ClientBuilder::from_card_preferring`"
+    )]
     pub preferred_bindings: Vec<String>,
 
     /// MIME types the client will advertise in `acceptedOutputModes`.
@@ -256,6 +269,8 @@ impl ClientConfig {
     /// Returns the default configuration suitable for connecting to a local
     /// or well-known agent over plain HTTP.
     #[must_use]
+    // The deprecated `preferred_bindings` keeps its value until it is removed.
+    #[allow(deprecated)]
     pub fn default_http() -> Self {
         Self {
             preferred_bindings: vec![BINDING_JSONRPC.into()],
@@ -277,6 +292,8 @@ impl ClientConfig {
 }
 
 impl Default for ClientConfig {
+    // The deprecated `preferred_bindings` keeps its value until it is removed.
+    #[allow(deprecated)]
     fn default() -> Self {
         Self {
             preferred_bindings: vec![BINDING_JSONRPC.into()],
@@ -298,8 +315,15 @@ impl Default for ClientConfig {
 }
 
 impl ClientConfig {
-    /// Sets the ordered binding preference list.
+    /// Sets [`preferred_bindings`](Self::preferred_bindings), which nothing
+    /// reads; see the field.
     #[must_use]
+    #[deprecated(
+        since = "0.15.0",
+        note = "nothing reads `preferred_bindings`: `from_card` follows the card's interface \
+                order (spec §8.3.2); pass a ranking to `ClientBuilder::from_card_preferring`"
+    )]
+    #[allow(deprecated)]
     pub fn with_preferred_bindings(mut self, bindings: Vec<String>) -> Self {
         self.preferred_bindings = bindings;
         self

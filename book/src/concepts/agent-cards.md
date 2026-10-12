@@ -154,9 +154,9 @@ the gRPC binding it is a gRPC target, `"grpc.example.com:443"` — no scheme,
 because gRPC names have none; whether the channel uses TLS is the client's
 decision (see [gRPC](transport-layers.md#grpc)).
 
-An agent must have at least one interface. Having multiple interfaces (e.g., JSON-RPC and REST) lets clients choose their preferred transport.
+An agent must have at least one interface. List them in the order you want clients to use them: the order is the agent's preference.
 
-The choice is the *client's*, not the card's. `ClientBuilder::from_card()` walks `ClientConfig::preferred_bindings` in order and takes the first binding the card offers, falling back to the card's first interface only when it offers none of them. Pass your own order with `ClientBuilder::from_card_preferring(&card, &["GRPC".into()])`.
+Spec §8.3.2 makes that order binding on clients: a client MUST select the first interface it supports and prefer earlier entries. `ClientBuilder::from_card()` does exactly that, skipping an interface for another protocol major and, at `build()`, one it cannot construct (gRPC under the synchronous `build()`, a binding it does not implement). Until 0.15 it preferred JSON-RPC wherever the card listed it. To rank bindings yourself, which the spec leaves to the client only when you ask for it, pass your own order with `ClientBuilder::from_card_preferring(&card, &["GRPC".into()])`; interfaces you did not rank follow in the card's order.
 
 Because a card gives each binding its own URL, the endpoint follows the binding: selecting `GRPC` selects that interface's `url` and `tenant` as well. The `tenant` field from the selected interface is preserved in `ClientConfig::tenant` and sent on every request — all eleven methods, `GetExtendedAgentCard` included — as spec §8.3.2 rule 4 requires. Methods whose params carry a `tenant` (send, get, list, push-config) let a per-request value override it.
 

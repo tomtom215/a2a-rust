@@ -86,9 +86,9 @@ let client = A2aClient::from_card(&card)?;
 ```
 
 `from_card` considers only interfaces for this SDK's protocol major (an agent
-that also serves v0.3 is not connected to on that endpoint), in the order of
-`ClientConfig::preferred_bindings` (`["JSONRPC"]` by default);
-`ClientBuilder::from_card_preferring` takes an order of your own.
+that also serves v0.3 is not connected to on that endpoint), in the card's
+own order, as spec §8.3.2 requires; `ClientBuilder::from_card_preferring`
+takes a binding order of your own.
 
 ## Streaming
 

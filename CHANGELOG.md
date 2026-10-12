@@ -247,6 +247,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **Breaking: `ClientBuilder::from_card` follows the card's interface order**
+  (client; spec §8.3.2: a client MUST select the first supported interface,
+  preferring earlier entries). It ranked by `ClientConfig::default()`'s
+  `preferred_bindings`, `["JSONRPC"]`, so a card listing `HTTP+JSON` before
+  `JSONRPC` got JSON-RPC. It now applies no preference of its own: the card's
+  first interface for protocol 1.x, with `build()` falling back down the list
+  past one it cannot construct. `A2aClient::from_card` follows.
+  `from_card_preferring` still applies a caller's explicit ranking, and
+  `ClientConfig::preferred_bindings` is documented as the record of the
+  ranking applied, which it always was. See the upgrading guide.
 - **Breaking for the `otel` feature: OpenTelemetry 0.33** (server, client,
   sdk). `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`,
   `opentelemetry-http`, `opentelemetry-appender-tracing` 0.32 to 0.33.1 and
@@ -533,6 +543,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
+- **`ClientConfig::preferred_bindings` and `ClientConfig::with_preferred_bindings`**
+  (client). Nothing reads them once `ClientBuilder::from_card` follows the
+  card's interface order (spec §8.3.2); setting them changed nothing a caller
+  could see. Rank bindings with `ClientBuilder::from_card_preferring`, and see
+  the choice with `ClientBuilder::chosen_interface`. Kept for one minor
+  release, as `STABILITY.md` requires.
 - **`signing::sign_agent_card` and `signing::sign_agent_card_ed25519`**,
   whose `key_id: Option<&str>` let a signature omit `kid`, which §8.4.2
   forbids. Use `sign_card_es256` and `sign_card_ed25519`: the same signature

@@ -153,7 +153,7 @@ let client = ClientBuilder::new(url)
 | Method | Default | Description |
 |--------|---------|-------------|
 | `new(url)` | — | Base URL of the agent (required) |
-| `from_card(&AgentCard)` | — | Build from an agent card, preferring `ClientConfig`'s default binding order (`["JSONRPC"]`), falling back to the card's first compatible interface. Only interfaces whose `protocolVersion` has major 1 count (empty counts; `v1.0` counts), so a v0.3 endpoint listed first is skipped; a card with none is refused with what it offers. If the chosen interface cannot be built (gRPC under sync `build()`, an unknown binding, a bad URL), `build()` moves to the next one |
+| `from_card(&AgentCard)` | — | Build from an agent card, using the first interface the card lists that this client supports (spec §8.3.2; until 0.15 it preferred JSON-RPC). Only interfaces whose `protocolVersion` has major 1 count (empty counts; `v1.0` counts), so a v0.3 endpoint listed first is skipped; a card with none is refused with what it offers. If the chosen interface cannot be built (gRPC under sync `build()`, an unknown binding, a bad URL), `build()` moves to the next one |
 | `from_card_preferring(&AgentCard, &[String])` | — | Same, with your own binding order. The first preference the card offers wins; matching is case-insensitive |
 | `with_protocol_binding(str)` | `"JSONRPC"` | Force transport: `"JSONRPC"`, `"HTTP+JSON"` (or `"REST"`), or `"GRPC"`, in any case. On a builder made from a card, moves the endpoint and tenant to that binding's interface too, and turns off `build()`'s fallback to other interfaces |
 | `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |

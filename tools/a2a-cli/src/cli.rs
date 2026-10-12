@@ -15,8 +15,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 /// drift apart in what they promise.
 pub const BINDING_HELP: &str = "Protocol binding to speak to <URL> with. \
 Without this flag the agent card is fetched from <URL>/.well-known/agent-card.json \
-and the binding is chosen the way ClientBuilder::from_card does: JSONRPC if the card \
-offers it, otherwise the card's first interface — and the card's URL for that \
+and the binding is chosen the way ClientBuilder::from_card does: the first interface \
+the card lists that this client supports (spec §8.3.2) — and the card's URL for that \
 interface is used, not <URL>. With this flag no card is fetched and <URL> is taken \
 as the endpoint of that binding (http(s):// for jsonrpc and rest, ws(s):// for \
 websocket, host:port or http(s):// for grpc).";
