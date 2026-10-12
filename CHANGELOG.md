@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only `/` is indexed. Built by `scripts/build_docs_site.py`, checked by its
   `check` step, which `prove_workflow_gates_fail.py` proves can fail; it
   deploys on every push to `main` and when the Release workflow succeeds.
+- **`HttpPushSender::https_only()`** (server; spec §13.2: webhook URLs
+  SHOULD use HTTPS). Opt-in: a push config whose URL is not `https://` is
+  refused at creation with `InvalidParams` naming the reason, and a delivery
+  to one is refused before any connection. Senders of your own report it
+  through the new provided method `PushSender::requires_https` (default
+  `false`). Off by default; `http://` webhooks are still delivered unless it
+  is set.
 - **`AgentCard::validate_security_schemes`** (types; proto `REQUIRED`):
   refuses a security scheme whose REQUIRED string is empty. See "refuses
   empty required strings" under Behaviour Changes.

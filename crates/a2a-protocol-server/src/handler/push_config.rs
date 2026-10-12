@@ -75,43 +75,7 @@ impl RequestHandler {
             return Err(ServerError::TaskNotFound(target_task));
         }
 
-        // FIX(#3): Validate webhook URL at config creation time to prevent
-        // SSRF attacks. Previously validation only happened at delivery time,
-        // leaving a window where malicious URLs could be stored.
-        // Respect the push sender's allow_private_urls setting for testing.
-        //
-        // This is deliberately the synchronous host check (scheme, IP
-        // literals, credentials, ports) — it fails fast on obviously bad
-        // URLs without adding a DNS lookup to a CRUD call. The security
-        // boundary is delivery: `validate_webhook_url_with_dns` re-checks
-        // there with resolution + IP pinning, so a hostname that resolves
-        // privately is stored but never delivered to.
-        if !sender.allows_private_urls() {
-            crate::push::sender::validate_webhook_url(&config.url)?;
-        }
-        if !sender.allows_webhook_url(&config.url) {
-            return Err(ServerError::InvalidParams(
-                "push notification URL's host is not in the server's webhook allowlist".into(),
-            ));
-        }
-        // The proto marks `url` REQUIRED. The host check above runs only
-        // when private URLs are refused, so with them allowed an empty or
-        // scheme-less URL was stored, and listed back, until 2026-10-10.
-        config.validate().map_err(ServerError::InvalidParams)?;
-        // §4.3.3 / §13.2: deliveries MUST carry the credentials the config
-        // specifies. The sender can write only `Bearer` and `Basic` (a2a-go
-        // v2.5.0 the same); any other scheme used to be stored and then
-        // delivered without credentials, with only a log line to say so.
-        if let Some(auth) = &config.authentication
-            && !auth.scheme.eq_ignore_ascii_case("bearer")
-            && !auth.scheme.eq_ignore_ascii_case("basic")
-        {
-            return Err(ServerError::InvalidParams(format!(
-                "push notification authentication scheme {:?} is not supported; \
-                 this server can send Bearer or Basic",
-                auth.scheme
-            )));
-        }
+        refuse_an_unservable_config(sender.as_ref(), &config)?;
 
         // Enforce the per-task config cap here so it holds for EVERY store
         // backend (the SQL stores do not self-enforce). Creating a new
@@ -457,6 +421,63 @@ impl RequestHandler {
         }
         result
     }
+}
+
+/// Refuses, at creation, a push config `sender` could not deliver: a URL the
+/// SSRF check, the HTTPS requirement or the host allowlist would refuse, a
+/// config the proto does not allow, or credentials the sender cannot write.
+fn refuse_an_unservable_config(
+    sender: &dyn crate::push::PushSender,
+    config: &TaskPushNotificationConfig,
+) -> ServerResult<()> {
+    // FIX(#3): Validate webhook URL at config creation time to prevent
+    // SSRF attacks. Previously validation only happened at delivery time,
+    // leaving a window where malicious URLs could be stored.
+    // Respect the push sender's allow_private_urls setting for testing.
+    //
+    // This is deliberately the synchronous host check (scheme, IP
+    // literals, credentials, ports) — it fails fast on obviously bad
+    // URLs without adding a DNS lookup to a CRUD call. The security
+    // boundary is delivery: `validate_webhook_url_with_dns` re-checks
+    // there with resolution + IP pinning, so a hostname that resolves
+    // privately is stored but never delivered to.
+    if !sender.allows_private_urls() {
+        crate::push::sender::validate_webhook_url(&config.url)?;
+    }
+    // §13.2: webhook URLs SHOULD use HTTPS; a sender set to deliver
+    // only over it refuses any other scheme here, with a reason, rather
+    // than storing a config every delivery of which would fail.
+    if sender.requires_https() && !crate::push::sender::is_https_url(&config.url) {
+        return Err(ServerError::InvalidParams(
+            "push notification URL must be https://: this server's push sender \
+             delivers only to https webhooks"
+                .into(),
+        ));
+    }
+    if !sender.allows_webhook_url(&config.url) {
+        return Err(ServerError::InvalidParams(
+            "push notification URL's host is not in the server's webhook allowlist".into(),
+        ));
+    }
+    // The proto marks `url` REQUIRED. The host check above runs only
+    // when private URLs are refused, so with them allowed an empty or
+    // scheme-less URL was stored, and listed back, until 2026-10-10.
+    config.validate().map_err(ServerError::InvalidParams)?;
+    // §4.3.3 / §13.2: deliveries MUST carry the credentials the config
+    // specifies. The sender can write only `Bearer` and `Basic` (a2a-go
+    // v2.5.0 the same); any other scheme used to be stored and then
+    // delivered without credentials, with only a log line to say so.
+    if let Some(auth) = &config.authentication
+        && !auth.scheme.eq_ignore_ascii_case("bearer")
+        && !auth.scheme.eq_ignore_ascii_case("basic")
+    {
+        return Err(ServerError::InvalidParams(format!(
+            "push notification authentication scheme {:?} is not supported; \
+             this server can send Bearer or Basic",
+            auth.scheme
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1105,6 +1126,49 @@ mod tests {
             .on_set_push_config(config, None)
             .await
             .expect("a listed host is accepted");
+    }
+
+    /// §13.2: a sender set to deliver only over HTTPS has an `http://`
+    /// config refused at creation, with the reason; `https://` is accepted.
+    #[tokio::test]
+    async fn set_push_config_refuses_http_when_the_sender_is_https_only() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_push_sender(crate::push::HttpPushSender::new().https_only())
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        let mut config = make_push_config("t-1");
+        config.url = "http://hooks.example.com/hook".into();
+        let refused = handler.on_set_push_config(config, None).await;
+        assert!(
+            matches!(&refused, Err(crate::error::ServerError::InvalidParams(m)) if m.contains("must be https://")),
+            "{refused:?}"
+        );
+        let mut config = make_push_config("t-1");
+        config.url = "https://hooks.example.com/hook".into();
+        handler
+            .on_set_push_config(config, None)
+            .await
+            .expect("an https:// webhook is accepted");
+    }
+
+    /// A sender that keeps `PushSender::requires_https`'s default accepts an
+    /// `http://` config: HTTPS-only is opt-in.
+    #[tokio::test]
+    async fn set_push_config_accepts_http_from_a_sender_that_does_not_require_https() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        let mut config = make_push_config("t-1");
+        config.url = "http://hooks.example.com/hook".into();
+        handler
+            .on_set_push_config(config, None)
+            .await
+            .expect("http:// is accepted unless the sender requires https");
     }
 
     /// SPEC §3.1.7: creating a push config for a task that does not exist must

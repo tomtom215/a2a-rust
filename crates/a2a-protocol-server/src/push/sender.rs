@@ -114,6 +114,14 @@ pub trait PushSender: Send + Sync + 'static {
         true
     }
 
+    /// Whether this sender delivers only to `https://` webhooks, checked when
+    /// a push config is created so an `http://` URL is refused then, with a
+    /// reason. Default: `false`. [`HttpPushSender`] answers from
+    /// [`https_only`](HttpPushSender::https_only).
+    fn requires_https(&self) -> bool {
+        false
+    }
+
     /// The longest a single [`send`](Self::send) can take, if this sender can
     /// say — its whole retry schedule, not one attempt.
     ///
@@ -263,6 +271,8 @@ pub struct HttpPushSender {
     allow_private_urls: bool,
     /// Lowercased hostnames webhooks may target; `None` allows any.
     allowed_hosts: Option<Vec<String>>,
+    /// Whether only `https://` webhooks are accepted.
+    https_only: bool,
 }
 
 impl Default for HttpPushSender {
@@ -290,6 +300,7 @@ impl HttpPushSender {
             dns_timeout: DEFAULT_DNS_LOOKUP_TIMEOUT,
             allow_private_urls: false,
             allowed_hosts: None,
+            https_only: false,
         }
     }
 
@@ -313,6 +324,7 @@ impl HttpPushSender {
             dns_timeout: DEFAULT_DNS_LOOKUP_TIMEOUT,
             allow_private_urls: false,
             allowed_hosts: None,
+            https_only: false,
         }
     }
 
@@ -370,6 +382,17 @@ impl HttpPushSender {
         self
     }
 
+    /// Delivers only to `https://` webhooks (spec §13.2: webhook URLs SHOULD
+    /// use HTTPS). A push config with any other scheme is refused when it is
+    /// created, and a delivery to one is refused before any connection is
+    /// made. Off by default, so `http://` webhooks are delivered in
+    /// plaintext unless this is set.
+    #[must_use]
+    pub const fn https_only(mut self) -> Self {
+        self.https_only = true;
+        self
+    }
+
     fn host_allowed(&self, url: &str) -> bool {
         let Some(allowed) = &self.allowed_hosts else {
             return true;
@@ -379,6 +402,12 @@ impl HttpPushSender {
             .and_then(|uri| uri.host().map(str::to_ascii_lowercase))
             .is_some_and(|host| allowed.contains(&host))
     }
+}
+
+/// Whether `url`'s scheme is `https`, ignoring ASCII case.
+pub(crate) fn is_https_url(url: &str) -> bool {
+    url.split_once("://")
+        .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"))
 }
 
 /// Returns `true` if the given IPv4 address is private, loopback, link-local,
@@ -819,6 +848,10 @@ impl PushSender for HttpPushSender {
         self.host_allowed(url)
     }
 
+    fn requires_https(&self) -> bool {
+        self.https_only
+    }
+
     fn send<'a>(
         &'a self,
         url: &'a str,
@@ -838,9 +871,12 @@ impl PushSender for HttpPushSender {
                 )));
             }
 
-            let is_https = url
-                .split_once("://")
-                .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"));
+            let is_https = is_https_url(url);
+            if self.https_only && !is_https {
+                return Err(A2aError::invalid_params(format!(
+                    "{target} is not an https:// webhook, and this sender delivers only to https"
+                )));
+            }
 
             // Without the `tls-rustls` feature this sender's connector is
             // HTTP-only. Fail an `https://` target early with an actionable

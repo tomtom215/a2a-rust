@@ -67,7 +67,10 @@ something stops it. The bundled `HttpPushSender` does:
 * the validated IP is pinned, so DNS rebinding between check and connect does
   not help an attacker;
 * credentials are checked for `\r` and `\n` before they reach a header;
-* every delivery is capped at 30 seconds.
+* every delivery is capped at 30 seconds;
+* with `https_only()`, an `http://` webhook is refused at config creation and
+  again at delivery, so payloads and credentials never cross the network in
+  plaintext (opt-in: spec §13.2 says webhook URLs SHOULD use HTTPS).
 
 If you replace the sender, you inherit all of that as your responsibility. The
 validation helpers are public and reusable — use them rather than reimplementing

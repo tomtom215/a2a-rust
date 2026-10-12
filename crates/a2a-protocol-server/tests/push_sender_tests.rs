@@ -785,6 +785,39 @@ async fn the_host_allowlist_refuses_other_hosts_before_connecting() {
     handle.abort();
 }
 
+/// §13.2: an HTTPS-only sender refuses an `http://` webhook before any
+/// connection, and says so when a push config is created; a default sender
+/// delivers to it.
+#[tokio::test]
+async fn an_https_only_sender_refuses_http_before_connecting() {
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
+    let url = format!("http://{addr}/webhook");
+
+    let https_only = HttpPushSender::new().allow_private_urls().https_only();
+    assert!(https_only.requires_https());
+    let err = https_only
+        .send(&url, &status_event(), &base_config(&url))
+        .await
+        .expect_err("an http:// webhook");
+    assert!(err.message.contains("delivers only to https"), "{err}");
+    // `send` refuses before connecting, so had it sent anything it would
+    // have awaited the response first: the capture is final here.
+    assert!(captured.lock().unwrap().is_empty(), "nothing may be sent");
+
+    let default = HttpPushSender::new().allow_private_urls();
+    assert!(!default.requires_https());
+    default
+        .send(&url, &status_event(), &base_config(&url))
+        .await
+        .expect("a default sender delivers over http");
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
+    handle.abort();
+}
+
 /// §4.3.3: at least one attempt per webhook. A policy of zero attempts, set
 /// through the setter or straight on the public field, still sends once; the
 /// retry loop used to run no attempt at all.
