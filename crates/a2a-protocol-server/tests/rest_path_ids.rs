@@ -49,6 +49,7 @@ impl PushSender for Noop {
 fn handler() -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(Working)
+            .without_agent_card()
             .with_push_sender(Noop)
             .build()
             .unwrap(),

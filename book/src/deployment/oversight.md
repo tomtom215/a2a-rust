@@ -130,11 +130,18 @@ client.send_message(MessageSendParams::new(reply)).await?;
 On the server, `with_approval_gate` decides which decisions reach the executor:
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 use a2a_protocol_server::approval::ApprovalGate;
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};
 # struct MyAgent;
 # a2a_protocol_server::agent_executor!(MyAgent, |_ctx, _q| async { Ok(()) });
 let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card())
     .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
         ("token-a", "alice"), ("token-b", "bob"), ("token-agent", "billing-agent"),
     ]))

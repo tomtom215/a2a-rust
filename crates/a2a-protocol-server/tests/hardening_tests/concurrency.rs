@@ -12,6 +12,7 @@ use super::*;
 async fn concurrency_multiple_send_message_calls_on_same_handler() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(QuickExecutor)
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );

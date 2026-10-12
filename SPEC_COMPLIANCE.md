@@ -101,6 +101,7 @@ the compliance claim is worse than no matrix.
 
 | Spec area | Implementation | Evidence |
 |---|---|---|
+| §8.1 A server MUST make an agent card available | `RequestHandlerBuilder::build` refuses a handler with no card unless `without_agent_card()` (since 0.15); JSON-RPC, REST and axum serve it. WebSocket- and gRPC-only deployments must publish it on an HTTP route of their own (ledger: PARTIAL) | `builder::tests::build_refuses_a_handler_without_an_agent_card`, `without_agent_card_builds_a_handler_with_no_card` |
 | §8.3 Well-known agent card at `/.well-known/agent-card.json` | dispatchers; `client/discovery.rs` | discovery tests; card served versionless (see §3.6.2 row) |
 | §8.3.2 rule 4 Client sends the selected interface's `tenant` on **every** request | `methods/mod.rs::tenant_or_default`, applied in all eleven methods; `builder/mod.rs` populates `ClientConfig::tenant` from the card | `methods::tests::card_tenant_is_sent_on_every_request` (per-method, by name); `tenant_round_trip_tests.rs` (client vs. tenant-partitioned server over JSON-RPC and REST, with a `TaskNotFound` control) |
 | `AgentInterface.url` for gRPC is a target `host:port` (proto comment, upstream `cfc9d34`) | `transport/grpc.rs::normalize_endpoint`; `GrpcBareAddressScheme` | `normalize_*` unit tests; `a2a-protocol-sdk/tests/grpc_address_e2e.rs` (bare loopback → plaintext; bare target with TLS and a pinned CA; bundled roots reject an unknown CA) |

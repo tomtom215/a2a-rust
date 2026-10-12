@@ -224,6 +224,7 @@ agent_executor!(Refunds, |ctx, queue| async {
 /// share the tenant's records rather than being isolated by caller.
 fn handler(gate: Option<ApprovalGate>) -> RequestHandler {
     let mut b = RequestHandlerBuilder::new(Refunds)
+        .without_agent_card()
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
             ("t-alice", "alice"),
             ("t-bob", "bob"),
@@ -297,9 +298,11 @@ async fn an_approval_flows_through_the_gate_to_the_executor() {
 fn caller_isolation_refuses_a_gate_that_needs_a_second_caller() {
     let auth = || BearerTokenAuthInterceptor::with_labelled_tokens([("t-alice", "alice")]);
     let by_default = RequestHandlerBuilder::new(Refunds)
+        .without_agent_card()
         .with_interceptor(auth())
         .with_approval_gate(ApprovalGate::new());
     let explicitly = RequestHandlerBuilder::new(Refunds)
+        .without_agent_card()
         .with_interceptor(auth())
         .with_approval_gate(ApprovalGate::new().with_approvers(["bob"]))
         .isolate_tasks_by_caller();
@@ -322,6 +325,7 @@ fn caller_isolation_refuses_a_gate_that_needs_a_second_caller() {
 #[tokio::test]
 async fn a_self_approving_gate_works_with_caller_isolation() {
     let h = RequestHandlerBuilder::new(Refunds)
+        .without_agent_card()
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
             ("t-alice", "alice"),
             ("t-bob", "bob"),
@@ -398,6 +402,7 @@ async fn an_admitted_decision_is_audited_with_the_approver() {
 
     let log = Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new())));
     let h = RequestHandlerBuilder::new(Refunds)
+        .without_agent_card()
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
             ("t-alice", "alice"),
             ("t-bob", "bob"),

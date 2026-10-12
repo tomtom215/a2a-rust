@@ -159,6 +159,12 @@ a2a-protocol-client = { version = "0.14", features = ["websocket"] }
 ### Server
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::agent_executor;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -168,7 +174,7 @@ a2a-protocol-client = { version = "0.14", features = ["websocket"] }
 use a2a_protocol_server::{WebSocketDispatcher, RequestHandlerBuilder};
 use std::sync::Arc;
 
-let handler = Arc::new(RequestHandlerBuilder::new(my_executor).build().unwrap());
+let handler = Arc::new(RequestHandlerBuilder::new(my_executor).with_agent_card(card()).build().unwrap());
 let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
 
 // Start accepting WebSocket connections
@@ -256,6 +262,12 @@ a2a-protocol-client = { version = "0.14", features = ["grpc"] }
 ### Server
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -265,7 +277,7 @@ a2a-protocol-client = { version = "0.14", features = ["grpc"] }
 use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
 use std::sync::Arc;
 
-let handler = Arc::new(RequestHandlerBuilder::new(my_executor).build().unwrap());
+let handler = Arc::new(RequestHandlerBuilder::new(my_executor).with_agent_card(card()).build().unwrap());
 let config = GrpcConfig::default()
     .with_max_message_size(8 * 1024 * 1024);
 let dispatcher = GrpcDispatcher::new(handler, config);
@@ -402,6 +414,12 @@ JSON-RPC and REST use SSE for streaming. WebSocket uses native text frames. gRPC
 The server can serve both transports simultaneously on different ports:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::agent_executor;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -411,7 +429,7 @@ use a2a_protocol_sdk::server::{JsonRpcDispatcher, RestDispatcher, RequestHandler
 use std::sync::Arc;
 
 let handler = Arc::new(
-    RequestHandlerBuilder::new(my_executor).build().unwrap()
+    RequestHandlerBuilder::new(my_executor).with_agent_card(card()).build().unwrap()
 );
 
 // JSON-RPC on port 3000

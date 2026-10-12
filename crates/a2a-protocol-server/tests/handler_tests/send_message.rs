@@ -11,6 +11,7 @@ use super::*;
 #[tokio::test]
 async fn send_message_returns_completed_task() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -45,6 +46,7 @@ async fn send_message_returns_completed_task() {
 #[tokio::test]
 async fn send_message_streaming_returns_reader() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -110,6 +112,7 @@ async fn send_message_streaming_returns_reader() {
 #[tokio::test]
 async fn send_message_executor_failure_results_in_failed_task() {
     let handler = RequestHandlerBuilder::new(FailingExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 

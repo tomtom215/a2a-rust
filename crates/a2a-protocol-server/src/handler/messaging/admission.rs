@@ -271,6 +271,7 @@ mod tests {
     #[tokio::test]
     async fn an_unreadable_log_position_refuses_the_lease_rather_than_renumbering() {
         let handler = RequestHandlerBuilder::new(NoopExecutor)
+            .without_agent_card()
             .with_task_store(UnreadableLogStore)
             .build()
             .expect("handler");

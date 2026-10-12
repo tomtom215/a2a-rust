@@ -415,11 +415,18 @@ Because the trait requires `Send + Sync + 'static`, the executor must be safe to
 The builder can set a timeout that kills hung executors:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # fn f(my_executor: impl AgentExecutor) -> ServerResult<RequestHandler> {
 use std::time::Duration;
 
 RequestHandlerBuilder::new(my_executor)
+    .with_agent_card(card())
     .with_executor_timeout(Duration::from_secs(300))  // 5 minutes
     .build()
 # }

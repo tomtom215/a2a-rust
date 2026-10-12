@@ -109,6 +109,7 @@ mod tests {
 
     fn handler_with_lock_cap(max: usize) -> RequestHandler {
         RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
             .with_handler_limits(HandlerLimits::default().with_max_context_locks(max))
             .build()
             .expect("handler builds")

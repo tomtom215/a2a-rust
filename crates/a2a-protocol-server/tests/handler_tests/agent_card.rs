@@ -34,6 +34,7 @@ async fn get_extended_agent_card_returns_card() {
 #[tokio::test]
 async fn get_extended_agent_card_not_configured() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -49,6 +50,7 @@ async fn get_extended_agent_card_not_configured() {
 #[tokio::test]
 async fn builder_defaults_work() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build with defaults");
 

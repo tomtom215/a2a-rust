@@ -214,7 +214,10 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_task_not_found_returns_error() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let params = CancelTaskParams {
             tenant: None,
             id: "nonexistent-task".to_owned(),
@@ -229,7 +232,10 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_task_terminal_state_returns_not_cancelable() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let task = make_completed_task("t-cancel-terminal");
         handler.task_store.save(&task).await.unwrap();
 
@@ -248,6 +254,7 @@ mod tests {
     #[tokio::test]
     async fn cancel_task_non_terminal_succeeds() {
         let handler = RequestHandlerBuilder::new(CancelableExecutor)
+            .without_agent_card()
             .build()
             .unwrap();
         let task = make_submitted_task("t-cancel-active");
@@ -277,6 +284,7 @@ mod tests {
     #[tokio::test]
     async fn cancel_task_does_not_leak_event_queue() {
         let handler = RequestHandlerBuilder::new(CancelableExecutor)
+            .without_agent_card()
             .build()
             .unwrap();
         // A non-terminal task with no running executor / no queue.
@@ -310,7 +318,10 @@ mod tests {
     #[tokio::test]
     async fn cancel_task_error_path_records_metrics() {
         // Exercises the Err match arm (lines 114, 118) by triggering TaskNotFound.
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let params = CancelTaskParams {
             tenant: None,
             id: "nonexistent-for-metrics".to_owned(),
@@ -330,7 +341,10 @@ mod tests {
     /// cancellation token (every reference SDK requires working cancel).
     #[tokio::test]
     async fn cancel_working_task_with_default_executor_succeeds() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let mut task = make_submitted_task("cancel-default-1");
         task.status = TaskStatus::new(TaskState::Working);
         handler.task_store.save(&task).await.unwrap();
@@ -398,6 +412,7 @@ mod tests {
             .await
             .unwrap();
         let handler = RequestHandlerBuilder::new(CancelableExecutor)
+            .without_agent_card()
             .with_task_store(StaleReads(inner))
             .build()
             .unwrap();

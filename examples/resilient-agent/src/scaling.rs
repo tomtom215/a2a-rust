@@ -74,6 +74,7 @@ async fn in_memory_isolation_inner() -> Result<String, String> {
     for _ in 0..2 {
         let handler =
             RequestHandlerBuilder::new(FlakyExecutor(Arc::new(FlakyTally::failing_first(0))))
+                .without_agent_card()
                 .build()
                 .map_err(|e| format!("building a replica: {e}"))?;
         let (_handler, url) = serve(handler).await?;
@@ -179,6 +180,7 @@ mod postgres {
             step: STEP,
             die_after_first_chunk: false,
         })
+        .without_agent_card()
         .with_task_store(store)
         .build()
         .map_err(|e| format!("building a replica: {e}"))
@@ -305,6 +307,7 @@ mod postgres {
         }
         let handler =
             RequestHandlerBuilder::new(FlakyExecutor(Arc::new(FlakyTally::failing_first(0))))
+                .without_agent_card()
                 // Identity first, so the limiter sees it.
                 .with_interceptor(FixedIdentity(caller.to_owned()))
                 .with_interceptor(limiter)

@@ -56,6 +56,7 @@ fn send_message_body() -> String {
 async fn spawn_guarded_server(interceptor: JwtAuthInterceptor) -> std::net::SocketAddr {
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExec)
+            .without_agent_card()
             .with_interceptor(interceptor)
             .build()
             .expect("build handler"),

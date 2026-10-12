@@ -146,6 +146,7 @@ fn make_params_with_context(text: &str, ctx_id: &str) -> MessageSendParams {
 #[tokio::test]
 async fn empty_context_id_is_unset() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -162,6 +163,7 @@ async fn empty_context_id_is_unset() {
 #[tokio::test]
 async fn reject_whitespace_only_context_id() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -178,6 +180,7 @@ async fn reject_whitespace_only_context_id() {
 #[tokio::test]
 async fn reject_oversized_context_id() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -192,6 +195,7 @@ async fn reject_oversized_context_id() {
 #[tokio::test]
 async fn accept_max_length_context_id() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -210,6 +214,7 @@ async fn accept_max_length_context_id() {
 #[tokio::test]
 async fn accept_unicode_context_id() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -229,6 +234,7 @@ async fn accept_unicode_context_id() {
 #[tokio::test]
 async fn reject_empty_parts() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -255,6 +261,7 @@ async fn reject_empty_parts() {
 #[tokio::test]
 async fn reject_oversized_metadata() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -270,6 +277,7 @@ async fn reject_oversized_metadata() {
 #[tokio::test]
 async fn reject_oversized_request_metadata() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -287,6 +295,7 @@ async fn reject_oversized_request_metadata() {
 #[tokio::test]
 async fn accept_small_metadata() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -306,6 +315,7 @@ async fn accept_small_metadata() {
 #[tokio::test]
 async fn artifact_produced_in_task() {
     let handler = RequestHandlerBuilder::new(ArtifactExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -334,6 +344,7 @@ async fn artifact_produced_in_task() {
 #[tokio::test]
 async fn return_immediately_returns_submitted_task() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -365,6 +376,7 @@ async fn return_immediately_returns_submitted_task() {
 #[tokio::test]
 async fn builder_rejects_zero_timeout() {
     let result = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .with_executor_timeout(Duration::ZERO)
         .build();
     assert!(result.is_err(), "zero timeout should be rejected");
@@ -433,7 +445,12 @@ async fn shutdown_cancels_in_flight_tasks() {
         }
     }
 
-    let handler = Arc::new(RequestHandlerBuilder::new(NeverFinish).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(NeverFinish)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
 
     // Start a streaming task
     let h = Arc::clone(&handler);
@@ -491,6 +508,7 @@ async fn shutdown_cancels_in_flight_tasks() {
 async fn shutdown_with_timeout() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(CompletingExecutor)
+            .without_agent_card()
             .build()
             .unwrap(),
     );
@@ -528,6 +546,7 @@ async fn shutdown_with_timeout() {
 async fn concurrent_list_and_send() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(CompletingExecutor)
+            .without_agent_card()
             .build()
             .unwrap(),
     );
@@ -602,6 +621,7 @@ async fn task_store_config_both_ttl_and_capacity() {
         .with_task_ttl(Some(Duration::from_secs(3600)));
 
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .with_task_store_config(config)
         .build()
         .unwrap();
@@ -643,6 +663,7 @@ async fn task_store_config_both_ttl_and_capacity() {
 #[tokio::test]
 async fn multi_turn_same_context_id() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -674,6 +695,7 @@ async fn multi_turn_same_context_id() {
 #[tokio::test]
 async fn custom_event_queue_capacity() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .with_event_queue_capacity(4)
         .build()
         .unwrap();
@@ -694,6 +716,7 @@ async fn custom_event_queue_capacity() {
 #[tokio::test]
 async fn custom_max_event_size() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .with_max_event_size(1024 * 1024)
         .build()
         .unwrap();
@@ -730,6 +753,7 @@ async fn metrics_receives_callbacks() {
     }
 
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .with_metrics(SharedCountingMetrics {
             requests: Arc::clone(&counter),
         })
@@ -753,6 +777,7 @@ async fn metrics_receives_callbacks() {
 #[tokio::test]
 async fn debug_impls_dont_panic() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -762,7 +787,7 @@ async fn debug_impls_dont_panic() {
         "debug output should contain 'RequestHandler', got: {debug}"
     );
 
-    let builder = RequestHandlerBuilder::new(CompletingExecutor);
+    let builder = RequestHandlerBuilder::new(CompletingExecutor).without_agent_card();
     let debug = format!("{builder:?}");
     assert!(
         debug.contains("RequestHandlerBuilder"),

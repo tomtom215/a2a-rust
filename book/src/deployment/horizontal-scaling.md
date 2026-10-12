@@ -35,6 +35,12 @@ Nothing works across replicas without this. Point every replica at the same
 PostgreSQL instance:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_server::store::PostgresTaskStore;
 # use a2a_protocol_server::{agent_executor, RequestHandlerBuilder};
 # struct MyExecutor;
@@ -42,6 +48,7 @@ PostgreSQL instance:
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let store = PostgresTaskStore::new(&std::env::var("DATABASE_URL")?).await?;
 let handler = RequestHandlerBuilder::new(MyExecutor)
+    .with_agent_card(card())
     .with_task_store(store)
     .build()?;
 # Ok(())

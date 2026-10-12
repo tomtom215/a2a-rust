@@ -41,6 +41,7 @@ impl AgentExecutor for NoopExecutor {
 /// Builds a minimal `RequestHandler` suitable for shutdown tests.
 fn make_handler() -> RequestHandler {
     RequestHandlerBuilder::new(NoopExecutor)
+        .without_agent_card()
         .build()
         .expect("builder should succeed with defaults")
 }
@@ -233,6 +234,7 @@ async fn shutdown_with_timeout_is_a_total_budget_not_a_per_phase_one() {
     }
 
     let handler = RequestHandlerBuilder::new(NeverFinishes)
+        .without_agent_card()
         .build()
         .expect("builder should succeed with defaults");
     // An active queue nothing will ever drain, so the drain phase runs out.

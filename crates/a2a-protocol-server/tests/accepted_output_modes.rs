@@ -25,7 +25,10 @@ agent_executor!(Echo, |ctx, queue| async {
 });
 
 async fn reply_to(params: MessageSendParams) -> String {
-    let handler = RequestHandlerBuilder::new(Echo).build().expect("handler");
+    let handler = RequestHandlerBuilder::new(Echo)
+        .without_agent_card()
+        .build()
+        .expect("handler");
     match handler.on_send_message(params, false, None).await {
         Ok(SendMessageResult::Response(SendMessageResponse::Message(m))) => {
             m.text().unwrap_or_default().to_owned()

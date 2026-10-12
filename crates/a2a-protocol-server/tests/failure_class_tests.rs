@@ -92,6 +92,7 @@ async fn a_bad_request_is_classified_as_one_and_never_invites_a_retry() {
     let handler = RequestHandlerBuilder::new(ErroringExecutor(|| {
         A2aError::invalid_params("the postcode is not a postcode")
     }))
+    .without_agent_card()
     .build()
     .expect("handler");
 
@@ -107,6 +108,7 @@ async fn a_bad_request_is_classified_as_one_and_never_invites_a_retry() {
 #[tokio::test]
 async fn an_internal_error_is_classified_as_internal() {
     let handler = RequestHandlerBuilder::new(ErroringExecutor(|| A2aError::internal("boom")))
+        .without_agent_card()
         .build()
         .expect("handler");
 
@@ -122,6 +124,7 @@ async fn an_internal_error_is_classified_as_internal() {
 #[tokio::test]
 async fn a_deadline_is_budget_exhausted_rather_than_internal() {
     let handler = RequestHandlerBuilder::new(HangingExecutor)
+        .without_agent_card()
         .with_executor_timeout(Duration::from_millis(50))
         .build()
         .expect("handler");
@@ -138,6 +141,7 @@ async fn a_deadline_is_budget_exhausted_rather_than_internal() {
 #[tokio::test]
 async fn an_executor_can_state_a_class_no_error_code_could_express() {
     let handler = RequestHandlerBuilder::new(SelfClassifyingExecutor(FailureClass::Transient))
+        .without_agent_card()
         .build()
         .expect("handler");
 
@@ -162,6 +166,7 @@ async fn an_executor_can_state_a_class_no_error_code_could_express() {
 #[tokio::test]
 async fn a_policy_refusal_asks_for_a_person_rather_than_a_retry() {
     let handler = RequestHandlerBuilder::new(SelfClassifyingExecutor(FailureClass::PolicyRefusal))
+        .without_agent_card()
         .build()
         .expect("handler");
 
@@ -185,6 +190,7 @@ async fn a_class_carried_on_the_error_wins_over_the_code() {
             serde_json::json!({ a2a_protocol_types::failure::FAILURE_METADATA_KEY: "transient" }),
         )
     }))
+    .without_agent_card()
     .build()
     .expect("handler");
 
@@ -203,6 +209,7 @@ async fn unrelated_error_data_leaves_the_code_to_decide() {
             serde_json::json!([{ "reason": "whatever" }]),
         )
     }))
+    .without_agent_card()
     .build()
     .expect("handler");
 

@@ -32,6 +32,12 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 Every example that serves A2A follows the same three-step integration pattern:
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 use a2a_protocol_sdk::prelude::*;
 use std::sync::Arc;
 
@@ -50,7 +56,7 @@ agent_executor!(MyExecutor, |ctx, queue| async {
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 // 2. Build a handler
-let handler = Arc::new(RequestHandlerBuilder::new(MyExecutor).build()?);
+let handler = Arc::new(RequestHandlerBuilder::new(MyExecutor).with_agent_card(card()).build()?);
 
 // 3. Serve via any dispatcher
 let dispatcher = JsonRpcDispatcher::new(handler);

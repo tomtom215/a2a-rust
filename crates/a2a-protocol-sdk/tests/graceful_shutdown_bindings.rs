@@ -169,6 +169,7 @@ async fn shut_down_during_a_delegation(
         RequestHandlerBuilder::new(Delegator {
             downstream_cancelled: Arc::clone(&downstream_cancelled),
         })
+        .without_agent_card()
         .build()
         .expect("handler"),
     );

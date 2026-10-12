@@ -29,6 +29,11 @@ use a2a_protocol_types::task::Task;
 /// Serves `handler` over JSON-RPC on an ephemeral loopback port and returns
 /// its base URL.
 ///
+/// The acts build their handlers `without_agent_card()`: each client is given
+/// this URL rather than discovering it, and a card naming an ephemeral port
+/// could only be written after the bind. An agent other clients discover
+/// publishes a card (see `hello-agent`).
+///
 /// The listener task runs for the life of the process. "Dropping the handler"
 /// in Act 1 means dropping every `Arc` this example holds *and* never
 /// touching this port again — the spawned acceptor keeps its own clone, which

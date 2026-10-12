@@ -95,6 +95,7 @@ mod tests {
     #[test]
     fn a_complete_auditable_configuration_builds_with_a_gate() {
         let h = RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
             .with_profile(Profile::Auditable(log(true, true)))
             .with_interceptor(authenticated())
             .share_tasks_across_callers()
@@ -107,20 +108,24 @@ mod tests {
     #[test]
     fn each_missing_piece_is_named() {
         let unrequired = RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
             .with_interceptor(authenticated())
             .with_profile(Profile::Auditable(log(false, true)));
         assert!(refusal(unrequired).contains("require_record"));
 
         let unsigned = RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
             .with_interceptor(authenticated())
             .with_profile(Profile::Auditable(log(true, false)));
         assert!(refusal(unsigned).contains("with_signer"));
 
-        let anonymous =
-            RequestHandlerBuilder::new(Idle).with_profile(Profile::Auditable(log(true, true)));
+        let anonymous = RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
+            .with_profile(Profile::Auditable(log(true, true)));
         assert!(refusal(anonymous).contains("authenticating interceptor"));
 
         let undecided = RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
             .with_interceptor(authenticated())
             .with_profile(Profile::Auditable(log(true, true)));
         let why = refusal(undecided);
@@ -132,6 +137,7 @@ mod tests {
     fn a_gate_set_before_the_profile_is_kept() {
         let gate = crate::approval::ApprovalGate::new().with_approvers(["carol"]);
         let h = RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
             .with_approval_gate(gate)
             .with_profile(Profile::Auditable(log(true, true)))
             .with_interceptor(authenticated())

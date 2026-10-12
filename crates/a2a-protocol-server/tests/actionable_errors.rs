@@ -22,7 +22,12 @@ struct Exec;
 agent_executor!(Exec, |_ctx, _q| async { Ok(()) });
 
 async fn send(version: &str, message: Value, metadata: Option<Value>) -> Value {
-    let handler = Arc::new(RequestHandlerBuilder::new(Exec).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Exec)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
         .await
         .unwrap();

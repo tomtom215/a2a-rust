@@ -209,6 +209,7 @@ async fn a_refused_delegation_fails_the_task_as_transient() {
     let handler = RequestHandlerBuilder::new(DelegatingExecutor {
         downstream: format!("http://127.0.0.1:{port}"),
     })
+    .without_agent_card()
     .build()
     .expect("handler");
 

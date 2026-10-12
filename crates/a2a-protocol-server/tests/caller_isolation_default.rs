@@ -120,6 +120,7 @@ async fn listed(h: &RequestHandler, headers: &HashMap<String, String>) -> usize 
 #[tokio::test]
 async fn by_default_only_identified_callers_are_isolated() {
     let h = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
         .with_interceptor(NamesSomeCallers)
         .build()
         .expect("the default stores partition");
@@ -147,6 +148,7 @@ async fn by_default_only_identified_callers_are_isolated() {
 #[tokio::test]
 async fn by_default_unlabelled_tokens_keep_sharing() {
     let h = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
         .with_interceptor(BearerTokenAuthInterceptor::new([
             "carol-token",
             "dave-token",
@@ -163,6 +165,7 @@ async fn by_default_unlabelled_tokens_keep_sharing() {
 #[tokio::test]
 async fn explicit_isolation_refuses_an_unidentified_caller() {
     let h = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
         .with_interceptor(NamesSomeCallers)
         .isolate_tasks_by_caller()
         .build()
@@ -186,7 +189,10 @@ async fn explicit_isolation_refuses_an_unidentified_caller() {
 /// only the default tenant.
 #[tokio::test]
 async fn without_an_authenticating_interceptor_nothing_changes() {
-    let h = RequestHandlerBuilder::new(Worker).build().expect("handler");
+    let h = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
+        .build()
+        .expect("handler");
     let id = start(&h, &named("alice")).await.expect("start");
     assert!(reads(&h, &id, &named("bob")).await, "nobody is identified");
 
@@ -204,6 +210,7 @@ async fn without_an_authenticating_interceptor_nothing_changes() {
 #[test]
 fn by_default_a_store_that_cannot_partition_is_refused() {
     let err = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
         .with_interceptor(NamesSomeCallers)
         .with_task_store(InMemoryTaskStore::new())
         .build()
@@ -213,6 +220,7 @@ fn by_default_a_store_that_cannot_partition_is_refused() {
     assert!(why.contains("share_tasks_across_callers()"), "{why}");
 
     RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
         .with_interceptor(NamesSomeCallers)
         .with_task_store(InMemoryTaskStore::new())
         .share_tasks_across_callers()

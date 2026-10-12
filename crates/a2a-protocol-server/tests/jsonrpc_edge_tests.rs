@@ -46,7 +46,12 @@ impl AgentExecutor for EchoExecutor {
 }
 
 fn make_dispatcher() -> Arc<JsonRpcDispatcher> {
-    let handler = Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     Arc::new(JsonRpcDispatcher::new(handler))
 }
 

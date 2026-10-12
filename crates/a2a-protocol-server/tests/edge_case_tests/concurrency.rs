@@ -71,7 +71,12 @@ async fn concurrent_get_or_create_event_queue() {
 
 #[tokio::test]
 async fn concurrent_send_message() {
-    let handler = Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let mut handles = vec![];
 
     for i in 0..10 {

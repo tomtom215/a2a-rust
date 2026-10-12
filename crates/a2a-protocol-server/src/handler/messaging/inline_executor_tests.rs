@@ -103,6 +103,7 @@ fn gated(
         started: Arc::clone(&started),
         release: Arc::clone(&release),
     })
+    .without_agent_card()
     .build()
     .expect("handler builds");
     (Arc::new(handler), started, release)
@@ -189,6 +190,7 @@ async fn an_interrupted_send_answers_before_its_executor_returns() {
 #[tokio::test]
 async fn a_panicking_inline_executor_fails_the_task_and_releases_it() {
     let handler = RequestHandlerBuilder::new(PanicExec)
+        .without_agent_card()
         .build()
         .expect("handler builds");
     let answered = handler

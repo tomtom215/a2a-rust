@@ -15,6 +15,7 @@ use super::*;
 #[tokio::test]
 async fn streaming_mode_delivers_status_events() {
     let handler = RequestHandlerBuilder::new(StatusExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -45,6 +46,7 @@ async fn streaming_mode_delivers_status_events() {
 #[tokio::test]
 async fn streaming_mode_delivers_artifact_events() {
     let handler = RequestHandlerBuilder::new(ArtifactExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -79,6 +81,7 @@ async fn streaming_mode_delivers_artifact_events() {
 #[tokio::test]
 async fn streaming_mode_error_produces_failed_event() {
     let handler = RequestHandlerBuilder::new(ErrorExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -107,6 +110,7 @@ async fn streaming_mode_error_produces_failed_event() {
 #[tokio::test]
 async fn streaming_mode_receives_all_events() {
     let handler = RequestHandlerBuilder::new(ArtifactExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -136,6 +140,7 @@ async fn streaming_mode_receives_all_events() {
 #[tokio::test]
 async fn streaming_mode_message_event_passes_through() {
     let handler = RequestHandlerBuilder::new(MessageEventExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -166,6 +171,7 @@ async fn streaming_mode_message_event_passes_through() {
 #[tokio::test]
 async fn streaming_mode_task_snapshot_in_stream() {
     let handler = RequestHandlerBuilder::new(TaskEventExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -226,6 +232,7 @@ impl AgentExecutor for ReplyOnlyExecutor {
 /// Collects the variant names of everything the stream yields.
 async fn shape_of(executor: impl AgentExecutor + 'static) -> Vec<&'static str> {
     let handler = RequestHandlerBuilder::new(executor)
+        .without_agent_card()
         .build()
         .expect("build handler");
     let SendMessageResult::Stream(mut reader) = handler

@@ -225,7 +225,7 @@ fn every_documented_default_is_the_default() {
     );
     let builder = debug_fields(&format!(
         "{:?}",
-        a2a_protocol_sdk::server::RequestHandlerBuilder::new(Noop)
+        a2a_protocol_sdk::server::RequestHandlerBuilder::new(Noop).without_agent_card()
     ));
     let executor_timeout = table(&page, "RequestHandlerBuilder")["with_executor_timeout"].clone();
     if canon(&builder["executor_timeout"]) != canon(&executor_timeout) {

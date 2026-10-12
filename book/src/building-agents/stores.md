@@ -183,6 +183,12 @@ migration runner — and are exercised against a live PostgreSQL 16 service
 in CI (`postgres_store_tests.rs`):
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyExecutor;
 # agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
@@ -192,6 +198,7 @@ use a2a_protocol_server::store::PostgresTaskStore;
 
 let store = PostgresTaskStore::with_migrations("postgres://user:pass@localhost/a2a").await?;
 let handler = RequestHandlerBuilder::new(MyExecutor)
+    .with_agent_card(card())
     .with_task_store(store)
     .build()?;
 # Ok(())
@@ -299,6 +306,12 @@ Features:
 ## Wiring Custom Stores
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use std::future::Future;
 # use std::pin::Pin;
 # use a2a_protocol_sdk::prelude::*;
@@ -322,6 +335,7 @@ use a2a_protocol_server::PostgresPushConfigStore;
 
 let pool = sqlx::PgPool::connect(database_url).await?;
 let handler = RequestHandlerBuilder::new(executor)
+    .with_agent_card(card())
     .with_task_store(PgJsonTaskStore { pool })
     .with_push_config_store(PostgresPushConfigStore::new(database_url).await?)
     .build()?;

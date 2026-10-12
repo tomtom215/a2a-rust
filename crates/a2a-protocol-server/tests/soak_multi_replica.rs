@@ -220,6 +220,7 @@ async fn spawn_replica(
     // the keys in the table rather than trusting the configuration.
     let handler = Arc::new(
         RequestHandlerBuilder::new(WorkingExec)
+            .without_agent_card()
             .with_task_store(store)
             .with_interceptor(ApiKeyAuthInterceptor::with_labelled_keys(
                 (0..WORKERS).map(|w| (format!("soak-key-{w}"), format!("caller-{w}"))),

@@ -376,7 +376,12 @@ mod tests {
         use std::sync::Arc;
         struct DummyExec;
         agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(RequestHandlerBuilder::new(DummyExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(DummyExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
 
         let default = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default());
         assert!(
@@ -416,7 +421,12 @@ mod tests {
         use std::sync::Arc;
         struct DummyExec;
         agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(RequestHandlerBuilder::new(DummyExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(DummyExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default());
         let _ = format!("{dispatcher:?}");
     }

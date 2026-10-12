@@ -680,6 +680,7 @@ async fn extended_card_returns_200() {
 #[test]
 fn rest_dispatcher_debug_impl() {
     let handler = RequestHandlerBuilder::new(SimpleExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
     let dispatcher = RestDispatcher::new(Arc::new(handler));
@@ -738,6 +739,7 @@ async fn dispatcher_trait_dispatch_via_real_server() {
 #[test]
 fn with_cors_returns_self() {
     let handler = RequestHandlerBuilder::new(SimpleExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
     let dispatcher = RestDispatcher::new(Arc::new(handler));

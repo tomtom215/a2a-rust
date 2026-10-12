@@ -83,6 +83,7 @@ impl TaskStore for Shared {
 async fn serve(store: &Arc<InMemoryTaskStore>) -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let handler: Arc<RequestHandler> = Arc::new(
         RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
             .with_task_store(Shared(Arc::clone(store)))
             .build()
             .expect("handler"),
@@ -249,6 +250,7 @@ mod axum_router {
     async fn serve(store: &Arc<InMemoryTaskStore>) -> SocketAddr {
         let handler: Arc<RequestHandler> = Arc::new(
             RequestHandlerBuilder::new(Idle)
+                .without_agent_card()
                 .with_task_store(Shared(Arc::clone(store)))
                 .build()
                 .expect("handler"),

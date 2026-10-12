@@ -37,6 +37,12 @@ Push notifications let agents deliver results asynchronously via webhooks. Inste
 Enable push by providing a `PushSender`:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -45,6 +51,7 @@ Enable push by providing a `PushSender`:
 use a2a_protocol_sdk::server::{RequestHandlerBuilder, HttpPushSender};
 
 let handler = RequestHandlerBuilder::new(my_executor)
+    .with_agent_card(card())
     .with_push_sender(HttpPushSender::new())
     .build()
     .unwrap();
@@ -193,6 +200,12 @@ impl PushSender for SqsPushSender {
 The default `InMemoryPushConfigStore` stores configs in memory with per-task limits. For production, implement `PushConfigStore`:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use std::future::Future;
 # use std::pin::Pin;
 # use a2a_protocol_sdk::prelude::*;
@@ -213,6 +226,7 @@ impl PushConfigStore for MyPushConfigStore {
 
 # fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
 RequestHandlerBuilder::new(executor)
+    .with_agent_card(card())
     .with_push_config_store(MyPushConfigStore { /* ... */ })
     // (SQLite and PostgreSQL push-config stores ship with the crate —
     //  SqlitePushConfigStore / PostgresPushConfigStore.)

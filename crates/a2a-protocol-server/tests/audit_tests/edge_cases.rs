@@ -16,6 +16,7 @@ use super::*;
 #[tokio::test]
 async fn unicode_emoji_in_messages() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -43,6 +44,7 @@ async fn unicode_emoji_in_messages() {
 #[tokio::test]
 async fn unicode_in_context_id() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -67,6 +69,7 @@ async fn unicode_in_context_id() {
 #[tokio::test]
 async fn large_page_size_clamped() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -111,6 +114,7 @@ async fn large_page_size_clamped() {
 #[tokio::test]
 async fn duplicate_task_id_rejected() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -235,6 +239,7 @@ async fn oversized_event_rejected() {
 #[test]
 fn builder_rejects_zero_timeout() {
     let result = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .with_executor_timeout(Duration::ZERO)
         .build();
 
@@ -268,6 +273,7 @@ fn builder_rejects_empty_interfaces() {
 #[test]
 fn builder_accepts_valid_timeout() {
     let result = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .with_executor_timeout(Duration::from_secs(30))
         .build();
 

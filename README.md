@@ -136,8 +136,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 ### A complete agent, and a client that calls it
 
-One file, `src/main.rs`. It starts the agent on a port the OS picks, then
-sends it a message and streams a second one. `cargo run` prints `Hello, Tom!`
+One file, `src/main.rs`. It starts the agent on port 3000 with the agent card
+it publishes, then sends it a message and streams a second one. `cargo run` prints `Hello, Tom!`
 and then the streamed events.
 
 ```rust,no_run
@@ -161,12 +161,17 @@ agent_executor!(MyAgent, |ctx, queue| async {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // The server, on a port the OS picks.
-    let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler)).await?;
+    // The agent card: what clients discover at /.well-known/agent-card.json,
+    // and what the server holds requests to. This agent streams.
+    let url = "http://127.0.0.1:3000";
+    let card = AgentCard::new("hello", "1.0.0", AgentInterface::jsonrpc(url))
+        .with_skill(AgentSkill::new("greet", "Greet", "Says hello").with_tags(["greeting"]))
+        .with_streaming(true);
+    let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);
+    serve_with_addr("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await?;
 
     // A client for it.
-    let client = ClientBuilder::new(format!("http://{addr}")).build()?;
+    let client = ClientBuilder::new(url).build()?;
     let reply = client
         .send_message(MessageSendParams::new(Message::user_text("m1", "Tom")))
         .await?;

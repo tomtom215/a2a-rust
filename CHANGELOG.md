@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI's `--no-capability-check`: see Behaviour Changes. The error names the
   method that was not sent and the card field that would have declared it;
   it is not retryable.
+- **`RequestHandlerBuilder::without_agent_card`** (server; spec §8.1): builds
+  a handler with no agent card, which `build()` now refuses otherwise. See
+  Behaviour Changes.
 - **`RequestHandlerBuilder::share_tasks_across_callers`** (server; spec
   §13.1): keeps one set of records per tenant, shared by every caller in it,
   now that an authenticating interceptor isolates callers by default. See
@@ -321,6 +324,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event's deliveries all run at once rather than 17 at a time; every config
   was attempted before and is now, and the event still finishes inside the
   budget. Both values remain configurable.
+- **Breaking: `build()` requires an agent card** (server; spec §8.1: an A2A
+  server MUST make an agent card available). `RequestHandlerBuilder` let a
+  handler build without one, which then answered discovery with 404 and,
+  with nothing declared, skipped every capability, input-mode and
+  required-extension check (§3.3.4). `build()` now refuses that, naming the
+  two ways out: `with_agent_card(card)`, or `without_agent_card()` for a card
+  published elsewhere or a handler that is not a public A2A server (a test,
+  for instance), which behaves as before. The README quick start and the
+  book's examples now set a card. See the upgrading guide.
 - **Breaking: an authenticating interceptor isolates tasks by caller**
   (server; spec §13.1: results scoped to the caller's authorization
   boundaries). Callers in one tenant shared its tasks unless the builder

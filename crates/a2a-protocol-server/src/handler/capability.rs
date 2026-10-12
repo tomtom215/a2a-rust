@@ -190,7 +190,10 @@ mod tests {
 
     #[test]
     fn no_card_allows_streaming_and_push() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         assert!(handler.ensure_streaming_supported().is_ok());
         assert!(handler.ensure_push_supported().is_ok());
     }
@@ -340,7 +343,10 @@ mod tests {
 
     #[tokio::test]
     async fn no_card_no_required_extensions() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let ctx = ctx_with_extensions(&[]);
         assert!(handler.ensure_required_extensions(&ctx).is_ok());
     }

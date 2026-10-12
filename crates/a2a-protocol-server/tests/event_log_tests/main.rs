@@ -214,6 +214,7 @@ impl a2a_protocol_server::executor::AgentExecutor for EmitsThenWaits {
 
 fn handler_with(store: &Arc<InMemoryTaskStore>) -> RequestHandler {
     RequestHandlerBuilder::new(ThreeSteps)
+        .without_agent_card()
         .with_task_store(Shared(Arc::clone(store)))
         .build()
         .expect("handler")

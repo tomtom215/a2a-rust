@@ -186,6 +186,7 @@ impl AgentExecutor for FailedStatusExecutor {
 #[tokio::test]
 async fn sync_mode_invalid_state_transition_returns_error() {
     let handler = RequestHandlerBuilder::new(InvalidTransitionExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -214,6 +215,7 @@ async fn sync_mode_completed_to_working_is_invalid() {
     // collect_events correctly returns at Completed before seeing the invalid
     // transition. The task is returned in Completed state.
     let handler = RequestHandlerBuilder::new(TerminalTransitionExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -233,6 +235,7 @@ async fn sync_mode_completed_to_working_is_invalid() {
 #[tokio::test]
 async fn streaming_mode_invalid_transition_does_not_crash_stream() {
     let handler = RequestHandlerBuilder::new(InvalidTransitionExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -264,6 +267,7 @@ async fn sync_mode_multiple_valid_transitions() {
     // Per Section 3.2.2, blocking mode returns at the first interrupted state
     // (InputRequired). The client would then send a follow-up message.
     let handler = RequestHandlerBuilder::new(MultiTransitionExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -283,6 +287,7 @@ async fn sync_mode_multiple_valid_transitions() {
 #[tokio::test]
 async fn sync_mode_working_to_canceled() {
     let handler = RequestHandlerBuilder::new(CanceledExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -298,6 +303,7 @@ async fn sync_mode_working_to_canceled() {
 #[tokio::test]
 async fn sync_mode_working_to_failed_via_status_update() {
     let handler = RequestHandlerBuilder::new(FailedStatusExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 

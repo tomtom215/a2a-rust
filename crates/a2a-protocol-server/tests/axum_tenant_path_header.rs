@@ -63,6 +63,7 @@ async fn axum_path_header_does_not_select_a_tenant() {
     let recorder = Recorder::default();
     let handler = Arc::new(
         RequestHandlerBuilder::new(recorder.clone())
+            .without_agent_card()
             .with_tenant_resolver(PathSegmentTenantResolver::new(1)) // /tenants/{t}/...
             .with_task_store(TenantAwareInMemoryTaskStore::new())
             .build()

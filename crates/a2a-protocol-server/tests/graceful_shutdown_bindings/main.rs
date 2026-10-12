@@ -91,11 +91,12 @@ impl AgentExecutor for Stubborn {
 /// `flag`.
 fn handler(flag: &Arc<AtomicBool>, stubborn: bool) -> Arc<a2a_protocol_server::RequestHandler> {
     let builder = if stubborn {
-        RequestHandlerBuilder::new(Stubborn)
+        RequestHandlerBuilder::new(Stubborn).without_agent_card()
     } else {
         RequestHandlerBuilder::new(Delegator {
             downstream_cancelled: Arc::clone(flag),
         })
+        .without_agent_card()
     };
     Arc::new(builder.build().expect("handler"))
 }

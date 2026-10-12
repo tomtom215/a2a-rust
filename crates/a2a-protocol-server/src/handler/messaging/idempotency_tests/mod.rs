@@ -253,6 +253,7 @@ async fn a_key_is_refused_when_the_store_cannot_honour_it() {
     // which is exactly what presenting a key is meant to rule out.
     let executions = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&executions)))
+        .without_agent_card()
         .with_task_store(NoIdempotencyStore::default())
         .build()
         .expect("build with a store lacking idempotency should succeed");
@@ -276,6 +277,7 @@ async fn a_key_is_refused_when_the_store_cannot_honour_it() {
 async fn a_store_without_idempotency_still_serves_unkeyed_sends() {
     let executions = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&executions)))
+        .without_agent_card()
         .with_task_store(NoIdempotencyStore::default())
         .build()
         .unwrap();
@@ -358,6 +360,7 @@ async fn an_operators_own_declaration_is_left_alone() {
 async fn a_server_with_no_card_still_builds_and_serves_keys() {
     let executions = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&executions)))
+        .without_agent_card()
         .build()
         .unwrap();
     assert!(handler.agent_card.is_none());
@@ -382,6 +385,7 @@ async fn a_send_that_fails_after_claiming_leaves_the_key_reusable() {
     // existed. Every failure path after the claim releases it.
     let executions = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&executions)))
+        .without_agent_card()
         .with_task_store(FailFirstSaveStore::default())
         .build()
         .unwrap();

@@ -222,6 +222,35 @@ let client = ClientBuilder::from_card(&card)?
 The CLI's equivalent is `--no-capability-check`. A client built for a bare
 endpoint with `ClientBuilder::new` has no card and checks nothing.
 
+### `build()` requires an agent card
+
+Spec §8.1: an A2A server MUST make an agent card available.
+`RequestHandlerBuilder::build` now refuses a handler without one. Before, it
+built, answered `/.well-known/agent-card.json` with 404, and skipped every
+check a card would drive: streaming and push-notification capabilities, input
+modes, required extensions. Give it the card your agent publishes:
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _q| async { Ok(()) });
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+    .with_streaming(true);
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card)
+    .build()?;
+# drop(handler);
+# Ok(())
+# }
+```
+
+Declare what the agent does: with a card, a streaming call to an agent that
+does not declare `streaming` is refused, as the spec requires. A handler whose
+card is published by something else, or one that is not a public A2A server
+(a test), keeps the old behaviour with `.without_agent_card()`.
+
 ### An authenticating interceptor isolates tasks by caller
 
 Spec §13.1: results are scoped to the caller's authorization boundaries. A
@@ -246,12 +275,19 @@ the one `Profile::Auditable` installs (or let requesters approve with
 callers are meant to see each other's tasks, say so:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_sdk::server::InMemoryTaskStore;
 # struct MyAgent;
 # a2a_protocol_sdk::server::agent_executor!(MyAgent, |_ctx, _q| async { Ok(()) });
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card())
     .with_task_store(InMemoryTaskStore::new())
     .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
         ("token-a", "alice"),

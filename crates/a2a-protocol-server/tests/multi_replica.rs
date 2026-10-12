@@ -149,6 +149,7 @@ async fn replica(url: &str, step: Duration) -> Arc<RequestHandler> {
         .expect("postgres task store");
     Arc::new(
         RequestHandlerBuilder::new(StreamingExec { step })
+            .without_agent_card()
             .with_task_store_arc(Arc::new(store))
             .build()
             .expect("handler builds"),

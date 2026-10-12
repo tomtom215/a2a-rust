@@ -27,7 +27,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | §1 | 2 |  |  |  | 4 |  | 1 | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 | 3 |
-| §3 | 85 | 21 | 19 | 3 | 3 | 1 | 5 | 137 |
+| §3 | 86 | 21 | 19 | 3 | 3 | 1 | 4 | 137 |
 | §4 | 7 | 5 | 2 |  | 1 |  |  | 15 |
 | §5 | 25 | 2 | 2 |  | 3 |  | 3 | 35 |
 | §7 | 7 | 13 | 2 |  |  |  |  | 22 |
@@ -40,16 +40,14 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 5 | 5 | 3 |  |  |  | 2 | 15 |
 | §A |  |  |  |  | 1 |  |  | 1 |
 | proto `REQUIRED` fields | 71 | 11 | 6 |  | 8 |  | 10 | 106 |
-| **All** | **301** | **89** | **52** | **13** | **22** | **2** | **33** | **512** |
+| **All** | **302** | **89** | **52** | **13** | **22** | **2** | **32** | **512** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
 | medium | PARTIAL | §1.4 (line 107) | SDK language bindings, schemas, and any other derived forms MUST be regenerated from the proto (directly or via code generation) rather tha… | Only the prost message types (feature `proto`, build.rs) are generated from a2a.proto; the primary public serde types (Task, Message, TaskListResponse, AgentCard ...) are hand-written structs, guarded by golden fixtures/proptests rather than generated. proto_… |
-| medium | PARTIAL | §3.3.4 (line 571) | When clients attempt to use operations or features that require capabilities not declared ... the agent MUST return an appropriate error re… | Summary of 573-576 below. All checks are skipped when no AgentCard is configured on the RequestHandler (capability.rs:16-18, 189). |
 | medium | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | Order is preserved, but a subscriber that falls behind the bounded broadcast buffer loses the overwritten events (surfaced as an explicit 'streamLagged' error), so a slow stream does not receive the same events as a fast one. |
-| medium | PARTIAL | §8.1 (line 1980) | A2A Servers **MUST** make an Agent Card available. | JSON-RPC, REST and axum serve GET /.well-known/agent-card.json when a card is configured, but RequestHandlerBuilder's agent_card defaults to None and build() accepts that, serving 404 (pinned by a test); the WebSocket and gRPC dispatchers serve no well-known … |
 | medium | PARTIAL | §8.4.3 (line 2132) | 2. Retrieve the public key using the `kid` and `jku` (or from a trusted key store) | kid-based lookup in a caller-supplied JWKS is implemented and tested; jku is decoded but never followed (deliberately: fetch_jwks takes a caller-trusted URL), so jku retrieval is left to the application. |
 | medium | PARTIAL | §12 (line 2985) | Custom bindings MUST comply with all requirements defined in Section 5 | SLIMRPC sends PushNotificationNotSupported and UnsupportedOperation as UNIMPLEMENTED where A2A §5.4's gRPC column says FAILED_PRECONDITION. This is the SLIMRPC spec's own §6.1 'canonical mapping' (a MUST), which the binding now follows exactly; the conflict i… |
 | low | IMPLEMENTED_UNTESTED | §3.3.2 (line 534) | Servers SHOULD log system errors for diagnostic purposes | Failures are recorded on the RPC span (error.type, otel.status_code=ERROR) and in metrics.on_error; trace_error! for executor panics. Behind the `tracing` feature; no test asserts that an Internal error is logged. |
@@ -70,6 +68,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | low | PARTIAL | §5.4 (line 1194) | Custom protocol bindings MUST define equivalent error code mappings that preserve the semantic meaning of each A2A error type. | WebSocket reuses the JSON-RPC codes verbatim, documented in its binding spec §5. Remaining: SLIMRPC's RpcCode mapping for PushNotSupported/UnsupportedOperation/VersionNotSupported (UNIMPLEMENTED) differs from A2A §5.4's gRPC column (FAILED_PRECONDITION); this… |
 | low | PARTIAL | §5.4 (line 1194) | The binding specification SHOULD provide a similar mapping table showing how each A2A error type is represented in the custom binding's nat… | WebSocket now has an error mapping table (binding spec §5). Remaining: SLIMRPC's vendored upstream table omits -32007/-32008/-32009. |
 | low | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid … |
+| low | PARTIAL | §8.1 (line 1980) | A2A Servers **MUST** make an Agent Card available. | Since 2026-10-12 RequestHandlerBuilder::build() refuses a handler with no agent card unless told without_agent_card() (for a card published elsewhere, or a handler that is not a public A2A server), and JSON-RPC, REST and axum serve the card at GET /.well-know… |
 | low | PARTIAL | §8.6 (line 2225) | Servers and clients **SHOULD** use standard HTTP caching mechanisms to reduce unnecessary network overhead. | Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching, and nothing honours max-age or no-stor… |
 | low | PARTIAL | §8.6.2 (line 2235) | Clients **SHOULD** honor HTTP caching semantics as defined in RFC 9111 when fetching Agent Cards | CachingCardResolver revalidates every resolve with the stored validators (permitted by RFC 9111: a cache may always validate) and, since 2026-10-12, does not store a no-store response (RFC 9111 §5.2.2.5), nor one with no validator to revalidate by. Remaining:… |
 | low | PARTIAL | §11.1 (line 2758) | Content-Type: application/a2a+json SHOULD be used for requests and responses | Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2843-2844 and 2929-2930 are not matched by … |

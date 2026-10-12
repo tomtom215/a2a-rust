@@ -60,7 +60,12 @@ impl AgentExecutor for NoopExecutor {
 }
 
 async fn start_real_server() -> String {
-    let handler = Arc::new(RequestHandlerBuilder::new(NoopExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(NoopExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
         .await
         .unwrap();

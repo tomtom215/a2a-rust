@@ -42,6 +42,7 @@ impl AgentExecutor for WorkThenErrorExecutor {
 #[tokio::test]
 async fn sync_mode_work_then_error_marks_failed() {
     let handler = RequestHandlerBuilder::new(WorkThenErrorExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -112,6 +113,7 @@ async fn streaming_mode_work_then_error_marks_failed_in_store() {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .without_agent_card()
         .with_task_store(NotifyOnSaveStore::new(store_saved.clone()))
         .build()
         .expect("build handler"),
@@ -213,6 +215,7 @@ async fn streaming_mode_error_marks_failed_in_store() {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .without_agent_card()
         .with_task_store(NotifyOnSaveStore::new(store_saved.clone()))
         .build()
         .expect("build handler"),
@@ -273,6 +276,7 @@ async fn sync_mode_push_delivery_timeout_does_not_block_forever() {
         HandlerLimits::default().with_push_delivery_timeout(std::time::Duration::from_millis(50));
 
     let handler = RequestHandlerBuilder::new(StatusExecutor)
+        .without_agent_card()
         .with_push_sender(SleepForeverPushSender)
         .with_handler_limits(limits)
         .build()
@@ -299,6 +303,7 @@ async fn sync_mode_push_delivery_timeout_does_not_block_forever() {
 #[tokio::test]
 async fn sync_mode_empty_executor_returns_submitted() {
     let handler = RequestHandlerBuilder::new(EmptyExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 

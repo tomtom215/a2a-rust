@@ -31,6 +31,7 @@ agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 
 fn make_handler() -> RequestHandler {
     RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .build()
         .expect("default build should succeed")
 }
@@ -92,6 +93,7 @@ async fn cleanup_guard_releases_the_token_when_the_executor_panics() {
     }
 
     let handler = RequestHandlerBuilder::new(PanicExec)
+        .without_agent_card()
         .build()
         .expect("build should succeed");
 
@@ -207,6 +209,7 @@ async fn seed_cancelled_tokens(handler: &RequestHandler, n: usize) -> Vec<TaskId
 #[tokio::test]
 async fn sweep_evicts_cancelled_tokens_once_the_map_is_at_capacity() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_handler_limits(
             crate::handler::limits::HandlerLimits::default().with_max_cancellation_tokens(2),
         )
@@ -244,6 +247,7 @@ async fn sweep_evicts_cancelled_tokens_once_the_map_is_at_capacity() {
 #[tokio::test]
 async fn context_locks_are_not_pruned_below_the_limit() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_handler_limits(
             crate::handler::limits::HandlerLimits::default().with_max_context_locks(5),
         )
@@ -280,6 +284,7 @@ async fn context_locks_are_not_pruned_below_the_limit() {
 #[tokio::test]
 async fn context_lock_pruning_spares_locks_still_in_use() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_handler_limits(
             crate::handler::limits::HandlerLimits::default().with_max_context_locks(2),
         )
@@ -325,6 +330,7 @@ async fn context_lock_pruning_spares_locks_still_in_use() {
 /// Builds a handler whose metadata budget is `max` bytes.
 fn handler_with_metadata_limit(max: usize) -> RequestHandler {
     RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_handler_limits(
             crate::handler::limits::HandlerLimits::default().with_max_metadata_size(max),
         )
@@ -688,6 +694,7 @@ async fn poll_task_state(handler: &RequestHandler, task_id: &TaskId, want: TaskS
 #[tokio::test]
 async fn return_immediately_persists_final_state() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
     let mut params = make_params(Some("ctx-ri"));
@@ -723,6 +730,7 @@ async fn return_immediately_persists_final_state() {
 #[tokio::test]
 async fn concurrent_send_to_in_flight_task_is_rejected() {
     let handler = RequestHandlerBuilder::new(BlockingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -757,6 +765,7 @@ async fn concurrent_send_to_in_flight_task_is_rejected() {
 #[tokio::test]
 async fn stream_cap_exhaustion_returns_overloaded_without_orphan() {
     let handler = RequestHandlerBuilder::new(BlockingExecutor)
+        .without_agent_card()
         .with_max_concurrent_streams(1)
         .build()
         .unwrap();
@@ -840,6 +849,7 @@ async fn too_long_context_id_returns_invalid_params() {
     use crate::handler::limits::HandlerLimits;
 
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_handler_limits(HandlerLimits::default().with_max_id_length(10))
         .build()
         .unwrap();
@@ -860,6 +870,7 @@ async fn too_long_task_id_returns_invalid_params() {
     use a2a_protocol_types::task::TaskId;
 
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_handler_limits(HandlerLimits::default().with_max_id_length(10))
         .build()
         .unwrap();
@@ -1373,6 +1384,7 @@ async fn send_message_error_path_records_metrics() {
     }
 
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_interceptor(FailInterceptor)
         .build()
         .unwrap();
@@ -1416,6 +1428,7 @@ async fn send_streaming_message_error_path_records_metrics() {
     }
 
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_interceptor(FailInterceptor)
         .build()
         .unwrap();
@@ -1596,6 +1609,7 @@ async fn unknown_task_id_returns_task_not_found() {
 async fn send_message_with_tenant() {
     // Covers line 46: tenant scoping with non-default tenant.
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
         .build()
         .expect("tenant-aware handler");
@@ -1635,6 +1649,7 @@ async fn executor_timeout_returns_failed_task() {
     }
 
     let handler = RequestHandlerBuilder::new(SlowExecutor)
+        .without_agent_card()
         .with_executor_timeout(Duration::from_millis(50))
         .build()
         .unwrap();
@@ -1676,7 +1691,10 @@ async fn executor_failure_writes_failed_event() {
         }
     }
 
-    let handler = RequestHandlerBuilder::new(FailExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(FailExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let params = make_params(None);
 
     // The blocking caller sees the executor's error on the Failed task
@@ -1752,6 +1770,7 @@ async fn cancellation_token_sweep_runs_when_map_is_full() {
     }
 
     let handler = RequestHandlerBuilder::new(SlowExec)
+        .without_agent_card()
         .with_handler_limits(HandlerLimits::default().with_max_cancellation_tokens(2))
         .build()
         .unwrap();
@@ -1795,6 +1814,7 @@ async fn stale_cancellation_tokens_cleaned_up() {
     }
 
     let handler = RequestHandlerBuilder::new(SlowExec2)
+        .without_agent_card()
         .with_handler_limits(
             HandlerLimits::default()
                 .with_max_cancellation_tokens(2)
@@ -1840,7 +1860,10 @@ async fn streaming_executor_failure_writes_error_event() {
         }
     }
 
-    let handler = RequestHandlerBuilder::new(FailExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(FailExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let params = make_params(None);
 
     let Ok(SendMessageResult::Stream(mut reader)) =
@@ -2102,6 +2125,7 @@ async fn seed_aged_token(handler: &RequestHandler, id: &str) -> TaskId {
 
 fn handler_with_token_cap(max: usize) -> RequestHandler {
     RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_handler_limits(
             crate::handler::limits::HandlerLimits::default()
                 .with_max_cancellation_tokens(max)
@@ -2373,6 +2397,7 @@ async fn a_message_id_at_the_limit_is_accepted() {
 #[tokio::test]
 async fn a_uuid_message_id_survives_a_max_id_length_below_it() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_handler_limits(crate::handler::HandlerLimits::default().with_max_id_length(32))
         .build()
         .expect("handler must build");
@@ -2400,6 +2425,7 @@ async fn a_uuid_message_id_survives_a_max_id_length_below_it() {
 #[tokio::test]
 async fn an_id_past_the_floor_is_still_refused_when_the_limit_is_tight() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_handler_limits(crate::handler::HandlerLimits::default().with_max_id_length(32))
         .build()
         .expect("handler must build");
@@ -2491,6 +2517,7 @@ agent_executor!(ReplyingExecutor, |_ctx, queue| async {
 #[tokio::test]
 async fn a_continuation_keeps_what_earlier_turns_wrote() {
     let handler = RequestHandlerBuilder::new(ReplyingExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -2551,6 +2578,7 @@ async fn a_send_asking_for_history_gets_the_whole_conversation() {
     use a2a_protocol_types::params::SendMessageConfiguration;
 
     let handler = RequestHandlerBuilder::new(ReplyingExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -2654,6 +2682,7 @@ impl crate::executor::AgentExecutor for LingeringExecutor {
 
 fn lingering_handler(linger: std::time::Duration, bound: std::time::Duration) -> RequestHandler {
     RequestHandlerBuilder::new(LingeringExecutor { linger })
+        .without_agent_card()
         .with_handler_limits(
             crate::handler::HandlerLimits::default().with_executor_drain_timeout(bound),
         )
@@ -2774,6 +2803,7 @@ async fn a_parked_executor_that_never_returns_is_refused_after_the_bound() {
 async fn a_send_into_a_working_task_is_refused_without_waiting() {
     let bound = std::time::Duration::from_secs(30);
     let handler = RequestHandlerBuilder::new(BlockingExecutor)
+        .without_agent_card()
         .with_handler_limits(
             crate::handler::HandlerLimits::default().with_executor_drain_timeout(bound),
         )
@@ -3001,6 +3031,7 @@ fn gated_handler(
     });
     let handler = std::sync::Arc::new(
         RequestHandlerBuilder::new(LingeringExecutor { linger })
+            .without_agent_card()
             .with_task_store_arc(store.clone())
             .with_handler_limits(
                 crate::handler::HandlerLimits::default()
@@ -3138,6 +3169,7 @@ async fn a_blocking_send_dropped_mid_work_still_records_the_outcome() {
         RequestHandlerBuilder::new(SlowCompletingExecutor {
             delay: std::time::Duration::from_millis(200),
         })
+        .without_agent_card()
         .build()
         .expect("build handler"),
     );
@@ -3226,6 +3258,7 @@ async fn a_failing_after_hook_does_not_orphan_the_running_task() {
         let handler = RequestHandlerBuilder::new(SlowCompletingExecutor {
             delay: std::time::Duration::from_millis(20),
         })
+        .without_agent_card()
         .with_interceptor(FailingAfter)
         .build()
         .expect("build handler");

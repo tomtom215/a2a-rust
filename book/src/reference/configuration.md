@@ -8,7 +8,8 @@ Complete reference of all configuration options across a2a-rust crates.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `with_agent_card` | `AgentCard` | None | Discovery card for `/.well-known/agent-card.json` |
+| `with_agent_card` | `AgentCard` | Required | Discovery card for `/.well-known/agent-card.json`; the handler checks requests against what it declares |
+| `without_agent_card()` | — | — | Build without a card, which `build()` otherwise refuses (spec §8.1): for a card published elsewhere, or a handler that is not a public A2A server |
 | `with_task_store` | `impl TaskStore` | `InMemoryTaskStore`; `TenantAwareInMemoryTaskStore` when tasks are isolated by caller | Custom task storage backend |
 | `with_task_store_config` | `TaskStoreConfig` | 1hr TTL, 10k capacity | TTL and capacity for default store; per caller partition when tasks are isolated by caller, so the store holds up to 1,000 times the capacity |
 | `with_push_config_store` | `impl PushConfigStore` | `InMemoryPushConfigStore`; the tenant-aware one when the task store partitions by tenant | Custom push config storage |

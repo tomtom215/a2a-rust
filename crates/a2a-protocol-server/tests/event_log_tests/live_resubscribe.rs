@@ -66,6 +66,7 @@ async fn positions_from_a_live_resubscribe(
             emitted: Arc::clone(&emitted),
             release: Arc::clone(&release),
         })
+        .without_agent_card()
         // Each append takes long enough that, at the moment the executor
         // reports three events emitted, none of them has reached the log.
         .with_task_store(super::SlowLog(

@@ -362,6 +362,7 @@ async fn axum_router_is_composable() {
     // Verify the A2aRouter can be merged with other Axum routes
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );

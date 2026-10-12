@@ -32,7 +32,12 @@ agent_executor!(Lingers, |ctx, queue| async {
 
 #[tokio::test]
 async fn the_stream_ends_at_the_terminal_status() {
-    let handler = Arc::new(RequestHandlerBuilder::new(Lingers).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Lingers)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let Ok(SendMessageResult::Stream(mut stream)) = handler
         .on_send_message(
             MessageSendParams::new(Message::user_text("m-1", "go")),

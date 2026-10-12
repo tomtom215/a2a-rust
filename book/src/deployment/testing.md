@@ -145,6 +145,12 @@ async fn test_calculator_executor() {
 Test the full stack by starting a real server and using a client:
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct CalcExecutor;
 # agent_executor!(CalcExecutor, |_ctx, _queue| async { Ok(()) });
@@ -156,7 +162,7 @@ use std::sync::Arc;
 async fn test_end_to_end() {
     // Build handler and server
     let handler = Arc::new(
-        RequestHandlerBuilder::new(CalcExecutor).build().unwrap()
+        RequestHandlerBuilder::new(CalcExecutor).with_agent_card(card()).build().unwrap()
     );
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
     let addr = start_test_server(dispatcher).await;

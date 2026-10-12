@@ -398,7 +398,10 @@ mod tests {
 
     #[tokio::test]
     async fn resubscribe_task_not_found_returns_error() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let params = TaskIdParams {
             tenant: None,
             id: "nonexistent-task".to_owned(),
@@ -415,7 +418,10 @@ mod tests {
         // SPEC §3.1.6: Subscribing to a terminal task returns UnsupportedOperation.
         use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let task = Task {
             id: TaskId::new("t-resub-1"),
             context_id: ContextId::new("ctx-1"),
@@ -455,6 +461,7 @@ mod tests {
 
         let handler = std::sync::Arc::new(
             RequestHandlerBuilder::new(DummyExecutor)
+                .without_agent_card()
                 .with_handler_limits(
                     crate::handler::HandlerLimits::default()
                         .with_subscribe_reattach_interval(std::time::Duration::from_millis(10))
@@ -542,6 +549,7 @@ mod tests {
         use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_handler_limits(
                 crate::handler::HandlerLimits::default()
                     .with_subscribe_reattach_interval(std::time::Duration::from_millis(5))
@@ -592,6 +600,7 @@ mod tests {
         let max_idle = std::time::Duration::from_millis(100);
         let keep_alive = std::time::Duration::from_millis(30);
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_handler_limits(
                 crate::handler::HandlerLimits::default()
                     .with_subscribe_reattach_interval(std::time::Duration::from_millis(5))
@@ -650,7 +659,10 @@ mod tests {
 
         use crate::handler::SendMessageResult;
 
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
 
         // Send a streaming message to create a task with an active event queue.
         let params = MessageSendParams {
@@ -700,7 +712,10 @@ mod tests {
     #[tokio::test]
     async fn resubscribe_with_tenant() {
         // Covers line 33: tenant scoping in resubscribe.
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let params = TaskIdParams {
             tenant: Some("test-tenant".to_string()),
             id: "nonexistent-task".to_owned(),
@@ -712,7 +727,10 @@ mod tests {
     #[tokio::test]
     async fn resubscribe_with_headers() {
         // Covers line 35: build_call_context with headers.
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let params = TaskIdParams {
             tenant: None,
             id: "nonexistent-task".to_owned(),
@@ -754,6 +772,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_interceptor(FailInterceptor)
             .build()
             .unwrap();

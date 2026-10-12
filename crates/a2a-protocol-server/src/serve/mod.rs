@@ -11,6 +11,11 @@
 //! # Example
 //!
 //! ```rust,no_run
+//! # fn card() -> a2a_protocol_types::agent_card::AgentCard {
+//! #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+//! #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+//! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+//! # }
 //! use std::sync::Arc;
 //! use a2a_protocol_server::serve::serve;
 //! use a2a_protocol_server::dispatch::JsonRpcDispatcher;
@@ -27,6 +32,7 @@
 //! # async fn example() -> std::io::Result<()> {
 //! let handler = Arc::new(
 //!     RequestHandlerBuilder::new(MyExecutor)
+//!         .with_agent_card(card())
 //!         .build()
 //!         .expect("build handler"),
 //! );
@@ -120,6 +126,11 @@ pub trait Dispatcher: Send + Sync + 'static {
 /// # Example
 ///
 /// ```rust,no_run
+/// # fn card() -> a2a_protocol_types::agent_card::AgentCard {
+/// #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+/// #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+/// #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+/// # }
 /// use std::sync::Arc;
 /// use a2a_protocol_server::serve::serve;
 /// use a2a_protocol_server::dispatch::JsonRpcDispatcher;
@@ -136,6 +147,7 @@ pub trait Dispatcher: Send + Sync + 'static {
 /// # async fn example() -> std::io::Result<()> {
 /// let handler = Arc::new(
 ///     RequestHandlerBuilder::new(MyExecutor)
+///         .with_agent_card(card())
 ///         .build()
 ///         .expect("build handler"),
 /// );

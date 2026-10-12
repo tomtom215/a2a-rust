@@ -70,6 +70,7 @@ impl ServerInterceptor for RecordingInterceptor {
 fn handler_with(policy: InboundTracePolicy) -> (RequestHandler, RecordingInterceptor) {
     let recorder = RecordingInterceptor::default();
     let handler = RequestHandlerBuilder::new(NoopExecutor)
+        .without_agent_card()
         .with_inbound_trace_policy(policy)
         .with_interceptor(recorder.clone())
         .build()

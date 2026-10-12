@@ -15,6 +15,7 @@ use super::*;
 #[tokio::test]
 async fn sync_mode_status_updates_stored() {
     let handler = RequestHandlerBuilder::new(StatusExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -30,6 +31,7 @@ async fn sync_mode_status_updates_stored() {
 #[tokio::test]
 async fn sync_mode_artifact_updates_appended() {
     let handler = RequestHandlerBuilder::new(ArtifactExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -48,6 +50,7 @@ async fn sync_mode_artifact_updates_appended() {
 #[tokio::test]
 async fn sync_mode_task_event_replaces_task() {
     let handler = RequestHandlerBuilder::new(TaskEventExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -68,6 +71,7 @@ async fn sync_mode_task_event_replaces_task() {
 #[tokio::test]
 async fn sync_mode_error_marks_failed() {
     let handler = RequestHandlerBuilder::new(ErrorExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -94,6 +98,7 @@ async fn sync_mode_error_marks_failed() {
 #[tokio::test]
 async fn sync_mode_message_event_is_noop_for_state() {
     let handler = RequestHandlerBuilder::new(MessageEventExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -109,6 +114,7 @@ async fn sync_mode_message_event_is_noop_for_state() {
 #[tokio::test]
 async fn sync_mode_no_push_calls_when_no_sender() {
     let handler = RequestHandlerBuilder::new(StatusExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -125,6 +131,7 @@ async fn sync_mode_no_push_calls_when_no_sender() {
 async fn sync_mode_no_push_calls_when_no_config() {
     let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let handler = RequestHandlerBuilder::new(StatusExecutor)
+        .without_agent_card()
         .with_push_sender(SharedRecordingPushSender {
             calls: calls.clone(),
             sent: Arc::new(Notify::new()),
@@ -202,6 +209,7 @@ fn only_artifact_text(task: &Task) -> Vec<(String, Option<String>)> {
 #[tokio::test]
 async fn a_repeated_artifact_id_replaces_on_the_blocking_path() {
     let handler = RequestHandlerBuilder::new(ReplacingArtifactExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
     let task = match handler
@@ -228,6 +236,7 @@ async fn a_repeated_artifact_id_replaces_on_the_blocking_path() {
 #[tokio::test]
 async fn a_repeated_artifact_id_replaces_on_the_background_path() {
     let handler = RequestHandlerBuilder::new(ReplacingArtifactExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
     let mut params = make_send_params();

@@ -19,6 +19,12 @@ For a fixed set of accepted credentials, `ApiKeyAuthInterceptor` and
 `BearerTokenAuthInterceptor` compare in constant time and need no feature flag:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::agent_executor;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -27,6 +33,7 @@ For a fixed set of accepted credentials, `ApiKeyAuthInterceptor` and
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};
 
 let handler = RequestHandlerBuilder::new(my_executor)
+    .with_agent_card(card())
     .with_interceptor(BearerTokenAuthInterceptor::new([
         "service-token-1",
         "service-token-2",

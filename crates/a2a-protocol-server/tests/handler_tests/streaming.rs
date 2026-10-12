@@ -11,6 +11,7 @@ use super::*;
 #[tokio::test]
 async fn streaming_events_arrive_in_order() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -41,6 +42,7 @@ async fn streaming_events_arrive_in_order() {
 #[tokio::test]
 async fn streaming_failure_produces_failed_event() {
     let handler = RequestHandlerBuilder::new(FailingExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 

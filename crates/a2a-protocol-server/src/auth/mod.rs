@@ -31,12 +31,18 @@
 //! # Example
 //!
 //! ```rust,no_run
+//! # fn card() -> a2a_protocol_types::agent_card::AgentCard {
+//! #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+//! #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+//! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+//! # }
 //! use a2a_protocol_server::auth::BearerTokenAuthInterceptor;
 //! use a2a_protocol_server::RequestHandlerBuilder;
 //! # struct Exec;
 //! # a2a_protocol_server::agent_executor!(Exec, |_ctx, _q| async { Ok(()) });
 //!
 //! let handler = RequestHandlerBuilder::new(Exec)
+//!     .with_agent_card(card())
 //!     .with_interceptor(BearerTokenAuthInterceptor::new(["secret-token-1", "secret-token-2"]))
 //!     .build()
 //!     .unwrap();

@@ -104,6 +104,7 @@ async fn task_store_background_eviction() {
 #[tokio::test]
 async fn executor_timeout() {
     let handler = RequestHandlerBuilder::new(SlowExecutor)
+        .without_agent_card()
         .with_executor_timeout(Duration::from_millis(100))
         .build()
         .unwrap();

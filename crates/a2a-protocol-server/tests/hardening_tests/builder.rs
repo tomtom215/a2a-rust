@@ -11,6 +11,7 @@ use super::*;
 #[tokio::test]
 async fn builder_build_with_all_defaults_succeeds() {
     let handler = RequestHandlerBuilder::new(QuickExecutor)
+        .without_agent_card()
         .build()
         .expect("build with defaults should succeed");
 
@@ -31,6 +32,7 @@ async fn builder_with_task_store_uses_custom_store() {
     );
 
     let handler = RequestHandlerBuilder::new(QuickExecutor)
+        .without_agent_card()
         .with_task_store(custom_store)
         .build()
         .expect("build with custom store");
@@ -51,6 +53,7 @@ async fn builder_with_task_store_uses_custom_store() {
 #[tokio::test]
 async fn builder_with_push_sender_enables_push() {
     let handler = RequestHandlerBuilder::new(QuickExecutor)
+        .without_agent_card()
         .with_push_sender(MockPushSender)
         .build()
         .expect("build with push sender");
@@ -79,6 +82,7 @@ async fn builder_with_push_sender_enables_push() {
 #[tokio::test]
 async fn builder_without_push_sender_rejects_push_config() {
     let handler = RequestHandlerBuilder::new(QuickExecutor)
+        .without_agent_card()
         .build()
         .expect("build without push sender");
 

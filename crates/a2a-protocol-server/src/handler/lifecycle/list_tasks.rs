@@ -175,7 +175,10 @@ mod tests {
 
     #[tokio::test]
     async fn list_tasks_empty_store_returns_empty() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let params = ListTasksParams::default();
         let result = handler
             .on_list_tasks(params, None)
@@ -189,7 +192,10 @@ mod tests {
 
     #[tokio::test]
     async fn list_tasks_returns_saved_task() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let task = make_completed_task("t-list-1");
         handler.task_store.save(&task).await.unwrap();
 
@@ -203,7 +209,10 @@ mod tests {
 
     #[tokio::test]
     async fn list_tasks_invalid_status_timestamp_after_is_invalid_params() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let params = ListTasksParams {
             status_timestamp_after: Some("not-a-timestamp".into()),
             ..Default::default()
@@ -220,7 +229,10 @@ mod tests {
 
     #[tokio::test]
     async fn list_tasks_status_timestamp_after_filters_results() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let mut old_task = make_completed_task("t-old");
         old_task.status.timestamp = Some("2026-01-01T00:00:00.000Z".into());
         let mut new_task = make_completed_task("t-new");
@@ -244,6 +256,7 @@ mod tests {
     async fn list_tasks_with_tenant() {
         // Covers line 32: tenant scoping with non-default tenant.
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
             .build()
             .unwrap();
@@ -261,7 +274,10 @@ mod tests {
     #[tokio::test]
     async fn list_tasks_with_headers() {
         // Covers line 34: build_call_context with headers.
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let params = ListTasksParams::default();
         let mut headers = std::collections::HashMap::new();
         headers.insert("authorization".to_string(), "Bearer tok".to_string());
@@ -289,7 +305,10 @@ mod tests {
 
     #[tokio::test]
     async fn list_tasks_history_length_zero_omits_history_from_every_task() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         handler
             .task_store
             .save(&make_task_with_history("t-hl0-a", 5))
@@ -314,7 +333,10 @@ mod tests {
 
     #[tokio::test]
     async fn list_tasks_history_length_keeps_the_most_recent_for_every_task() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         handler
             .task_store
             .save(&make_task_with_history("t-hl2-a", 5))
@@ -341,7 +363,10 @@ mod tests {
 
     #[tokio::test]
     async fn list_tasks_history_length_above_the_length_returns_all() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         handler
             .task_store
             .save(&make_task_with_history("t-hlbig-a", 3))
@@ -377,7 +402,10 @@ mod tests {
     /// unfiltered `ListTasks` response.
     #[tokio::test]
     async fn list_tasks_without_history_length_leaves_history_intact() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         handler
             .task_store
             .save(&make_task_with_history("t-hlnone", 3))
@@ -429,6 +457,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_interceptor(FailInterceptor)
             .build()
             .unwrap();

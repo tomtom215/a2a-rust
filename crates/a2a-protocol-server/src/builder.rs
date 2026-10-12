@@ -101,6 +101,16 @@ pub(crate) enum CallerIsolation {
     EveryCaller,
 }
 
+/// What the builder was told about the agent card.
+enum CardSetting {
+    /// Nothing: `build()` refuses (spec §8.1).
+    Unset,
+    /// The card to serve and to check requests against.
+    Card(Box<AgentCard>),
+    /// [`RequestHandlerBuilder::without_agent_card`].
+    Without,
+}
+
 /// Fluent builder for [`RequestHandler`].
 ///
 /// # Required
@@ -126,7 +136,10 @@ pub(crate) enum CallerIsolation {
 ///   partition by tenant; see [`accept_unisolated_tenants`](Self::accept_unisolated_tenants).
 /// - `push_sender`: defaults to `None`.
 /// - `interceptors`: defaults to an empty chain.
-/// - `agent_card`: defaults to `None`.
+/// - `agent_card`: none, and `build()` refuses that: an A2A server MUST make
+///   one available (spec §8.1). Set one with
+///   [`with_agent_card`](Self::with_agent_card), or say it is published
+///   elsewhere with [`without_agent_card`](Self::without_agent_card).
 /// - `tenant_resolver`: defaults to `None` (no tenant resolution).
 /// - `tenant_config`: defaults to `None` (no per-tenant limits).
 /// - `max_concurrent_streams`: defaults to
@@ -142,7 +155,7 @@ pub struct RequestHandlerBuilder {
     push_config_store: Option<Arc<dyn PushConfigStore>>,
     push_sender: Option<Arc<dyn PushSender>>,
     interceptors: ServerInterceptorChain,
-    agent_card: Option<AgentCard>,
+    agent_card: CardSetting,
     executor_timeout: Option<Duration>,
     event_queue_capacity: Option<usize>,
     max_event_size: Option<usize>,
@@ -179,7 +192,7 @@ impl RequestHandlerBuilder {
             push_config_store: None,
             push_sender: None,
             interceptors: ServerInterceptorChain::new(),
-            agent_card: None,
+            agent_card: CardSetting::Unset,
             executor_timeout: Some(DEFAULT_EXECUTOR_TIMEOUT),
             event_queue_capacity: None,
             max_event_size: None,
@@ -343,9 +356,35 @@ impl RequestHandlerBuilder {
     }
 
     /// Sets the agent card for discovery responses.
+    ///
+    /// The JSON-RPC and HTTP+JSON dispatchers serve it at
+    /// `/.well-known/agent-card.json`, and the handler checks requests
+    /// against what it declares: streaming, push notifications, input modes,
+    /// required extensions, the extended card. `build()` requires a card
+    /// unless told [`without_agent_card`](Self::without_agent_card).
     #[must_use]
     pub fn with_agent_card(mut self, card: AgentCard) -> Self {
-        self.agent_card = Some(card);
+        self.agent_card = CardSetting::Card(Box::new(card));
+        self
+    }
+
+    /// Builds a handler with no agent card.
+    ///
+    /// Spec §8.1: an A2A server MUST make an agent card available, so
+    /// `build()` refuses a handler without one unless this is called. Call it
+    /// when the card is published by something other than this handler (a
+    /// gateway, or your own route serving a
+    /// [`DynamicAgentCardHandler`](crate::agent_card::DynamicAgentCardHandler)),
+    /// or when the handler is not a public A2A server at all, as in a test.
+    ///
+    /// Without a card the dispatchers answer `/.well-known/agent-card.json`
+    /// with 404, `GetExtendedAgentCard` answers `ExtendedAgentCardNotConfigured`,
+    /// and nothing a card would declare is checked: streaming and push
+    /// notifications are served, any input mode is accepted, no extension is
+    /// required, and none is advertised.
+    #[must_use]
+    pub fn without_agent_card(mut self) -> Self {
+        self.agent_card = CardSetting::Without;
         self
     }
 
@@ -648,16 +687,28 @@ impl RequestHandlerBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams) if the configuration is invalid:
-    /// - Agent card with empty `supported_interfaces`
-    /// - Zero executor timeout (would cause immediate timeouts)
+    /// Returns [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams),
+    /// naming what to change, if the configuration is one this handler cannot
+    /// serve correctly:
+    /// - an agent card the spec does not allow (`AgentCard::validate`), or a
+    ///   signed card it would have to edit to declare an extension;
+    /// - no agent card, unless [`without_agent_card`](Self::without_agent_card)
+    ///   (spec §8.1);
+    /// - a zero executor timeout, `max_id_length`, `max_metadata_size` or
+    ///   `push_delivery_timeout`;
+    /// - tasks isolated by caller with a store that does not partition by
+    ///   tenant, with no authenticating interceptor (when asked for
+    ///   explicitly), or with an approval gate that needs a second approver
+    ///   (see [`isolate_tasks_by_caller`](Self::isolate_tasks_by_caller));
+    /// - with the `audit` feature, a `Profile` whose requirements are not
+    ///   met.
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
         // A card this server would publish must be valid: a name, and every
         // repeated field the proto marks REQUIRED non-empty (spec §5.7).
         // Until 2026-10-11 only the interface list was checked, so a card
         // with no skills or modes was served as it was.
-        if let Some(ref card) = self.agent_card
+        if let CardSetting::Card(ref card) = self.agent_card
             && let Err(why) = card.validate()
         {
             return Err(crate::error::ServerError::InvalidParams(why.into()));
@@ -752,7 +803,11 @@ impl RequestHandlerBuilder {
         // `required` — a client that does not know the extension sends nothing
         // and is served exactly as before, and making one required would lock
         // those clients out for a feature they do not use.
-        let mut agent_card = self.agent_card;
+        let card_unset = matches!(self.agent_card, CardSetting::Unset);
+        let mut agent_card = match self.agent_card {
+            CardSetting::Card(card) => Some(*card),
+            CardSetting::Unset | CardSetting::Without => None,
+        };
         if let Some(card) = agent_card.as_mut() {
             let mut wanted: Vec<AgentExtension> = Vec::new();
             if task_store.supports_idempotency() {
@@ -909,6 +964,14 @@ impl RequestHandlerBuilder {
             };
             return Err(crate::error::ServerError::InvalidParams(why.to_owned()));
         }
+        if card_unset {
+            return Err(crate::error::ServerError::InvalidParams(
+                "an A2A server must make an agent card available (spec §8.1): call \
+                 with_agent_card(card), or without_agent_card() if the card is \
+                 published elsewhere or this handler is not a public A2A server"
+                    .to_owned(),
+            ));
+        }
 
         Ok(RequestHandler {
             executor: self.executor,
@@ -999,7 +1062,14 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("push_config_store", &self.push_config_store.is_some())
             .field("push_sender", &self.push_sender.is_some())
             .field("interceptors", &self.interceptors)
-            .field("agent_card", &self.agent_card.is_some())
+            .field(
+                "agent_card",
+                &match self.agent_card {
+                    CardSetting::Unset => "unset",
+                    CardSetting::Card(_) => "card",
+                    CardSetting::Without => "without",
+                },
+            )
             .field("executor_timeout", &self.executor_timeout)
             .field("event_queue_capacity", &self.event_queue_capacity)
             .field("max_event_size", &self.max_event_size)
@@ -1040,7 +1110,9 @@ mod tests {
 
     #[test]
     fn builder_defaults_build_ok() {
-        let handler = RequestHandlerBuilder::new(TestExecutor).build();
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .build();
         let h = handler.expect("default builder should succeed");
         assert!(
             h.tenant_resolver().is_none(),
@@ -1055,9 +1127,41 @@ mod tests {
     #[test]
     fn builder_zero_executor_timeout_errors() {
         let result = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_executor_timeout(Duration::ZERO)
             .build();
         assert!(result.is_err());
+    }
+
+    /// Spec §8.1: an A2A server MUST make an agent card available, so a
+    /// handler with none is refused, naming both ways out.
+    #[test]
+    fn build_refuses_a_handler_without_an_agent_card() {
+        let err = RequestHandlerBuilder::new(TestExecutor)
+            .build()
+            .expect_err("no card and no opt-out");
+        let why = err.to_string();
+        assert!(why.contains("spec §8.1"), "{why}");
+        assert!(why.contains("with_agent_card(card)"), "{why}");
+        assert!(why.contains("without_agent_card()"), "{why}");
+    }
+
+    #[test]
+    fn without_agent_card_builds_a_handler_with_no_card() {
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .build()
+            .expect("opted out");
+        assert!(handler.agent_card.is_none());
+    }
+
+    #[test]
+    fn a_card_needs_no_opt_out() {
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(unsigned_card())
+            .build()
+            .expect("a card is all it needs");
+        assert!(handler.agent_card.is_some());
     }
 
     #[test]
@@ -1139,6 +1243,7 @@ mod tests {
         use crate::tenant_resolver::HeaderTenantResolver;
 
         let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_tenant_resolver(HeaderTenantResolver::default())
             .with_tenant_config(
                 PerTenantConfig::builder()
@@ -1173,7 +1278,10 @@ mod tests {
 
     #[test]
     fn builder_without_tenant_fields() {
-        let handler = RequestHandlerBuilder::new(TestExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         assert!(handler.tenant_resolver().is_none());
         assert!(handler.tenant_config().is_none());
     }
@@ -1183,7 +1291,10 @@ mod tests {
     /// caller allocate channels and spawn tasks without bound.
     #[test]
     fn builder_default_caps_concurrent_streams() {
-        let handler = RequestHandlerBuilder::new(TestExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let debug = format!("{:?}", handler.event_queue_manager);
         assert!(
             debug.contains(&format!(
@@ -1198,6 +1309,7 @@ mod tests {
     #[test]
     fn builder_max_concurrent_streams_override_wins() {
         let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_max_concurrent_streams(7)
             .build()
             .unwrap();
@@ -1210,15 +1322,24 @@ mod tests {
 
     #[test]
     fn builder_debug_does_not_panic() {
-        let builder = RequestHandlerBuilder::new(TestExecutor);
+        let builder = RequestHandlerBuilder::new(TestExecutor).without_agent_card();
         let debug = format!("{builder:?}");
         assert!(debug.contains("RequestHandlerBuilder"));
+        assert!(debug.contains(r#"agent_card: "without""#), "{debug}");
+        let unset = format!("{:?}", RequestHandlerBuilder::new(TestExecutor));
+        assert!(unset.contains(r#"agent_card: "unset""#), "{unset}");
+        let card = format!(
+            "{:?}",
+            RequestHandlerBuilder::new(TestExecutor).with_agent_card(unsigned_card())
+        );
+        assert!(card.contains(r#"agent_card: "card""#), "{card}");
     }
 
     #[test]
     fn builder_with_push_config_store_builds_ok() {
         use crate::push::InMemoryPushConfigStore;
         let result = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_push_config_store(InMemoryPushConfigStore::new())
             .build();
         let _h = result.expect("builder with push config store should succeed");
@@ -1227,6 +1348,7 @@ mod tests {
     #[test]
     fn builder_zero_max_id_length_errors() {
         let result = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_handler_limits(HandlerLimits::default().with_max_id_length(0))
             .build();
         assert!(result.is_err(), "zero max_id_length should be rejected");
@@ -1235,6 +1357,7 @@ mod tests {
     #[test]
     fn builder_zero_max_metadata_size_errors() {
         let result = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_handler_limits(HandlerLimits::default().with_max_metadata_size(0))
             .build();
         assert!(result.is_err(), "zero max_metadata_size should be rejected");
@@ -1243,6 +1366,7 @@ mod tests {
     #[test]
     fn builder_zero_push_delivery_timeout_errors() {
         let result = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_handler_limits(
                 HandlerLimits::default().with_push_delivery_timeout(Duration::ZERO),
             )

@@ -38,8 +38,12 @@ async fn post(addr: std::net::SocketAddr, path: &str, body: String) -> (u16, ser
 
 #[tokio::test]
 async fn a_halted_server_refuses_sends_on_both_http_bindings() {
-    let handler: Arc<RequestHandler> =
-        Arc::new(RequestHandlerBuilder::new(Exec).build().expect("handler"));
+    let handler: Arc<RequestHandler> = Arc::new(
+        RequestHandlerBuilder::new(Exec)
+            .without_agent_card()
+            .build()
+            .expect("handler"),
+    );
     let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&handler)))
         .await
         .unwrap();

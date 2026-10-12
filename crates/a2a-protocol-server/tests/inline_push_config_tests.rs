@@ -202,6 +202,7 @@ async fn no_inline_config_registers_nothing() {
 async fn inline_config_is_rejected_when_push_is_unsupported() {
     // No push sender, and a card that does not advertise pushNotifications.
     let handler = RequestHandlerBuilder::new(NoopExecutor)
+        .without_agent_card()
         .build()
         .expect("handler must build");
 

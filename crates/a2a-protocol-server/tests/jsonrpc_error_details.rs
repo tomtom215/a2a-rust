@@ -71,7 +71,12 @@ fn find<'a>(details: &'a serde_json::Value, ty: &str) -> &'a serde_json::Value {
 
 #[tokio::test]
 async fn jsonrpc_invalid_params_name_the_field() {
-    let handler: Arc<RequestHandler> = Arc::new(RequestHandlerBuilder::new(Exec).build().unwrap());
+    let handler: Arc<RequestHandler> = Arc::new(
+        RequestHandlerBuilder::new(Exec)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
         .await
         .unwrap();
@@ -96,6 +101,7 @@ async fn unary_errors_keep_their_data() {
     let handler = || -> Arc<RequestHandler> {
         Arc::new(
             RequestHandlerBuilder::new(Exec)
+                .without_agent_card()
                 .with_interceptor(RefuseWithData)
                 .build()
                 .unwrap(),

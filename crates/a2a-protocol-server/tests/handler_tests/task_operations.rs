@@ -11,6 +11,7 @@ use super::*;
 #[tokio::test]
 async fn get_task_returns_stored_task() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -43,6 +44,7 @@ async fn get_task_returns_stored_task() {
 #[tokio::test]
 async fn get_task_not_found() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -61,6 +63,7 @@ async fn get_task_not_found() {
 #[tokio::test]
 async fn list_tasks_returns_created_tasks() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -100,6 +103,7 @@ async fn list_tasks_returns_created_tasks() {
 async fn cancel_task_on_working_task() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(CancelableExecutor)
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );
@@ -157,6 +161,7 @@ async fn cancel_task_on_working_task() {
 #[tokio::test]
 async fn cancel_terminal_task_fails() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -190,6 +195,7 @@ async fn cancel_terminal_task_fails() {
 #[tokio::test]
 async fn cancel_nonexistent_task_fails() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 

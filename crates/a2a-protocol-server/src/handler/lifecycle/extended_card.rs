@@ -140,7 +140,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_extended_agent_card_no_card_returns_not_configured_error() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let result = handler.on_get_extended_agent_card(None).await;
         assert!(
             matches!(result, Err(ServerError::Protocol(ref e)) if e.code == a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured),
@@ -269,7 +272,10 @@ mod tests {
     #[tokio::test]
     async fn get_extended_agent_card_error_path_records_metrics() {
         // Exercises the Err metrics path when no agent card is configured.
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let result = handler.on_get_extended_agent_card(None).await;
         assert!(
             result.is_err(),

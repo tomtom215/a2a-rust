@@ -303,6 +303,7 @@ fn fixed_budget_shutdown_warns_only_when_cleanup_hangs() {
     let hung = warnings_during(|| {
         rt().block_on(async {
             let handler = RequestHandlerBuilder::new(HangingExecutor)
+                .without_agent_card()
                 .build()
                 .expect("builder should succeed");
             let report = handler.shutdown().await;
@@ -326,6 +327,7 @@ fn hung_cleanup_is_warned_about() {
     let warnings = warnings_during(|| {
         rt.block_on(async {
             let handler = RequestHandlerBuilder::new(HangingExecutor)
+                .without_agent_card()
                 .build()
                 .expect("builder should succeed");
             let report = handler
@@ -433,6 +435,7 @@ fn cancel_in_flight_warns_only_when_work_outlives_the_grace_period() {
     let stuck = warnings_during(|| {
         rt().block_on(async {
             let handler = RequestHandlerBuilder::new(IgnoresCancellation)
+                .without_agent_card()
                 .build()
                 .expect("builder should succeed");
             let _stream = handler

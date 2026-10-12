@@ -69,6 +69,12 @@ process. Set one matched to your workload, or call `without_executor_timeout()`
 if your executors are genuinely unbounded:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -76,6 +82,7 @@ if your executors are genuinely unbounded:
 use std::time::Duration;
 
 RequestHandlerBuilder::new(executor)
+    .with_agent_card(card())
     .with_executor_timeout(Duration::from_secs(300))
     .build()
 # }
@@ -88,11 +95,18 @@ allocates channels and spawns background tasks). Tune the ceiling to your
 deployment; pass `usize::MAX` to effectively disable it:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
 RequestHandlerBuilder::new(executor)
+    .with_agent_card(card())
     .with_max_concurrent_streams(1000)
     .build()
 # }
@@ -103,6 +117,12 @@ RequestHandlerBuilder::new(executor)
 Prevent unbounded memory growth:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -111,6 +131,7 @@ Prevent unbounded memory growth:
 use a2a_protocol_sdk::server::TaskStoreConfig;
 
 RequestHandlerBuilder::new(executor)
+    .with_agent_card(card())
     .with_task_store_config(
         TaskStoreConfig::default()
             .with_max_capacity(Some(100_000))
@@ -226,6 +247,12 @@ fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
 Protect public-facing agents from abuse:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -233,6 +260,7 @@ Protect public-facing agents from abuse:
 use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
 
 RequestHandlerBuilder::new(executor)
+    .with_agent_card(card())
     .with_interceptor(
         RateLimitInterceptor::new(
             RateLimitConfig::default()
@@ -351,11 +379,17 @@ a2a-rust works directly with hyper — no middleware framework overhead. Cross-c
 Tune the event queue for your workload:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
-# let builder = RequestHandlerBuilder::new(executor);
+# let builder = RequestHandlerBuilder::new(executor).with_agent_card(card());
 // High-throughput: larger queues for tasks producing >250 events/task
 let builder = builder.with_event_queue_capacity(512);
 

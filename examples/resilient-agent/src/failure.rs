@@ -67,6 +67,7 @@ async fn executor_failures() -> Check {
 async fn executor_failures_inner() -> Result<String, String> {
     let tally = Arc::new(FlakyTally::failing_first(EXECUTOR_FAILURES));
     let handler = RequestHandlerBuilder::new(FlakyExecutor(Arc::clone(&tally)))
+        .without_agent_card()
         .build()
         .map_err(|e| format!("building the handler: {e}"))?;
     let (_handler, url) = serve(handler).await?;
@@ -203,6 +204,7 @@ async fn executor_failures_inner() -> Result<String, String> {
 /// `metadata.error` of the terminal status event.
 async fn streamed_failure_text() -> Result<String, String> {
     let handler = RequestHandlerBuilder::new(FlakyExecutor(Arc::new(FlakyTally::failing_first(1))))
+        .without_agent_card()
         .build()
         .map_err(|e| format!("building the streaming handler: {e}"))?;
     let (_handler, url) = serve(handler).await?;
@@ -256,6 +258,7 @@ async fn deliver_through(
         step: Duration::from_millis(10),
         die_after_first_chunk: false,
     })
+    .without_agent_card()
     .with_metrics(Arc::clone(&metrics))
     .with_push_sender(
         HttpPushSender::with_timeout(Duration::from_secs(1))
@@ -362,6 +365,7 @@ async fn client_retry() -> Check {
 async fn client_retry_inner() -> Result<String, String> {
     let tally = Arc::new(FlakyTally::failing_first(0));
     let handler = RequestHandlerBuilder::new(FlakyExecutor(Arc::clone(&tally)))
+        .without_agent_card()
         .build()
         .map_err(|e| format!("building the handler: {e}"))?;
     let (_handler, agent_url) = serve(handler).await?;

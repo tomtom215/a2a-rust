@@ -111,6 +111,7 @@ async fn start_jsonrpc_server_small_body() -> (std::net::SocketAddr, tokio::task
 
     let handler = Arc::new(
         a2a_protocol_server::builder::RequestHandlerBuilder::new(SimpleExecutor)
+            .without_agent_card()
             .with_push_sender(MockPushSender)
             .build()
             .expect("build handler"),
@@ -154,6 +155,7 @@ async fn start_rest_server_small_body() -> (std::net::SocketAddr, tokio::task::J
 
     let handler = Arc::new(
         a2a_protocol_server::builder::RequestHandlerBuilder::new(SimpleExecutor)
+            .without_agent_card()
             .with_push_sender(MockPushSender)
             .build()
             .expect("build handler"),
@@ -286,6 +288,7 @@ async fn start_jsonrpc_server_tiny_body_short_timeout()
 
     let handler = Arc::new(
         a2a_protocol_server::builder::RequestHandlerBuilder::new(SimpleExecutor)
+            .without_agent_card()
             .with_push_sender(MockPushSender)
             .build()
             .expect("build handler"),
@@ -332,6 +335,7 @@ async fn start_rest_server_tiny_body_short_timeout()
 
     let handler = Arc::new(
         a2a_protocol_server::builder::RequestHandlerBuilder::new(SimpleExecutor)
+            .without_agent_card()
             .with_push_sender(MockPushSender)
             .build()
             .expect("build handler"),

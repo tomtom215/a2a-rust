@@ -58,6 +58,7 @@ agent_executor!(Worker, |ctx, queue| async {
 async fn serve() -> SocketAddr {
     let handler = Arc::new(
         RequestHandlerBuilder::new(Worker)
+            .without_agent_card()
             .with_task_store(TenantAwareInMemoryTaskStore::new())
             .build()
             .expect("handler"),

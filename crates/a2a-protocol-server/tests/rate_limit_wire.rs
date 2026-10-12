@@ -36,6 +36,7 @@ fn handler() -> Arc<RequestHandler> {
     .expect("limiter");
     Arc::new(
         RequestHandlerBuilder::new(Exec)
+            .without_agent_card()
             .with_interceptor(limiter)
             .build()
             .expect("handler"),

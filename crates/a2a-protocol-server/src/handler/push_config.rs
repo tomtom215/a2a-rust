@@ -469,7 +469,10 @@ mod tests {
     agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 
     fn make_handler() -> RequestHandler {
-        RequestHandlerBuilder::new(DummyExecutor).build().unwrap()
+        RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap()
     }
 
     fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
@@ -597,6 +600,7 @@ mod tests {
 
         let handler = Arc::new(
             RequestHandlerBuilder::new(DummyExecutor)
+                .without_agent_card()
                 .with_push_sender(CapTestSender)
                 .with_push_config_store(SlowListStore::default())
                 .with_handler_limits(
@@ -691,6 +695,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .build()
             .unwrap();
@@ -748,6 +753,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(DefaultPolicySender)
             .build()
             .unwrap();
@@ -804,6 +810,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .with_handler_limits(
                 crate::handler::HandlerLimits::default().with_max_total_push_configs(2),
@@ -870,6 +877,7 @@ mod tests {
 
         // Per-task cap of 1: one config fills the task.
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .with_handler_limits(
                 crate::handler::HandlerLimits::default().with_max_push_configs_per_task(1),
@@ -970,6 +978,7 @@ mod tests {
     #[tokio::test]
     async fn set_push_config_rejects_an_empty_or_schemeless_url_when_private_urls_are_allowed() {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .build()
             .unwrap();
@@ -997,6 +1006,7 @@ mod tests {
     async fn set_push_config_refuses_an_auth_scheme_it_cannot_send() {
         use a2a_protocol_types::push::AuthenticationInfo;
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .build()
             .unwrap();
@@ -1036,6 +1046,7 @@ mod tests {
     #[tokio::test]
     async fn empty_required_ids_are_invalid_params() {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .build()
             .unwrap();
@@ -1074,6 +1085,7 @@ mod tests {
     #[tokio::test]
     async fn set_push_config_refuses_a_host_outside_the_allowlist() {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(
                 crate::push::HttpPushSender::new().with_allowed_hosts(["hooks.example.com"]),
             )
@@ -1100,6 +1112,7 @@ mod tests {
     #[tokio::test]
     async fn set_push_config_for_missing_task_returns_task_not_found() {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .build()
             .unwrap();
@@ -1316,6 +1329,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_interceptor(FailInterceptor)
             .build()
             .unwrap();
@@ -1360,6 +1374,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_interceptor(FailInterceptor)
             .build()
             .unwrap();

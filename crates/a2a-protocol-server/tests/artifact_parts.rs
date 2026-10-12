@@ -59,7 +59,12 @@ agent_executor!(EmptyArtifact, |_ctx, queue| async {
 
 #[tokio::test]
 async fn an_artifact_with_no_parts_is_not_streamed() {
-    let handler = Arc::new(RequestHandlerBuilder::new(EmptyArtifact).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EmptyArtifact)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let Ok(SendMessageResult::Stream(mut stream)) = handler
         .on_send_message(
             MessageSendParams::new(Message::user_text("m-1", "go")),

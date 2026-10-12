@@ -7,12 +7,18 @@ Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides f
 Routes JSON-RPC 2.0 requests to the handler:
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
 use a2a_protocol_sdk::server::JsonRpcDispatcher;
 use std::sync::Arc;
 
@@ -61,12 +67,18 @@ Both JSON-RPC and REST dispatchers share a `DispatchConfig` for transport-level 
 Routes RESTful HTTP requests to the handler:
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
 use a2a_protocol_sdk::server::RestDispatcher;
 use std::sync::Arc;
 
@@ -129,12 +141,18 @@ The REST dispatcher includes automatic protections:
 Both dispatchers implement the `Dispatcher` trait, so you can use the `serve()` helper to eliminate hyper boilerplate:
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
 use a2a_protocol_server::serve::{serve, serve_with_addr};
 
 // Blocking — runs the accept loop on the current task
@@ -197,12 +215,18 @@ a2a-protocol-server = { version = "0.14", features = ["websocket"] }
 ```
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
 use a2a_protocol_server::WebSocketDispatcher;
 use std::sync::Arc;
 
@@ -265,6 +289,12 @@ peer that completes it and then goes silent held a task, a socket and a file
 descriptor for the life of the process. Two knobs bound that, both opt-in:
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_server::WebSocketDispatcher;
 # use std::sync::Arc;
@@ -272,7 +302,7 @@ descriptor for the life of the process. Two knobs bound that, both opt-in:
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # fn main() {
-# let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).build().expect("handler"));
+# let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build().expect("handler"));
 let dispatcher = Arc::new(
     WebSocketDispatcher::new(handler)
         .with_max_connections(1024)
@@ -305,12 +335,18 @@ a2a-protocol-server = { version = "0.14", features = ["grpc"] }
 ```
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
 use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
 use std::sync::Arc;
 
@@ -355,6 +391,12 @@ a connection that simply exists: measured, 400 TCP connections opened and left
 silent were all accepted, and the oldest was still alive twelve seconds later.
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
 # use std::sync::Arc;
@@ -362,7 +404,7 @@ silent were all accepted, and the oldest was still alive twelve seconds later.
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # fn main() {
-# let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).build().expect("handler"));
+# let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build().expect("handler"));
 let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default())
     .with_http2_keepalive(Duration::from_secs(30), Duration::from_secs(10))
     .with_max_connection_age(Duration::from_secs(600))
@@ -403,12 +445,18 @@ the only gRPC surface.
 For advanced scenarios, use `into_service()` to get a tonic service:
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
 # let dispatcher = a2a_protocol_server::GrpcDispatcher::new(handler, a2a_protocol_server::GrpcConfig::default());
 # let addr: std::net::SocketAddr = "127.0.0.1:50051".parse()?;
 let svc = dispatcher.into_service();
@@ -459,12 +507,18 @@ axum::serve(listener, app).await?;
 The returned `Router` can be merged with other Axum routes and middleware:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # async fn custom_handler() -> &'static str { "ok" }
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
 # use a2a_protocol_server::A2aRouter;
 let app = axum::Router::new()
     .merge(A2aRouter::new(handler).into_router())
@@ -519,11 +573,17 @@ configured: without `with_cors`, no response carries CORS headers — an
 `OPTIONS` preflight included — so a browser refuses the cross-origin call.
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).build()?);
+# let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
 use a2a_protocol_sdk::server::CorsConfig;
 
 // Answers OPTIONS preflights, and adds the CORS headers to every response.

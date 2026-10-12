@@ -177,6 +177,7 @@ async fn the_documented_shutdown_ends_the_delegation(binding: Binding) {
         RequestHandlerBuilder::new(Delegator {
             downstream_cancelled: Arc::clone(&downstream_cancelled),
         })
+        .without_agent_card()
         .build()
         .unwrap(),
     );
@@ -280,7 +281,12 @@ impl AgentExecutor for Stubborn {
 
 #[tokio::test]
 async fn work_that_ignores_cancellation_is_reported_after_the_grace_period() {
-    let handler = Arc::new(RequestHandlerBuilder::new(Stubborn).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Stubborn)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let grace = Duration::from_millis(100);
     let (addr, stop, serving) = serve(
         &handler,
@@ -357,6 +363,7 @@ async fn quick_task_through_shutdown(
         RequestHandlerBuilder::new(Quick {
             release: Arc::clone(&release),
         })
+        .without_agent_card()
         .build()
         .unwrap(),
     );
@@ -439,6 +446,7 @@ async fn shutdown_is_seen_at_the_connection_ceiling() {
         RequestHandlerBuilder::new(Delegator {
             downstream_cancelled: Arc::clone(&downstream_cancelled),
         })
+        .without_agent_card()
         .build()
         .unwrap(),
     );

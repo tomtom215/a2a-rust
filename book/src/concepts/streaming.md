@@ -180,6 +180,12 @@ With broadcast channels, writes never block on readers. A reader that falls more
 Configure these via the builder:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -187,6 +193,7 @@ Configure these via the builder:
 # let executor = MyAgent;
 # let _handler =
 RequestHandlerBuilder::new(executor)
+    .with_agent_card(card())
     .with_event_queue_capacity(512)  // increase above 256 default for high-volume streams
     .with_max_event_size(8 * 1024 * 1024)  // 8 MiB
     .build()

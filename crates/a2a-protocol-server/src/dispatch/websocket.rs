@@ -1256,7 +1256,12 @@ mod tests {
         use std::sync::Arc;
         struct DummyExec;
         agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(RequestHandlerBuilder::new(DummyExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(DummyExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let _dispatcher = WebSocketDispatcher::new(handler);
     }
 
@@ -1290,7 +1295,12 @@ mod tests {
     });
 
     async fn spawn_ws_server() -> std::net::SocketAddr {
-        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
         dispatcher
             .serve_with_addr("127.0.0.1:0")
@@ -1415,7 +1425,12 @@ mod tests {
     /// `None` is only interesting if `None` means what it should.
     #[tokio::test(flavor = "multi_thread")]
     async fn the_defaults_are_no_idle_timeout_and_no_connection_ceiling() {
-        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let default = WebSocketDispatcher::new(handler);
         assert!(
             default.idle_timeout.is_none(),
@@ -1682,7 +1697,12 @@ mod tests {
         executor: impl crate::executor::AgentExecutor + 'static,
         configure: impl FnOnce(WebSocketDispatcher) -> WebSocketDispatcher,
     ) -> std::net::SocketAddr {
-        let handler = Arc::new(RequestHandlerBuilder::new(executor).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(executor)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let dispatcher = Arc::new(configure(WebSocketDispatcher::new(handler)));
         dispatcher
             .serve_with_addr("127.0.0.1:0")
@@ -2172,6 +2192,7 @@ mod tests {
         let seen = Seen::default();
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
                 .with_metrics(Recording(Arc::clone(&seen)))
                 .build()
                 .unwrap(),
@@ -2237,6 +2258,7 @@ mod tests {
 
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
                 .with_push_sender(NoopSender)
                 .build()
                 .unwrap(),
@@ -2414,6 +2436,7 @@ mod tests {
 
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
                 .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
                 .with_tenant_resolver(HeaderTenantResolver::default())
                 .require_resolved_tenant()
@@ -2532,7 +2555,12 @@ mod tests {
     async fn ws_missing_version_header_accepted_with_optout() {
         use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 
-        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let dispatcher =
             Arc::new(WebSocketDispatcher::new(handler).accept_missing_version_header());
         let addr = dispatcher
@@ -2614,6 +2642,7 @@ mod tests {
 
         let handler = Arc::new(
             RequestHandlerBuilder::new(FloodExec)
+                .without_agent_card()
                 .with_event_queue_capacity(1)
                 .build()
                 .unwrap(),
@@ -2691,7 +2720,12 @@ mod tests {
             Ok(())
         });
 
-        let handler = Arc::new(RequestHandlerBuilder::new(BlockingExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(BlockingExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let addr = Arc::new(WebSocketDispatcher::new(handler))
             .serve_with_addr("127.0.0.1:0")
             .await
@@ -2750,7 +2784,12 @@ mod tests {
     // configured handshake timeout instead of pinning the connection forever.
     #[tokio::test]
     async fn ws_handshake_timeout_disconnects_stalled_peer() {
-        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let dispatcher = Arc::new(
             WebSocketDispatcher::new(handler)
                 .with_handshake_timeout(std::time::Duration::from_millis(200)),

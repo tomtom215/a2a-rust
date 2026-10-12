@@ -109,7 +109,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_task_not_found_returns_error() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let params = TaskQueryParams {
             tenant: None,
             id: "nonexistent-task".to_owned(),
@@ -124,7 +127,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_task_found_returns_task() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let task = make_completed_task("t-get-1");
         handler.task_store.save(&task).await.unwrap();
 
@@ -144,7 +150,10 @@ mod tests {
     #[tokio::test]
     async fn get_task_error_path_records_metrics() {
         // Exercises the Err metrics path (line 74) via TaskNotFound.
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let params = TaskQueryParams {
             tenant: None,
             id: "nonexistent-metrics".to_owned(),
@@ -189,7 +198,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_task_history_length_zero_returns_no_history() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         handler
             .task_store
             .save(&make_task_with_history("t-hl-0", 5))
@@ -211,7 +223,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_task_history_length_truncates_to_most_recent() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         handler
             .task_store
             .save(&make_task_with_history("t-hl-2", 5))
@@ -247,7 +262,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_task_history_length_larger_than_history_returns_all() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         handler
             .task_store
             .save(&make_task_with_history("t-hl-big", 3))
@@ -270,7 +288,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_task_no_history_length_returns_full_history() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         handler
             .task_store
             .save(&make_task_with_history("t-hl-none", 5))

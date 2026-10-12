@@ -56,6 +56,7 @@ impl AgentExecutor for CompletingExecutor {
 async fn start() -> std::net::SocketAddr {
     let handler = Arc::new(
         RequestHandlerBuilder::new(CompletingExecutor)
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );

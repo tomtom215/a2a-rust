@@ -738,6 +738,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -782,6 +783,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -823,6 +825,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -867,6 +870,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -991,6 +995,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -1052,6 +1057,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -1107,6 +1113,7 @@ mod tests {
             .await
             .unwrap();
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -1171,6 +1178,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -1239,6 +1247,7 @@ mod tests {
             .await
             .unwrap();
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -1292,6 +1301,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -1329,6 +1339,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -1373,6 +1384,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -1444,6 +1456,7 @@ mod tests {
         };
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .with_push_sender(sender)
             .build()
@@ -1507,6 +1520,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -1577,6 +1591,7 @@ mod tests {
             .unwrap();
         let errors = Arc::new(DrainErrors::default());
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .with_handler_limits(
                 HandlerLimits::default().with_executor_drain_timeout(Duration::from_secs(2)),
@@ -1673,6 +1688,7 @@ mod tests {
         }
         let outcomes = Arc::new(PushOutcomes::default());
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_config_store(store)
             .with_push_sender(OneSecondSender(Arc::new(AtomicU64::new(0))))
             .with_metrics(Arc::clone(&outcomes))
@@ -1757,6 +1773,7 @@ mod tests {
         }
         let outcomes = Arc::new(PushOutcomes::default());
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_config_store(store)
             .with_push_sender(OneSecondSender(Arc::new(AtomicU64::new(0))))
             .with_metrics(Arc::clone(&outcomes))
@@ -1839,6 +1856,7 @@ mod tests {
         }
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_config_store(store)
             .with_push_sender(OrderRecorder(Arc::clone(&seen)))
             .with_handler_limits(
@@ -1907,6 +1925,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -1958,6 +1977,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .with_handler_limits(HandlerLimits::default().with_max_artifacts_per_task(1))
             .build()
@@ -2039,6 +2059,7 @@ mod tests {
         };
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .with_push_sender(sender)
             .build()
@@ -2085,6 +2106,30 @@ mod tests {
         );
     }
 
+    /// A push sender whose every delivery outlasts any delivery timeout; the
+    /// spawned task is aborted when the test's runtime drops, so it never
+    /// actually waits.
+    struct HangingPushSender;
+    impl crate::push::PushSender for HangingPushSender {
+        fn send<'a>(
+            &'a self,
+            _url: &'a str,
+            _event: &'a a2a_protocol_types::events::StreamResponse,
+            _config: &'a a2a_protocol_types::push::TaskPushNotificationConfig,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async {
+                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                Ok(())
+            })
+        }
+    }
+
     /// Regression guard for the finding that non-streaming `SendMessage` awaited
     /// push delivery inline: a webhook that hangs must not delay the response.
     /// A sender that would sleep far past the delivery timeout is registered;
@@ -2092,28 +2137,7 @@ mod tests {
     /// spawned. Before the fix this took roughly `events * push_delivery_timeout`.
     #[tokio::test]
     async fn push_delivery_does_not_block_the_sync_response() {
-        use std::future::Future;
-        use std::pin::Pin;
-
-        use a2a_protocol_types::error::A2aResult;
         use a2a_protocol_types::push::TaskPushNotificationConfig;
-
-        struct HangingPushSender;
-        impl crate::push::PushSender for HangingPushSender {
-            fn send<'a>(
-                &'a self,
-                _url: &'a str,
-                _event: &'a a2a_protocol_types::events::StreamResponse,
-                _config: &'a TaskPushNotificationConfig,
-            ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-                // Longer than any delivery timeout; the spawned task is aborted
-                // when the test's runtime drops, so this never actually waits.
-                Box::pin(async {
-                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-                    Ok(())
-                })
-            }
-        }
 
         let task_store = Arc::new(InMemoryTaskStore::new());
         task_store
@@ -2121,6 +2145,7 @@ mod tests {
             .await
             .unwrap();
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .with_push_sender(HangingPushSender)
             .build()
@@ -2176,6 +2201,7 @@ mod tests {
             .unwrap();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
             .build()
             .unwrap();
@@ -2218,6 +2244,7 @@ mod tests {
             .await
             .unwrap();
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store(super::super::stale_reads::StaleReads::always(inner))
             .build()
             .unwrap();
@@ -2255,6 +2282,7 @@ mod tests {
         stored.status = TaskStatus::with_timestamp(TaskState::Canceled);
         inner.save(&stored).await.unwrap();
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_task_store(super::super::stale_reads::StaleReads::first(inner, 1))
             .build()
             .unwrap();

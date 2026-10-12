@@ -3051,6 +3051,7 @@ async fn caller_isolation_holds_on_the_tenant_postgres_stores() {
 
     let db = TestDb::create("caller_isolation").await;
     let handler = RequestHandlerBuilder::new(IsolationWorker)
+        .without_agent_card()
         .with_task_store(
             TenantAwarePostgresTaskStore::new(&db.url)
                 .await

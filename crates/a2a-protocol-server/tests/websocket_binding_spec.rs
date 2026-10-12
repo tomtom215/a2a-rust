@@ -31,7 +31,12 @@ type Ws =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn server() -> std::net::SocketAddr {
-    let handler = Arc::new(RequestHandlerBuilder::new(Done).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Done)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     Arc::new(WebSocketDispatcher::new(handler))
         .serve_with_addr("127.0.0.1:0")
         .await

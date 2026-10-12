@@ -7,12 +7,19 @@ The `RequestHandler` is the central orchestrator that connects your executor to 
 ### Minimal Setup
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyExecutor;
 # agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
 
 let handler = RequestHandlerBuilder::new(MyExecutor)
+    .with_agent_card(card())
     .build()
     .expect("build handler");
 ```
@@ -22,8 +29,12 @@ This gives you sensible defaults:
 - In-memory push config store
 - No push sender (webhooks disabled)
 - No interceptors
-- No agent card
 - 1-hour executor timeout (`without_executor_timeout()` removes it)
+
+The agent card has no default. An A2A server must publish one (spec §8.1), so
+`build()` refuses a handler without it unless you call `without_agent_card()`,
+which is for a card published elsewhere or a handler that is not a public A2A
+server, such as one in a test.
 
 ### Full Configuration
 
@@ -78,7 +89,8 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 
 | Method | Default | Description |
 |--------|---------|-------------|
-| `with_agent_card(AgentCard)` | None | Discovery card for `/.well-known/agent-card.json` |
+| `with_agent_card(AgentCard)` | Required | Discovery card for `/.well-known/agent-card.json`; the handler checks requests against what it declares |
+| `without_agent_card()` | — | Build without a card, which `build()` otherwise refuses (spec §8.1): for a card published elsewhere, or a handler that is not a public A2A server |
 | `with_task_store(impl TaskStore)` | `InMemoryTaskStore`; `TenantAwareInMemoryTaskStore` when tasks are isolated by caller | Custom task storage backend |
 | `with_task_store_config(TaskStoreConfig)` | 1hr TTL, 10k capacity | TTL and capacity for the default store; per caller partition when tasks are isolated by caller, so the store holds up to 1,000 times the capacity |
 | `with_push_config_store(impl PushConfigStore)` | `InMemoryPushConfigStore`; the tenant-aware one when the task store partitions by tenant | Custom push config storage |
@@ -164,6 +176,12 @@ Those ten methods are the whole protocol surface. Everything the dispatchers do
 on top is decoding the wire format and encoding the reply.
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 use std::collections::HashMap;
 
 use a2a_protocol_server::agent_executor;
@@ -177,6 +195,7 @@ struct EchoAgent;
 agent_executor!(EchoAgent, |_ctx, _queue| async { Ok(()) });
 
 let handler = RequestHandlerBuilder::new(EchoAgent)
+    .with_agent_card(card())
     .build()
     .expect("build handler");
 
@@ -213,6 +232,12 @@ the transport.
 The handler is wrapped in `Arc` for sharing between dispatchers:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyExecutor;
 # agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
@@ -220,6 +245,7 @@ use std::sync::Arc;
 
 let handler = Arc::new(
     RequestHandlerBuilder::new(MyExecutor)
+        .with_agent_card(card())
         .build()
         .unwrap()
 );
@@ -236,6 +262,12 @@ This means JSON-RPC and REST clients share the same task store, push configs, an
 The default `InMemoryTaskStore` supports TTL and capacity limits:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyExecutor;
 # agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
@@ -248,6 +280,7 @@ let config = TaskStoreConfig::default()
     .with_max_capacity(Some(50_000));               // Keep at most 50k tasks
 
 RequestHandlerBuilder::new(executor)
+    .with_agent_card(card())
     .with_task_store_config(config)
     .build()
 # }
@@ -260,6 +293,12 @@ When capacity is exceeded, the oldest terminal tasks are evicted first, then non
 For production use, implement the `TaskStore` trait for your database:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+# }
 # use std::future::Future;
 # use std::pin::Pin;
 # use a2a_protocol_sdk::prelude::*;
@@ -281,6 +320,7 @@ impl TaskStore for MyTaskStore {
 
 # fn f(executor: MyExecutor) -> ServerResult<RequestHandler> {
 RequestHandlerBuilder::new(executor)
+    .with_agent_card(card())
     .with_task_store(MyTaskStore { /* ... */ })
     .build()
 # }

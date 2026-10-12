@@ -61,6 +61,7 @@ async fn idle_handler_reports_zero_queues_and_tokens() {
         proceed: Arc::new(Notify::new()),
         started: Arc::new(AtomicBool::new(false)),
     })
+    .without_agent_card()
     .with_task_store(InMemoryTaskStore::new())
     .build()
     .expect("build handler");
@@ -93,6 +94,7 @@ async fn one_in_flight_task_is_counted_exactly_once() {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .without_agent_card()
         .with_task_store(InMemoryTaskStore::new())
         .build()
         .expect("build handler"),
@@ -258,6 +260,7 @@ async fn pushed_artifacts_are_reported_at_their_own_index() {
     let deltas = Arc::new(Mutex::new(Vec::new()));
     let handler = Arc::new(
         RequestHandlerBuilder::new(PushingExecutor { count: COUNT })
+            .without_agent_card()
             .with_task_store(DeltaRecordingStore::new(Arc::clone(&deltas)))
             .build()
             .expect("build handler"),
@@ -307,6 +310,7 @@ async fn pushed_artifacts_are_reported_at_their_own_index_when_blocking() {
 
     let deltas = Arc::new(Mutex::new(Vec::new()));
     let handler = RequestHandlerBuilder::new(PushingExecutor { count: COUNT })
+        .without_agent_card()
         .with_task_store(DeltaRecordingStore::new(Arc::clone(&deltas)))
         .build()
         .expect("build handler");
@@ -340,6 +344,7 @@ async fn pushed_artifacts_are_reported_at_their_own_index_when_blocking() {
 #[tokio::test]
 async fn task_count_is_the_number_of_stored_tasks() {
     let handler = RequestHandlerBuilder::new(StatusExecutor)
+        .without_agent_card()
         .with_task_store(InMemoryTaskStore::new())
         .build()
         .expect("build handler");

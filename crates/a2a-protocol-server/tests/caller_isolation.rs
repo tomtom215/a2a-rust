@@ -62,12 +62,12 @@ enum Callers {
 const ISOLATED: [Callers; 2] = [Callers::ByDefault, Callers::Isolated];
 
 fn handler(callers: Callers) -> RequestHandler {
-    let b = RequestHandlerBuilder::new(Worker).with_interceptor(
-        BearerTokenAuthInterceptor::with_labelled_tokens([
+    let b = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
+        .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
             ("alice-token", "alice"),
             ("bob-token", "bob"),
-        ]),
-    );
+        ]));
     match callers {
         Callers::ByDefault => b,
         Callers::Isolated => b
@@ -285,6 +285,7 @@ async fn background_work_finishes_in_the_callers_partition(h: &RequestHandler) {
 #[test]
 fn isolation_refuses_stores_that_cannot_partition() {
     let err = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
         .with_task_store(InMemoryTaskStore::new())
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([(
             "alice-token",
@@ -304,6 +305,7 @@ fn isolation_refuses_stores_that_cannot_partition() {
 #[test]
 fn isolation_refuses_a_chain_that_identifies_nobody() {
     let err = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
         .with_task_store(TenantAwareInMemoryTaskStore::new())
         .isolate_tasks_by_caller()
         .build()
@@ -336,6 +338,7 @@ async fn isolation_holds_on_the_sqlite_stores() {
     use a2a_protocol_server::store::TenantAwareSqliteTaskStore;
 
     let h = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
         .with_task_store(
             TenantAwareSqliteTaskStore::new("sqlite::memory:")
                 .await

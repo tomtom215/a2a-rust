@@ -11,6 +11,11 @@
 //! # Quick start
 //!
 //! ```rust,no_run
+//! # fn card() -> a2a_protocol_types::agent_card::AgentCard {
+//! #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+//! #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+//! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+//! # }
 //! use std::sync::Arc;
 //! use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
 //! use a2a_protocol_server::RequestHandlerBuilder;
@@ -26,6 +31,7 @@
 //! # async fn example() {
 //! let handler = Arc::new(
 //!     RequestHandlerBuilder::new(MyExecutor)
+//!         .with_agent_card(card())
 //!         .build()
 //!         .expect("build handler"),
 //! );
@@ -831,6 +837,7 @@ mod tests {
                 crate::agent_executor!(Noop, |_ctx, _q| async { Ok(()) });
                 Noop
             })
+            .without_agent_card()
             .build()
             .unwrap(),
         );
@@ -1210,7 +1217,12 @@ mod tests {
             }
         }
 
-        let handler = Arc::new(RequestHandlerBuilder::new(NoopExecutor).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(NoopExecutor)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let router = A2aRouter::new(handler);
         // Should not panic when building the router
         let _axum_router = router.into_router();
@@ -1237,7 +1249,12 @@ mod tests {
             }
         }
 
-        let handler = Arc::new(RequestHandlerBuilder::new(NoopExecutor).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(NoopExecutor)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let config =
             super::super::DispatchConfig::default().with_max_request_body_size(8 * 1024 * 1024);
         let router = A2aRouter::with_config(handler, config);
@@ -1311,7 +1328,7 @@ mod readiness_tests {
         struct Noop;
         crate::agent_executor!(Noop, |_ctx, _q| async { Ok(()) });
 
-        let builder = crate::builder::RequestHandlerBuilder::new(Noop);
+        let builder = crate::builder::RequestHandlerBuilder::new(Noop).without_agent_card();
         let builder = match store {
             Some(s) => builder.with_task_store(s),
             None => builder,

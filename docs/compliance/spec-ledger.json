@@ -1899,19 +1899,22 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "When clients attempt to use operations or features that require capabilities not declared ... the agent MUST return an appropriate error response",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:39",
     "crates/a2a-protocol-server/src/handler/capability.rs:62",
     "crates/a2a-protocol-server/src/handler/capability.rs:84"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/capability.rs:196 card_without_streaming_rejects_streaming"
+    "crates/a2a-protocol-server/src/handler/capability.rs:196 card_without_streaming_rejects_streaming",
+    "crates/a2a-protocol-server/tests/streaming_contract.rs streaming_methods_are_refused_when_the_card_does_not_declare_streaming",
+    "crates/a2a-protocol-server/src/builder.rs build_refuses_a_handler_without_an_agent_card"
    ],
-   "notes": "Summary of 573-576 below. All checks are skipped when no AgentCard is configured on the RequestHandler (capability.rs:16-18, 189).",
+   "notes": "Summary of 573-576 below, each TESTED. The checks are skipped only for a handler built with RequestHandlerBuilder::without_agent_card(), an explicit statement that it is not a public A2A server or that its card is published elsewhere; since 2026-10-12 build() refuses a handler with no card otherwise (spec §8.1). Before: every check was skipped whenever no card was configured, which was the default.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 573,
@@ -1952,7 +1955,7 @@
     "crates/a2a-protocol-server/src/handler/capability.rs:196 card_without_streaming_rejects_streaming",
     "crates/a2a-protocol-server/tests/streaming_contract.rs streaming_methods_are_refused_when_the_card_does_not_declare_streaming"
    ],
-   "notes": "ensure_streaming_supported refuses SendStreamingMessage and SubscribeToTask unless capabilities.streaming is true. Tested over JSON-RPC for streaming false and absent (code -32004 on both methods, against an existing task); shown to fail with the check disabled. A no-op when no card is configured.",
+   "notes": "ensure_streaming_supported refuses SendStreamingMessage and SubscribeToTask unless capabilities.streaming is true. Tested over JSON-RPC for streaming false and absent (code -32004 on both methods, against an existing task); shown to fail with the check disabled. A no-op only for a handler built without_agent_card(); build() otherwise requires a card (2026-10-12).",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
@@ -4546,7 +4549,7 @@
    "binds": "server",
    "requirement": "A2A Servers **MUST** make an Agent Card available.",
    "status": "PARTIAL",
-   "severity": "medium",
+   "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:101",
     "crates/a2a-protocol-server/src/builder.rs:117",
@@ -4556,12 +4559,14 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:230 agent_card_get_returns_card_when_configured",
-    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:241 agent_card_get_returns_404_when_not_configured",
-    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:202 axum_agent_card_discovery"
+    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:202 axum_agent_card_discovery",
+    "crates/a2a-protocol-server/src/builder.rs build_refuses_a_handler_without_an_agent_card",
+    "crates/a2a-protocol-server/src/builder.rs without_agent_card_builds_a_handler_with_no_card"
    ],
-   "notes": "JSON-RPC, REST and axum serve GET /.well-known/agent-card.json when a card is configured, but RequestHandlerBuilder's agent_card defaults to None and build() accepts that, serving 404 (pinned by a test); the WebSocket and gRPC dispatchers serve no well-known card at all, so a WS-only or gRPC-only deployment has no discovery endpoint from the SDK.",
+   "notes": "Since 2026-10-12 RequestHandlerBuilder::build() refuses a handler with no agent card unless told without_agent_card() (for a card published elsewhere, or a handler that is not a public A2A server), and JSON-RPC, REST and axum serve the card at GET /.well-known/agent-card.json. Still PARTIAL: the WebSocket and gRPC dispatchers serve no well-known card, so a WebSocket-only or gRPC-only deployment must publish it on an HTTP route of its own (StaticAgentCardHandler). Before: agent_card defaulted to None and build() accepted that, serving 404.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 1994,
