@@ -672,6 +672,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **`keep_alive_comments_reset_the_idle_bound` tolerates a runner stall**
+  (client tests). It failed on Windows on `9aacd7a` and on `main` at
+  `6ce5dc9`: the stub and the client share one thread, so a stall longer
+  than the bound minus the 100 ms heartbeat interval fires the idle timeout
+  correctly. The bound is now 3 s (about 2.9 s of stall tolerated, was
+  0.9 s), and a failure reports the stub's longest gap between writes, which
+  says whether the runner stalled or heartbeats were not counted.
 - **Tests for four spec requirements that were implemented but untested**:
   §3.1.4 `includeArtifacts` omission (`list_tasks_artifacts.rs`), §3.3.4
   streaming refused without the capability on the JSON-RPC wire and §3.5.2

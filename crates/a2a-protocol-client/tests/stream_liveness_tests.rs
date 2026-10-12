@@ -13,7 +13,9 @@
 
 mod common;
 
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use a2a_protocol_client::{ClientBuilder, ClientError};
 use common::{
@@ -99,30 +101,62 @@ async fn subscribe_to_task_that_stalls_times_out() {
     assert_idle_timeout(stream).await;
 }
 
-/// Keep-alive comments are liveness: a stream quiet for several idle periods
-/// between events, but heartbeating throughout, must survive to its
+/// Raises `longest_ms` to the time since `last`, then restarts `last`.
+fn record_write(longest_ms: &AtomicU64, last: &mut Instant) {
+    let gap = u64::try_from(last.elapsed().as_millis()).unwrap_or(u64::MAX);
+    longest_ms.fetch_max(gap, Ordering::Relaxed);
+    *last = Instant::now();
+}
+
+/// Keep-alive comments are liveness: a stream quiet for longer than the idle
+/// bound between events, but heartbeating throughout, must survive to its
 /// terminal event.
+///
+/// The bound is wide against the heartbeat interval on purpose. The stub and
+/// the client share one current-thread runtime, so a runner that stalls the
+/// thread for longer than `bound - interval` makes the client's deadline and
+/// the stub's next heartbeat fall due in the same tick, and the deadline is
+/// then correct to fire. Windows CI stalled that long at a 1 s bound (failed
+/// on `9aacd7a` and on `main` at `6ce5dc9`); 3 s tolerates a stall of about
+/// 2.9 s. The stub records the longest gap between its own writes, so a
+/// failure says which of the two it was: a runner stall, or heartbeats that
+/// arrived on time and were not counted as liveness.
 #[tokio::test]
 async fn keep_alive_comments_reset_the_idle_bound() {
-    let url = serve(|mut s, _| async move {
-        write(&mut s, SSE_HEAD).await;
-        write(&mut s, &chunk(&jsonrpc_status_frame("TASK_STATE_WORKING"))).await;
-        // 25 heartbeats 100 ms apart: 2.5 s of no events, against a 1 s bound.
-        // The interval *is* the subject here, so it is a real sleep.
-        for _ in 0..25 {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            write(&mut s, &chunk(": keep-alive\n\n")).await;
+    const BOUND: Duration = Duration::from_secs(3);
+    const HEARTBEAT: Duration = Duration::from_millis(100);
+    // 4.5 s with no event, against the 3 s bound.
+    const HEARTBEATS: u32 = 45;
+
+    let longest_gap_ms = Arc::new(AtomicU64::new(0));
+    let url = serve({
+        let longest_gap_ms = Arc::clone(&longest_gap_ms);
+        move |mut s, _| {
+            let longest_gap_ms = Arc::clone(&longest_gap_ms);
+            async move {
+                let mut last_write = Instant::now();
+                write(&mut s, SSE_HEAD).await;
+                write(&mut s, &chunk(&jsonrpc_status_frame("TASK_STATE_WORKING"))).await;
+                record_write(&longest_gap_ms, &mut last_write);
+                // The interval *is* the subject here, so it is a real sleep.
+                for _ in 0..HEARTBEATS {
+                    tokio::time::sleep(HEARTBEAT).await;
+                    write(&mut s, &chunk(": keep-alive\n\n")).await;
+                    record_write(&longest_gap_ms, &mut last_write);
+                }
+                write(
+                    &mut s,
+                    &chunk(&jsonrpc_status_frame("TASK_STATE_COMPLETED")),
+                )
+                .await;
+                record_write(&longest_gap_ms, &mut last_write);
+                write(&mut s, LAST_CHUNK).await;
+            }
         }
-        write(
-            &mut s,
-            &chunk(&jsonrpc_status_frame("TASK_STATE_COMPLETED")),
-        )
-        .await;
-        write(&mut s, LAST_CHUNK).await;
     })
     .await;
     let client = ClientBuilder::new(&url)
-        .with_stream_idle_timeout(Some(Duration::from_secs(1)))
+        .with_stream_idle_timeout(Some(BOUND))
         .build()
         .expect("build");
     let mut stream = client.stream_message(params()).await.expect("stream");
@@ -132,7 +166,15 @@ async fn keep_alive_comments_reset_the_idle_bound() {
         .await
         .expect("guard")
     {
-        ev.expect("no event may fail: heartbeats keep the stream alive");
+        if let Err(e) = ev {
+            let gap = Duration::from_millis(longest_gap_ms.load(Ordering::Relaxed));
+            panic!(
+                "no event may fail while heartbeats keep the stream alive, got {e:?}. The \
+                 stub's longest gap between writes was {gap:?} against a {BOUND:?} bound and \
+                 a {HEARTBEAT:?} interval: a gap near the bound means the runner stalled; a \
+                 gap near the interval means heartbeats were not counted as liveness"
+            );
+        }
         events += 1;
     }
     assert_eq!(events, 2, "both events arrive");
