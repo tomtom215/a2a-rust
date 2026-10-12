@@ -269,6 +269,26 @@ pub fn attr(attrs: &[KeyValue], key: &str) -> Option<String> {
     })
 }
 
+/// A collector that is never reached: a listener that accepts each
+/// connection and closes it at once, held for the test's lifetime so no other
+/// test can take its port. It fails an export as fast on every OS. A closed
+/// port does not: Windows retries the connection for about 2 s, so
+/// `opentelemetry-otlp`'s four attempts outlast the batch processor's 5 s
+/// shutdown wait and the loss is reported as that timeout instead (failed on
+/// Windows on 2026-10-12). Port 1 was used before that; a port bound and
+/// released was reused by another test's server under full-suite load
+/// (observed 2026-10-11), and the export then succeeded.
+pub fn unreachable() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            drop(stream);
+        }
+    });
+    format!("http://{addr}")
+}
+
 async fn serve_http(
     listener: tokio::net::TcpListener,
     log: Log,

@@ -18,7 +18,7 @@ mod collector;
 use std::time::{Duration, Instant};
 
 use a2a_protocol_server::otel::{Langfuse, OtlpProtocol, Telemetry, TelemetryBuilder};
-use collector::{Collector, attr, test_certs};
+use collector::{Collector, attr, test_certs, unreachable};
 use opentelemetry::metrics::MeterProvider as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 
@@ -184,12 +184,6 @@ fn https_without_the_private_ca_exports_nothing() {
     assert!(collector.received().is_empty(), "{:?}", collector.paths());
 }
 
-/// Nothing listens here. Port 1 is privileged and outside the ephemeral
-/// range; a port bound and released was reused by another test's server
-/// under full-suite load (observed 2026-10-11), and the export then
-/// succeeded.
-const UNREACHABLE: &str = "http://127.0.0.1:1";
-
 /// A collector that cannot be reached is reported by `shutdown`, though the
 /// SDK's own shutdown says `Ok`, on either transport: one export, retried
 /// and then given up, is one loss. A collector answering `200` is covered by
@@ -197,7 +191,7 @@ const UNREACHABLE: &str = "http://127.0.0.1:1";
 #[test]
 fn an_unreachable_collector_is_reported_by_shutdown() {
     for protocol in [OtlpProtocol::HttpProtobuf, OtlpProtocol::Grpc] {
-        let telemetry = builder(UNREACHABLE, protocol)
+        let telemetry = builder(&unreachable(), protocol)
             .with_metrics(false)
             .with_logs(false)
             .build()
@@ -467,7 +461,7 @@ fn grpc_over_tls_without_the_private_ca_exports_nothing() {
 /// `force_flush` reports a lost export as `shutdown` does.
 #[test]
 fn an_unreachable_collector_is_reported_by_force_flush() {
-    let telemetry = builder(UNREACHABLE, OtlpProtocol::HttpProtobuf)
+    let telemetry = builder(&unreachable(), OtlpProtocol::HttpProtobuf)
         .with_metrics(false)
         .with_logs(false)
         .build()
