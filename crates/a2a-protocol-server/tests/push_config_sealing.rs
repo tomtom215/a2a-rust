@@ -60,8 +60,11 @@ async fn rows(pool: &SqlitePool, table: &str) -> Vec<String> {
 fn assert_secret_free(rows: &[String]) {
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert!(rows[0].starts_with("a2a-sealed:v1:"), "{}", rows[0]);
-    for secret in SECRETS {
-        assert!(!rows[0].contains(secret), "{secret} stored: {}", rows[0]);
+    for (what, value) in ["the client's token", "the webhook credential"]
+        .into_iter()
+        .zip(SECRETS)
+    {
+        assert!(!rows[0].contains(value), "{what} is stored in the clear");
     }
 }
 

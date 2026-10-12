@@ -1063,6 +1063,10 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     reads at most `subscribe_replay_limit` (1,000), and a custom store
     without a log has nothing to read. `dispatch/websocket.rs`'s lag test
     now truncates the log to 4 events so that its stream still lags.
+37. `test(server):` the sealing tests name a leaked secret instead of
+    printing it. CodeQL's "cleartext logging of sensitive information"
+    raised three high alerts on `748c95b4` against item 35's tests, whose
+    failure messages printed the fixture secrets; nothing real was exposed.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

@@ -218,8 +218,11 @@ fn assert_sealed(value: &serde_json::Value) {
         .as_str()
         .unwrap_or_else(|| panic!("not sealed: {value}"));
     assert!(text.starts_with("a2a-sealed:v1:"), "{text}");
-    for secret in ["client-token-s3cret", "webhook-credential-s3cret"] {
-        assert!(!text.contains(secret), "{secret} stored: {text}");
+    for (what, value) in [
+        ("the client's token", "client-token-s3cret"),
+        ("the webhook credential", "webhook-credential-s3cret"),
+    ] {
+        assert!(!text.contains(value), "{what} is stored in the clear");
     }
 }
 

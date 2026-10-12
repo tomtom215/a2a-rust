@@ -144,12 +144,12 @@ async fn with_a_cipher_no_secret_is_stored_and_the_config_reads_back() {
     let sealing = sealing();
     let stored = sealing.encode_text(&config(), &here()).await.unwrap();
     assert!(stored.starts_with(SEALED_PREFIX), "{stored}");
-    for secret in [
-        "client-token-s3cret",
-        "webhook-credential-s3cret",
-        "hooks.example.com",
+    for (what, value) in [
+        ("the client's token", "client-token-s3cret"),
+        ("the webhook credential", "webhook-credential-s3cret"),
+        ("the webhook URL", "hooks.example.com"),
     ] {
-        assert!(!stored.contains(secret), "{secret} in {stored}");
+        assert!(!stored.contains(value), "{what} is stored in the clear");
     }
     let read = sealing.decode_text(&stored, &here()).await.unwrap();
     assert!(same(&read, &config()));
