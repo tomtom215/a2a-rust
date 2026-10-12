@@ -37,7 +37,7 @@ use crate::streaming::build_sse_response;
 use error_response::not_found_response;
 use query::{
     contains_path_traversal, parse_list_tasks_query, parse_query_param, parse_query_param_u32,
-    percent_decode, strip_tenant_prefix,
+    percent_decode_path, strip_tenant_prefix,
 };
 use response::{extract_headers, health_response, inject_field_if_missing, read_body_limited};
 
@@ -187,10 +187,12 @@ impl RestDispatcher {
         // Strip the optional tenant prefix — `/{tenant}/...` from the proto's
         // `additional_bindings`, or this SDK's explicit `/tenants/{tenant}/`.
         // The segment is a path variable, so a client that percent-encodes a
-        // reserved character in it (as ours does) is decoded here; task and
-        // config ids in the path are matched raw, as before.
+        // reserved character in it (as ours does) is decoded here, as task
+        // and config ids are once routed. They were matched raw until
+        // 2026-10-12, so an id this SDK's client encoded (a space, `:`, `/`)
+        // was looked up encoded and not found. `+` is a literal in a path.
         let (tenant, rest_path) = strip_tenant_prefix(&path);
-        let tenant = tenant.map(percent_decode);
+        let tenant = tenant.map(percent_decode_path);
         let tenant = tenant.as_deref();
 
         // Extract HTTP headers BEFORE consuming the request body.
@@ -575,6 +577,8 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let id = percent_decode_path(id);
+        let id = id.as_str();
         let history_length = parse_query_param_u32(query, "historyLength");
         let params = a2a_protocol_types::params::TaskQueryParams {
             tenant: tenant.map(str::to_owned),
@@ -607,6 +611,8 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let id = percent_decode_path(id);
+        let id = id.as_str();
         // `CancelTaskRequest` is `body: "*"`: the body may carry `metadata`,
         // and — under the primary binding — the `tenant`. Until 2026-09-09
         // the body was never read, so both were dropped on this binding.
@@ -635,6 +641,8 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let id = percent_decode_path(id);
+        let id = id.as_str();
         // A POST body, when present, may name the tenant (`SubscribeToTask
         // Request` under the primary binding); a GET has none and its
         // `?tenant=` was read by the caller.
@@ -667,6 +675,8 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let task_id = percent_decode_path(task_id);
+        let task_id = task_id.as_str();
         // The REST client may strip `taskId` from the body (it's already in the
         // URL path), and the tenant may only be in the path prefix. Inject
         // both before deserializing so the required field is always present
@@ -696,6 +706,10 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let task_id = percent_decode_path(task_id);
+        let task_id = task_id.as_str();
+        let config_id = percent_decode_path(config_id);
+        let config_id = config_id.as_str();
         let params = a2a_protocol_types::params::GetPushConfigParams {
             tenant: tenant.map(str::to_owned),
             task_id: task_id.to_owned(),
@@ -713,6 +727,8 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let task_id = percent_decode_path(task_id);
+        let task_id = task_id.as_str();
         match self
             .handler
             .on_list_push_configs(task_id, tenant, Some(headers))
@@ -736,6 +752,10 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let task_id = percent_decode_path(task_id);
+        let task_id = task_id.as_str();
+        let config_id = percent_decode_path(config_id);
+        let config_id = config_id.as_str();
         let params = a2a_protocol_types::params::DeletePushConfigParams {
             tenant: tenant.map(str::to_owned),
             task_id: task_id.to_owned(),

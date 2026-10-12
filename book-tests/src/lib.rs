@@ -59,6 +59,8 @@ pub mod page_readme {}
 // compiled rather than silently skipped.
 #[doc = include_str!("../../book/src/bindings/slimrpc.md")]
 pub mod page_bindings_slimrpc {}
+#[doc = include_str!("../../book/src/bindings/websocket.md")]
+pub mod page_bindings_websocket {}
 
 #[doc = include_str!("../../book/src/building-agents/authentication.md")]
 pub mod page_building_agents_authentication {}

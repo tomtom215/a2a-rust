@@ -1343,18 +1343,20 @@
    "keyword": "MUST",
    "binds": "spec-authors",
    "requirement": "Custom protocol bindings MUST specify how service parameters are transmitted in their binding specification.",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "SUPPORTED",
+   "severity": null,
    "impl_evidence": [
+    "book/src/bindings/websocket.md",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:109",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:415",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:678",
     "spec/slimrpc_v1/slimrpc.md:56"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2371 ws_upgrade_headers_drive_tenant_resolution"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2371 ws_upgrade_headers_drive_tenant_resolution",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:73 the_version_is_checked_at_the_handshake_with_a_query_fallback"
    ],
-   "notes": "The SDK ships two custom bindings. SLIMRPC has a written binding spec section (slimrpc.md §3 'Service Parameter Transmission'). The WebSocket binding's only specification is rustdoc: service params are the upgrade request's HTTP headers, captured once per connection (websocket.rs:109-119), so per-request A2A-Extensions/A2A-Version cannot vary on one connection and there is no standalone binding spec.",
+   "notes": "WebSocket: the binding specification (book/src/bindings/websocket.md §2) states the mechanism (upgrade headers, once per connection), the A2A-Version query fallback, value constraints, the reserved :path key, and that parameters cannot vary per request. SLIMRPC: slimrpc.md §3. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
    "auditor": "B",
    "source": "spec"
   },
@@ -3066,20 +3068,23 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Identical Functionality: Provide the same set of operations and capabilities",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:883",
+    "book/src/bindings/websocket.md",
+    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:880",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:134",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:303",
-    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:880"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:883"
    ],
    "test_evidence": [
-    "tck/src/equivalence.rs:338 bind_equiv_001",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2148 ws_legacy_method_names_rejected",
     "crates/a2a-protocol-server/tests/method_routing_completeness.rs:194 every_spec_method_is_routed",
-    "crates/a2a-protocol-server/tests/method_routing_completeness.rs:221 nothing_outside_the_spec_set_is_routed"
+    "crates/a2a-protocol-server/tests/method_routing_completeness.rs:221 nothing_outside_the_spec_set_is_routed",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:92 refusals_carry_the_documented_codes",
+    "tck/src/equivalence.rs:338 bind_equiv_001"
    ],
-   "notes": "All 11 operations are routed on JSON-RPC, REST, gRPC and WebSocket (TCK --equivalence runs in .github/workflows/tck.yml:178). But WebSocket additionally routes legacy `\"message/stream\"` (websocket.rs:883) which the JSON-RPC HTTP dispatcher answers with MethodNotFound (asserted by nothing_outside_the_spec_set_is_routed), contradicting websocket.rs's own module doc that v0.3 names are rejected.",
+   "notes": "All 11 operations are routed on JSON-RPC, REST, gRPC and WebSocket (TCK --equivalence). WebSocket's leftover v0.3 alias message/stream was removed on 2026-10-12 and is now -32601 as over HTTP; shown to fail with the alias restored.",
    "auditor": "C",
    "source": "spec"
   },
@@ -3439,15 +3444,16 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:862",
     "bindings/a2a-protocol-slimrpc/src/error.rs:41",
     "bindings/a2a-protocol-slimrpc/src/error.rs:98",
+    "book/src/bindings/websocket.md",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:862",
     "spec/slimrpc_v1/slimrpc.md:214"
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/src/error.rs:224 every_error_code_round_trips_through_the_message_prefix"
    ],
-   "notes": "WebSocket reuses JSON-RPC error objects/codes verbatim (equivalent). SlimRPC preserves semantics via the `<TypeName>Error:` message prefix for all 14 codes, but its RpcCode mapping (error.rs:108-111: PushNotSupported/UnsupportedOperation/VersionNotSupported -> UNIMPLEMENTED) contradicts its own doc comment claiming it is 'deliberately identical' to the gRPC mapping (FAILED_PRECONDITION), and differs from the vendored slimrpc.md table for ContentTypeNotSupported and ParseError; vendored slimrpc.md table also omits -32007/-32008/-32009.",
+   "notes": "WebSocket reuses the JSON-RPC codes verbatim, documented in its binding spec §5. Remaining: SLIMRPC's RpcCode mapping for PushNotSupported/UnsupportedOperation/VersionNotSupported (UNIMPLEMENTED) differs from A2A §5.4's gRPC column (FAILED_PRECONDITION); this is the SLIMRPC spec's own mapping (2985, maintainer/upstream).",
    "auditor": "C",
    "source": "spec"
   },
@@ -3460,11 +3466,12 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "spec/slimrpc_v1/slimrpc.md:214",
-    "book/src/concepts/transport-layers.md:147"
+    "book/src/bindings/websocket.md",
+    "book/src/concepts/transport-layers.md:147",
+    "spec/slimrpc_v1/slimrpc.md:214"
    ],
    "test_evidence": [],
-   "notes": "SlimRPC (upstream-vendored) has a table but missing three error types; the SDK's own WebSocket binding (https://a2a-rust.com/bindings/websocket/v1) has no written error-mapping table (book section only says JSON-RPC 2.0 frames).",
+   "notes": "WebSocket now has an error mapping table (binding spec §5). Remaining: SLIMRPC's vendored upstream table omits -32007/-32008/-32009.",
    "auditor": "C",
    "source": "spec"
   },
@@ -5262,10 +5269,13 @@
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:277",
-    "crates/a2a-protocol-client/src/discovery.rs:336"
+    "crates/a2a-protocol-client/src/discovery.rs:336",
+    "crates/a2a-protocol-client/src/discovery.rs:454"
    ],
-   "test_evidence": [],
-   "notes": "CachingCardResolver stores ETag/Last-Modified and always revalidates, but never parses Cache-Control (no max-age freshness, stores even under no-store); the plain resolve_agent_card path does no caching.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/card_revalidation.rs:98 a_no_store_card_is_not_kept"
+   ],
+   "notes": "CachingCardResolver revalidates every resolve with the stored validators (permitted by RFC 9111: a cache may always validate) and, since 2026-10-12, does not store a no-store response (RFC 9111 §5.2.2.5), nor one with no validator to revalidate by. Remaining: max-age freshness is not used to skip the request (by choice, so hot-reloaded cards are seen at once), and resolve_agent_card / fetch_card_from_url do no caching.",
    "auditor": "D",
    "source": "spec"
   },
@@ -5829,21 +5839,24 @@
    "keyword": "MUST (implied by URL-pattern list)",
    "binds": "both",
    "requirement": "REST URL patterns: POST /message:send, /message:stream; GET /tasks/{id}; GET /tasks; POST /tasks/{id}:cancel; POST /tasks/{id}:subscribe; push-config CRUD under /tasks/{id}/pushNotificationConfigs[/{configId}]; GET /extendedAgentCard",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:302-501",
-    "crates/a2a-protocol-client/src/transport/rest/routing.rs:36-102",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:66-68",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:200-207"
+    "crates/a2a-protocol-client/src/transport/rest/routing.rs:36-102",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:200-207",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:302-501",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:87"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:202 rest_push_config_crud",
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:16 rest_send_message",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:166 rest_extended_agent_card",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:202 rest_push_config_crud",
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:85 rest_list_tasks",
-    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:166 rest_extended_agent_card"
+    "crates/a2a-protocol-server/tests/rest_path_ids.rs:126 an_encoded_config_id_is_found_over_rest",
+    "crates/a2a-protocol-server/tests/rest_path_ids.rs:135 an_encoded_config_id_is_found_over_axum"
    ],
-   "notes": "Every route exists on server and client, plus tolerated aliases: GET :subscribe, /tasks/{id}/cancel, singular pushNotificationConfig, POST .../{id}/delete. Mismatch: the client percent-encodes path ids (request.rs:68 `encode_query_value`), but the server matches task and config ids raw without decoding (rest/mod.rs:202-204 says so). A client-chosen push-config id such as \"my cfg\" is stored as \"my cfg\" and then looked up as \"my%20cfg\", which returns not found.",
+   "notes": "Every route exists on server and client, plus tolerated aliases (GET :subscribe, /tasks/{id}/cancel, singular pushNotificationConfig, POST .../{id}/delete). The client percent-encodes path ids; since 2026-10-12 the REST dispatcher decodes task and config ids (and the tenant) after routing, with + literal as RFC 3986 says, and the axum router routes on the raw path before decoding, so an id with a space, +, : or / round-trips on both. Shown to fail with the decoder disabled.",
    "auditor": "E",
    "source": "spec"
   },
@@ -6218,16 +6231,20 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "4. Document Completely: Provide comprehensive documentation of the binding specification",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "SUPPORTED",
+   "severity": null,
    "impl_evidence": [
+    "bindings/a2a-protocol-slimrpc/README.md:148-202",
+    "book/src/bindings/websocket.md",
     "book/src/building-agents/dispatchers.md:191-260",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:6-33",
-    "spec/slimrpc_v1/slimrpc.md:1-270",
-    "bindings/a2a-protocol-slimrpc/README.md:148-202"
+    "spec/slimrpc_v1/slimrpc.md:1-270"
    ],
-   "test_evidence": [],
-   "notes": "SLIMRPC has a full vendored binding spec. WebSocket has only a short protocol bullet list in the book and rustdoc: no data-type mapping, error format, event ordering or reconnection sections, and the rustdoc and book contradict each other on v0.3 method names.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:134 a_stream_is_frames_then_the_marker",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:92 refusals_carry_the_documented_codes"
+   ],
+   "notes": "WebSocket now has a binding specification (book/src/bindings/websocket.md): connection, service parameters, messages, data types, streaming, errors, authentication, security, differences from JSON-RPC over HTTP. SLIMRPC follows the vendored upstream spec. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
    "auditor": "E",
    "source": "spec"
   },
@@ -6237,15 +6254,16 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Custom bindings MUST provide clear mappings for: Protocol Buffer Types, Timestamps, Binary Data, Enumerations",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "SUPPORTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:6-24",
     "bindings/a2a-protocol-slimrpc/README.md:178-184",
+    "book/src/bindings/websocket.md",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:6-24",
     "spec/slimrpc_v1/slimrpc.md:1-60"
    ],
    "test_evidence": [],
-   "notes": "SLIMRPC is protobuf on the wire (mappings implicit in proto3) and documented. WebSocket says only \"JSON-RPC 2.0 requests as text frames\", so the ProtoJSON mappings are implied by reference to §9 but never stated.",
+   "notes": "WebSocket spec §3 'Data types' states the ProtoJSON mappings: lowerCamelCase names, enum names as strings, RFC 3339 UTC timestamps, base64 bytes, Struct as JSON object; binary frames refused. SLIMRPC is protobuf on the wire.",
    "auditor": "E",
    "source": "spec"
   },
@@ -6255,16 +6273,19 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "custom protocol bindings MUST document how service parameters are transmitted ... MUST address: Transmission Mechanism, Value Constraints, Reserved Names, Fallback Strategy",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "SUPPORTED",
+   "severity": null,
    "impl_evidence": [
+    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:30-54",
+    "book/src/bindings/websocket.md",
     "book/src/building-agents/dispatchers.md:231-243",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:678-700",
-    "spec/slimrpc_v1/slimrpc.md:56-90",
-    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:30-54"
+    "spec/slimrpc_v1/slimrpc.md:56-90"
    ],
-   "test_evidence": [],
-   "notes": "WebSocket documents the mechanism: headers of the HTTP upgrade request apply to every message on the connection. It does not document value constraints, the internally injected `:path` key, or that per-request parameters (e.g., a different A2A-Extensions per call) cannot be expressed. SLIMRPC's spec §3 covers all four points.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:73 the_version_is_checked_at_the_handshake_with_a_query_fallback"
+   ],
+   "notes": "WebSocket spec §2 covers transmission, value constraints, reserved names (:path) and fallback (A2A-Version query parameter only). The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
    "auditor": "E",
    "source": "spec"
   },
@@ -6358,14 +6379,17 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "4. Document Error Format: Specify the structure of error responses",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "SUPPORTED",
+   "severity": null,
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/README.md:186-202",
+    "book/src/bindings/websocket.md",
     "book/src/building-agents/dispatchers.md:220-229"
    ],
-   "test_evidence": [],
-   "notes": "SLIMRPC documents it. WebSocket error frames (JSON-RPC error, the -32000 mid-stream code, the AIP-193 400 body on a failed handshake) are not documented in the book.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:92 refusals_carry_the_documented_codes"
+   ],
+   "notes": "WebSocket spec §1 and §5 document the handshake error body and the JSON-RPC error object with its typed data array, with a code table for every A2A error. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
    "auditor": "E",
    "source": "spec"
   },
@@ -6375,18 +6399,20 @@
    "keyword": "MUST (implied by §12.1.4 for streaming bindings)",
    "binds": "server",
    "requirement": "Define Stream Mechanism; Event Ordering; Reconnection; Stream Termination",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "SUPPORTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1085-1131",
+    "book/src/bindings/websocket.md",
     "book/src/building-agents/dispatchers.md:224",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1085-1131",
     "spec/slimrpc_v1/slimrpc.md:237-266"
    ],
    "test_evidence": [
+    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:240 streaming_send_delivers_events_and_terminates",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1990 ws_send_streaming_message_events",
-    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:240 streaming_send_delivers_events_and_terminates"
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:134 a_stream_is_frames_then_the_marker"
    ],
-   "notes": "SLIMRPC spec §7 covers all four. WebSocket documents the mechanism and termination (the sentinel frame), but not ordering, and it supports no resumption (websocket.rs:1096-1100 says so in a code comment only).",
+   "notes": "WebSocket spec §4: mechanism (frames carrying the request id), ordering (per stream in production order; streams on one connection interleave), reconnection (none; resubscribe, first event is the snapshot), termination (stream_complete marker, or an error frame). The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
    "auditor": "E",
    "source": "spec"
   },
@@ -6416,16 +6442,17 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:678-700",
+    "bindings/a2a-protocol-slimrpc/src/server/mod.rs:1-259",
+    "book/src/bindings/websocket.md",
     "book/src/building-agents/dispatchers.md:231-243",
-    "bindings/a2a-protocol-slimrpc/src/server/mod.rs:1-259"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:678-700"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2371 ws_upgrade_headers_drive_tenant_resolution",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:344 a_jwt_identity_carries_an_a2a_call",
     "bindings/a2a-protocol-slimrpc/tests/spiffe.rs:94 a_spiffe_identity_carries_an_a2a_call"
    ],
-   "notes": "WebSocket presents credentials once, on the upgrade headers. A refused credential comes back only as a JSON-RPC -32600 body with no 401 or WWW-Authenticate challenge (documented). Browsers cannot set Authorization on a WebSocket and no alternative is offered. SLIMRPC authenticates at the transport (shared secret/JWT/SPIFFE), forwards the authorization metadata to the handler, and maps refusals to UNAUTHENTICATED/PERMISSION_DENIED.",
+   "notes": "WebSocket spec §6 documents integration: credentials on the upgrade headers, checked per request; a refused credential is -32600 in the body with no 401/WWW-Authenticate (the connection is already upgraded), and browsers cannot set Authorization. Remaining: no in-band challenge, which the binding cannot send; the documented workaround is a gateway. SLIMRPC authenticates at the transport and maps refusals to UNAUTHENTICATED/PERMISSION_DENIED.",
    "auditor": "E",
    "source": "spec"
   },
@@ -6472,18 +6499,21 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Custom binding implementers SHOULD: Test Against Reference; Document Differences; Provide Examples; Test Edge Cases",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "SUPPORTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1757-2739",
-    "bindings/a2a-protocol-slimrpc/README.md:17-31"
+    "bindings/a2a-protocol-slimrpc/README.md:17-31",
+    "book/src/bindings/websocket.md",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1757-2739"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/websocket_tests.rs:332 ws_json_without_a_method_returns_invalid_request",
+    "bindings/a2a-protocol-slimrpc/tests/out_of_process.rs (suite)",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1903 ws_oversized_message_rejected",
-    "bindings/a2a-protocol-slimrpc/tests/out_of_process.rs (suite)"
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:134 a_stream_is_frames_then_the_marker",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:92 refusals_carry_the_documented_codes",
+    "crates/a2a-protocol-server/tests/websocket_tests.rs:332 ws_json_without_a_method_returns_invalid_request"
    ],
-   "notes": "Both bindings have broad edge-case tests, and SLIMRPC is checked against upstream's spec and the official crate (README). WebSocket has no parity test against the JSON-RPC HTTP binding, no published request/response examples, and no list of deviations from JSON-RPC: the stream sentinel, -32000, missing error data and per-connection headers.",
+   "notes": "WebSocket: examples and a differences table are in the binding spec (§3, §5, §8); TCK --equivalence compares it with the spec bindings; edge cases are tested in websocket.rs and websocket_*.rs. SLIMRPC is checked against upstream's spec and the official crate.",
    "auditor": "E",
    "source": "spec"
   },
@@ -7749,15 +7779,16 @@
    "keyword": "MUST",
    "binds": "spec-authors",
    "requirement": "Custom protocol bindings MUST address security considerations in their specification",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "SUPPORTED",
+   "severity": null,
    "impl_evidence": [
+    "book/src/bindings/websocket.md",
+    "book/src/concepts/transport-layers.md:188",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:24",
-    "crates/a2a-protocol-types/src/lib.rs:85",
-    "book/src/concepts/transport-layers.md:188"
+    "crates/a2a-protocol-types/src/lib.rs:85"
    ],
    "test_evidence": [],
-   "notes": "The repo's own custom binding (WebSocket, https://a2a-rust.com/bindings/websocket/v1) has no binding specification with a security section; docs only say upgrade headers carry auth. Unaddressed: no Origin check on the upgrade (cross-site WebSocket hijacking with cookie/ambient auth), server listener is ws:// only, per-message auth errors have no status. SLIMRPC follows an upstream binding spec.",
+   "notes": "WebSocket spec §7 addresses transport (ws:// only; TLS terminator), the unchecked Origin header and cross-site WebSocket hijacking where credentials are ambient, one identity per connection, and limits. SLIMRPC follows its upstream binding spec. Recorded for the maintainer: an opt-in Origin allowlist on the dispatcher.",
    "auditor": "F",
    "source": "spec"
   },
@@ -7939,15 +7970,18 @@
    "keyword": "none (optional in proto)",
    "binds": "client",
    "requirement": "string context_id = 2; (not REQUIRED in proto)",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:270",
     "crates/a2a-protocol-types/src/task.rs:418",
     "crates/a2a-protocol-types/src/task.rs:419",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:270"
+    "crates/a2a-protocol-types/src/task.rs:427"
    ],
-   "test_evidence": [],
-   "notes": "Proto marks Task.context_id optional, but the JSON type has `pub context_id: ContextId` with no serde(default): a JSON-RPC/REST/WS peer Task without contextId makes the whole response fail with ClientError::Serialization, while gRPC tolerates it (ContextId(value.context_id)). Server always emits it.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/required_fields.rs:151 a_task_needs_id_and_status_but_not_context_id"
+   ],
+   "notes": "A peer's task without contextId (ProtoJSON omits an empty string) parses with an empty id instead of failing the whole response; id and status remain required. Shown to fail with the serde default removed.",
    "auditor": "G",
    "source": "proto"
   },

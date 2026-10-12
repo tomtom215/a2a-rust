@@ -283,6 +283,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   proto: an artifact must contain at least one part). Persistence dropped
   it, but live subscribers had already been sent it. The executor's write
   now returns `InvalidParams`. An appending chunk may still be empty.
+- **The WebSocket binding no longer routes `message/stream`** (server; spec
+  §5.1). It was the one v0.3 method name still served there, and every other
+  binding refuses it; it is now `-32601` like the rest. The binding has a
+  written specification at `book/src/bindings/websocket.md`.
 - **One JSON-RPC error shape on every surface** (server; spec §9.5, §12.4).
   HTTP responses, SSE frames and WebSocket messages now build the error the
   same way: the A2A code, and `data` as the typed-details array. On WebSocket
@@ -448,6 +452,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTTP+JSON ids with reserved characters are found** (server; spec
+  §11.3). This SDK's client percent-encodes path ids; `RestDispatcher`
+  matched them encoded, so a push config whose id held a space, `+`, `:` or
+  `/` was created and never found. It now decodes ids (and the tenant) after
+  routing, with `+` literal as in any URL path. The axum router decoded the
+  whole tail before splitting it, so an encoded `/` or `:` broke the route;
+  it now routes on the raw path, as `RestDispatcher` does.
+- **A peer's task without `contextId` parses** (types). The proto leaves it
+  optional and ProtoJSON omits an empty string; the whole response failed.
+- **`CachingCardResolver` does not keep a `no-store` card** (client; RFC 9111
+  §5.2.2.5), nor one without a validator to revalidate it by.
 - **The axum router's agent card is cacheable** (server; spec §8.6.1). It
   served the JSON alone; it now sends the same `ETag`, `Last-Modified` and
   `Cache-Control: public, max-age=3600` as the JSON-RPC and REST

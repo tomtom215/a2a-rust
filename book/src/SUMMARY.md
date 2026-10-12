@@ -23,6 +23,7 @@
 - [Request Handler & Builder](./building-agents/handler.md)
 - [Dispatchers (JSON-RPC, REST, WebSocket, Axum & gRPC)](./building-agents/dispatchers.md)
 - [SLIMRPC over AGNTCY SLIM](./bindings/slimrpc.md)
+- [WebSocket binding specification](./bindings/websocket.md)
 - [Push Notifications](./building-agents/push-notifications.md)
 - [Interceptors & Middleware](./building-agents/interceptors.md)
 - [Authentication](./building-agents/authentication.md)

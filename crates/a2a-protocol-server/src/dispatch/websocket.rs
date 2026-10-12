@@ -829,9 +829,10 @@ impl ActivityClock {
 ///
 /// Routes the v1.0 `PascalCase` method names the JSON-RPC HTTP dispatcher
 /// routes, so a client can switch bindings without changing method names.
-/// Of the v0.3 `method/verb` spellings only `message/stream` is accepted;
-/// the others are refused with `MethodNotFound`, as over HTTP
-/// (`ws_legacy_method_names_rejected`; audit N19).
+/// The v0.3 `method/verb` spellings are refused with `MethodNotFound`, as
+/// over HTTP (`ws_legacy_method_names_rejected`). `message/stream` was
+/// still routed until 2026-10-12, which made this binding offer an
+/// operation the others refuse (spec §5.1, identical functionality).
 ///
 /// Each call runs in its `SERVER` span and is recorded with the error code
 /// it answers with, as over HTTP (ADR 0013).
@@ -873,7 +874,7 @@ async fn process_ws_message(
         "SendMessage" => {
             dispatch_send_message(handler, &rpc_req, false, headers, id, &writer).await;
         }
-        "SendStreamingMessage" | "message/stream" => {
+        "SendStreamingMessage" => {
             dispatch_send_message(handler, &rpc_req, true, headers, id, &writer).await;
         }
         "GetTask" => {
@@ -2148,7 +2149,7 @@ mod tests {
         let addr = spawn_ws_server().await;
         let mut ws = ws_connect(addr).await;
 
-        for legacy in ["message/send", "tasks/list", "tasks/get"] {
+        for legacy in ["message/send", "message/stream", "tasks/list", "tasks/get"] {
             let v = ws_call(
                 &mut ws,
                 serde_json::json!({

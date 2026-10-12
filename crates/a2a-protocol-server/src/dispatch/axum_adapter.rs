@@ -80,7 +80,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use bytes::Bytes;
@@ -367,12 +367,18 @@ fn hyper_to_axum(
 async fn handle_tasks_catchall(
     State(state): State<A2aState>,
     method: axum::http::Method,
-    Path(rest): Path<String>,
+    uri: axum::http::Uri,
     headers: axum::http::HeaderMap,
     TimedBody(body): TimedBody,
 ) -> axum::response::Response {
     let hdrs = extract_headers(&headers);
+    // Routed on the raw path, then each id decoded, as the REST dispatcher
+    // does: an id this SDK's client encoded keeps its `/` and `:` inside it.
+    // `Path` decoded the whole tail first, so such an id was split or read as
+    // an action until 2026-10-12.
+    let rest = uri.path().strip_prefix("/tasks/").unwrap_or_default();
     let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+    let dec = super::rest::query::percent_decode_path;
 
     match (method.as_str(), segments.as_slice()) {
         // GET /tasks/{id} (no colon action)
@@ -382,7 +388,7 @@ async fn handle_tasks_catchall(
                 "GetTask",
                 (method.as_str(), "/tasks/{id}"),
                 &hdrs,
-                handle_get_task_inner(&state, id, &hdrs),
+                handle_get_task_inner(&state, &dec(id), &hdrs),
             )
             .await
         }
@@ -395,7 +401,7 @@ async fn handle_tasks_catchall(
                 "CancelTask",
                 (method.as_str(), "/tasks/{id}:cancel"),
                 &hdrs,
-                handle_cancel_task_inner(&state, id, &hdrs),
+                handle_cancel_task_inner(&state, &dec(id), &hdrs),
             )
             .await
         }
@@ -408,7 +414,7 @@ async fn handle_tasks_catchall(
                 "SubscribeToTask",
                 (method.as_str(), "/tasks/{id}:subscribe"),
                 &hdrs,
-                handle_subscribe_inner(&state, id, &hdrs),
+                handle_subscribe_inner(&state, &dec(id), &hdrs),
             )
             .await
         }
@@ -420,7 +426,7 @@ async fn handle_tasks_catchall(
                 "CreateTaskPushNotificationConfig",
                 (method.as_str(), "/tasks/{task_id}/pushNotificationConfigs"),
                 &hdrs,
-                handle_create_push_config_inner(&state, task_id, &hdrs, body),
+                handle_create_push_config_inner(&state, &dec(task_id), &hdrs, body),
             )
             .await
         }
@@ -432,7 +438,7 @@ async fn handle_tasks_catchall(
                 "ListTaskPushNotificationConfigs",
                 (method.as_str(), "/tasks/{task_id}/pushNotificationConfigs"),
                 &hdrs,
-                handle_list_push_configs_inner(&state, task_id, &hdrs),
+                handle_list_push_configs_inner(&state, &dec(task_id), &hdrs),
             )
             .await
         }
@@ -447,7 +453,7 @@ async fn handle_tasks_catchall(
                     "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
                 ),
                 &hdrs,
-                handle_get_push_config_inner(&state, task_id, config_id, &hdrs),
+                handle_get_push_config_inner(&state, &dec(task_id), &dec(config_id), &hdrs),
             )
             .await
         }
@@ -462,7 +468,7 @@ async fn handle_tasks_catchall(
                     "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
                 ),
                 &hdrs,
-                handle_delete_push_config_inner(&state, task_id, config_id, &hdrs),
+                handle_delete_push_config_inner(&state, &dec(task_id), &dec(config_id), &hdrs),
             )
             .await
         }
@@ -852,7 +858,7 @@ mod tests {
         let response = handle_tasks_catchall(
             State(state.clone()),
             axum::http::Method::from_bytes(method.as_bytes()).unwrap(),
-            Path(rest.to_owned()),
+            format!("/tasks/{rest}").parse().unwrap(),
             axum::http::HeaderMap::new(),
             TimedBody(Bytes::new()),
         )

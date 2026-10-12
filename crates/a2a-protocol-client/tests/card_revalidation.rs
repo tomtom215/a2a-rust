@@ -7,6 +7,7 @@
 //! `If-None-Match` / `If-Modified-Since`. The unit tests' servers answered
 //! `304` unconditionally, so none showed the validators were sent. This
 //! server records each request and answers `304` only to the right ones.
+//! A `no-store` card is not kept at all.
 
 use std::sync::{Arc, Mutex};
 
@@ -29,7 +30,7 @@ fn card() -> AgentCard {
 /// Serves the card with validators; answers `304` to a request carrying
 /// both of them. Returns the base URL and every request's header block,
 /// lower-cased.
-async fn serve() -> (String, Arc<Mutex<Vec<String>>>) {
+async fn serve(extra_header: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -51,7 +52,7 @@ async fn serve() -> (String, Arc<Mutex<Vec<String>>>) {
                 "HTTP/1.1 304 Not Modified\r\nconnection: close\r\n\r\n".to_owned()
             } else {
                 format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\netag: {ETAG}\r\nlast-modified: {LAST_MODIFIED}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\netag: {ETAG}\r\nlast-modified: {LAST_MODIFIED}\r\n{extra_header}content-length: {}\r\nconnection: close\r\n\r\n{body}",
                     body.len()
                 )
             };
@@ -63,7 +64,7 @@ async fn serve() -> (String, Arc<Mutex<Vec<String>>>) {
 
 #[tokio::test]
 async fn a_cached_card_is_revalidated_with_its_validators() {
-    let (url, seen) = serve().await;
+    let (url, seen) = serve("").await;
     let resolver = CachingCardResolver::new(&url).unwrap();
 
     assert_eq!(resolver.resolve().await.unwrap().name, "cached");
@@ -89,4 +90,20 @@ async fn a_cached_card_is_revalidated_with_its_validators() {
         "{}",
         seen[1]
     );
+}
+
+/// RFC 9111 §5.2.2.5: a cache MUST NOT store a `no-store` response. The
+/// resolver kept it, and revalidated it, like any other.
+#[tokio::test]
+async fn a_no_store_card_is_not_kept() {
+    let (url, seen) = serve("cache-control: no-store\r\n").await;
+    let resolver = CachingCardResolver::new(&url).unwrap();
+
+    assert_eq!(resolver.resolve().await.unwrap().name, "cached");
+    assert_eq!(resolver.resolve().await.unwrap().name, "cached");
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert!(!seen[1].contains("if-none-match"), "{}", seen[1]);
+    assert!(!seen[1].contains("if-modified-since"), "{}", seen[1]);
 }

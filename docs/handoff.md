@@ -1019,6 +1019,13 @@ area. This branch answers both.
     empty appending chunks (287), §13.3 extended card with no card
     configured (3172, tied to 1980).
 
+24. WebSocket binding specification (`book/src/bindings/websocket.md`),
+    pinned by `websocket_binding_spec.rs`; the WebSocket `message/stream`
+    alias removed; HTTP+JSON path ids decoded (REST) and routed raw
+    (axum); a task without `contextId` parses; `no-store` cards are not
+    cached. Recorded for the maintainer: an opt-in `Origin` allowlist on
+    the WebSocket upgrade (3222).
+
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
 fields, each opened the code and tests for every RFC 2119 line. Their entries
@@ -1041,14 +1048,14 @@ before acting on it, as this branch did.
   container's disk allowance (ENOSPC mid-run). The SLIMRPC binding is
   outside the workspace; its `cargo test -- --test-threads=1` passed after
   item 12.
-- Ledger after item 23: TESTED 291, PARTIAL 48, IMPLEMENTED_UNTESTED 2,
-  GAP 3, NOT_SUPPORTED 13, SUPPORTED 44, NOT_APPLICABLE 22,
+- Ledger after item 24: TESTED 294, PARTIAL 37, SUPPORTED 52,
+  IMPLEMENTED_UNTESTED 2, GAP 3, NOT_SUPPORTED 13, NOT_APPLICABLE 22,
   APPLICATION 89 (`scripts/check_spec_ledger.py`). Items 21-22 moved ten
   entries from IMPLEMENTED_UNTESTED to PARTIAL (nine security-scheme
   REQUIRED strings and the brute-force SHOULD); item 23 moved eight PARTIAL
-  entries to TESTED. The
-  two left untested: system errors are logged (534) and webhook URLs
-  should be HTTPS (3137).
+  entries to TESTED; item 24 moved eight WebSocket documentation entries to
+  SUPPORTED and three to TESTED. The two left untested: system errors are
+  logged (534) and webhook URLs should be HTTPS (3137).
 - Workspace tests after item 21: 182 binaries, 4,517 passed, 0 failed,
   116 ignored. Item 22's four new tests were run on their own and each shown
   to fail with its fix removed.

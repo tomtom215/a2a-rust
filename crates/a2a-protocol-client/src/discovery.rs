@@ -313,10 +313,13 @@ impl CachingCardResolver {
             fetch_card_with_metadata(&self.url, cached.as_ref(), &CardFetchOptions::default())
                 .await?;
 
-        // Update cache with new metadata.
+        // Kept only with a validator to revalidate it by: without one no
+        // `304` can answer for it. A `no-store` response comes back with
+        // none (RFC 9111 §5.2.2.5: a cache MUST NOT store it), so it is not
+        // kept, and replaces what was.
         {
             let mut guard = self.cache.write().await;
-            *guard = Some(CachedCard {
+            *guard = (etag.is_some() || last_modified.is_some()).then(|| CachedCard {
                 card: card.clone(),
                 etag,
                 last_modified,
@@ -446,7 +449,15 @@ async fn fetch_card_with_metadata(
     }
     // No cached card but got 304 — shouldn't happen, fall through to error.
 
-    // Extract caching headers before consuming the response body.
+    // Extract caching headers before consuming the response body. A
+    // `no-store` response keeps no validators, so no cache holds it.
+    let no_store = resp
+        .headers()
+        .get_all(header::CACHE_CONTROL)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(','))
+        .any(|d| d.trim().eq_ignore_ascii_case("no-store"));
     let etag = resp
         .headers()
         .get("etag")
@@ -457,6 +468,11 @@ async fn fetch_card_with_metadata(
         .get("last-modified")
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
+    let (etag, last_modified) = if no_store {
+        (None, None)
+    } else {
+        (etag, last_modified)
+    };
 
     // FIX(H8): Check Content-Length before reading the body to prevent OOM
     // from a compromised card endpoint sending an arbitrarily large response.

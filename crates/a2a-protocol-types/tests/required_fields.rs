@@ -143,3 +143,26 @@ fn a_grpc_update_event_without_its_status_or_artifact_is_refused() {
     .expect_err("an artifact update without an artifact converted");
     assert_eq!(err.field, "artifactUpdate.artifact");
 }
+
+/// `Task`: `id` and `status` are REQUIRED; `contextId` is not, and a
+/// ProtoJSON printer leaves an empty one out. A peer's task without it used
+/// to fail the whole response.
+#[test]
+fn a_task_needs_id_and_status_but_not_context_id() {
+    use a2a_protocol_types::task::Task;
+
+    let task = json!({"id": "t", "contextId": "c", "status": {"state": "TASK_STATE_WORKING"}});
+    let mut no_context = task.clone();
+    no_context.as_object_mut().unwrap().remove("contextId");
+    let parsed: Task = serde_json::from_value(no_context).expect("contextId is optional");
+    assert_eq!(parsed.context_id.0, "");
+
+    for key in ["id", "status"] {
+        let mut t = task.clone();
+        t.as_object_mut().unwrap().remove(key);
+        assert!(
+            serde_json::from_value::<Task>(t).is_err(),
+            "a task without {key} parsed"
+        );
+    }
+}
