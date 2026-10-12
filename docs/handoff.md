@@ -1127,12 +1127,22 @@ before acting on it, as this branch did.
   `1.x`, and so does the official Python SDK: `_is_version_compatible`
   compares only the major version, although its docstring says major and
   minor. Rejecting `1.1` follows the text and breaks the first 1.1 client.
-- *Upstream report: the Python SDK's card canonicalization.* Its
+- *Upstream report: the Python SDK's card canonicalization (reported).* Its
   `_clean_empty` drops a security requirement whose scope list is empty, so a
   card's `securityRequirements` (the ordinary bearer case) are not covered by
-  its signature and can be removed from a signed card undetected. That is a
-  signature-coverage weakness in the reference SDK; it should go to
-  a2a-python's security contact, not a public issue. Nothing was filed.
+  its signature: one can be removed from, or added to, a signed card
+  undetected. Reproduced on a2a-sdk 1.1.4 and 1.2.2 (2026-10-12), with
+  controls; the SDK's `AuthInterceptor` then sends no credential, or a
+  different declared scheme's. Reported privately to a2aproject/a2a-python
+  through GitHub Security Advisories on 2026-10-12 (the advisory ID is in the
+  maintainer's GitHub notifications; it stays out of this repository until
+  published). This repository's `CHANGELOG.md` and
+  `itk/interop/card_signature_interop.py` already described the behaviour
+  publicly from 2026-10-10, which the report says. Related public threads:
+  a2a-python#1278 and A2A#2122 (canonicalization of empty and REQUIRED
+  fields; a maintainer there rules out changing signed bytes outside a major
+  release). Do not file a public issue about the security consequence while
+  the advisory is open.
 
 **What the next session should do first.**
 1. Read the first CI run of this branch. New or changed gates: the ledger
