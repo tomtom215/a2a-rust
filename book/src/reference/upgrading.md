@@ -167,6 +167,16 @@ A push config with an empty or scheme-less `url`, or with an authentication
 scheme other than Bearer or Basic, answers `InvalidParams`. The second used to
 be stored and then delivered with no credentials at all.
 
+### OpenTelemetry 0.33 for the `otel` feature
+
+`opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp` and the rest of the
+family move from 0.32 to 0.33.1, and `tracing-opentelemetry` from 0.33 to
+0.34.0. Types from them appear in `Telemetry`'s API, so move your own
+dependencies on these crates to the same versions. Export now retries a
+failed batch (four attempts by default), which is `opentelemetry-otlp`'s new
+default, and `shutdown` reports only exports that were lost after retrying,
+on gRPC as well as OTLP/HTTP.
+
 ### Error codes some clients may match on
 
 - A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with

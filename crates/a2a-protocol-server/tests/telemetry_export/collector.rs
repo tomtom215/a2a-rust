@@ -100,7 +100,15 @@ impl Collector {
 
     /// OTLP/HTTP, plaintext, answering every export with `status`.
     pub fn http_answering(status: u16) -> Self {
-        Self::start(move |listener, log, stopped| serve_http(listener, log, None, status, stopped))
+        Self::http_answering_in_turn(vec![status])
+    }
+
+    /// OTLP/HTTP, plaintext, answering the n-th export request with
+    /// `statuses[n]`, and every request after the last with the last.
+    pub fn http_answering_in_turn(statuses: Vec<u16>) -> Self {
+        Self::start(move |listener, log, stopped| {
+            serve_http(listener, log, None, statuses, stopped)
+        })
     }
 
     /// OTLP/HTTP over TLS, presenting `chain` for `localhost`.
@@ -118,7 +126,7 @@ impl Collector {
         .expect("server cert");
         let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
         Self::start(move |listener, log, stopped| {
-            serve_http(listener, log, Some(acceptor), 200, stopped)
+            serve_http(listener, log, Some(acceptor), vec![200], stopped)
         })
     }
 
@@ -265,9 +273,10 @@ async fn serve_http(
     listener: tokio::net::TcpListener,
     log: Log,
     tls: Option<tokio_rustls::TlsAcceptor>,
-    status: u16,
+    statuses: Vec<u16>,
     mut stopped: oneshot::Receiver<()>,
 ) {
+    let statuses = Arc::new(statuses);
     loop {
         let (stream, _) = tokio::select! {
             accepted = listener.accept() => match accepted { Ok(a) => a, Err(_) => return },
@@ -275,10 +284,12 @@ async fn serve_http(
         };
         let log = Arc::clone(&log);
         let tls = tls.clone();
+        let statuses = Arc::clone(&statuses);
         tokio::spawn(async move {
             let service =
                 hyper::service::service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
                     let log = Arc::clone(&log);
+                    let statuses = Arc::clone(&statuses);
                     async move {
                         let path = req.uri().path().to_owned();
                         let headers = req
@@ -294,11 +305,15 @@ async fn serve_http(
                             .await
                             .map(|b| b.to_bytes().to_vec())
                             .unwrap_or_default();
-                        log.lock().expect("lock").push(Received {
-                            path,
-                            headers,
-                            body,
-                        });
+                        let status = {
+                            let mut log = log.lock().expect("lock");
+                            log.push(Received {
+                                path,
+                                headers,
+                                body,
+                            });
+                            statuses[(log.len() - 1).min(statuses.len() - 1)]
+                        };
                         Ok::<_, std::convert::Infallible>(
                             hyper::Response::builder()
                                 .status(status)

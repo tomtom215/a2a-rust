@@ -135,7 +135,7 @@ Things it gets right that hand-wiring tends not to, each covered by a test in
 * **OTLP/HTTP without reqwest.** Export goes over this crate's own hyper and
   rustls (ring) stack; `deny.toml` keeps reqwest out of the graph.
 * **TLS to a gRPC collector verifies against real roots.** For an `https://`
-  endpoint `opentelemetry-otlp` 0.32 builds an empty `ClientTlsConfig`, which
+  endpoint `opentelemetry-otlp` 0.33.1 builds an empty `ClientTlsConfig`, which
   in tonic 0.14 enables no roots; `Telemetry` passes the Mozilla roots and
   any extra CA explicitly.
 * **The exporter's own stack is never exported.** Spans and events from
@@ -143,13 +143,13 @@ Things it gets right that hand-wiring tends not to, each covered by a test in
   out of the layer, so an export cannot produce telemetry that needs
   exporting. They still reach your other layers, so a `fmt` layer still shows
   an export error.
-* **A lost export is reported.** The OpenTelemetry SDK's batch processors
-  log a failed export and drop the batch, and their `shutdown` returns `Ok`
-  regardless (`opentelemetry_sdk` 0.32.1). Over OTLP/HTTP, `Telemetry` counts
-  exports that did not reach the collector or that it refused, and
-  `shutdown` and `force_flush` return `TelemetryError::Export` naming the
-  signal and the count. Over gRPC the export goes through tonic's client, and
-  a failure is only logged.
+* **A lost export is reported, on either transport.** `opentelemetry-otlp`
+  retries a failed export (four attempts by default, with backoff), and when
+  it gives up the SDK's batch processor logs the failure and drops the batch;
+  its `shutdown` returns `Ok` regardless (`opentelemetry_sdk` 0.33.1).
+  `Telemetry` counts each export its exporter gave up on, and `shutdown` and
+  `force_flush` return `TelemetryError::Export` naming the signal and the
+  count. An export refused once and delivered on retry is not counted.
 * **Log records are `INFO` and above** by default (`with_log_level` changes
   it); spans are not filtered by level here.
 
@@ -227,7 +227,8 @@ The dots are correct: OpenTelemetry names metrics this way
 (`http.server.request.duration`), and the exporter translates `.` to `_`.
 But you should not have to guess the translated name, so here it is,
 measured rather than derived — rendered through `opentelemetry-prometheus`
-0.32.0, the version matching this crate's `opentelemetry_sdk`:
+0.33.1, the version matching this crate's `opentelemetry_sdk` (re-measured
+2026-10-12 after the move from 0.32.0; every name is unchanged):
 
 | Instrument | Prometheus name |
 |---|---|
@@ -399,7 +400,7 @@ the client reports no `invoke_agent` span of its own.
 A span is exported when it closes, and `tracing` holds a span open until its
 children close, so a call's span reaches your backend once the work it
 spawned has finished — with its own end time, the call's, not theirs. Every
-attribute is recorded once: `tracing-opentelemetry` 0.33.0 exports a field
+attribute is recorded once: `tracing-opentelemetry` 0.34.0 exports a field
 recorded twice as two attributes with one key, and the SDK's observability
 gate fails on any span that carries one.
 

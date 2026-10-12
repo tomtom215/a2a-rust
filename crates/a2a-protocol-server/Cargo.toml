@@ -134,24 +134,24 @@ tonic-prost       = { workspace = true, optional = true }
 tonic-types       = { workspace = true, optional = true }
 prost             = { workspace = true, optional = true }
 tokio-stream      = { workspace = true, optional = true }
-opentelemetry     = { version = "0.32", optional = true }
+opentelemetry     = { version = "0.33", optional = true }
 # Bridges the crate's `tracing` spans to OpenTelemetry, so the span an inbound
 # call runs in can take the caller's `traceparent` as its remote parent and
-# the id sent downstream names a span the exporter has (ADR 0013). 0.33 is the
-# release built on opentelemetry 0.32 (`opentelemetry = "^0.32"`, crates.io).
-tracing-opentelemetry = { version = ">=0.33, <0.34", optional = true, default-features = false }
+# the id sent downstream names a span the exporter has (ADR 0013). 0.34 is the
+# release built on opentelemetry 0.33 (`opentelemetry = "^0.33.0"`, crates.io).
+tracing-opentelemetry = { version = ">=0.34, <0.35", optional = true, default-features = false }
 # `experimental_metrics_custom_reader` exposes `ManualReader` + the `MetricReader`
 # trait for the unit tests in `src/otel/mod.rs` that verify instrument emission
 # end-to-end. The feature only *adds* API surface — it does not change runtime
 # behaviour — so its "experimental" status only matters to the test code.
-opentelemetry_sdk = { version = "0.32", optional = true, features = ["metrics", "trace", "logs", "experimental_metrics_custom_reader"] }
+opentelemetry_sdk = { version = "0.33", optional = true, features = ["metrics", "trace", "logs", "experimental_metrics_custom_reader"] }
 # `http-proto` without a bundled HTTP client: `Telemetry` supplies its own
 # (hyper + rustls, `otel/telemetry/http.rs`), because `deny.toml` keeps
 # reqwest out of this crate's graph. `tls-ring` + `tls-webpki-roots` give the
 # gRPC exporter the same ring provider and Mozilla roots the client uses.
-opentelemetry-otlp = { version = "0.32", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "metrics", "trace", "logs", "tls-ring", "tls-webpki-roots"] }
-opentelemetry-http = { version = "0.32", optional = true, default-features = false }
-opentelemetry-appender-tracing = { version = "0.32", optional = true, default-features = false }
+opentelemetry-otlp = { version = "0.33", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "metrics", "trace", "logs", "tls-ring", "tls-webpki-roots"] }
+opentelemetry-http = { version = "0.33", optional = true, default-features = false }
+opentelemetry-appender-tracing = { version = "0.33", optional = true, default-features = false }
 # Not the workspace's `>=0.3.18`: this is a dependency of the published crate,
 # and 0.3.18-0.3.19 carry RUSTSEC-2025-0055 (`check_advisory_floors.py`).
 tracing-subscriber = { version = ">=0.3.20, <0.4", optional = true, default-features = false, features = ["registry", "std"] }
@@ -198,7 +198,7 @@ rustls = { version = ">=0.23.45, <0.24" }
 tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
 # Stand-in OTLP collectors for `tests/telemetry_export/`: decode what
 # `Telemetry` exports over HTTP, and serve the OTLP gRPC services.
-opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic", "trace", "metrics", "logs"] }
+opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic", "trace", "metrics", "logs"] }
 prost = { workspace = true }
 tonic = { workspace = true }
 tokio-stream = { workspace = true, features = ["net"] }

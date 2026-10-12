@@ -11,8 +11,6 @@
 //! with "there is no reactor running". This one moves every request onto
 //! [`ExportRuntime`](super::runtime::ExportRuntime) and waits for it.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -38,12 +36,6 @@ pub(super) struct ExportHttpClient {
     handle: Handle,
     client: Client<Https, Full<Bytes>>,
     timeout: Duration,
-    /// Exports that did not reach the collector or that it refused. The
-    /// SDK's batch processors log a failed export and drop the batch, and
-    /// their `shutdown` returns `Ok` regardless (`opentelemetry_sdk` 0.32.1,
-    /// `trace/span_processor.rs`), so this count is how `Telemetry` can say
-    /// telemetry was lost.
-    failures: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for ExportHttpClient {
@@ -57,12 +49,7 @@ impl std::fmt::Debug for ExportHttpClient {
 impl ExportHttpClient {
     /// A client verifying servers against `tls`, giving up on a request
     /// after `timeout`.
-    pub(super) fn new(
-        handle: Handle,
-        tls: &rustls::ClientConfig,
-        timeout: Duration,
-        failures: Arc<AtomicU64>,
-    ) -> Self {
+    pub(super) fn new(handle: Handle, tls: &rustls::ClientConfig, timeout: Duration) -> Self {
         let connector = hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(tls.clone())
             .https_or_http()
@@ -74,7 +61,6 @@ impl ExportHttpClient {
             handle,
             client,
             timeout,
-            failures,
         }
     }
 }
@@ -105,13 +91,9 @@ impl HttpClient for ExportHttpClient {
         // A `JoinError` means the export runtime stopped first — `Telemetry`
         // stops it only after the providers' final flush, so this is the
         // flush of a provider someone kept alive past the guard.
-        let result = match self.handle.spawn(exchange).await {
+        match self.handle.spawn(exchange).await {
             Ok(result) => result,
             Err(e) => Err(e.into()),
-        };
-        if !result.as_ref().is_ok_and(|r| r.status().is_success()) {
-            self.failures.fetch_add(1, Ordering::Relaxed);
         }
-        result
     }
 }

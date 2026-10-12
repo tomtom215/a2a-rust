@@ -184,23 +184,31 @@ fn https_without_the_private_ca_exports_nothing() {
     assert!(collector.received().is_empty(), "{:?}", collector.paths());
 }
 
+/// Nothing listens here. Port 1 is privileged and outside the ephemeral
+/// range; a port bound and released was reused by another test's server
+/// under full-suite load (observed 2026-10-11), and the export then
+/// succeeded.
+const UNREACHABLE: &str = "http://127.0.0.1:1";
+
 /// A collector that cannot be reached is reported by `shutdown`, though the
-/// SDK's own shutdown says `Ok`. A collector answering `200` is covered by
+/// SDK's own shutdown says `Ok`, on either transport: one export, retried
+/// and then given up, is one loss. A collector answering `200` is covered by
 /// every test above that expects `Ok`.
 #[test]
 fn an_unreachable_collector_is_reported_by_shutdown() {
-    // Port 1: privileged and outside the ephemeral range, so nothing in the
-    // test run listens there. A port bound and released was reused by another
-    // test's server under full-suite load (observed 2026-10-11), and the
-    // export then succeeded.
-    let telemetry = builder("http://127.0.0.1:1", OtlpProtocol::HttpProtobuf)
-        .with_metrics(false)
-        .with_logs(false)
-        .build()
-        .expect("build");
-    record_one_of_each(&telemetry);
-    let err = telemetry.shutdown().expect_err("the export failed");
-    assert!(err.to_string().contains("traces: 1 export(s)"), "{err}");
+    for protocol in [OtlpProtocol::HttpProtobuf, OtlpProtocol::Grpc] {
+        let telemetry = builder(UNREACHABLE, protocol)
+            .with_metrics(false)
+            .with_logs(false)
+            .build()
+            .expect("build");
+        record_one_of_each(&telemetry);
+        let err = telemetry.shutdown().expect_err("the export failed");
+        assert!(
+            err.to_string().contains("traces: 1 export(s)"),
+            "{protocol:?}: {err}"
+        );
+    }
 }
 
 /// The Langfuse preset sends traces only, to Langfuse's route, with its
@@ -374,24 +382,58 @@ fn a_layer_with_every_signal_off_does_not_silence_other_layers() {
     assert_eq!(seen.load(Ordering::SeqCst), 1);
 }
 
-/// A collector that answers an export with an error status refused it, and
-/// that is reported the same way.
-#[test]
-fn a_collector_refusing_exports_is_reported_by_shutdown() {
-    let collector = Collector::http_answering(503);
-    let telemetry = builder(&collector.http_base(), OtlpProtocol::HttpProtobuf)
+/// Traces only, to `collector` over OTLP/HTTP.
+fn traces_to(collector: &Collector) -> Telemetry {
+    builder(&collector.http_base(), OtlpProtocol::HttpProtobuf)
         .with_metrics(false)
         .with_logs(false)
         .build()
-        .expect("build");
+        .expect("build")
+}
+
+/// A collector that refuses an export with a status the OTLP specification
+/// does not retry refused it once, and that is reported the same way.
+#[test]
+fn a_collector_refusing_exports_is_reported_by_shutdown() {
+    let collector = Collector::http_answering(400);
+    let telemetry = traces_to(&collector);
     record_one_of_each(&telemetry);
     let err = telemetry.shutdown().expect_err("the export was refused");
     assert!(err.to_string().contains("traces: 1 export(s)"), "{err}");
     assert_eq!(
         collector.paths(),
         ["/v1/traces"],
-        "it did reach the collector"
+        "it did reach the collector, once"
     );
+}
+
+/// A retryable refusal (`503`) is retried, and an export refused on every
+/// attempt is still one loss, not one per attempt.
+#[test]
+fn an_export_refused_on_every_attempt_is_one_loss() {
+    let collector = Collector::http_answering(503);
+    let telemetry = traces_to(&collector);
+    record_one_of_each(&telemetry);
+    let err = telemetry.shutdown().expect_err("the export was refused");
+    assert!(err.to_string().contains("traces: 1 export(s)"), "{err}");
+    assert_eq!(
+        collector.paths().len(),
+        4,
+        "opentelemetry-otlp's default policy makes four attempts"
+    );
+}
+
+/// An export refused once and accepted on retry was not lost, so nothing is
+/// reported. Counting refused responses rather than lost exports, as this
+/// crate did before `opentelemetry-otlp` 0.33 began retrying, would report
+/// this one as a loss.
+#[test]
+fn an_export_the_retry_delivers_is_not_a_loss() {
+    let collector = Collector::http_answering_in_turn(vec![503, 200]);
+    let telemetry = traces_to(&collector);
+    record_one_of_each(&telemetry);
+    telemetry.shutdown().expect("the retry delivered it");
+    assert_eq!(collector.paths(), ["/v1/traces", "/v1/traces"]);
 }
 
 /// gRPC to a collector behind a private CA, once the CA is given — the path
@@ -425,18 +467,11 @@ fn grpc_over_tls_without_the_private_ca_exports_nothing() {
 /// `force_flush` reports a lost export as `shutdown` does.
 #[test]
 fn an_unreachable_collector_is_reported_by_force_flush() {
-    let port = {
-        let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        l.local_addr().expect("addr").port()
-    };
-    let telemetry = builder(
-        &format!("http://127.0.0.1:{port}"),
-        OtlpProtocol::HttpProtobuf,
-    )
-    .with_metrics(false)
-    .with_logs(false)
-    .build()
-    .expect("build");
+    let telemetry = builder(UNREACHABLE, OtlpProtocol::HttpProtobuf)
+        .with_metrics(false)
+        .with_logs(false)
+        .build()
+        .expect("build");
     record_one_of_each(&telemetry);
     let err = telemetry.force_flush().expect_err("the export failed");
     assert!(err.to_string().contains("traces: 1 export(s)"), "{err}");

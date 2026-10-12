@@ -247,6 +247,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **Breaking for the `otel` feature: OpenTelemetry 0.33** (server, client,
+  sdk). `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`,
+  `opentelemetry-http`, `opentelemetry-appender-tracing` 0.32 to 0.33.1 and
+  `tracing-opentelemetry` 0.33 to 0.34.0, together: the four Dependabot
+  updates could not land one at a time. Types from these crates appear in
+  the server's API (`Telemetry::tracer_provider`, `meter_provider`,
+  `logger_provider`, `TelemetryError::Exporter`, whose source
+  `ExporterBuildError` now has only `InvalidConfiguration` and
+  `InternalFailure`), and the client reads the current span's context
+  through `tracing-opentelemetry` 0.34, so its `traceparent` names the
+  caller's span only under a 0.34 layer. An application must move to the
+  same versions.
+  `opentelemetry-otlp` 0.33 retries a failed export by default (four
+  attempts, exponential backoff with jitter), so `Telemetry` export does too.
 - **Every push webhook is attempted** (server; spec §4.3.3). Deliveries ran
   one after another and `push_delivery_budget` skipped whatever it did not
   reach: at the defaults a slow webhook estate reached 6 of 100 configs per
@@ -457,6 +471,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Telemetry` reports a lost export on either transport, and only a lost
+  one** (server, feature `otel`). It counted failed HTTP responses, so over
+  gRPC a lost export was only logged, and with 0.33's retries an export
+  refused once and delivered on retry would have been reported lost. It now
+  counts exports the exporter gave up on, after its retries, on OTLP/HTTP
+  and gRPC alike (`otel/telemetry/counting.rs`); `shutdown` and
+  `force_flush` name each signal with `N export(s) failed after retrying and
+  were dropped`.
 - **HTTP+JSON ids with reserved characters are found** (server; spec
   §11.3). This SDK's client percent-encodes path ids; `RestDispatcher`
   matched them encoded, so a push config whose id held a space, `+`, `:` or

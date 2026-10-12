@@ -19,7 +19,7 @@
 //! instrumentation, nothing here reports a `GenAI` agent operation.
 //!
 //! Each attribute is recorded once, at the end, when its final value is
-//! known: `tracing-opentelemetry` 0.33.0 exports a field recorded twice as two
+//! known: `tracing-opentelemetry` 0.34.0 exports a field recorded twice as two
 //! attributes with one key.
 //!
 //! With the `otel` feature and a `tracing-opentelemetry` layer recording,
