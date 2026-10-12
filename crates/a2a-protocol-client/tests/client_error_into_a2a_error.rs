@@ -135,6 +135,23 @@ fn every_local_failure_maps_to_a_code_and_class_and_keeps_its_text() {
     }
 }
 
+/// A downstream rate limit passes through with its code, message and delay,
+/// and is `Transient`: the client would retry it, so the delegation is worth
+/// retrying too.
+#[test]
+fn a_downstream_rate_limit_passes_through_as_transient() {
+    let downstream = ClientError::Protocol(A2aError::rate_limited(
+        "slow down",
+        std::time::Duration::from_secs(5),
+    ));
+    assert!(downstream.is_retryable());
+    let got = convert(downstream);
+    assert_eq!(got.code, ErrorCode::InternalError);
+    assert_eq!(got.message, "slow down");
+    assert_eq!(got.retry_after(), Some(std::time::Duration::from_secs(5)));
+    assert_eq!(error_class(&got), FailureClass::Transient);
+}
+
 /// The class a converted error carries agrees with the client's own retry
 /// policy, so "retry this delegation" means the same thing on both sides.
 #[test]

@@ -192,7 +192,7 @@ impl ServerError {
     /// How long a rate-limited caller should wait
     /// ([`A2aError::rate_limited`]); `None` for anything else.
     #[must_use]
-    pub(crate) fn retry_after(&self) -> Option<std::time::Duration> {
+    pub(crate) const fn retry_after(&self) -> Option<std::time::Duration> {
         match self {
             Self::Protocol(e) => e.retry_after(),
             _ => None,

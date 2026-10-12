@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only `/` is indexed. Built by `scripts/build_docs_site.py`, checked by its
   `check` step, which `prove_workflow_gates_fail.py` proves can fail; it
   deploys on every push to `main` and when the Release workflow succeeds.
+- **`A2aError::with_retry_info_from_details`** (types): records the delay of a
+  received error's `RetryInfo` detail, so `retry_after` (now a `const fn`)
+  answers for an error from the wire as it does for one built with
+  `rate_limited`.
 - **`ClientError::CapabilityNotDeclared` and
   `ClientBuilder::without_capability_checks`** (client; spec §3.3.4), and the
   CLI's `--no-capability-check`: see Behaviour Changes. The error names the
@@ -295,6 +299,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ClientBuilder::without_capability_checks` sends them anyway; a client built
   with `ClientBuilder::new` has no card and is unaffected. See the upgrading
   guide.
+- **A rate limit refused over JSON-RPC or WebSocket is retried** (client;
+  spec §3.3.2). Such a refusal is an `InternalError` whose details carry a
+  `google.rpc.RetryInfo` delay; the client treated it as permanent, while the
+  same refusal over HTTP+JSON (`429`) or gRPC (`RESOURCE_EXHAUSTED`) was
+  retried. It is now `is_retryable()`, `retry_after()` returns the delay, and
+  a client with a `RetryPolicy` waits that long and re-sends, `SendMessage`
+  included: the request was refused before it was processed. Without a
+  policy nothing is re-sent. A delegating executor that passes such an error
+  through with `?` now records it as `Transient`.
 - **Push webhook timeouts are 10 s per request and 30 s per delivery**
   (server; spec §4.3.3 and §13.2 recommend 10-30 s). `HttpPushSender`'s
   request timeout was 30 s and `HandlerLimits::push_delivery_timeout`, which

@@ -1261,7 +1261,8 @@ before acting on it, as this branch did.
    `RESOURCE_EXHAUSTED` maps to `UnexpectedStatus { 429 }` (`grpc.rs`), also
    retried. Over JSON-RPC it is `Protocol(InternalError)` with the `RetryInfo`
    in `data`, which the retry layer does not retry. Open: decide whether the
-   JSON-RPC client should read `RetryInfo`.
+   JSON-RPC client should read `RetryInfo`. Decided 2026-10-12 and done on
+   `claude/tender-cray-bsfw83`: it does, and retries.
    Done: SLIMRPC status table and key case; §3.1.4, §3.3.4 and §3.5.2
    tests; empty push `url`. The §12 PARTIAL that remains is a conflict
    between the SLIMRPC table and A2A §5.4 (push/unsupported-operation

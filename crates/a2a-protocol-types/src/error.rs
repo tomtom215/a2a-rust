@@ -306,7 +306,8 @@ pub struct A2aError {
     /// binding answers it with its own status instead.
     #[serde(skip)]
     auth_rejection: Option<AuthRejection>,
-    /// Set when this error refuses a request for exceeding a rate limit; see
+    /// Set when this error refuses a request for exceeding a rate limit, or
+    /// was received carrying a `RetryInfo` detail; see
     /// [`retry_after`](Self::retry_after). Not on the wire as a field: each
     /// binding answers it with its own status and a `RetryInfo` detail.
     ///
@@ -407,12 +408,36 @@ impl A2aError {
     }
 
     /// How long a caller refused by [`rate_limited`](Self::rate_limited)
-    /// should wait before retrying; `None` for any other error. Never read
-    /// from the wire.
+    /// should wait before retrying, or the delay a received error's
+    /// `RetryInfo` detail asked for (see
+    /// [`with_retry_info_from_details`](Self::with_retry_info_from_details));
+    /// `None` for any other error.
     #[must_use]
-    pub fn retry_after(&self) -> Option<std::time::Duration> {
-        self.retry_after_secs
-            .map(|s| std::time::Duration::from_secs(u64::from(s.get())))
+    pub const fn retry_after(&self) -> Option<std::time::Duration> {
+        match self.retry_after_secs {
+            Some(secs) => Some(std::time::Duration::from_secs(secs.get() as u64)),
+            None => None,
+        }
+    }
+
+    /// Records the delay a received error's `google.rpc.RetryInfo` detail
+    /// asks for, so that [`retry_after`](Self::retry_after) answers for an
+    /// error that came over the wire as it does for one built with
+    /// [`rate_limited`](Self::rate_limited).
+    ///
+    /// Reads `data` as the typed-details array
+    /// [`error_info_data`](Self::error_info_data) writes (a single detail
+    /// object is accepted too) and takes the first `RetryInfo` whose
+    /// `retryDelay` is a `ProtoJSON` duration: whole seconds with an optional
+    /// fraction and an `s` suffix, as in `"12s"` or `"1.5s"`. Rounded up to
+    /// whole seconds, at least one, as `rate_limited` rounds. Anything else,
+    /// or a delay already recorded, leaves the error as it was.
+    #[must_use]
+    pub fn with_retry_info_from_details(mut self) -> Self {
+        if self.retry_after_secs.is_none() {
+            self.retry_after_secs = self.data.as_ref().and_then(retry_info_secs);
+        }
+        self
     }
 
     /// The credential refusal this error carries, if it is one. Set only by
@@ -594,7 +619,7 @@ impl A2aError {
         if let Some(secs) = self.retry_after_secs {
             // A `google.protobuf.Duration` in its `ProtoJSON` form.
             details.push(serde_json::json!({
-                "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                "@type": RETRY_INFO_TYPE,
                 "retryDelay": format!("{secs}s")
             }));
         }
@@ -604,6 +629,36 @@ impl A2aError {
             serde_json::Value::Array(details)
         }
     }
+}
+
+/// The `@type` of a `google.rpc.RetryInfo` detail.
+const RETRY_INFO_TYPE: &str = "type.googleapis.com/google.rpc.RetryInfo";
+
+/// The whole seconds, rounded up and at least one, of the first `RetryInfo`
+/// detail in `data` whose `retryDelay` is a `ProtoJSON` duration.
+fn retry_info_secs(data: &serde_json::Value) -> Option<std::num::NonZeroU32> {
+    let details = data
+        .as_array()
+        .map_or_else(|| std::slice::from_ref(data), Vec::as_slice);
+    let delay = details
+        .iter()
+        .filter(|d| d.get("@type").and_then(serde_json::Value::as_str) == Some(RETRY_INFO_TYPE))
+        .find_map(|d| d.get("retryDelay").and_then(serde_json::Value::as_str))?;
+    let digits = delay.strip_suffix('s')?;
+    let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+    if whole.is_empty()
+        || !whole.bytes().all(|b| b.is_ascii_digit())
+        || !fraction.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    // More digits than a u64 holds is still a delay: the longest there is.
+    let secs = whole
+        .parse::<u64>()
+        .unwrap_or(u64::MAX)
+        .saturating_add(u64::from(fraction.bytes().any(|b| b != b'0')));
+    let secs = u32::try_from(secs).unwrap_or(u32::MAX);
+    Some(std::num::NonZeroU32::new(secs).unwrap_or(std::num::NonZeroU32::MIN))
 }
 
 impl fmt::Display for A2aError {
@@ -1341,6 +1396,67 @@ mod tests {
         );
         assert!(!unmarked.is_stream_lagged());
         assert_eq!(unmarked.dropped_event_count(), None);
+    }
+
+    /// A received error's `RetryInfo` detail is read back as the delay it
+    /// asks for, by the same rounding `rate_limited` writes with; anything
+    /// that is not a `ProtoJSON` duration in a `RetryInfo` is ignored.
+    #[test]
+    fn retry_info_is_read_from_received_details() {
+        use std::time::Duration;
+        let received = |data: serde_json::Value| {
+            A2aError::with_data(ErrorCode::InternalError, "slow down", data)
+                .with_retry_info_from_details()
+                .retry_after()
+        };
+        let retry = |delay: &str| {
+            serde_json::json!([
+                {"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "X"},
+                {"@type": RETRY_INFO_TYPE, "retryDelay": delay}
+            ])
+        };
+        assert_eq!(received(retry("12s")), Some(Duration::from_secs(12)));
+        assert_eq!(received(retry("1.5s")), Some(Duration::from_secs(2)));
+        assert_eq!(received(retry("3.000s")), Some(Duration::from_secs(3)));
+        assert_eq!(received(retry("0s")), Some(Duration::from_secs(1)));
+        assert_eq!(
+            received(retry("99999999999999999999999s")),
+            Some(Duration::from_secs(u64::from(u32::MAX)))
+        );
+        // A single detail object, not an array.
+        assert_eq!(
+            received(serde_json::json!({"@type": RETRY_INFO_TYPE, "retryDelay": "4s"})),
+            Some(Duration::from_secs(4))
+        );
+        for malformed in ["12", "-1s", "1.5.2s", "s", ".5s", "1e3s", " 2s"] {
+            assert_eq!(received(retry(malformed)), None, "{malformed:?}");
+        }
+        assert_eq!(
+            received(
+                serde_json::json!([{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "retryDelay": "5s"}])
+            ),
+            None,
+            "only a RetryInfo detail counts"
+        );
+        assert_eq!(
+            A2aError::internal("no data")
+                .with_retry_info_from_details()
+                .retry_after(),
+            None
+        );
+        // A delay already recorded stands.
+        let mut own = A2aError::rate_limited("own", Duration::from_secs(7));
+        own.data = Some(retry("30s"));
+        assert_eq!(
+            own.with_retry_info_from_details().retry_after(),
+            Some(Duration::from_secs(7))
+        );
+        // What this crate writes, it reads back.
+        let written = A2aError::rate_limited("slow down", Duration::from_secs(9));
+        assert_eq!(
+            received(written.error_info_data(None)),
+            Some(Duration::from_secs(9))
+        );
     }
 
     /// A rate-limit refusal keeps the code §3.3.2 gives for it and carries a

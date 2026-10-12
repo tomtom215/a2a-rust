@@ -168,13 +168,14 @@ impl std::error::Error for ClientError {
 }
 
 impl ClientError {
-    /// Server-requested retry delay, if this error carries one (a `Retry-After`
-    /// header on a `429`/`503`). The retry layer prefers this over its computed
-    /// backoff.
+    /// Server-requested retry delay, if this error carries one: a
+    /// `Retry-After` header on a `429`/`503`, or a `RetryInfo` detail on a
+    /// protocol error. The retry layer prefers this over its computed backoff.
     #[must_use]
     pub const fn retry_after(&self) -> Option<std::time::Duration> {
         match self {
             Self::UnexpectedStatus { retry_after, .. } => *retry_after,
+            Self::Protocol(e) => e.retry_after(),
             _ => None,
         }
     }
@@ -252,6 +253,7 @@ impl From<A2aError> for ClientError {
 /// | `ClientError` | `A2aError` code | Failure class |
 /// |---|---|---|
 /// | `Protocol(e)` | `e.code`, with `e.message` and `e.data` unchanged | from the code |
+/// | `Protocol(e)` naming a retry delay (a downstream rate limit) | as above, with its delay | `Transient` |
 /// | anything [`is_retryable`](ClientError::is_retryable) — timeouts, connection failures, `429`/`502`/`503`/`504`, `TooManyPendingRequests` | `InternalError` | `Transient` |
 /// | `Serialization` (the peer sent something unreadable) | `InvalidAgentResponse` | `Internal` |
 /// | everything else (bad endpoint, binding mismatch, other statuses, auth required) | `InternalError` | `Internal` |
@@ -292,7 +294,14 @@ impl From<ClientError> for A2aError {
             FailureClass::Internal
         };
         let code = match e {
-            ClientError::Protocol(inner) => return inner,
+            // A downstream rate limit is passed through like any protocol
+            // error, but it is temporary, and `is_retryable` says so.
+            ClientError::Protocol(mut inner) => {
+                if inner.retry_after().is_some() {
+                    set_error_class(&mut inner, FailureClass::Transient);
+                }
+                return inner;
+            }
             ClientError::Serialization(_) => ErrorCode::InvalidAgentResponse,
             _ => ErrorCode::InternalError,
         };
