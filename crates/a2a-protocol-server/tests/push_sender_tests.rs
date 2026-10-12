@@ -812,3 +812,93 @@ async fn zero_attempts_still_sends_once() {
     }
     handle.abort();
 }
+
+/// A webhook that answers `302` toward another address is refused, not
+/// followed: the redirect target never sees a connection. Pinned because the
+/// adversarial probe that claimed this (`scripts/adversarial/probe_push.py`,
+/// redirect mode) could not exercise it on Python 3.13 or later until
+/// 2026-10-12, so nothing else held the property.
+#[tokio::test]
+async fn a_redirect_is_not_followed() {
+    let target_hits = Arc::new(AtomicUsize::new(0));
+    let (target, target_handle) = mock_server(200, Arc::clone(&target_hits)).await;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let redirecting = tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                stream.readable().await.unwrap();
+                let mut buf = vec![0u8; 4096];
+                let _ = stream.try_read(&mut buf);
+                let response = format!(
+                    "HTTP/1.1 302 Found\r\nLocation: http://{target}/stolen\r\n\
+                     Content-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                stream.writable().await.unwrap();
+                let _ = stream.try_write(response.as_bytes());
+            });
+        }
+    });
+
+    let url = format!("http://{addr}/webhook");
+    let err = HttpPushSender::new()
+        .allow_private_urls()
+        .send(&url, &status_event(), &base_config(&url))
+        .await
+        .expect_err("a 302 is not a delivery");
+    assert!(
+        err.message.contains("non-retryable") && err.message.contains("302"),
+        "{err}"
+    );
+    // A client that followed the redirect would have done so before `send`
+    // returned, so the count is final here.
+    assert_eq!(
+        target_hits.load(Ordering::SeqCst),
+        0,
+        "the redirect target must never be dialled"
+    );
+    redirecting.abort();
+    target_handle.abort();
+}
+
+/// Delivery reads the status, not the body: a webhook that declares a 50 MB
+/// body and then stalls cannot hold `send` until the request timeout, nor
+/// make it buffer what it declared. Same provenance as the redirect test.
+#[tokio::test]
+async fn a_flooding_response_body_is_not_read() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let flooding = tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                stream.readable().await.unwrap();
+                let mut buf = vec![0u8; 4096];
+                let _ = stream.try_read(&mut buf);
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                    50 * 1024 * 1024,
+                    "A".repeat(1024)
+                );
+                stream.writable().await.unwrap();
+                let _ = stream.try_write(head.as_bytes());
+                // Hold the connection with the body unfinished.
+                std::future::pending::<()>().await;
+                drop(stream);
+            });
+        }
+    });
+
+    let url = format!("http://{addr}/webhook");
+    // A request timeout far beyond the guard below: had `send` waited for the
+    // body, the guard would fire first and fail the test.
+    let sender = HttpPushSender::with_timeout(Duration::from_secs(120)).allow_private_urls();
+    tokio::time::timeout(
+        Duration::from_secs(20),
+        sender.send(&url, &status_event(), &base_config(&url)),
+    )
+    .await
+    .expect("send must return once the status line arrives")
+    .expect("a 200 status is a delivery");
+    flooding.abort();
+}

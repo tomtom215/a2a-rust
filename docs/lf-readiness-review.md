@@ -364,7 +364,7 @@ timeout: no leak — established only after a naive settle-then-measure looked
 like a 25× leak and a drain-and-two-burst method showed it was allocator
 high-water-mark, not retained state (fds returned to baseline every time).
 `probe_push.py` turned the server into an outbound HTTP client against hostile
-webhook receivers (hang, drip, 50 MB response, reset, 302-to-metadata),
+webhook receivers (hang, late reply, 50 MB response, reset, 302-to-metadata),
 counting deliveries so a vacuous run fails loudly — which caught that the first
 run delivered nothing (the config field is `taskPushNotificationConfig`, not the
 intuitive `pushNotificationConfig`). With that fixed it surfaced a real gap: a

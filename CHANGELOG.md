@@ -679,6 +679,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correctly. The bound is now 3 s (about 2.9 s of stall tolerated, was
   0.9 s), and a failure reports the stub's longest gap between writes, which
   says whether the runner stalled or heartbeats were not counted.
+- **Push delivery: a redirect is not followed and a response body is not
+  read**, now pinned in `push_sender_tests.rs`
+  (`a_redirect_is_not_followed`, `a_flooding_response_body_is_not_read`).
+- **`scripts/adversarial/probe_push.py` exercises its receivers again.** On
+  Python 3.13 and later `threading.Thread.__init__` sets `self._handle`,
+  which shadowed the receiver's connection handler, so every handler thread
+  died with a `TypeError` and every mode behaved as a silent hang. The hang
+  mode also closed the socket it meant to hold (`finally: c.close()`).
+  Measured on Python 3.13.16 by connecting to each mode before and after.
 - **Tests for four spec requirements that were implemented but untested**:
   §3.1.4 `includeArtifacts` omission (`list_tasks_artifacts.rs`), §3.3.4
   streaming refused without the capability on the JSON-RPC wire and §3.5.2

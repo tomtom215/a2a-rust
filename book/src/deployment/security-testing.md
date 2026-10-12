@@ -246,8 +246,8 @@ much verification as one that is.
 
 Registering a webhook turns the server into an HTTP client dialing an address
 the caller chose — a different threat model from every inbound probe.
-`probe_push.py` bundles hostile receivers (hang, drip, a 50 MB response, an
-abrupt reset, a 302 to the cloud metadata endpoint) and — crucially — counts how
+`probe_push.py` bundles hostile receivers (hang, a reply after the delivery
+timeout, a 50 MB response, an abrupt reset, a 302 to the cloud metadata endpoint) and — crucially — counts how
 often the server actually dialed each, so a run that delivers nothing fails
 loudly instead of passing vacuously.
 
@@ -257,6 +257,15 @@ because the config field is `taskPushNotificationConfig` and the intuitive
 fixed, the defended properties hold — the client reads the webhook's status, not
 its (50 MB) body, so a flooding receiver cannot grow its memory; it does not
 follow the 302 to metadata; and `http` targets are IP-pinned against rebinding.
+
+On Python 3.13 and later, until 2026-10-12, every receiver except `hang` did
+nothing: the receiver class subclasses `threading.Thread`, whose constructor
+since 3.13 sets an attribute named like the receiver's connection handler, so
+each handler thread died before it ran and every mode behaved as a silent
+hang. A run there exercised the hang case only. The status-not-body and
+no-redirect properties are now also pinned in Rust, by
+`a_flooding_response_body_is_not_read` and `a_redirect_is_not_followed` in
+`crates/a2a-protocol-server/tests/push_sender_tests.rs`.
 
 ### The finding: sync delivery blocked the response
 
