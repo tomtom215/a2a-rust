@@ -774,6 +774,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   justifies the second now checks that `close` really is a no-op. No
   behaviour changes. `check_endpoint_reachable`, the sixth, was already
   killed on `main`.
+- **The full mutation sweep fits its timeout again.** `a2a-server` is
+  dealt round-robin across 24 shards instead of in 12 consecutive slices,
+  after two of the 12 were cancelled at 240 minutes on 2026-10-12; projected
+  from that run's own timings, the slowest shard drops from over 240 minutes
+  to about 110. `mutation-history.md` records that sweep and the four before
+  it, none of which had been recorded.
 - **Tests for four spec requirements that were implemented but untested**:
   §3.1.4 `includeArtifacts` omission (`list_tasks_artifacts.rs`), §3.3.4
   streaming refused without the capability on the JSON-RPC wire and §3.5.2

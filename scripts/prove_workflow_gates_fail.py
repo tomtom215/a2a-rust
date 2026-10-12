@@ -400,6 +400,19 @@ def shard_reports(
             (d / "COMPLETED").write_text("")
 
 
+def sweep_shard_count() -> int:
+    """`EXPECTED_SHARDS` as `mutants.yml`'s summary job states it.
+
+    Read rather than restated, so a resharded matrix moves these fixtures with
+    it instead of failing the healthy case on a stale count.
+    """
+    doc = yaml.safe_load((WORKFLOWS / "mutants.yml").read_text())
+    for raw in doc["jobs"]["mutants-summary"]["steps"]:
+        if raw.get("name") == "Require every shard to have completed":
+            return int(raw["env"]["EXPECTED_SHARDS"])
+    raise KeyError("mutants.yml: no 'Require every shard to have completed' step")
+
+
 def incremental_shards(root: Path, n: int, *, missed_in: int = 0) -> None:
     for i in range(n):
         d = root / "shards" / f"mutation-report-incremental-shard-{i}"
@@ -1031,6 +1044,7 @@ def build_registry() -> dict[str, Probe | Exempt]:
     )
 
     # ── mutants.yml ──────────────────────────────────────────────────────────
+    shards = sweep_shard_count()
     reg["mutants.yml::mutants-crate::Require a readable mutation report"] = Probe(
         healthy=lambda d: mutants_out(d, caught=10, missed=0),
         defects=[
@@ -1068,23 +1082,23 @@ def build_registry() -> dict[str, Probe | Exempt]:
         context={"matrix.short": "syn"},
     )
     reg["mutants.yml::mutants-summary::Require every shard to have completed"] = Probe(
-        healthy=lambda d: shard_reports(d, 21),
+        healthy=lambda d: shard_reports(d, shards),
         defects=[
             Defect(
                 "a shard killed mid-run (no COMPLETED marker)",
-                lambda d: shard_reports(d, 21, skip_completed=3),
+                lambda d: shard_reports(d, shards, skip_completed=3),
                 "no COMPLETED marker",
             ),
             Defect(
-                "a shard's artifact missing entirely (20 of 21)",
-                lambda d: shard_reports(d, 20),
-                "expected 21",
+                "a shard's artifact missing entirely (one fewer than expected)",
+                lambda d: shard_reports(d, shards - 1),
+                f"expected {shards}",
             ),
         ],
         context={"needs.mutants-crate.result": "success", "inputs.package": ""},
     )
     reg["mutants.yml::mutants-summary::Aggregate results"] = Probe(
-        healthy=lambda d: shard_reports(d, 21),
+        healthy=lambda d: shard_reports(d, shards),
         defects=[
             Defect(
                 "zero mutants examined (the '100% from empty files' bug)",
@@ -1093,12 +1107,12 @@ def build_registry() -> dict[str, Probe | Exempt]:
             ),
             Defect(
                 "a malformed shard report",
-                lambda d: shard_reports(d, 21, malformed=2),
+                lambda d: shard_reports(d, shards, malformed=2),
                 "unusable",
             ),
             Defect(
                 "a surviving mutant",
-                lambda d: shard_reports(d, 21, missed_in=1),
+                lambda d: shard_reports(d, shards, missed_in=1),
                 "survived",
             ),
         ],
