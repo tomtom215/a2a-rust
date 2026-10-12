@@ -79,11 +79,12 @@ impl RequestHandler {
             // remaining events, exactly as `SubscribeToTask` would — ending
             // the stream after the snapshot would read as a task that had
             // finished emitting.
-            self.event_queue_manager
+            let reader = self
+                .event_queue_manager
                 .subscribe_with_snapshot(&task_id, first.clone())
                 .await
-                .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(first))
-                .with_reattach(self.subscribe_reattach_hook(task_id.clone()))
+                .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(first));
+            self.with_stream_hooks(reader, &task_id)
         };
         Ok(SendMessageResult::Stream(reader))
     }
@@ -130,7 +131,8 @@ impl RequestHandler {
             // SPEC §3.1.2: a task-lifecycle stream MUST begin with the Task,
             // and a message-only stream MUST be exactly one Message. Which one
             // this is, the executor's first event decides.
-            let mut reader = reader;
+            // §3.5.2: a stream that falls behind catches up from the log.
+            let mut reader = reader.with_catch_up(self.lag_catch_up_hook(snapshot.id.clone()));
             reader.set_provisional_task(StreamResponse::Task(snapshot));
             SendMessageResult::Stream(reader)
         } else {

@@ -135,7 +135,7 @@ take the same three through their own `with_completion_grace`,
 
 | Limit | Value | Description |
 |-------|-------|-------------|
-| Event queue type | `broadcast` | Fan-out to multiple subscribers; a reader that falls behind the ring receives a `streamLagged` error and its stream ends (no silent gap) |
+| Event queue type | `broadcast` | Fan-out to multiple subscribers; a reader that falls behind the ring catches up from the task's event log, and when the log cannot supply what it missed it receives a `streamLagged` error and its stream ends (no silent gap) |
 | Rate limiter cleanup interval | 256 checks | Stale buckets (from departed callers) evicted every 256 `check()` calls |
 | Rate limiter window CAS | Lock-free | Window transitions use `compare_exchange` to avoid TOCTOU races |
 | Credential store poisoning | Fail-fast | `InMemoryCredentialsStore` panics on poisoned locks rather than returning `None` |

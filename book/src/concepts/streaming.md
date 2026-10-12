@@ -170,12 +170,13 @@ The event queue uses `tokio::sync::broadcast` channels for fan-out to multiple s
 | Queue capacity | 256 events | Broadcast channel ring buffer size |
 | Max event size | 16 MiB | Rejects oversized events |
 
-With broadcast channels, writes never block on readers. A reader that falls more than the queue capacity behind is cut off: its stream ends with one `event: error` frame carrying the `streamLagged` signal (`ClientError::is_stream_lagged()` on the client). It gets a contiguous prefix and an announced end, never a silent gap, and resubscribing (with `Last-Event-ID` to replay) continues it. The task store is the source of truth; SSE is best-effort notification. The one write that waits is the terminal one, on the store rather than on readers (see [The terminal frame is the stored one](#the-terminal-frame-is-the-stored-one)).
+With broadcast channels, writes never block on readers. A reader that falls more than the queue capacity behind catches up from the task's event log (spec §3.5.2): it reads the events it missed from the store, after the last position it delivered, and goes on, so a slow stream receives the same events in the same order as a fast one. Every built-in store keeps a log: the SQL stores keep a task's whole log, and the in-memory ones the last 512 events of a task by default (`TaskStoreConfig::max_events_per_task`). Only a complete replay is used. When the log cannot supply every missed event, because the store keeps none, the reader fell further behind than the log holds, or it missed more events than one replay reads (`HandlerLimits::subscribe_replay_limit`, 1,000 by default), the stream is cut off instead: it ends with one `event: error` frame carrying the `streamLagged` signal (`ClientError::is_stream_lagged()` on the client). It gets a contiguous prefix and an announced end, never a silent gap, and resubscribing (with `Last-Event-ID` to replay) continues it. The task store is the source of truth; SSE is best-effort notification. The one write that waits is the terminal one, on the store rather than on readers (see [The terminal frame is the stored one](#the-terminal-frame-is-the-stored-one)).
 
 > **High-volume streams:** For tasks producing >250 events, increase the queue
 > capacity to match expected peak volume. The default capacity of 256 is sufficient
-> for most use cases, but high-volume streams beyond that risk cutting off slower
-> readers with `streamLagged`.
+> for most use cases. A slower reader catches up from the event log, so what
+> ends a stream with `streamLagged` is the log's retention and the replay
+> limit, not the queue.
 
 Configure these via the builder:
 
@@ -305,10 +306,11 @@ let mut stream = client
 The server creates a new broadcast subscriber and immediately emits a `Task`
 snapshot as the first event, allowing the client to recover the current state.
 Multiple SSE connections can be active simultaneously for the same task — each
-receives all events published after it subscribes. If a reader falls behind by
-more than the queue capacity, its stream ends with a `streamLagged` error frame
-rather than blocking other readers or the writer; resubscribe with
-`subscribe_to_task_from` to continue.
+receives all events published after it subscribes. A reader that falls behind
+by more than the queue capacity catches up from the task's event log; only when
+the log cannot supply what it missed does its stream end with a `streamLagged`
+error frame. Either way it never blocks other readers or the writer; after a
+`streamLagged`, resubscribe with `subscribe_to_task_from` to continue.
 
 > **Terminal tasks:** Subscribing to a task in a terminal state
 > (`Completed`, `Failed`, `Canceled`, `Rejected`) returns an

@@ -15,7 +15,8 @@ Last updated 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
 left after #165, OpenTelemetry 0.33, a versioned documentation site, the
 weekly mutation sweep, the ledger's last GAP (§3.3.4), push timeouts,
 JSON-RPC `RetryInfo`, §13.1 caller isolation by default, Dependabot #166
-and #167, and §8.1's required agent card. `git log -1 --format='%ci %s' --
+and #167, §8.1's required agent card, the opt-in push and authentication
+hardening (§13.2, §13.4), and §3.5.2's lag catch-up. `git log -1 --format='%ci %s' --
 docs/handoff.md` remains the authority on this line.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
@@ -1047,6 +1048,21 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     before. The SDK ships no cipher; the tests use AES-256-GCM from `ring`
     (`tests/support/aes_gcm.rs`). `tenant_sqlite_config_store.rs`'s tests
     moved to their own file, unchanged, to keep it under 500 lines.
+36. `feat(server):` §3.5.2 — a stream that falls behind the broadcast
+    buffer catches up from the task's event log, after the last position it
+    delivered, and goes on live, instead of ending with `streamLagged` (the
+    maintainer's choice). The request builds the hook (`lag_catch_up_hook`)
+    inside its tenant scope (item 34) and hands it to the reader
+    (`with_catch_up`). Each reader starts after the writer's position when
+    it attached (`starting_after`), so a catch-up never replays what the
+    stream was not owed. The hook takes only a complete replay whose head is
+    still in the log, and after a catch-up a live event that does not follow
+    it is reported as a lag, so a stream never skips an event silently.
+    `streamLagged` remains when the log cannot supply every missed event:
+    the in-memory stores keep 512 events per task by default, one replay
+    reads at most `subscribe_replay_limit` (1,000), and a custom store
+    without a log has nothing to read. `dispatch/websocket.rs`'s lag test
+    now truncates the log to 4 events so that its stream still lags.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
@@ -1069,6 +1085,15 @@ PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
   still uploaded, so an incomplete sweep can be counted too.
 - The versioned site is about 18 MB per release line (268 MB for 13 lines and
   dev, measured); GitHub Pages caps a site at 1 GB.
+- A test can pass on a different branch than the one it is named for. Both
+  §3.5.2 over-limit tests first ran the live-writer branch, because the
+  agent finished before the test's first read and the stream lagged inside
+  it; a hand mutant on the other branch survived. Print the decision's
+  inputs once (here the replay's target) to see which branch a test
+  reaches, and gate the agent when timing decides it.
+- A hand-applied mutant checked with `cargo test` (no `--no-fail-fast`)
+  shows only the first failing binary's tests; a test in a later target may
+  kill it too. Run that target alone before citing it as the killer.
 - Nightly cargo's `unused_dependencies` lint flags `book-tests`' dependencies,
   which only its doctests use. A warning on the informational nightly job
   today; it would need an allow if the lint stabilizes as-is.
@@ -1109,14 +1134,13 @@ PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
    bindings has no discovery endpoint from the SDK. Closing it means serving
    the card beside them (an HTTP route a gRPC-only server can mount), which
    is a design question, not a fix.
-8. The ledger's four medium PARTIAL entries are the maintainer's to decide,
+8. The ledger's three medium PARTIAL entries are the maintainer's to decide,
    not fixes: §1.4 (line 107; the serde types are hand-written, not generated
-   from the proto), §3.5.2 (line 692; a subscriber that falls behind the
-   bounded buffer loses events, reported as `streamLagged`), §8.4.3 (line
-   2132; `jku` is never followed, deliberately: `fetch_jwks` takes a URL
-   the caller trusts, not one the card names), and §12 (line 2985;
-   SLIMRPC's own spec maps two errors differently from A2A §5.4). The 21
-   PARTIAL left are these four and 17 low.
+   from the proto), §8.4.3 (line 2132; `jku` is never followed,
+   deliberately: `fetch_jwks` takes a URL the caller trusts, not one the card
+   names), and §12 (line 2985; SLIMRPC's own spec maps two errors
+   differently from A2A §5.4). §3.5.2 (line 692) moved to low with item 36.
+   The 21 PARTIAL left are these three and 18 low.
 9. Pin freshness (`pin-freshness.yml`, every third Monday; next 2026-10-26,
    or dispatch it with `force`). Its 2026-10-05 grading run had three red
    legs: python-sdk never graded (no PyYAML; fixed on this branch), go-sdk
@@ -1161,12 +1185,10 @@ PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
     `retry_after: None` (`transport/grpc.rs`), dropping the `RetryInfo`
     detail the server sends, so a retry policy backs off on its own schedule
     instead of the server's; the JSON-RPC and REST clients honour it.
-14. One item the maintainer chose is still open: §3.5.2's lagged stream
-    catching up from the task store's event log instead of reporting
-    `streamLagged` (ledger line 692, medium). The pieces exist
-    (`read_log_with_catchup`, `queue_replay`, `event_log_covers`); the reader
-    needs a catch-up hook, built inside the request so it captures the tenant
-    (item 34).
+14. §3.5.2 is done (item 36). Ledger line 692 stays PARTIAL, now low, for
+    the `streamLagged` cases item 36 lists. Raising the in-memory retention
+    (`TaskStoreConfig::with_max_events_per_task`) or the replay limit narrows
+    them; the SQL stores already keep a task's whole log.
 15. The Postgres-gated suites run locally against a throwaway PostgreSQL 16
     (`initdb` as the `postgres` user, outside the scratchpad, whose parent
     permissions get reset): `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres

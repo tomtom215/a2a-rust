@@ -2624,7 +2624,9 @@ mod tests {
     // The lag is genuine. A queue capacity of 1 plus an executor that writes
     // far more events than the socket consumer can drain overflows the
     // broadcast ring for this subscriber, which is exactly the production
-    // condition the frame exists to report.
+    // condition the frame exists to report. The store's log keeps only the
+    // last four events: with a whole log the stream would catch up from it
+    // (§3.5.2) and never report a lag.
     #[allow(clippy::too_many_lines)]
     #[tokio::test]
     async fn ws_lagged_stream_reports_server_error_code() {
@@ -2647,6 +2649,9 @@ mod tests {
             RequestHandlerBuilder::new(FloodExec)
                 .without_agent_card()
                 .with_event_queue_capacity(1)
+                .with_task_store(crate::store::InMemoryTaskStore::with_config(
+                    crate::store::TaskStoreConfig::default().with_max_events_per_task(Some(4)),
+                ))
                 .build()
                 .unwrap(),
         );

@@ -335,6 +335,17 @@ failed batch (four attempts by default), which is `opentelemetry-otlp`'s new
 default, and `shutdown` reports only exports that were lost after retrying,
 on gRPC as well as OTLP/HTTP.
 
+### A stream that falls behind catches up instead of ending
+
+A reader slower than the agent used to end with `streamLagged` as soon as the
+broadcast queue overwrote an event it had not read. It now reads what it
+missed from the task's event log and goes on (spec §3.5.2), on every store that
+keeps a log, which is every built-in one. A test that provokes `streamLagged`
+with a small `with_event_queue_capacity` no longer sees it there; also bound
+the log below what the stream misses
+(`TaskStoreConfig::with_max_events_per_task`), or lower
+`HandlerLimits::subscribe_replay_limit`.
+
 ### Error codes some clients may match on
 
 - A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with

@@ -315,6 +315,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A stream that falls behind catches up from the task's event log**
+  (server; spec §3.5.2: each stream MUST receive the same events in the same
+  order). A reader slower than the agent lost the events the bounded
+  broadcast queue overwrote, and its stream ended with `streamLagged`. When
+  the task store keeps an event log, as every built-in store does, the reader
+  now reads what it missed from the log, after the last position it
+  delivered, and goes on. This is the reader every binding streams
+  `SendStreamingMessage` and `SubscribeToTask` from. A subscriber attaching
+  mid-task resumes from where it attached, not from the start of the log.
+  Only a complete replay is used, and a live event that does not follow it
+  is reported as a lag. When the log cannot supply every missed event the
+  stream ends with `streamLagged`, as before: a store without a log, a lag
+  beyond what the log still holds (the in-memory stores keep the last 512
+  events of a task by default; the SQL stores keep the whole log), or more
+  missed events than one replay reads (`subscribe_replay_limit`, 1,000 by
+  default).
 - **Breaking: `ClientBuilder::from_card` follows the card's interface order**
   (client; spec §8.3.2: a client MUST select the first supported interface,
   preferring earlier entries). It ranked by `ClientConfig::default()`'s

@@ -6,7 +6,11 @@
 //! In-memory event queue backed by a `tokio::sync::broadcast` channel.
 //!
 //! The broadcast channel has a fixed capacity and is used for SSE fan-out.
-//! When a slow SSE consumer falls behind it receives `Lagged(n)`, and its
+//! When a slow SSE consumer falls behind it receives `Lagged(n)`. If the
+//! reader has a catch-up hook, which the handler attaches whenever its task
+//! store keeps an event log, the reader reads the events it missed from the
+//! log and goes on (spec §3.5.2: each stream MUST receive the same events in
+//! the same order). Otherwise, or when the log cannot supply all of them, the
 //! stream **ends**: `InMemoryQueueReader::read` turns the lag into
 //! `A2aError::stream_lagged`, which `streaming::sse` writes as an
 //! `event: error` frame before closing.
@@ -626,11 +630,21 @@ pub struct InMemoryQueueReader {
     /// In a `Mutex` only to keep the reader `Sync`, which it was before this
     /// field; `read` takes `&mut self`, so the lock is never contended.
     reattaching: std::sync::Mutex<Option<Pin<Box<dyn Future<Output = Reattached> + Send>>>>,
+    /// Consulted when the reader lags; see [`Self::with_catch_up`].
+    catch_up: Option<CatchUpFn>,
+    /// The hook's answer while it is still being awaited, kept here for the
+    /// same cancel-safety reason as `reattaching`.
+    catching_up: std::sync::Mutex<Option<CatchUpFuture>>,
+    /// Set by a catch-up until the next live event: that event must follow
+    /// the replay directly. If it does not, the replay left a gap (a short
+    /// log, a failed append), and the stream says so rather than skip it.
+    just_caught_up: bool,
     /// Set once a frame reporting a terminal state has been handed to the
     /// consumer. Suppresses the synthesized final frame, so a client that
     /// already saw the real one does not get it twice.
     saw_terminal: bool,
-    /// The highest log position handed to the consumer from `pending`.
+    /// The highest log position handed to the consumer, from `pending` or
+    /// the live channel, or the position the reader attached at.
     ///
     /// A resuming subscriber attaches to the broadcast channel *before* the
     /// log is read, so any event written in the window between those two
@@ -640,6 +654,11 @@ pub struct InMemoryQueueReader {
     /// reconstructible, and the wire `id:` sequence goes backwards. Positions
     /// are assigned by one writer and strictly increase, so a live event at or
     /// below this mark is exactly a frame the replay already delivered.
+    ///
+    /// A lag catch-up reads the log after this mark, which is why the live
+    /// channel raises it too, and why a reader attaching to a running queue
+    /// starts it at the writer's position (see
+    /// [`Self::starting_after`]).
     replayed_through: u64,
     /// A `SendStreamingMessage` stream's `Task` snapshot, held until the
     /// executor's first event says which §3.1.2 pattern the stream is.
@@ -665,6 +684,7 @@ impl std::fmt::Debug for InMemoryQueueReader {
         f.debug_struct("InMemoryQueueReader")
             .field("pending", &self.pending.len())
             .field("reattach", &self.reattach.is_some())
+            .field("catch_up", &self.catch_up.is_some())
             .field("saw_terminal", &self.saw_terminal)
             .field("provisional", &self.provisional.is_some())
             .field("finished", &self.finished)
@@ -692,6 +712,16 @@ pub enum Reattached {
 /// stream is really over. See [`InMemoryQueueReader::with_reattach`].
 pub type ReattachFn =
     Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Reattached> + Send>> + Send + Sync>;
+
+/// What a catch-up hook answers: every event after the position it was
+/// given, up to the writer's position when it was called, or `None` when the
+/// log cannot supply all of them.
+pub type CatchUpFuture =
+    Pin<Box<dyn Future<Output = Option<Vec<crate::store::RecordedEvent>>> + Send>>;
+
+/// Called with the last position a lagging reader delivered, to read what it
+/// missed from the task's event log. See [`InMemoryQueueReader::with_catch_up`].
+pub type CatchUpFn = Arc<dyn Fn(u64) -> CatchUpFuture + Send + Sync>;
 
 /// Whether a stream frame reports a terminal task state.
 pub const fn carries_terminal_state(event: &StreamResponse) -> bool {
@@ -722,6 +752,29 @@ impl InMemoryQueueReader {
         self
     }
 
+    /// Attaches a hook that runs when the reader falls behind the broadcast
+    /// channel (spec §3.5.2).
+    ///
+    /// The channel keeps the last `capacity` events; a reader slower than the
+    /// writer misses the ones overwritten. The hook reads them from the
+    /// task's event log, after the last position this reader delivered, and
+    /// the reader hands them out before resuming the channel, where anything
+    /// at or below the replay is skipped. A hook that answers `None` (no
+    /// complete replay) leaves the reader to end the stream with
+    /// `streamLagged`, as without one.
+    pub(crate) fn with_catch_up(mut self, catch_up: Option<CatchUpFn>) -> Self {
+        self.catch_up = catch_up;
+        self
+    }
+
+    /// Marks `position` as already accounted for: the writer's position when
+    /// this reader attached, or the one its numbering resumes from. A lag
+    /// catch-up starts after it, so it does not replay what came before the
+    /// reader existed.
+    pub(crate) fn starting_after(&mut self, position: u64) {
+        self.replayed_through = self.replayed_through.max(position);
+    }
+
     /// Creates a new `InMemoryQueueReader`.
     pub(crate) fn new(rx: broadcast::Receiver<super::Shared>) -> Self {
         Self {
@@ -729,6 +782,9 @@ impl InMemoryQueueReader {
             pending: std::collections::VecDeque::new(),
             reattach: None,
             reattaching: std::sync::Mutex::new(None),
+            catch_up: None,
+            catching_up: std::sync::Mutex::new(None),
+            just_caught_up: false,
             saw_terminal: false,
             replayed_through: 0,
             provisional: None,
@@ -785,6 +841,9 @@ impl InMemoryQueueReader {
             pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
             reattaching: std::sync::Mutex::new(None),
+            catch_up: None,
+            catching_up: std::sync::Mutex::new(None),
+            just_caught_up: false,
             saw_terminal: false,
             replayed_through: 0,
             provisional: None,
@@ -808,6 +867,9 @@ impl InMemoryQueueReader {
             pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
             reattaching: std::sync::Mutex::new(None),
+            catch_up: None,
+            catching_up: std::sync::Mutex::new(None),
+            just_caught_up: false,
             saw_terminal: false,
             replayed_through: 0,
             provisional: None,
@@ -875,7 +937,9 @@ impl EventQueueReader for InMemoryQueueReader {
                     return first;
                 }
                 if let Some(event) = first {
-                    self.pending.push_back(event);
+                    // To the front: a lag catch-up may have queued the rest
+                    // of the replay behind it already.
+                    self.pending.push_front(event);
                 }
                 self.saw_terminal |= carries_terminal_state(&snapshot);
                 return Some(Ok(StreamEvent::unpositioned(snapshot)));
@@ -886,6 +950,73 @@ impl EventQueueReader for InMemoryQueueReader {
 }
 
 impl InMemoryQueueReader {
+    /// What the catch-up hook answers for the events after the last position
+    /// this reader delivered; `None` without a hook.
+    ///
+    /// Cancel-safe the way the reattach hook is: the pending answer lives in
+    /// `catching_up`, so a `read` dropped while it waits leaves it for the
+    /// next `read` instead of calling the hook again.
+    async fn catch_up(&mut self) -> Option<Vec<crate::store::RecordedEvent>> {
+        let hook = self.catch_up.as_ref()?;
+        let after = self.replayed_through;
+        let answer = {
+            let slot = self
+                .catching_up
+                .get_mut()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            slot.get_or_insert_with(|| hook(after)).await
+        };
+        *self
+            .catching_up
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        answer
+    }
+
+    /// What a reader that lagged by `dropped` events yields next: the first
+    /// event the log replay supplies, or the lag error when the log cannot
+    /// supply them all. `None` when the replay holds nothing new, so reading
+    /// the channel goes on.
+    async fn recover_from_lag(&mut self, dropped: u64) -> Option<A2aResult<StreamEvent>> {
+        let Some(missed) = self.catch_up().await else {
+            trace_warn!(
+                dropped_events = dropped,
+                "event queue reader lagged, {dropped} events dropped"
+            );
+            return Some(Err(lag_error(dropped)));
+        };
+        trace_info!(
+            dropped_events = dropped,
+            replayed = missed.len(),
+            "event queue reader lagged; caught up from the event log"
+        );
+        self.queue_replay(missed);
+        self.just_caught_up = true;
+        let next = self.pending.pop_front()?;
+        if let Ok(ref ev) = next {
+            self.saw_terminal |= carries_terminal_state(&ev.event);
+        }
+        Some(next)
+    }
+
+    /// Records that live position `seq` is being delivered. Right after a
+    /// catch-up it must follow the replay directly; when it does not, the
+    /// replay left a gap, and the lag error to report it is returned.
+    fn deliver_live_position(&mut self, seq: u64) -> Option<a2a_protocol_types::error::A2aError> {
+        let caught_up = std::mem::take(&mut self.just_caught_up);
+        let expected = self.replayed_through + 1;
+        self.replayed_through = seq;
+        if caught_up && seq != expected {
+            trace_warn!(
+                expected = expected,
+                got = seq,
+                "a lag catch-up left a gap; reporting the lag"
+            );
+            return Some(lag_error(seq - expected));
+        }
+        None
+    }
+
     /// The next event from the live channel, reattaching across turns.
     async fn next_live(&mut self) -> Option<A2aResult<StreamEvent>> {
         {
@@ -906,16 +1037,19 @@ impl InMemoryQueueReader {
                             if ev.seq.is_some_and(|s| s <= self.replayed_through) {
                                 continue;
                             }
+                            if let Some(seq) = ev.seq
+                                && let Some(gap) = self.deliver_live_position(seq)
+                            {
+                                return Some(Err(gap));
+                            }
                             self.saw_terminal |= carries_terminal_state(&ev.event);
                         }
                         return Some(event);
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        trace_warn!(
-                            dropped_events = n,
-                            "event queue reader lagged, {n} events dropped"
-                        );
-                        return Some(Err(lag_error(n)));
+                        if let Some(next) = self.recover_from_lag(n).await {
+                            return Some(next);
+                        }
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         // The queue for this turn is gone. If a terminal state
@@ -1859,6 +1993,137 @@ mod tests {
             vec![Some(1), Some(2), Some(3), Some(4)],
             "each position must be delivered exactly once, in order"
         );
+    }
+
+    /// Two lags in one stream (spec §3.5.2): the catch-up hook runs once per
+    /// lag, each time after the last position delivered, and the stream
+    /// carries every position once, in order.
+    #[tokio::test]
+    async fn each_lag_catches_up_after_the_last_position_delivered() {
+        use crate::store::RecordedEvent;
+
+        let (writer, reader) =
+            new_in_memory_queue_with_options(2, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
+        let asked: Arc<std::sync::Mutex<Vec<u64>>> = Arc::default();
+        // The log holds positions 1 up to this.
+        let logged = Arc::new(AtomicU64::new(0));
+        let hook: CatchUpFn = {
+            let (asked, logged) = (Arc::clone(&asked), Arc::clone(&logged));
+            Arc::new(move |after| {
+                asked.lock().unwrap().push(after);
+                let until = logged.load(Ordering::SeqCst);
+                Box::pin(async move {
+                    Some(
+                        (after + 1..=until)
+                            .map(|seq| RecordedEvent {
+                                seq,
+                                event: make_status_event("t-lag", TaskState::Working),
+                            })
+                            .collect(),
+                    )
+                })
+            })
+        };
+        let mut reader = reader.with_catch_up(Some(hook));
+
+        let mut positions = Vec::new();
+        for round in 1..=2_u64 {
+            for _ in 0..5 {
+                writer
+                    .write(make_status_event("t-lag", TaskState::Working))
+                    .await
+                    .unwrap();
+            }
+            logged.store(round * 5, Ordering::SeqCst);
+            for _ in 0..5 {
+                let item = reader.read().await.expect("a frame").expect("no lag error");
+                positions.push(item.seq.expect("positioned"));
+            }
+        }
+        drop(writer);
+        assert!(
+            reader.read().await.is_none(),
+            "the stream ends with the queue"
+        );
+
+        assert_eq!(positions, (1..=10).collect::<Vec<_>>());
+        assert_eq!(*asked.lock().unwrap(), [0, 5]);
+    }
+
+    /// A replay hook for the tests below: answers with the positions from
+    /// `after + 1` up to `until`, and records each `after` it was asked.
+    fn log_hook(until: u64, asked: &Arc<std::sync::Mutex<Vec<u64>>>) -> CatchUpFn {
+        use crate::store::RecordedEvent;
+        let asked = Arc::clone(asked);
+        Arc::new(move |after| {
+            asked.lock().unwrap().push(after);
+            Box::pin(async move {
+                Some(
+                    (after + 1..=until)
+                        .map(|seq| RecordedEvent {
+                            seq,
+                            event: make_status_event("t-lag", TaskState::Working),
+                        })
+                        .collect(),
+                )
+            })
+        })
+    }
+
+    /// The catch-up starts after the last position delivered live, not only
+    /// after the last one replayed.
+    #[tokio::test]
+    async fn a_catch_up_starts_after_the_last_live_position() {
+        let (writer, reader) =
+            new_in_memory_queue_with_options(2, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
+        let asked = Arc::default();
+        let mut reader = reader.with_catch_up(Some(log_hook(6, &asked)));
+        let event = || make_status_event("t-lag", TaskState::Working);
+
+        writer.write(event()).await.unwrap();
+        let live = reader.read().await.unwrap().unwrap();
+        assert_eq!(live.seq, Some(1), "delivered live");
+        for _ in 0..5 {
+            writer.write(event()).await.unwrap();
+        }
+        drop(writer);
+
+        let mut positions = vec![1];
+        while let Some(item) = reader.read().await {
+            positions.push(item.expect("no lag error").seq.expect("positioned"));
+        }
+        assert_eq!(positions, (1..=6).collect::<Vec<_>>());
+        assert_eq!(*asked.lock().unwrap(), [1]);
+    }
+
+    /// A replay that stops short of where the live channel resumes leaves a
+    /// gap, which the stream reports as a lag instead of skipping over it.
+    #[tokio::test]
+    async fn a_replay_that_leaves_a_gap_is_reported_as_a_lag() {
+        let (writer, reader) =
+            new_in_memory_queue_with_options(2, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
+        let asked = Arc::default();
+        // The log has only 1 and 2 of the 6 written.
+        let mut reader = reader.with_catch_up(Some(log_hook(2, &asked)));
+        for _ in 0..6 {
+            writer
+                .write(make_status_event("t-lag", TaskState::Working))
+                .await
+                .unwrap();
+        }
+        drop(writer);
+
+        let mut items = Vec::new();
+        while let Some(item) = reader.read().await {
+            items.push(item);
+        }
+        let positions: Vec<_> = items
+            .iter()
+            .map(|i| i.as_ref().ok().and_then(|e| e.seq))
+            .collect();
+        assert_eq!(positions[..2], [Some(1), Some(2)], "the replay first");
+        let lag = items[2].as_ref().expect_err("then the gap, reported");
+        assert!(lag.is_stream_lagged(), "{lag:?}");
     }
 
     /// The negative control: de-duplication must key on the position, not on

@@ -416,9 +416,17 @@ impl EventQueueManager {
         // Create a reader with the snapshot as its pending first event.
         // The snapshot is NOT written to the broadcast channel, so other
         // subscribers are unaffected.
+        //
+        // The writer's position is read before the receiver attaches, so
+        // every event the receiver holds is above it: a lag catch-up then
+        // starts there, not at the start of the task's log, whose events up
+        // to the snapshot the subscriber did not ask for.
+        let attached_after = writer.current_seq();
         let rx = writer.raw_subscribe();
         drop(map);
-        Some(InMemoryQueueReader::with_first_event(rx, snapshot))
+        let mut reader = InMemoryQueueReader::with_first_event(rx, snapshot);
+        reader.starting_after(attached_after);
+        Some(reader)
     }
 
     /// Removes and drops the event queue for the given task.

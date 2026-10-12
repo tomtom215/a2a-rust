@@ -2482,15 +2482,24 @@
    "binds": "server",
    "requirement": "Each stream MUST receive the same events in the same order",
    "status": "PARTIAL",
-   "severity": "medium",
+   "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:547"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:980",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1005",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:259"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:107 a_lagged_send_stream_catches_up_from_the_event_log",
+    "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:328 a_lagged_subscription_catches_up_from_where_it_attached",
+    "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:274 a_second_turn_catches_up_from_its_own_start",
+    "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:253 a_lagged_stream_catches_up_in_its_tenant",
+    "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:138 a_replay_over_the_limit_ends_with_stream_lagged",
+    "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:410 a_lag_the_log_cannot_cover_still_ends_with_stream_lagged",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2102 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:171 slow_reader_gets_explicit_lag_error",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1212 subscribe_creates_independent_reader"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1567 subscribe_creates_independent_reader"
    ],
-   "notes": "Order is preserved, but a subscriber that falls behind the bounded broadcast buffer loses the overwritten events (surfaced as an explicit 'streamLagged' error), so a slow stream does not receive the same events as a fast one.",
+   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Remaining, each ending the stream with an explicit streamLagged: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log), more missed events than one replay reads (subscribe_replay_limit, 1,000), or a custom store without an event log.",
    "auditor": "B",
    "source": "spec"
   },

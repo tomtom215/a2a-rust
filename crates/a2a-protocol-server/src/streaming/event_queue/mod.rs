@@ -19,8 +19,8 @@ mod manager;
 mod status_stamp;
 pub(crate) mod terminal_gate;
 
+pub(crate) use in_memory::{CatchUpFn, ReattachFn, Reattached, carries_terminal_state};
 pub use in_memory::{InMemoryQueueReader, InMemoryQueueWriter};
-pub(crate) use in_memory::{ReattachFn, Reattached, carries_terminal_state};
 pub use manager::EventQueueManager;
 pub(crate) use manager::{QueueConsumer, QueueLease};
 

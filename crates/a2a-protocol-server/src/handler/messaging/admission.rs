@@ -130,7 +130,7 @@ impl RequestHandler {
         {
             QueueLease::Created {
                 writer,
-                reader,
+                mut reader,
                 persistence_rx,
             } => {
                 // Resume the log's numbering before the executor can write.
@@ -151,7 +151,12 @@ impl RequestHandler {
                     // to show for it. A refused send is recoverable by retrying;
                     // a turn whose events were never recorded is not.
                     match self.task_store.last_event_seq(task_id).await {
-                        Ok(seq) => writer.seed_seq(seq),
+                        Ok(seq) => {
+                            writer.seed_seq(seq);
+                            // A lag catch-up resumes after the previous
+                            // turns, which this stream does not carry.
+                            reader.starting_after(seq);
+                        }
                         Err(e) => {
                             // The lease is already registered, so returning
                             // without releasing it would wedge the task as

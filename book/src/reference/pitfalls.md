@@ -405,7 +405,7 @@ In streaming mode, the background event processor previously subscribed to the b
 
 ### Lagged event queue reader drops diagnostic count (fixed)
 
-The broadcast channel `Lagged(n)` error provides the exact count of dropped events, but the reader used `_n` (underscore prefix), discarding the count. The warning message said "skipping missed events" without saying how many. The fix exposes the count in the log: `"event queue reader lagged, {n} events dropped"`. The reader no longer skips ahead either: it returns `A2aError::stream_lagged(n)`, and the stream ends with that error.
+The broadcast channel `Lagged(n)` error provides the exact count of dropped events, but the reader used `_n` (underscore prefix), discarding the count. The warning message said "skipping missed events" without saying how many. The fix exposes the count in the log: `"event queue reader lagged, {n} events dropped"`. The reader no longer skips ahead either: it returns `A2aError::stream_lagged(n)`, and the stream ends with that error. Since the event-log catch-up (spec §3.5.2), a stream reads the dropped events from the task's log first, and ends with that error only when the log cannot supply them all.
 
 ## Client Pitfalls
 

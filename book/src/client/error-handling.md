@@ -298,7 +298,8 @@ while let Some(event) = stream.next().await {
 ```
 
 A reader that falls too far behind is cut off — over SSE when it lags the
-server's broadcast queue, over WebSocket once 64 frames are waiting unread —
+server's broadcast queue further than the task's event log can make up, over
+WebSocket once 64 frames are waiting unread —
 with an error that answers `is_stream_lagged()`. Resubscribe
 (`subscribe_to_task_from` with the stream's `last_event_id()` over SSE, or
 `subscribe_to_task`) to continue; see

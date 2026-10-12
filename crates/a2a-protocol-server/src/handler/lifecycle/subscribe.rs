@@ -14,6 +14,7 @@ use a2a_protocol_types::task::TaskId;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 
 use crate::error::{ServerError, ServerResult};
+use crate::streaming::event_queue::CatchUpFn;
 use crate::streaming::{InMemoryQueueReader, Reattached};
 
 use super::super::RequestHandler;
@@ -203,90 +204,85 @@ impl RequestHandler {
         reader.queue_replay(events);
     }
 
-    /// Reads the task's log from `after_seq`, waiting — bounded by
-    /// [`HandlerLimits::subscribe_replay_catchup`](crate::handler::HandlerLimits::subscribe_replay_catchup)
-    /// — for it to catch up with what the live writer has already broadcast.
-    ///
-    /// The barrier is the writer's current position. Every position at or
-    /// below it has been handed to the persistence channel, so once the log
-    /// reaches it the replay covers everything the broadcast receiver —
-    /// attached before this runs — could not have seen. Without the wait, a
-    /// position broadcast just before the receiver existed and appended just
-    /// after the log was read is in neither source, and the subscriber loses
-    /// it with nothing in what it receives to reveal that.
-    ///
-    /// `None` means the read failed and the caller should serve the stream
-    /// without a replay: that is the pre-resumption behaviour, a snapshot then
-    /// live events, and refusing to subscribe because the history could not be
-    /// read would turn a storage hiccup into a dropped connection.
+    /// Reads the task's log from `after_seq` for a resubscribe; see
+    /// [`LogReplay::read`]. `None` means the read failed and the caller
+    /// should serve the stream without a replay: that is the pre-resumption
+    /// behaviour, a snapshot then live events, and refusing to subscribe
+    /// because the history could not be read would turn a storage hiccup into
+    /// a dropped connection.
     async fn read_log_with_catchup(
         &self,
         task_id: &TaskId,
         after_seq: u64,
     ) -> Option<Vec<crate::store::RecordedEvent>> {
-        // Backoff rather than a fixed tick: the common case is the processor
-        // being an event or two behind, which the first retry catches, and the
-        // cap keeps a full budget to roughly a dozen store reads instead of a
-        // poll every few milliseconds.
-        const FIRST_BACKOFF: Duration = Duration::from_millis(10);
-        const MAX_BACKOFF: Duration = Duration::from_millis(200);
-
-        // `None` means no live queue: the task is parked or the process
-        // restarted, nothing is being written, and the log is already whole.
-        let target = self
-            .event_queue_manager
-            .current_seq(task_id)
+        self.log_replay()
+            .read(task_id, after_seq)
             .await
-            .unwrap_or(0);
+            .map(|replayed| replayed.events)
+    }
 
-        let limit = self.limits.subscribe_replay_limit;
-        let deadline = Instant::now() + self.limits.subscribe_replay_catchup;
-        let mut backoff = FIRST_BACKOFF;
+    /// What reading the log needs, detached from the handler.
+    fn log_replay(&self) -> LogReplay {
+        LogReplay {
+            queues: self.event_queue_manager.clone(),
+            store: std::sync::Arc::clone(&self.task_store),
+            metrics: std::sync::Arc::clone(&self.metrics),
+            limit: self.limits.subscribe_replay_limit,
+            catchup: self.limits.subscribe_replay_catchup,
+        }
+    }
 
-        loop {
-            let found = match self.task_store.read_events(task_id, after_seq, limit).await {
-                Ok(found) => found,
-                Err(_e) => {
+    /// `reader` with the hooks a stream of `task_id` needs once its request
+    /// has returned: reattaching across turns, and catching up after a lag.
+    pub(crate) fn with_stream_hooks(
+        &self,
+        reader: InMemoryQueueReader,
+        task_id: &TaskId,
+    ) -> InMemoryQueueReader {
+        reader
+            .with_reattach(self.subscribe_reattach_hook(task_id.clone()))
+            .with_catch_up(self.lag_catch_up_hook(task_id.clone()))
+    }
+
+    /// Builds the hook a stream calls when it falls behind the broadcast
+    /// channel, to read the events it missed from the task's event log (spec
+    /// §3.5.2: each stream MUST receive the same events in the same order).
+    /// `None` when the store keeps no log, which leaves such a stream ending
+    /// with `streamLagged`.
+    ///
+    /// The hook answers only with a complete replay: every event after the
+    /// stream's last position up to the writer's position, with the head of
+    /// the log still there. A partial one would hand the stream a gap it
+    /// cannot see, so the explicit `streamLagged` is the answer then. Like
+    /// the reattach hook it runs outside the request, so it re-enters the
+    /// request's tenant and caller.
+    pub(crate) fn lag_catch_up_hook(&self, task_id: TaskId) -> Option<CatchUpFn> {
+        if !self.task_store.supports_event_log() {
+            return None;
+        }
+        let replay = self.log_replay();
+        let partition = crate::store::tenant::TenantContext::capture();
+        Some(std::sync::Arc::new(move |after| {
+            let (replay, task_id) = (replay.clone(), task_id.clone());
+            Box::pin(partition.clone().scope(async move {
+                let replayed = replay.read(&task_id, after).await?;
+                if !replayed.complete
+                    || !replay
+                        .store
+                        .event_log_covers(&task_id, after)
+                        .await
+                        .unwrap_or(true)
+                {
                     trace_warn!(
                         task_id = %task_id,
-                        "resubscribe: event log read failed; the stream starts from the snapshot"
+                        after_seq = after,
+                        "a lagged stream could not be caught up in full from the event log"
                     );
                     return None;
                 }
-            };
-
-            let reached = found.last().map_or(after_seq, |e| e.seq);
-            // Caught up, or capped by `subscribe_replay_limit` — which is
-            // truncation, not lag, and is resumable by the client's own next
-            // `Last-Event-ID`, so there is nothing to wait for.
-            if reached >= target || found.len() >= limit {
-                return Some(found);
-            }
-            if Instant::now() >= deadline {
-                trace_warn!(
-                    task_id = %task_id,
-                    reached = reached,
-                    target = target,
-                    "resubscribe: the event log did not catch up within \
-                     subscribe_replay_catchup; the replay is short by the difference"
-                );
-                self.metrics.on_persistence_error(
-                    crate::metrics::persistence_operation::EVENT_LOG_CATCHUP,
-                    crate::metrics::event_log_catchup_error::TIMED_OUT,
-                );
-                return Some(found);
-            }
-            tokio::time::sleep(backoff).await;
-            // `saturating_mul` rather than `*`: the doubling is politeness,
-            // not correctness, so `*` mutated to `/` shrinks the interval to
-            // zero and spins until the same deadline, returning the same
-            // events and reporting the same metric — an equivalent mutant
-            // that survived the incremental mutation gate on this pull
-            // request (shard 4 of run 35523981742). A saturating call has no
-            // weakened operator form, and it also cannot panic on overflow
-            // if MAX_BACKOFF is ever raised near Duration::MAX.
-            backoff = backoff.saturating_mul(2).min(MAX_BACKOFF);
-        }
+                Some(replayed.events)
+            }))
+        }))
     }
 
     /// Handles `SubscribeToTask`.
@@ -349,7 +345,7 @@ impl RequestHandler {
                     // SPEC: The first event in a SubscribeToTask stream MUST be a Task
                     // snapshot representing the current state (Go #231, JS #323).
                     let snapshot = a2a_protocol_types::events::StreamResponse::Task(task);
-                    let mut reader = self
+                    let reader = self
                         .event_queue_manager
                         .subscribe_with_snapshot(&task_id, snapshot.clone())
                         .await
@@ -359,8 +355,8 @@ impl RequestHandler {
                         // finished, so §3.1.6 says the stream must stay open; start
                         // from the snapshot and let the reattach hook below wait for
                         // the next turn's queue.
-                        .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(snapshot))
-                        .with_reattach(self.subscribe_reattach_hook(task_id.clone()));
+                        .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(snapshot));
+                    let mut reader = self.with_stream_hooks(reader, &task_id);
 
                     // Resumption. A client that was disconnected sends back the
                     // `id:` of the last frame it saw; the log is replayed from
@@ -390,6 +386,115 @@ impl RequestHandler {
             }
         }
         result
+    }
+}
+
+/// Reads a task's event log for a replay, detached from the handler so a
+/// stream can do it after its request returned (the lag catch-up).
+#[derive(Clone)]
+struct LogReplay {
+    queues: crate::streaming::EventQueueManager,
+    store: std::sync::Arc<dyn crate::store::TaskStore>,
+    metrics: std::sync::Arc<dyn crate::metrics::Metrics>,
+    limit: usize,
+    catchup: Duration,
+}
+
+/// Events read from the log after a position.
+struct Replayed {
+    events: Vec<crate::store::RecordedEvent>,
+    /// Whether they are all there is up to the writer's position when the
+    /// read began: not capped by the limit, not cut short by the deadline.
+    complete: bool,
+}
+
+impl LogReplay {
+    /// Reads the task's log from `after_seq`, waiting — bounded by
+    /// [`HandlerLimits::subscribe_replay_catchup`](crate::handler::HandlerLimits::subscribe_replay_catchup)
+    /// — for it to catch up with what the live writer has already broadcast.
+    ///
+    /// The barrier is the writer's current position. Every position at or
+    /// below it has been handed to the persistence channel, so once the log
+    /// reaches it the replay covers everything the broadcast receiver —
+    /// attached before this runs — could not have seen. Without the wait, a
+    /// position broadcast just before the receiver existed and appended just
+    /// after the log was read is in neither source, and the subscriber loses
+    /// it with nothing in what it receives to reveal that.
+    ///
+    /// `None` means the read failed.
+    async fn read(&self, task_id: &TaskId, after_seq: u64) -> Option<Replayed> {
+        // Backoff rather than a fixed tick: the common case is the processor
+        // being an event or two behind, which the first retry catches, and the
+        // cap keeps a full budget to roughly a dozen store reads instead of a
+        // poll every few milliseconds.
+        const FIRST_BACKOFF: Duration = Duration::from_millis(10);
+        const MAX_BACKOFF: Duration = Duration::from_millis(200);
+
+        // `None` means no live queue: the task is parked or the process
+        // restarted, nothing is being written, and the log is already whole.
+        let target = self.queues.current_seq(task_id).await.unwrap_or(0);
+
+        let limit = self.limit;
+        let deadline = Instant::now() + self.catchup;
+        let mut backoff = FIRST_BACKOFF;
+
+        loop {
+            let found = match self.store.read_events(task_id, after_seq, limit).await {
+                Ok(found) => found,
+                Err(_e) => {
+                    trace_warn!(
+                        task_id = %task_id,
+                        "event log replay: the read failed, so nothing is replayed"
+                    );
+                    return None;
+                }
+            };
+
+            let reached = found.last().map_or(after_seq, |e| e.seq);
+            // Caught up, or capped by `subscribe_replay_limit` — which is
+            // truncation, not lag, and is resumable by the client's own next
+            // `Last-Event-ID`, so there is nothing to wait for.
+            if reached >= target || found.len() >= limit {
+                // With no live queue (`target` 0) the log is whole, and the
+                // read is all of it only if the limit did not cap it.
+                let complete = if target == 0 {
+                    found.len() < limit
+                } else {
+                    reached >= target
+                };
+                return Some(Replayed {
+                    events: found,
+                    complete,
+                });
+            }
+            if Instant::now() >= deadline {
+                trace_warn!(
+                    task_id = %task_id,
+                    reached = reached,
+                    target = target,
+                    "event log replay: the log did not catch up within \
+                     subscribe_replay_catchup; the replay is short by the difference"
+                );
+                self.metrics.on_persistence_error(
+                    crate::metrics::persistence_operation::EVENT_LOG_CATCHUP,
+                    crate::metrics::event_log_catchup_error::TIMED_OUT,
+                );
+                return Some(Replayed {
+                    events: found,
+                    complete: false,
+                });
+            }
+            tokio::time::sleep(backoff).await;
+            // `saturating_mul` rather than `*`: the doubling is politeness,
+            // not correctness, so `*` mutated to `/` shrinks the interval to
+            // zero and spins until the same deadline, returning the same
+            // events and reporting the same metric — an equivalent mutant
+            // that survived the incremental mutation gate on this pull
+            // request (shard 4 of run 35523981742). A saturating call has no
+            // weakened operator form, and it also cannot panic on overflow
+            // if MAX_BACKOFF is ever raised near Duration::MAX.
+            backoff = backoff.saturating_mul(2).min(MAX_BACKOFF);
+        }
     }
 }
 
