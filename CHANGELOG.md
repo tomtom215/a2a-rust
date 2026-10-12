@@ -688,6 +688,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   died with a `TypeError` and every mode behaved as a silent hang. The hang
   mode also closed the socket it meant to hold (`finally: c.close()`).
   Measured on Python 3.13.16 by connecting to each mode before and after.
+- **Workflow actions** (Dependabot #164): `actions/upload-artifact` 7.0.2,
+  `actions/download-artifact` 8.0.2, `actions/setup-node` 7.1.0, and
+  `dtolnay/rust-toolchain` at `e2a55d2` (2026-10-08, which hardens how the
+  action handles its inputs). Its pin comment said `master 2026-09-03`; the
+  previous pin was dated 2026-09-11 and the comment now gives the new
+  commit's date.
 - **Tests for four spec requirements that were implemented but untested**:
   §3.1.4 `includeArtifacts` omission (`list_tasks_artifacts.rs`), §3.3.4
   streaming refused without the capability on the JSON-RPC wire and §3.5.2
