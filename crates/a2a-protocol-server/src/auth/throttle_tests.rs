@@ -50,6 +50,19 @@ fn refused(throttle: &AuthFailureThrottle, ctx: &CallContext) -> bool {
     throttle.refuse_if_throttled(ctx).is_err()
 }
 
+/// The clock a throttle reads unless a test gives it another: Unix time in
+/// seconds. A constant one would put every failure in one window that never
+/// ends, so a throttled peer would never be let back in.
+#[test]
+fn the_default_clock_is_unix_time_in_seconds() {
+    let expected = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let read = unix_now_secs();
+    assert!(read.abs_diff(expected) <= 1, "{read} against {expected}");
+}
+
 #[test]
 fn a_zero_limit_window_or_peer_bound_is_refused() {
     let base = AuthFailureThrottleConfig::default;
