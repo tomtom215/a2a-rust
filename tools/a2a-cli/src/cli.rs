@@ -75,6 +75,14 @@ pub struct GlobalOpts {
     /// effect on an address that already carries a scheme.
     #[arg(long, global = true)]
     pub grpc_plaintext: bool,
+
+    /// Run `stream` even when the agent card does not declare
+    /// `capabilities.streaming`. By default the stream is refused before
+    /// anything is sent, as spec §3.3.4 asks of a client. Only for an agent
+    /// that streams without declaring it. No effect with `--binding`, which
+    /// skips the card.
+    #[arg(long, global = true)]
+    pub no_capability_check: bool,
 }
 
 /// The four bindings the client library speaks.

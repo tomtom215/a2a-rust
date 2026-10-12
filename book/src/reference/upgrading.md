@@ -191,6 +191,37 @@ let client = ClientBuilder::from_card_preferring(&card, &["JSONRPC".into()])?.bu
 reads them. Use `from_card_preferring` to rank, and
 `ClientBuilder::chosen_interface` to see what was chosen.
 
+### A client built from a card checks the card's capabilities
+
+Spec §3.3.4: a client SHOULD check the agent card before an operation that
+needs an optional capability. A client from `ClientBuilder::from_card` (or
+`A2aClient::from_card`) now does: streaming and resubscription need
+`capabilities.streaming`, the push-config methods and a send carrying an
+inline push config need `pushNotifications`, and `get_extended_agent_card`
+needs `extendedAgentCard`, each set to `true`. Otherwise the call returns
+`ClientError::CapabilityNotDeclared` and nothing is sent.
+
+A conformant agent refuses the same calls, so code that already handled
+`UnsupportedOperationError` or `PushNotificationNotSupportedError` from such
+an agent should handle this error the same way. For an agent that streams or
+takes push configs without declaring it, opt out:
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# fn main() -> Result<(), ClientError> {
+# let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3001"))
+#     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
+let client = ClientBuilder::from_card(&card)?
+    .without_capability_checks()
+    .build()?;
+# drop(client);
+# Ok(())
+# }
+```
+
+The CLI's equivalent is `--no-capability-check`. A client built for a bare
+endpoint with `ClientBuilder::new` has no card and checks nothing.
+
 ### Only `A2A-Version: 1.0` is served
 
 Spec §3.6.2: a request is processed with the semantics of the version it

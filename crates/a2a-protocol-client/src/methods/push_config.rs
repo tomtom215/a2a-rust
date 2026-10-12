@@ -33,6 +33,7 @@ impl A2aClient {
         mut config: TaskPushNotificationConfig,
     ) -> ClientResult<TaskPushNotificationConfig> {
         const METHOD: &str = "CreateTaskPushNotificationConfig";
+        self.require_declared(crate::declared::Capability::PushNotifications, METHOD)?;
 
         config.tenant = self.tenant_or_default(config.tenant.take());
         let params_value = serde_json::to_value(&config).map_err(ClientError::Serialization)?;
@@ -66,6 +67,7 @@ impl A2aClient {
         id: impl Into<String>,
     ) -> ClientResult<TaskPushNotificationConfig> {
         const METHOD: &str = "GetTaskPushNotificationConfig";
+        self.require_declared(crate::declared::Capability::PushNotifications, METHOD)?;
 
         let params = GetPushConfigParams {
             tenant: self.tenant_or_default(None),
@@ -102,6 +104,7 @@ impl A2aClient {
         mut params: ListPushConfigsParams,
     ) -> ClientResult<ListPushConfigsResponse> {
         const METHOD: &str = "ListTaskPushNotificationConfigs";
+        self.require_declared(crate::declared::Capability::PushNotifications, METHOD)?;
 
         params.tenant = self.tenant_or_default(params.tenant.take());
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
@@ -139,6 +142,7 @@ impl A2aClient {
         id: impl Into<String>,
     ) -> ClientResult<()> {
         const METHOD: &str = "DeleteTaskPushNotificationConfig";
+        self.require_declared(crate::declared::Capability::PushNotifications, METHOD)?;
 
         let params = DeletePushConfigParams {
             tenant: self.tenant_or_default(None),

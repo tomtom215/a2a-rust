@@ -55,6 +55,10 @@ pub struct A2aClient {
     pub(crate) config: ClientConfig,
     /// The agent called, as its spans describe it.
     pub(crate) peer: crate::call_span::Peer,
+    /// The optional capabilities the agent's card declares, checked before a
+    /// call that needs one; `None` when there is no card to check against or
+    /// the checks were turned off.
+    pub(crate) declared: Option<crate::declared::DeclaredCapabilities>,
 }
 
 impl A2aClient {
@@ -106,6 +110,7 @@ impl A2aClient {
             interceptors,
             config,
             peer: crate::call_span::Peer::default(),
+            declared: None,
         }
     }
 
@@ -113,6 +118,26 @@ impl A2aClient {
     pub(crate) fn with_peer(mut self, peer: crate::call_span::Peer) -> Self {
         self.peer = peer;
         self
+    }
+
+    /// Sets the card capabilities checked before each call that needs one.
+    pub(crate) const fn with_declared(
+        mut self,
+        declared: Option<crate::declared::DeclaredCapabilities>,
+    ) -> Self {
+        self.declared = declared;
+        self
+    }
+
+    /// Refuses `method` locally when the card this client was built from does
+    /// not declare `capability` (spec §3.3.4). A no-op without a card.
+    pub(crate) fn require_declared(
+        &self,
+        capability: crate::declared::Capability,
+        method: &str,
+    ) -> ClientResult<()> {
+        self.declared
+            .map_or(Ok(()), |declared| declared.require(capability, method))
     }
 
     /// Sends an intercepted request, and lets the interceptors see a

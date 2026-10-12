@@ -27,6 +27,7 @@ impl A2aClient {
     /// Returns [`ClientError`] on transport or protocol errors.
     pub async fn get_extended_agent_card(&self) -> ClientResult<AuthenticatedExtendedCardResponse> {
         const METHOD: &str = "GetExtendedAgentCard";
+        self.require_declared(crate::declared::Capability::ExtendedAgentCard, METHOD)?;
 
         // `GetExtendedAgentCardRequest` has exactly one field, `tenant`
         // (§8.3.2 rule 4 applies to it like any other request). Parameterless

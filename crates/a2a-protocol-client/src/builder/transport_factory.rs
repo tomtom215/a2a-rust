@@ -87,7 +87,9 @@ impl ClientBuilder {
                 self.agent.clone(),
             )
         };
-        Ok(A2aClient::new(transport, self.interceptors, self.config).with_peer(peer))
+        Ok(A2aClient::new(transport, self.interceptors, self.config)
+            .with_peer(peer)
+            .with_declared(self.declared))
     }
 
     /// Tries the card's remaining interfaces after the chosen one failed
@@ -199,7 +201,9 @@ impl ClientBuilder {
             transport
         };
 
-        Ok(A2aClient::new(transport, self.interceptors, self.config).with_peer(peer))
+        Ok(A2aClient::new(transport, self.interceptors, self.config)
+            .with_peer(peer)
+            .with_declared(self.declared))
     }
 }
 

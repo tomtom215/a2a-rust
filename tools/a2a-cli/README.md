@@ -58,6 +58,7 @@ Accepted before or after the subcommand.
 | `--header K=V` | Extra header on every request; repeatable. Split at the first `=`, so `--header "Authorization=Bearer abc=="` keeps the padding. Over gRPC the headers become request metadata; over WebSocket they go on the upgrade request. |
 | `--tenant <ID>` | Tenant for multi-tenant agents. Overrides the tenant the card advertises for the chosen interface. |
 | `--grpc-plaintext` | Dial a bare `host:port` gRPC address without TLS. The default is the library's: TLS for every host except loopback. No effect on an address that carries a scheme. |
+| `--no-capability-check` | Run `stream` even when the agent card does not set `capabilities.streaming` to `true`. By default, as `ClientBuilder::from_card` does (spec §3.3.4), the stream is refused before anything is sent. For an agent that streams without declaring it. No effect with `--binding`, which fetches no card. |
 
 There is no `--insecure-http`. The client library accepts `http://` without
 an opt-in (its HTTPS connector is `https_or_http`), and this tool does not add

@@ -975,9 +975,15 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     retired; see `mutation-history.md`.
 14. `ci(mutants):` `a2a-server` dealt round-robin across 24 shards; the four
     unrecorded sweeps since 2026-09-07 and the 2026-10-12 one get ledger rows.
+15. `docs(handoff):` this section.
+16. `feat(client)!:` §3.3.4, the ledger's last GAP — a client built from a
+    card refuses, before sending, a call the card does not declare the
+    capability for (`ClientError::CapabilityNotDeclared`), with
+    `ClientBuilder::without_capability_checks` and the CLI's
+    `--no-capability-check` to opt out.
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 298,
-PARTIAL 35, GAP 1, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 299,
+PARTIAL 35, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**
@@ -1191,7 +1197,8 @@ before acting on it, as this branch did.
   passes no preference (card order, with the existing fallback past an
   interface it cannot build) while `from_card_preferring` keeps the caller's
   explicit ranking. Not changed: it reverses a recorded decision and changes
-  which binding default clients use.
+  which binding default clients use. **Decided 2026-10-12: follow the spec;
+  done on `claude/tender-cray-bsfw83`.**
 - *Upstream candidate, not filed: a2a-java and `application/a2a+json`.*
   a2a-java 1.3.0.Final's REST server refuses any request Content-Type not
   starting with `application/json` (`A2AServerRoutes.validateContentType`,
@@ -1205,6 +1212,7 @@ before acting on it, as this branch did.
   `1.x`, and so does the official Python SDK: `_is_version_compatible`
   compares only the major version, although its docstring says major and
   minor. Rejecting `1.1` follows the text and breaks the first 1.1 client.
+  **Decided 2026-10-12: follow the spec; done on `claude/tender-cray-bsfw83`.**
 - *Upstream report: the Python SDK's card canonicalization (reported).* Its
   `_clean_empty` drops a security requirement whose scope list is empty, so a
   card's `securityRequirements` (the ordinary bearer case) are not covered by
@@ -1230,7 +1238,8 @@ before acting on it, as this branch did.
    lists every open one, most severe first). The ones read and confirmed
    this session but not yet fixed: the client never checks card capabilities before
    streaming (a SHOULD, and checking would refuse servers that stream without
-   declaring it).
+   declaring it). Done on `claude/tender-cray-bsfw83`: checked by default,
+   with `ClientBuilder::without_capability_checks` for such servers.
 3. Postgres was run this session too: `postgres_store_tests -- --ignored`,
    67 passed against postgres:16, including
    `caller_isolation_holds_on_the_tenant_postgres_stores`, which fails with

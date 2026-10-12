@@ -120,6 +120,7 @@ struct ReadmeDoctests;
 mod trace;
 
 mod call_span;
+mod declared;
 
 pub mod auth;
 pub mod builder;

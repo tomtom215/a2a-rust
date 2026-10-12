@@ -277,6 +277,12 @@ pub(super) fn replicate(e: &ClientError) -> ClientError {
             ClientError::TooManyPendingRequests { limit: *limit }
         }
         ClientError::ProtocolBindingMismatch(s) => ClientError::ProtocolBindingMismatch(s.clone()),
+        ClientError::CapabilityNotDeclared { method, capability } => {
+            ClientError::CapabilityNotDeclared {
+                method: method.clone(),
+                capability,
+            }
+        }
         ClientError::IncompleteStream {
             last_event_id,
             detail,

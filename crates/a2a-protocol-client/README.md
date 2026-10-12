@@ -90,6 +90,13 @@ that also serves v0.3 is not connected to on that endpoint), in the card's
 own order, as spec §8.3.2 requires; `ClientBuilder::from_card_preferring`
 takes a binding order of your own.
 
+A client built from a card also checks the card's optional capabilities
+before each call that needs one (spec §3.3.4): streaming, push-notification
+config and the extended card are refused with
+`ClientError::CapabilityNotDeclared`, before anything is sent, unless the card
+sets `capabilities.streaming`, `pushNotifications` or `extendedAgentCard` to
+`true`. `ClientBuilder::without_capability_checks` turns this off.
+
 ## Streaming
 
 ```rust,no_run

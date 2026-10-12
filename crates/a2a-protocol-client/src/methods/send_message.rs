@@ -43,6 +43,26 @@ fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
 }
 
 impl A2aClient {
+    /// A send carrying an inline push-notification config needs the push
+    /// capability as much as `CreateTaskPushNotificationConfig` does; a
+    /// conformant agent refuses it with the same error (spec §3.3.4).
+    fn require_inline_push_declared(
+        &self,
+        params: &MessageSendParams,
+        method: &str,
+    ) -> ClientResult<()> {
+        if params
+            .configuration
+            .as_ref()
+            .is_some_and(|c| c.task_push_notification_config.is_some())
+        {
+            self.require_declared(crate::declared::Capability::PushNotifications, method)?;
+        }
+        Ok(())
+    }
+}
+
+impl A2aClient {
     /// Sends a message to the agent and waits for a complete response.
     ///
     /// Calls the `SendMessage` JSON-RPC method. The agent may respond with
@@ -79,6 +99,7 @@ impl A2aClient {
         mut params: MessageSendParams,
     ) -> ClientResult<SendMessageResponse> {
         const METHOD: &str = "SendMessage";
+        self.require_inline_push_declared(&params, METHOD)?;
 
         apply_client_config(&mut params, &self.config);
 
@@ -111,6 +132,8 @@ impl A2aClient {
     /// Returns [`ClientError`] on transport or protocol errors.
     pub async fn stream_message(&self, mut params: MessageSendParams) -> ClientResult<EventStream> {
         const METHOD: &str = "SendStreamingMessage";
+        self.require_declared(crate::declared::Capability::Streaming, METHOD)?;
+        self.require_inline_push_declared(&params, METHOD)?;
 
         apply_client_config(&mut params, &self.config);
 

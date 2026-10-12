@@ -2004,16 +2004,24 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients SHOULD validate capability support by examining the Agent Card before attempting operations that require optional capabilities",
-   "status": "GAP",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:203",
-    "crates/a2a-protocol-client/src/builder/selection.rs:51"
+    "crates/a2a-protocol-client/src/declared.rs:60",
+    "crates/a2a-protocol-client/src/client.rs:134",
+    "crates/a2a-protocol-client/src/methods/send_message.rs:49",
+    "crates/a2a-protocol-client/src/builder/mod.rs:498"
    ],
-   "test_evidence": [],
-   "notes": "Client reads card.capabilities only for the idempotency extension (builder/mod.rs:203); stream/subscribe/push-config calls are sent regardless of capabilities.streaming/pushNotifications (no such check in crates/a2a-protocol-client/src).",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:197 a_card_declaring_nothing_refuses_every_dependent_call_before_sending",
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:250 each_capability_gates_only_its_own_calls",
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:310 without_capability_checks_sends_what_the_card_does_not_declare",
+    "crates/a2a-protocol-client/src/declared.rs only_true_declares_a_capability"
+   ],
+   "notes": "A client built from a card refuses, before sending, every call that needs an optional capability the card does not set to true: streaming and resubscription (streaming), the four push-config methods and a send carrying an inline push config (pushNotifications), GetExtendedAgentCard (extendedAgentCard). The refusal is ClientError::CapabilityNotDeclared; nothing reaches the transport (tested against a recording transport for all ten call shapes). ClientBuilder::without_capability_checks and the CLI's --no-capability-check opt out; a client built from a bare URL has no card and checks nothing. Required extensions are not checked client-side: the client cannot know which it supports.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 590,

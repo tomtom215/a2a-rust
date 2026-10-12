@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only `/` is indexed. Built by `scripts/build_docs_site.py`, checked by its
   `check` step, which `prove_workflow_gates_fail.py` proves can fail; it
   deploys on every push to `main` and when the Release workflow succeeds.
+- **`ClientError::CapabilityNotDeclared` and
+  `ClientBuilder::without_capability_checks`** (client; spec §3.3.4), and the
+  CLI's `--no-capability-check`: see Behaviour Changes. The error names the
+  method that was not sent and the card field that would have declared it;
+  it is not retryable.
 - **`CardFetchOptions::with_signature_keys`** (client, feature `signing`;
   spec §14: clients SHOULD verify signatures when present). Card discovery
   with these options returns a signed card only if one of its signatures
@@ -275,6 +280,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WebSocket and `validate_version_metadata` alike. A patch number is still
   ignored (§3.6). The WebSocket handshake's own copy of the check now calls
   the shared validator.
+- **Breaking for clients built from a card: a call the card does not
+  declare the capability for is refused before it is sent** (client; spec
+  §3.3.4: clients SHOULD validate capability support against the card before
+  an operation that needs it). `stream_message`, `subscribe_to_task` and
+  `subscribe_to_task_from`, the four push-config methods, a send or stream
+  carrying an inline push config, and `get_extended_agent_card` return
+  `ClientError::CapabilityNotDeclared` without sending anything unless the
+  card sets `capabilities.streaming`, `pushNotifications` or
+  `extendedAgentCard` (respectively) to `true`. A conformant agent refuses
+  those calls too, with `UnsupportedOperationError` or
+  `PushNotificationNotSupportedError`, so against one what changes is where
+  the refusal happens and which error carries it.
+  `ClientBuilder::without_capability_checks` sends them anyway; a client built
+  with `ClientBuilder::new` has no card and is unaffected. See the upgrading
+  guide.
 - **Breaking for the `otel` feature: OpenTelemetry 0.33** (server, client,
   sdk). `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`,
   `opentelemetry-http`, `opentelemetry-appender-tracing` 0.32 to 0.33.1 and

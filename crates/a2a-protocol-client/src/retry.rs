@@ -166,12 +166,14 @@ impl ClientError {
             Self::UnexpectedStatus { status, .. } => {
                 matches!(status, 429 | 502 | 503 | 504)
             }
-            // Non-retryable: serialization, protocol, config, auth errors
+            // Non-retryable: serialization, protocol, config, auth errors,
+            // and a call the card does not declare the capability for
             Self::Serialization(_)
             | Self::Protocol(_)
             | Self::Transport(_)
             | Self::InvalidEndpoint(_)
             | Self::AuthRequired { .. }
+            | Self::CapabilityNotDeclared { .. }
             | Self::ProtocolBindingMismatch(_) => false,
         }
     }

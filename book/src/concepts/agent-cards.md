@@ -133,6 +133,13 @@ let caps = AgentCapabilities::none()
 > So if your agent serves streaming or push, **set the matching flag to `true`**
 > — otherwise clients are told the operation is unsupported. A handler with no
 > agent card configured publishes no contract and is not gated.
+>
+> **The client reads the same flags (spec §3.3.4).** A client built with
+> `ClientBuilder::from_card` refuses those calls itself, before sending, when
+> the card does not set the flag to `true`, with
+> `ClientError::CapabilityNotDeclared`; a send carrying an inline push config
+> counts as a push call. `ClientBuilder::without_capability_checks` sends them
+> anyway, for an agent that serves a capability without declaring it.
 
 ## Interfaces
 

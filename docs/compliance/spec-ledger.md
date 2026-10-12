@@ -23,30 +23,29 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 
 ## By chapter
 
-| Chapter | TESTED | APPLICATION | SUPPORTED | NOT_SUPPORTED | NOT_APPLICABLE | IMPLEMENTED_UNTESTED | PARTIAL | GAP | Total |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| §1 | 2 |  |  |  | 4 |  | 1 |  | 7 |
-| §2 |  |  | 1 |  | 1 |  | 1 |  | 3 |
-| §3 | 84 | 21 | 19 | 3 | 3 | 1 | 5 | 1 | 137 |
-| §4 | 6 | 5 | 2 |  | 1 |  | 1 |  | 15 |
-| §5 | 25 | 2 | 2 |  | 3 |  | 3 |  | 35 |
-| §7 | 7 | 13 | 2 |  |  |  |  |  | 22 |
-| §8 | 29 | 5 | 5 | 2 |  |  | 4 |  | 45 |
-| §9 | 13 |  |  |  |  |  |  |  | 13 |
-| §10 | 6 |  |  |  |  |  |  |  | 6 |
-| §11 | 14 |  |  | 4 |  |  | 1 |  | 19 |
-| §12 | 7 | 1 | 7 |  | 1 |  | 3 |  | 19 |
-| §13 | 29 | 26 | 5 | 4 |  | 1 | 4 |  | 69 |
-| §14 | 5 | 5 | 3 |  |  |  | 2 |  | 15 |
-| §A |  |  |  |  | 1 |  |  |  | 1 |
-| proto `REQUIRED` fields | 71 | 11 | 6 |  | 8 |  | 10 |  | 106 |
-| **All** | **298** | **89** | **52** | **13** | **22** | **2** | **35** | **1** | **512** |
+| Chapter | TESTED | APPLICATION | SUPPORTED | NOT_SUPPORTED | NOT_APPLICABLE | IMPLEMENTED_UNTESTED | PARTIAL | Total |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| §1 | 2 |  |  |  | 4 |  | 1 | 7 |
+| §2 |  |  | 1 |  | 1 |  | 1 | 3 |
+| §3 | 85 | 21 | 19 | 3 | 3 | 1 | 5 | 137 |
+| §4 | 6 | 5 | 2 |  | 1 |  | 1 | 15 |
+| §5 | 25 | 2 | 2 |  | 3 |  | 3 | 35 |
+| §7 | 7 | 13 | 2 |  |  |  |  | 22 |
+| §8 | 29 | 5 | 5 | 2 |  |  | 4 | 45 |
+| §9 | 13 |  |  |  |  |  |  | 13 |
+| §10 | 6 |  |  |  |  |  |  | 6 |
+| §11 | 14 |  |  | 4 |  |  | 1 | 19 |
+| §12 | 7 | 1 | 7 |  | 1 |  | 3 | 19 |
+| §13 | 29 | 26 | 5 | 4 |  | 1 | 4 | 69 |
+| §14 | 5 | 5 | 3 |  |  |  | 2 | 15 |
+| §A |  |  |  |  | 1 |  |  | 1 |
+| proto `REQUIRED` fields | 71 | 11 | 6 |  | 8 |  | 10 | 106 |
+| **All** | **299** | **89** | **52** | **13** | **22** | **2** | **35** | **512** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
-| medium | GAP | §3.3.4 (line 578) | Clients SHOULD validate capability support by examining the Agent Card before attempting operations that require optional capabilities | Client reads card.capabilities only for the idempotency extension (builder/mod.rs:203); stream/subscribe/push-config calls are sent regardless of capabilities.streaming/pushNotifications (no such check in crates/a2a-protocol-client/src). |
 | medium | PARTIAL | §1.4 (line 107) | SDK language bindings, schemas, and any other derived forms MUST be regenerated from the proto (directly or via code generation) rather tha… | Only the prost message types (feature `proto`, build.rs) are generated from a2a.proto; the primary public serde types (Task, Message, TaskListResponse, AgentCard ...) are hand-written structs, guarded by golden fixtures/proptests rather than generated. proto_… |
 | medium | PARTIAL | §3.3.4 (line 571) | When clients attempt to use operations or features that require capabilities not declared ... the agent MUST return an appropriate error re… | Summary of 573-576 below. All checks are skipped when no AgentCard is configured on the RequestHandler (capability.rs:16-18, 189). |
 | medium | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | Order is preserved, but a subscriber that falls behind the bounded broadcast buffer loses the overwritten events (surfaced as an explicit 'streamLagged' error), so a slow stream does not receive the same events as a fast one. |

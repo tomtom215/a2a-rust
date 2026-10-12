@@ -188,6 +188,7 @@ impl A2aClient {
         last_event_id: Option<String>,
     ) -> ClientResult<EventStream> {
         const METHOD: &str = "SubscribeToTask";
+        self.require_declared(crate::declared::Capability::Streaming, METHOD)?;
 
         let params = TaskIdParams {
             tenant: self.tenant_or_default(None),

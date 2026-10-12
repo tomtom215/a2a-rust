@@ -105,6 +105,10 @@ pub struct ClientBuilder {
     /// The card's agent, for the client's spans; `None` unless the builder
     /// came from a card.
     pub(super) agent: Option<std::sync::Arc<(String, String, String)>>,
+    /// The card's optional capabilities, checked before each call that needs
+    /// one (spec §3.3.4); `None` unless the builder came from a card, and
+    /// cleared by [`ClientBuilder::without_capability_checks`].
+    pub(super) declared: Option<crate::declared::DeclaredCapabilities>,
 }
 
 impl ClientBuilder {
@@ -128,6 +132,7 @@ impl ClientBuilder {
             card_interfaces: Vec::new(),
             fallback_interfaces: Vec::new(),
             agent: None,
+            declared: None,
         }
     }
 
@@ -239,6 +244,9 @@ impl ClientBuilder {
             card_interfaces: card.supported_interfaces.clone(),
             fallback_interfaces: candidates.collect(),
             agent: Some(crate::call_span::agent_identity(card)),
+            declared: Some(crate::declared::DeclaredCapabilities::of(
+                &card.capabilities,
+            )),
         })
     }
 
@@ -469,6 +477,26 @@ impl ClientBuilder {
     #[must_use]
     pub const fn without_tls(mut self) -> Self {
         self.config.tls = TlsConfig::Disabled;
+        self
+    }
+
+    /// Sends every call, whatever the agent card declares.
+    ///
+    /// A client built from a card refuses, before sending anything, a call
+    /// that needs an optional capability the card does not declare
+    /// (spec §3.3.4): `SendStreamingMessage` and `SubscribeToTask` need
+    /// `capabilities.streaming`, the push-config methods and a send with an
+    /// inline push config need `capabilities.pushNotifications`, and
+    /// `GetExtendedAgentCard` needs `capabilities.extendedAgentCard`. The
+    /// refusal is [`ClientError::CapabilityNotDeclared`]; a conformant agent
+    /// would have refused the call too.
+    ///
+    /// This turns that off, for an agent that serves a capability without
+    /// declaring it. A client built for a bare endpoint has no card and
+    /// checks nothing either way.
+    #[must_use]
+    pub const fn without_capability_checks(mut self) -> Self {
+        self.declared = None;
         self
     }
 

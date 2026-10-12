@@ -90,6 +90,24 @@ pub enum ClientError {
         detail: String,
     },
 
+    /// Not sent: the agent card this client was built from does not declare
+    /// the optional capability the call needs (spec §3.3.4).
+    ///
+    /// A conformant agent refuses such a call itself, with
+    /// `UnsupportedOperationError` (or `PushNotificationNotSupportedError` for
+    /// push notifications), so the check saves the round trip without
+    /// changing the outcome. Not retryable: the card says what it says.
+    /// [`ClientBuilder::without_capability_checks`](crate::ClientBuilder::without_capability_checks)
+    /// sends such calls anyway, for an agent that serves a capability it
+    /// does not declare.
+    CapabilityNotDeclared {
+        /// The method that was not sent, e.g. `SendStreamingMessage`.
+        method: String,
+        /// The card field that would declare it: `streaming`,
+        /// `pushNotifications` or `extendedAgentCard`.
+        capability: &'static str,
+    },
+
     /// The server appears to use a different protocol binding than the client.
     ///
     /// For example, a JSON-RPC client connected to a REST-only server (or
@@ -123,6 +141,11 @@ impl fmt::Display for ClientError {
             Self::IncompleteStream { detail, .. } => {
                 write!(f, "stream ended before its final event: {detail}")
             }
+            Self::CapabilityNotDeclared { method, capability } => write!(
+                f,
+                "{method} not sent: the agent card does not declare \
+                 capabilities.{capability} (spec §3.3.4)"
+            ),
             Self::ProtocolBindingMismatch(msg) => {
                 write!(
                     f,

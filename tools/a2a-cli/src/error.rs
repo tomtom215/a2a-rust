@@ -75,6 +75,9 @@ impl CliError {
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Client(e @ ClientError::CapabilityNotDeclared { .. }) => {
+                write!(f, "{e}\nhint: pass --no-capability-check to send it anyway")
+            }
             Self::Client(e) => write!(f, "{e}"),
             Self::Discovery { url, source } => write!(
                 f,
@@ -134,6 +137,19 @@ mod tests {
         assert_eq!(a2a.code, ErrorCode::TaskNotFound);
         let e = CliError::Client(ClientError::Transport("x".into()));
         assert!(e.protocol_error().is_none());
+    }
+
+    #[test]
+    fn an_undeclared_capability_names_the_way_out() {
+        let e = CliError::Client(ClientError::CapabilityNotDeclared {
+            method: "SendStreamingMessage".into(),
+            capability: "streaming",
+        });
+        let text = e.to_string();
+        assert!(text.contains("capabilities.streaming"), "{text}");
+        assert!(text.contains("--no-capability-check"), "{text}");
+        let e = CliError::Client(ClientError::Transport("x".into()));
+        assert!(!e.to_string().contains("--no-capability-check"));
     }
 
     #[test]
