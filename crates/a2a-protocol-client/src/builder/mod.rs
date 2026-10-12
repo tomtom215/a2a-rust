@@ -716,7 +716,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [BINDING_JSONRPC]
         );
-        assert!(builder.config.preferred_bindings.is_empty());
+        assert_eq!(builder.config.preferred_bindings, Vec::<String>::new());
     }
 
     #[test]

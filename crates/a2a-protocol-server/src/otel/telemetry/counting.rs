@@ -153,8 +153,8 @@ mod tests {
     }
 
     impl SpanExporter for Fake {
-        async fn export(&self, _: Vec<SpanData>) -> OTelSdkResult {
-            export_result(self)
+        fn export(&self, _: Vec<SpanData>) -> impl Future<Output = OTelSdkResult> + Send {
+            std::future::ready(export_result(self))
         }
         fn shutdown_with_timeout(&self, _: Duration) -> OTelSdkResult {
             failed("shutdown_with_timeout")
@@ -171,8 +171,8 @@ mod tests {
     }
 
     impl PushMetricExporter for Fake {
-        async fn export(&self, _: &ResourceMetrics) -> OTelSdkResult {
-            export_result(self)
+        fn export(&self, _: &ResourceMetrics) -> impl Future<Output = OTelSdkResult> + Send {
+            std::future::ready(export_result(self))
         }
         fn force_flush(&self) -> OTelSdkResult {
             failed("force_flush")
@@ -190,8 +190,8 @@ mod tests {
     }
 
     impl LogExporter for Fake {
-        async fn export(&self, _: LogBatch<'_>) -> OTelSdkResult {
-            export_result(self)
+        fn export(&self, _: LogBatch<'_>) -> impl Future<Output = OTelSdkResult> + Send {
+            std::future::ready(export_result(self))
         }
         fn shutdown_with_timeout(&self, _: Duration) -> OTelSdkResult {
             failed("shutdown_with_timeout")
