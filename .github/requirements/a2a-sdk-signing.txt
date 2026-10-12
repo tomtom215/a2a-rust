@@ -1,6 +1,6 @@
-a2a-sdk==1.1.4 \
-    --hash=sha256:a77d7234d25e4b480626c09580c8cf4967d6beb0433ae139ac0eb15055fef128 \
-    --hash=sha256:b91b0350e1b1a3ef996b76766244523890d6b31b5aaf3f9d69c145fa97c5e0cf
+a2a-sdk==1.2.2 \
+    --hash=sha256:09be001a90fae9634d54041471feca1014201ec22f7107f0883309a2b4027a15 \
+    --hash=sha256:f2aa9692f3e3034f58ebff501e091d43affa416878c734fd63016ae0b8ea8c66
     # via -r a2a-sdk-signing.in
 aiologic==0.17.1 ; python_full_version < '3.13' \
     --hash=sha256:2e1b93b9e88ced318c2a63ad7b382688f40cbfe40e3d42258d49dc9c5aea179d \
