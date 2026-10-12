@@ -1088,6 +1088,17 @@ PARTIAL 23, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
    the caller trusts, not one the card names), and §12 (line 2985;
    SLIMRPC's own spec maps two errors differently from A2A §5.4). The 23
    PARTIAL left are these four and 19 low.
+9. Pin freshness (`pin-freshness.yml`, every third Monday; next 2026-10-26,
+   or dispatch it with `force`). Its last grading run, 2026-10-05, had three
+   red legs: python-sdk never graded (no PyYAML; fixed on this branch),
+   go-sdk could not resolve a2a-go 2.6.0 on Go 1.25 (fixed on `main`
+   2026-10-10), and java-sdk graded the newest a2a-java (1.4.0.Final, on
+   Maven Central by 2026-09-28) and found `tck.yml`'s REST skip of
+   `a2a_media_type_accepted` stale: upstream fixed it. The graded pins lag:
+   a2a-java 1.3.0.Final (1.4.0.Final is out), a2a-go v2.5.0 (v2.6.0),
+   `@a2a-js/sdk` 1.1.0 by its lockfile (1.3.0). js-sdk's leg passed 21/21 on
+   REST. Moving a pin is the maintainer's call, as the workflow's header
+   says; moving a2a-java's retires that skip.
 
 ## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
 
@@ -1275,7 +1286,10 @@ before acting on it, as this branch did.
   read from the jar's bytecode), so a client following §11.1's SHOULD gets
   `ContentTypeNotSupportedError` from it. This client keeps sending
   `application/json`; ledger line 2758 records why. A public issue on
-  a2a-java is the maintainer's call.
+  a2a-java is the maintainer's call. **Superseded 2026-10-12: nothing to
+  file.** Pin freshness graded a2a-java 1.4.0.Final on 2026-10-05 (run
+  37268203276) and its REST server passed `a2a_media_type_accepted`, which
+  1.3.0.Final fails; see item 9 of this branch's section.
 - *Minor-version matching (ledger §3.6.2, line 737).* The spec says requests
   are processed with the semantics of the requested `Major.Minor` and an
   unsupported one is `VersionNotSupportedError`. This server accepts any

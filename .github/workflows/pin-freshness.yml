@@ -153,8 +153,13 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # Every leg, not only python-sdk's: the skip-list step below parses
+      # tck.yml with PyYAML, installed from its lock into this interpreter.
+      # It used whatever python3 came first on PATH: the runner's, which has
+      # PyYAML, on three legs, and this one, which does not, on python-sdk's.
+      # That leg died with `No module named 'yaml'` before grading anything
+      # (2026-10-05).
       - name: Setup Python
-        if: matrix.sdk == 'python-sdk'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
@@ -189,6 +194,7 @@ jobs:
         id: skips
         run: |
           set -euo pipefail
+          python3 -m pip install --quiet --require-hashes -r .github/requirements/pyyaml.txt
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import yaml
           doc = yaml.safe_load(open(".github/workflows/tck.yml"))

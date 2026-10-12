@@ -858,6 +858,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   justifies the second now checks that `close` really is a no-op. No
   behaviour changes. `check_endpoint_reachable`, the sixth, was already
   killed on `main`.
+- **Pin freshness grades the Python SDK again** (`pin-freshness.yml`). Its
+  python-sdk leg read `tck.yml` with a `python3` that had no PyYAML and
+  died before grading anything (2026-10-05). Every leg now sets up Python
+  and installs PyYAML from `.github/requirements/pyyaml.txt` first. The
+  same run's go-sdk leg failed because a2a-go 2.6.0 needs Go 1.26, which
+  the workflow has asked for since 2026-10-10.
 - **The full mutation sweep fits its timeout again.** `a2a-server` is
   dealt round-robin across 24 shards instead of in 12 consecutive slices,
   after two of the 12 were cancelled at 240 minutes on 2026-10-12; projected
