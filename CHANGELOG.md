@@ -295,6 +295,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ClientBuilder::without_capability_checks` sends them anyway; a client built
   with `ClientBuilder::new` has no card and is unaffected. See the upgrading
   guide.
+- **Push webhook timeouts are 10 s per request and 30 s per delivery**
+  (server; spec §4.3.3 and §13.2 recommend 10-30 s). `HttpPushSender`'s
+  request timeout was 30 s and `HandlerLimits::push_delivery_timeout`, which
+  bounds a whole delivery with its retries, was 5 s, so one attempt of the
+  default three ever ran. Now every attempt starts inside the bound and the
+  first two finish. With the bound equal to `push_delivery_budget` (30 s), an
+  event's deliveries all run at once rather than 17 at a time; every config
+  was attempted before and is now, and the event still finishes inside the
+  budget. Both values remain configurable.
 - **Breaking for the `otel` feature: OpenTelemetry 0.33** (server, client,
   sdk). `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`,
   `opentelemetry-http`, `opentelemetry-appender-tracing` 0.32 to 0.33.1 and

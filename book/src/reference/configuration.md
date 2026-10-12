@@ -30,7 +30,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_metadata_size` | `usize` | 1 MiB | Maximum serialized metadata size |
 | `max_cancellation_tokens` | `usize` | 10,000 | Cleanup sweep threshold |
 | `max_token_age` | `Duration` | 1 hour | Stale token eviction age |
-| `push_delivery_timeout` | `Duration` | 5s | Per-webhook delivery timeout |
+| `push_delivery_timeout` | `Duration` | 30s | Per-webhook delivery timeout, retries included (the sender's own request timeout is 10s) |
 | `push_delivery_budget` | `Duration` | 30s | Total push-delivery time per event, across all configs |
 | `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn's executor to return |
 | `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |

@@ -28,7 +28,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §1 | 2 |  |  |  | 4 |  | 1 | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 | 3 |
 | §3 | 85 | 21 | 19 | 3 | 3 | 1 | 5 | 137 |
-| §4 | 6 | 5 | 2 |  | 1 |  | 1 | 15 |
+| §4 | 7 | 5 | 2 |  | 1 |  |  | 15 |
 | §5 | 25 | 2 | 2 |  | 3 |  | 3 | 35 |
 | §7 | 7 | 13 | 2 |  |  |  |  | 22 |
 | §8 | 29 | 5 | 5 | 2 |  |  | 4 | 45 |
@@ -36,11 +36,11 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §10 | 6 |  |  |  |  |  |  | 6 |
 | §11 | 14 |  |  | 4 |  |  | 1 | 19 |
 | §12 | 7 | 1 | 7 |  | 1 |  | 3 | 19 |
-| §13 | 29 | 26 | 5 | 4 |  | 1 | 4 | 69 |
+| §13 | 30 | 26 | 5 | 4 |  | 1 | 3 | 69 |
 | §14 | 5 | 5 | 3 |  |  |  | 2 | 15 |
 | §A |  |  |  |  | 1 |  |  | 1 |
 | proto `REQUIRED` fields | 71 | 11 | 6 |  | 8 |  | 10 | 106 |
-| **All** | **299** | **89** | **52** | **13** | **22** | **2** | **35** | **512** |
+| **All** | **301** | **89** | **52** | **13** | **22** | **2** | **33** | **512** |
 
 ## Open items, most severe first
 
@@ -67,7 +67,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | low | PARTIAL | §3.1.6 (line 309) | The stream MUST terminate when the task reaches a terminal state | SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still… |
 | low | PARTIAL | §3.3.2 (line 544) | Well-known types from the google.rpc error model (e.g., ErrorInfo, BadRequest) SHOULD be used where applicable | ErrorInfo on every A2A-specific error. Since ef31df9 a body or params that do not deserialize carry google.rpc.BadRequest with the field path (jsonrpc_error_details.rs, bad_request_details.rs). Remaining: the handler's own validation failures (empty message.i… |
 | low | PARTIAL | §3.6.2 (line 739) | Agents MUST interpret empty value as 0.3 version. | Empty means 0.3 and is refused on every binding including axum. Only the explicit opt-outs (accept_missing_version_header, gRPC require_version_header=false) serve it as 1.0, by the deployer's choice. |
-| low | PARTIAL | §4.3.3 (line 886) | Agents SHOULD include a reasonable timeout for webhook requests (recommended: 10-30 seconds) | Timeouts exist: per-request 30s in HttpPushSender, but the handler wraps each send in `push_delivery_timeout` = 5s default, below the recommended 10-30s and (as the code's own comment notes) truncating the sender's retry schedule to one attempt. |
 | low | PARTIAL | §5.4 (line 1194) | Custom protocol bindings MUST define equivalent error code mappings that preserve the semantic meaning of each A2A error type. | WebSocket reuses the JSON-RPC codes verbatim, documented in its binding spec §5. Remaining: SLIMRPC's RpcCode mapping for PushNotSupported/UnsupportedOperation/VersionNotSupported (UNIMPLEMENTED) differs from A2A §5.4's gRPC column (FAILED_PRECONDITION); this… |
 | low | PARTIAL | §5.4 (line 1194) | The binding specification SHOULD provide a similar mapping table showing how each A2A error type is represented in the custom binding's nat… | WebSocket now has an error mapping table (binding spec §5). Remaining: SLIMRPC's vendored upstream table omits -32007/-32008/-32009. |
 | low | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid … |
@@ -76,7 +75,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | low | PARTIAL | §11.1 (line 2758) | Content-Type: application/a2a+json SHOULD be used for requests and responses | Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2843-2844 and 2929-2930 are not matched by … |
 | low | PARTIAL | §12.4 (line 3024) | 2. Preserve Error Information: Ensure error details are accessible to clients | WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker ins… |
 | low | PARTIAL | §12.6 (line 3041) | Custom bindings MUST: Support Standard Schemes; Document Integration; Handle Challenges; Maintain Security | WebSocket spec §6 documents integration: credentials on the upgrade headers, checked per request; a refused credential is -32600 in the body with no 401/WWW-Authenticate (the connection is already upgraded), and browsers cannot set Authorization. Remaining: n… |
-| low | PARTIAL | §13.2 (line 3118) | Agents SHOULD implement reasonable timeout values for webhook requests (recommended: 10-30 seconds) | HttpPushSender's per-request timeout is 30s, but HandlerLimits::push_delivery_timeout defaults to 5s and wraps the whole send, so the effective default webhook timeout is 5s, below the recommended 10-30s (configurable). A test pins the contradiction. |
 | low | PARTIAL | §13.2 (line 3139) | Agents SHOULD securely store push notification configurations and credentials | SQL push-config stores persist the whole config (incl. authentication.credentials and token) as plaintext JSON (`serde_json::to_string(&config)`); no at-rest encryption hook. In-memory and Debug output are redacted. |
 | low | PARTIAL | §13.3 (line 3172) | When capabilities.extendedAgentCard is false or not present, the operation MUST return UnsupportedOperationError | Correct when the handler has a card with the flag false/absent. When the handler has no card at all (capability therefore not declared by this handler) it returns ExtendedAgentCardNotConfigured instead of UnsupportedOperationError; a test asserts that orderin… |
 | low | PARTIAL | §13.4 (line 3198) | Agents SHOULD implement rate limiting to prevent brute-force attacks | RateLimitInterceptor limits throughput per caller, but nothing throttles failed authentication: the docs say to register the limiter after the auth interceptor (so it can key by identity), and a refused credential never reaches it. Registering it first keys u… |

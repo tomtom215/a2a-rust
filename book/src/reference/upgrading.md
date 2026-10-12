@@ -222,6 +222,17 @@ let client = ClientBuilder::from_card(&card)?
 The CLI's equivalent is `--no-capability-check`. A client built for a bare
 endpoint with `ClientBuilder::new` has no card and checks nothing.
 
+### Push webhook timeouts: 10 s per request, 30 s per delivery
+
+`HttpPushSender`'s request timeout goes from 30 s to 10 s and
+`HandlerLimits::push_delivery_timeout` from 5 s to 30 s, both inside the
+10-30 s that spec §4.3.3 recommends. The old pair let one attempt of the
+sender's three run; now all three start and two always finish. A webhook
+that needs more than 10 s per request needs `HttpPushSender::with_timeout`.
+Because the delivery bound now equals `push_delivery_budget`, an event's
+deliveries run all at once instead of 17 at a time; to bound how many are in
+flight, raise `push_delivery_budget` or lower the delivery bound.
+
 ### Only `A2A-Version: 1.0` is served
 
 Spec §3.6.2: a request is processed with the semantics of the version it

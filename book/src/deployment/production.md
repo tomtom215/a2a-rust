@@ -33,7 +33,7 @@ The built-in `HttpPushSender` includes:
 
 - **SSRF protection** — Rejects private/loopback IPs at config creation and delivery time (defense-in-depth), including IPv4-in-IPv6 smuggling, and pins the validated IP against DNS rebinding
 - **Header injection prevention** — Validates credentials for `\r`/`\n` characters
-- **Per-request timeout** — Each push delivery HTTP request is capped at 30 seconds
+- **Timeouts** — Each push delivery HTTP request is capped at 10 seconds, and a whole delivery, retries included, at 30 (`HandlerLimits::push_delivery_timeout`), inside the 10-30 seconds spec §4.3.3 recommends
 
 > **Transport note:** with the `tls-rustls` feature (enabled by default when
 > using `a2a-protocol-sdk`) the bundled `HttpPushSender` delivers to both

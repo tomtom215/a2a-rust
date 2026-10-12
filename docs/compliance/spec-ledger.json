@@ -2953,20 +2953,22 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Agents SHOULD include a reasonable timeout for webhook requests (recommended: 10-30 seconds)",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:139",
-    "crates/a2a-protocol-server/src/push/sender.rs:920",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:223",
+    "crates/a2a-protocol-server/src/push/sender.rs:151",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:229",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:132"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/mod.rs:324 deliver_push_bg_logs_delivery_timeout"
+    "crates/a2a-protocol-server/src/push/sender.rs:1328 the_default_schedule_starts_every_attempt_inside_the_default_bound",
+    "crates/a2a-protocol-server/src/handler/limits/tests.rs:13 default_values",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/mod.rs:317 deliver_push_bg_logs_delivery_timeout"
    ],
-   "notes": "Timeouts exist: per-request 30s in HttpPushSender, but the handler wraps each send in `push_delivery_timeout` = 5s default, below the recommended 10-30s and (as the code's own comment notes) truncating the sender's retry schedule to one attempt.",
+   "notes": "HttpPushSender's per-request timeout defaults to 10s and HandlerLimits::push_delivery_timeout, which bounds a whole delivery with its retries, to 30s: both inside the recommended 10-30s. At the defaults every attempt of the three-attempt schedule starts inside the bound (5s, 16s, 28s when each request runs to its timeout); the first two finish. Until 2026-10-12 the bound was 5s and truncated the schedule to one attempt.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 887,
@@ -6777,20 +6779,20 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Agents SHOULD implement reasonable timeout values for webhook requests (recommended: 10-30 seconds)",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:139",
-    "crates/a2a-protocol-server/src/push/sender.rs:931",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:223"
+    "crates/a2a-protocol-server/src/push/sender.rs:151",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:229"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:1059 http_push_sender_default",
-    "crates/a2a-protocol-server/src/push/sender.rs:1265 the_default_schedule_does_not_fit_the_default_handler_bound"
+    "crates/a2a-protocol-server/src/push/sender.rs:1120 http_push_sender_default",
+    "crates/a2a-protocol-server/src/push/sender.rs:1328 the_default_schedule_starts_every_attempt_inside_the_default_bound"
    ],
-   "notes": "HttpPushSender's per-request timeout is 30s, but HandlerLimits::push_delivery_timeout defaults to 5s and wraps the whole send, so the effective default webhook timeout is 5s, below the recommended 10-30s (configurable). A test pins the contradiction.",
+   "notes": "Per-request timeout 10s, whole-delivery bound 30s by default, both configurable (HttpPushSender::with_timeout, HandlerLimits::with_push_delivery_timeout). The test that used to pin the two defaults contradicting each other now pins that they fit: every attempt starts, two finish.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 3119,
