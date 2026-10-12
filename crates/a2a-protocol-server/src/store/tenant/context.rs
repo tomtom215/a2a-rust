@@ -151,3 +151,26 @@ impl CapturedTenant {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_capture_reports_and_restores_its_tenant_and_caller() {
+        let captured = TenantContext::scope_request("acme", async {
+            assert!(TenantContext::set_caller("alice"));
+            TenantContext::capture()
+        })
+        .await;
+        assert_eq!(captured.tenant(), "acme");
+        assert_eq!(TenantContext::capture().tenant(), "", "no scope, no tenant");
+
+        let seen = tokio::spawn(
+            captured.scope(async { (TenantContext::current(), TenantContext::caller()) }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(seen, ("acme".to_owned(), Some("alice".to_owned())));
+    }
+}
