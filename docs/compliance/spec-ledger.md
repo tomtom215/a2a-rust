@@ -27,7 +27,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | §1 | 2 |  |  |  | 4 |  | 1 | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 | 3 |
-| §3 | 86 | 21 | 19 | 3 | 3 | 1 | 4 | 137 |
+| §3 | 87 | 21 | 19 | 3 | 3 |  | 4 | 137 |
 | §4 | 7 | 5 | 2 |  | 1 |  |  | 15 |
 | §5 | 25 | 2 | 2 |  | 3 |  | 3 | 35 |
 | §7 | 7 | 13 | 2 |  |  |  |  | 22 |
@@ -40,7 +40,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 5 | 5 | 3 |  |  |  | 2 | 15 |
 | §A |  |  |  |  | 1 |  |  | 1 |
 | proto `REQUIRED` fields | 80 | 11 | 6 |  | 8 |  | 1 | 106 |
-| **All** | **311** | **89** | **52** | **13** | **22** | **2** | **23** | **512** |
+| **All** | **312** | **89** | **52** | **13** | **22** | **1** | **23** | **512** |
 
 ## Open items, most severe first
 
@@ -50,7 +50,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | medium | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | Order is preserved, but a subscriber that falls behind the bounded broadcast buffer loses the overwritten events (surfaced as an explicit 'streamLagged' error), so a slow stream does not receive the same events as a fast one. |
 | medium | PARTIAL | §8.4.3 (line 2132) | 2. Retrieve the public key using the `kid` and `jku` (or from a trusted key store) | kid-based lookup in a caller-supplied JWKS is implemented and tested; jku is decoded but never followed (deliberately: fetch_jwks takes a caller-trusted URL), so jku retrieval is left to the application. |
 | medium | PARTIAL | §12 (line 2985) | Custom bindings MUST comply with all requirements defined in Section 5 | SLIMRPC sends PushNotificationNotSupported and UnsupportedOperation as UNIMPLEMENTED where A2A §5.4's gRPC column says FAILED_PRECONDITION. This is the SLIMRPC spec's own §6.1 'canonical mapping' (a MUST), which the binding now follows exactly; the conflict i… |
-| low | IMPLEMENTED_UNTESTED | §3.3.2 (line 534) | Servers SHOULD log system errors for diagnostic purposes | Failures are recorded on the RPC span (error.type, otel.status_code=ERROR) and in metrics.on_error; trace_error! for executor panics. Behind the `tracing` feature; no test asserts that an Internal error is logged. |
 | low | IMPLEMENTED_UNTESTED | §13.2 (line 3137) | Webhook URLs SHOULD use HTTPS to protect payload confidentiality in transit | HTTPS delivery supported (tls-rustls feature, on by default via sdk); plain http also accepted with no warning or opt-in. No test or option enforcing https-only. |
 | low | PARTIAL | proto:Artifact.parts (proto line 287) | The content of the artifact. Must contain at least one part. | A non-appending artifact with no parts is refused at the event-queue write (InvalidParams to the executor) so live subscribers never see it; persistence also drops one from any other writer (sync_collector test). Remaining: an appending chunk (append=true) wi… |
 | low | PARTIAL | §3.1.6 (line 309) | The stream MUST terminate when the task reaches a terminal state | SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still… |

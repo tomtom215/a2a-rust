@@ -1779,19 +1779,22 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Servers SHOULD log system errors for diagnostic purposes",
-   "status": "IMPLEMENTED_UNTESTED",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/rpc_span/mod.rs:297",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:66",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:333"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:333",
+    "crates/a2a-protocol-server/src/handler/messaging/execute.rs:382"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/rpc_span/tests.rs:116 a_finished_call_is_recorded_once"
+    "crates/a2a-protocol-server/src/rpc_span/tests.rs:116 a_finished_call_is_recorded_once",
+    "crates/a2a-protocol-server/tests/executor_failure_logged.rs:57 a_failed_executor_is_logged_at_error_with_its_task_and_cause"
    ],
-   "notes": "Failures are recorded on the RPC span (error.type, otel.status_code=ERROR) and in metrics.on_error; trace_error! for executor panics. Behind the `tracing` feature; no test asserts that an Internal error is logged.",
+   "notes": "Failures are recorded on the RPC span (error.type, otel.status_code=ERROR) and in metrics.on_error, and trace_error! logs a system error as an ERROR event at 19 call sites: executor failures and panics, failed task-store and queue writes, JSON-RPC and REST response serialization, failed audit writes, and a too-short HS256 secret. Since 2026-10-12 a test asserts the executor-failure event: an executor returning an internal error is logged at ERROR with the task id and the cause (three hand mutants killed: the call deleted, demoted to WARN, the cause dropped). The other sites use the same macro and are not tested one by one. Behind the `tracing` feature, on by default. Before: no test asserted that an internal error is logged.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 540,

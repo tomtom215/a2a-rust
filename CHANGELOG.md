@@ -870,6 +870,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from that run's own timings, the slowest shard drops from over 240 minutes
   to about 110. `mutation-history.md` records that sweep and the four before
   it, none of which had been recorded.
+- **A failed executor is shown to be logged** (§3.3.2: servers SHOULD log
+  system errors). `executor_failure_logged.rs` asserts the ERROR event
+  that names the task and the cause; it fails with the call deleted,
+  demoted to WARN, or without the cause.
 - **Tests for four spec requirements that were implemented but untested**:
   §3.1.4 `includeArtifacts` omission (`list_tasks_artifacts.rs`), §3.3.4
   streaming refused without the capability on the JSON-RPC wire and §3.5.2

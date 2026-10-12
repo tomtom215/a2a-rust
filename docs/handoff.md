@@ -1005,7 +1005,9 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     script); docs set a card (hidden `card()` helper in 47 doc blocks, a
     visible card in both quick starts).
 25. `docs(handoff):` this update.
-26. `fix(server):` a card whose security scheme has an empty REQUIRED
+26. `deps(itk):` the signing interop lock takes protobuf 7.36.2, the
+    version the other Python locks had; the interop matched 6/6 on it.
+27. `fix(server):` a card whose security scheme has an empty REQUIRED
     string (an API key's `name`, an HTTP `scheme`, `openIdConnectUrl`, the
     authorization-code, client-credentials and device-code flow URLs) is
     refused by `build()`, hot reload and the dynamic card handler, through
@@ -1018,9 +1020,12 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     (14 moved: rustfmt ran after the remap, and two were already wrong).
     The ledger check verifies the file and the name, not the line, so a
     line drifts silently; anchor by name after any edit that moves code.
+28. `ci:` pin freshness grades the Python SDK again (item 9 below).
+29. `test(server):` §3.3.2's SHOULD log system errors is tested: a failed
+    executor is logged at ERROR with its task and cause.
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 311,
-PARTIAL 23, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 312,
+PARTIAL 23, GAP 0, IMPLEMENTED_UNTESTED 1. Gate prover: 30 proven, 0 unproven,
 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**
