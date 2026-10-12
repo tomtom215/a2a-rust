@@ -174,8 +174,14 @@ async fn start_stress_server(completed_count: Arc<AtomicUsize>) -> SocketAddr {
 
     tokio::spawn(async move {
         loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                break;
+            let stream = match listener.accept().await {
+                Ok((stream, _)) => stream,
+                Err(e) => {
+                    // Said aloud: a connect refused after this is the loop
+                    // having stopped, not the backlog filling.
+                    eprintln!("stress server: accept failed, no longer accepting: {e}");
+                    break;
+                }
             };
             let io = hyper_util::rt::TokioIo::new(stream);
             let dispatcher = Arc::clone(&dispatcher);
@@ -195,6 +201,19 @@ async fn start_stress_server(completed_count: Arc<AtomicUsize>) -> SocketAddr {
 }
 
 type HttpClient = Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>>;
+
+/// `e` and every error under it: hyper's own message for a failed connect is
+/// "client error (Connect)", and the OS error that says why is in the chain.
+fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut chain = e.to_string();
+    let mut source = e.source();
+    while let Some(cause) = source {
+        chain.push_str(": ");
+        chain.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    chain
+}
 
 fn build_http_client() -> HttpClient {
     Client::builder(TokioExecutor::new()).build_http()
@@ -220,7 +239,7 @@ async fn send_request(client: &HttpClient, addr: SocketAddr, id: usize) -> Resul
     let resp = client
         .request(req)
         .await
-        .map_err(|e| format!("request failed: {e}"))?;
+        .map_err(|e| format!("request failed: {}", error_chain(&e)))?;
 
     let status = resp.status();
     let body_bytes = resp
