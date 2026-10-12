@@ -26,10 +26,10 @@
 #
 # Everything that bears on security is set as strict here as at the root:
 # advisories deny, yanked crates deny, unknown registries and git sources
-# deny, and the license allowlist is the root's. There is one documented
-# advisory exception, added 2026-09-16 — see `[advisories].ignore` below.
-# It exists because the SLIM tree forecloses the fix, not because the policy
-# is looser here.
+# deny, and the license allowlist is the root's. There are two documented
+# advisory exceptions, added 2026-09-16 and 2026-10-12 — see
+# `[advisories].ignore` below. They exist because the SLIM tree forecloses the
+# fix, not because the policy is looser here.
 #
 # The one deliberate relaxation is `multiple-versions`, and the reason is that
 # the root's justification for "deny" does not transfer. There, a reviewed skip
@@ -94,9 +94,9 @@ allow = [
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked  = "deny"
-# One active ignore, added 2026-09-16. The graph was clean when this file was
-# written; this entry is a real exception with a real date rather than
-# something inherited.
+# Two active ignores, added 2026-09-16 and 2026-10-12. The graph was clean
+# when this file was written; each entry is a real exception with a real date
+# rather than something inherited.
 #
 # RUSTSEC-2026-0285 (rustls < 0.23.45) — why this binding cannot take the fix
 # while the root workspace already has:
@@ -155,8 +155,21 @@ yanked  = "deny"
 # mls-rs-crypto-awslc ^0.25, and 0.25.0 pins aws-lc-rs =1.16.3 (crates.io
 # dependency metadata, read the same day). osv-scanner reports the same
 # advisory, and osv-scanner.toml beside this file carries the matching waiver.
+#
+# RUSTSEC-2024-0449 (unsafe-libyaml unmaintained), added 2026-10-12, when it
+# first failed this check (PR #168). An "unmaintained" notice, not a
+# vulnerability: the crate's repository is archived and its last release is
+# 0.2.11. It reaches this graph only as serde_yaml 0.9.34+deprecated, under
+# agntcy-slim-config 0.16.1 and regorus 0.11.0 (via agntcy-slim-auth 0.15.4).
+# Checked against the crates.io index the same day: every agntcy-slim-config
+# release through 0.17.2 still requires serde_yaml ^0.9.34, and although
+# regorus 0.12.0 drops it, only agntcy-slim-auth >= 0.16.4 uses that, which
+# would still leave the slim-config path. Nothing this repository can bump
+# removes it. Remove this entry when agntcy-slim-config publishes a release
+# without serde_yaml and the binding moves to it.
 ignore  = [
     { id = "RUSTSEC-2026-0285", reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; slim-auth 0.15.4 -> mls-rs-crypto-awslc 0.23.0 pins aws-lc-rs =1.16.2. No upstream release resolves this yet (checked 2026-09-16). See the note above." },
+    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml (unmaintained) via serde_yaml, required by every agntcy-slim-config release through 0.17.2. No upstream release resolves this yet (checked 2026-10-12). See the note above." },
 ]
 
 # ---------------------------------------------------------------------------

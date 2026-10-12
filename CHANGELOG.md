@@ -640,6 +640,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **SLIMRPC binding: RUSTSEC-2024-0449 waived, with its chain recorded**
+  (`bindings/a2a-protocol-slimrpc/deny.toml`). `unsafe-libyaml` is
+  unmaintained (an informational advisory, not a vulnerability) and reaches
+  only the binding, as `serde_yaml` under `agntcy-slim-config` and `regorus`.
+  Every `agntcy-slim-config` release through 0.17.2 still requires
+  `serde_yaml`, so no bump available here removes it; the entry names the
+  release that would. The four published crates do not contain it.
 - **Code-scanning findings on `main` addressed** (OSV-Scanner, Scorecard,
   CodeQL; reproduced locally with the same tools before and after).
   - Test-peer dependencies: the Python peers floor `anyio>=4.14.2`
