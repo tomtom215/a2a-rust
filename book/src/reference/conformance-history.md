@@ -441,7 +441,7 @@ as bad as a missing row, but it costs the reader the one thing the row exists to
 | ~~W3~~ | `official-tck.yml` (step *Run the suite against the minimal-capability profile*) | ~~`--deselect …TestRestStreaming::test_streaming_content_type`~~ | ~~1 test, minimal profile only~~ | Upstream harness defect: the HTTP+JSON client calls `.json()` on a streamed response it closed unread, so any conformant server returning non-2xx to `message:stream` trips `httpx.ResponseNotRead`. Diagnosis and standalone repro in `docs/official-tck-findings.md` §17. The requirement it belongs to, `HTTP_JSON-SSE-001`, is graded `PASS` by the full profile. | **Removed 2026-09-01.** [`#226`](https://github.com/a2aproject/a2a-tck/pull/226) ("read streamed error body before close so `_extract_error` survives non-2xx") merged upstream on 2026-08-31 as [`38ab89e`](https://github.com/a2aproject/a2a-tck/commit/38ab89e), closing [`#225`](https://github.com/a2aproject/a2a-tck/issues/225). Measured at `a2a-tck@de6af18`: the test now skips cleanly on *"Streaming not supported"*, and the minimal profile grades the same 66 MUST requirements and reports the same failures with the flag as without it. The waiver is closed, not traded. See `docs/official-tck-findings.md` §21. |
 | W4 | `official-tck.yml:404` (step *Run the suite against the required-extension profile*, `:389`) | `-k "TestCapabilityExtensionRequired"` | scopes run to 2 tests | Required-extension enforcement is per-request (spec §3.3.4); the suite does not send `A2A-Extensions` on ordinary positive requests, so an unscoped run against this card fails 72 checks. Scoping, not waiving — every excluded requirement is graded by the full profile. | [`a2aproject/a2a-tck#193`](https://github.com/a2aproject/a2a-tck/issues/193) lands. **Re-verified still OPEN 2026-08-12.** Guarded by `--require-pass CORE-CAP-004` (`:436`), so an upstream rename fails loudly instead of selecting nothing. |
 | ~~W5~~ | `tck.yml` js-sdk leg (`tck.yml:264`; the comment at `:274-291` records the removal) | ~~`--skip list_tasks_basic,a2a_media_type_accepted` (jsonrpc), `list_tasks_basic` (rest)~~ | ~~js-sdk leg~~ | Documented `@a2a-js/sdk` 1.0.0 defects, not deviations of this SDK. | **Removed 2026-08-30.** `list_tasks_basic` was fixed in `@a2a-js/sdk` 1.1.0, and the pin moved. `a2a_media_type_accepted` on JSON-RPC was never a divergence: §9 specifies `application/json`, and the check is now REST-only. See "2026-08-30 — the pins moved" below. |
-| W6 | `tck.yml:317` (matrix `sdk: java-sdk`, `skip_rest`), applied at `tck.yml:378` | `--skip a2a_media_type_accepted` (rest only; the JSON-RPC half was removed 2026-08-30) | java-sdk leg, REST binding | Documented `a2a-java` divergence on HTTP+JSON: it rejects `application/a2a+json`, which §11.1 says SHOULD be used. Pinned exactly at 1.3.0.Final in the POM; re-verified failing there 2026-08-30. | Upstream fixes it. Since 2026-08-09 a skipped test that passes exits 1, so this cannot rot silently. **Verified still failing 2026-08-10** against `a2a-java` 1.0.0.CR1 — logged `[FAIL] … failed as documented` on both bindings in run `31382900862`; see "Not verified" below. **Re-verified 2026-08-12 against `a2a-java` 1.2.0.Final** and **2026-08-30 against 1.3.0.Final** (REST half). See below. |
+| ~~W6~~ | `tck.yml` java-sdk leg (the comment there records the removal) | ~~`--skip a2a_media_type_accepted` (rest only; the JSON-RPC half was removed 2026-08-30)~~ | ~~java-sdk leg, REST binding~~ | Documented `a2a-java` divergence on HTTP+JSON: 1.3.0.Final rejected `application/a2a+json`, which §11.1 says SHOULD be used. | **Removed 2026-10-12.** `a2a-java` 1.4.0.Final accepts it. Pin freshness graded 1.4.0.Final and reported the skip stale (run `38299384752`: 20/20 graded on REST, `STALE SKIP`), the pin moved, and the skip went with it; graded again locally at 1.4.0.Final, 21/21 on both bindings with no skip. See "2026-10-12 — the pins moved again" below. |
 | W7 | `tck.yml:96` (step *a2a-inspector card validation*, `:95`) | `continue-on-error: true` | `a2a-inspector` card validation | Not a conformance gate. The vendored inspector validator hard-requires a top-level `url` field that the v1.0 `AgentCard` no longer has (§13-14) — a fully compliant card must fail it. | `a2aproject/a2a-inspector` updates to v1.0 cards. |
 | W8 | `itk.yml:103` | `continue-on-error: true` | opt-in `workflow_dispatch` job only | The upstream ITK resolves dependencies from a private Google Artifact Registry that 401s unauthenticated. The deterministic in-repo `itk-traversal-selftest` is the authoritative gate. | A public ITK lockfile exists. |
 | W9 | `tck/conformance-baseline.json` | baselined known failures | 7 (requirement, transport) pairs | **No longer empty.** `CORE-SEND-003` [`grpc`, `http_json`, `jsonrpc`] was added 2026-09-26 (`docs/official-tck-findings.md` §22): the requirement declares no `expected_error`, so the suite demands that an unsupported media type be accepted, and 0.14.0 now refuses it as §3.1.1 requires. Clears when the suite declares the expected error. The rest: `GRPC-ERR-002` [`grpc`] and `HTTP_JSON-STATUS-001` [`*`] were added 2026-08-30 (`docs/official-tck-findings.md` §20); `CORE-CANCEL-002` [`http_json`] and `STREAM-SUB-003` [`grpc`] on 2026-09-01 (§21). All four are the same cause: `a2a-tck` grades §5.4 against a **vendored copy of the specification** pinned to A2A **v1.0.0** (per its own `specification/version.json`, and byte-identical to that tag), which A2A's **v1.0.1** release superseded on 2026-05-28, and each of the four fails on exactly the one binding whose cell the two copies disagree about — passing on the bindings where they agree. Not a waiver of this SDK's behaviour: the SDK answers what the published §5.4 says, corroborated by the official Python SDK. | [`a2aproject/a2a-tck#231`](https://github.com/a2aproject/a2a-tck/issues/231) (filed 2026-09-01) lands, i.e. `a2a-tck` refreshes its vendored specification. The gate is differential in both directions, so a baselined check that starts passing fails as a **stale baseline** and forces the entry out. |
@@ -762,3 +762,39 @@ looked broken. `itk/agents/java-sdk` now produces a permissive provider, which
 grants rather than switching the check off, so the authorization path still
 executes. Controlled comparison, single variable: same 1.3.0.Final build,
 without the bean 11 failures, with it 0.
+
+### 2026-10-12 — the pins moved again, and the last waiver went with them
+
+Pin freshness's 2026-10-05 run graded every official SDK at its latest
+release and found one stale skip: `a2a-java` 1.4.0.Final accepts
+`application/a2a+json` on REST. Its python-sdk leg had died before grading
+anything (no PyYAML on the interpreter it set up; fixed the same week), so it
+was dispatched again on 2026-10-12 (run `38299384752`): python-sdk, js-sdk
+and go-sdk passed at their latest releases, and java-sdk passed every graded
+check and failed only on the stale skip. The maintainer moved all three
+pins:
+
+| Pin | Was | Now | Result |
+|---|---|---|---|
+| `@a2a-js/sdk` | 1.1.0 | **1.3.0** | no waiver; 21/21 on both bindings |
+| `a2a-go/v2` | v2.5.0 | **v2.6.0** | no waiver; 21/21 on both bindings |
+| `a2a-java` | 1.3.0.Final | **1.4.0.Final** | W6 **removed**; 21/21 on both bindings |
+
+The 21/21 figures were measured locally with this repository's `a2a-tck`
+against each agent in `itk/agents/` before the pins were committed.
+
+**a2a-go v2.6.0 reads the spec's `securityRequirements` shape.**
+`scripts/go_sdk_interop.sh` step 1b had pinned a2a-go v2.5.0's rejection of
+the `{"list":[...]}` scope lists this SDK writes (§8.5, `StringList`), and
+failed as designed on the first a2a-go that read them. It now runs the whole
+a2a-go client battery against a card with `securityRequirements`: 36 checks
+passed, beside step 1's 52 and step 2's zero failures.
+
+**Python is not the only SDK that signs cards.** a2a-go v2.6.0 adds
+agent-card signatures (`a2acrypto`; v2.5.0 had none). `@a2a-js/sdk` has
+exported `generateAgentCardSignature` and `verifyAgentCardSignature` since at
+least 1.1.0, although `itk/interop/card_signature_interop.py` said it had
+none. That script still covers only the Python SDK.
+
+No suppression in the register above applies to an official SDK's agent any
+more.

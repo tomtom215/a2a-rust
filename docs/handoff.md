@@ -1023,6 +1023,9 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
 28. `ci:` pin freshness grades the Python SDK again (item 9 below).
 29. `test(server):` §3.3.2's SHOULD log system errors is tested: a failed
     executor is logged at ERROR with its task and cause.
+30. `deps(itk):` the conformance peers move to `@a2a-js/sdk` 1.3.0, a2a-go
+    v2.6.0 and `a2a-java` 1.4.0.Final (maintainer's decision); the java-sdk
+    REST skip goes, and the Go interop's step 1b runs the full battery.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 312,
 PARTIAL 23, GAP 0, IMPLEMENTED_UNTESTED 1. Gate prover: 30 proven, 0 unproven,
@@ -1094,16 +1097,24 @@ PARTIAL 23, GAP 0, IMPLEMENTED_UNTESTED 1. Gate prover: 30 proven, 0 unproven,
    SLIMRPC's own spec maps two errors differently from A2A §5.4). The 23
    PARTIAL left are these four and 19 low.
 9. Pin freshness (`pin-freshness.yml`, every third Monday; next 2026-10-26,
-   or dispatch it with `force`). Its last grading run, 2026-10-05, had three
-   red legs: python-sdk never graded (no PyYAML; fixed on this branch),
-   go-sdk could not resolve a2a-go 2.6.0 on Go 1.25 (fixed on `main`
-   2026-10-10), and java-sdk graded the newest a2a-java (1.4.0.Final, on
-   Maven Central by 2026-09-28) and found `tck.yml`'s REST skip of
-   `a2a_media_type_accepted` stale: upstream fixed it. The graded pins lag:
-   a2a-java 1.3.0.Final (1.4.0.Final is out), a2a-go v2.5.0 (v2.6.0),
-   `@a2a-js/sdk` 1.1.0 by its lockfile (1.3.0). js-sdk's leg passed 21/21 on
-   REST. Moving a pin is the maintainer's call, as the workflow's header
-   says; moving a2a-java's retires that skip.
+   or dispatch it with `force`). Its 2026-10-05 grading run had three red
+   legs: python-sdk never graded (no PyYAML; fixed on this branch), go-sdk
+   could not resolve a2a-go 2.6.0 on Go 1.25 (fixed on `main` 2026-10-10),
+   and java-sdk graded the newest a2a-java (1.4.0.Final, on Maven Central by
+   2026-09-28) and found `tck.yml`'s REST skip of `a2a_media_type_accepted`
+   stale: upstream fixed it. Dispatched on this branch on 2026-10-12 (run
+   38299384752), python-sdk, js-sdk and go-sdk passed at their latest
+   releases and java-sdk failed only on that stale skip. The maintainer then
+   moved all three pins (item 30), and no skip is left on any official SDK's
+   leg. Next: extend `card_signature_interop.py` to a2a-go 2.6.0
+   (`a2acrypto`) and to `@a2a-js/sdk`, which has exported card signing since
+   at least 1.1.0 although the script said it had none.
+10. The REST client still sends `Content-Type: application/json` (ledger
+    line 2758, NOT_SUPPORTED), deliberately, because a2a-java 1.3.0.Final's
+    server refused anything else. The ledger said to revisit when a2a-java
+    accepts `application/a2a+json`; 1.4.0.Final does. Switching follows
+    §11.1's SHOULD but breaks every call to a 1.3.0.Final or older a2a-java
+    server: the maintainer's call.
 
 ## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
 

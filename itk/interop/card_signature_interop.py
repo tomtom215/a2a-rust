@@ -11,8 +11,11 @@ card carrying one verified here and nowhere that follows the spec.
 
 For each card below, this signs with the official `a2a-sdk` and verifies with
 `a2a card verify`, then signs with `a2a card sign` and verifies with the SDK.
-Of the four official SDKs only Python implements card signing (a2a-go 2.5.0
-and @a2a-js/sdk 1.1.0 have none), so it is the one peer there is.
+Python is the only peer here, though not the only SDK that signs. a2a-go 2.5.0
+had no card signing and 2.6.0, which the ITK pins since 2026-10-12, has it
+(`a2acrypto`). @a2a-js/sdk has exported `generateAgentCardSignature` and
+`verifyAgentCardSignature` since at least 1.1.0, although this docstring said
+until 2026-10-12 that it had none. This script covers neither yet.
 
 The SDK and the specification disagree on one point, and the cards are chosen
 to show it rather than hide it. `a2a.utils.signing._clean_empty` removes every

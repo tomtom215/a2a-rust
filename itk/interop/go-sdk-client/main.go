@@ -18,11 +18,12 @@
 //   - an agent card with securityRequirements was unparseable by a2a-go (T1).
 //     This SDK now reads a2a-go's bare-array scopes and writes the spec's
 //     {"list":[...]} (a2a.proto's StringList, the spec's §8.5 sample, the
-//     Python SDK's output). a2a-go v2.5.0 still rejects that, which only
-//     a2a-go can fix, so -expect-card-rejected pins the rejection: when a
-//     new a2a-go reads the spec shape, this check fails and says to drop it.
+//     Python SDK's output). a2a-go v2.5.0 rejected that; v2.6.0 reads it, so
+//     -expect-security now runs the whole battery against such a card. Until
+//     2026-10-12 an -expect-card-rejected flag pinned the rejection instead,
+//     and it failed, as designed, on the first a2a-go that read the card.
 //
-// Usage: go-sdk-client [-expect-card-rejected] [-expect-security] <agent-base-url> [binding,...]
+// Usage: go-sdk-client [-expect-security] <agent-base-url> [binding,...]
 //
 // Exits 0 only when every check passed on every binding the card lists; a
 // binding that the caller names but the card omits is a failure, not a skip,
@@ -86,19 +87,12 @@ func text(t string) *a2a.SendMessageRequest {
 	return &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart(t))}
 }
 
-// The a2a-go error that rejecting the spec's StringList shape produces
-// (a2a/auth.go, SecurityRequirementsOptions.UnmarshalJSON into
-// SecuritySchemeScopes []string).
-const upstreamCardRejection = "a2a.SecuritySchemeScopes"
-
 func main() {
-	expectRejected := flag.Bool("expect-card-rejected", false,
-		"assert a2a-go still rejects the agent's spec-shaped securityRequirements, and stop")
 	expectSecurity := flag.Bool("expect-security", false,
 		"require the card to publish apiKey [read write] securityRequirements")
 	flag.Parse()
 	if flag.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: go-sdk-client [-expect-card-rejected] [-expect-security] <agent-base-url> [binding,...]")
+		fmt.Fprintln(os.Stderr, "usage: go-sdk-client [-expect-security] <agent-base-url> [binding,...]")
 		os.Exit(2)
 	}
 	base := flag.Arg(0)
@@ -116,18 +110,6 @@ func main() {
 
 	fmt.Printf("=== agent card (%s) ===\n", base)
 	card, err := agentcard.DefaultResolver.Resolve(ctx, base)
-	if *expectRejected {
-		switch {
-		case err == nil:
-			s.fail("a2a-go rejects spec-shaped scopes (known divergence)",
-				"a2a-go now reads {\"list\":[...]}: drop -expect-card-rejected and run the full battery with -expect-security")
-		case !strings.Contains(err.Error(), upstreamCardRejection):
-			s.fail("a2a-go rejects spec-shaped scopes (known divergence)", "rejected for another reason: %v", err)
-		default:
-			s.ok("a2a-go rejects spec-shaped scopes (known divergence)", err.Error())
-		}
-		finish(s)
-	}
 	if err != nil {
 		s.fail("resolve agent card", "%v", err)
 		finish(s)

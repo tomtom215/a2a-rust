@@ -170,13 +170,14 @@ A2A. They are recorded here for traceability, not for credit.
 ## Known non-conformances (in the ecosystem, not here)
 
 Running our TCK against the official SDKs surfaced upstream divergences,
-skipped in CI via `a2a-tck --skip` (reported, never silent):
+skipped in CI via `a2a-tck --skip` (reported, never silent) until each was
+fixed upstream and the pin moved. None is skipped since 2026-10-12:
 
-| SDK | Test | Divergence |
-|---|---|---|
-| `@a2a-js/sdk` 1.0.0 | `list_tasks_basic` | `ListTasksRequest.fromJSON({})` materializes proto3-default `status=TASK_STATE_UNSPECIFIED`; the store filters on it, so unfiltered lists return empty. |
-| `@a2a-js/sdk` 1.0.0 | `a2a_media_type_accepted` | Rejects `application/a2a+json`; spec §6.1 examples use it (Python/Go SDKs accept it). |
-| `a2a-java` 1.3.0.Final | `a2a_media_type_accepted` | Same `application/a2a+json` rejection, on the REST binding only. |
+| SDK | Test | Divergence | Fixed in |
+|---|---|---|---|
+| `@a2a-js/sdk` 1.0.0 | `list_tasks_basic` | `ListTasksRequest.fromJSON({})` materializes proto3-default `status=TASK_STATE_UNSPECIFIED`; the store filters on it, so unfiltered lists return empty. | 1.1.0 (skip removed 2026-08-30) |
+| `@a2a-js/sdk` 1.0.0 | `a2a_media_type_accepted` | Rejected `application/a2a+json` on JSON-RPC. Not a divergence: §9 specifies `application/json`, and the check is REST-only now. | (skip removed 2026-08-30) |
+| `a2a-java` 1.3.0.Final | `a2a_media_type_accepted` | Rejects `application/a2a+json` on the REST binding, which §11 says SHOULD be used. | 1.4.0.Final (skip removed 2026-10-12) |
 
 Our implementation accepts `application/a2a+json` and returns a populated
 `ListTasks` response, matching the spec and the Python/Go reference SDKs.

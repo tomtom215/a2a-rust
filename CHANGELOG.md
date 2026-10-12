@@ -858,6 +858,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   justifies the second now checks that `close` really is a no-op. No
   behaviour changes. `check_endpoint_reachable`, the sixth, was already
   killed on `main`.
+- **The conformance peers are at their latest releases, and no skip is
+  left** (`itk/agents/`, `tck.yml`). `@a2a-js/sdk` 1.3.0, a2a-go v2.6.0 and
+  `a2a-java` 1.4.0.Final each pass 21/21 on both bindings of this kit.
+  a2a-java 1.4.0.Final accepts `application/a2a+json` on REST, so the java-sdk
+  leg's skip of `a2a_media_type_accepted`, the last one, is gone. a2a-go
+  v2.6.0 reads the spec's `securityRequirements` lists, so
+  `go_sdk_interop.sh` step 1b runs the whole a2a-go client battery against
+  such a card (36 checks) instead of asserting the rejection.
 - **Pin freshness grades the Python SDK again** (`pin-freshness.yml`). Its
   python-sdk leg read `tck.yml` with a `python3` that had no PyYAML and
   died before grading anything (2026-10-05). Every leg now sets up Python
