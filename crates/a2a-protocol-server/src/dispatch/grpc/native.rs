@@ -20,7 +20,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
 use super::GrpcConfig;
-use super::helpers::{server_error_to_status, validated_metadata};
+use super::helpers::{request_headers, server_error_to_status};
 use super::pb::a2a_service_server::A2aService;
 use crate::handler::{RequestHandler, SendMessageResult};
 
@@ -140,7 +140,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SendMessageRequest>,
     ) -> Result<Response<apb::SendMessageResponse>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::MessageSendParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -164,7 +164,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SendMessageRequest>,
     ) -> Result<Response<Self::SendStreamingMessageStream>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::MessageSendParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -192,7 +192,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetTaskRequest>,
     ) -> Result<Response<apb::Task>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::TaskQueryParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -209,7 +209,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::ListTasksRequest>,
     ) -> Result<Response<apb::ListTasksResponse>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::ListTasksParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -226,7 +226,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::CancelTaskRequest>,
     ) -> Result<Response<apb::Task>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::CancelTaskParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -245,7 +245,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SubscribeToTaskRequest>,
     ) -> Result<Response<Self::SubscribeToTaskStream>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::TaskIdParams = request.into_inner().into();
         match self
             .rpc_span("SubscribeToTask", &headers)
@@ -266,7 +266,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::TaskPushNotificationConfig>,
     ) -> Result<Response<apb::TaskPushNotificationConfig>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let config: a2a_protocol_types::push::TaskPushNotificationConfig =
             request.into_inner().into();
         match self
@@ -283,7 +283,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetTaskPushNotificationConfigRequest>,
     ) -> Result<Response<apb::TaskPushNotificationConfig>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::GetPushConfigParams = request.into_inner().into();
         match self
             .rpc_span("GetTaskPushNotificationConfig", &headers)
@@ -299,7 +299,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::ListTaskPushNotificationConfigsRequest>,
     ) -> Result<Response<apb::ListTaskPushNotificationConfigsResponse>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::ListPushConfigsParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -325,7 +325,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::DeleteTaskPushNotificationConfigRequest>,
     ) -> Result<Response<()>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::DeletePushConfigParams =
             request.into_inner().into();
         match self
@@ -344,7 +344,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetExtendedAgentCardRequest>,
     ) -> Result<Response<apb::AgentCard>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         match self
             .rpc_span("GetExtendedAgentCard", &headers)
             .run(self.handler.on_get_extended_agent_card(Some(&headers)))

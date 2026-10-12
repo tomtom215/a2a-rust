@@ -417,9 +417,12 @@ impl WebSocketDispatcher {
         // do on the HTTP bindings. Also validates the A2A-Version header.
         let mut upgrade_headers: Option<HashMap<String, String>> = None;
         let require_version = self.require_version_header;
+        let peer = stream.peer_addr().ok();
         let callback = |req: &WsUpgradeRequest, resp: WsUpgradeResponse| {
             check_a2a_version(req, require_version)?;
-            upgrade_headers = Some(extract_upgrade_headers(req));
+            let mut headers = extract_upgrade_headers(req);
+            super::record_peer_addr(&mut headers, peer);
+            upgrade_headers = Some(headers);
             Ok(resp)
         };
 

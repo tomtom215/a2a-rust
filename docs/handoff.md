@@ -1026,9 +1026,17 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
 30. `deps(itk):` the conformance peers move to `@a2a-js/sdk` 1.3.0, a2a-go
     v2.6.0 and `a2a-java` 1.4.0.Final (maintainer's decision); the java-sdk
     REST skip goes, and the Go interop's step 1b runs the full battery.
+31. `deps:` every lockfile takes the day's semver-compatible updates
+    (maintainer's decision): root 59 crates, SLIMRPC binding 41, itk and fuzz
+    48 each, loom-halt 2. `agntcy-slim-persistence` is held at 0.1.0 in the
+    binding (item 11 below). The benchmark-harness locks are left alone.
+32. `feat(server):` §13.2 — `HttpPushSender::https_only()`, opt-in
+    (maintainer's choice of three hardening options).
+33. `feat(server):` §13.4 — `AuthFailureThrottle`, opt-in, and
+    `CallContext::peer_addr`, which every binding now records (item 12).
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 312,
-PARTIAL 23, GAP 0, IMPLEMENTED_UNTESTED 1. Gate prover: 30 proven, 0 unproven,
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 314,
+PARTIAL 22, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**
@@ -1094,8 +1102,8 @@ PARTIAL 23, GAP 0, IMPLEMENTED_UNTESTED 1. Gate prover: 30 proven, 0 unproven,
    bounded buffer loses events, reported as `streamLagged`), §8.4.3 (line
    2132; `jku` is never followed, deliberately: `fetch_jwks` takes a URL
    the caller trusts, not one the card names), and §12 (line 2985;
-   SLIMRPC's own spec maps two errors differently from A2A §5.4). The 23
-   PARTIAL left are these four and 19 low.
+   SLIMRPC's own spec maps two errors differently from A2A §5.4). The 22
+   PARTIAL left are these four and 18 low.
 9. Pin freshness (`pin-freshness.yml`, every third Monday; next 2026-10-26,
    or dispatch it with `force`). Its 2026-10-05 grading run had three red
    legs: python-sdk never graded (no PyYAML; fixed on this branch), go-sdk
@@ -1115,6 +1123,36 @@ PARTIAL 23, GAP 0, IMPLEMENTED_UNTESTED 1. Gate prover: 30 proven, 0 unproven,
     accepts `application/a2a+json`; 1.4.0.Final does. Switching follows
     §11.1's SHOULD but breaks every call to a 1.3.0.Final or older a2a-java
     server: the maintainer's call.
+11. The SLIMRPC binding's lock holds `agntcy-slim-persistence` at 0.1.0.
+    Its 0.1.1, a patch release, moves to mls-rs 0.56 / mls-rs-core 0.27
+    while `agntcy-slim-mls` 0.3.10 still builds against 0.54 / 0.26 and
+    implements persistence's storage trait across the two: with both in the
+    graph `agntcy-slim-mls` fails to compile (73 errors, E0277 "multiple
+    different versions of crate mls_rs_core"). A plain `cargo update` in
+    `bindings/a2a-protocol-slimrpc` brings it back; use `cargo update -p
+    agntcy-slim-persistence --precise 0.1.0` after it until SLIM releases a
+    matching `agntcy-slim-mls`. That is upstream's to fix.
+12. `CallContext::peer_addr` travels in the headers map under `":peer-addr"`
+    (`PEER_ADDR_KEY`), beside `":path"`, so no handler signature changed. The
+    axum router has it only when served with
+    `into_make_service_with_connect_info::<SocketAddr>()` or with a
+    `PeerAddr` extension. `RateLimitInterceptor` does not use it: an
+    unidentified caller is still keyed by trusted `x-forwarded-for` hops or
+    the shared `anonymous` bucket. Keying that bucket by peer address
+    instead would be a behaviour change to an existing feature, so it is the
+    maintainer's call. `serve/mod.rs` is at exactly 500 lines.
+13. Found on the way, not changed. (a) `validate_webhook_url` compares the
+    scheme case-sensitively, so `HTTPS://…` is refused at creation although
+    RFC 3986 schemes are case-insensitive: stricter than needed, not unsafe.
+    (b) The gRPC client maps `RESOURCE_EXHAUSTED` to a 429 with
+    `retry_after: None` (`transport/grpc.rs`), dropping the `RetryInfo`
+    detail the server sends, so a retry policy backs off on its own schedule
+    instead of the server's; the JSON-RPC and REST clients honour it.
+14. Two hardening items the maintainer chose are still open: an
+    encryption hook for push-config credentials at rest in the SQL stores
+    (§13.2, ledger line 3139), and §3.5.2's lagged stream catching up from
+    the task store's event log instead of reporting `streamLagged` (ledger
+    line 692, medium).
 
 ## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
 

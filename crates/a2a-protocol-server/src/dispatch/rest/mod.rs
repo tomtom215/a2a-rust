@@ -201,6 +201,7 @@ impl RestDispatcher {
         // this name, so a client cannot supply it (the WebSocket dispatcher
         // inserts it the same way).
         headers.insert(":path".to_owned(), path.clone());
+        super::record_peer_addr(&mut headers, super::peer_of(req.extensions()));
 
         // Boxed on clippy's own recommendation: the dispatch future is ~16 KiB,
         // and moving that much state around on the stack per request costs

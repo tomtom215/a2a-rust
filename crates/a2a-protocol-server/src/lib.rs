@@ -175,9 +175,12 @@ pub use agent_card::{
     AgentCardProducer, CORS_ALLOW_ALL, DynamicAgentCardHandler, HotReloadAgentCardHandler,
     StaticAgentCardHandler,
 };
-pub use auth::{ApiKeyAuthInterceptor, BearerTokenAuthInterceptor};
+pub use auth::{
+    ApiKeyAuthInterceptor, AuthFailureThrottle, AuthFailureThrottleConfig,
+    BearerTokenAuthInterceptor,
+};
 pub use builder::RequestHandlerBuilder;
-pub use call_context::CallContext;
+pub use call_context::{CallContext, PEER_ADDR_KEY, PeerAddr};
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
 #[cfg(feature = "axum")]

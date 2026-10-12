@@ -334,6 +334,7 @@ are rustdoc's job.
 |----------|-------------|
 | `CORS_ALLOW_ALL` | CORS Access-Control-Allow-Origin header value for public agent cards |
 | `A2A_VERSION_METADATA_KEY` | The service parameter naming the A2A protocol version, spelled the way a non-HTTP binding carries it |
+| `PEER_ADDR_KEY` | The headers-map key (`":peer-addr"`) under which a binding records the connection's address for `CallContext::peer_addr` |
 
 ### Core Types
 
@@ -428,6 +429,8 @@ are rustdoc's job.
 | `PostgresRateLimitCounter` | A `RateLimitCounter` backed by a PostgreSQL table (`postgres` feature) |
 | `ApiKeyAuthInterceptor` | Rejects requests whose API-key header is absent or not in the allowed set |
 | `BearerTokenAuthInterceptor` | Rejects requests whose bearer token is absent or not in the allowed set |
+| `AuthFailureThrottle` | Refuses a peer whose credentials were refused too often, until its window ends |
+| `PeerAddr` | Request extension carrying the connection's address, which the dispatchers copy to `CallContext::peer_addr` |
 | `ServerInterceptorChain` | An ordered chain of `ServerInterceptor` instances |
 | `CallOutcome` | How a call ended — succeeded, failed with the error sent, or cancelled — as `ServerInterceptor::on_complete` is told |
 | `Migration` | A single SQLite schema migration (`sqlite` feature) |
@@ -459,6 +462,7 @@ are rustdoc's job.
 | `PerTenantConfig` | Per-tenant configuration for timeouts, capacity limits, and executor selection |
 | `TenantLimits` | Resource limits declared for a single tenant |
 | `RateLimitConfig` | Configuration for `RateLimitInterceptor` |
+| `AuthFailureThrottleConfig` | Configuration for `AuthFailureThrottle` |
 | `PushRetryPolicy` | Retry policy for push notification delivery |
 | `ServerError` | Server-level error type |
 | `ServerResult<T>` | Alias for `Result<T, ServerError>` |

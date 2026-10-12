@@ -49,6 +49,19 @@ pub(super) fn validated_metadata(
     Ok(headers)
 }
 
+/// [`validated_metadata`] for a request, with the address of the connection
+/// it arrived on recorded as [`CallContext::peer_addr`](crate::CallContext::peer_addr)
+/// reads it, when tonic knows it.
+#[allow(clippy::result_large_err)]
+pub(super) fn request_headers<T>(
+    request: &tonic::Request<T>,
+    require_version: bool,
+) -> Result<HashMap<String, String>, Status> {
+    let mut headers = validated_metadata(request.metadata(), require_version)?;
+    crate::dispatch::record_peer_addr(&mut headers, request.remote_addr());
+    Ok(headers)
+}
+
 /// Converts a [`ServerError`] into a tonic [`Status`].
 ///
 /// Per Section 5.4, each A2A error type maps to a specific gRPC status code.

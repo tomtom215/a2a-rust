@@ -309,6 +309,31 @@ fn extract_headers(headers: &axum::http::HeaderMap) -> HashMap<String, String> {
         .collect()
 }
 
+/// The request's headers as the handler takes them, with the address of the
+/// connection it arrived on: a [`PeerAddr`](crate::call_context::PeerAddr)
+/// extension, or axum's `ConnectInfo<SocketAddr>` when the router is served
+/// with `into_make_service_with_connect_info::<SocketAddr>()`.
+struct CallHeaders(HashMap<String, String>);
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for CallHeaders {
+    type Rejection = Infallible;
+
+    fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
+        let mut headers = extract_headers(&parts.headers);
+        let peer = super::peer_of(&parts.extensions).or_else(|| {
+            parts
+                .extensions
+                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                .map(|info| info.0)
+        });
+        super::record_peer_addr(&mut headers, peer);
+        std::future::ready(Ok(Self(headers)))
+    }
+}
+
 // ── Helper: convert A2A errors to HTTP responses ─────────────────────────────
 
 /// An error response from the REST dispatcher's own builders, so this adapter
@@ -374,10 +399,9 @@ async fn handle_tasks_catchall(
     State(state): State<A2aState>,
     method: axum::http::Method,
     uri: axum::http::Uri,
-    headers: axum::http::HeaderMap,
+    CallHeaders(hdrs): CallHeaders,
     TimedBody(body): TimedBody,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(&headers);
     // Routed on the raw path, then each id decoded, as the REST dispatcher
     // does: an id this SDK's client encoded keeps its `/` and `:` inside it.
     // `Path` decoded the whole tail first, so such an id was split or read as
@@ -508,10 +532,9 @@ fn rpc_call(
 
 async fn handle_send_message(
     State(state): State<A2aState>,
-    headers: axum::http::HeaderMap,
+    CallHeaders(hdrs): CallHeaders,
     TimedBody(body): TimedBody,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(&headers);
     rpc_call(
         &state.handler,
         "SendMessage",
@@ -524,10 +547,9 @@ async fn handle_send_message(
 
 async fn handle_stream_message(
     State(state): State<A2aState>,
-    headers: axum::http::HeaderMap,
+    CallHeaders(hdrs): CallHeaders,
     TimedBody(body): TimedBody,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(&headers);
     rpc_call(
         &state.handler,
         "SendStreamingMessage",
@@ -541,9 +563,8 @@ async fn handle_stream_message(
 async fn handle_list_tasks(
     State(state): State<A2aState>,
     Query(query): Query<HashMap<String, String>>,
-    headers: axum::http::HeaderMap,
+    CallHeaders(hdrs): CallHeaders,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(&headers);
     let params = a2a_protocol_types::params::ListTasksParams {
         tenant: None,
         context_id: query.get("contextId").cloned(),
@@ -573,9 +594,8 @@ async fn handle_list_tasks(
 
 async fn handle_extended_card(
     State(state): State<A2aState>,
-    headers: axum::http::HeaderMap,
+    CallHeaders(hdrs): CallHeaders,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(&headers);
     rpc_call(
         &state.handler,
         "GetExtendedAgentCard",
@@ -866,7 +886,7 @@ mod tests {
             State(state.clone()),
             axum::http::Method::from_bytes(method.as_bytes()).unwrap(),
             format!("/tasks/{rest}").parse().unwrap(),
-            axum::http::HeaderMap::new(),
+            CallHeaders(HashMap::new()),
             TimedBody(Bytes::new()),
         )
         .await;

@@ -220,6 +220,29 @@ pub(crate) fn add_auth_challenge(headers: &mut hyper::HeaderMap, err: &crate::er
     headers.insert(hyper::header::WWW_AUTHENTICATE, value);
 }
 
+/// Records the address of the connection a call arrived on in its headers
+/// map, under [`PEER_ADDR_KEY`](crate::call_context::PEER_ADDR_KEY), where
+/// [`CallContext::peer_addr`](crate::CallContext::peer_addr) reads it.
+pub(crate) fn record_peer_addr(
+    headers: &mut std::collections::HashMap<String, String>,
+    peer: Option<std::net::SocketAddr>,
+) {
+    if let Some(addr) = peer {
+        headers.insert(
+            crate::call_context::PEER_ADDR_KEY.to_owned(),
+            addr.to_string(),
+        );
+    }
+}
+
+/// The [`PeerAddr`](crate::call_context::PeerAddr) a server attached to a
+/// request, if any.
+pub(crate) fn peer_of(extensions: &hyper::http::Extensions) -> Option<std::net::SocketAddr> {
+    extensions
+        .get::<crate::call_context::PeerAddr>()
+        .map(|peer| peer.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

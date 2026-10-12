@@ -161,7 +161,9 @@ Stated because a security page that lists only strengths is not one.
   build provenance attestations described in `PROVENANCE.md`, not the tag.
 * **No rate limiting is applied unless you wire it.** `rate_limit_rps` is
   counted in an interceptor; setting the field without installing
-  `RateLimitInterceptor` does nothing.
+  `RateLimitInterceptor` does nothing. Failed credentials are throttled only
+  with `AuthFailureThrottle` registered before the authenticator (see
+  [Authentication](../building-agents/authentication.md#throttling-guessed-credentials)).
 * **The SLIMRPC binding is out of scope for the published crates' audit
   surface.** It pulls 359 transitive dependencies including a native C crypto
   build, which is why it lives outside the workspace with its own lockfile and

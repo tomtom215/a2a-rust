@@ -29,6 +29,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the new provided method `PushSender::requires_https` (default
   `false`). Off by default; `http://` webhooks are still delivered unless it
   is set.
+- **`AuthFailureThrottle`** (server; spec §13.4: agents SHOULD rate-limit
+  to prevent brute-force attacks). An interceptor, registered before the
+  authenticating one, that counts per peer the calls refused as
+  unauthenticated and, once a peer reaches `max_failures` in a window,
+  refuses its calls as rate-limited (HTTP+JSON `429` with `Retry-After`,
+  JSON-RPC `-32603`, gRPC `RESOURCE_EXHAUSTED`, the last two with a
+  `RetryInfo` detail) until the window ends, the right credential included. A peer is the connection's
+  IP address, or the client address trusted proxies appended to
+  `x-forwarded-for`; at most `max_peers` are tracked. Opt-in: nothing
+  throttles failed authentication unless it is registered.
+- **`CallContext::peer_addr`**, **`PeerAddr`** and **`PEER_ADDR_KEY`**
+  (server): the address of the connection a call arrived on. The SDK's
+  servers (`serve`, `serve_with_addr`, `Server`, the WebSocket and gRPC
+  dispatchers) record it; the axum router reads it from `PeerAddr` or from
+  `ConnectInfo<SocketAddr>`. It travels in the headers map under
+  `":peer-addr"`, which no client can send, as the request path does under
+  `":path"`. `RateLimitInterceptor` does not use it: a caller it cannot
+  identify is still keyed by trusted `x-forwarded-for` hops or the shared
+  `anonymous` bucket.
 - **`AgentCard::validate_security_schemes`** (types; proto `REQUIRED`):
   refuses a security scheme whose REQUIRED string is empty. See "refuses
   empty required strings" under Behaviour Changes.

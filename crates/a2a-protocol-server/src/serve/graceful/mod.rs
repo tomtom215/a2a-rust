@@ -290,7 +290,7 @@ impl Server {
                 break;
             };
 
-            let (stream, _peer) = match accept {
+            let (stream, peer) = match accept {
                 Ok(pair) => pair,
                 Err(e) => {
                     // Transient by nature — a per-connection abort, or a
@@ -304,6 +304,7 @@ impl Server {
             accepted.fetch_add(1, Ordering::Relaxed);
             spawn_connection(
                 stream,
+                peer,
                 Arc::clone(&dispatcher),
                 graceful.watcher(),
                 permit,
@@ -342,6 +343,7 @@ impl Server {
 /// rather than on total accepts.
 fn spawn_connection(
     stream: tokio::net::TcpStream,
+    peer: SocketAddr,
     dispatcher: Arc<impl Dispatcher>,
     watcher: hyper_util::server::graceful::Watcher,
     permit: tokio::sync::OwnedSemaphorePermit,
@@ -360,6 +362,7 @@ fn spawn_connection(
         let service = super::service(
             dispatcher,
             connection.as_ref().map(connections::Connection::requests),
+            peer,
         );
         // The builder is bound rather than chained: `serve_connection` borrows
         // it, and the connection future outlives the statement.
