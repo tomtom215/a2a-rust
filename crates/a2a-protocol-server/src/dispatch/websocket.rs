@@ -686,10 +686,10 @@ fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
 }
 
 /// Validates the `A2A-Version` header (or `?A2A-Version=` parameter, §3.6.1)
-/// on the upgrade request, mirroring the
-/// JSON-RPC dispatcher: absent or empty is interpreted as protocol 0.3 per
-/// spec §3.6.2 and rejected under the strict default; any `1.x` is
-/// accepted; other major versions are rejected with HTTP 400 during the
+/// on the upgrade request with the same check the HTTP bindings use
+/// (`validate_version_header`): absent or empty is interpreted as protocol
+/// 0.3 per spec §3.6.2 and rejected under the strict default, and any version
+/// but this server's `Major.Minor` is rejected, with HTTP 400 during the
 /// handshake.
 // The Err type (an HTTP response) is dictated by tungstenite's `Callback`
 // trait contract — it cannot be boxed or shrunk here.
@@ -698,27 +698,12 @@ fn check_a2a_version(req: &WsUpgradeRequest, require: bool) -> Result<(), ErrorR
     // A browser cannot set headers on a WebSocket upgrade, so the §3.6.1
     // request parameter is the only way it can name a version at all.
     let value = super::requested_version(req.headers(), req.uri());
-    let v = value.as_deref().unwrap_or("").trim();
-    if v.is_empty() {
-        if !require {
-            return Ok(());
-        }
-        // Fall through to the rejection below with the 0.3 interpretation.
-    } else {
-        let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
-        if major == Some(1) {
-            return Ok(());
-        }
-    }
+    let Err(a2a_err) = super::validate_version_header(value.as_deref(), require) else {
+        return Ok(());
+    };
     // Emit the same AIP-193 error shape (code/status/message/details with
     // google.rpc.ErrorInfo) as the REST binding, so a version-rejected
     // upgrade is machine-readable identically across HTTP surfaces.
-    let a2a_err = a2a_protocol_types::error::A2aError::version_not_supported(if v.is_empty() {
-        "A2A version '0.3' is not supported by this server; expected '1.0' (send the A2A-Version header)"
-            .to_owned()
-    } else {
-        format!("unsupported A2A version: {v}; this server supports 1.x")
-    });
     let mut error_obj = serde_json::json!({
         "error": {
             "code": a2a_err.code.http_status(),
@@ -2499,7 +2484,17 @@ mod tests {
             "handshake with A2A-Version 2.0 must be rejected"
         );
 
-        // 1.x is accepted.
+        // §3.6.2: another minor is refused too; this server has 1.0's
+        // semantics only.
+        let mut req = format!("ws://{addr}").into_client_request().unwrap();
+        req.headers_mut()
+            .insert("a2a-version", "1.1".parse().unwrap());
+        assert!(
+            tokio_tungstenite::connect_async(req).await.is_err(),
+            "handshake with A2A-Version 1.1 must be rejected"
+        );
+
+        // 1.0 is accepted.
         let mut req = format!("ws://{addr}").into_client_request().unwrap();
         req.headers_mut()
             .insert("a2a-version", "1.0".parse().unwrap());

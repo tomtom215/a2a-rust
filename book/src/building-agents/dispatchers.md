@@ -30,7 +30,7 @@ let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 - **Streaming** — `SendStreamingMessage` and `SubscribeToTask` return SSE streams
 - **CORS** — Configurable cross-origin headers
 - **Content type** — Accepts `application/json` and `application/a2a+json`
-- **Version validation** — Requires the `A2A-Version` header by default: a request without it (read as v0.3, spec §3.6.2) or with a major version other than 1 is refused with `VersionNotSupported` (-32009). `DispatchConfig::accept_missing_version_header()` admits header-less requests
+- **Version validation** — Requires the `A2A-Version` header by default: a request without it (read as v0.3, spec §3.6.2) or with a version other than 1.0 (a patch number is ignored; `1.1` is refused) is refused with `VersionNotSupported` (-32009). `DispatchConfig::accept_missing_version_header()` admits header-less requests
 
 ### Batch Restrictions
 

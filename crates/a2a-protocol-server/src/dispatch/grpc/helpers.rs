@@ -28,8 +28,8 @@ pub(super) fn extract_metadata(metadata: &tonic::metadata::MetadataMap) -> HashM
 
 /// Extracts gRPC metadata into headers and validates the `a2a-version`
 /// service parameter (§3.6.2, §10.2) through the **same shared validator** the
-/// JSON-RPC, REST and WebSocket bindings use, so all four agree: any `1.x` is
-/// accepted; an empty or absent value is interpreted as protocol 0.3 and, when
+/// JSON-RPC, REST and WebSocket bindings use, so all four agree: `1.0`, with
+/// any patch, is accepted and any other version refused; an empty or absent value is interpreted as protocol 0.3 and, when
 /// `require_version` is set (the default), rejected with `VersionNotSupported`
 /// carrying its `google.rpc.ErrorInfo` detail — the identical rejection the
 /// other bindings produce. `require_version = false` admits versionless legacy
@@ -329,8 +329,8 @@ mod tests {
     // ── validated_metadata (§3.6.2 / §10.2 version negotiation) ──────────
 
     #[test]
-    fn validated_metadata_accepts_1x() {
-        for version in ["1.0", "1.5", "1.0.3"] {
+    fn validated_metadata_accepts_1_0_with_any_patch() {
+        for version in ["1.0", "1.0.3"] {
             let mut meta = tonic::metadata::MetadataMap::new();
             meta.insert("a2a-version", version.parse().unwrap());
             assert!(
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn validated_metadata_rejects_absent_version_by_default() {
         // Absent or empty is interpreted as protocol 0.3 (§3.6.2), which this
-        // 1.x server does not support, so the strict default rejects it — the
+        // 1.0 server does not support, so the strict default rejects it — the
         // same negotiation the JSON-RPC, REST and WebSocket bindings enforce.
         // Regression guard: this used to be accepted, letting a gRPC caller
         // skip the version check the other bindings apply.
@@ -375,7 +375,7 @@ mod tests {
     #[test]
     fn validated_metadata_rejects_unsupported_versions() {
         use tonic_types::StatusExt as _;
-        for version in ["0.3", "2.0", "not-a-version"] {
+        for version in ["0.3", "1.5", "2.0", "not-a-version"] {
             let mut meta = tonic::metadata::MetadataMap::new();
             meta.insert("a2a-version", version.parse().unwrap());
             let status =

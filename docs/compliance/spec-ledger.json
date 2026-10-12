@@ -2534,7 +2534,7 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:42"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:393 version_metadata_accepts_any_1x_including_patch",
+    "crates/a2a-protocol-server/src/dispatch/version.rs:181 version_metadata_accepts_this_major_minor_with_any_patch",
     "crates/a2a-protocol-client/src/builder/selection_tests.rs:96 prefixed_and_missing_versions_count_as_compatible"
    ],
    "notes": "Only the major is compared on both sides.",
@@ -2607,18 +2607,23 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Agents MUST process requests using the semantics of the requested A2A-Version (matching Major.Minor).",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:254"
+    "crates/a2a-protocol-server/src/dispatch/version.rs:105",
+    "crates/a2a-protocol-server/src/dispatch/version.rs:134",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:697"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:393 version_metadata_accepts_any_1x_including_patch"
+    "crates/a2a-protocol-server/src/dispatch/version.rs:197 version_metadata_refuses_another_minor_or_no_minor",
+    "crates/a2a-protocol-server/src/dispatch/version.rs:181 version_metadata_accepts_this_major_minor_with_any_patch",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2475 ws_version_mismatch_rejects_handshake",
+    "crates/a2a-protocol-server/tests/actionable_errors.rs (the refusal names the supported version)"
    ],
-   "notes": "Open decision, not changed: the server accepts any 1.x and serves 1.0 semantics. The official Python SDK does the same: a2a/utils/version_validator.py `_is_version_compatible` compares only the major version, although its docstring says major and minor. Rejecting 1.x for x>0 follows the spec's text and breaks forward compatibility with a future 1.1 client; the maintainer decides.",
+   "notes": "Since 2026-10-12 (maintainer decision) a request is served only when its A2A-Version names this server's Major.Minor, 1.0, with any patch; any other version, 1.1 included, is VersionNotSupportedError naming 1.0, on every binding through one validator (the WebSocket handshake had its own copy). Until then any 1.x was accepted and served with 1.0 semantics, as the official Python SDK still does (_is_version_compatible compares the major only).",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 737,
@@ -5687,7 +5692,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:42-51"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:305 validated_metadata_accepts_1x",
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:332 validated_metadata_accepts_1_0_with_any_patch",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:632 default_config_rejects_a_versionless_rpc"
    ],
    "notes": "All 11 RPCs call validated_metadata(request.metadata(), ..) and pass the headers to the handler.",

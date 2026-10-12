@@ -191,6 +191,16 @@ let client = ClientBuilder::from_card_preferring(&card, &["JSONRPC".into()])?.bu
 reads them. Use `from_card_preferring` to rank, and
 `ClientBuilder::chosen_interface` to see what was chosen.
 
+### Only `A2A-Version: 1.0` is served
+
+Spec §3.6.2: a request is processed with the semantics of the version it
+asks for, and a server that does not support that version MUST answer
+`VersionNotSupportedError`. This server implements 1.0 only, so a request
+naming `1.1`, or a bare `1`, is now refused with an error that says it
+supports `1.0`; a patch number is still ignored (`1.0.1` is 1.0). It used to
+accept any `1.x` and serve it as 1.0, which is also what the official Python
+SDK does. Every client in this SDK, and every peer the conformance suites
+run against, sends `1.0`.
 
 ### OpenTelemetry 0.33 for the `otel` feature
 

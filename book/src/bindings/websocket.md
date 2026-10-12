@@ -21,7 +21,7 @@ The server answers `101 Switching Protocols`, or refuses the upgrade:
 | Condition | Answer |
 |---|---|
 | `A2A-Version` absent or empty (read as 0.3, §3.6.2) | `400`, unless the server was built with `accept_missing_version_header()` |
-| `A2A-Version` names a major version other than 1 | `400` |
+| `A2A-Version` names a version other than 1.0 (a patch number is ignored) | `400` |
 | Handshake not finished within the handshake timeout (default 10 s) | connection closed |
 
 A refused upgrade carries the HTTP+JSON binding's error body (§11.6):

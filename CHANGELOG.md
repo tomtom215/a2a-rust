@@ -257,6 +257,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `from_card_preferring` still applies a caller's explicit ranking, and
   `ClientConfig::preferred_bindings` is documented as the record of the
   ranking applied, which it always was. See the upgrading guide.
+- **Breaking: only `A2A-Version: 1.0` is served** (server; spec §3.6.2:
+  requests are processed with the requested `Major.Minor`'s semantics, and an
+  unsupported version MUST be `VersionNotSupportedError`). Any `1.x` was
+  accepted and served as 1.0; now `1.1`, a bare `1`, `v1.0` and `+1.0` are
+  refused with a message naming `1.0`, on JSON-RPC, HTTP+JSON, gRPC,
+  WebSocket and `validate_version_metadata` alike. A patch number is still
+  ignored (§3.6). The WebSocket handshake's own copy of the check now calls
+  the shared validator.
 - **Breaking for the `otel` feature: OpenTelemetry 0.33** (server, client,
   sdk). `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`,
   `opentelemetry-http`, `opentelemetry-appender-tracing` 0.32 to 0.33.1 and

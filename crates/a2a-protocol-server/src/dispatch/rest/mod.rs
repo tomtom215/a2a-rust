@@ -173,7 +173,7 @@ impl RestDispatcher {
 
         // Validate the A2A-Version header per spec §3.6.2: absent or empty
         // is interpreted as protocol 0.3 and rejected under the strict
-        // default (reference-SDK parity); any 1.x is accepted. Rejections
+        // default (reference-SDK parity); only 1.0 (any patch) is accepted. Rejections
         // produce the real VersionNotSupportedError (with its ErrorInfo
         // detail), not an anonymous 400.
         let version_value = super::requested_version(req.headers(), req.uri());

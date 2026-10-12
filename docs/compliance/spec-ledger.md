@@ -27,7 +27,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | §1 | 2 |  |  |  | 4 |  | 1 |  | 7 |
 | §2 |  |  | 1 |  | 1 |  | 1 |  | 3 |
-| §3 | 83 | 21 | 19 | 3 | 3 | 1 | 6 | 1 | 137 |
+| §3 | 84 | 21 | 19 | 3 | 3 | 1 | 5 | 1 | 137 |
 | §4 | 6 | 5 | 2 |  | 1 |  | 1 |  | 15 |
 | §5 | 25 | 2 | 2 |  | 3 |  | 3 |  | 35 |
 | §7 | 7 | 13 | 2 |  |  |  |  |  | 22 |
@@ -40,7 +40,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 5 | 5 | 3 |  |  |  | 2 |  | 15 |
 | §A |  |  |  |  | 1 |  |  |  | 1 |
 | proto `REQUIRED` fields | 71 | 11 | 6 |  | 8 |  | 10 |  | 106 |
-| **All** | **297** | **89** | **52** | **13** | **22** | **2** | **36** | **1** | **512** |
+| **All** | **298** | **89** | **52** | **13** | **22** | **2** | **35** | **1** | **512** |
 
 ## Open items, most severe first
 
@@ -50,7 +50,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | medium | PARTIAL | §1.4 (line 107) | SDK language bindings, schemas, and any other derived forms MUST be regenerated from the proto (directly or via code generation) rather tha… | Only the prost message types (feature `proto`, build.rs) are generated from a2a.proto; the primary public serde types (Task, Message, TaskListResponse, AgentCard ...) are hand-written structs, guarded by golden fixtures/proptests rather than generated. proto_… |
 | medium | PARTIAL | §3.3.4 (line 571) | When clients attempt to use operations or features that require capabilities not declared ... the agent MUST return an appropriate error re… | Summary of 573-576 below. All checks are skipped when no AgentCard is configured on the RequestHandler (capability.rs:16-18, 189). |
 | medium | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | Order is preserved, but a subscriber that falls behind the bounded broadcast buffer loses the overwritten events (surfaced as an explicit 'streamLagged' error), so a slow stream does not receive the same events as a fast one. |
-| medium | PARTIAL | §3.6.2 (line 737) | Agents MUST process requests using the semantics of the requested A2A-Version (matching Major.Minor). | Open decision, not changed: the server accepts any 1.x and serves 1.0 semantics. The official Python SDK does the same: a2a/utils/version_validator.py `_is_version_compatible` compares only the major version, although its docstring says major and minor. Rejec… |
 | medium | PARTIAL | §8.1 (line 1980) | A2A Servers **MUST** make an Agent Card available. | JSON-RPC, REST and axum serve GET /.well-known/agent-card.json when a card is configured, but RequestHandlerBuilder's agent_card defaults to None and build() accepts that, serving 404 (pinned by a test); the WebSocket and gRPC dispatchers serve no well-known … |
 | medium | PARTIAL | §8.4.3 (line 2132) | 2. Retrieve the public key using the `kid` and `jku` (or from a trusted key store) | kid-based lookup in a caller-supplied JWKS is implemented and tested; jku is decoded but never followed (deliberately: fetch_jwks takes a caller-trusted URL), so jku retrieval is left to the application. |
 | medium | PARTIAL | §12 (line 2985) | Custom bindings MUST comply with all requirements defined in Section 5 | SLIMRPC sends PushNotificationNotSupported and UnsupportedOperation as UNIMPLEMENTED where A2A §5.4's gRPC column says FAILED_PRECONDITION. This is the SLIMRPC spec's own §6.1 'canonical mapping' (a MUST), which the binding now follows exactly; the conflict i… |

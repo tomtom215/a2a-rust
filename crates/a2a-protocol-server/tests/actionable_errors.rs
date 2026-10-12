@@ -85,7 +85,7 @@ async fn each_refusal_names_the_parameter_and_what_is_accepted() {
         ),
         (
             send("2.0", message("m-1", text()), None).await,
-            vec!["2.0", "supports 1.x"],
+            vec!["2.0", "supports 1.0"],
         ),
     ];
     for (error, needles) in cases {

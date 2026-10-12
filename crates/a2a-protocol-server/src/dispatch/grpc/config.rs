@@ -33,7 +33,7 @@ pub struct GrpcConfig {
     pub stream_channel_capacity: usize,
     /// Whether to reject a request whose `a2a-version` metadata is absent or
     /// empty. Per spec §3.6.2 an absent value is interpreted as protocol 0.3,
-    /// which this 1.x server does not support, so the strict default (`true`)
+    /// which this 1.0 server does not support, so the strict default (`true`)
     /// rejects it with `VersionNotSupported` — matching the JSON-RPC, REST and
     /// WebSocket bindings. Set `false` only to admit versionless legacy
     /// clients. Default: `true`.

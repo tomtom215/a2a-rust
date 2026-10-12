@@ -163,7 +163,7 @@ connection.
 The gRPC run surfaced one real gap. A request with **no `a2a-version`** was
 *processed* on gRPC, while the identical request on JSON-RPC and WebSocket was
 *rejected* — the spec (§3.6.2, §737) says an absent value is protocol 0.3,
-which a 1.x server must refuse with `VersionNotSupported`. The gRPC helper did
+which a 1.0 server must refuse with `VersionNotSupported`. The gRPC helper did
 its version check only when a value was present, and its docstring even claimed
 it mirrored the other bindings when it did not. It now delegates to the same
 shared validator the HTTP and WebSocket bindings use, so all four agree; a
