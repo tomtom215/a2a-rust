@@ -1,9 +1,9 @@
-FROM rust:1.93-alpine AS build
+FROM rust:1.93-alpine@sha256:4fec02de605563c297c78a31064c8335bc004fa2b0bf406b1b99441da64e2d2d AS build
 RUN apk add --no-cache musl-dev protoc
 WORKDIR /src
 COPY . .
 RUN cargo build --release -p a2a-tck
 
-FROM alpine:3.19
+FROM alpine:3.19@sha256:6baf43584bcb78f2e5847d1de515f23499913ac9f12bdf834811a3145eb11ca1
 COPY --from=build /src/target/release/a2a-tck /tck
 ENTRYPOINT ["/tck"]

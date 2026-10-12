@@ -36,6 +36,36 @@
 
   <dependencyManagement>
     <dependencies>
+      <!-- The artifacts the advisories name, managed directly as well as
+           through the BOMs below. Maven already resolves these versions from
+           the BOM order (`mvn dependency:tree`, 2026-10-12), but OSV-Scanner's
+           source mode, which Scorecard's Vulnerabilities check uses, let the
+           Quarkus BOM win and reported the advisories anyway. -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-codec-http</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-codec-http2</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-codec-dns</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-handler</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-core</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
       <dependency>
         <groupId>io.netty</groupId>
         <artifactId>netty-bom</artifactId>

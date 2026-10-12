@@ -9,7 +9,7 @@
 # Build from the repository root, not this directory:
 #   docker build -f examples/deploy-agent/Dockerfile -t deploy-agent .
 
-FROM rust:1.93-bookworm AS build
+FROM rust:1.93-bookworm@sha256:7c4ae649a84014c467d79319bbf17ce2632ae8b8be123ac2fb2ea5be46823f31 AS build
 WORKDIR /src
 
 # The whole workspace is copied because this example depends on the SDK crates
@@ -22,7 +22,7 @@ RUN cargo build --release -p deploy-agent
 # needs CA certificates the moment the agent makes an outbound HTTPS call.
 # Starting from scratch works right up until the first push notification, and
 # then fails with a TLS error that reads like a code bug.
-FROM debian:bookworm-slim AS runtime
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \

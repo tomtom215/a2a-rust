@@ -1345,6 +1345,24 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "GRPC",
         "https://a2a-rust.com/bindings/websocket/v1",
     ]
+    # osv.yml's `rust` job runs the scanner inline (so Scorecard can see its
+    # SARIF upload) and keeps the reusable workflow's guard: a scanner that
+    # failed without writing results must fail the job, not report "clean".
+    def _osv_results(content: str | None) -> Setup:
+        def setup(d: Path) -> None:
+            if content is not None:
+                (d / "results.json").write_text(content)
+
+        return setup
+
+    reg["osv.yml::rust::Check that the scan completed"] = Probe(
+        healthy=_osv_results('{"results": []}'),
+        defects=[
+            Defect("no results file", _osv_results(None), "OSV-Scanner failed without writing"),
+            Defect("an empty results file", _osv_results(""), "OSV-Scanner failed without writing"),
+        ],
+    )
+
     reg["tck.yml::tck-all-bindings::Card advertises all four bindings"] = Probe(
         healthy=_card_fixture(ALL_FOUR),
         defects=[

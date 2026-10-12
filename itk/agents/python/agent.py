@@ -15,7 +15,6 @@ Usage:
 
 import argparse
 import asyncio
-import json
 import uuid
 
 from starlette.applications import Starlette

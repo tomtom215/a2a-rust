@@ -80,6 +80,7 @@ def read_until(s, needle, cap=8192, timeout=10):
             if needle in buf:
                 break
     except socket.timeout:
+        # timeout ends the read; the caller inspects whatever was buffered
         pass
     return buf
 
@@ -116,6 +117,7 @@ def rss_kb(pid):
                     return int(line.split()[1])
     except Exception:
         return None
+    return None  # no VmRSS line (e.g. a zombie process): RSS unknown
 
 
 def fd_count(pid):
@@ -178,13 +180,16 @@ class Stream:
                 try:
                     s.recv(256)
                 except socket.timeout:
+                    # no bytes within the timeout is fine; we only need the stream opened
                     pass
                 try:
                     s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
                 except Exception:
+                    # SO_LINGER unsupported on this socket; a plain close still drops the client
                     pass
                 s.close()
             except Exception:
+                # a failed connect/drop is one fewer churned stream; the RSS/liveness checks below judge the server
                 pass
         time.sleep(drain)
         rss1 = rss_kb(self.server_pid)
@@ -230,10 +235,12 @@ class Stream:
                 try:
                     s.recv(64)  # read a little, then hold without reading more
                 except socket.timeout:
+                    # no bytes within the timeout is fine; the point is to hold the stream open
                     pass
                 with lock:
                     socks.append(s)
             except Exception:
+                # a refused/failed open is counted via len(socks) below, not raised
                 pass
 
         ts = [threading.Thread(target=opener) for _ in range(k)]
@@ -246,6 +253,7 @@ class Stream:
             try:
                 s.close()
             except Exception:
+                # best-effort close at teardown; the server may have already dropped it
                 pass
         time.sleep(1.5)
         fd1 = fd_count(self.server_pid)
@@ -268,9 +276,11 @@ class Stream:
                 try:
                     s.recv(64)
                 except socket.timeout:
+                    # no bytes within the timeout is fine; the point is to stall the stream
                     pass
                 socks.append(s)
             except Exception:
+                # a refused/failed open just means fewer stalled streams; the checks below judge the server
                 pass
         # Stall: do not read. The server's write timeout (5s) must bound the
         # producer; memory must not balloon while these sit unread.
@@ -281,6 +291,7 @@ class Stream:
             try:
                 s.close()
             except Exception:
+                # best-effort close at teardown; the server may have already dropped it
                 pass
         time.sleep(1.5)
         live2 = alive(self.host, self.port) and stream_completes(self.host, self.port)

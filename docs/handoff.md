@@ -1036,6 +1036,25 @@ area. This branch answers both.
     maintainer: legacy-name warnings (3429, needs custom deserializers),
     encrypted push-credential storage (3139, needs a key design).
 
+26. Code-scanning alerts (132 open on `main`, 2026-10-12). This session's
+    token cannot read the alerts API (403), so each tool was rerun locally on
+    `main` and on this branch: osv-scanner 2.2.3, Scorecard v5.4.0 (built
+    from the Go proxy; local mode reproduced main's seven Token-Permissions
+    findings at the alerts' exact lines), CodeQL 2.27.2 with the
+    workflow's suites. Fixed on this branch: peer dependency advisories
+    (recursive osv-scanner: 0), Pinned-Dependencies (23 to 0: image digests,
+    hash-locked pip under `.github/requirements/`, npm lockfile), osv.yml's
+    three Token-Permissions findings, the four `jwt.rs` cleartext-logging
+    test messages, 45 Python quality findings. Alerts close only when this
+    reaches `main`. Left for the maintainer, in the alert UI: dismiss the
+    four `contents: write` Token-Permissions alerts (release.yml x2,
+    benchmarks.yml, itk-nightly.yml; each needs the grant), and Code-Review
+    / Branch-Protection, which are repository settings. Disk note: the
+    CodeQL Rust database (deps included) needs ~10 GB; `target/` was
+    deleted to make room. Noticed, not fixed: `scripts/adversarial/
+    probe_push.py` "hang" mode closes the socket it means to hold (its
+    `finally: c.close()` runs after appending to `_held`).
+
 **How the ledger was made, and how far to trust it.** Seven read-only audit
 agents, one per specification region plus one over the proto's `REQUIRED`
 fields, each opened the code and tests for every RFC 2119 line. Their entries

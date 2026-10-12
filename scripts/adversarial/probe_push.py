@@ -81,6 +81,7 @@ class Receiver(threading.Thread):
             try:
                 c.recv(65536)  # read (and discard) the notification request
             except socket.timeout:
+                # the request body is discarded anyway; a slow/absent body must not stop the reply
                 pass
             if self.mode == "hang":
                 self._held.append(c)              # never respond, hold forever
@@ -100,11 +101,13 @@ class Receiver(threading.Thread):
             else:  # ok
                 c.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
         except Exception:
+            # the probe client may have hung up or reset; the receiver's reply is best-effort
             pass
         finally:
             try:
                 c.close()
             except Exception:
+                # socket already closed or reset; nothing left to release
                 pass
 
     def stop(self):
@@ -112,6 +115,7 @@ class Receiver(threading.Thread):
         try:
             self.srv.close()
         except Exception:
+            # listener already closed; stop() is idempotent
             pass
 
 
@@ -152,11 +156,13 @@ def responsive(host, port):
 
 def rss_kb(pid):
     try:
-        for l in open("/proc/%d/status" % pid):
-            if l.startswith("VmRSS:"):
-                return int(l.split()[1])
+        with open("/proc/%d/status" % pid) as f:
+            for l in f:
+                if l.startswith("VmRSS:"):
+                    return int(l.split()[1])
     except Exception:
         return None
+    return None  # no VmRSS line (e.g. a zombie process): RSS unknown
 
 
 def fd_count(pid):

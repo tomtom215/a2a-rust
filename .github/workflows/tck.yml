@@ -95,7 +95,7 @@ jobs:
       - name: a2a-inspector card validation
         continue-on-error: true
         run: |
-          pip install httpx
+          pip install --require-hashes -r .github/requirements/httpx.txt
           python itk/interop/inspector_card_check.py http://127.0.0.1:9090
 
   # ── All four bindings, against the purpose-built SUT ──────────────────────
@@ -393,7 +393,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install official A2A Python SDK (client)
-        run: pip install 'a2a-sdk[http-server]' httpx
+        run: pip install --require-hashes -r .github/requirements/a2a-sdk-http.txt
 
       - name: Build and start our echo agent
         run: |
@@ -437,7 +437,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install the official A2A Python SDK with signing
-        run: pip install 'a2a-sdk[signing]==1.1.4' cryptography
+        run: pip install --require-hashes -r .github/requirements/a2a-sdk-signing.txt
 
       - name: Build the a2a CLI
         run: cargo build -p a2a-cli
@@ -461,7 +461,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install official A2A Python SDK
-        run: pip install a2a-sdk
+        run: pip install --require-hashes -r .github/requirements/a2a-sdk.txt
 
       # Guard against drift between our vendored a2a.proto and the schema
       # revision shipped by the official SDK: re-parse the corpus with the

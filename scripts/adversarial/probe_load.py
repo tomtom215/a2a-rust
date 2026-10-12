@@ -41,7 +41,6 @@ import argparse
 import http.client
 import json
 import os
-import socket
 import sys
 import threading
 import time
@@ -102,6 +101,7 @@ class Conn:
                     if self.c:
                         self.c.close()
                 except Exception:
+                    # best-effort close of a connection already known to be broken; we reconnect next
                     pass
                 self.c = None
                 if attempt == 2:
@@ -113,6 +113,7 @@ class Conn:
             if self.c:
                 self.c.close()
         except Exception:
+            # best-effort close at teardown; a failure here says nothing about the server
             pass
 
 
@@ -339,7 +340,7 @@ class Load:
             while time.time() < stop:
                 # Mix reads and fast creates.
                 body = send_msg("soak-%d-%d" % (wid, i)) if i % 3 == 0 else rpc_bytes("ListTasks", {"pageSize": 20})
-                ok, status, data, dt, terr = conn.call(body)
+                conn.call(body)  # outcome unused: the soak only drives load; leaks are judged below
                 i += 1
             conn.close()
             with lock:

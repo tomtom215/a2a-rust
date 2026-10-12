@@ -126,6 +126,7 @@ class Conn:
         try:
             self.sock.close()
         except OSError:
+            # best-effort close; the socket may already be dead and there is nothing to recover
             pass
 
 
@@ -303,6 +304,7 @@ def cpu_model() -> str:
                 if line.startswith("model name"):
                     return line.split(":", 1)[1].strip()
     except OSError:
+        # no /proc/cpuinfo (non-Linux or sandboxed); fall back to platform.processor() below
         pass
     return platform.processor() or "unknown"
 
@@ -453,7 +455,7 @@ def main() -> int:
             "loadavg": list(os.getloadavg()),
             "note": args.note,
             "python_packages": (
-                open(args.env_file, encoding="utf-8").read().splitlines()
+                pathlib.Path(args.env_file).read_text(encoding="utf-8").splitlines()
                 if args.env_file
                 else []
             ),

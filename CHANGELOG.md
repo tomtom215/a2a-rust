@@ -594,6 +594,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Code-scanning findings on `main` addressed** (OSV-Scanner, Scorecard,
+  CodeQL; reproduced locally with the same tools before and after).
+  - Test-peer dependencies: the Python peers floor `anyio>=4.14.2`
+    (CVE-2026-63374, CVE-2026-64847) and `h11>=0.16.0` (CVE-2025-43859);
+    the JavaScript echo agent moves `uuid` to `^11.1.1` (GHSA-w5hq-g745-h8pq)
+    and gains a lockfile. The Java peer manages the Netty and Jackson
+    artifacts the advisories name directly as well as through BOMs (Maven
+    already resolved the fixed versions; OSV's source mode did not). A
+    recursive `osv-scanner` over the tree finds no advisories.
+  - Every Docker base image is pinned by digest; the Python and JavaScript
+    agent images install from hash-locked files (`requirements.lock`,
+    `npm ci`); CI's `pip install` steps install from hash-locked files under
+    `.github/requirements/`. Scorecard Pinned-Dependencies: 23 findings to 0.
+  - `osv.yml`'s `rust` job runs the scanner inline so Scorecard sees its SARIF
+    upload: Token-Permissions 7 findings to 4 (the four remaining
+    `contents: write` grants create releases and push the benchmark
+    dashboard and the nightly prerelease, which need them).
+  - CodeQL `rust/cleartext-logging`: four `jwt.rs` test assertions no longer
+    format secret-derived values into their failure messages.
+  - CodeQL Python code quality: 45 findings in the gate and probe scripts
+    fixed (unclosed files, silent `except` blocks, unused imports).
+
 - **Stored secrets are wiped on drop** (`zeroize`, already in the
   dependency graph through rustls, so no new crate). This covers the HS256
   secret held by `JwtValidator`, including one refused as too short, and the

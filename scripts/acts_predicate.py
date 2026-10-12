@@ -57,7 +57,8 @@ def main(argv):
     failures = []
     for path in sorted(args.reports):
         try:
-            raw = open(path, "rb").read()
+            with open(path, "rb") as fh:
+                raw = fh.read()
         except OSError:
             # An unmatched shell glob arrives here literally.
             print(f"acts_predicate: no report at {path}", file=sys.stderr)
