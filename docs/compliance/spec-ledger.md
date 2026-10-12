@@ -36,11 +36,11 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §10 | 6 |  |  |  |  |  | 6 |
 | §11 | 14 |  |  | 4 |  | 1 | 19 |
 | §12 | 7 | 1 | 7 |  | 1 | 3 | 19 |
-| §13 | 32 | 26 | 5 | 4 |  | 2 | 69 |
+| §13 | 33 | 26 | 5 | 4 |  | 1 | 69 |
 | §14 | 5 | 5 | 3 |  |  | 2 | 15 |
 | §A |  |  |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 80 | 11 | 6 |  | 8 | 1 | 106 |
-| **All** | **314** | **89** | **52** | **13** | **22** | **22** | **512** |
+| **All** | **315** | **89** | **52** | **13** | **22** | **21** | **512** |
 
 ## Open items, most severe first
 
@@ -63,7 +63,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | low | PARTIAL | §11.1 (line 2758) | Content-Type: application/a2a+json SHOULD be used for requests and responses | Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2843-2844 and 2929-2930 are not matched by … |
 | low | PARTIAL | §12.4 (line 3024) | 2. Preserve Error Information: Ensure error details are accessible to clients | WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker ins… |
 | low | PARTIAL | §12.6 (line 3041) | Custom bindings MUST: Support Standard Schemes; Document Integration; Handle Challenges; Maintain Security | WebSocket spec §6 documents integration: credentials on the upgrade headers, checked per request; a refused credential is -32600 in the body with no 401/WWW-Authenticate (the connection is already upgraded), and browsers cannot set Authorization. Remaining: n… |
-| low | PARTIAL | §13.2 (line 3139) | Agents SHOULD securely store push notification configurations and credentials | SQL push-config stores persist the whole config (incl. authentication.credentials and token) as plaintext JSON (`serde_json::to_string(&config)`); no at-rest encryption hook. In-memory and Debug output are redacted. |
 | low | PARTIAL | §13.3 (line 3172) | When capabilities.extendedAgentCard is false or not present, the operation MUST return UnsupportedOperationError | Correct when the handler has a card with the flag false/absent. When the handler has no card at all (capability therefore not declared by this handler) it returns ExtendedAgentCardNotConfigured instead of UnsupportedOperationError; a test asserts that orderin… |
 | low | PARTIAL | §14 (line 3350) | Implementations SHOULD support HTTPS to ensure authenticity and integrity of the Agent Card | Client fetches over HTTPS (rustls). Server HTTP listeners (serve/, JSON-RPC/REST/WS) do not terminate TLS; docs require a reverse proxy; only gRPC has native TLS (grpc-tls). |
 | low | PARTIAL | §14 (line 3352) | Clients SHOULD verify signatures when present | With CardFetchOptions::with_signature_keys (feature signing), resolve_agent_card_with_options and fetch_card_from_url_with_options return a signed card only if one signature verifies against the caller's keys; a tampered card or one with no matching key fails… |

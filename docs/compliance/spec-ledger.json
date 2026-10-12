@@ -666,7 +666,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1565 list_returns_all_tasks_most_recently_updated_first",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:566 list_orders_most_recently_updated_first",
-    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:319 task_list_orders_most_recently_updated_first (ignored without PG)"
+    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:449 task_list_orders_most_recently_updated_first (ignored without PG)"
    ],
    "notes": "",
    "auditor": "A",
@@ -709,7 +709,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1721 list_orders_by_status_timestamp_not_write_order",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:597 list_orders_by_status_timestamp_not_write_order",
-    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:387 task_list_status_timestamp_ordering_and_filter (ignored without PG)"
+    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:517 task_list_status_timestamp_ordering_and_filter (ignored without PG)"
    ],
    "notes": "Tasks without a parseable status timestamp fall back to write order.",
    "auditor": "A",
@@ -1130,7 +1130,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:339",
     "crates/a2a-protocol-server/src/push/config_store.rs:260",
-    "crates/a2a-protocol-server/src/push/sqlite_config_store.rs:171"
+    "crates/a2a-protocol-server/src/push/sqlite_config_store.rs:202"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/push_config.rs:25 push_config_crud_lifecycle",
@@ -1150,7 +1150,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/config_store.rs:260",
-    "crates/a2a-protocol-server/src/push/sqlite_config_store.rs:171"
+    "crates/a2a-protocol-server/src/push/sqlite_config_store.rs:202"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:1327 delete_push_config_nonexistent_returns_ok",
@@ -7079,13 +7079,22 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Agents SHOULD securely store push notification configurations and credentials",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sqlite_config_store.rs:99"
+    "crates/a2a-protocol-server/src/push/cipher.rs:119",
+    "crates/a2a-protocol-server/src/push/cipher.rs:153",
+    "crates/a2a-protocol-server/src/push/sqlite_config_store.rs:66"
    ],
-   "test_evidence": [],
-   "notes": "SQL push-config stores persist the whole config (incl. authentication.credentials and token) as plaintext JSON (`serde_json::to_string(&config)`); no at-rest encryption hook. In-memory and Debug output are redacted.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/push_config_sealing.rs:76 a_sealed_store_writes_no_secret_and_reads_its_configs_back",
+    "crates/a2a-protocol-server/tests/push_config_sealing.rs:92 a_sealed_config_moved_to_another_task_does_not_open",
+    "crates/a2a-protocol-server/tests/push_config_sealing.rs:150 the_tenant_store_seals_each_config_to_its_partition",
+    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:231 postgres_push_store_seals_its_configs",
+    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:267 tenant_postgres_push_store_seals_each_config_to_its_tenant",
+    "crates/a2a-protocol-server/src/push/cipher_tests.rs:188 with_a_cipher_an_unsealed_row_is_refused_unless_accepted"
+   ],
+   "notes": "Opt-in, since 2026-10-12: given a PushConfigCipher (with_cipher), the four SQL push-config stores write each config sealed (the whole JSON, so token and authentication.credentials are never stored in the clear) as a2a-sealed:v1:<base64>, bound as associated data to its row (partition, task id, config id), so a sealed config moved to another row does not open; with a cipher an unsealed row is refused unless accept_unsealed_rows, and without one a sealed row is refused. The SDK ships no cipher (tests use AES-256-GCM from ring). Default stores still write plaintext JSON; in-memory stores and Debug output are redacted as before.",
    "auditor": "F",
    "source": "spec"
   },
@@ -7790,7 +7799,7 @@
     "crates/a2a-protocol-server/src/store/retention/mod.rs:8"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:1449 retention_does_not_cross_tenants"
+    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:1579 retention_does_not_cross_tenants"
    ],
    "notes": "In-memory TTL default 1h; persistent stores keep everything unless purge_expired is configured (documented decision); audit has its own retention.",
    "auditor": "F",

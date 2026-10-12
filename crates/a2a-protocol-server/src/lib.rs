@@ -221,6 +221,8 @@ pub use store::{
 /// (N16).
 pub use tokio_util::sync::CancellationToken;
 
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+pub use push::PushConfigCipher;
 #[cfg(feature = "sqlite")]
 pub use push::{SqlitePushConfigStore, TenantAwareSqlitePushConfigStore};
 #[cfg(feature = "sqlite")]

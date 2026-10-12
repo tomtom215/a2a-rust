@@ -362,6 +362,7 @@ are rustdoc's job.
 |-------|-------------|
 | `AgentExecutor` | Agent logic entry point |
 | `TaskStore` | Task persistence backend |
+| `PushConfigCipher` | Seals push configs at rest in the SQL push-config stores (`with_cipher`; `sqlite` / `postgres` features) |
 | `PushConfigStore` | Push config persistence |
 | `PushSender` | Webhook delivery |
 | `ServerInterceptor` | Server-side middleware |

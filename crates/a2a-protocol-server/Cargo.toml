@@ -37,9 +37,9 @@ tracing = ["dep:tracing"]
 ## `HttpPushSender` speaks plaintext HTTP only and fails fast on `https://`.
 tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
-sqlite = ["dep:sqlx"]
+sqlite = ["dep:sqlx", "dep:base64"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
-postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
+postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json", "dep:base64"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite"]
 ## Enable gRPC transport via `tonic`. Serves the canonical `lf.a2a.v1.A2AService`

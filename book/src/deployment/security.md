@@ -70,7 +70,11 @@ something stops it. The bundled `HttpPushSender` does:
 * every delivery is capped at 30 seconds;
 * with `https_only()`, an `http://` webhook is refused at config creation and
   again at delivery, so payloads and credentials never cross the network in
-  plaintext (opt-in: spec §13.2 says webhook URLs SHOULD use HTTPS).
+  plaintext (opt-in: spec §13.2 says webhook URLs SHOULD use HTTPS);
+* with a `PushConfigCipher` (`with_cipher` on the SQL push-config stores),
+  configs are sealed at rest, bound to their row, so the table holds no token
+  or credential in the clear (opt-in: spec §13.2 says agents SHOULD store them
+  securely).
 
 If you replace the sender, you inherit all of that as your responsibility. The
 validation helpers are public and reusable — use them rather than reimplementing

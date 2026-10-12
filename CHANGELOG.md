@@ -29,6 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the new provided method `PushSender::requires_https` (default
   `false`). Off by default; `http://` webhooks are still delivered unless it
   is set.
+- **`PushConfigCipher`** and the SQL push-config stores' `with_cipher` and
+  `accept_unsealed_rows` (server, features `sqlite` / `postgres`; spec §13.2:
+  agents SHOULD securely store push notification configurations and
+  credentials). Opt-in: given a cipher, `SqlitePushConfigStore`,
+  `PostgresPushConfigStore` and their tenant-aware forms write each config
+  sealed (the whole JSON document, so the client's `token` and the webhook
+  `credentials` are never stored in the clear) as `a2a-sealed:v1:<base64>`,
+  bound to its row (tenant partition, task id, config id) as associated
+  data, so a sealed config moved to another row does not open. With a
+  cipher, an unsealed row is refused unless `accept_unsealed_rows` is set
+  for migrating a table written before; without one, a sealed row is
+  refused. The SDK ships no cipher: plug in an AEAD whose key your KMS
+  holds (the tests use AES-256-GCM from `ring`).
 - **`AuthFailureThrottle`** (server; spec §13.4: agents SHOULD rate-limit
   to prevent brute-force attacks). An interceptor, registered before the
   authenticating one, that counts per peer the calls refused as

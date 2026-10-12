@@ -1041,9 +1041,15 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     Found while designing §3.5.2's catch-up; item 21's caller isolation
     made it reach every authenticated server. Any hook a reader runs later
     (the §3.5.2 catch-up included) needs the same capture.
+35. `feat(server):` §13.2 — `PushConfigCipher`, opt-in: the SQL push-config
+    stores' `with_cipher` seals each config (`a2a-sealed:v1:<base64>`),
+    bound to its row, and `accept_unsealed_rows` reads a table written
+    before. The SDK ships no cipher; the tests use AES-256-GCM from `ring`
+    (`tests/support/aes_gcm.rs`). `tenant_sqlite_config_store.rs`'s tests
+    moved to their own file, unchanged, to keep it under 500 lines.
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 314,
-PARTIAL 22, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
+PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**
@@ -1109,8 +1115,8 @@ PARTIAL 22, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
    bounded buffer loses events, reported as `streamLagged`), §8.4.3 (line
    2132; `jku` is never followed, deliberately: `fetch_jwks` takes a URL
    the caller trusts, not one the card names), and §12 (line 2985;
-   SLIMRPC's own spec maps two errors differently from A2A §5.4). The 22
-   PARTIAL left are these four and 18 low.
+   SLIMRPC's own spec maps two errors differently from A2A §5.4). The 21
+   PARTIAL left are these four and 17 low.
 9. Pin freshness (`pin-freshness.yml`, every third Monday; next 2026-10-26,
    or dispatch it with `force`). Its 2026-10-05 grading run had three red
    legs: python-sdk never graded (no PyYAML; fixed on this branch), go-sdk
@@ -1155,11 +1161,17 @@ PARTIAL 22, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
     `retry_after: None` (`transport/grpc.rs`), dropping the `RetryInfo`
     detail the server sends, so a retry policy backs off on its own schedule
     instead of the server's; the JSON-RPC and REST clients honour it.
-14. Two hardening items the maintainer chose are still open: an
-    encryption hook for push-config credentials at rest in the SQL stores
-    (§13.2, ledger line 3139), and §3.5.2's lagged stream catching up from
-    the task store's event log instead of reporting `streamLagged` (ledger
-    line 692, medium).
+14. One item the maintainer chose is still open: §3.5.2's lagged stream
+    catching up from the task store's event log instead of reporting
+    `streamLagged` (ledger line 692, medium). The pieces exist
+    (`read_log_with_catchup`, `queue_replay`, `event_log_covers`); the reader
+    needs a catch-up hook, built inside the request so it captures the tenant
+    (item 34).
+15. The Postgres-gated suites run locally against a throwaway PostgreSQL 16
+    (`initdb` as the `postgres` user, outside the scratchpad, whose parent
+    permissions get reset): `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres
+    cargo test -p a2a-protocol-server --features postgres --test
+    postgres_store_tests -- --ignored`.
 
 ## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
 

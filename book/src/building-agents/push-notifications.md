@@ -235,6 +235,73 @@ RequestHandlerBuilder::new(executor)
 # }
 ```
 
+### Sealing stored configs
+
+A push config carries secrets: the client's `token`, and the `credentials` the
+agent presents to the webhook. The SQL push-config stores keep each config as
+JSON, so without more they hold both in the clear (spec §13.2: agents SHOULD
+store them securely). Give a store a `PushConfigCipher` and it writes each
+config sealed, as `a2a-sealed:v1:<base64>`, and opens it on read:
+
+```rust,no_run
+# use std::future::Future;
+# use std::pin::Pin;
+# use std::sync::Arc;
+use a2a_protocol_server::push::{PushConfigCipher, SqlitePushConfigStore};
+use a2a_protocol_types::error::A2aResult;
+
+/// An AEAD (AES-256-GCM, ChaCha20-Poly1305) whose key your KMS holds,
+/// authenticating `context` as associated data.
+struct KmsCipher;
+
+impl PushConfigCipher for KmsCipher {
+    fn seal<'a>(
+        &'a self,
+        plaintext: Vec<u8>,
+        context: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<u8>>> + Send + 'a>> {
+        Box::pin(async move { aead_seal(plaintext, context) })
+    }
+
+    fn open<'a>(
+        &'a self,
+        sealed: Vec<u8>,
+        context: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<u8>>> + Send + 'a>> {
+        Box::pin(async move { aead_open(sealed, context) })
+    }
+}
+# fn aead_seal(p: Vec<u8>, _: &[u8]) -> A2aResult<Vec<u8>> { Ok(p) }
+# fn aead_open(s: Vec<u8>, _: &[u8]) -> A2aResult<Vec<u8>> { Ok(s) }
+
+# async fn f() -> Result<(), Box<dyn std::error::Error>> {
+let store = SqlitePushConfigStore::new("sqlite:push.db?mode=rwc")
+    .await?
+    .with_cipher(Arc::new(KmsCipher));
+# Ok(())
+# }
+```
+
+The SDK ships no cipher, by design; bring a vetted AEAD. The server crate's
+tests use AES-256-GCM from `ring` with a random 96-bit nonce per seal
+(`tests/support/aes_gcm.rs`), which is safe for up to 2^32 seals under one key.
+
+- **The context binds a config to its row**: the JSON array
+  `["a2a-push-config/v1", partition, task_id, id]`, with `partition` `""` in a
+  store without tenants. The cipher must authenticate it, or anyone who can
+  write the table could move a sealed config to another task and receive that
+  task's updates.
+- **Fails closed**: with a cipher, a row that is not sealed, or one the cipher
+  cannot open, is an error rather than a config. Without one, a sealed row is
+  an error.
+- **Migrating a table written before**: `accept_unsealed_rows()` also reads
+  plain rows; each is sealed when it is next written. A config that is never
+  rewritten stays plain, so find them (`data NOT LIKE 'a2a-sealed:%'` in
+  SQLite, `jsonb_typeof(data) <> 'string'` in Postgres) and re-create them
+  before dropping the flag.
+- The task and config ids stay in their own columns, unsealed, so lookups and
+  deletes work as before.
+
 ## Security Considerations
 
 - **Always use HTTPS** for webhook URLs in production
