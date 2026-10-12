@@ -553,6 +553,32 @@ stage's arithmetic. Neither is an argument against the simplification — the
 file ended simpler *and* better tested — but both are arguments for re-running
 the sweep after a refactor rather than assuming the score can only improve.
 
+### Two retired by matching the replacement exactly, 2026-10-12
+
+Both survived the sweeps of 2026-09-28, 2026-10-05 and 2026-10-12, and both
+were equivalent outright, not untested:
+
+- `TaskStore::earliest_event_seq`'s default returned `Ok(None)`, and the
+  mutant replaces the body with `Box::pin(async move{Ok(None)})` — the same
+  value, with no side effect either way. The patched cargo-mutants already
+  skips a replacement equal to a boxed future's whole body, which is why
+  `TaskStore::count`'s `Box::pin(async { Ok(0) })` never produced an `Ok(0)`
+  mutant; this body escaped that check only because it began with
+  `let _ = task_id;`. The discard is now an `#[allow(unused_variables)]` on the
+  method, the body is the bare expression, and the mutant is not generated.
+- The conformance harness's `CancelOnFirstWrite::close` forwarded to
+  `InMemoryQueueWriter::close`, whose body is itself
+  `Box::pin(async move { Ok(()) })` — the channel closes when the last writer
+  drops, not on `close`. Forwarding and doing nothing were the same function.
+  The wrapper now does nothing, in the form the tool recognises, and
+  `close_is_no_op_and_succeeds` was strengthened from "returns `Ok`" to "the
+  queue still delivers a write made after `close`", so the equivalence the
+  rewrite rests on fails a test the day it stops holding.
+
+Measured with the pinned, patched cargo-mutants 27.1.0 over the two
+functions: 4 mutants listed before the change, 2 after (`Ok(Some(0))` and
+`Ok(Some(1))`, both caught in the 2026-10-12 sweep).
+
 ## Per-file measurements
 
 A full workspace sweep needs 21 CI runners; a single 4-core machine projects to

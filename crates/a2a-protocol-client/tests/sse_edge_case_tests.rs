@@ -225,6 +225,33 @@ fn with_max_event_size_recovery_after_oversized() {
     assert_eq!(second.unwrap().data, "ok");
 }
 
+/// An event refused on a later line, after earlier lines were accepted,
+/// leaves nothing behind: the next event carries only its own data and type.
+/// The single-line case above cannot show this, because nothing was
+/// accumulated before its one line overflowed. Without the reset the next
+/// event is refused too, as `EventTooLarge { limit: 32, actual: 40 }`: the
+/// refused event's size is still counted against it (the weekly mutation
+/// sweep of 2026-10-12 found the reset untested).
+#[test]
+fn with_max_event_size_a_later_overflow_leaves_no_state_behind() {
+    let mut p = SseParser::with_max_event_size(32);
+    p.feed(b"event: big\ndata: 0123456789\ndata: 0123456789012345678901234\n\n");
+    p.feed(b"data: ok\n\n");
+
+    let first = p.next_frame().expect("first result");
+    assert!(
+        matches!(first, Err(SseParseError::EventTooLarge { .. })),
+        "{first:?}"
+    );
+    let second = p
+        .next_frame()
+        .expect("second result")
+        .expect("the next event parses");
+    assert_eq!(second.data, "ok");
+    assert_eq!(second.event_type, None);
+    assert!(p.next_frame().is_none(), "nothing else is pending");
+}
+
 // ── T-2: Fragmented delivery ─────────────────────────────────────────────────
 
 #[test]

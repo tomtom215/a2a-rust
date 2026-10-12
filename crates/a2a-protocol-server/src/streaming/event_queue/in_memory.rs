@@ -1408,9 +1408,23 @@ mod tests {
 
     #[tokio::test]
     async fn close_is_no_op_and_succeeds() {
-        let (writer, _reader) = new_in_memory_queue();
+        let (writer, mut reader) = new_in_memory_queue();
         let result = writer.close().await;
         assert!(result.is_ok(), "close() should succeed");
+
+        // A no-op in fact, not just in name: the queue stays open until the
+        // last writer drops. `CancelOnFirstWrite::close` in the conformance
+        // harness is written as the same no-op on the strength of this.
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .expect("a write after close() still succeeds");
+        assert!(
+            reader.read().await.is_some(),
+            "the event written after close() arrives"
+        );
+        drop(writer);
+        assert!(reader.read().await.is_none(), "EOF once the writer drops");
     }
 
     // ── subscribe creates independent readers ────────────────────────────

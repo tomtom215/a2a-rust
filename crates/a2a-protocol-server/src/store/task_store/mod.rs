@@ -629,11 +629,15 @@ pub trait TaskStore: Send + Sync + 'static {
     /// # Errors
     ///
     /// [`A2aError`](a2a_protocol_types::error::A2aError) if the store fails.
+    // An attribute rather than the `let _ = task_id;` the other defaults use:
+    // with that statement the body differed from cargo-mutants' `Ok(None)`
+    // replacement only in text, which listed the default as a mutant of
+    // itself that no test can kill.
+    #[allow(unused_variables)]
     fn earliest_event_seq<'a>(
         &'a self,
         task_id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
-        let _ = task_id;
         Box::pin(async { Ok(None) })
     }
 

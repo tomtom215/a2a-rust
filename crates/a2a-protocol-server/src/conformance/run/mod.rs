@@ -130,8 +130,12 @@ impl EventQueueWriter for CancelOnFirstWrite {
         })
     }
 
+    // `InMemoryQueueWriter::close` is a no-op — the channel closes when the
+    // last writer drops — so forwarding to it and doing nothing are the same
+    // function, and the forwarding form left a mutant no test could kill.
+    // `close_is_no_op_and_succeeds` fails if that ever stops being true.
     fn close<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        self.inner.close()
+        Box::pin(async { Ok(()) })
     }
 }
 

@@ -765,6 +765,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   action handles its inputs). Its pin comment said `master 2026-09-03`; the
   previous pin was dated 2026-09-11 and the comment now gives the new
   commit's date.
+- **The weekly mutation sweep's survivors are gone** (2026-09-28 onward, six
+  each week). New tests fail under `SseParser::reset_event_state` emptied
+  and under `RequestHandler::task_count` returning 0 or 1. The
+  `TaskStore::earliest_event_seq` default and the conformance harness's
+  `CancelOnFirstWrite::close` were equivalent mutants, no-ops either way, and
+  are now written so the tool does not generate them; the queue test that
+  justifies the second now checks that `close` really is a no-op. No
+  behaviour changes. `check_endpoint_reachable`, the sixth, was already
+  killed on `main`.
 - **Tests for four spec requirements that were implemented but untested**:
   §3.1.4 `includeArtifacts` omission (`list_tasks_artifacts.rs`), §3.3.4
   streaming refused without the capability on the JSON-RPC wire and §3.5.2
