@@ -12,8 +12,9 @@ stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
 Last updated 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
-left after #165, OpenTelemetry 0.33, a versioned documentation site, and the
-weekly mutation sweep. `git log -1 --format='%ci %s' --
+left after #165, OpenTelemetry 0.33, a versioned documentation site, the
+weekly mutation sweep, the ledger's last GAP (§3.3.4), push timeouts,
+JSON-RPC `RetryInfo`, and §13.1 caller isolation by default. `git log -1 --format='%ci %s' --
 docs/handoff.md` remains the authority on this line.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
@@ -981,9 +982,23 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     capability for (`ClientError::CapabilityNotDeclared`), with
     `ClientBuilder::without_capability_checks` and the CLI's
     `--no-capability-check` to opt out.
+17. `fix(server):` push webhook timeouts of 10 s per request and 30 s per
+    delivery (§4.3.3, §13.2), so every attempt of the default three starts
+    inside the bound.
+18. `feat(client):` a rate limit refused over JSON-RPC or WebSocket
+    (`InternalError` with a `RetryInfo` detail) is retried after the delay
+    it names; `A2aError::with_retry_info_from_details`.
+19. `test(server):` the stress test reports a failed connect's whole error
+    chain, and its accept loop says when it stops (item 6 below).
+20. `deps(itk):` the card-signature interop pin moves to a2a-sdk 1.2.2, after
+    the interop matched all six cards against it.
+21. `feat(server)!:` §13.1 — an authenticating interceptor isolates tasks by
+    caller by default; `share_tasks_across_callers()` opts out. See "§13.1,
+    as built" below for the rules and what `build()` now refuses.
+22. `docs(handoff):` this update.
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 299,
-PARTIAL 35, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 301,
+PARTIAL 33, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**
@@ -1018,6 +1033,31 @@ PARTIAL 35, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
 4. The incremental mutation job still slices: run 37906246207 put one shard
    at ~83 minutes while the other seven took 13-49. Round-robin is the likely
    fix there too; measure it from that run's artifacts before changing it.
+5. `benches/sdk-comparison/harness/agent-a2a-rust` pins the published
+   `a2a-protocol-sdk =0.14.1`, so the §13.1 default does not reach it yet.
+   When the pin moves past it, its `AUTH_TOKEN` mode (one unlabelled token)
+   with `SQLITE_URL` builds no more without `share_tasks_across_callers()`,
+   and without `SQLITE_URL` it measures `TenantAwareInMemoryTaskStore`
+   instead of the plain store: add the call to keep the measured store.
+6. `stress_tests::concurrent_200_requests_all_succeed` failed once on
+   `Test (1.88, windows-latest)` at `2d086b04` (run 38269273780): 1 of 200
+   requests got `client error (Connect)`. The CI runs on `main` that
+   preceded it succeeded, and both runs on the previous head (`40449307`)
+   got past this binary to fail later, in `telemetry_export`. It failed at
+   TCP connect, before a request reaches any code this branch changed; the
+   cause is not established. Two candidates, neither confirmed: a
+   full accept backlog (Windows refuses a connect then, where Linux retries
+   the SYN), or the test's own accept loop, which `break`s on the first
+   `accept()` error and so drops the listener. Item 19 makes a recurrence
+   name its cause: read the failing log's error chain, and look for
+   "accept failed". In that job it failed in the `sqlite` feature step,
+   after passing in the five steps before it; the re-run of the job on the
+   same commit passed (run attempt 2).
+7. Required agent card at `RequestHandlerBuilder::build` with a
+   `without_agent_card()` opt-out (§8.1, ledger lines 1980 and 571): decided
+   by the maintainer 2026-10-12 ("require a card, opt-out"), not yet built.
+   About 574 builder call sites, 151 of them with a card, so most of the work
+   is test churn.
 
 ## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
 
@@ -1278,9 +1318,33 @@ chains and metric labels. Spawned work re-enters both through
 would get its own halt scope, so halting a tenant would not stop its callers);
 a nested future per method (clippy `large_futures`: 29-34 KB); a general
 `TaskAuthorizer` hook (ownership would have to be stored in all four stores).
-A maintainer decision remains: whether isolation should become the default
-when an authenticating interceptor is installed. That is a breaking change for
-deployments that share tasks within a tenant on purpose.
+**Decided 2026-10-12 and done on `claude/tender-cray-bsfw83`: on by default
+with an authenticating interceptor.** The rules, as built:
+- `build()` resolves an unset isolation to `IdentifiedCallers` when an
+  interceptor `authenticates()`, else `Shared`. Unset stores become the
+  tenant-aware in-memory ones under isolation (1,000 partitions by default).
+  `TenantStoreConfig` has no overall cap: each partition gets the whole
+  `with_task_store_config` capacity (10,000 tasks by default), so that
+  default store's worst case is now 1,000 times the old one. Documented, not
+  changed; the maintainer was not asked about it.
+- A request no interceptor identified (an unlabelled token or key, a JWT
+  without `sub`) keeps the tenant's shared records under the default, as the
+  maintainer was promised ("no change when there is no authenticated
+  identity"); `isolate_tasks_by_caller()` (`EveryCaller`) still refuses it.
+  The shared partition is the bare tenant, which `isolatable` keeps free of
+  U+001F, so it never meets a caller partition.
+- `build()` refuses a supplied task or push-config store that does not
+  partition (agreed with the maintainer), and an approval gate that needs a
+  second approver, including `Profile::Auditable`'s, since the approver
+  could never reach the requester's task. The gate refusal was not in the
+  question put to the maintainer: it follows their choice of a build error
+  over silent sharing, and is theirs to reverse (the alternative is to
+  resolve the default to `Shared` when such a gate is installed).
+- Every handler built with an authenticating interceptor was read, in the
+  workspace and out (TCK SUT, ITK agent, soak, examples, book): the ones that
+  would no longer build call `share_tasks_across_callers()` or drop an
+  explicit plain store. The ITK agent, outside the workspace, was
+  compile-checked with `cargo check --locked` and `-D warnings`.
 
 **Environment notes, new this session.**
 - `pkill -f` / `pgrep -f` with a pattern from your own command killed the
