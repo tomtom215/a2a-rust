@@ -262,3 +262,31 @@ fn unknown_keys_and_messages_are_left_alone() {
     prune(other.as_object_mut().expect("object"), "NotAMessage");
     assert_eq!(other, json!({"anything": ""}));
 }
+
+#[test]
+fn is_default_matches_protobuf_defaults_for_every_json_kind() {
+    // No message in `SCHEMA` has a numeric field (checked against the
+    // vendored proto), so only a direct call reaches the numeric arm.
+    for default in [
+        json!(null),
+        json!(false),
+        json!(0),
+        json!(0.0),
+        json!(""),
+        json!([]),
+        json!({}),
+    ] {
+        assert!(is_default(&default), "{default} is a protobuf default");
+    }
+    for set in [
+        json!(true),
+        json!(1),
+        json!(-1),
+        json!(0.5),
+        json!("x"),
+        json!([0]),
+        json!({"k": 0}),
+    ] {
+        assert!(!is_default(&set), "{set} is not a protobuf default");
+    }
+}
