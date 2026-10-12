@@ -38,8 +38,14 @@ impl RateLimitInterceptor {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let remaining = self.config.window_secs - now_secs % self.config.window_secs;
+        let remaining = Self::seconds_to_window_end(self.config.window_secs, now_secs);
         A2aError::rate_limited(message, Duration::from_secs(remaining))
+    }
+
+    /// Whole seconds from `now_secs` to the end of its window, in
+    /// `1..=window_secs`. `window_secs` is never zero (`new` refuses it).
+    pub(super) const fn seconds_to_window_end(window_secs: u64, now_secs: u64) -> u64 {
+        window_secs - now_secs % window_secs
     }
 
     /// Removes buckets whose window is older than the previous window.

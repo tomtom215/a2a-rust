@@ -110,8 +110,7 @@ pub trait PushSender: Send + Sync + 'static {
     /// config is created so a URL the sender would refuse is rejected then,
     /// not stored. Default: `true`. [`HttpPushSender`] answers from its
     /// [`with_allowed_hosts`](HttpPushSender::with_allowed_hosts) allowlist.
-    fn allows_webhook_url(&self, url: &str) -> bool {
-        let _ = url;
+    fn allows_webhook_url(&self, _url: &str) -> bool {
         true
     }
 
