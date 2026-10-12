@@ -1873,4 +1873,109 @@ mod tests {
             "the snapshot leads, and carries no position"
         );
     }
+
+    // ── identity binding on artifact updates and task snapshots ─────────
+    //
+    // `check_identity` has one arm per event kind that carries ids. Status
+    // updates are covered end to end in `tests/event_identity.rs`; these two
+    // arms are not reached there.
+
+    fn bound_writer() -> (InMemoryQueueWriter, InMemoryQueueReader) {
+        let (writer, reader) = new_in_memory_queue();
+        writer.bind_identity(TaskId::new("t-bound"), ContextId::new("ctx-bound"));
+        (writer, reader)
+    }
+
+    fn artifact_update(task_id: &str) -> StreamResponse {
+        use a2a_protocol_types::artifact::Artifact;
+        use a2a_protocol_types::events::TaskArtifactUpdateEvent;
+        use a2a_protocol_types::message::Part;
+        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: TaskId::new(task_id),
+            context_id: ContextId::new(""),
+            artifact: Artifact::new("a-1", vec![Part::text("x")]),
+            append: None,
+            last_chunk: None,
+            metadata: None,
+        })
+    }
+
+    fn task_snapshot(task_id: &str) -> StreamResponse {
+        use a2a_protocol_types::task::Task;
+        StreamResponse::Task(Task {
+            id: TaskId::new(task_id),
+            context_id: ContextId::new(""),
+            status: TaskStatus {
+                state: TaskState::Working,
+                message: None,
+                timestamp: None,
+            },
+            history: None,
+            artifacts: None,
+            metadata: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn a_bound_writer_fills_and_refuses_artifact_update_ids() {
+        let (writer, mut reader) = bound_writer();
+        assert!(
+            writer.write(artifact_update("t-other")).await.is_err(),
+            "an artifact update naming another task is refused"
+        );
+        writer.write(artifact_update("")).await.unwrap();
+        match reader.read().await.unwrap().unwrap().event {
+            StreamResponse::ArtifactUpdate(u) => {
+                assert_eq!(u.task_id, TaskId::new("t-bound"));
+                assert_eq!(u.context_id, ContextId::new("ctx-bound"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_bound_writer_fills_and_refuses_task_snapshot_ids() {
+        let (writer, mut reader) = bound_writer();
+        assert!(
+            writer.write(task_snapshot("t-other")).await.is_err(),
+            "a task snapshot naming another task is refused"
+        );
+        writer.write(task_snapshot("")).await.unwrap();
+        match reader.read().await.unwrap().unwrap().event {
+            StreamResponse::Task(t) => {
+                assert_eq!(t.id, TaskId::new("t-bound"));
+                assert_eq!(t.context_id, ContextId::new("ctx-bound"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    /// A provisional snapshot that is already terminal closes the stream once
+    /// the event read alongside it is delivered, with the writer still alive
+    /// (`replace |= with &=` on the provisional path leaves `saw_terminal`
+    /// false and the third read waits on the live channel instead).
+    #[tokio::test]
+    async fn a_terminal_provisional_snapshot_closes_the_stream() {
+        let (writer, mut reader) = new_in_memory_queue();
+        reader.set_provisional_task(make_status_event("t-p", TaskState::Completed));
+        writer
+            .write(make_status_event("t-p", TaskState::Working))
+            .await
+            .unwrap();
+
+        let mut seen = vec![];
+        for _ in 0..2 {
+            match reader.read().await.unwrap().unwrap().event {
+                StreamResponse::StatusUpdate(u) => seen.push(u.status.state),
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        assert_eq!(seen, vec![TaskState::Completed, TaskState::Working]);
+        let end = tokio::time::timeout(std::time::Duration::from_secs(2), reader.read()).await;
+        assert!(
+            matches!(end, Ok(None)),
+            "the stream ends at the terminal snapshot, not when the writer drops"
+        );
+        drop(writer);
+    }
 }
