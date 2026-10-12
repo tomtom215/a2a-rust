@@ -82,6 +82,94 @@ fn a_card_missing_a_required_field_does_not_parse() {
     }
 }
 
+/// Present but empty, a security scheme's REQUIRED string parses: over gRPC
+/// an absent proto3 string arrives empty, so parsing cannot refuse it.
+/// `validate_security_schemes` does, naming the field.
+#[test]
+fn an_empty_required_scheme_field_is_refused_by_validate_security_schemes() {
+    let control: AgentCard = serde_json::from_value(full_card()).expect("the control parses");
+    control
+        .validate_security_schemes()
+        .expect("the control's schemes are valid");
+
+    for (path, named) in [
+        (
+            "/securitySchemes/key/apiKeySecurityScheme/name",
+            "apiKeySecurityScheme needs a name",
+        ),
+        (
+            "/securitySchemes/http/httpAuthSecurityScheme/scheme",
+            "httpAuthSecurityScheme needs a scheme",
+        ),
+        (
+            "/securitySchemes/oidc/openIdConnectSecurityScheme/openIdConnectUrl",
+            "openIdConnectSecurityScheme needs an openIdConnectUrl",
+        ),
+        (
+            "/securitySchemes/ac/oauth2SecurityScheme/flows/authorizationCode/authorizationUrl",
+            "authorizationCode flow needs an authorizationUrl",
+        ),
+        (
+            "/securitySchemes/ac/oauth2SecurityScheme/flows/authorizationCode/tokenUrl",
+            "authorizationCode flow needs a tokenUrl",
+        ),
+        (
+            "/securitySchemes/cc/oauth2SecurityScheme/flows/clientCredentials/tokenUrl",
+            "clientCredentials flow needs a tokenUrl",
+        ),
+        (
+            "/securitySchemes/dc/oauth2SecurityScheme/flows/deviceCode/deviceAuthorizationUrl",
+            "deviceCode flow needs a deviceAuthorizationUrl",
+        ),
+        (
+            "/securitySchemes/dc/oauth2SecurityScheme/flows/deviceCode/tokenUrl",
+            "deviceCode flow needs a tokenUrl",
+        ),
+    ] {
+        let mut card = full_card();
+        *card
+            .pointer_mut(path)
+            .unwrap_or_else(|| panic!("no {path}")) = json!("");
+        let card: AgentCard =
+            serde_json::from_value(card).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let why = card.validate_security_schemes().expect_err(path);
+        assert!(why.contains(named), "{path}: {why}");
+    }
+}
+
+/// An API key's `location` is an enum with no empty value: `""` does not
+/// parse.
+#[test]
+fn an_empty_api_key_location_does_not_parse() {
+    let mut card = full_card();
+    *card
+        .pointer_mut("/securitySchemes/key/apiKeySecurityScheme/location")
+        .unwrap() = json!("");
+    assert!(serde_json::from_value::<AgentCard>(card).is_err());
+}
+
+/// Over gRPC the empty `location` an absent field arrives as does not
+/// convert.
+#[cfg(feature = "proto")]
+#[test]
+fn a_grpc_api_key_scheme_with_an_empty_location_is_refused() {
+    use a2a_protocol_types::proto as pb;
+    use a2a_protocol_types::security::SecurityScheme;
+
+    let scheme = |location: &str| pb::SecurityScheme {
+        scheme: Some(pb::security_scheme::Scheme::ApiKeySecurityScheme(
+            pb::ApiKeySecurityScheme {
+                location: location.into(),
+                name: "X-Api-Key".into(),
+                ..Default::default()
+            },
+        )),
+    };
+    SecurityScheme::try_from(scheme("header")).expect("the control converts");
+    let err = SecurityScheme::try_from(scheme("")).expect_err("an empty location converted");
+    assert_eq!(err.field, "apiKey.location");
+}
+
 /// `TaskStatusUpdateEvent` and `TaskArtifactUpdateEvent`: `taskId`,
 /// `contextId` and the status or artifact are REQUIRED. Over JSON a missing
 /// key does not parse.

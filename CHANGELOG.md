@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only `/` is indexed. Built by `scripts/build_docs_site.py`, checked by its
   `check` step, which `prove_workflow_gates_fail.py` proves can fail; it
   deploys on every push to `main` and when the Release workflow succeeds.
+- **`AgentCard::validate_security_schemes`** (types; proto `REQUIRED`):
+  refuses a security scheme whose REQUIRED string is empty. See "refuses
+  empty required strings" under Behaviour Changes.
 - **`A2aError::with_retry_info_from_details`** (types): records the delay of a
   received error's `RetryInfo` detail, so `retry_after` (now a `const fn`)
   answers for an error from the wire as it does for one built with
@@ -388,7 +391,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `protocolVersion`; the provider's `organization` or `url`; a skill's
   `id`, `name` or `description`; a signature's `protected` or `signature`.
   Over gRPC an empty string is the absent value. Security-scheme fields are
-  not yet checked (the const `validate` cannot walk the scheme map).
+  checked by `AgentCard::validate_security_schemes` (the const `validate`
+  cannot walk the scheme map): an API key's `name`, an HTTP scheme's
+  `scheme`, an OpenID Connect `openIdConnectUrl`, and the URLs of the
+  authorization-code, client-credentials and device-code flows.
+  `RequestHandlerBuilder::build`, `HotReloadAgentCardHandler` and
+  `DynamicAgentCardHandler` run both.
 - **An executor's events are bound to its task** (server; proto
   `REQUIRED` `taskId`/`contextId`). A status, artifact or task event written
   with an empty task or context id gets the running task's; one naming

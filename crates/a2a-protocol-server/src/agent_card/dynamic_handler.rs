@@ -43,14 +43,17 @@ pub struct DynamicAgentCardHandler<P> {
 impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
     /// The producer's card, refused when it is not one this server may
     /// publish (spec §5.7: required arrays non-empty; see
-    /// [`AgentCard::validate`]). A refusal is answered as a producer failure,
-    /// `500`, since serving it would be the server's error, not the
-    /// caller's. Until 2026-10-11 a produced card was served unchecked.
+    /// [`AgentCard::validate`] and [`AgentCard::validate_security_schemes`]).
+    /// A refusal is answered as a producer failure, `500`, since serving it
+    /// would be the server's error, not the caller's. Until 2026-10-11 a
+    /// produced card was served unchecked.
     async fn valid_card(&self) -> A2aResult<AgentCard> {
         let card = self.producer.produce().await?;
-        card.validate().map_err(|why| {
-            a2a_protocol_types::error::A2aError::internal(format!("invalid agent card: {why}"))
-        })?;
+        card.validate()
+            .and_then(|()| card.validate_security_schemes())
+            .map_err(|why| {
+                a2a_protocol_types::error::A2aError::internal(format!("invalid agent card: {why}"))
+            })?;
         Ok(card)
     }
 

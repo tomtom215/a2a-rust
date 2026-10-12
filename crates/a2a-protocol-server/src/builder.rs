@@ -690,8 +690,9 @@ impl RequestHandlerBuilder {
     /// Returns [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams),
     /// naming what to change, if the configuration is one this handler cannot
     /// serve correctly:
-    /// - an agent card the spec does not allow (`AgentCard::validate`), or a
-    ///   signed card it would have to edit to declare an extension;
+    /// - an agent card the spec does not allow (`AgentCard::validate` and
+    ///   `AgentCard::validate_security_schemes`), or a signed card it would
+    ///   have to edit to declare an extension;
     /// - no agent card, unless [`without_agent_card`](Self::without_agent_card)
     ///   (spec §8.1);
     /// - a zero executor timeout, `max_id_length`, `max_metadata_size` or
@@ -707,9 +708,12 @@ impl RequestHandlerBuilder {
         // A card this server would publish must be valid: a name, and every
         // repeated field the proto marks REQUIRED non-empty (spec §5.7).
         // Until 2026-10-11 only the interface list was checked, so a card
-        // with no skills or modes was served as it was.
+        // with no skills or modes was served as it was; until 2026-10-12 a
+        // security scheme's REQUIRED strings were not checked at all.
         if let CardSetting::Card(ref card) = self.agent_card
-            && let Err(why) = card.validate()
+            && let Err(why) = card
+                .validate()
+                .and_then(|()| card.validate_security_schemes())
         {
             return Err(crate::error::ServerError::InvalidParams(why.into()));
         }
@@ -1193,6 +1197,39 @@ mod tests {
             .with_agent_card(card)
             .build();
         assert!(result.is_err());
+    }
+
+    /// A security scheme's REQUIRED string, present but empty, is refused
+    /// like the card's own (`AgentCard::validate_security_schemes`).
+    #[test]
+    fn build_refuses_a_card_with_an_empty_required_scheme_field() {
+        use a2a_protocol_types::security::{HttpAuthSecurityScheme, SecurityScheme};
+
+        let card = |scheme: &str| {
+            let mut card = crate::agent_card::caching::tests::minimal_agent_card();
+            card.security_schemes = Some(std::collections::HashMap::from([(
+                "bearer".to_owned(),
+                SecurityScheme::Http(HttpAuthSecurityScheme {
+                    scheme: scheme.to_owned(),
+                    bearer_format: None,
+                    description: None,
+                }),
+            )]));
+            card
+        };
+        RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card("bearer"))
+            .build()
+            .expect("the control builds");
+        let err = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card(""))
+            .build()
+            .expect_err("a card with an empty HTTP scheme built");
+        assert!(
+            err.to_string()
+                .contains("httpAuthSecurityScheme needs a scheme"),
+            "{err}"
+        );
     }
 
     #[test]

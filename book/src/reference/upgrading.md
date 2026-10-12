@@ -157,7 +157,10 @@ let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc(url))
 ```
 
 `AgentCard::new` now starts both mode lists at `["text/plain"]`, so a card
-built with it only needs the skill. A `DynamicAgentCardHandler` whose producer
+built with it only needs the skill. `build()` also runs
+`AgentCard::validate_security_schemes`, which refuses a security scheme whose
+REQUIRED string is empty, such as an API key with no `name`. A
+`DynamicAgentCardHandler` whose producer
 returns an invalid card answers `500`, and `HotReloadAgentCardHandler` refuses
 to reload one and keeps serving the previous card.
 

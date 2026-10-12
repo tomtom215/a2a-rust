@@ -198,6 +198,24 @@ impl SecurityScheme {
             Self::MutualTls(_) => SCHEME_ARMS[4].0,
         }
     }
+
+    /// Refuses a string field `a2a.proto` marks REQUIRED that is empty.
+    ///
+    /// Over JSON a missing one does not parse, but an empty one does, and
+    /// over gRPC an absent proto3 string arrives empty. `location` needs no
+    /// check: [`ApiKeyLocation`] has no empty value, and `""` neither parses
+    /// nor converts.
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        match self {
+            Self::ApiKey(s) if s.name.is_empty() => Err("an apiKeySecurityScheme needs a name"),
+            Self::Http(s) if s.scheme.is_empty() => Err("an httpAuthSecurityScheme needs a scheme"),
+            Self::OpenIdConnect(s) if s.open_id_connect_url.is_empty() => {
+                Err("an openIdConnectSecurityScheme needs an openIdConnectUrl")
+            }
+            Self::OAuth2(s) => s.flows.validate(),
+            Self::ApiKey(_) | Self::Http(_) | Self::OpenIdConnect(_) | Self::MutualTls(_) => Ok(()),
+        }
+    }
 }
 
 impl Serialize for SecurityScheme {
@@ -418,6 +436,36 @@ pub enum OAuthFlows {
     /// ```
     #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code")]
     Password(PasswordOAuthFlow),
+}
+
+impl OAuthFlows {
+    /// [`SecurityScheme::validate`] for the flow. The proto marks no field
+    /// of the deprecated implicit and password flows REQUIRED.
+    #[allow(deprecated)] // matching the deprecated flows is not using them
+    const fn validate(&self) -> Result<(), &'static str> {
+        match self {
+            Self::AuthorizationCode(f) if f.authorization_url.is_empty() => {
+                Err("an authorizationCode flow needs an authorizationUrl")
+            }
+            Self::AuthorizationCode(f) if f.token_url.is_empty() => {
+                Err("an authorizationCode flow needs a tokenUrl")
+            }
+            Self::ClientCredentials(f) if f.token_url.is_empty() => {
+                Err("a clientCredentials flow needs a tokenUrl")
+            }
+            Self::DeviceCode(f) if f.device_authorization_url.is_empty() => {
+                Err("a deviceCode flow needs a deviceAuthorizationUrl")
+            }
+            Self::DeviceCode(f) if f.token_url.is_empty() => {
+                Err("a deviceCode flow needs a tokenUrl")
+            }
+            Self::AuthorizationCode(_)
+            | Self::ClientCredentials(_)
+            | Self::DeviceCode(_)
+            | Self::Implicit(_)
+            | Self::Password(_) => Ok(()),
+        }
+    }
 }
 
 /// OAuth 2.0 authorization code flow.

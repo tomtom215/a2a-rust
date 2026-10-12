@@ -38,7 +38,7 @@
     "crates/a2a-protocol-types/build.rs:6",
     "crates/a2a-protocol-types/src/task.rs:420",
     "crates/a2a-protocol-types/src/responses.rs:49",
-    "crates/a2a-protocol-types/src/security.rs:394"
+    "crates/a2a-protocol-types/src/security.rs:412"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/proto_schema_sync.rs:53 canonical_proto_copies_are_identical",
@@ -85,16 +85,16 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:394",
-    "crates/a2a-protocol-types/src/security.rs:406",
-    "crates/a2a-protocol-types/src/security.rs:419",
-    "crates/a2a-protocol-types/src/security.rs:465",
-    "crates/a2a-protocol-types/src/security.rs:485"
+    "crates/a2a-protocol-types/src/security.rs:412",
+    "crates/a2a-protocol-types/src/security.rs:424",
+    "crates/a2a-protocol-types/src/security.rs:437",
+    "crates/a2a-protocol-types/src/security.rs:513",
+    "crates/a2a-protocol-types/src/security.rs:533"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:402 implicit",
-    "crates/a2a-protocol-types/src/security.rs:415 password",
-    "crates/a2a-protocol-types/src/security.rs:662 wire_format_password_oauth_flow"
+    "crates/a2a-protocol-types/src/security.rs:420 implicit",
+    "crates/a2a-protocol-types/src/security.rs:433 password",
+    "crates/a2a-protocol-types/src/security.rs:777 wire_format_password_oauth_flow"
    ],
    "notes": "The two proto-deprecated OAuth flows (implicit, password) are kept so cards declaring them parse, and since 2026-10-11 carry #[deprecated] as the proto fields do. Two compile_fail doctests deny(deprecated) on each variant; removing the attribute makes the doctest compile and fail (shown). No v1.0 field was renamed, so no renamed-field aliases are needed.",
    "auditor": "A",
@@ -109,15 +109,15 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:394",
-    "crates/a2a-protocol-types/src/security.rs:398",
-    "crates/a2a-protocol-types/src/security.rs:406",
-    "crates/a2a-protocol-types/src/security.rs:419"
+    "crates/a2a-protocol-types/src/security.rs:412",
+    "crates/a2a-protocol-types/src/security.rs:416",
+    "crates/a2a-protocol-types/src/security.rs:424",
+    "crates/a2a-protocol-types/src/security.rs:437"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:402 implicit",
-    "crates/a2a-protocol-types/src/security.rs:415 password",
-    "crates/a2a-protocol-types/src/security.rs:662 wire_format_password_oauth_flow"
+    "crates/a2a-protocol-types/src/security.rs:420 implicit",
+    "crates/a2a-protocol-types/src/security.rs:433 password",
+    "crates/a2a-protocol-types/src/security.rs:777 wire_format_password_oauth_flow"
    ],
    "notes": "Both deprecated flows remain in the public enum and on the wire (wire_format_password_oauth_flow round-trips one); removal would be a semver-major change, which cargo-semver-checks gates in CI.",
    "auditor": "A",
@@ -4580,7 +4580,7 @@
     "crates/a2a-protocol-server/src/builder.rs:548"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:889 builder_empty_agent_card_interfaces_errors"
+    "crates/a2a-protocol-server/src/builder.rs:1172 builder_empty_agent_card_interfaces_errors"
    ],
    "notes": "Builder only rejects an empty supported_interfaces list; content is author-supplied.",
    "auditor": "D",
@@ -8005,7 +8005,7 @@
     "crates/a2a-protocol-types/src/task.rs:427"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:151 a_task_needs_id_and_status_but_not_context_id"
+    "crates/a2a-protocol-types/tests/required_fields.rs:239 a_task_needs_id_and_status_but_not_context_id"
    ],
    "notes": "A peer's task without contextId (ProtoJSON omits an empty string) parses with an empty id instead of failing the whole response; id and status remain required. Shown to fail with the serde default removed.",
    "auditor": "G",
@@ -8303,7 +8303,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
-    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:177 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:834 tck_stream_response_status_update_variant"
    ],
    "notes": "A missing key does not parse over JSON. On the server, the queue writer is bound to the running task: an event whose id is empty (gRPC's absent string) gets the task's id, and one naming another task or context is refused with InvalidParams before it is persisted or delivered. Over gRPC on the client, an empty id still converts; the proto3 wire cannot tell absent from empty.",
@@ -8329,7 +8329,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
-    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:177 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:834 tck_stream_response_status_update_variant"
    ],
    "notes": "A missing key does not parse over JSON. On the server, the queue writer is bound to the running task: an event whose id is empty (gRPC's absent string) gets the task's id, and one naming another task or context is refused with InvalidParams before it is persisted or delivered. Over gRPC on the client, an empty id still converts; the proto3 wire cannot tell absent from empty.",
@@ -8351,8 +8351,8 @@
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:339"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:126 a_grpc_update_event_without_its_status_or_artifact_is_refused",
-    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:214 a_grpc_update_event_without_its_status_or_artifact_is_refused",
+    "crates/a2a-protocol-types/tests/required_fields.rs:177 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:834 tck_stream_response_status_update_variant"
    ],
    "notes": "Missing over JSON does not parse; absent over gRPC is ConvertError statusUpdate.status. Tests shown to fail with the conversion check replaced by a default.",
@@ -8378,7 +8378,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
-    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:177 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:860 tck_stream_response_artifact_update_variant"
    ],
    "notes": "A missing key does not parse over JSON. On the server, the queue writer is bound to the running task: an event whose id is empty (gRPC's absent string) gets the task's id, and one naming another task or context is refused with InvalidParams before it is persisted or delivered. Over gRPC on the client, an empty id still converts; the proto3 wire cannot tell absent from empty.",
@@ -8404,7 +8404,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
-    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:177 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:860 tck_stream_response_artifact_update_variant"
    ],
    "notes": "A missing key does not parse over JSON. On the server, the queue writer is bound to the running task: an event whose id is empty (gRPC's absent string) gets the task's id, and one naming another task or context is refused with InvalidParams before it is persisted or delivered. Over gRPC on the client, an empty id still converts; the proto3 wire cannot tell absent from empty.",
@@ -8425,8 +8425,8 @@
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:368"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:126 a_grpc_update_event_without_its_status_or_artifact_is_refused",
-    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_update_event_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:214 a_grpc_update_event_without_its_status_or_artifact_is_refused",
+    "crates/a2a-protocol-types/tests/required_fields.rs:177 an_update_event_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:860 tck_stream_response_artifact_update_variant"
    ],
    "notes": "Missing over JSON does not parse; absent over gRPC is ConvertError artifactUpdate.artifact. Shown to fail with the check replaced by a stand-in artifact.",
@@ -8503,7 +8503,7 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:467",
     "crates/a2a-protocol-server/src/builder.rs:547",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:38"
    ],
    "test_evidence": [
@@ -8526,7 +8526,7 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:467",
     "crates/a2a-protocol-server/src/builder.rs:547",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:51"
    ],
    "test_evidence": [
@@ -8577,7 +8577,7 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:467",
     "crates/a2a-protocol-server/src/builder.rs:547",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:57"
    ],
    "test_evidence": [
@@ -8753,7 +8753,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:140",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -8773,7 +8773,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:137",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -8812,7 +8812,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:155",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -8832,7 +8832,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:158",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -8852,7 +8852,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:161",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -8872,7 +8872,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:169",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:271 validate_refuses_each_empty_required_array"
@@ -8904,7 +8904,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335",
     "crates/a2a-protocol-types/src/extensions.rs:64"
    ],
    "test_evidence": [
@@ -8938,7 +8938,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:332",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:335",
     "crates/a2a-protocol-types/src/extensions.rs:67"
    ],
    "test_evidence": [
@@ -9036,22 +9036,21 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "location [(google.api.field_behavior) = REQUIRED]",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:301",
-    "crates/a2a-protocol-types/src/security.rs:341",
-    "crates/a2a-protocol-types/src/security.rs:404",
-    "crates/a2a-protocol-types/src/security.rs:430",
-    "crates/a2a-protocol-types/src/security.rs:447",
-    "crates/a2a-protocol-types/src/security.rs:504"
+    "crates/a2a-protocol-types/src/security.rs:345",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:244"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:143 an_empty_api_key_location_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:155 a_grpc_api_key_scheme_with_an_empty_location_is_refused"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
+   "notes": "location is ApiKeyLocation, an enum with no empty value. A card missing the key does not parse; \"\" does not parse either, and over gRPC (where an absent string arrives empty) api_key_location_from_str refuses it, failing the card's conversion. Before: the empty case was untested and the note grouped it with the string fields; it never needed validate_security_schemes.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 525,
@@ -9059,22 +9058,27 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "name [(google.api.field_behavior) = REQUIRED]",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:301",
-    "crates/a2a-protocol-types/src/security.rs:341",
-    "crates/a2a-protocol-types/src/security.rs:404",
-    "crates/a2a-protocol-types/src/security.rs:430",
-    "crates/a2a-protocol-types/src/security.rs:447",
-    "crates/a2a-protocol-types/src/security.rs:504"
+    "crates/a2a-protocol-types/src/security.rs:208",
+    "crates/a2a-protocol-types/src/security.rs:445",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-server/src/builder.rs:716",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
+    "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 534,
@@ -9085,7 +9089,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:343"
+    "crates/a2a-protocol-types/src/security.rs:361"
    ],
    "test_evidence": [],
    "notes": "Free-form String supplied by the agent author; no SDK check.",
@@ -9098,22 +9102,27 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "scheme [(google.api.field_behavior) = REQUIRED]",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:301",
-    "crates/a2a-protocol-types/src/security.rs:341",
-    "crates/a2a-protocol-types/src/security.rs:404",
-    "crates/a2a-protocol-types/src/security.rs:430",
-    "crates/a2a-protocol-types/src/security.rs:447",
-    "crates/a2a-protocol-types/src/security.rs:504"
+    "crates/a2a-protocol-types/src/security.rs:208",
+    "crates/a2a-protocol-types/src/security.rs:445",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-server/src/builder.rs:716",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
+    "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 546,
@@ -9124,7 +9133,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:362",
+    "crates/a2a-protocol-types/src/security.rs:380",
     "crates/a2a-protocol-types/src/proto/convert/card.rs:286"
    ],
    "test_evidence": [
@@ -9143,7 +9152,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:367"
+    "crates/a2a-protocol-types/src/security.rs:385"
    ],
    "test_evidence": [],
    "notes": "Field is carried but never fetched by the client SDK (grep oauth2_metadata_url: only types/convert/tests); HTTPS is not validated on publish. Author's responsibility.",
@@ -9156,22 +9165,27 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "open_id_connect_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:301",
-    "crates/a2a-protocol-types/src/security.rs:341",
-    "crates/a2a-protocol-types/src/security.rs:404",
-    "crates/a2a-protocol-types/src/security.rs:430",
-    "crates/a2a-protocol-types/src/security.rs:447",
-    "crates/a2a-protocol-types/src/security.rs:504"
+    "crates/a2a-protocol-types/src/security.rs:208",
+    "crates/a2a-protocol-types/src/security.rs:445",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-server/src/builder.rs:716",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
+    "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 585,
@@ -9179,22 +9193,27 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "authorization_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:301",
-    "crates/a2a-protocol-types/src/security.rs:341",
-    "crates/a2a-protocol-types/src/security.rs:404",
-    "crates/a2a-protocol-types/src/security.rs:430",
-    "crates/a2a-protocol-types/src/security.rs:447",
-    "crates/a2a-protocol-types/src/security.rs:504"
+    "crates/a2a-protocol-types/src/security.rs:208",
+    "crates/a2a-protocol-types/src/security.rs:445",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-server/src/builder.rs:716",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
+    "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 587,
@@ -9202,22 +9221,27 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "token_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:301",
-    "crates/a2a-protocol-types/src/security.rs:341",
-    "crates/a2a-protocol-types/src/security.rs:404",
-    "crates/a2a-protocol-types/src/security.rs:430",
-    "crates/a2a-protocol-types/src/security.rs:447",
-    "crates/a2a-protocol-types/src/security.rs:504"
+    "crates/a2a-protocol-types/src/security.rs:208",
+    "crates/a2a-protocol-types/src/security.rs:445",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-server/src/builder.rs:716",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
+    "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 591,
@@ -9228,9 +9252,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:419",
-    "crates/a2a-protocol-types/src/security.rs:441",
-    "crates/a2a-protocol-types/src/security.rs:462",
+    "crates/a2a-protocol-types/src/security.rs:437",
+    "crates/a2a-protocol-types/src/security.rs:489",
+    "crates/a2a-protocol-types/src/security.rs:510",
     "crates/a2a-protocol-client/src/discovery.rs:467"
    ],
    "test_evidence": [
@@ -9277,22 +9301,27 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "token_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:301",
-    "crates/a2a-protocol-types/src/security.rs:341",
-    "crates/a2a-protocol-types/src/security.rs:404",
-    "crates/a2a-protocol-types/src/security.rs:430",
-    "crates/a2a-protocol-types/src/security.rs:447",
-    "crates/a2a-protocol-types/src/security.rs:504"
+    "crates/a2a-protocol-types/src/security.rs:208",
+    "crates/a2a-protocol-types/src/security.rs:445",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-server/src/builder.rs:716",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
+    "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 604,
@@ -9303,9 +9332,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:419",
-    "crates/a2a-protocol-types/src/security.rs:441",
-    "crates/a2a-protocol-types/src/security.rs:462",
+    "crates/a2a-protocol-types/src/security.rs:437",
+    "crates/a2a-protocol-types/src/security.rs:489",
+    "crates/a2a-protocol-types/src/security.rs:510",
     "crates/a2a-protocol-client/src/discovery.rs:467"
    ],
    "test_evidence": [
@@ -9325,8 +9354,8 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/security.rs:485"
+    "crates/a2a-protocol-types/src/security.rs:516",
+    "crates/a2a-protocol-types/src/security.rs:533"
    ],
    "test_evidence": [],
    "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
@@ -9342,8 +9371,8 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/security.rs:485"
+    "crates/a2a-protocol-types/src/security.rs:516",
+    "crates/a2a-protocol-types/src/security.rs:533"
    ],
    "test_evidence": [],
    "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
@@ -9359,8 +9388,8 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:479",
-    "crates/a2a-protocol-types/src/security.rs:496"
+    "crates/a2a-protocol-types/src/security.rs:527",
+    "crates/a2a-protocol-types/src/security.rs:544"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty"
@@ -9379,8 +9408,8 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/security.rs:485"
+    "crates/a2a-protocol-types/src/security.rs:516",
+    "crates/a2a-protocol-types/src/security.rs:533"
    ],
    "test_evidence": [],
    "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
@@ -9396,8 +9425,8 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/security.rs:485"
+    "crates/a2a-protocol-types/src/security.rs:516",
+    "crates/a2a-protocol-types/src/security.rs:533"
    ],
    "test_evidence": [],
    "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
@@ -9413,8 +9442,8 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:479",
-    "crates/a2a-protocol-types/src/security.rs:496"
+    "crates/a2a-protocol-types/src/security.rs:527",
+    "crates/a2a-protocol-types/src/security.rs:544"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty"
@@ -9430,22 +9459,27 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "device_authorization_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:301",
-    "crates/a2a-protocol-types/src/security.rs:341",
-    "crates/a2a-protocol-types/src/security.rs:404",
-    "crates/a2a-protocol-types/src/security.rs:430",
-    "crates/a2a-protocol-types/src/security.rs:447",
-    "crates/a2a-protocol-types/src/security.rs:504"
+    "crates/a2a-protocol-types/src/security.rs:208",
+    "crates/a2a-protocol-types/src/security.rs:445",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-server/src/builder.rs:716",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
+    "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 640,
@@ -9453,22 +9487,27 @@
    "keyword": "REQUIRED",
    "binds": "both",
    "requirement": "token_url [(google.api.field_behavior) = REQUIRED]",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:301",
-    "crates/a2a-protocol-types/src/security.rs:341",
-    "crates/a2a-protocol-types/src/security.rs:404",
-    "crates/a2a-protocol-types/src/security.rs:430",
-    "crates/a2a-protocol-types/src/security.rs:447",
-    "crates/a2a-protocol-types/src/security.rs:504"
+    "crates/a2a-protocol-types/src/security.rs:208",
+    "crates/a2a-protocol-types/src/security.rs:445",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-server/src/builder.rs:716",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
+    "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Not refused when present but empty: AgentCard::validate is const and cannot walk the securitySchemes map, and over gRPC an empty string is the absent value. Remaining: a non-const scheme check run by build and hot reload.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 644,
@@ -9479,9 +9518,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:419",
-    "crates/a2a-protocol-types/src/security.rs:441",
-    "crates/a2a-protocol-types/src/security.rs:462",
+    "crates/a2a-protocol-types/src/security.rs:437",
+    "crates/a2a-protocol-types/src/security.rs:489",
+    "crates/a2a-protocol-types/src/security.rs:510",
     "crates/a2a-protocol-client/src/discovery.rs:467"
    ],
    "test_evidence": [

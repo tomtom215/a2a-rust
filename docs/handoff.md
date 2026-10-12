@@ -1005,9 +1005,22 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     script); docs set a card (hidden `card()` helper in 47 doc blocks, a
     visible card in both quick starts).
 25. `docs(handoff):` this update.
+26. `fix(server):` a card whose security scheme has an empty REQUIRED
+    string (an API key's `name`, an HTTP `scheme`, `openIdConnectUrl`, the
+    authorization-code, client-credentials and device-code flow URLs) is
+    refused by `build()`, hot reload and the dynamic card handler, through
+    the new `AgentCard::validate_security_schemes` (the const `validate`
+    cannot walk the map, and dropping its `const` would break the public
+    API at 0.14.1). Nine proto ledger entries move to TESTED. The ledger's
+    191 citations into the edited files were carried through the diff by
+    script (115 moved), each checked to name the same text as before, and
+    every named test citation into them was then anchored to its `fn` line
+    (14 moved: rustfmt ran after the remap, and two were already wrong).
+    The ledger check verifies the file and the name, not the line, so a
+    line drifts silently; anchor by name after any edit that moves code.
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 302,
-PARTIAL 32, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 311,
+PARTIAL 23, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**
@@ -1067,6 +1080,14 @@ PARTIAL 32, GAP 0, IMPLEMENTED_UNTESTED 2. Gate prover: 30 proven, 0 unproven,
    bindings has no discovery endpoint from the SDK. Closing it means serving
    the card beside them (an HTTP route a gRPC-only server can mount), which
    is a design question, not a fix.
+8. The ledger's four medium PARTIAL entries are the maintainer's to decide,
+   not fixes: §1.4 (line 107; the serde types are hand-written, not generated
+   from the proto), §3.5.2 (line 692; a subscriber that falls behind the
+   bounded buffer loses events, reported as `streamLagged`), §8.4.3 (line
+   2132; `jku` is never followed, deliberately: `fetch_jwks` takes a URL
+   the caller trusts, not one the card names), and §12 (line 2985;
+   SLIMRPC's own spec maps two errors differently from A2A §5.4). The 23
+   PARTIAL left are these four and 19 low.
 
 ## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
 
