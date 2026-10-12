@@ -792,6 +792,101 @@ def build_registry() -> dict[str, Probe | Exempt]:
         ],
     )
 
+    # The versioned site: the root is the latest release's book, /vX.Y/ each
+    # release line's, /dev/ main's. Building it needs the repository's tags
+    # and mdBook; the check that follows is the gate. Its fixture is laid out
+    # by the script's own `assemble()` from two tiny synthetic release books
+    # and a dev book, so a change to the layout that the check does not follow
+    # fails here on the healthy case.
+    def _versioned_site(defect=None):
+        def setup(d):
+            import importlib.util
+
+            spec = importlib.util.spec_from_file_location(
+                "build_docs_site", REPO / "scripts" / "build_docs_site.py"
+            )
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            (d / "scripts").mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO / "scripts" / "build_docs_site.py", d / "scripts" / "build_docs_site.py")
+
+            def book(where, canonical):
+                head = (
+                    '<meta name="robots" content="index,follow">'
+                    + ('<link rel="canonical" href="https://a2a-rust.com/x">' if canonical else "")
+                )
+                for rel in ("index.html", "guide/page.html", "print.html", "404.html"):
+                    (where / rel).parent.mkdir(parents=True, exist_ok=True)
+                    (where / rel).write_text(
+                        f'<html><head>{head}</head><body><div id="menu-bar"></div>'
+                        "<main><p>text</p></main></body></html>",
+                        encoding="utf-8",
+                    )
+                for name in ("robots.txt", "sitemap.xml"):
+                    (where / name).write_text("x", encoding="utf-8")
+                return where
+
+            builds = [
+                (mod.Line("0.2", "0.2.1", "v0.2.1"), book(d / "b02", True)),
+                (mod.Line("0.1", "0.1.0", "v0.1.0"), book(d / "b01", True)),
+            ]
+            dev = book(d / "dev", True)
+            for chapter in mod.PERMALINKS.values():
+                (dev / chapter).parent.mkdir(parents=True, exist_ok=True)
+                (dev / chapter).write_text("<html><head></head><body></body></html>", encoding="utf-8")
+            mod.assemble(dev, builds, d / "site")
+            if defect:
+                defect(d / "site")
+            return {}
+
+        return setup
+
+    def _indexable(site):
+        page = site / "v0.1" / "guide" / "page.html"
+        text = page.read_text(encoding="utf-8").replace('<meta name="robots" content="noindex">', "")
+        page.write_text(text, encoding="utf-8")
+
+    def _no_selector(site):
+        page = site / "guide" / "page.html"
+        text = re.sub(r'<script defer src="[^"]*version-switcher\.js"[^>]*></script>', "", page.read_text(encoding="utf-8"))
+        page.write_text(text, encoding="utf-8")
+
+    reg["docs.yml::build::Build every release line's book and assemble the versioned site"] = Exempt(
+        "needs the repository's release tags (full history) and the mdBook binary; "
+        "what it lays out is checked by the next step, `Versioned site is complete`, "
+        "whose probe runs the same assemble() on synthetic books"
+    )
+    reg["docs.yml::build::Versioned site is complete"] = Probe(
+        healthy=_versioned_site(),
+        defects=[
+            Defect(
+                "a release line's page is indexable, competing with the root",
+                _versioned_site(_indexable),
+                "a non-root page must be noindex",
+            ),
+            Defect(
+                "a page lost the version selector",
+                _versioned_site(_no_selector),
+                "guide/page.html: switcher []",
+            ),
+            Defect(
+                "versions.json names a release line the site does not have",
+                _versioned_site(lambda site: shutil.rmtree(site / "v0.1")),
+                "/v0.1/index.html is missing",
+            ),
+            Defect(
+                "an identifier this project mints no longer leads to its chapter",
+                _versioned_site(lambda site: (site / "dev" / "client" / "idempotency.html").unlink()),
+                "/extensions/idempotency/v1 does not lead to its chapter",
+            ),
+            Defect(
+                "robots.txt was published under a version, where crawlers never read it",
+                _versioned_site(lambda site: (site / "dev" / "robots.txt").write_text("x", encoding="utf-8")),
+                "crawlers read it only at the root",
+            ),
+        ],
+    )
+
     # ── coverage.yml ─────────────────────────────────────────────────────────
     #
     # The step reads the live report for `main`; the probe hands it a saved

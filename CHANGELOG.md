@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Versioned documentation** (site). [a2a-rust.com](https://a2a-rust.com)
+  was the book built from `main`, so a reader on a release saw the next
+  release's unreleased and breaking changes. Now `/` is the latest
+  release's book, built from its tag, `/vX.Y/` each release line's (all
+  thirteen, 0.2 to 0.14), and `/dev/` is `main`'s, with `main`'s rustdoc at
+  `/dev/api/`; `/api/` redirects to docs.rs at the release. Every page has
+  a version selector, and a page that is not the latest release's says so.
+  Only `/` is indexed. Built by `scripts/build_docs_site.py`, checked by its
+  `check` step, which `prove_workflow_gates_fail.py` proves can fail; it
+  deploys on every push to `main` and when the Release workflow succeeds.
 - **`CardFetchOptions::with_signature_keys`** (client, feature `signing`;
   spec §14: clients SHOULD verify signatures when present). Card discovery
   with these options returns a signed card only if one of its signatures
@@ -493,6 +503,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `fonts/…`, which resolves to `theme/fonts/` and answered 404 on the live
   site, so Space Grotesk and JetBrains Mono never loaded; it asks for
   `../fonts/…`. Release books built before this keep the fault.
+- **This project's extension and binding URIs lead to their chapters.**
+  `https://a2a-rust.com/extensions/idempotency/v1`, `…/extensions/failure/v1`
+  and `…/bindings/websocket/v1` answered 404; each now redirects to the
+  chapter that specifies it.
 - **`Telemetry` reports a lost export on either transport, and only a lost
   one** (server, feature `otel`). It counted failed HTTP responses, so over
   gRPC a lost export was only logged, and with 0.33's retries an export

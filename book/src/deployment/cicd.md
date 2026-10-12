@@ -88,69 +88,40 @@ Crates are published in dependency order:
 
 ## Documentation Deployment
 
-The docs workflow builds the mdBook and deploys to GitHub Pages. Abridged — the
-toolchain, cache and API-documentation steps are omitted; see the workflow file
-for the whole of it:
+`.github/workflows/docs.yml` builds and deploys the site at
+[a2a-rust.com](https://a2a-rust.com). The site is versioned, so a reader on a
+release reads that release's documentation:
 
-```yaml
-# .github/workflows/docs.yml (abridged)
-name: Deploy Documentation
+| Path | What it is |
+|---|---|
+| `/` | The latest release's book, built from its tag. The only copy search engines index. |
+| `/vX.Y/` | Each release line's book, at its latest patch release (`/v0.14/` is 0.14.1). |
+| `/dev/` | The book built from `main`, which can describe changes no release has yet. |
+| `/dev/api/` | rustdoc for the four published crates, built from `main`. |
+| `/api/`, `/vX.Y/api/` | Redirects to docs.rs at that release; old `/api/<crate>/…` links are sent there by the 404 page. |
 
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+Every page carries a version selector, and a page that is not the latest
+release's says so and links to the same page in the latest release.
+`scripts/build_docs_site.py` builds every release line's book from its tag with
+the same pinned mdBook, lays the site out, and checks it; its docstring has the
+details, and the workflow is the authority on the steps.
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+It deploys on every push to `main` (so `/dev/` follows `main`) and when the
+Release workflow finishes successfully (so `/` moves to the new release). The
+second runs through `workflow_run`, which executes on the default branch: the
+`github-pages` environment may refuse a deployment from a tag ref.
 
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Install mdBook
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz \
-            | tar -xz -C "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Build book
-        run: mdbook build book
-      - name: Copy static assets into build output
-        run: |
-          set -euo pipefail
-          cp -r --no-preserve=mode book/static/. book/book/
-          test -f book/book/robots.txt
-          test -f book/book/sitemap.xml
-      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
-      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
-        with:
-          path: book/book
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
-```
+Each release line adds about 18 MB, and GitHub Pages caps a site at 1 GB; at
+2026-10-12 the site was about 270 MB with 13 release lines.
 
 ### Setting Up GitHub Pages
 
 1. Go to **Settings → Pages** in your GitHub repo
 2. Set **Source** to "GitHub Actions"
 3. Push to `main` to trigger the first deployment
-4. Your docs will be live at `https://tomtom215.github.io/a2a-rust/`
+4. Your docs will be live at `https://<owner>.github.io/<repo>/`, or at the
+   custom domain configured in the same settings page (this project's is
+   `a2a-rust.com`)
 
 ### Building Locally
 
@@ -168,8 +139,9 @@ mdbook serve book --open
 ## Cargo Documentation
 
 The docs workflow also builds rustdoc for the four published crates
-(`--all-features`, `--cfg docsrs`) and publishes it under `/api/` beside the
-book. To build it locally:
+(`--all-features`, `--cfg docsrs`) from `main` and publishes it under
+`/dev/api/`; a release's API documentation is the one docs.rs builds from the
+published crate, which `/api/` redirects to. To build it locally:
 
 ```bash
 # Build API docs for all crates

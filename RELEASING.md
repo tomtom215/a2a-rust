@@ -283,6 +283,11 @@ fixable; it is the measurement of how often the gap was used.
 
 - Verify all 4 crates appear on [crates.io](https://crates.io)
 - Verify docs build on [docs.rs](https://docs.rs)
+- Verify the site moved to the release: the Release workflow's success starts
+  *Deploy Documentation* (`workflow_run`), after which
+  [a2a-rust.com](https://a2a-rust.com) is the new release's book, its version
+  selector lists it as latest, and the previous release is under `/vX.Y/`. If
+  that run did not start, run *Deploy Documentation* by hand on `main`
 - Announce release if appropriate
 
 ## Versioning
