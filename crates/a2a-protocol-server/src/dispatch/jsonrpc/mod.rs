@@ -397,11 +397,13 @@ impl JsonRpcDispatcher {
                     }
                 }
             }
-            // In batch context, streaming is not supported.
-            "SendStreamingMessage" => Err(ServerError::InvalidParams(
+            // A stream cannot be one answer of a batch: the method is
+            // served, its params may be fine, so UnsupportedOperation
+            // (-32004), not the InvalidParams it was until 2026-10-13.
+            "SendStreamingMessage" => Err(ServerError::UnsupportedOperation(
                 "SendStreamingMessage not supported in batch requests".into(),
             )),
-            "SubscribeToTask" => Err(ServerError::InvalidParams(
+            "SubscribeToTask" => Err(ServerError::UnsupportedOperation(
                 "SubscribeToTask not supported in batch requests".into(),
             )),
             "GetTask" => {

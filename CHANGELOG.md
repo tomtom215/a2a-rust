@@ -326,6 +326,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **JSON-RPC follows three more JSON-RPC 2.0 rules** (server and types;
+  spec §9.3: requests MUST follow JSON-RPC 2.0), over HTTP and WebSocket.
+  An `id` that is not a string, a number or `null` (§4) is now an Invalid
+  Request (`-32600`, null id); it was run and echoed.
+  `JsonRpcRequestId`'s `Deserialize` refuses it. An omitted `params` (§4.2:
+  it "MAY be omitted") is read as `{}`, so `ListTasks` without one lists,
+  and a method with a required field names it; it was "missing params".
+  `SendStreamingMessage` or `SubscribeToTask` inside a batch is
+  `UnsupportedOperationError` (`-32004`); it was `-32602`, though the params
+  were valid. Notifications are still answered.
 - **A request's `Content-Type` is read as a media type** (server; spec
   §9.1 and §11.1 name `application/json` and `application/a2a+json`; RFC
   9110 §8.3.1 makes the type and subtype case-insensitive). The JSON-RPC,

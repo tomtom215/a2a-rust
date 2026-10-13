@@ -1120,7 +1120,7 @@ async fn dispatch_simple<'a, F>(
         >,
     >,
 {
-    let params = rpc_req.params.clone().unwrap_or(serde_json::Value::Null);
+    let params = rpc_req.params.clone().unwrap_or_else(empty_params);
     match ws_span(handler, rpc_req, headers)
         .run(f(handler, params, headers))
         .await
@@ -1181,12 +1181,18 @@ fn ws_params<T: serde::de::DeserializeOwned>(
         .map_err(|e| crate::streaming::sse::invalid_params_for::<T>(p, &e).to_a2a_error())
 }
 
-/// Parses params from an optional JSON value.
+/// Parses params from an optional JSON value, absent read as `{}` (JSON-RPC
+/// 2.0 §4.2: `params` "MAY be omitted"), as over HTTP.
 fn parse_params<T: serde::de::DeserializeOwned>(
     params: Option<&serde_json::Value>,
 ) -> Result<T, ServerError> {
-    let value = params.cloned().unwrap_or(serde_json::Value::Null);
+    let value = params.cloned().unwrap_or_else(empty_params);
     T::deserialize(&value).map_err(|e| crate::streaming::sse::invalid_params_for::<T>(&value, &e))
+}
+
+/// The `params` an omitted member stands for: `{}`.
+fn empty_params() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
 }
 
 #[cfg(test)]

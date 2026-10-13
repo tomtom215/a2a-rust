@@ -1428,6 +1428,23 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     JSON it could read. The axum router's own rejections stay plain text
     (register R26). Ledger §13.4 (entry 379) cited the JSON-parse
     `map_err` for the body cap, and now cites the read.
+70. `fix(server, types):` §9.3 — three more JSON-RPC 2.0 rules (audit
+    register R21, all but its notification part). An id that is not a
+    string, a number or `null` is refused by `JsonRpcRequestId`'s
+    `Deserialize`, so it is `-32600` with a null id over HTTP and
+    WebSocket, where it was run and echoed; a header refusal (item 67)
+    echoes only an id of those types. An omitted `params` is read as `{}`
+    on both transports (HTTP's `parse_params`, WebSocket's two paths), so
+    `ListTasks` lists. A stream in a batch is `UnsupportedOperation`
+    (`-32004`). `jsonrpc_2_0_rules.rs` failed 6 of 6 before; the types
+    crate has its own test, since cargo-mutants runs only the mutated
+    crate's. Two tests pinned the old behaviour and now assert the new:
+    `list_tasks_missing_params` (renamed `list_tasks_without_params_lists`)
+    and the unit test now `parse_params_missing_names_the_required_field`,
+    which entries 485, 495 and 503 cite. Hand mutants 12 of 12, one
+    rewritten after it did not build. Still open, the maintainer's call
+    (register R21): a notification is answered, which JSON-RPC 2.0 §4.1
+    forbids; `jsonrpc_absent_id_request_answered_with_null_id` pins it.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

@@ -47,7 +47,14 @@ impl JsonRpcDispatcher {
         body: &[u8],
         err: &ServerError,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let id_of = |request: &serde_json::Value| request.get("id").cloned();
+        // An id that is not a string or number cannot be echoed (JSON-RPC
+        // 2.0 §4), as the dispatcher refuses it.
+        let id_of = |request: &serde_json::Value| {
+            request
+                .get("id")
+                .filter(|id| id.is_string() || id.is_number())
+                .cloned()
+        };
         match serde_json::from_slice::<serde_json::Value>(body) {
             Ok(serde_json::Value::Array(batch))
                 if !batch.is_empty() && batch.len() <= self.config.max_batch_size =>

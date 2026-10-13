@@ -66,10 +66,11 @@ pub(super) fn parse_params<T>(rpc_req: &JsonRpcRequest) -> Result<T, ServerError
 where
     T: serde::de::DeserializeOwned + a2a_protocol_types::params::AcceptedFields,
 {
-    let params = rpc_req
-        .params
-        .as_ref()
-        .ok_or_else(|| ServerError::InvalidParams("missing params".into()))?;
+    // JSON-RPC 2.0 §4.2: `params` "MAY be omitted". Read as `{}`, so a
+    // method whose fields are all optional (ListTasks) runs, and one with a
+    // required field names it. Until 2026-10-13 it was "missing params".
+    let empty = serde_json::Value::Object(serde_json::Map::new());
+    let params = rpc_req.params.as_ref().unwrap_or(&empty);
     // From the borrowed tree: `&Value` is a deserializer, and the clone
     // `from_value` needed copied every string in the params once more.
     let parsed = T::deserialize(params)
@@ -331,8 +332,10 @@ mod tests {
 
     // ── parse_params ─────────────────────────────────────────────────────────
 
+    /// Omitted params are read as `{}` (JSON-RPC 2.0 §4.2), so a method
+    /// with a required field is refused naming it.
     #[test]
-    fn parse_params_missing_returns_invalid_params() {
+    fn parse_params_missing_names_the_required_field() {
         use a2a_protocol_types::params::TaskQueryParams;
         let req = JsonRpcRequest {
             jsonrpc: JsonRpcVersion,
@@ -341,12 +344,13 @@ mod tests {
             params: None,
         };
         let result: Result<TaskQueryParams, _> = parse_params(&req);
-        assert!(result.is_err(), "expected error when params are missing");
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, ServerError::InvalidParams(_)),
-            "expected InvalidParams, got {err:?}"
+        let err = result.expect_err("GetTask needs an id").to_a2a_error();
+        assert_eq!(
+            err.code,
+            a2a_protocol_types::error::ErrorCode::InvalidParams,
+            "{err:?}"
         );
+        assert!(err.message.contains("`id`"), "{err:?}");
     }
 
     #[test]

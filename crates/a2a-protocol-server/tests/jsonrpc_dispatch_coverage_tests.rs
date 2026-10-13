@@ -542,8 +542,10 @@ async fn list_tasks_returns_result() {
     );
 }
 
+/// JSON-RPC 2.0 §4.2: `params` "MAY be omitted", and every `ListTasks`
+/// field is optional, so it lists. It was "missing params" until 2026-10-13.
 #[tokio::test]
-async fn list_tasks_missing_params() {
+async fn list_tasks_without_params_lists() {
     let addr = start_server(make_plain_dispatcher()).await;
     let body = serde_json::json!({
         "jsonrpc": "2.0",
@@ -554,7 +556,7 @@ async fn list_tasks_missing_params() {
 
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    assert!(v.get("error").is_some());
+    assert!(v["result"]["tasks"].is_array(), "{v}");
 }
 
 // ── CancelTask dispatch (lines 292-297) ──────────────────────────────────────
