@@ -1472,6 +1472,18 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     asserts `-5` writes `1969-12-31T23:59:59.995Z`. Two drifted citations
     were corrected in passing: entry 182's `list_tasks.rs:47` (the
     page-size message) and entry 424's `status_stamp.rs:21` (a doc line).
+72. `fix(types):` §8.4 / RFC 7515 §4.1.11 — a card signature naming a
+    critical JWS extension is refused (audit register R28).
+    `signature_header` read only `alg`, `kid` and `jku`, so a protected
+    header with `"crit": ["exp"]` verified and its expiry was never
+    enforced. Any `crit`, protected or unprotected, is now an error from
+    `signature_header`, so `verify_agent_card` and both JWK Set verifiers
+    refuse it. `a_signature_with_crit_is_refused` signs with and without
+    `crit` under one key; mutants 2 of 2 (the check removed, the
+    unprotected header ignored). The a2a-sdk interop signs with `alg`,
+    `kid` and `typ` only (`itk/interop/card_signature_interop.py`), so it
+    is unaffected. Entry 262 cited a doc line for the verify step; it cites
+    `verify_with` now.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

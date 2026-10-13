@@ -1115,6 +1115,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A card signature naming a critical JWS extension is refused** (types;
+  spec §8.4: card signatures are JWS "as defined in RFC 7515", whose
+  §4.1.11 makes a JWS invalid when its `crit` names an extension the
+  recipient does not understand). `signature_header`, which
+  `verify_agent_card` and the JWK Set verifiers read, ignored `crit`, so a
+  signature whose protected header carried `"crit": ["exp"], "exp": …`
+  verified, its expiry unenforced. This verifier understands no extension,
+  so any `crit`, in the protected header or the unprotected one (where RFC
+  7515 forbids it), now fails verification.
 - **SLIMRPC binding: RUSTSEC-2024-0449 waived, with its chain recorded**
   (`bindings/a2a-protocol-slimrpc/deny.toml`). `unsafe-libyaml` is
   unmaintained (an informational advisory, not a vulnerability) and reaches

@@ -482,6 +482,16 @@ pub fn signature_header(sig: &AgentCardSignature) -> A2aResult<SignatureHeader> 
         .map_err(|e| A2aError::internal(format!("invalid header encoding: {e}")))?;
     let header: serde_json::Value = serde_json::from_slice(&header_bytes)
         .map_err(|e| A2aError::internal(format!("invalid header JSON: {e}")))?;
+    // RFC 7515 §4.1.11: a JWS naming in `crit` an extension the recipient
+    // does not understand is invalid, and `crit` may only be in the
+    // protected header. This verifier understands none, so any `crit` is
+    // refused; until 2026-10-13 it was ignored.
+    let unprotected = sig.header.as_ref().and_then(|h| h.get("crit"));
+    if header.get("crit").or(unprotected).is_some() {
+        return Err(A2aError::internal(
+            "signature header names critical extensions (crit), which this verifier does not support",
+        ));
+    }
     let str_field = |k: &str| {
         header
             .get(k)
@@ -915,6 +925,52 @@ mod tests {
     }
 
     // ── signature_header: spec §8.4.3 step 2 support ─────────────────────
+
+    /// RFC 7515 §4.1.11: a signature naming a critical extension this
+    /// verifier does not understand is invalid, however well it verifies.
+    #[test]
+    fn a_signature_with_crit_is_refused() {
+        let card = minimal_card();
+        let rng = SystemRandom::new();
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
+            .unwrap();
+        let key_pair = EcdsaKeyPair::from_pkcs8(
+            &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+            pkcs8.as_ref(),
+            &rng,
+        )
+        .unwrap();
+        let public_key = key_pair.public_key().as_ref().to_vec();
+        let sign = |header: &serde_json::Value| {
+            let protected = URL_SAFE_NO_PAD.encode(header.to_string());
+            let input = format!(
+                "{protected}.{}",
+                URL_SAFE_NO_PAD.encode(canonicalize_card(&card).unwrap())
+            );
+            let sig = key_pair.sign(&rng, input.as_bytes()).unwrap();
+            AgentCardSignature {
+                protected,
+                signature: URL_SAFE_NO_PAD.encode(sig.as_ref()),
+                header: None,
+            }
+        };
+        let plain = sign(&serde_json::json!({"alg": "ES256", "kid": "k"}));
+        verify_agent_card(&card, &plain, &public_key).expect("the same signature without crit");
+        for crit in [
+            serde_json::json!(["exp"]),
+            serde_json::json!([]),
+            serde_json::json!("exp"),
+        ] {
+            let critical =
+                sign(&serde_json::json!({"alg": "ES256", "kid": "k", "crit": crit, "exp": 1}));
+            let err = verify_agent_card(&card, &critical, &public_key).expect_err("crit");
+            assert!(err.message.contains("crit"), "{err}");
+        }
+        // Nor in the unprotected header, where it may not appear at all.
+        let mut unprotected = plain;
+        unprotected.header = Some(serde_json::json!({"crit": ["exp"]}));
+        assert!(verify_agent_card(&card, &unprotected, &public_key).is_err());
+    }
 
     #[test]
     fn signature_header_exposes_alg_and_kid() {
