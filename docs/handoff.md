@@ -1132,6 +1132,12 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `RefUnwindSafe` it has had since 0.13.0. `__rustls-tls` is
     tokio-tungstenite's internal feature name: the `>=0.30, <0.31` range
     pins it; recheck it when that range moves.
+48. `refactor(server):` item 44 took `handler/messaging/mod.rs` to 520
+    lines, past the 500-line ratchet. A continuation's register, save and
+    withdraw moved into `create.rs`'s `save_turn`; `mod.rs` is at exactly
+    500. A fifth test, `an_accepted_continuation_registers_its_config_once`,
+    covers the case the move made easy to break; 12 hand mutants over the
+    new shape, all killed.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

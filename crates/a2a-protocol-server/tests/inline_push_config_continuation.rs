@@ -348,3 +348,33 @@ async fn a_continuation_whose_turn_cannot_be_saved_keeps_a_named_config() {
     let ids: Vec<_> = configs.into_iter().filter_map(|c| c.id).collect();
     assert_eq!(ids, ["hook-1"]);
 }
+
+/// An accepted continuation registers its config once: before its turn is
+/// saved, and not again where a new task's is registered.
+#[tokio::test]
+async fn an_accepted_continuation_registers_its_config_once() {
+    let handler = RequestHandlerBuilder::new(AsksForInput)
+        .with_agent_card(push_card())
+        .with_push_sender(HttpPushSender::new().allow_private_urls())
+        .build()
+        .expect("handler must build");
+    let task_id = parked(&handler).await;
+
+    handler
+        .on_send_message(
+            send(
+                "m-2",
+                Some(&task_id),
+                Some(config("http://127.0.0.1:9/hook")),
+            ),
+            false,
+            None,
+        )
+        .await
+        .expect("the continuation is accepted");
+    let configs = handler
+        .on_list_push_configs(&task_id, None, None)
+        .await
+        .expect("listing push configs must succeed");
+    assert_eq!(configs.len(), 1, "{configs:?}");
+}

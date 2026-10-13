@@ -419,23 +419,9 @@ impl RequestHandler {
             // tokens before this one was inserted; it has set its flag by
             // now, so stop this turn the way the walk would have (`halt`).
             self.stop_if_halted(&turn, &ctx.cancellation_token);
-            // A continuation registers its inline config before the turn
-            // touches the row, so that a refusal leaves the task it continues
-            // as it was (see `register_inline_push_config`).
-            let registered = if continues {
-                Box::pin(self.register_inline_push_config(
-                    params.configuration.as_ref(),
-                    &task_id,
-                    false,
-                ))
-                .await?
-            } else {
-                None
-            };
-            if let Err(e) = self.persist_initial_task(&task).await {
-                Box::pin(self.withdraw_inline_push_config(registered)).await;
-                return Err(e);
-            }
+            // A continuation's inline push config is registered here, before
+            // its turn is saved; a new task's below (see `save_turn`).
+            Box::pin(self.save_turn(&task, params.configuration.as_ref(), continues)).await?;
             #[cfg(feature = "audit")]
             if let (Some(log), Some(approval)) = (&self.audit, ctx.approval.as_ref()) {
                 Box::pin(crate::audit::record_approval(
@@ -458,14 +444,8 @@ impl RequestHandler {
             // Dropping the guard first published a task that a concurrent
             // send for the same context could find by `find_task_by_context`
             // in the window before the rollback.
-            if !continues {
-                Box::pin(self.register_inline_push_config(
-                    params.configuration.as_ref(),
-                    &task_id,
-                    true,
-                ))
-                .await?;
-            }
+            let inline = params.configuration.as_ref().filter(|_| !continues);
+            Box::pin(self.register_inline_push_config(inline, &task_id, true)).await?;
 
             // Subsequent requests for this context_id will now find the task via
             // find_task_by_context.

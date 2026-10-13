@@ -197,6 +197,34 @@ impl RequestHandler {
         Err(refused)
     }
 
+    /// Saves the turn's task. A continuation's inline push config is
+    /// registered first, so that a refusal leaves the task it continues as it
+    /// was, and withdrawn if the save then fails; a new task's is registered
+    /// by the caller once the row exists (see
+    /// [`register_inline_push_config`](Self::register_inline_push_config)).
+    ///
+    /// # Errors
+    ///
+    /// The registration's refusal, or the store's error.
+    pub(super) async fn save_turn(
+        &self,
+        task: &Task,
+        configuration: Option<&SendMessageConfiguration>,
+        continues: bool,
+    ) -> ServerResult<()> {
+        let registered = if continues {
+            self.register_inline_push_config(configuration, &task.id, false)
+                .await?
+        } else {
+            None
+        };
+        if let Err(e) = self.persist_initial_task(task).await {
+            self.withdraw_inline_push_config(registered).await;
+            return Err(e);
+        }
+        Ok(())
+    }
+
     /// Withdraws the config a continuation registered when its turn then
     /// could not be saved. The client is told the send failed, and a retry
     /// registers the config again; left in place, the retry's would be a
