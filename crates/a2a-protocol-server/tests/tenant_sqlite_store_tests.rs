@@ -5,6 +5,9 @@
 
 #![cfg(feature = "sqlite")]
 
+#[path = "support/list_proto.rs"]
+mod list_proto;
+
 use a2a_protocol_server::store::TaskStore;
 use a2a_protocol_server::store::TenantAwareSqliteTaskStore;
 use a2a_protocol_server::store::tenant::TenantContext;
@@ -646,4 +649,10 @@ async fn a_second_writer_on_one_tenants_position_is_reported_and_a_replay_is_not
         assert_eq!(events[0].seq, 1);
     })
     .await;
+}
+
+/// a2a.proto's `ListTasks` fields; see `support/list_proto.rs`.
+#[tokio::test]
+async fn tenant_sqlite_list_follows_the_proto() {
+    list_proto::list_follows_the_proto(&new_store().await).await;
 }

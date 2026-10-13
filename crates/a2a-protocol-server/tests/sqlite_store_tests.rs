@@ -7,6 +7,9 @@
 
 #![cfg(feature = "sqlite")]
 
+#[path = "support/list_proto.rs"]
+mod list_proto;
+
 use a2a_protocol_server::push::{PushConfigStore, SqlitePushConfigStore};
 use a2a_protocol_server::store::{SqliteTaskStore, TaskStore};
 use a2a_protocol_types::error::A2aResult;
@@ -364,4 +367,10 @@ async fn a_status_delta_keeps_the_journal_rows_a_save_would_supersede() -> A2aRe
     );
     assert_eq!(stored.status.state, TaskState::Completed);
     Ok(())
+}
+
+/// a2a.proto's `ListTasks` fields; see `support/list_proto.rs`.
+#[tokio::test]
+async fn sqlite_list_follows_the_proto() {
+    list_proto::list_follows_the_proto(&new_task_store().await).await;
 }

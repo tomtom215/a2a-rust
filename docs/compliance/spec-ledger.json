@@ -10128,11 +10128,13 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
-    "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
+    "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden",
+    "crates/a2a-protocol-server/tests/support/list_proto.rs list_follows_the_proto (run by store_tests, sqlite_store_tests, tenant_sqlite_store_tests, postgres_store_tests)"
    ],
-   "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",
+   "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default). Its value is what the proto comment says, the tasks the filters match before pagination, in every store since 2026-10-13: the SQL stores reported the page's length, the in-memory one every task in the partition whatever the filters.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 716,

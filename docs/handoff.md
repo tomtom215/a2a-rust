@@ -1677,6 +1677,23 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     docs describe it continuing. The test of the report,
     `a_consumer_that_falls_behind_is_told_what_it_missed`, stops reading at
     it, so it does not distinguish the two.
+89. `fix(server):` a2a.proto `ListTasksRequest`/`ListTasksResponse` — every
+    task store (audit register R40; in Behaviour Changes).
+    `status_timestamp_after` includes its bound, `total_size` counts what the
+    filters match before pagination, and the SQL stores' `page_size` is the
+    size used, not the page's length; a2a-sdk 1.2.2's stores, read
+    2026-10-13, do all three. `tests/support/list_proto.rs` runs against
+    all six stores (Postgres two, `#[ignore]`d like the rest of that file)
+    and failed on each before. Five tests pinned strictly-after and now
+    expect the bound included; they are named in the commit. The in-memory
+    count keeps an unfiltered or context-only list O(1) (`index.len()`); a
+    timestamp or status filter walks what it matches. The SQL stores run a
+    `COUNT(*)` per call. MEASURED 2026-10-13, `data_volume/list/
+    filtered_page_50` (context filter, release, this container), criterion
+    medians, two runs each: at 10K tasks old 34.07 and 34.04 µs, new 34.95
+    and 35.81; at 100K old 33.20 and 33.86, new 33.86 and 35.28; at 1K no
+    change. The 10K gap (0.9 to 1.8 µs) is wider than the old code's
+    run-to-run spread and is not explained by the O(1) path it takes.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

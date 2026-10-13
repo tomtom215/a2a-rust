@@ -661,7 +661,8 @@ async fn list_resave_without_status_change_keeps_position() {
     );
 }
 
-/// §3.1.4 statusTimestampAfter: strictly-after filter, boundary excluded.
+/// a2a.proto `status_timestamp_after`: "greater than or equal to", so the
+/// boundary is included. Until 2026-10-13 this pinned strictly-after.
 #[tokio::test]
 async fn list_filters_by_status_timestamp_after() {
     let store = make_store().await;
@@ -682,11 +683,7 @@ async fn list_filters_by_status_timestamp_after() {
     };
     let response = store.list(&params).await.unwrap();
     let ids: Vec<&str> = response.tasks.iter().map(|t| t.id.0.as_str()).collect();
-    assert_eq!(
-        ids,
-        vec!["new"],
-        "filter must be strictly-after (boundary excluded)"
-    );
+    assert_eq!(ids, vec!["new", "boundary"], "the boundary is included");
 }
 
 #[tokio::test]

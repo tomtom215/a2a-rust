@@ -326,6 +326,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **ListTasks follows a2a.proto's `ListTasksRequest` and
+  `ListTasksResponse`** (server, every task store). `statusTimestampAfter`
+  includes its bound ("greater than or equal to"); every store excluded
+  it. `totalSize` is the number of tasks the filters match before
+  pagination; the SQL stores reported the page's length, and the in-memory
+  store every task in the partition, whatever the filters. And the SQL
+  stores' `pageSize` is the page size used, as the in-memory store's
+  already was, not the number of tasks on the page. The official Python
+  SDK (a2a-sdk 1.2.2) does all three the same way. The SQL stores now run
+  a `COUNT(*)` over the filters on each call.
 - **SLIMRPC refuses a call that declares no `A2A-Version`**
   (`a2a-protocol-slimrpc`; spec §3.6.2: an empty value MUST be read as
   0.3). The server served such a call as 1.0, because the official

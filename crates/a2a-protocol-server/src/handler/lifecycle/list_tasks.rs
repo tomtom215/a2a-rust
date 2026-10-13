@@ -269,7 +269,11 @@ mod tests {
             .await
             .expect("filtered list must succeed");
         let ids: Vec<&str> = result.tasks.iter().map(|t| t.id.0.as_str()).collect();
-        assert_eq!(ids, vec!["t-new"], "only strictly-after tasks are returned");
+        assert_eq!(
+            ids,
+            vec!["t-new"],
+            "only tasks at or after the bound are returned"
+        );
     }
 
     #[tokio::test]
