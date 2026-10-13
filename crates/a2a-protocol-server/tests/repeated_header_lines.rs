@@ -12,7 +12,6 @@
 //! JSON-RPC response echoed the first line as activated while the handler
 //! had read the second.
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use a2a_protocol_server::agent_executor;
@@ -171,7 +170,7 @@ async fn axum_reads_both_lines() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
-    let addr: SocketAddr = listener.local_addr().expect("addr");
+    let addr = listener.local_addr().expect("addr");
     tokio::spawn(async move { axum::serve(listener, app).await });
     let (status, _, v) = send(two_lines(
         "GET",
