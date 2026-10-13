@@ -688,6 +688,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A card's `ETag` is the same for the same card** (server; spec §8.6.1:
+  an `ETag` "derived from ... a hash of the card content"). It hashed the
+  card's serialization, and `securitySchemes`, a requirement's `schemes`
+  and an OAuth flow's `scopes` are `HashMap`s, written in an order each
+  map draws at random. A card with two or more entries in one of them had
+  another `ETag` on each replica and after each restart, and a
+  `DynamicAgentCardHandler` whose producer builds the card per request
+  gave another on every request, so revalidation returned the whole card
+  instead of a `304`. The static and dynamic handlers and the extended
+  card (`GetExtendedAgentCard` over HTTP+JSON) now hash the card with its
+  maps' keys sorted. The body is unchanged.
 - **The agent card fetch sends `A2A-Version`** (client; spec §3.6.1:
   "Clients MUST send the `A2A-Version` header with each request"). Every
   transport sent it, but `resolve_agent_card`, `fetch_card_from_url` and

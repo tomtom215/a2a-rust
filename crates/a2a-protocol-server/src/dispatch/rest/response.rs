@@ -41,7 +41,7 @@ pub fn json_ok_response<T: serde::Serialize>(
 /// The card depends on who asked, so `private` keeps it out of shared
 /// caches and `Vary: Authorization` keys a client's cache by credential.
 /// `no-cache` makes the client revalidate on every use, and the `ETag`
-/// (the public card's validator, over the serialized card) makes that
+/// (the public card's validator, over the card's content) makes that
 /// revalidation a `304` until the card changes, which is how a change, a
 /// new `version` included, reaches a client that cached the old one. Until
 /// 2026-10-10 the response carried none of these.
@@ -49,10 +49,9 @@ pub fn extended_card_response(
     card: &a2a_protocol_types::AgentCard,
     headers: &HashMap<String, String>,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let Ok(body) = serde_json::to_vec(card) else {
+    let Ok((body, etag)) = crate::agent_card::caching::card_body_and_etag(card) else {
         return internal_error_response();
     };
-    let etag = crate::agent_card::caching::make_etag(&body);
     let not_modified = headers
         .get("if-none-match")
         .is_some_and(|inm| crate::agent_card::caching::etag_matches(inm, &etag));
@@ -197,6 +196,33 @@ mod tests {
     }
 
     // ── Response helpers ─────────────────────────────────────────────────
+
+    /// The extended card's `ETag` names the card, not the order its maps
+    /// were drawn in: each `from_value` builds `HashMap`s with their own
+    /// random order.
+    #[test]
+    fn the_extended_card_s_etag_is_the_same_for_the_same_card() {
+        let mut value =
+            serde_json::to_value(crate::agent_card::caching::tests::minimal_agent_card()).unwrap();
+        value["securitySchemes"] = (0..16)
+            .map(|i| {
+                (
+                    format!("key-{i}"),
+                    serde_json::json!({"apiKeySecurityScheme": {"location": "header", "name": "x"}}),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        let etags: std::collections::HashSet<String> = (0..8)
+            .map(|_| {
+                let card: a2a_protocol_types::AgentCard =
+                    serde_json::from_value(value.clone()).unwrap();
+                let resp = extended_card_response(&card, &HashMap::new());
+                resp.headers()["etag"].to_str().unwrap().to_owned()
+            })
+            .collect();
+        assert_eq!(etags.len(), 1, "{etags:?}");
+    }
 
     #[tokio::test]
     async fn health_response_status_and_body() {

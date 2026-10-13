@@ -16,7 +16,7 @@ use http_body_util::Full;
 
 use crate::agent_card::CORS_ALLOW_ALL;
 use crate::agent_card::caching::{
-    CacheConfig, ConditionalResult, check_conditional, format_http_date, make_etag,
+    CacheConfig, ConditionalResult, card_body_and_etag, check_conditional, format_http_date,
 };
 use crate::error::ServerResult;
 
@@ -39,8 +39,7 @@ impl StaticAgentCardHandler {
     ///
     /// Returns a [`ServerError`](crate::error::ServerError) if serialization fails.
     pub fn new(card: &AgentCard) -> ServerResult<Self> {
-        let json = serde_json::to_vec(card)?;
-        let etag = make_etag(&json);
+        let (json, etag) = card_body_and_etag(card)?;
         Ok(Self {
             card_json: Bytes::from(json),
             etag,

@@ -23,7 +23,7 @@ use bytes::Bytes;
 use http_body_util::Full;
 
 use crate::agent_card::CORS_ALLOW_ALL;
-use crate::agent_card::caching::{CacheConfig, make_etag};
+use crate::agent_card::caching::{CacheConfig, card_body_and_etag};
 
 /// Trait for producing an [`AgentCard`] dynamically.
 ///
@@ -96,9 +96,8 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
             .map(str::to_owned);
 
         match self.valid_card().await {
-            Ok(card) => match serde_json::to_vec(&card) {
-                Ok(json) => {
-                    let etag = make_etag(&json);
+            Ok(card) => match card_body_and_etag(&card) {
+                Ok((json, etag)) => {
                     let not_modified = if_none_match
                         .as_deref()
                         .is_some_and(|inm| etag_matches(inm, &etag));
@@ -130,18 +129,15 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
     /// Handles a request without conditional headers (legacy compatibility).
     pub async fn handle_unconditional(&self) -> hyper::Response<Full<Bytes>> {
         match self.valid_card().await {
-            Ok(card) => match serde_json::to_vec(&card) {
-                Ok(json) => {
-                    let etag = make_etag(&json);
-                    hyper::Response::builder()
-                        .status(200)
-                        .header("content-type", "application/json")
-                        .header("access-control-allow-origin", CORS_ALLOW_ALL)
-                        .header("etag", &etag)
-                        .header("cache-control", self.cache_config.header_value())
-                        .body(Full::new(Bytes::from(json)))
-                        .unwrap_or_else(|_| fallback_error_response())
-                }
+            Ok(card) => match card_body_and_etag(&card) {
+                Ok((json, etag)) => hyper::Response::builder()
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .header("access-control-allow-origin", CORS_ALLOW_ALL)
+                    .header("etag", &etag)
+                    .header("cache-control", self.cache_config.header_value())
+                    .body(Full::new(Bytes::from(json)))
+                    .unwrap_or_else(|_| fallback_error_response()),
                 Err(e) => error_response(500, &format!("serialization error: {e}")),
             },
             Err(e) => error_response(500, &format!("card producer error: {e}")),

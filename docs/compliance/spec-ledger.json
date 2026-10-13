@@ -2633,7 +2633,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/lib.rs:49",
     "crates/a2a-protocol-types/src/agent_card/builders.rs:60",
-    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:65",
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:64",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:197"
    ],
    "test_evidence": [
@@ -5340,7 +5340,7 @@
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:277",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:81",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:80",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:557",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:604"
    ],
@@ -5360,15 +5360,15 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/caching.rs:190",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:88",
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:213",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:87",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:557",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:604",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:66"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:110 static_handler_returns_etag_and_cache_headers",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:185 static_handler_custom_max_age",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:109 static_handler_returns_etag_and_cache_headers",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:184 static_handler_custom_max_age",
     "crates/a2a-protocol-server/tests/agent_card_caching.rs:78 the_axum_agent_card_is_cacheable_like_the_rest_one"
    ],
    "notes": "JSON-RPC, REST and (since 2026-10-11) the axum router serve the public card with Cache-Control: public, max-age=3600 from StaticAgentCardHandler. The max-age is set on StaticAgentCardHandler::with_max_age; the dispatchers build theirs with the default and do not expose it. The axum test fails without the fix (no cache-control).",
@@ -5384,17 +5384,23 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/caching.rs:21",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:43",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:557",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:604"
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:42",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:42",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:99",
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:52",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:297",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:621"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:126 static_handler_304_on_matching_etag",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:125 static_handler_304_on_matching_etag",
     "crates/a2a-protocol-server/tests/agent_card_caching.rs:78 the_axum_agent_card_is_cacheable_like_the_rest_one",
-    "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:379 same_card_produces_same_etag"
+    "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:379 same_card_produces_same_etag",
+    "crates/a2a-protocol-server/tests/card_etag_determinism.rs:78 the_same_card_parsed_twice_has_one_static_etag",
+    "crates/a2a-protocol-server/tests/card_etag_determinism.rs:99 a_card_built_per_request_keeps_its_dynamic_etag",
+    "crates/a2a-protocol-server/tests/card_etag_determinism.rs:120 the_unconditional_path_keeps_it_too",
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:204 the_extended_card_s_etag_is_the_same_for_the_same_card"
    ],
-   "notes": "Content-hash ETag (and Last-Modified) on all three HTTP card routes; If-None-Match answers 304. The axum route had neither until 2026-10-11.",
+   "notes": "Content-hash ETag (and Last-Modified) on all three HTTP card routes; If-None-Match answers 304. The axum route had neither until 2026-10-11. The hash is over the card with its maps' keys sorted (card_body_and_etag), since 2026-10-13. It was over the serialization, whose HashMap fields (securitySchemes, a requirement's schemes, OAuth scopes) come out in an order each map draws at random: the same card had another ETag on each replica, after each restart, and on each request of a dynamic handler building its card, so revalidation returned 200. Shown 8 ETags in 8 parses before the fix.",
    "auditor": "D",
    "source": "spec"
   },
@@ -5407,12 +5413,12 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:47",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:87",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:102"
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:46",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:86",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:101"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:110 static_handler_returns_etag_and_cache_headers",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:109 static_handler_returns_etag_and_cache_headers",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:154 handle_sends_no_last_modified",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:260 if_modified_since_is_ignored"
    ],
@@ -5982,7 +5988,7 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:121-133"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:182 extract_headers_lowercased_keys",
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:181 extract_headers_lowercased_keys",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:586 build_request_includes_extra_headers"
    ],
    "notes": "",

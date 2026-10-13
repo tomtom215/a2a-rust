@@ -1318,6 +1318,23 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     without the header. Ledger §3.6.1 (entry 130),
     whose transport citations had drifted, now cites the lines that set
     the header.
+63. `fix(server):` §8.6.1 — a card's `ETag` is the same for the same card
+    (audit register R16). It hashed `serde_json::to_vec(card)`, and the
+    card's `HashMap` fields (`securitySchemes`, a requirement's `schemes`,
+    OAuth `scopes`) serialize in a per-instance random order: the new
+    `card_etag_determinism.rs` gave 8 ETags in 8 parses of one card with
+    16 schemes, statically and through a dynamic handler. All four call
+    sites (static, dynamic conditional and unconditional, the REST
+    extended card) take `caching::card_body_and_etag`, which hashes
+    `serde_json::to_value(card)`; the body served is unchanged. That
+    relies on `serde_json::Map` being a `BTreeMap`, which holds while no
+    crate in the build enables serde_json's `preserve_order` (none does,
+    `cargo tree -e features -i serde_json --all-features`);
+    `serde_json_maps_are_sorted` fails if the workspace ever does. An
+    application that enables it downstream gets the old variable `ETag`
+    back, costing bandwidth, not correctness. An explicit sort would cover
+    that, but in this build it is an equivalent mutant, which
+    `mutants.toml` does not admit.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
