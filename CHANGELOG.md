@@ -768,6 +768,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An agent card's explicitly empty `iconUrl` or `documentationUrl`
+  survives gRPC** (types; spec §8.4.1: an optional field explicitly set to
+  its default MUST be included). Both are `optional string` in a2a.proto,
+  and the gRPC conversion mapped `""` to absent in both directions, so a
+  card read over gRPC was not the card served over JSON, and a signature
+  covering the empty field no longer verified. The conversion keeps it.
 - **The agent card answers `HEAD`, and its conditional requests follow RFC
   9110** (server; spec §8.6.1: cache validation on the card endpoint).
   JSON-RPC and HTTP+JSON served `/.well-known/agent-card.json` (and the

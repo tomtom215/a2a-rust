@@ -4976,15 +4976,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:72",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:76"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:76",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:462",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:513"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing/presence/tests.rs the_specification_example_canonicalizes_as_published"
+    "crates/a2a-protocol-types/src/signing/presence/tests.rs the_specification_example_canonicalizes_as_published",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:623 an_explicitly_empty_url_keeps_its_presence"
    ],
-   "notes": "Option<bool> Some(false) serializes `false`; no test pins the spec example's `\"pushNotifications\":false,\"streaming\":false` in canonical output.",
+   "notes": "Option<bool> Some(false) serializes `false`; no test pins the spec example's `\"pushNotifications\":false,\"streaming\":false` in canonical output. The gRPC card conversion keeps an explicitly set empty iconUrl or documentationUrl (both `optional string` in a2a.proto) since 2026-10-13; it mapped Some(\"\") to None both ways, so a card read over gRPC lost what a signature over the JSON card had covered.",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 2025,
@@ -9471,7 +9474,7 @@
     "crates/a2a-protocol-types/src/proto/convert/card.rs:286"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/proto/convert/card.rs:687 oauth2_missing_flows_rejected"
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:702 oauth2_missing_flows_rejected"
    ],
    "notes": "Always serialized; gRPC missing -> ConvertError; JSON missing -> serde error.",
    "auditor": "G",

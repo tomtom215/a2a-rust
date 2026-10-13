@@ -458,8 +458,9 @@ impl TryFrom<pb::AgentCard> for AgentCard {
                 .transpose()?
                 .unwrap_or_default(),
             provider: value.provider.map(Into::into),
-            icon_url: value.icon_url.filter(|s| !s.is_empty()),
-            documentation_url: value.documentation_url.filter(|s| !s.is_empty()),
+            // `optional string`: an explicitly set "" is kept (§5.7).
+            icon_url: value.icon_url,
+            documentation_url: value.documentation_url,
             security_schemes: if value.security_schemes.is_empty() {
                 None
             } else {
@@ -509,11 +510,7 @@ impl TryFrom<AgentCard> for pb::AgentCard {
                 .collect(),
             provider: value.provider.map(Into::into),
             version: value.version,
-            // Filter empties on the way out too, so the proto→domain filter
-            // (which maps `Some("")` → `None`) makes the round-trip idempotent
-            // rather than silently dropping an empty string only in one
-            // direction.
-            documentation_url: value.documentation_url.filter(|s| !s.is_empty()),
+            documentation_url: value.documentation_url,
             capabilities: Some(value.capabilities.try_into()?),
             security_schemes: match value.security_schemes {
                 None => HashMap::new(),
@@ -540,7 +537,7 @@ impl TryFrom<AgentCard> for pb::AgentCard {
                 .into_iter()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?,
-            icon_url: value.icon_url.filter(|s| !s.is_empty()),
+            icon_url: value.icon_url,
         })
     }
 }
@@ -615,6 +612,24 @@ mod tests {
             serde_json::to_value(&back).unwrap(),
             serde_json::to_value(&card).unwrap()
         );
+    }
+
+    /// `icon_url` and `documentation_url` are `optional string` in
+    /// a2a.proto, so an explicitly set `""` is set, not absent (spec §5.7:
+    /// set and omitted are distinct). Both directions mapped it to `None`,
+    /// so such a card read over gRPC differed from the one served over
+    /// JSON, and a signature over it no longer verified.
+    #[test]
+    fn an_explicitly_empty_url_keeps_its_presence() {
+        let mut card = sample_card();
+        card.icon_url = Some(String::new());
+        card.documentation_url = Some(String::new());
+        let proto: pb::AgentCard = card.try_into().unwrap();
+        assert_eq!(proto.icon_url.as_deref(), Some(""));
+        assert_eq!(proto.documentation_url.as_deref(), Some(""));
+        let back: AgentCard = proto.try_into().unwrap();
+        assert_eq!(back.icon_url.as_deref(), Some(""));
+        assert_eq!(back.documentation_url.as_deref(), Some(""));
     }
 
     #[test]

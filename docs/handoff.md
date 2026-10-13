@@ -1596,6 +1596,12 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     pushed in `d3f633d3`'s batch before a no-default-features clippy ran on
     it. Lesson: a test file with a feature-gated test needs clippy with
     that feature off before it is pushed, not only `--all-features`.
+82. `fix(types):` §8.4.1 — the gRPC card conversion keeps an explicitly
+    empty `icon_url` or `documentation_url` (audit register R47; both are
+    `optional string` in a2a.proto). Both directions filtered `""` to
+    `None`, a comment calling it idempotence.
+    `an_explicitly_empty_url_keeps_its_presence` failed before; mutants 4
+    of 4 (each filter put back). Ledger 248 cites it.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
