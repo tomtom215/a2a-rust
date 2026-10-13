@@ -482,11 +482,15 @@ impl A2aError {
     /// Returns `true` when this error is the recoverable consumer-lag signal
     /// a server emits on a streaming subscription.
     ///
-    /// This is **not** a terminal error. The server surfaces it to say "you
-    /// read too slowly and `n` events were dropped"; the stream continues, and
-    /// a consumer that keeps polling still receives every later event,
-    /// including the terminal status. A consumer that treats it like any other
-    /// error and stops reading will silently miss the end of the task.
+    /// It says events were dropped for this consumer, not that the task
+    /// failed: the task goes on, and `GetTask` shows its state. This SDK's
+    /// servers send it only when the task's event log cannot replay what the
+    /// consumer missed (spec §3.5.2). On the JSON-RPC, HTTP+JSON, WebSocket
+    /// and gRPC bindings it is the stream's last frame; the SLIMRPC binding
+    /// sends the error's text without the marker, so this returns `false`
+    /// there. To resynchronize, subscribe again: the new stream begins with
+    /// a fresh `Task` snapshot, and over SSE a `Last-Event-ID` resumes it
+    /// after the last position seen, while the log still holds it.
     ///
     /// It is detected by the [`STREAM_LAGGED_MARKER`] key in [`A2aError::data`]
     /// rather than by code or message, because the code is a generic

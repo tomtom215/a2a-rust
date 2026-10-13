@@ -677,6 +677,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`A2aError::is_stream_lagged` says what a lag does to the stream**
+  (types; documentation only). It said the stream goes on after the lag
+  and a consumer that keeps reading still gets every later event, including
+  the terminal status. This SDK's servers send the lag only when the task's
+  event log cannot replay what the consumer missed, and on the JSON-RPC,
+  HTTP+JSON, WebSocket and gRPC bindings it is the stream's last frame. The
+  doc now says so, and that the way back is to subscribe again (over SSE
+  with `Last-Event-ID`). The SLIMRPC binding sends the error's text without
+  the marker, so the check is `false` there.
 - **A gRPC error carries its data, and a stream's error its marker**
   (server and client; spec §5.1: every binding MUST handle errors the same
   way). The JSON bindings send an error's `data` beside its `ErrorInfo`: a

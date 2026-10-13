@@ -1262,10 +1262,36 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     types crate's `proto` module re-exports `prost_types`, so neither the
     server nor the client takes a dependency of its own, and no lockfile
     changes.
+60. `docs:` stale ledger notes and citations (audit register R62). The
+    §3.6 patch-version entry said both sides compare only the major: the
+    server compares `Major.Minor` (`is_served_version`) and the client only
+    the major (`is_compatible`), so neither considers the patch, and the
+    client takes a 1.1 interface listed first and addresses it as 1.0. The
+    §14 and §10.2 entries still said the server accepts any 1.x, and
+    §3.3.2's quoted the refusal as "supports 1.x". §3.3.2's `@type` entry
+    said `A2aError.data` is dropped; it goes as a typed detail on every
+    binding (gRPC since item 59). §3.3.2's retry-guidance entry and
+    §13.4's said RetryInfo goes on every binding; SLIMRPC has no details
+    field and sends none. The §9.5, §10.6 and §11.6 error entries said
+    unary errors carry `ErrorInfo` alone, WebSocket sends no `data` and
+    gRPC streams lose the marker, all fixed since (`ef31df91`, 2026-10-11,
+    and item 59); §11.6's "further objects MAY" entry moves from
+    NOT_SUPPORTED to TESTED on `unary_errors_keep_their_data`. Twelve
+    entries cited `dispatch/mod.rs` lines whose code had moved, mostly to
+    `dispatch/version.rs`. The 24 entries changed here had their citations
+    re-pointed by pattern, each cited line read back. Ledger-wide, 296 of
+    the 723 named test citations with a line number pointed at a line
+    other than the test's `fn`; each now names the one `fn <name>` line in
+    its file (only the numbers changed, checked by diff).
+    `A2aError::is_stream_lagged`'s doc said the stream goes on after the
+    lag; on every binding but SLIMRPC it is the last frame, and the doc now
+    says so and how to resynchronize. SLIMRPC's `event_stream` sends the
+    error as `"InternalError: …"` text and reads on after it; whether the
+    stream ends there is unchecked (register: SLIMRPC stream marker).
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
-PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
-23 exempt of 53. Static checks: 29 of 29 locally.
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
+PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
+proven, 0 unproven, 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**
 - A check describes the tree it ran on. After any edit that follows a
@@ -1299,9 +1325,11 @@ PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
   replica sharing the store may be writing (item 56). Reason about the
   multi-replica case before calling a read order safe.
 - The ledger checker verifies that a cited test function exists, not that a
-  `path:line` names the code meant; some citations were already loose at
-  `7cb97ad8` (`in_memory.rs:667` was a blank line). Move citations through
-  `git diff` when a file changes (item 56 did, 45 lines checked identical).
+  `path:line` names the code meant. Item 60 anchored every named test
+  citation to its `fn` line (296 had drifted); the 1,180 `impl_evidence`
+  citations carry no name and were checked only in the entries items 56
+  to 60 touched. Move citations through `git diff` when a file changes
+  (item 56 did, 45 lines checked identical).
 - Nightly cargo's `unused_dependencies` lint flags `book-tests`' dependencies,
   which only its doctests use. A warning on the informational nightly job
   today; it would need an allow if the lint stabilizes as-is.
