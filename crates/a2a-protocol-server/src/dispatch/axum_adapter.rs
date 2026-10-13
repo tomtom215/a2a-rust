@@ -202,8 +202,10 @@ async fn validate_a2a_request(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let path = req.uri().path();
-    let versionless = req.method() == axum::http::Method::GET
-        && matches!(path, "/.well-known/agent-card.json" | "/health" | "/ready");
+    let versionless = matches!(
+        *req.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD
+    ) && matches!(path, "/.well-known/agent-card.json" | "/health" | "/ready");
     if !versionless {
         if let Err(err) = super::check_request_content_type(req.method(), req.headers()) {
             return handler_error_to_response(&crate::error::ServerError::Protocol(err));

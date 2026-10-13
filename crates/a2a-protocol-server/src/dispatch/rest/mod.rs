@@ -139,7 +139,7 @@ impl RestDispatcher {
         }
 
         // Health check endpoint.
-        if method == "GET" && (path == "/health" || path == "/ready") {
+        if matches!(method.as_str(), "GET" | "HEAD") && (path == "/health" || path == "/ready") {
             let mut resp = health_response();
             if let Some(ref cors) = self.cors {
                 cors.apply_headers(&mut resp);
@@ -162,7 +162,7 @@ impl RestDispatcher {
         }
 
         // Agent card is always at the well-known path (no tenant prefix).
-        if method == "GET" && path == "/.well-known/agent-card.json" {
+        if matches!(method.as_str(), "GET" | "HEAD") && path == "/.well-known/agent-card.json" {
             return self
                 .card_handler
                 .as_ref()

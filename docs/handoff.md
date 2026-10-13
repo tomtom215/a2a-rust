@@ -1575,6 +1575,27 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     at `TcpListener::bind` with WSAENOBUFS (10055) in
     `dispatch_edge_tests`, unchanged by the push and green on `8059da21`;
     commented on the PR, and the next push is its one re-run.
+80. `fix(server):` §8.6.1 / RFC 9110 §9.3.2, §13.1 — the card answers
+    `HEAD`, and its conditionals follow RFC 9110 (audit register R29,
+    R44). JSON-RPC and HTTP+JSON route `GET` and `HEAD` to the card (and
+    HTTP+JSON's probes), axum exempts both from the version check, and
+    `check_conditional` and the dynamic handler answer `304` to `GET` and
+    `HEAD` only, read every `If-None-Match` line through
+    `dispatch::field_value`, and (static) skip `If-Modified-Since` whenever
+    `If-None-Match` is present. `tests/card_head.rs` (all three bindings
+    failed before) and four unit tests, all failing before; mutants
+    13 of 13. Ledger 270 and 271 carry the new rules and tests; 268's note
+    that nothing honours `no-store` was stale (item 77's resolver does) and
+    is corrected. Not changed: a non-`GET` request carrying a matching
+    `If-None-Match` gets the card, not the `412` §13.1.2 asks for, because
+    `ConditionalResult` has no such outcome and no SDK route sends one
+    there; `If-Modified-Since` is still compared by exact string.
+81. `test(server):` `eefd2399` — item 76's `repeated_header_lines.rs`
+    imported `SocketAddr` for an annotation in its axum-gated test, so
+    clippy on the server without `axum` failed (unused import). It was
+    pushed in `d3f633d3`'s batch before a no-default-features clippy ran on
+    it. Lesson: a test file with a feature-gated test needs clippy with
+    that feature off before it is pushed, not only `--all-features`.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

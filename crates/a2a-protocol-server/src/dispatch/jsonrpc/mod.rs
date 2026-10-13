@@ -109,7 +109,9 @@ impl JsonRpcDispatcher {
 
         // Serve the agent card at the well-known discovery path (spec §8.3).
         // This must be handled before JSON-RPC body parsing since it's a GET.
-        if req.method() == "GET" && req.uri().path() == "/.well-known/agent-card.json" {
+        if matches!(*req.method(), hyper::Method::GET | hyper::Method::HEAD)
+            && req.uri().path() == "/.well-known/agent-card.json"
+        {
             let mut resp = self.card_handler.as_ref().map_or_else(
                 || json_response(404, br#"{"error":"agent card not configured"}"#.to_vec()),
                 |h| h.handle(&req).map(http_body_util::BodyExt::boxed),

@@ -129,22 +129,30 @@ pub enum ConditionalResult {
 /// Checks `If-None-Match` and `If-Modified-Since` headers against the
 /// current `ETag` and `Last-Modified` values.
 ///
-/// Per RFC 7232, `If-None-Match` takes precedence over `If-Modified-Since`.
+/// Only a `GET` or `HEAD` is answered `304` (RFC 9110 §13.1.2, §13.1.3);
+/// any other method gets [`SendFull`](ConditionalResult::SendFull). When
+/// `If-None-Match` is present, all of its lines are read and
+/// `If-Modified-Since` is ignored, even if no line is readable. Until
+/// 2026-10-13 a request of any method was answered `304`, only the first
+/// `If-None-Match` line was read, and one that was not visible ASCII fell
+/// through to the date.
 #[must_use]
 pub fn check_conditional(
     req: &hyper::Request<impl hyper::body::Body>,
     current_etag: &str,
     current_last_modified: &str,
 ) -> ConditionalResult {
-    // Check If-None-Match first (takes precedence per RFC 7232 §6).
-    if let Some(inm) = req.headers().get("if-none-match")
-        && let Ok(inm_str) = inm.to_str()
-    {
-        if etag_matches(inm_str, current_etag) {
-            return ConditionalResult::NotModified;
-        }
-        // If-None-Match was present but didn't match; skip If-Modified-Since.
+    if !matches!(*req.method(), hyper::Method::GET | hyper::Method::HEAD) {
         return ConditionalResult::SendFull;
+    }
+    if req.headers().contains_key(hyper::header::IF_NONE_MATCH) {
+        let matched = crate::dispatch::field_value(req.headers(), "if-none-match")
+            .is_some_and(|inm| etag_matches(&inm, current_etag));
+        return if matched {
+            ConditionalResult::NotModified
+        } else {
+            ConditionalResult::SendFull
+        };
     }
 
     // Check If-Modified-Since (only when If-None-Match is absent).
@@ -399,6 +407,62 @@ pub(crate) mod tests {
             ConditionalResult::SendFull,
             "If-None-Match miss should skip If-Modified-Since per RFC 7232"
         );
+    }
+
+    fn conditional(method: &str, lines: &[(&str, &[u8])]) -> ConditionalResult {
+        let mut req = hyper::Request::builder().method(method);
+        for (name, value) in lines {
+            req = req.header(
+                *name,
+                hyper::header::HeaderValue::from_bytes(value).unwrap(),
+            );
+        }
+        let req = req.body(Full::new(Bytes::new())).unwrap();
+        check_conditional(&req, "W/\"abc\"", "Thu, 01 Jan 2026 00:00:00 GMT")
+    }
+
+    /// RFC 9110 §13.1.3: a recipient MUST ignore `If-Modified-Since` when
+    /// the request carries `If-None-Match`, readable or not. One that was
+    /// not visible ASCII fell through to the date, and a matching date
+    /// answered 304.
+    #[test]
+    fn an_unreadable_if_none_match_still_hides_if_modified_since() {
+        let lines: &[(&str, &[u8])] = &[
+            ("if-none-match", b"\"\xe9\""),
+            ("if-modified-since", b"Thu, 01 Jan 2026 00:00:00 GMT"),
+        ];
+        assert_eq!(conditional("GET", lines), ConditionalResult::SendFull);
+    }
+
+    /// RFC 9110 §5.3: `If-None-Match` sent as two lines is one list. Only the
+    /// first line was read.
+    #[test]
+    fn an_if_none_match_on_a_second_line_counts() {
+        let lines: &[(&str, &[u8])] = &[
+            ("if-none-match", b"\"other\""),
+            ("if-none-match", b"W/\"abc\""),
+        ];
+        assert_eq!(conditional("GET", lines), ConditionalResult::NotModified);
+    }
+
+    /// RFC 9110 §13.1.2, §13.1.3: a 304 answers a GET or a HEAD; for another
+    /// method `If-Modified-Since` MUST be ignored and a matching
+    /// `If-None-Match` is no 304. Every method was answered 304.
+    #[test]
+    fn conditions_apply_to_get_and_head_only() {
+        let inm: &[(&str, &[u8])] = &[("if-none-match", b"W/\"abc\"")];
+        let ims: &[(&str, &[u8])] = &[("if-modified-since", b"Thu, 01 Jan 2026 00:00:00 GMT")];
+        for lines in [inm, ims] {
+            assert_eq!(conditional("GET", lines), ConditionalResult::NotModified);
+            assert_eq!(conditional("HEAD", lines), ConditionalResult::NotModified);
+            for method in ["POST", "PUT", "DELETE"] {
+                assert_eq!(
+                    conditional(method, lines),
+                    ConditionalResult::SendFull,
+                    "{method}"
+                );
+            }
+        }
     }
 
     #[test]

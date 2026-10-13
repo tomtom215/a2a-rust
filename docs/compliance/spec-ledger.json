@@ -1093,7 +1093,7 @@
    "status": "NOT_SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:435",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:437",
     "crates/a2a-protocol-server/src/handler/push_config.rs:248"
    ],
    "test_evidence": [],
@@ -1436,11 +1436,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:105",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:167",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:180",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:42",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:695",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:212"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:214"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs axum_enforces_the_protocol_version_except_for_discovery"
@@ -2717,7 +2717,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:190",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:162",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:164",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:1"
    ],
    "test_evidence": [
@@ -2762,11 +2762,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:167",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:180",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:42",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:695",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:212"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:214"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs axum_enforces_the_protocol_version_except_for_discovery"
@@ -3967,7 +3967,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:216",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:218",
     "crates/a2a-protocol-server/src/push/sender.rs:873"
    ],
    "test_evidence": [
@@ -3987,7 +3987,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:212",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:214",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:49"
    ],
    "test_evidence": [
@@ -4714,7 +4714,7 @@
     "crates/a2a-protocol-server/src/builder.rs:117",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:112",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:176",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:545"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:547"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:252 agent_card_get_returns_card_when_configured",
@@ -5371,13 +5371,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:277",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:88",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:545",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:592"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:547",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:594"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/agent_card_caching.rs:79 the_axum_agent_card_is_cacheable_like_the_rest_one"
    ],
-   "notes": "Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching, and nothing honours max-age or no-store (see 2235).",
+   "notes": "Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching; the resolver does not store a no-store response, and max-age is not used to skip a request (see 2235).",
    "auditor": "D",
    "source": "spec"
   },
@@ -5390,10 +5390,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/caching.rs:213",
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:221",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:95",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:545",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:592",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:547",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:594",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:66"
    ],
    "test_evidence": [
@@ -5416,10 +5416,11 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/caching.rs:42",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:50",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:99",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:101",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:41",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:298",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:609"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:300",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:611",
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:140"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:159 static_handler_304_on_matching_etag",
@@ -5428,9 +5429,13 @@
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:81 the_same_card_parsed_twice_has_one_static_etag",
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:102 a_card_built_per_request_keeps_its_dynamic_etag",
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:123 the_unconditional_path_keeps_it_too",
-    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:182 the_extended_card_s_etag_is_the_same_for_the_same_card"
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:182 the_extended_card_s_etag_is_the_same_for_the_same_card",
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:440 an_if_none_match_on_a_second_line_counts",
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:452 conditions_apply_to_get_and_head_only",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:379 if_none_match_counts_every_line_on_get_and_head_only",
+    "crates/a2a-protocol-server/tests/card_head.rs:102 rest_answers_head_on_the_card_and_probes"
    ],
-   "notes": "Content-hash ETag (and Last-Modified) on all three HTTP card routes; If-None-Match answers 304. The axum route had neither until 2026-10-11. The hash is over the card with its maps' keys sorted (card_body_and_etag), since 2026-10-13. It was over the serialization, whose HashMap fields (securitySchemes, a requirement's schemes, OAuth scopes) come out in an order each map draws at random: the same card had another ETag on each replica, after each restart, and on each request of a dynamic handler building its card, so revalidation returned 200. Shown 8 ETags in 8 parses before the fix.",
+   "notes": "Content-hash ETag (and Last-Modified) on all three HTTP card routes; If-None-Match answers 304. The axum route had neither until 2026-10-11. The hash is over the card with its maps' keys sorted (card_body_and_etag), since 2026-10-13. It was over the serialization, whose HashMap fields (securitySchemes, a requirement's schemes, OAuth scopes) come out in an order each map draws at random: the same card had another ETag on each replica, after each restart, and on each request of a dynamic handler building its card, so revalidation returned 200. Shown 8 ETags in 8 parses before the fix. Since 2026-10-13 a 304 answers only a GET or HEAD, every If-None-Match line is read (RFC 9110 §13.1.2, §5.3), and HEAD on the card is served on JSON-RPC, HTTP+JSON and axum; before, any method got a 304, only the first line was read, and a HEAD was refused or not found.",
    "auditor": "D",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -5446,14 +5451,15 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:54",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:94",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:101"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:103"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:143 static_handler_returns_etag_and_cache_headers",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:154 handle_sends_no_last_modified",
-    "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:260 if_modified_since_is_ignored"
+    "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:260 if_modified_since_is_ignored",
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:429 an_unreadable_if_none_match_still_hides_if_modified_since"
    ],
-   "notes": "Static handler: set to handler construction time (changes on every restart); If-Modified-Since compared by exact string equality (caching.rs:127). Dynamic handler: sends none since 2026-10-13. It had stamped the current second on every request, claiming the card changed at each one; a card produced per request has no modification date (RFC 9110 §8.8.2.1), so it now ignores If-Modified-Since (§13.1.3) and revalidates by ETag alone.",
+   "notes": "Static handler: set to handler construction time (changes on every restart); If-Modified-Since compared by exact string equality (caching.rs:159), and ignored when If-None-Match is present, readable or not, or the method is not GET or HEAD (RFC 9110 §13.1.3; until 2026-10-13 an unreadable If-None-Match fell through to it). Dynamic handler: sends none since 2026-10-13. It had stamped the current second on every request, claiming the card changed at each one; a card produced per request has no modification date (RFC 9110 §8.8.2.1), so it now ignores If-Modified-Since (§13.1.3) and revalidates by ETag alone.",
    "auditor": "D",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -5553,7 +5559,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:340-354",
     "crates/a2a-protocol-server/src/streaming/sse.rs:424-430",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:307-327"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:309-329"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:662 build_sse_response_has_correct_headers",
@@ -5572,8 +5578,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:127-128",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:162-176",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:129-130",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:164-178",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:259-271",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:195-204"
    ],
@@ -5644,9 +5650,9 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/jsonrpc.rs:51-75",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:210-275",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:212-277",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:180-204",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:197",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:199",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/refusal.rs:44-81",
     "crates/a2a-protocol-types/src/jsonrpc.rs:167",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:61"
@@ -5684,7 +5690,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:385-388",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:329-345",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:331-347",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:244-260"
    ],
    "test_evidence": [
@@ -5731,7 +5737,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:66-91",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:173-207",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:458"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:460"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:343 parse_error_response_has_error_code",
@@ -6034,8 +6040,8 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:185-214",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:259-271",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:121-133",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:199-217",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:315"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:199-219",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:317"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:347 rest_required_extension_enforced_and_echoed",
@@ -6127,8 +6133,8 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:110-118",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:568-607",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:169-185",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:704",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:708"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:706",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:710"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/request.rs:305 build_uri_extracts_path_param_and_appends_query",
@@ -6153,9 +6159,9 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:169-185",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:573",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:569",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:571",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:12-37",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:704"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:706"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:593 parse_list_tasks_query_all_params",
@@ -6348,7 +6354,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:70-98",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:148-168",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:263-279"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:265-281"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/hardening.rs rest_rejects_wrong_content_type_on_post",
@@ -7730,7 +7736,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:512",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:183",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:185",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:280",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:39",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:114-152"

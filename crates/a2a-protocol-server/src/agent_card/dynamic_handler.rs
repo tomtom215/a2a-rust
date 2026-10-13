@@ -79,21 +79,23 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
 
     /// Handles an agent card request with conditional caching support.
     ///
-    /// Serializes the produced card, computes an `ETag`, and answers a
-    /// matching `If-None-Match` with `304`. `If-Modified-Since` is ignored:
-    /// a produced card has no modification date (RFC 9110 §13.1.3).
+    /// Serializes the produced card, computes an `ETag`, and answers a `GET`
+    /// or `HEAD` whose `If-None-Match` matches with `304`.
+    /// `If-Modified-Since` is ignored: a produced card has no modification
+    /// date (RFC 9110 §13.1.3).
     #[allow(clippy::future_not_send)] // Body impl may not be Sync
     pub async fn handle(
         &self,
         req: &hyper::Request<impl hyper::body::Body>,
     ) -> hyper::Response<Full<Bytes>> {
         // Extract the conditional header before the await point so the
-        // non-Send `impl Body` reference doesn't cross it.
-        let if_none_match = req
-            .headers()
-            .get("if-none-match")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_owned);
+        // non-Send `impl Body` reference doesn't cross it. Every line of it
+        // counts (RFC 9110 §5.3), and only a GET or HEAD is answered 304
+        // (§13.1.2); until 2026-10-13 the first line alone was read, for any
+        // method.
+        let if_none_match = matches!(*req.method(), hyper::Method::GET | hyper::Method::HEAD)
+            .then(|| crate::dispatch::field_value(req.headers(), "if-none-match"))
+            .flatten();
 
         match self.valid_card().await {
             Ok(card) => match card_body_and_etag(&card) {
@@ -368,6 +370,31 @@ mod tests {
             200,
             "non-matching ETag should return 200 with full body"
         );
+    }
+
+    /// RFC 9110 §5.3, §13.1.2: every `If-None-Match` line counts, and only a
+    /// `GET` or `HEAD` is answered 304. Only the first line was read, and
+    /// any method was answered 304.
+    #[tokio::test]
+    async fn if_none_match_counts_every_line_on_get_and_head_only() {
+        let handler = DynamicAgentCardHandler::new(MockProducer);
+        let first = hyper::Request::builder()
+            .body(Full::new(Bytes::new()))
+            .unwrap();
+        let etag = handler.handle(&first).await.headers()["etag"].clone();
+        let status = |method: &'static str| {
+            let req = hyper::Request::builder()
+                .method(method)
+                .header("if-none-match", "\"other\"")
+                .header("if-none-match", etag.clone())
+                .body(Full::new(Bytes::new()))
+                .unwrap();
+            let handler = &handler;
+            async move { handler.handle(&req).await.status() }
+        };
+        assert_eq!(status("GET").await, 304);
+        assert_eq!(status("HEAD").await, 304);
+        assert_eq!(status("POST").await, 200);
     }
 
     #[tokio::test]

@@ -768,6 +768,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The agent card answers `HEAD`, and its conditional requests follow RFC
+  9110** (server; spec §8.6.1: cache validation on the card endpoint).
+  JSON-RPC and HTTP+JSON served `/.well-known/agent-card.json` (and the
+  HTTP+JSON probes `/health`, `/ready`) for `GET` only, and the axum router
+  exempted only `GET` from the `A2A-Version` check, so a `HEAD` was refused
+  (RFC 9110 §9.3.2: answer it as a `GET`, without the body). In the static
+  and dynamic card handlers, a `304` answered any method, not only `GET`
+  and `HEAD` (§13.1.2); only the first `If-None-Match` line was read
+  (§5.3); and in the static handler an `If-None-Match` that was not visible
+  ASCII fell through to `If-Modified-Since`, which MUST then be ignored
+  (§13.1.3).
 - **A response, stream event or OAuth flow set with a field it does not
   know still parses** (types; spec §5.7: implementations SHOULD ignore
   unrecognized fields). `SendMessageResponse`, `StreamResponse` and
