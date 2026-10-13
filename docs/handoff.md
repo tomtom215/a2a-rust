@@ -1566,6 +1566,15 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     enum and `#[inline]` did not help). The gate fails at 25 % with 95 %
     confidence. One client test asserted the old "unknown variant" text and
     now asserts the new one. Ledger 189 cites the macro and the tests.
+79. `test(types):` CI on `152ea962`, mutants shard 7: `replace && with ||
+    in offset_minutes` survived item 71's tests. Under it, a digit then `:`
+    reads as two digits (`:` - `0` is 10), so `+05:0:` parses as `+05:10`;
+    nothing put a non-digit in an offset's digit positions. Three such
+    offsets join `parse_refuses_what_rfc_3339_does_not_allow`; the mutant
+    is killed by hand. The same run's `Test (stable, windows-latest)` failed
+    at `TcpListener::bind` with WSAENOBUFS (10055) in
+    `dispatch_edge_tests`, unchanged by the push and green on `8059da21`;
+    commented on the PR, and the next push is its one re-run.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

@@ -650,6 +650,9 @@ mod tests {
             "2026-01-02T03:04-05Z",      //
             "2026-01-02T03:04:61Z",      // second 61
             "2026-01-02T03:04:05+05:60", // offset minute 60
+            "2026-01-02T03:04:05+05:0:", // a non-digit in the offset,
+            "2026-01-02T03:04:05+0::30", // which `:` - `0` would read as 10
+            "2026-01-02T03:04:05+05:3/", // or below `0`
             "2026-06-15T23:59:60Z",      // a leap second mid-month
             "2026-06-30T12:00:60Z",      // or mid-day
         ] {
