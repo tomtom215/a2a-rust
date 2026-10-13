@@ -253,24 +253,23 @@ async fn if_none_match_wildcard_returns_304() {
 
 // ── Conditional requests (If-Modified-Since) ────────────────────────────────
 
+/// The handler stamps `Last-Modified` with the current second, so a pair of
+/// requests straddling a second boundary rightly gets a 200; such a pair is
+/// retried, and within one second a matching `If-Modified-Since` is a 304.
 #[tokio::test]
 async fn if_modified_since_matching_returns_304() {
     let handler = DynamicAgentCardHandler::new(StaticProducer(test_card()));
-
-    // First request to get the Last-Modified value.
-    let resp = handler.handle(&make_request()).await;
-    let lm = resp
-        .headers()
-        .get("last-modified")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
-
-    // Second request with matching If-Modified-Since.
-    let req = make_request_with_header("if-modified-since", &lm);
-    let resp2 = handler.handle(&req).await;
-    assert_eq!(resp2.status(), 304);
+    let lm = |r: &hyper::Response<Full<Bytes>>| r.headers()["last-modified"].clone();
+    for _ in 0..5 {
+        let first = lm(&handler.handle(&make_request()).await);
+        let req = make_request_with_header("if-modified-since", first.to_str().unwrap());
+        let resp2 = handler.handle(&req).await;
+        if lm(&resp2) == first {
+            assert_eq!(resp2.status(), 304);
+            return;
+        }
+    }
+    panic!("five request pairs each straddled a second boundary");
 }
 
 #[tokio::test]

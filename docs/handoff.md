@@ -1071,6 +1071,10 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     reader decisions no test reached (the live position expected after a
     catch-up, the gap's dropped count, a replayed terminal state ending the
     stream); three tests pin them.
+39. `test(server):` `if_modified_since_matching_returns_304` retries a
+    request pair that straddles a second. It failed once on macOS at
+    `f95b5420` (200 for 304); reproduced by timing the pair across a second
+    boundary. The handler and test date from `708ead97`.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
@@ -1193,6 +1197,11 @@ PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
     `retry_after: None` (`transport/grpc.rs`), dropping the `RetryInfo`
     detail the server sends, so a retry policy backs off on its own schedule
     instead of the server's; the JSON-RPC and REST clients honour it.
+    (c) `DynamicAgentCardHandler` stamps `Last-Modified` with the current
+    second on every request and answers `If-Modified-Since` with 304 only
+    on an exact match, so a conditional request gets a 304 only within the
+    same second. `ETag` revalidation is unaffected; whether a dynamic card
+    should send `Last-Modified` at all is the maintainer's call.
 14. §3.5.2 is done (item 36). Ledger line 692 stays PARTIAL, now low, for
     the `streamLagged` cases item 36 lists. Raising the in-memory retention
     (`TaskStoreConfig::with_max_events_per_task`) or the replay limit narrows
