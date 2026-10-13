@@ -102,6 +102,32 @@ let client = ClientBuilder::new(url)
 
 Your own hooks implement `CallInterceptor` and are added the same way.
 
+### Extensions
+
+Ask the agent to use extensions (spec §3.2.6, `A2A-Extensions`):
+
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# let url = "http://agent.example.com";
+let client = ClientBuilder::new(url)
+    .with_extensions([
+        "https://example.com/extensions/geolocation/v1",
+        "https://standards.org/extensions/citations/v1",
+    ])
+    .build()
+    .unwrap();
+```
+
+Every request carries the URIs in one comma-separated `A2A-Extensions` header
+(gRPC metadata on gRPC). An agent uses those it supports; one that declares an
+extension `required` refuses a request that does not ask for it with
+`ExtensionSupportRequired` (§3.3.4). An interceptor that sets the header
+itself decides for that request. A `WebSocketTransport` sends headers only
+with its upgrade, so give it the URIs with
+`WebSocketTransportConfig::with_extensions`; another set needs another
+connection. The build refuses a URI that is empty or holds a comma,
+whitespace or anything but visible ASCII.
+
 ### Retry Policy
 
 Enable automatic retries on transient failures (connection errors, timeouts, HTTP 429/502/503/504):
@@ -170,6 +196,7 @@ let client = ClientBuilder::new(url)
 | `with_return_immediately(bool)` | false | Don't wait for task completion |
 | `with_tenant(str)` | None (auto from `AgentCard`) | Default tenant for multi-tenancy |
 | `with_interceptor(impl CallInterceptor)` | Empty chain | Add request/response hook |
+| `with_extensions(uris)` | None | Extensions to ask the agent for, sent as `A2A-Extensions` on every request |
 | `with_max_response_size(usize)` | 32 MiB | Largest buffered (non-streaming) response body |
 | `without_tls()` | TLS on with the `tls-rustls` feature | Disable TLS (plain HTTP only) |
 | `with_peer_honouring_idempotency(bool)` | false (true when the card advertises the extension) | Let a keyed send be retried after an ambiguous failure; see [Idempotent Sends](./idempotency.md) |

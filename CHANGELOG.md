@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ClientBuilder::with_extensions`** and
+  **`WebSocketTransportConfig::with_extensions`** (client; spec §3.2.6: the
+  `A2A-Extensions` service parameter lists the extension URIs "the client
+  wants to use for the request"). The server read the header on every
+  binding, but the client could send it only as a header the caller set
+  itself. The builder now sends the URIs as one comma-separated
+  `A2A-Extensions` header (gRPC metadata on gRPC) on every request, unless
+  an interceptor set the header itself; the WebSocket transport sends them
+  with its upgrade, where that binding's server reads them. A URI that is
+  empty, or holds a comma, whitespace or anything but visible ASCII, is
+  refused at build or connect.
 - **Versioned documentation** (site). [a2a-rust.com](https://a2a-rust.com)
   was the book built from `main`, so a reader on a release saw the next
   release's unreleased and breaking changes. Now `/` is the latest

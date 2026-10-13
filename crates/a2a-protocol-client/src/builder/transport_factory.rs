@@ -52,6 +52,7 @@ impl ClientBuilder {
                 "connection_timeout must be non-zero".into(),
             ));
         }
+        self.send_extensions()?;
 
         let custom = self.transport_override.is_some();
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override.take() {
@@ -90,6 +91,16 @@ impl ClientBuilder {
         Ok(A2aClient::new(transport, self.interceptors, self.config)
             .with_peer(peer)
             .with_declared(self.declared))
+    }
+
+    /// Checks what [`ClientBuilder::with_extensions`] asks for and adds the
+    /// interceptor that sends it, after the caller's.
+    fn send_extensions(&mut self) -> ClientResult<()> {
+        if let Some(value) = crate::extensions::header_value(&self.extensions)? {
+            self.interceptors
+                .push(crate::extensions::ExtensionsHeader(value));
+        }
+        Ok(())
     }
 
     /// Tries the card's remaining interfaces after the chosen one failed
@@ -141,7 +152,7 @@ impl ClientBuilder {
     /// - [`ClientError::InvalidEndpoint`] if the endpoint URL is malformed.
     /// - [`ClientError::Transport`] if the gRPC connection fails.
     #[cfg(feature = "grpc")]
-    pub async fn build_grpc(self) -> ClientResult<A2aClient> {
+    pub async fn build_grpc(mut self) -> ClientResult<A2aClient> {
         use crate::transport::grpc::{GrpcTransport, GrpcTransportConfig};
 
         if self.config.request_timeout.is_zero() {
@@ -158,6 +169,7 @@ impl ClientBuilder {
                 "stream_connect_timeout must be non-zero".into(),
             ));
         }
+        self.send_extensions()?;
 
         let peer = if self.transport_override.is_some() {
             crate::call_span::Peer::default()

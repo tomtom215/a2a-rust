@@ -210,6 +210,9 @@ pub struct WebSocketTransportConfig {
     /// `Authorization` header produced by an
     /// [`AuthInterceptor`](crate::AuthInterceptor)).
     pub extra_headers: HashMap<String, String>,
+    /// The extensions to ask the agent for; see
+    /// [`with_extensions`](Self::with_extensions). Default: none.
+    pub extensions: Vec<String>,
     /// How long the connect may take: TCP, TLS, and the HTTP upgrade
     /// handshake, together. Default: 10 seconds.
     ///
@@ -278,6 +281,7 @@ impl Default for WebSocketTransportConfig {
             request_timeout: Duration::from_secs(30),
             connect_timeout: Duration::from_secs(10),
             extra_headers: HashMap::new(),
+            extensions: Vec::new(),
             max_message_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
             max_pending_requests: DEFAULT_MAX_PENDING_REQUESTS,
             #[cfg(feature = "tls-rustls")]
@@ -320,6 +324,24 @@ impl WebSocketTransportConfig {
     #[must_use]
     pub fn with_extra_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.extra_headers = headers;
+        self
+    }
+
+    /// Asks the agent to use these extensions on every request of the
+    /// connection: the `A2A-Extensions` service parameter (spec §3.2.6), sent
+    /// with the upgrade, which is where the server reads a WebSocket's
+    /// service parameters. An `A2A-Extensions` entry in
+    /// [`extra_headers`](Self::extra_headers) replaces it.
+    ///
+    /// The connect refuses a URI that is empty, or holds a comma, whitespace
+    /// or anything but visible ASCII.
+    #[must_use]
+    pub fn with_extensions<I, S>(mut self, uris: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.extensions = uris.into_iter().map(Into::into).collect();
         self
     }
 
@@ -551,6 +573,14 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
                 a2a_protocol_types::A2A_VERSION,
             ),
         );
+        // §3.2.6, also before extra_headers for the same reason.
+        if let Some(value) = crate::extensions::header_value(&config.extensions)? {
+            let value = tokio_tungstenite::tungstenite::http::HeaderValue::try_from(value)
+                .map_err(|e| ClientError::Transport(format!("invalid extension URIs: {e}")))?;
+            ws_request
+                .headers_mut()
+                .insert(crate::extensions::HEADER, value);
+        }
         for (k, v) in &config.extra_headers {
             // Fail closed on an unparseable header rather than silently dropping
             // it: a rejected `Authorization` header must not let the handshake

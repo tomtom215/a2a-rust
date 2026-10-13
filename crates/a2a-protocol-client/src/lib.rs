@@ -121,6 +121,7 @@ mod trace;
 
 mod call_span;
 mod declared;
+mod extensions;
 
 pub mod auth;
 pub mod builder;

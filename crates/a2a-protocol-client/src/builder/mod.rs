@@ -109,6 +109,9 @@ pub struct ClientBuilder {
     /// one (spec §3.3.4); `None` unless the builder came from a card, and
     /// cleared by [`ClientBuilder::without_capability_checks`].
     pub(super) declared: Option<crate::declared::DeclaredCapabilities>,
+    /// What [`ClientBuilder::with_extensions`] asks for; checked, and sent,
+    /// by the build.
+    pub(super) extensions: Vec<String>,
 }
 
 impl ClientBuilder {
@@ -133,6 +136,7 @@ impl ClientBuilder {
             fallback_interfaces: Vec::new(),
             agent: None,
             declared: None,
+            extensions: Vec::new(),
         }
     }
 
@@ -247,6 +251,7 @@ impl ClientBuilder {
             declared: Some(crate::declared::DeclaredCapabilities::of(
                 &card.capabilities,
             )),
+            extensions: Vec::new(),
         })
     }
 
@@ -554,6 +559,28 @@ impl ClientBuilder {
     #[must_use]
     pub fn with_interceptor<I: CallInterceptor>(mut self, interceptor: I) -> Self {
         self.interceptors.push(interceptor);
+        self
+    }
+
+    /// Asks the agent to use these extensions on every request: the
+    /// `A2A-Extensions` service parameter (spec §3.2.6), one comma-separated
+    /// header (gRPC metadata on gRPC). The agent activates those it supports.
+    ///
+    /// Sent after the interceptors run, and only on a request none of them
+    /// gave the header, so an interceptor can ask for another set on a
+    /// request. A WebSocket transport sends headers only with its upgrade:
+    /// give it the extensions with `WebSocketTransportConfig::with_extensions`
+    /// (feature `websocket`).
+    ///
+    /// The build refuses a URI that is empty, or holds a comma, whitespace or
+    /// anything but visible ASCII.
+    #[must_use]
+    pub fn with_extensions<I, S>(mut self, uris: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.extensions = uris.into_iter().map(Into::into).collect();
         self
     }
 }

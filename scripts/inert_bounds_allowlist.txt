@@ -44,7 +44,7 @@
 
 # ── CallInterceptor: AuthInterceptor, BearerAuthInterceptor ──────────────────
 
-CallInterceptor  request_timeout  AuthInterceptor,TracePropagationInterceptor  # Name collision, not a bound. The "read" is OAuth2ClientCredentials::request_timeout (token_provider.rs:253, applied at :430), the token-endpoint call's own timeout, which happens to live in the file holding `impl CallInterceptor for BearerAuthInterceptor`. None of the three reads ClientConfig::request_timeout: AuthInterceptor copies a stored credential into a header (auth.rs:226) and TracePropagationInterceptor writes traceparent/tracestate (trace_propagation.rs:128-138); neither makes a request to time out.
+CallInterceptor  request_timeout  AuthInterceptor,ExtensionsHeader,TracePropagationInterceptor  # Name collision, not a bound. The "read" is OAuth2ClientCredentials::request_timeout (token_provider.rs:320, applied at :501), the token-endpoint call's own timeout, which happens to live in the file holding `impl CallInterceptor for BearerAuthInterceptor`. None of the four reads ClientConfig::request_timeout: AuthInterceptor copies a stored credential into a header (auth.rs:226), ExtensionsHeader the A2A-Extensions value it was built with (extensions.rs:52) and TracePropagationInterceptor writes traceparent/tracestate (trace_propagation.rs:155-162); none makes a request to time out.
 
 # ── PushConfigStore: InMemory, Sqlite, Postgres, and the TenantAware three ───
 

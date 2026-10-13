@@ -1288,6 +1288,26 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     says so and how to resynchronize. SLIMRPC's `event_stream` sends the
     error as `"InternalError: …"` text and reads on after it; whether the
     stream ends there is unchecked (register: SLIMRPC stream marker).
+61. `feat(client):` §3.2.6 — the client asks for extensions (audit register
+    R63). The server read `A2A-Extensions` on every binding, but the
+    client could send it only as a header the caller set; the ledger's
+    `binds: both` entry was TESTED on the server half alone.
+    `ClientBuilder::with_extensions` sends the URIs as one comma-separated
+    header (gRPC metadata) on every request, through an interceptor the
+    build adds after the caller's, which leaves alone a request an
+    interceptor already gave the header (`src/extensions.rs`).
+    `WebSocketTransportConfig::with_extensions` puts it on the upgrade,
+    where that binding's server reads every service parameter; an
+    `extra_headers` entry of the same name replaces it. A URI that is
+    empty or holds a comma, whitespace or non-visible-ASCII is refused at
+    build or connect. `extensions_e2e.rs` (SDK crate) checks what the
+    executor sees over JSON-RPC, HTTP+JSON, gRPC and WebSocket, unary and
+    streaming; the client crate's own tests (unit tests in
+    `extensions.rs`, `ws_extensions_tests.rs`) kill the 14 hand-applied
+    mutants, since cargo-mutants runs only the mutated crate's tests.
+    SLIMRPC is not tested. Ledger §3.2.6 (entry 69), §9.2 and §10.2's
+    comma-separated entries and the proto `AgentExtension.required` entry
+    say so.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
