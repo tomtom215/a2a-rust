@@ -229,7 +229,7 @@ impl SlimRpcMulticast {
                         message,
                         details,
                     };
-                    answered.insert(origin, Err(rpc_error_to_client_error(&err)));
+                    answered.insert(address_key(&origin), Err(rpc_error_to_client_error(&err)));
                 }
                 // The session ended before every member replied. This names the
                 // missing members outright, which is better than the timeout
@@ -350,12 +350,16 @@ pub(super) fn member_key(name: &SlimName) -> String {
 /// and every response then filed under a name no member matched, so every
 /// member came back as a timeout while all of them had in fact answered.
 pub(super) fn proto_name_key(source: &ProtoName) -> String {
-    source
-        .to_string()
-        .split('/')
-        .take(3)
-        .collect::<Vec<_>>()
-        .join("/")
+    address_key(&source.to_string())
+}
+
+/// The same key, from a SLIM name already rendered as text: the `origin` of
+/// a member's error, which SLIM fills with the full four-part rendering.
+/// Until 2026-10-13 errors were filed under that rendering, the mistake
+/// [`proto_name_key`] describes, so a member that answered with an error was
+/// reported as having timed out.
+pub(super) fn address_key(rendered: &str) -> String {
+    rendered.split('/').take(3).collect::<Vec<_>>().join("/")
 }
 
 #[cfg(test)]
@@ -385,7 +389,7 @@ mod tests {
         ] {
             assert_eq!(
                 member_key(&invited),
-                truncate_to_address(on_the_wire),
+                address_key(on_the_wire),
                 "a response from {on_the_wire} must key to the invited member"
             );
         }
@@ -395,18 +399,13 @@ mod tests {
     #[test]
     fn different_agents_keep_different_keys() {
         assert_ne!(
-            truncate_to_address("org/mc/agent-0/NULL_COMPONENT"),
-            truncate_to_address("org/mc/agent-1/NULL_COMPONENT")
+            address_key("org/mc/agent-0/NULL_COMPONENT"),
+            address_key("org/mc/agent-1/NULL_COMPONENT")
         );
         assert_ne!(
             member_key(&SlimName::new("org", "a", "agent")),
             member_key(&SlimName::new("org", "b", "agent"))
         );
-    }
-
-    /// The string half of `proto_name_key`, testable without a `ProtoName`.
-    fn truncate_to_address(rendered: &str) -> String {
-        rendered.split('/').take(3).collect::<Vec<_>>().join("/")
     }
 
     /// A node component in the address is an attach hint, not part of the

@@ -1663,6 +1663,20 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     version, so it now adds one through the unicast client's
     `metadata_from`. Mutants 9 of 9 (7 server, 2 multicast). Ledger 135
     PARTIAL to TESTED: its note had said every binding refused.
+88. `fix(slimrpc):` — a multicast member's error is its outcome (found
+    while testing item 87; in Fixed). `MulticastRpc`'s `origin` is the full
+    four-part SLIM name, and `send_message` keyed it unchanged while
+    outcomes are paired by the three-part address, so an erroring agent
+    came back as a timeout; `fanout.rs` dropped every error frame. Both now
+    go through `address_key`, which also replaced the unit tests' private
+    copy of it. `an_agents_refusal_is_its_outcome` and
+    `an_agents_refusal_reaches_its_stream` failed before; mutants 4 of 4.
+    **Open, Low:** an `EventStream` ends at its first `Err` chunk
+    (`event_stream.rs:485`), and the fan-out's lag report is one, so a
+    member that falls behind is told so and its stream ends; `fanout.rs`'s
+    docs describe it continuing. The test of the report,
+    `a_consumer_that_falls_behind_is_told_what_it_missed`, stops reading at
+    it, so it does not distinguish the two.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

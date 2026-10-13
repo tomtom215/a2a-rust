@@ -17,13 +17,14 @@ use a2a_protocol_client::{ClientError, ClientResult};
 use a2a_protocol_types::StreamResponse;
 use a2a_protocol_types::proto as pb;
 use futures::StreamExt;
-use slim_rpc::{Channel, Metadata, MulticastItem};
+use slim_rpc::{Channel, Metadata, MulticastItem, RpcError};
 
 use crate::binding::A2A_SERVICE_NAME;
 use crate::codec::Pb;
+use crate::error::rpc_error_to_client_error;
 use crate::method;
 
-use super::proto_name_key;
+use super::{address_key, proto_name_key};
 
 /// Buffer depth for each member's event stream in a streaming broadcast.
 pub(super) const MEMBER_STREAM_CAPACITY: usize = 64;
@@ -84,11 +85,25 @@ pub(super) async fn fan_out_to_members(
     let mut lagged: HashMap<String, u64> = HashMap::new();
 
     while let Some(frame) = frames.next().await {
-        let Ok(MulticastItem { context, message }) = frame else {
-            // An unattributable transport error cannot be routed to a member's
-            // stream; the affected member's stream simply ends when this loop
-            // does.
-            continue;
+        let MulticastItem { context, message } = match frame {
+            Ok(item) => item,
+            // A member's own error names it, so it goes to that member's
+            // stream, which ends at it. Until 2026-10-13 it was dropped with
+            // the rest, and the stream ended as though the agent had sent
+            // nothing. A pending gap report is not sent first: a stream ends
+            // at its first error, and the agent's own is the one to keep.
+            // Into a full channel it is lost, and the stream ends with the
+            // gap report, or `IncompleteStream`, instead.
+            Err(err) => {
+                if let RpcError::MulticastRpc { origin, .. } = &err
+                    && let Some(tx) = senders.get(&address_key(origin))
+                {
+                    let _ = tx.try_send(Err(rpc_error_to_client_error(&err)));
+                }
+                // Any other error names no member, so it cannot be routed;
+                // each stream simply ends when this loop does.
+                continue;
+            }
         };
         let key = proto_name_key(&context.source);
         let Some(tx) = senders.get(&key) else {

@@ -797,6 +797,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SLIMRPC multicast: an agent's error is its outcome**
+  (`a2a-protocol-slimrpc`). SLIM names the member an error came from with
+  its full four-part SLIM name; `SlimRpcMulticast::send_message` filed the
+  error under that name while it pairs outcomes by the three-part agent
+  address, so an agent that answered with an error was reported as a
+  timeout. `stream_message` dropped every error frame, so a refusing agent's
+  stream ended with no events, as `IncompleteStream`. Now the first reports
+  the agent's own error, and the second ends that agent's stream with it.
 - **`RestDispatcher` serves an id containing `..`** (server; spec §11.3
   routes). Its path-traversal guard refused any path containing `..`, raw
   or percent-encoded, so a task or push config id such as `v1..prod`,

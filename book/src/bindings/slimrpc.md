@@ -165,7 +165,10 @@ they are.
 
 - **SLIM names carry a fourth instance component** (`org/ns/agent/NULL_COMPONENT`).
   Key on the full rendering and every multicast response files under a name no
-  member matches: all agents answer, and all of them report as timeouts.
+  member matches: all agents answer, and all of them report as timeouts. A
+  member's error carries the same rendering as text, in `MulticastRpc`'s
+  `origin`, and this crate keyed it that way until 2026-10-13: an agent that
+  refused a broadcast was reported as having timed out.
 - **A client must announce its own name to the node** —
   `app.subscribe(&reply_to, Some(conn))`. `Channel` routes outward only, so
   without it every call fails its session handshake. This is invisible
