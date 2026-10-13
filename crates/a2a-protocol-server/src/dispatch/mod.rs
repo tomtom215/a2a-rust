@@ -189,18 +189,32 @@ pub(crate) fn check_request_content_type(
     ) {
         return Ok(());
     }
-    let Some(ct) = headers.get(hyper::header::CONTENT_TYPE) else {
-        return Ok(());
-    };
-    let ct = ct.to_str().unwrap_or("");
-    if ct.starts_with("application/json") || ct.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE) {
-        return Ok(());
-    }
-    Err(
+    unsupported_content_type(headers).map_or(Ok(()), Err)
+}
+
+/// The refusal of a `Content-Type` that names neither of A2A's JSON media
+/// types, or `None` when `headers` name one of them or none at all.
+///
+/// The value is read as RFC 9110 §8.3.1 reads a media type: the type and
+/// subtype before any `;` parameter, compared case-insensitively. Until
+/// 2026-10-13 every binding compared the raw value by prefix,
+/// case-sensitively, so `Application/JSON` was refused and
+/// `application/json-patch+json` accepted.
+pub(crate) fn unsupported_content_type(
+    headers: &hyper::HeaderMap,
+) -> Option<a2a_protocol_types::error::A2aError> {
+    let ct = headers
+        .get(hyper::header::CONTENT_TYPE)?
+        .to_str()
+        .unwrap_or("");
+    let essence = rest::media_type::essence(ct);
+    let json = essence.eq_ignore_ascii_case("application/json")
+        || essence.eq_ignore_ascii_case(a2a_protocol_types::A2A_CONTENT_TYPE);
+    (!json).then(|| {
         a2a_protocol_types::error::A2aError::content_type_not_supported(format!(
             "unsupported Content-Type: {ct}; expected application/json or application/a2a+json"
-        )),
-    )
+        ))
+    })
 }
 
 /// Adds the `WWW-Authenticate` challenge a `401` for `err` must carry

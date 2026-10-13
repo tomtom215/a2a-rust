@@ -160,15 +160,18 @@ impl JsonRpcDispatcher {
         // version is interpreted as protocol 0.3 and rejected under the
         // strict default (reference-SDK parity); only 1.0 (any patch) is
         // accepted. Either refusal waits for the body, to answer with its ids.
+        // An unsupported media type is -32005 (§5.4), not -32700: the body
+        // was never parsed.
         let version_value = super::requested_version(req.headers(), req.uri());
-        let refused = refusal::unsupported_content_type(req.headers()).or_else(|| {
-            super::validate_version_header(
-                version_value.as_deref(),
-                self.config.require_version_header,
-            )
-            .err()
-            .map(ServerError::Protocol)
-        });
+        let refused = super::unsupported_content_type(req.headers())
+            .or_else(|| {
+                super::validate_version_header(
+                    version_value.as_deref(),
+                    self.config.require_version_header,
+                )
+                .err()
+            })
+            .map(ServerError::Protocol);
 
         // Extract HTTP headers BEFORE consuming the body.
         let mut headers = extract_headers(req.headers());

@@ -84,7 +84,7 @@ pub fn is_negotiable_path(path: &str) -> bool {
 }
 
 /// The `type/subtype` of a media type, without parameters or whitespace.
-fn essence(value: &str) -> &str {
+pub fn essence(value: &str) -> &str {
     value.split(';').next().unwrap_or("").trim()
 }
 

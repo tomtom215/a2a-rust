@@ -326,6 +326,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A request's `Content-Type` is read as a media type** (server; spec
+  §9.1 and §11.1 name `application/json` and `application/a2a+json`; RFC
+  9110 §8.3.1 makes the type and subtype case-insensitive). The JSON-RPC,
+  HTTP+JSON and axum bindings compared the raw value by prefix,
+  case-sensitively. `Application/JSON` was refused with
+  `ContentTypeNotSupportedError`, and a type that only begins with one of
+  the two, such as `application/json-rpc` or `application/json-patch+json`,
+  was accepted. Now the type and subtype before any `;` parameter must be
+  one of the two, in any case. A client that sends `application/json-rpc`
+  is refused where it was served (a2a-java 1.3.0.Final's REST server also
+  matches by prefix, and would accept it).
 - **A message's raw parts must be base64, and its numbers exact in
   protobuf** (server; spec §4: every binding MUST represent the same
   data). A part's `raw` is protobuf `bytes`, and the numbers in metadata

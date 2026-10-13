@@ -1093,7 +1093,7 @@
    "status": "NOT_SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:433",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:436",
     "crates/a2a-protocol-server/src/handler/push_config.rs:248"
    ],
    "test_evidence": [],
@@ -1436,7 +1436,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:105",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:168",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:180",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:47",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:704",
@@ -1582,7 +1582,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:209",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:223",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:157",
     "crates/a2a-protocol-types/src/auth_rejection.rs:63"
    ],
@@ -1605,7 +1605,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:70",
     "crates/a2a-protocol-server/src/auth/mod.rs:80",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:209"
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:223"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:187 an_api_key_refusal_names_its_header_in_the_challenge"
@@ -2717,7 +2717,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:190",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:163",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:1"
    ],
    "test_evidence": [
@@ -2762,11 +2762,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:190",
-    "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:41",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:706",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:146"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:168",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:180",
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:47",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:704",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:212"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs axum_enforces_the_protocol_version_except_for_discovery"
@@ -3954,7 +3954,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:216",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:219",
     "crates/a2a-protocol-server/src/push/sender.rs:873"
    ],
    "test_evidence": [
@@ -3974,7 +3974,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:212",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:215",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:49"
    ],
    "test_evidence": [
@@ -4413,7 +4413,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:70",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:209"
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:223"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:114 rest_answers_a_missing_bearer_token_401_with_its_challenge",
@@ -5508,16 +5508,17 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:271-292",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/refusal.rs:31-40",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:203-218",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:186-200"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:486 json_response_has_content_type_and_version_header",
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:435 jsonrpc_accepts_a2a_content_type",
     "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:315 unsupported_content_type_returns_content_type_not_supported",
-    "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:102 a_refused_content_type_is_answered_with_the_id"
+    "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:102 a_refused_content_type_is_answered_with_the_id",
+    "crates/a2a-protocol-server/tests/content_type_essence.rs:78 json_rpc_reads_the_media_type"
    ],
-   "notes": "Server emits `application/json` (JSON_CONTENT_TYPE) on every JSON-RPC response and accepts application/json or application/a2a+json on ingress; client sends application/json. A refused Content-Type is answered with the request's id since 2026-10-13 (it answered null).",
+   "notes": "Server emits `application/json` (JSON_CONTENT_TYPE) on every JSON-RPC response and accepts application/json or application/a2a+json on ingress; client sends application/json. A refused Content-Type is answered with the request's id since 2026-10-13 (it answered null). Since 2026-10-13 the request's Content-Type is read as a media type (RFC 9110 §8.3.1): the type and subtype before any parameter, case-insensitively. It was compared by prefix, case-sensitively, so Application/JSON was refused and application/json-rpc accepted.",
    "auditor": "E",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -5533,7 +5534,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:340-354",
     "crates/a2a-protocol-server/src/streaming/sse.rs:424-430",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:307-327"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:310-330"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:662 build_sse_response_has_correct_headers",
@@ -5553,7 +5554,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:127-131",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:163-176",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165-179",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:24-32",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:195-204"
    ],
@@ -5620,10 +5621,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/jsonrpc.rs:51-75",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:210-275",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:213-278",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:180-204",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:197",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/refusal.rs:63-93"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:200",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/refusal.rs:44-74"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/jsonrpc.rs:414 version_rejects_wrong_version",
@@ -5651,7 +5652,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:385-388",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:329-345",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:332-348",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:244-260"
    ],
    "test_evidence": [
@@ -5698,7 +5699,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:66-91",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:184-218",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:456"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:459"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:390 parse_error_response_has_error_code",
@@ -5952,14 +5953,18 @@
     "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:40-75",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:91-102",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:173-190",
-    "crates/a2a-protocol-types/src/lib.rs:87-98"
+    "crates/a2a-protocol-types/src/lib.rs:87-98",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:203-218"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/http_json_error_parity.rs:170 rest_and_axum_negotiate_the_response_media_type"
+    "crates/a2a-protocol-server/tests/http_json_error_parity.rs:170 rest_and_axum_negotiate_the_response_media_type",
+    "crates/a2a-protocol-server/tests/content_type_essence.rs:94 http_json_reads_the_media_type",
+    "crates/a2a-protocol-server/tests/content_type_essence.rs:110 the_axum_router_reads_the_media_type"
    ],
-   "notes": "Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2843-2844 and 2929-2930 are not matched by default. This is a deliberate interop trade-off for a2a-go (media_type.rs:8-25).",
+   "notes": "Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2843-2844 and 2929-2930 are not matched by default. This is a deliberate interop trade-off for a2a-go (media_type.rs:8-25). Since 2026-10-13 the request's Content-Type is read as a media type (RFC 9110 §8.3.1): the type and subtype before any parameter, case-insensitively. It was compared by prefix, case-sensitively, so Application/JSON was refused and application/json-rpc accepted.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 2758,
@@ -7683,7 +7688,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:522",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:183",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:186",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:280",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:39"
    ],

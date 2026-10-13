@@ -11,7 +11,7 @@ use std::convert::Infallible;
 use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
 
-use a2a_protocol_types::error::{A2aError, ErrorCode};
+use a2a_protocol_types::error::ErrorCode;
 use a2a_protocol_types::jsonrpc::JsonRpcErrorResponse;
 
 use super::JsonRpcDispatcher;
@@ -19,25 +19,6 @@ use super::response::{
     error_response, invalid_request_response, json_response, parse_error_response,
 };
 use crate::error::ServerError;
-
-/// The refusal of a `Content-Type` that is not JSON, if `headers` name one.
-///
-/// Spec §5.4 maps an unsupported media type to `ContentTypeNotSupportedError`
-/// (-32005), not `ParseError` (-32700): the body was never parsed, so "parse
-/// error" both misreports the cause and denies the client the
-/// machine-readable `CONTENT_TYPE_NOT_SUPPORTED` reason. Answered through
-/// `error_response`, it carries the §10.6 `ErrorInfo` detail like every
-/// other A2A error.
-pub(super) fn unsupported_content_type(headers: &hyper::HeaderMap) -> Option<ServerError> {
-    let ct = headers.get("content-type")?.to_str().unwrap_or("");
-    let json =
-        ct.starts_with("application/json") || ct.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE);
-    (!json).then(|| {
-        ServerError::Protocol(A2aError::content_type_not_supported(format!(
-            "unsupported Content-Type: {ct}; expected application/json or application/a2a+json"
-        )))
-    })
-}
 
 impl JsonRpcDispatcher {
     /// Answers a request refused before it named a method, and records it

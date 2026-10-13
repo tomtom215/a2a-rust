@@ -1400,6 +1400,22 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     id types for both. Hand mutants: 16 distinct,
     all killed; three were first written so that they did not build
     under `-D warnings`, and were rewritten until they did.
+68. `fix(server):` §9.1 / §11.1 — a request's `Content-Type` is read as
+    a media type (audit register R22). The JSON-RPC, HTTP+JSON and axum
+    bindings matched the raw value by prefix, case-sensitively:
+    `Application/JSON` was refused, `application/json-rpc` and
+    `application/json-patch+json` accepted. One predicate,
+    `dispatch::unsupported_content_type`, now serves all three: the
+    type/subtype before any `;` (`rest::media_type::essence`), compared
+    case-insensitively with the two A2A types. `content_type_essence.rs`
+    failed on all three bindings before; hand mutants 9 of 9 killed.
+    The stricter half is a behaviour change, in the CHANGELOG: a client
+    sending `application/json-rpc` is refused where it was served
+    (a2a-java 1.3.0.Final's server matches by prefix too, entry 295). The
+    client was already case-insensitive (it lowercases before its
+    `text/event-stream` check) and is unchanged. Ledger §3.6.2 (entry
+    134) cited four lines that had drifted to a comment, an attribute,
+    `};` and a doc line; it now cites the version checks entry 70 cites.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
