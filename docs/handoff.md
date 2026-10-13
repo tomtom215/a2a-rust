@@ -1495,6 +1495,16 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     before; mutants 4 of 4, a CR/LF-only check among them (killed by the
     NUL and BEL cases). Entry 429's citation had drifted to a `));` and
     now names the scheme check.
+74. `fix(server):` proto `REQUIRED` — `StaticAgentCardHandler::new`
+    validates the card (audit register R39). It is public and re-exported,
+    and was the one way to serve a card that ran neither
+    `AgentCard::validate` nor `validate_security_schemes`. It already
+    returned `ServerResult`, so it now returns `InvalidParams` as `build()`
+    does, with no signature change. The three dispatchers build theirs
+    from a card `build()` has already validated, so they are unaffected.
+    `a_card_that_does_not_validate_is_refused` (no skills; an API key
+    scheme without a name); mutants 2 of 2. The 25 ledger notes that
+    listed where validation runs say this too.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

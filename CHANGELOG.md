@@ -326,6 +326,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **`StaticAgentCardHandler::new` refuses a card a server may not publish**
+  (server; proto `REQUIRED` fields, spec §5.7). `build()`, hot reload and
+  the dynamic card handler run `AgentCard::validate` and
+  `validate_security_schemes`; this public constructor did not, so a card
+  handed to it directly was served with, say, no skills or an API key
+  scheme without a name. It now returns `InvalidParams`, as `build()` does.
 - **Timestamps are read as RFC 3339, as gRPC reads them, 1969 included**
   (types and server; spec §5.6.1: ISO 8601 date-times; §5.1: the bindings
   MUST represent the same thing). `parse_iso8601_to_unix_millis` trimmed

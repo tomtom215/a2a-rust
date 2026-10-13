@@ -3880,7 +3880,7 @@
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs an_invalid_produced_card_is_not_served",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json_refuses_an_invalid_card"
    ],
-   "notes": "Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid produced card, hot reload refuses one. Remaining, why PARTIAL/low: (1) ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty for a listing with no matches, a contradiction inside the specification; the SDK returns the empty list. (2) HotReloadAgentCardHandler::new and update are infallible and do not validate (a change would break their signatures). Client-side parsing stays tolerant on purpose.",
+   "notes": "Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid produced card, hot reload refuses one. Remaining, why PARTIAL/low: (1) ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty for a listing with no matches, a contradiction inside the specification; the SDK returns the empty list. (2) HotReloadAgentCardHandler::new and update are infallible and do not validate (a change would break their signatures). Client-side parsing stays tolerant on purpose. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
@@ -5366,7 +5366,7 @@
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:277",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:80",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:88",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:558",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:605"
    ],
@@ -5387,14 +5387,14 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/caching.rs:213",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:87",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:95",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:558",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:605",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:66"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:109 static_handler_returns_etag_and_cache_headers",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:184 static_handler_custom_max_age",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:143 static_handler_returns_etag_and_cache_headers",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:218 static_handler_custom_max_age",
     "crates/a2a-protocol-server/tests/agent_card_caching.rs:79 the_axum_agent_card_is_cacheable_like_the_rest_one"
    ],
    "notes": "JSON-RPC, REST and (since 2026-10-11) the axum router serve the public card with Cache-Control: public, max-age=3600 from StaticAgentCardHandler. The max-age is set on StaticAgentCardHandler::with_max_age; the dispatchers build theirs with the default and do not expose it. The axum test fails without the fix (no cache-control).",
@@ -5411,14 +5411,14 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/caching.rs:42",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:42",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:50",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:99",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:52",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:298",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:622"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:125 static_handler_304_on_matching_etag",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:159 static_handler_304_on_matching_etag",
     "crates/a2a-protocol-server/tests/agent_card_caching.rs:79 the_axum_agent_card_is_cacheable_like_the_rest_one",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:379 same_card_produces_same_etag",
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:81 the_same_card_parsed_twice_has_one_static_etag",
@@ -5440,12 +5440,12 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:46",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:86",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:54",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:94",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:101"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:109 static_handler_returns_etag_and_cache_headers",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:143 static_handler_returns_etag_and_cache_headers",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:154 handle_sends_no_last_modified",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:260 if_modified_since_is_ignored"
    ],
@@ -8789,7 +8789,7 @@
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
    ],
-   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8812,7 +8812,7 @@
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
    ],
-   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8863,7 +8863,7 @@
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
    ],
-   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8886,7 +8886,7 @@
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
    ],
-   "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty name, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
+   "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty name, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8911,7 +8911,7 @@
     "crates/a2a-protocol-types/src/agent_card/builders/tests.rs:23 new_produces_a_card_that_validates_once_it_has_a_description_and_a_skill",
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:424 builder_rejects_a_card_without_a_description_or_version"
    ],
-   "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty description, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Refused since 0.15; AgentCard::new leaves it empty until with_description, and such a card was served with \"description\": \"\". Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
+   "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty description, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Refused since 0.15; AgentCard::new leaves it empty until with_description, and such a card was served with \"description\": \"\". Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -8958,7 +8958,7 @@
     "crates/a2a-protocol-types/src/agent_card/builders/tests.rs:45 a_card_with_an_empty_version_is_refused",
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:424 builder_rejects_a_card_without_a_description_or_version"
    ],
-   "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty version, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Refused since 0.15. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
+   "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty version, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Refused since 0.15. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -9000,7 +9000,7 @@
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
    ],
-   "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty.",
+   "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9022,7 +9022,7 @@
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
    ],
-   "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty.",
+   "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9042,11 +9042,13 @@
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
    ],
    "test_evidence": [
-    "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
+    "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:120 a_card_that_does_not_validate_is_refused"
    ],
-   "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty.",
+   "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 404,
@@ -9064,7 +9066,7 @@
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
    ],
-   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9084,7 +9086,7 @@
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
    ],
-   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9124,7 +9126,7 @@
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
    ],
-   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9144,7 +9146,7 @@
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
    ],
-   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9164,7 +9166,7 @@
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
    ],
-   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9217,7 +9219,7 @@
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
    ],
-   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9251,7 +9253,7 @@
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
    ],
-   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks).",
+   "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto"
   },
@@ -9379,12 +9381,13 @@
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:120 a_card_that_does_not_validate_is_refused"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 534,
@@ -9425,7 +9428,7 @@
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
@@ -9488,7 +9491,7 @@
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
@@ -9516,7 +9519,7 @@
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
@@ -9544,7 +9547,7 @@
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
@@ -9624,7 +9627,7 @@
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
@@ -9782,7 +9785,7 @@
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
@@ -9810,7 +9813,7 @@
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
-   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
+   "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
