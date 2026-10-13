@@ -159,6 +159,9 @@ that accepts its cookie or ticket and forwards a header.
 
 - **Transport.** The dispatcher listens on plain `ws://`. Production
   deployments put a TLS terminator in front and publish `wss://` in the card.
+  The SDK's client connects to `wss://` with the roots its HTTPS transports
+  use (feature `tls-rustls`, on by default), or a configuration given to
+  `WebSocketTransportConfig::with_tls_config`.
 - **Origin.** The server does not check the upgrade's `Origin` header. Where
   credentials are ambient (a cookie a gateway turns into a header), a page on
   another site could open an authenticated connection (cross-site WebSocket

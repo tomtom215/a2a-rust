@@ -1123,6 +1123,15 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     failed its p95 bound (3.94x, a dip at 40-50 s that recovered), not
     reproduced; it ran 59,090 pairs where the two runs before ran 32,773
     and 45,486, so a faster runner. Recorded, not fixed: read the next run.
+47. `fix(client):` the WebSocket transport reaches `wss://`. `tls-rustls`
+    now enables tokio-tungstenite's `__rustls-tls`, which compiles its
+    rustls connector in without a root store of its own; the transport hands
+    it `tls::default_tls_config()` or `with_tls_config`'s. The config sits
+    in a private newtype that declares itself unwind-safe, since a bare
+    `rustls::ClientConfig` would have cost `WebSocketTransport` the
+    `RefUnwindSafe` it has had since 0.13.0. `__rustls-tls` is
+    tokio-tungstenite's internal feature name: the `>=0.30, <0.31` range
+    pins it; recheck it when that range moves.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

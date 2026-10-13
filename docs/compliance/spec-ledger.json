@@ -7409,12 +7409,17 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:109",
     "crates/a2a-protocol-server/src/serve/mod.rs:148",
-    "crates/a2a-protocol-client/src/tls.rs:60"
+    "crates/a2a-protocol-client/src/tls.rs:60",
+    "crates/a2a-protocol-client/src/transport/websocket.rs:586"
    ],
-   "test_evidence": [],
-   "notes": "Client: rustls HTTPS on by default (tls-rustls), grpc-tls feature. Server: gRPC TLS via GrpcDispatcher::with_tls (grpc-tls); the built-in hyper serve()/WebSocket listeners are plaintext only, so HTTPS for JSON-RPC/REST/WS requires an external terminator or the axum adapter with the operator's own TLS. Deployment duty.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/ws_tls_tests.rs:101 a_wss_endpoint_is_reached_with_the_configured_roots",
+    "crates/a2a-protocol-client/tests/ws_tls_tests.rs:118 a_wss_endpoint_with_an_untrusted_certificate_is_refused"
+   ],
+   "notes": "Client: rustls HTTPS on by default (tls-rustls), grpc-tls feature. Server: gRPC TLS via GrpcDispatcher::with_tls (grpc-tls); the built-in hyper serve()/WebSocket listeners are plaintext only, so HTTPS for JSON-RPC/REST/WS requires an external terminator or the axum adapter with the operator's own TLS. Deployment duty. The client's WebSocket transport reaches wss:// endpoints, verified against the same roots (2026-10-13); until then it was built without TLS and every wss:// connect failed.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 3182,

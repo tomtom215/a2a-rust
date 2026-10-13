@@ -252,7 +252,25 @@ pub struct WebSocketTransportConfig {
     /// [`ClientError::TooManyPendingRequests`] rather than queued invisibly;
     /// it is retryable, and a later attempt finds room once responses arrive.
     pub max_pending_requests: usize,
+    /// See [`with_tls_config`](Self::with_tls_config).
+    #[cfg(feature = "tls-rustls")]
+    tls: Option<WsTls>,
 }
+
+/// A `wss://` connection's TLS configuration.
+///
+/// `rustls::ClientConfig` holds trait objects with no unwind-safety bounds;
+/// held as it is, it would cost this config, and the transport holding it,
+/// the `RefUnwindSafe` they had in 0.13.0 (see the auto-trait assertion in
+/// this file's tests). Nothing here mutates it: it is read once per connect.
+#[cfg(feature = "tls-rustls")]
+#[derive(Clone, Debug)]
+struct WsTls(Arc<rustls::ClientConfig>);
+
+#[cfg(feature = "tls-rustls")]
+impl std::panic::UnwindSafe for WsTls {}
+#[cfg(feature = "tls-rustls")]
+impl std::panic::RefUnwindSafe for WsTls {}
 
 impl Default for WebSocketTransportConfig {
     fn default() -> Self {
@@ -262,6 +280,8 @@ impl Default for WebSocketTransportConfig {
             extra_headers: HashMap::new(),
             max_message_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
             max_pending_requests: DEFAULT_MAX_PENDING_REQUESTS,
+            #[cfg(feature = "tls-rustls")]
+            tls: None,
         }
     }
 }
@@ -307,6 +327,22 @@ impl WebSocketTransportConfig {
     #[must_use]
     pub const fn with_max_message_size(mut self, max_bytes: usize) -> Self {
         self.max_message_size = max_bytes;
+        self
+    }
+
+    /// Sets the TLS configuration for a `wss://` endpoint; a `ws://` one does
+    /// not use it.
+    ///
+    /// Without one the transport uses
+    /// [`default_tls_config`](crate::tls::default_tls_config), Mozilla's roots
+    /// verified with `ring`, as the HTTP transports do. For a private CA pass
+    /// [`tls_config_with_extra_roots`](crate::tls::tls_config_with_extra_roots).
+    /// Its ALPN list, if it has one, must not offer `h2`: the upgrade is an
+    /// HTTP/1.1 request, and a server that picks `h2` cannot answer it.
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_tls_config(mut self, config: rustls::ClientConfig) -> Self {
+        self.tls = Some(WsTls(Arc::new(config)));
         self
     }
 }
@@ -544,18 +580,32 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
         // Bounded, because nothing below this line is. A server that accepts
         // the TCP connection and never answers the upgrade leaves this future
         // pending with no OS timeout to rescue it.
-        let (ws_stream, _resp) = tokio::time::timeout(
-            config.connect_timeout,
-            tokio_tungstenite::connect_async_with_config(ws_request, Some(ws_config), true),
-        )
-        .await
-        .map_err(|_| {
-            ClientError::Transport(format!(
-                "WebSocket connect to {endpoint} did not complete within {:?}",
-                config.connect_timeout
-            ))
-        })?
-        .map_err(connect_error)?;
+        // The connector is used only for a `wss://` request; `ws://` stays
+        // plain whatever it is.
+        #[cfg(feature = "tls-rustls")]
+        let connect = tokio_tungstenite::connect_async_tls_with_config(
+            ws_request,
+            Some(ws_config),
+            true,
+            Some(tokio_tungstenite::Connector::Rustls(
+                config.tls.as_ref().map_or_else(
+                    || Arc::new(crate::tls::default_tls_config()),
+                    |tls| Arc::clone(&tls.0),
+                ),
+            )),
+        );
+        #[cfg(not(feature = "tls-rustls"))]
+        let connect =
+            tokio_tungstenite::connect_async_with_config(ws_request, Some(ws_config), true);
+        let (ws_stream, _resp) = tokio::time::timeout(config.connect_timeout, connect)
+            .await
+            .map_err(|_| {
+                ClientError::Transport(format!(
+                    "WebSocket connect to {endpoint} did not complete within {:?}",
+                    config.connect_timeout
+                ))
+            })?
+            .map_err(connect_error)?;
 
         let (ws_writer, ws_reader) = ws_stream.split();
 
@@ -922,6 +972,11 @@ fn connect_error(e: tokio_tungstenite::tungstenite::Error) -> ClientError {
             retry_after: None,
         },
         Error::Io(io) => ClientError::HttpClient(format!("WebSocket connect failed: {io}")),
+        Error::Url(tokio_tungstenite::tungstenite::error::UrlError::TlsFeatureNotEnabled) => {
+            ClientError::Transport(
+                "WebSocket connect failed: wss:// needs this crate's `tls-rustls` feature".into(),
+            )
+        }
         other => ClientError::Transport(format!("WebSocket connect failed: {other}")),
     }
 }
@@ -1238,6 +1293,18 @@ mod tests {
     #[test]
     fn validate_ws_url_accepts_wss() {
         assert!(validate_ws_url("wss://agent.example.com/a2a").is_ok());
+    }
+
+    /// A `wss://` endpoint in a build without TLS names the feature that
+    /// enables it, rather than tungstenite's "TLS support not compiled in".
+    #[test]
+    fn a_wss_connect_without_tls_names_the_feature() {
+        use tokio_tungstenite::tungstenite::{Error, error::UrlError};
+        let err = connect_error(Error::Url(UrlError::TlsFeatureNotEnabled));
+        assert!(
+            matches!(&err, ClientError::Transport(m) if m.contains("`tls-rustls`")),
+            "{err}"
+        );
     }
 
     #[test]

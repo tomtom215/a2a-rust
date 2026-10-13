@@ -25,8 +25,13 @@ categories             = ["network-programming", "web-programming"]
 ## `default-features = false` for a plaintext-HTTP-only build with no rustls
 ## dependency and no logging.
 default = ["tls-rustls", "tracing"]
-## Enable HTTPS support via rustls (no OpenSSL system dependency).
-tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots"]
+## Enable HTTPS support via rustls (no OpenSSL system dependency), and
+## `wss://` for the `websocket` transport. tokio-tungstenite's `__rustls-tls`
+## is the feature that compiles its rustls connector in without a root store
+## of its own: the transport hands it this crate's `ring`-backed config and
+## Mozilla roots, so the public `rustls-tls-*` features would only add a
+## second root-store crate. The version range below pins the feature name.
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots", "tokio-tungstenite?/__rustls-tls"]
 ## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
 ##
 ## This forwards the types-crate feature and nothing more: no code in this crate

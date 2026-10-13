@@ -233,6 +233,7 @@ reach it. Its equivalents are these:
 | `request_timeout` | 30s | waiting for one response on an established connection |
 | `max_message_size` | 32 MiB | an incoming frame, at the protocol level |
 | `max_pending_requests` | 64 | requests awaiting a response on one connection; the next is refused with `ClientError::TooManyPendingRequests` (retryable) rather than queued |
+| `with_tls_config` | Mozilla's roots, verified with `ring` | the certificate a `wss://` endpoint must present; `tls::tls_config_with_extra_roots` adds a private CA. Needs the `tls-rustls` feature (on by default); until 0.15 no `wss://` endpoint could be reached |
 
 After the socket drops, the next call reconnects to the same endpoint with the
 same configuration (one reconnect shared by concurrent callers, bounded by

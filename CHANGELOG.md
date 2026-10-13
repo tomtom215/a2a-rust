@@ -647,6 +647,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The WebSocket client connects to `wss://`** (client, feature
+  `websocket`; spec §7.1: production deployments MUST use encrypted
+  communication). `tokio-tungstenite` was built without TLS, so every
+  `wss://` endpoint failed with "TLS support not compiled in", although the
+  transport accepted the scheme and the book's example used it. With
+  `tls-rustls` (on by default) the transport now verifies the server against
+  the roots the HTTPS transports use, Mozilla's with `ring`, or a
+  configuration given to the new
+  `WebSocketTransportConfig::with_tls_config`. Without the feature a
+  `wss://` connect fails naming it.
 - **`A2aRouter` reads a GET or DELETE request's fields from its query**
   (server, feature `axum`; spec §11.5: GET and DELETE MUST carry request
   parameters as path or query parameters). The router ignored the query of
