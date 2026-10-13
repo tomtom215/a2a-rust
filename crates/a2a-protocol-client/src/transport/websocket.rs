@@ -1396,8 +1396,8 @@ mod tests {
         );
         let err = result.expect_err("the sentinel must not parse as a StreamResponse");
         assert!(
-            err.to_string().contains("unknown variant"),
-            "expected an unknown-variant error, got: {err}"
+            err.to_string().contains("this one sets none"),
+            "expected a no-member error, got: {err}"
         );
     }
 

@@ -1548,6 +1548,24 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     no `CardFetchOptions`, because `CardFetchOptions` derives `Debug` and
     prints its headers, an `Authorization` among them, and a resolver
     holding one would print it too.
+78. `fix(types):` §5.7 — the `oneof` wrappers skip unknown fields (audit
+    register R46). `SendMessageResponse`, `StreamResponse` and
+    `OAuthFlows` derived serde's externally tagged encoding, which fails on
+    any key beside the member. `oneof_deserialize!` (`types/src/oneof.rs`)
+    reads keys as identifiers, skips unknown ones, builds the member once,
+    and refuses none or two; `Part` and `SecurityScheme` keep their own
+    deserializers. `tests/oneof_unknown_fields.rs`: the unknown-field test
+    failed before; the two-member refusal held before and only its message
+    changed. Mutants: 10 of 10 on the final macro, one surviving until the
+    test asserted "this one sets more". Cost, measured because
+    `protocol/stream_events/*/deserialize` is in the Regression Gate:
+    timed interleaved with a derived mirror enum in one release-build
+    process, 21 pairs per run, 3 runs, Intel Xeon @ 2.10GHz, a stream
+    event's parse is 1.08-1.10x the derived one's (a first version that
+    moved the member through an `Option` was 1.09-1.17x; a per-enum tag
+    enum and `#[inline]` did not help). The gate fails at 25 % with 95 %
+    confidence. One client test asserted the old "unknown variant" text and
+    now asserts the new one. Ledger 189 cites the macro and the tests.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

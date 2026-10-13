@@ -95,7 +95,7 @@ pub struct TaskArtifactUpdateEvent {
 /// the wire — it is **not** an untagged union, and must not be "corrected" to
 /// one without breaking wire compatibility.
 #[non_exhaustive]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StreamResponse {
     /// A complete task object (initial response before streaming begins).
@@ -105,13 +105,21 @@ pub enum StreamResponse {
     Message(Message),
 
     /// A task state change event.
-    #[serde(alias = "status_update")]
     StatusUpdate(TaskStatusUpdateEvent),
 
     /// An artifact delivery event.
-    #[serde(alias = "artifact_update")]
     ArtifactUpdate(TaskArtifactUpdateEvent),
 }
+
+crate::oneof::oneof_deserialize!(
+    StreamResponse,
+    [
+        Task(Task) = "task",
+        Message(Message) = "message",
+        StatusUpdate(TaskStatusUpdateEvent) = "statusUpdate" | "status_update",
+        ArtifactUpdate(TaskArtifactUpdateEvent) = "artifactUpdate" | "artifact_update",
+    ]
+);
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

@@ -122,6 +122,7 @@ pub mod idempotency;
 pub mod jsonrpc;
 pub mod message;
 pub mod method;
+mod oneof;
 pub mod params;
 #[cfg(feature = "proto")]
 pub mod proto;

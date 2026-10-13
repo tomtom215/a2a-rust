@@ -768,6 +768,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A response, stream event or OAuth flow set with a field it does not
+  know still parses** (types; spec §5.7: implementations SHOULD ignore
+  unrecognized fields). `SendMessageResponse`, `StreamResponse` and
+  `OAuthFlows` are protobuf `oneof`s and derived serde's externally tagged
+  encoding, which reads one key and nothing else: `{"task": …, "x": 1}`,
+  an event with a field from a later 1.x version, or a card whose
+  `oauth2SecurityScheme.flows` held one, failed to parse. They now skip
+  unknown keys and still refuse no member, or two. Error text for those
+  cases changes, from serde's "unknown variant" to "a StreamResponse sets
+  exactly one of task, message, statusUpdate, artifactUpdate; this one sets
+  none". The hand-written visitor costs a little: timed interleaved with
+  the derived one in a release build, a stream event's parse takes
+  1.08-1.10x as long (32-57 ns more on medians of 419-608 ns).
 - **`CachingCardResolver` takes the validators a `304` sends** (client;
   spec §8.6.2: clients SHOULD honour RFC 9111). RFC 9111 §4.3.4 has a
   cache that freshens a stored response from a `304` replace its stored

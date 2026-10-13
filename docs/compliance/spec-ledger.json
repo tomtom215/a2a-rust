@@ -37,8 +37,8 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/build.rs:6",
     "crates/a2a-protocol-types/src/task.rs:420",
-    "crates/a2a-protocol-types/src/responses.rs:49",
-    "crates/a2a-protocol-types/src/security.rs:427"
+    "crates/a2a-protocol-types/src/responses.rs:54",
+    "crates/a2a-protocol-types/src/security.rs:424"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/proto_schema_sync.rs:53 canonical_proto_copies_are_identical",
@@ -85,16 +85,16 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:427",
-    "crates/a2a-protocol-types/src/security.rs:439",
-    "crates/a2a-protocol-types/src/security.rs:452",
-    "crates/a2a-protocol-types/src/security.rs:528",
-    "crates/a2a-protocol-types/src/security.rs:548"
+    "crates/a2a-protocol-types/src/security.rs:424",
+    "crates/a2a-protocol-types/src/security.rs:436",
+    "crates/a2a-protocol-types/src/security.rs:449",
+    "crates/a2a-protocol-types/src/security.rs:536",
+    "crates/a2a-protocol-types/src/security.rs:556"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:435 implicit",
-    "crates/a2a-protocol-types/src/security.rs:448 password",
-    "crates/a2a-protocol-types/src/security.rs:815 wire_format_password_oauth_flow"
+    "crates/a2a-protocol-types/src/security.rs:432 implicit",
+    "crates/a2a-protocol-types/src/security.rs:445 password",
+    "crates/a2a-protocol-types/src/security.rs:823 wire_format_password_oauth_flow"
    ],
    "notes": "The two proto-deprecated OAuth flows (implicit, password) are kept so cards declaring them parse, and since 2026-10-11 carry #[deprecated] as the proto fields do. Two compile_fail doctests deny(deprecated) on each variant; removing the attribute makes the doctest compile and fail (shown). No v1.0 field was renamed, so no renamed-field aliases are needed.",
    "auditor": "A",
@@ -109,15 +109,15 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:427",
-    "crates/a2a-protocol-types/src/security.rs:431",
-    "crates/a2a-protocol-types/src/security.rs:439",
-    "crates/a2a-protocol-types/src/security.rs:452"
+    "crates/a2a-protocol-types/src/security.rs:424",
+    "crates/a2a-protocol-types/src/security.rs:428",
+    "crates/a2a-protocol-types/src/security.rs:436",
+    "crates/a2a-protocol-types/src/security.rs:449"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:435 implicit",
-    "crates/a2a-protocol-types/src/security.rs:448 password",
-    "crates/a2a-protocol-types/src/security.rs:815 wire_format_password_oauth_flow"
+    "crates/a2a-protocol-types/src/security.rs:432 implicit",
+    "crates/a2a-protocol-types/src/security.rs:445 password",
+    "crates/a2a-protocol-types/src/security.rs:823 wire_format_password_oauth_flow"
    ],
    "notes": "Both deprecated flows remain in the public enum and on the wire (wire_format_password_oauth_flow round-trips one); removal would be a semver-major change, which cargo-semver-checks gates in CI.",
    "auditor": "A",
@@ -583,10 +583,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:58"
+    "crates/a2a-protocol-types/src/responses.rs:63"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:245 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/coverage_gap_tests.rs:582 (nextPageToken presence)"
    ],
    "notes": "Field is a plain String with no skip_serializing_if; gRPC follows proto3 default semantics.",
@@ -3730,10 +3730,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:209"
+    "crates/a2a-protocol-types/src/lib.rs:210"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:495 utc_now_has_millisecond_precision_and_z_suffix"
+    "crates/a2a-protocol-types/src/lib.rs:496 utc_now_has_millisecond_precision_and_z_suffix"
    ],
    "notes": "utc_now_iso8601 formats YYYY-MM-DDTHH:mm:ss.sssZ.",
    "auditor": "C",
@@ -3748,19 +3748,19 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:245",
+    "crates/a2a-protocol-types/src/lib.rs:246",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:151",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:168",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:67"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:509 utc_now_roundtrips_through_parser",
-    "crates/a2a-protocol-types/src/lib.rs:524 parse_epoch_and_known_instants",
+    "crates/a2a-protocol-types/src/lib.rs:510 utc_now_roundtrips_through_parser",
+    "crates/a2a-protocol-types/src/lib.rs:525 parse_epoch_and_known_instants",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:514 timestamp_parses_offset_and_normalizes_to_utc",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:534 timestamp_rejects_invalid_string",
     "crates/a2a-protocol-types/tests/timestamp_parity.rs:32 the_json_parser_reads_what_the_grpc_conversion_reads",
-    "crates/a2a-protocol-types/src/lib.rs:632 parse_refuses_what_rfc_3339_does_not_allow",
-    "crates/a2a-protocol-types/src/lib.rs:603 parse_accepts_pre_epoch_dates_back_to_year_0",
+    "crates/a2a-protocol-types/src/lib.rs:633 parse_refuses_what_rfc_3339_does_not_allow",
+    "crates/a2a-protocol-types/src/lib.rs:604 parse_accepts_pre_epoch_dates_back_to_year_0",
     "crates/a2a-protocol-server/tests/pre_epoch_timestamps.rs:85 list_tasks_accepts_a_pre_epoch_filter"
    ],
    "notes": "Server rejects malformed statusTimestampAfter with InvalidParams; JSON-path clients keep timestamps as opaque strings (no parsing needed). Until 2026-10-13 the parser was lenient (whitespace, unpadded or signed fields, an offset without minutes, 02-30 rolled into March) and refused every pre-1970 instant, so the JSON and gRPC bindings disagreed on such values and a 1969 statusTimestampAfter was InvalidParams. It now reads exactly what the time crate's RFC 3339 parser reads, checked over 1,655,808 strings, and the formatter writes pre-1970 instants as themselves.",
@@ -3777,10 +3777,10 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:245"
+    "crates/a2a-protocol-types/src/lib.rs:246"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:524 parse_epoch_and_known_instants"
+    "crates/a2a-protocol-types/src/lib.rs:525 parse_epoch_and_known_instants"
    ],
    "notes": "Parser accepts with and without fractional seconds.",
    "auditor": "C",
@@ -3894,14 +3894,18 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/task.rs:411"
+    "crates/a2a-protocol-types/src/task.rs:411",
+    "crates/a2a-protocol-types/src/oneof.rs:26-112"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/proto_field_alias.rs:1069 unrecognised_fields_are_ignored_not_rejected"
+    "crates/a2a-protocol-types/tests/proto_field_alias.rs:1069 unrecognised_fields_are_ignored_not_rejected",
+    "crates/a2a-protocol-types/tests/oneof_unknown_fields.rs:47 an_unknown_field_beside_the_member_is_skipped",
+    "crates/a2a-protocol-types/tests/oneof_unknown_fields.rs:77 two_members_or_none_are_refused"
    ],
-   "notes": "No deny_unknown_fields anywhere in types/server/client src.",
+   "notes": "No deny_unknown_fields anywhere in types/server/client src. The oneof wrappers skip unknown keys too: SendMessageResponse, StreamResponse and OAuthFlows through oneof_deserialize! (Part and SecurityScheme have their own deserializers), while still refusing no member or two. Until 2026-10-13 those three derived serde's externally tagged encoding, which failed on any key beside the member, so a response, a stream event or a card's flows carrying a field from a later version did not parse.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 1279,
@@ -9385,7 +9389,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
-    "crates/a2a-protocol-types/src/security.rs:460",
+    "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
@@ -9430,7 +9434,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
-    "crates/a2a-protocol-types/src/security.rs:460",
+    "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
@@ -9493,7 +9497,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
-    "crates/a2a-protocol-types/src/security.rs:460",
+    "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
@@ -9521,7 +9525,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
-    "crates/a2a-protocol-types/src/security.rs:460",
+    "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
@@ -9549,7 +9553,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
-    "crates/a2a-protocol-types/src/security.rs:460",
+    "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
@@ -9576,9 +9580,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:452",
-    "crates/a2a-protocol-types/src/security.rs:504",
-    "crates/a2a-protocol-types/src/security.rs:525",
+    "crates/a2a-protocol-types/src/security.rs:449",
+    "crates/a2a-protocol-types/src/security.rs:512",
+    "crates/a2a-protocol-types/src/security.rs:533",
     "crates/a2a-protocol-client/src/discovery.rs:552"
    ],
    "test_evidence": [
@@ -9629,7 +9633,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
-    "crates/a2a-protocol-types/src/security.rs:460",
+    "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
@@ -9656,9 +9660,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:452",
-    "crates/a2a-protocol-types/src/security.rs:504",
-    "crates/a2a-protocol-types/src/security.rs:525",
+    "crates/a2a-protocol-types/src/security.rs:449",
+    "crates/a2a-protocol-types/src/security.rs:512",
+    "crates/a2a-protocol-types/src/security.rs:533",
     "crates/a2a-protocol-client/src/discovery.rs:552"
    ],
    "test_evidence": [
@@ -9678,8 +9682,8 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:531",
-    "crates/a2a-protocol-types/src/security.rs:548"
+    "crates/a2a-protocol-types/src/security.rs:539",
+    "crates/a2a-protocol-types/src/security.rs:556"
    ],
    "test_evidence": [],
    "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
@@ -9695,8 +9699,8 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:531",
-    "crates/a2a-protocol-types/src/security.rs:548"
+    "crates/a2a-protocol-types/src/security.rs:539",
+    "crates/a2a-protocol-types/src/security.rs:556"
    ],
    "test_evidence": [],
    "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
@@ -9712,8 +9716,8 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:542",
-    "crates/a2a-protocol-types/src/security.rs:559"
+    "crates/a2a-protocol-types/src/security.rs:550",
+    "crates/a2a-protocol-types/src/security.rs:567"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty"
@@ -9732,8 +9736,8 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:531",
-    "crates/a2a-protocol-types/src/security.rs:548"
+    "crates/a2a-protocol-types/src/security.rs:539",
+    "crates/a2a-protocol-types/src/security.rs:556"
    ],
    "test_evidence": [],
    "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
@@ -9749,8 +9753,8 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:531",
-    "crates/a2a-protocol-types/src/security.rs:548"
+    "crates/a2a-protocol-types/src/security.rs:539",
+    "crates/a2a-protocol-types/src/security.rs:556"
    ],
    "test_evidence": [],
    "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
@@ -9766,8 +9770,8 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:542",
-    "crates/a2a-protocol-types/src/security.rs:559"
+    "crates/a2a-protocol-types/src/security.rs:550",
+    "crates/a2a-protocol-types/src/security.rs:567"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty"
@@ -9787,7 +9791,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
-    "crates/a2a-protocol-types/src/security.rs:460",
+    "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
@@ -9815,7 +9819,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
-    "crates/a2a-protocol-types/src/security.rs:460",
+    "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
@@ -9842,9 +9846,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:452",
-    "crates/a2a-protocol-types/src/security.rs:504",
-    "crates/a2a-protocol-types/src/security.rs:525",
+    "crates/a2a-protocol-types/src/security.rs:449",
+    "crates/a2a-protocol-types/src/security.rs:512",
+    "crates/a2a-protocol-types/src/security.rs:533",
     "crates/a2a-protocol-client/src/discovery.rs:552"
    ],
    "test_evidence": [
@@ -10034,11 +10038,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:49",
+    "crates/a2a-protocol-types/src/responses.rs:54",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:245 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
    ],
    "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",
@@ -10054,11 +10058,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:49",
+    "crates/a2a-protocol-types/src/responses.rs:54",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:245 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
    ],
    "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",
@@ -10074,11 +10078,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:49",
+    "crates/a2a-protocol-types/src/responses.rs:54",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:245 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
    ],
    "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",
@@ -10094,11 +10098,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:49",
+    "crates/a2a-protocol-types/src/responses.rs:54",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:245 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
    ],
    "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",

@@ -409,19 +409,16 @@ pub struct OAuth2SecurityScheme {
 /// Per the proto definition, this is a `oneof flow` — exactly one flow type
 /// can be specified. Serialized as an externally tagged enum in JSON.
 #[non_exhaustive]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OAuthFlows {
     /// Authorization code flow.
-    #[serde(alias = "authorization_code")]
     AuthorizationCode(AuthorizationCodeFlow),
 
     /// Client credentials flow.
-    #[serde(alias = "client_credentials")]
     ClientCredentials(ClientCredentialsFlow),
 
     /// Device authorization flow (RFC 8628).
-    #[serde(alias = "device_code")]
     DeviceCode(DeviceCodeFlow),
 
     /// Implicit flow (deprecated — use Authorization Code + PKCE instead).
@@ -452,6 +449,17 @@ pub enum OAuthFlows {
     #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code")]
     Password(PasswordOAuthFlow),
 }
+
+crate::oneof::oneof_deserialize!(
+    OAuthFlows,
+    [
+        AuthorizationCode(AuthorizationCodeFlow) = "authorizationCode" | "authorization_code",
+        ClientCredentials(ClientCredentialsFlow) = "clientCredentials" | "client_credentials",
+        DeviceCode(DeviceCodeFlow) = "deviceCode" | "device_code",
+        Implicit(ImplicitFlow) = "implicit",
+        Password(PasswordOAuthFlow) = "password",
+    ]
+);
 
 impl OAuthFlows {
     /// [`SecurityScheme::validate`] for the flow. The proto marks no field
