@@ -2124,6 +2124,80 @@ mod tests {
         assert_eq!(positions[..2], [Some(1), Some(2)], "the replay first");
         let lag = items[2].as_ref().expect_err("then the gap, reported");
         assert!(lag.is_stream_lagged(), "{lag:?}");
+        assert_eq!(lag.dropped_event_count(), Some(2), "positions 3 and 4");
+    }
+
+    /// A live event that follows a catch-up's replay directly is delivered,
+    /// here after a second catch-up that found nothing new: the gap check
+    /// compares it with the position after the last one delivered.
+    #[tokio::test]
+    async fn a_live_event_right_after_a_catch_up_is_delivered() {
+        let (writer, reader) =
+            new_in_memory_queue_with_options(2, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
+        let asked = Arc::default();
+        let mut reader = reader.with_catch_up(Some(log_hook(5, &asked)));
+        let event = || make_status_event("t-lag", TaskState::Working);
+
+        for _ in 0..5 {
+            writer.write(event()).await.unwrap();
+        }
+        let mut positions = Vec::new();
+        for _ in 0..5 {
+            let item = reader.read().await.expect("a frame").expect("no lag error");
+            positions.push(item.seq.expect("positioned"));
+        }
+        writer.write(event()).await.unwrap();
+        drop(writer);
+        while let Some(item) = reader.read().await {
+            let item = item.expect("position 6 follows the replay: no gap");
+            positions.push(item.seq.expect("positioned"));
+        }
+
+        assert_eq!(positions, (1..=6).collect::<Vec<_>>());
+        assert_eq!(*asked.lock().unwrap(), [0, 5]);
+    }
+
+    /// A terminal state delivered from a catch-up's replay ends the stream at
+    /// close, as one delivered live does: the reattach hook is not asked.
+    #[tokio::test]
+    async fn a_terminal_state_from_a_catch_up_ends_the_stream_without_reattaching() {
+        use crate::store::RecordedEvent;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let (writer, reader) =
+            new_in_memory_queue_with_options(2, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
+        let called = Arc::new(AtomicBool::new(false));
+        // The log's one event after position 2 is the terminal one.
+        let hook: CatchUpFn = Arc::new(|after| {
+            Box::pin(async move {
+                Some(vec![RecordedEvent {
+                    seq: after + 1,
+                    event: make_status_event("t-term", TaskState::Completed),
+                }])
+            })
+        });
+        let mut reader = reader
+            .with_reattach(counting_reattach(&called))
+            .with_catch_up(Some(hook));
+        reader.starting_after(2);
+        for state in [TaskState::Working, TaskState::Working, TaskState::Completed] {
+            writer
+                .write(make_status_event("t-term", state))
+                .await
+                .unwrap();
+        }
+        drop(writer);
+
+        let terminal = reader.read().await.expect("a frame").expect("no lag error");
+        assert_eq!(terminal.seq, Some(3), "the replayed terminal state");
+        assert!(
+            reader.read().await.is_none(),
+            "a stream that delivered a terminal state ends at close"
+        );
+        assert!(
+            !called.load(Ordering::SeqCst),
+            "the reattach hook must not be consulted once a terminal state has been seen"
+        );
     }
 
     /// The negative control: de-duplication must key on the position, not on

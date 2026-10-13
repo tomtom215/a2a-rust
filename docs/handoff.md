@@ -1067,6 +1067,10 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     printing it. CodeQL's "cleartext logging of sensitive information"
     raised three high alerts on `748c95b4` against item 35's tests, whose
     failure messages printed the fixture secrets; nothing real was exposed.
+38. `test(server):` cargo-mutants over items 36-37's source diff found four
+    reader decisions no test reached (the live position expected after a
+    catch-up, the gap's dropped count, a replayed terminal state ending the
+    stream); three tests pin them.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
