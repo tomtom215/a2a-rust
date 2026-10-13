@@ -647,6 +647,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The client advertises its own `acceptedOutputModes`** (client; a2a.proto
+  `SendMessageConfiguration.accepted_output_modes`: agents SHOULD use it to
+  tailor their output). A request with no `configuration` of its own was
+  given `SendMessageConfiguration::default()`, whose `["text/plain"]` then
+  kept `ClientConfig::accepted_output_modes` from applying, so every such
+  request told the agent to answer in text only, whatever the client was
+  configured with. It now carries the configured modes: by default
+  `text/plain` and `application/json`.
 - **A task's events reach every stream in the order they were written**
   (server; spec §3.5.2: events MUST NOT be reordered). Each event gets its
   position when it is written, but two writes on one task in flight at once
@@ -659,7 +667,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to one queue now take turns from the moment a position is assigned until
   the event is broadcast. An uncontended write still finishes without
   waiting.
-
 - **A `SubscribeToTask` stream on a tenant- or caller-partitioned task store
   stays open across turns** (server; spec §3.1.6: the stream MUST terminate
   when the task reaches a terminal state). The hook that reattaches the

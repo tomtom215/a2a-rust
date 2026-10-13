@@ -1094,6 +1094,11 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     chance: `concurrent_clones_deliver_every_position_in_order` caught the
     sync path releasing before its broadcast in 17 of 20 runs, since that
     race is one call wide.
+42. `fix(client):` a request with no `configuration` carries the client's
+    `accepted_output_modes`. `SendMessageConfiguration::default()`'s
+    `["text/plain"]` filled the field first, so the configured modes never
+    applied; the unit test that covered the merge set an empty
+    configuration by hand, with a comment explaining the default away.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

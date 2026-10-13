@@ -7933,12 +7933,13 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/accepted_output_modes.rs the_executor_sees_the_accepted_output_modes",
-    "crates/a2a-protocol-server/tests/accepted_output_modes.rs no_configuration_means_no_preference"
+    "crates/a2a-protocol-server/tests/accepted_output_modes.rs no_configuration_means_no_preference",
+    "crates/a2a-protocol-client/src/methods/send_message.rs:279 apply_config_sets_accepted_output_modes_when_empty"
    ],
-   "notes": "RequestContext::accepted_output_modes() now carries SendMessageConfiguration.acceptedOutputModes to the executor (empty = no preference); tailoring the output is the agent's job. Until 2026-10-10 the executor could not see the field at all.",
+   "notes": "RequestContext::accepted_output_modes() now carries SendMessageConfiguration.acceptedOutputModes to the executor (empty = no preference); tailoring the output is the agent's job. Until 2026-10-10 the executor could not see the field at all. The client sends what its ClientConfig::accepted_output_modes names (default text/plain and application/json) on a request with no configuration of its own; until 2026-10-13 it sent [\"text/plain\"] there, SendMessageConfiguration::default()'s value, whatever the config said.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 148,
