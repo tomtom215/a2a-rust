@@ -1427,6 +1427,7 @@ mod tests {
             "0.0.0",
             a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
         )
+        .with_description("A test agent")
         .with_skill(
             a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
         );
@@ -1465,6 +1466,7 @@ mod tests {
             "0.0.0",
             a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
         )
+        .with_description("A test agent")
         .with_skill(
             a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
         );
@@ -1501,6 +1503,7 @@ mod tests {
             "0.0.0",
             a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
         )
+        .with_description("A test agent")
         .with_skill(
             a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
         )

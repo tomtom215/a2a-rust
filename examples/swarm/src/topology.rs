@@ -25,6 +25,7 @@ pub async fn spawn_agent(name: &str, executor: impl AgentExecutor + 'static) -> 
     let url = format!("http://{addr}");
     // Spec §5.7: a published card has at least one skill, each with a tag.
     let card = AgentCard::new(name, "0.0.0", AgentInterface::jsonrpc(&url))
+        .with_description("An example agent")
         .with_streaming(true)
         .with_skill(AgentSkill::new(name, name, "A swarm member").with_tags(["swarm"]));
     let handler = Arc::new(

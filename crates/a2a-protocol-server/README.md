@@ -25,7 +25,7 @@ use std::sync::Arc;
 use a2a_protocol_server::{
     EventEmitter, JsonRpcDispatcher, RequestHandlerBuilder, agent_executor, serve,
 };
-use a2a_protocol_types::{AgentCard, AgentInterface, Part, TaskState};
+use a2a_protocol_types::{AgentCard, AgentInterface, AgentSkill, Part, TaskState};
 
 struct MyAgent;
 
@@ -39,7 +39,9 @@ agent_executor!(MyAgent, |ctx, queue| async {
 
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"));
+let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+    .with_description("An example agent")
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
 let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);
 serve("0.0.0.0:3000", JsonRpcDispatcher::new(handler)).await?;
 # Ok(())
@@ -55,7 +57,7 @@ that ends it; in-flight work finishes (or is cancelled after
 ```rust,no_run
 # use std::sync::Arc;
 # use a2a_protocol_server::{EventEmitter, JsonRpcDispatcher, RequestHandlerBuilder, agent_executor};
-# use a2a_protocol_types::{AgentCard, AgentInterface, TaskState};
+# use a2a_protocol_types::{AgentCard, AgentInterface, AgentSkill, TaskState};
 # struct MyAgent;
 # agent_executor!(MyAgent, |ctx, queue| async {
 #     EventEmitter::new(ctx, queue).status(TaskState::Completed).await
@@ -64,7 +66,7 @@ use a2a_protocol_server::{ServeConfig, Server};
 
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"));
+# let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_description("An example agent").with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
 # let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);
 let report = Server::bind("0.0.0.0:3000")
     .await?

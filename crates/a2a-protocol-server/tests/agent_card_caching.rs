@@ -30,6 +30,7 @@ fn handler() -> Arc<RequestHandler> {
         "1.0.0",
         AgentInterface::jsonrpc("http://localhost"),
     )
+    .with_description("A test agent")
     .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]));
     Arc::new(
         RequestHandlerBuilder::new(Exec)

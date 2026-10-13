@@ -13,14 +13,14 @@
 
 use super::*;
 
-/// The invariant the whole shape rests on: what `new` requires is exactly what
-/// `validate` checks, so a constructed card is never invalid.
-/// Spec §5.7: a card needs at least one skill, each with a tag. `new`
-/// cannot invent one, so its card validates once a skill is added, and not
-/// before. Until 2026-10-11 `validate` did not check skills and this test
-/// asserted the bare card was valid.
+/// What `new` leaves out, `validate` asks for. Spec §5.7: a card needs at
+/// least one skill, each with a tag; `a2a.proto` marks `description`
+/// REQUIRED. `new` can invent neither, so its card validates once both are
+/// added, and not before. Until 2026-10-11 `validate` did not check skills,
+/// and until 0.15 not the description, and this test asserted the bare
+/// card was valid.
 #[test]
-fn new_produces_a_card_that_validates_once_it_has_a_skill() {
+fn new_produces_a_card_that_validates_once_it_has_a_description_and_a_skill() {
     let card = AgentCard::new(
         "my-agent",
         "1.0.0",
@@ -28,10 +28,25 @@ fn new_produces_a_card_that_validates_once_it_has_a_skill() {
     );
     assert_eq!(
         card.validate(),
+        Err("agent card description must not be empty")
+    );
+    let card = card.with_description("Does one thing");
+    assert_eq!(
+        card.validate(),
         Err("agent card must declare at least one skill")
     );
     let card = card.with_skill(AgentSkill::new("s", "S", "a skill").with_tags(["s"]));
     assert!(card.validate().is_ok());
+}
+
+/// `version` is REQUIRED in `a2a.proto` too; `new` takes it, so only an
+/// empty one can fail.
+#[test]
+fn a_card_with_an_empty_version_is_refused() {
+    let card = AgentCard::new("a", "", AgentInterface::jsonrpc("http://localhost:3000"))
+        .with_description("Does one thing")
+        .with_skill(AgentSkill::new("s", "S", "a skill").with_tags(["s"]));
+    assert_eq!(card.validate(), Err("agent card version must not be empty"));
 }
 
 /// The point of the whole module: the constructors must produce byte-identical

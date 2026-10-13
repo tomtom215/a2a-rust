@@ -1335,6 +1335,26 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     back, costing bandwidth, not correctness. An explicit sort would cover
     that, but in this build it is an equivalent mutant, which
     `mutants.toml` does not admit.
+64. `fix(types)!:` proto REQUIRED — an agent card needs a description and
+    a version (audit register R7). `AgentCard::validate` checked `name`
+    but not `description` or `version`, and `AgentCard::new` leaves the
+    description empty, so such a card was published with
+    `"description": ""`. Both are refused now; `build()`, hot reload and
+    the dynamic card handler run `validate`. 73 `AgentCard::new` call
+    sites without `with_description` gained one, by script (book, READMEs,
+    the server's doc comments and tests, the SDK's observability test, the
+    swarm example); the 29 tests that failed first are among them.
+    Compile-only snippets (`no_run`) in the server README, the book's
+    dispatchers, security and hello-agent pages also lacked a skill, so
+    `build()` refused them already; they have one now (hello-agent's as
+    the example has it). Left without a description, because nothing
+    validates them: the types crate's builder examples, the client's
+    discovery and signature tests, the CLI's selection test, the
+    a2a-rs benchmark harness (another SDK), and history (old CHANGELOG
+    entries, the v0.9.0 review). Ledger: the proto `AgentCard` name,
+    description, version and capabilities entries said `validate` is never
+    called in production, which has been wrong since `build()` ran it;
+    the three REQUIRED list entries said an empty list may be emitted.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

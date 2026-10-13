@@ -1439,7 +1439,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:180",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:47",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:704",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:211"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:212"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs axum_enforces_the_protocol_version_except_for_discovery"
@@ -1602,8 +1602,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/auth/mod.rs:69",
-    "crates/a2a-protocol-server/src/auth/mod.rs:79",
+    "crates/a2a-protocol-server/src/auth/mod.rs:70",
+    "crates/a2a-protocol-server/src/auth/mod.rs:80",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:209"
    ],
    "test_evidence": [
@@ -1689,7 +1689,7 @@
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:164 reject_whitespace_only_context_id",
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:235 reject_empty_parts",
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:262 reject_oversized_metadata",
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:802 reference_task_ids_are_validated_like_the_other_ids",
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:841 reference_task_ids_are_validated_like_the_other_ids",
     "crates/a2a-protocol-server/tests/audit_tests/edge_cases.rs:70 a_page_size_over_100_is_invalid_params",
     "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs:220 list_tasks_page_size_zero_is_invalid_params"
    ],
@@ -2142,7 +2142,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:67"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:664 multi_turn_same_context_id"
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:703 multi_turn_same_context_id"
    ],
    "notes": "Client contextId used verbatim after validation.",
    "auditor": "B",
@@ -2213,7 +2213,7 @@
     "crates/a2a-protocol-server/src/request_context.rs:46"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:664 multi_turn_same_context_id"
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:703 multi_turn_same_context_id"
    ],
    "notes": "SDK groups by context (find_task_by_context, per-context lock) and passes context_id to the executor; conversational semantics are the agent's.",
    "auditor": "B",
@@ -2247,7 +2247,7 @@
     "crates/a2a-protocol-server/src/store/retention"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:618 task_store_config_both_ttl_and_capacity"
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:657 task_store_config_both_ttl_and_capacity"
    ],
    "notes": "Task-store TTL/capacity and retention modules.",
    "auditor": "B",
@@ -2764,7 +2764,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:190",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:41",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:706",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:145"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:146"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs axum_enforces_the_protocol_version_except_for_discovery"
@@ -3310,7 +3310,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:549",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:324"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:341"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:287 validate_empty_supported_interfaces_returns_error"
@@ -4073,7 +4073,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:176",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:112",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:166"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:167"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:140 rest_wellknown_agent_card",
@@ -4375,7 +4375,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/auth/mod.rs:79",
+    "crates/a2a-protocol-server/src/auth/mod.rs:80",
     "crates/a2a-protocol-server/src/error/mod.rs:162",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:130"
    ],
@@ -4398,7 +4398,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/auth/mod.rs:69",
+    "crates/a2a-protocol-server/src/auth/mod.rs:70",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:209"
    ],
    "test_evidence": [
@@ -4687,7 +4687,7 @@
     "crates/a2a-protocol-server/src/builder.rs:117",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:112",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:176",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:557"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:558"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:252 agent_card_get_returns_card_when_configured",
@@ -5341,11 +5341,11 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:277",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:80",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:557",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:604"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:558",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:605"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/agent_card_caching.rs:78 the_axum_agent_card_is_cacheable_like_the_rest_one"
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:79 the_axum_agent_card_is_cacheable_like_the_rest_one"
    ],
    "notes": "Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching, and nothing honours max-age or no-store (see 2235).",
    "auditor": "D",
@@ -5362,14 +5362,14 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/caching.rs:213",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:87",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:557",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:604",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:558",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:605",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:66"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:109 static_handler_returns_etag_and_cache_headers",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:184 static_handler_custom_max_age",
-    "crates/a2a-protocol-server/tests/agent_card_caching.rs:78 the_axum_agent_card_is_cacheable_like_the_rest_one"
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:79 the_axum_agent_card_is_cacheable_like_the_rest_one"
    ],
    "notes": "JSON-RPC, REST and (since 2026-10-11) the axum router serve the public card with Cache-Control: public, max-age=3600 from StaticAgentCardHandler. The max-age is set on StaticAgentCardHandler::with_max_age; the dispatchers build theirs with the default and do not expose it. The axum test fails without the fix (no cache-control).",
    "auditor": "D",
@@ -5388,16 +5388,16 @@
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:42",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:99",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:52",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:297",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:621"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:298",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:622"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:125 static_handler_304_on_matching_etag",
-    "crates/a2a-protocol-server/tests/agent_card_caching.rs:78 the_axum_agent_card_is_cacheable_like_the_rest_one",
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:79 the_axum_agent_card_is_cacheable_like_the_rest_one",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:379 same_card_produces_same_etag",
-    "crates/a2a-protocol-server/tests/card_etag_determinism.rs:78 the_same_card_parsed_twice_has_one_static_etag",
-    "crates/a2a-protocol-server/tests/card_etag_determinism.rs:99 a_card_built_per_request_keeps_its_dynamic_etag",
-    "crates/a2a-protocol-server/tests/card_etag_determinism.rs:120 the_unconditional_path_keeps_it_too",
+    "crates/a2a-protocol-server/tests/card_etag_determinism.rs:81 the_same_card_parsed_twice_has_one_static_etag",
+    "crates/a2a-protocol-server/tests/card_etag_determinism.rs:102 a_card_built_per_request_keeps_its_dynamic_etag",
+    "crates/a2a-protocol-server/tests/card_etag_determinism.rs:123 the_unconditional_path_keeps_it_too",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:204 the_extended_card_s_etag_is_the_same_for_the_same_card"
    ],
    "notes": "Content-hash ETag (and Last-Modified) on all three HTTP card routes; If-None-Match answers 304. The axum route had neither until 2026-10-11. The hash is over the card with its maps' keys sorted (card_body_and_etag), since 2026-10-13. It was over the serialization, whose HashMap fields (securitySchemes, a requirement's schemes, OAuth scopes) come out in an order each map draws at random: the same card had another ETag on each replica, after each restart, and on each request of a dynamic handler building its card, so revalidation returned 200. Shown 8 ETags in 8 parses before the fix.",
@@ -5923,7 +5923,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:40-75",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:91-102",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:172-189",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:173-190",
     "crates/a2a-protocol-types/src/lib.rs:87-98"
    ],
    "test_evidence": [
@@ -5965,7 +5965,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:185-214",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:17-25",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:121-133",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:236-245"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:237-246"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:347 rest_required_extension_enforced_and_echoed",
@@ -6054,8 +6054,8 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:110-118",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:567-606",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:169-185",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:716",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:720"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:717",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:721"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/request.rs:305 build_uri_extracts_path_param_and_appends_query",
@@ -6080,9 +6080,9 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:169-185",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:572",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:581",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:582",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:12-37",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:716"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:717"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:593 parse_list_tasks_query_all_params",
@@ -6275,7 +6275,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:70-98",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:148-168",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:262-278"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:263-279"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/hardening.rs rest_rejects_wrong_content_type_on_post",
@@ -6758,7 +6758,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:204",
     "crates/a2a-protocol-server/src/handler/push_config.rs:271",
     "crates/a2a-protocol-server/src/handler/push_config.rs:332",
-    "crates/a2a-protocol-server/src/auth/mod.rs:241"
+    "crates/a2a-protocol-server/src/auth/mod.rs:242"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/interceptor_on_complete.rs:125 every_handler_method_reports_its_outcome",
@@ -7695,8 +7695,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/auth/mod.rs:74",
-    "crates/a2a-protocol-server/src/auth/mod.rs:220",
+    "crates/a2a-protocol-server/src/auth/mod.rs:75",
+    "crates/a2a-protocol-server/src/auth/mod.rs:221",
     "crates/a2a-protocol-types/src/push.rs:43"
    ],
    "test_evidence": [
@@ -7752,7 +7752,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/auth/mod.rs:168",
+    "crates/a2a-protocol-server/src/auth/mod.rs:169",
     "crates/a2a-protocol-server/src/auth/jwt.rs:670"
    ],
    "test_evidence": [],
@@ -7791,7 +7791,7 @@
     "crates/a2a-protocol-server/src/auth/throttle.rs:207",
     "crates/a2a-protocol-server/src/auth/throttle.rs:230",
     "crates/a2a-protocol-server/src/call_context.rs:275",
-    "crates/a2a-protocol-server/src/rate_limit/mod.rs:308"
+    "crates/a2a-protocol-server/src/rate_limit/mod.rs:309"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_failure_throttle.rs:93 json_rpc_throttles_a_peer_after_its_failed_credentials",
@@ -7891,7 +7891,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/rate_limit/mod.rs:302"
+    "crates/a2a-protocol-server/src/rate_limit/mod.rs:303"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/rate_limit/tests.rs:127 rejects_requests_over_limit",
@@ -7936,7 +7936,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/rate_limit/mod.rs:309"
+    "crates/a2a-protocol-server/src/rate_limit/mod.rs:310"
    ],
    "test_evidence": [],
    "notes": "Per-tenant allowance (tiers via tenant config) supported; no per-operation limits in the built-in limiter (custom interceptor can key on ctx.method()).",
@@ -8717,7 +8717,7 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:480",
     "crates/a2a-protocol-server/src/builder.rs:547",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:38"
    ],
    "test_evidence": [
@@ -8740,7 +8740,7 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:480",
     "crates/a2a-protocol-server/src/builder.rs:547",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:51"
    ],
    "test_evidence": [
@@ -8791,7 +8791,7 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:480",
     "crates/a2a-protocol-server/src/builder.rs:547",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:57"
    ],
    "test_evidence": [
@@ -8812,13 +8812,16 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:227",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:323",
-    "crates/a2a-protocol-client/src/discovery.rs:480"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:321",
+    "crates/a2a-protocol-server/src/builder.rs:715",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
+    "crates/a2a-protocol-client/src/discovery.rs:544"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
    ],
-   "notes": "Non-optional field, always serialized. AgentCard::validate (non-empty name) is never called by server or client production code, so an empty name/description/version is served as \"\". Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
+   "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty name, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8832,13 +8835,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:248",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:323",
-    "crates/a2a-protocol-client/src/discovery.rs:480"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:324",
+    "crates/a2a-protocol-server/src/builder.rs:715",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
+    "crates/a2a-protocol-client/src/discovery.rs:544"
    ],
    "test_evidence": [
-    "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
+    "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
+    "crates/a2a-protocol-types/src/agent_card/builders/tests.rs:23 new_produces_a_card_that_validates_once_it_has_a_description_and_a_skill",
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:424 builder_rejects_a_card_without_a_description_or_version"
    ],
-   "notes": "Non-optional field, always serialized. AgentCard::validate (non-empty name) is never called by server or client production code, so an empty name/description/version is served as \"\". Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
+   "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty description, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Refused since 0.15; AgentCard::new leaves it empty until with_description, and such a card was served with \"description\": \"\". Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8873,13 +8881,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:251",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:323",
-    "crates/a2a-protocol-client/src/discovery.rs:480"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:327",
+    "crates/a2a-protocol-server/src/builder.rs:715",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
+    "crates/a2a-protocol-client/src/discovery.rs:544"
    ],
    "test_evidence": [
-    "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
+    "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
+    "crates/a2a-protocol-types/src/agent_card/builders/tests.rs:45 a_card_with_an_empty_version_is_refused",
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:424 builder_rejects_a_card_without_a_description_or_version"
    ],
-   "notes": "Non-optional field, always serialized. AgentCard::validate (non-empty name) is never called by server or client production code, so an empty name/description/version is served as \"\". Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
+   "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty version, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Refused since 0.15. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8893,13 +8906,12 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:285",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:323",
-    "crates/a2a-protocol-client/src/discovery.rs:480"
+    "crates/a2a-protocol-client/src/discovery.rs:544"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
    ],
-   "notes": "Non-optional field, always serialized. AgentCard::validate (non-empty name) is never called by server or client production code, so an empty name/description/version is served as \"\". Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
+   "notes": "Non-optional field, always serialized. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
    "auditor": "G",
    "source": "proto"
   },
@@ -8912,12 +8924,16 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:268"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:268",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:360",
+    "crates/a2a-protocol-server/src/builder.rs:715",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
    ],
-   "notes": "Vec without skip_serializing_if: always emitted (possibly []); client tolerates absence via serde(default).",
+   "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8930,12 +8946,16 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:275"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:275",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:363",
+    "crates/a2a-protocol-server/src/builder.rs:715",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
    ],
-   "notes": "Vec without skip_serializing_if: always emitted (possibly []); client tolerates absence via serde(default).",
+   "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8948,12 +8968,16 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:282"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:282",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:366",
+    "crates/a2a-protocol-server/src/builder.rs:715",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
    ],
-   "notes": "Vec without skip_serializing_if: always emitted (possibly []); client tolerates absence via serde(default).",
+   "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty.",
    "auditor": "G",
    "source": "proto"
   },
@@ -8967,7 +8991,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:140",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -8987,7 +9011,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:137",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9026,7 +9050,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:155",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9046,7 +9070,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:158",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9066,7 +9090,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:161",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9086,7 +9110,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:169",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:271 validate_refuses_each_empty_required_array"
@@ -9118,7 +9142,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/extensions.rs:64"
    ],
    "test_evidence": [
@@ -9152,7 +9176,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:335",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/extensions.rs:67"
    ],
    "test_evidence": [
@@ -9277,7 +9301,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:445",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9287,7 +9311,7 @@
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
@@ -9321,7 +9345,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:445",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9331,7 +9355,7 @@
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
@@ -9384,7 +9408,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:445",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9394,7 +9418,7 @@
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
@@ -9412,7 +9436,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:445",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9422,7 +9446,7 @@
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
@@ -9440,7 +9464,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:445",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9450,7 +9474,7 @@
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
@@ -9520,7 +9544,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:445",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9530,7 +9554,7 @@
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
@@ -9678,7 +9702,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:445",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9688,7 +9712,7 @@
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",
@@ -9706,7 +9730,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:445",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:404",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:716",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9716,7 +9740,7 @@
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1205 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:45 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it.",
    "auditor": "G",

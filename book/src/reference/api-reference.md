@@ -490,7 +490,7 @@ The prelude includes the most commonly used types from all three crates — see 
 # use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let base64_string = "aGVsbG8=";
-# let card = AgentCard::new("a", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"));
+# let card = AgentCard::new("a", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_description("An example agent");
 // Task status
 TaskStatus::new(TaskState::Working);
 TaskStatus::with_timestamp(TaskState::Completed);

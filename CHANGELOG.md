@@ -326,6 +326,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **An agent card needs a description and a version** (types; `a2a.proto`
+  marks `AgentCard.description` and `AgentCard.version` REQUIRED).
+  `AgentCard::validate`, which `RequestHandlerBuilder::build`, hot reload
+  and the dynamic card handler run, refused an empty name but not an empty
+  description or version, and `AgentCard::new` leaves the description
+  empty, so a card built with it was published with `"description": ""`,
+  which over gRPC is the REQUIRED field absent. Both are refused now: add
+  `with_description` to a card built with `new`. The book's and READMEs'
+  snippets do, and the ones compiled but never run also gained the skill
+  they lacked, without which `build()` refused them already.
 - **ListTasks refuses a `pageSize` outside 1 to 100** (server; a2a.proto:
   `page_size`'s "minimum value is 1" and "maximum value is 100"; spec
   §3.3.2 and §13.4: servers MUST validate all input parameters). A larger

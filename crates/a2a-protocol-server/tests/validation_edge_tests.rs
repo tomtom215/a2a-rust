@@ -417,6 +417,45 @@ async fn builder_rejects_empty_interfaces_in_card() {
     assert!(result.is_err(), "empty interfaces should be rejected");
 }
 
+/// `a2a.proto` marks the card's `description` and `version` REQUIRED.
+/// `AgentCard::new` leaves the description empty, and such a card was
+/// served with `"description": ""` until 0.15.
+#[tokio::test]
+async fn builder_rejects_a_card_without_a_description_or_version() {
+    let card = || {
+        a2a_protocol_types::AgentCard::new(
+            "test",
+            "1.0.0",
+            a2a_protocol_types::AgentInterface::jsonrpc("http://localhost:3000"),
+        )
+        .with_skill(a2a_protocol_types::AgentSkill::new("s", "S", "A skill").with_tags(["s"]))
+    };
+    for (card, missing) in [
+        (card(), "description"),
+        (
+            a2a_protocol_types::AgentCard {
+                version: String::new(),
+                ..card().with_description("A test agent")
+            },
+            "version",
+        ),
+    ] {
+        let err = RequestHandlerBuilder::new(CompletingExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect_err(missing);
+        assert!(
+            err.to_string()
+                .contains(&format!("agent card {missing} must not be empty")),
+            "{missing}: {err}"
+        );
+    }
+    RequestHandlerBuilder::new(CompletingExecutor)
+        .with_agent_card(card().with_description("A test agent"))
+        .build()
+        .expect("a card with both is served");
+}
+
 // ── Shutdown tests ───────────────────────────────────────────────────────────
 
 #[tokio::test]

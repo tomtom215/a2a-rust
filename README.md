@@ -165,6 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // and what the server holds requests to. This agent streams.
     let url = "http://127.0.0.1:3000";
     let card = AgentCard::new("hello", "1.0.0", AgentInterface::jsonrpc(url))
+        .with_description("An example agent")
         .with_skill(AgentSkill::new("greet", "Greet", "Says hello").with_tags(["greeting"]))
         .with_streaming(true);
     let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);

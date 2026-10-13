@@ -243,13 +243,14 @@ impl AgentCard {
     /// A card with a name, a version and one interface, accepting and
     /// producing `text/plain` by default.
     ///
-    /// Not yet publishable: spec §5.7 requires at least one skill, each with
-    /// at least one tag, and [`AgentCard::validate`] (which the server's
-    /// builder runs) refuses a card without one. Add it with
-    /// [`with_skill`](Self::with_skill). `description` starts empty, every
-    /// optional field starts `None`, and capabilities start unset
-    /// ([`AgentCapabilities::none`]); [`with_input_modes`](Self::with_input_modes)
-    /// and [`with_output_modes`](Self::with_output_modes) replace the default
+    /// Not yet publishable: [`AgentCard::validate`] (which the server's
+    /// builder runs) refuses a card without a description, REQUIRED in
+    /// `a2a.proto`, or without a skill, each with at least one tag (spec
+    /// §5.7). Add them with [`with_description`](Self::with_description) and
+    /// [`with_skill`](Self::with_skill). Every optional field starts `None`,
+    /// and capabilities start unset ([`AgentCapabilities::none`]);
+    /// [`with_input_modes`](Self::with_input_modes) and
+    /// [`with_output_modes`](Self::with_output_modes) replace the default
     /// modes.
     ///
     /// ```
@@ -259,10 +260,11 @@ impl AgentCard {
     ///     "my-agent",
     ///     "1.0.0",
     ///     AgentInterface::jsonrpc("http://localhost:3000"),
-    /// );
-    /// assert!(card.validate().is_err(), "no skill yet");
+    /// )
+    /// .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
+    /// assert!(card.validate().is_err(), "no description yet");
     ///
-    /// let card = card.with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
+    /// let card = card.with_description("Echoes what it is sent");
     /// assert!(card.validate().is_ok());
     /// assert_eq!(card.default_input_modes, ["text/plain"]);
     /// ```

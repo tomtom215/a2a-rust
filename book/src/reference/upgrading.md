@@ -144,20 +144,22 @@ trip over.
 
 Spec §5.7: a required array MUST contain at least one element.
 `RequestHandlerBuilder::build` now runs `AgentCard::validate`, which checks
-`defaultInputModes`, `defaultOutputModes`, `skills`, and every skill's `tags`, as
+`defaultInputModes`, `defaultOutputModes`, `skills`, and every skill's `tags`, and
+the card's `description` and `version`, which `a2a.proto` marks REQUIRED, as
 well as the name and interfaces it checked before. A card missing any of them
-used to be served as it was. Add a skill:
+used to be served as it was. Add a description and a skill:
 
 ```rust
 # use a2a_protocol_sdk::prelude::*;
 # let url = "http://localhost:3000";
 let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc(url))
+    .with_description("An example agent")
     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
 # assert!(card.validate().is_ok());
 ```
 
 `AgentCard::new` now starts both mode lists at `["text/plain"]`, so a card
-built with it only needs the skill. `build()` also runs
+built with it only needs the description and the skill. `build()` also runs
 `AgentCard::validate_security_schemes`, which refuses a security scheme whose
 REQUIRED string is empty, such as an API key with no `name`. A
 `DynamicAgentCardHandler` whose producer
@@ -183,6 +185,7 @@ choice, rank the bindings yourself:
 # use a2a_protocol_sdk::prelude::*;
 # fn main() -> Result<(), ClientError> {
 # let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::rest("http://localhost:3001"))
+#     .with_description("An example agent")
 #     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
 let client = ClientBuilder::from_card_preferring(&card, &["JSONRPC".into()])?.build()?;
 # drop(client);
@@ -213,6 +216,7 @@ takes push configs without declaring it, opt out:
 # use a2a_protocol_sdk::prelude::*;
 # fn main() -> Result<(), ClientError> {
 # let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3001"))
+#     .with_description("An example agent")
 #     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
 let client = ClientBuilder::from_card(&card)?
     .without_capability_checks()
@@ -239,6 +243,7 @@ modes, required extensions. Give it the card your agent publishes:
 # agent_executor!(MyAgent, |_ctx, _q| async { Ok(()) });
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+    .with_description("An example agent")
     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
     .with_streaming(true);
 let handler = RequestHandlerBuilder::new(MyAgent)
@@ -281,6 +286,7 @@ callers are meant to see each other's tasks, say so:
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
 # }

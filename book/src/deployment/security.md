@@ -115,7 +115,7 @@ side reported nothing. So `build()` **refuses** a signed card it would
 otherwise have to edit, and names the URIs to add:
 
 ```rust
-use a2a_protocol_types::agent_card::{AgentCard, AgentInterface};
+use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::extensions::AgentExtension;
 use a2a_protocol_types::failure::FAILURE_EXTENSION_URI;
@@ -127,7 +127,9 @@ fn card_to_serve(pkcs8: &[u8]) -> A2aResult<AgentCard> {
         "Triage Agent",
         "1.0.0",
         AgentInterface::jsonrpc("https://agent.example/rpc"),
-    );
+    )
+    .with_description("Triages incoming incidents")
+    .with_skill(AgentSkill::new("triage", "Triage", "Triages an incident").with_tags(["triage"]));
 
     // Declare first. `AgentExtension::new` leaves `required` unset, which is
     // what a non-required extension means on the wire.

@@ -58,6 +58,7 @@ async fn main() -> std::io::Result<()> {
     // What clients discover at /.well-known/agent-card.json. An A2A server
     // must publish one, so build() refuses a handler without it.
     let card = AgentCard::new("hello", "1.0.0", AgentInterface::jsonrpc("http://127.0.0.1:3000"))
+        .with_description("An example agent")
         .with_skill(AgentSkill::new("greet", "Greet", "Says hello").with_tags(["greeting"]));
     let handler = std::sync::Arc::new(
         RequestHandlerBuilder::new(HelloAgent)

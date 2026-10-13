@@ -27,11 +27,14 @@ use http_body_util::Full;
 /// One card, as JSON, declaring `n` API-key schemes and requiring all of
 /// them, so two of its maps hold `n` entries.
 fn card_json(n: usize) -> String {
-    let mut card = serde_json::to_value(AgentCard::new(
-        "etag-agent",
-        "1.0",
-        AgentInterface::jsonrpc("https://agent.example.com/rpc"),
-    ))
+    let mut card = serde_json::to_value(
+        AgentCard::new(
+            "etag-agent",
+            "1.0",
+            AgentInterface::jsonrpc("https://agent.example.com/rpc"),
+        )
+        .with_description("A test agent"),
+    )
     .expect("card");
     let schemes: serde_json::Map<String, serde_json::Value> = (0..n)
         .map(|i| {

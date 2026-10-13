@@ -72,6 +72,7 @@ if your executors are genuinely unbounded:
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
 # }
@@ -98,6 +99,7 @@ deployment; pass `usize::MAX` to effectively disable it:
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
 # }
@@ -120,6 +122,7 @@ Prevent unbounded memory growth:
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
 # }
@@ -251,6 +254,7 @@ Protect public-facing agents from abuse:
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
 # }
@@ -383,6 +387,7 @@ Tune the event queue for your workload:
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
 # }

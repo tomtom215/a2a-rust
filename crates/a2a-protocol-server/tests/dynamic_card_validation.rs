@@ -28,6 +28,7 @@ impl AgentCardProducer for OidcCard {
                 "1.0.0",
                 AgentInterface::jsonrpc("https://agent.example.com/rpc"),
             )
+            .with_description("A test agent")
             .with_skill(AgentSkill::new("echo", "Echo", "Echoes").with_tags(["echo"]));
             card.security_schemes = Some(HashMap::from([(
                 "oidc".to_owned(),

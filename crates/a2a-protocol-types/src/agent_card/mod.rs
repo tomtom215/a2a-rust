@@ -314,12 +314,29 @@ pub struct AgentCard {
 }
 
 impl AgentCard {
+    /// The card's own REQUIRED strings, `name`, `description` and
+    /// `version`: none may be empty.
+    const fn validate_identity(&self) -> Result<(), &'static str> {
+        if self.name.is_empty() {
+            return Err("agent card name must not be empty");
+        }
+        if self.description.is_empty() {
+            return Err("agent card description must not be empty");
+        }
+        if self.version.is_empty() {
+            return Err("agent card version must not be empty");
+        }
+        Ok(())
+    }
+
     /// Validates the agent card for completeness.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `name` is empty
+    /// - `name`, `description` or `version` is empty (all three REQUIRED in
+    ///   `a2a.proto`; until 0.15 only `name` was checked, and
+    ///   [`AgentCard::new`] leaves `description` empty)
     /// - a repeated field the proto marks REQUIRED is empty (spec §5.7:
     ///   arrays marked as required MUST contain at least one element):
     ///   `supported_interfaces`, `default_input_modes`, `default_output_modes`,
@@ -333,8 +350,8 @@ impl AgentCard {
     /// The security schemes' REQUIRED fields are checked by
     /// [`validate_security_schemes`](Self::validate_security_schemes).
     pub const fn validate(&self) -> Result<(), &'static str> {
-        if self.name.is_empty() {
-            return Err("agent card name must not be empty");
+        if let Err(why) = self.validate_identity() {
+            return Err(why);
         }
         if self.supported_interfaces.is_empty() {
             return Err("agent card must have at least one supported interface");
