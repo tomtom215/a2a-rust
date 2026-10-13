@@ -647,6 +647,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Proto3 defaults on the JSON bindings mean unset** (server; spec §5.1:
+  every binding MUST return semantically equivalent results for the same
+  request). `ProtoJSON` prints a field without presence at its default as
+  "unset", and a client that prints every field (a2a-java's JSON-RPC
+  transport does) sends `""` or `TASK_STATE_UNSPECIFIED` for "none". Only a
+  message's `contextId` and `taskId` were read that way. The rest were read
+  as values, where gRPC's conversion already read them as unset: a part with
+  `"mediaType": ""` was refused as `ContentTypeNotSupported`; a push config
+  created with `"id": ""` was stored under the id `""`, which Get and Delete
+  refuse, and the next such create replaced it; `"token": ""` sent an empty
+  token header; and ListTasks with `"contextId": ""`, `"pageToken": ""` or
+  `"status": "TASK_STATE_UNSPECIFIED"` listed nothing. Each is now unset on
+  ingress: a part's `mediaType` and `filename`, a push config's `id` and
+  `token` (standalone or inline in `SendMessage`), and those three ListTasks
+  fields.
 - **A cancelled task's streams end on `Canceled` whatever its `cancel` hook
   writes** (server; spec §3.1.2, §3.1.6: a stream MUST close when the task
   reaches a terminal state). Only the default `AgentExecutor::cancel` wrote

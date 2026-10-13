@@ -17,6 +17,16 @@ use crate::error::{ServerError, ServerResult};
 use super::RequestHandler;
 use super::helpers::build_call_context;
 
+/// Unsets a push config's proto3 strings that hold their default, `""`:
+/// `id`, so the store mints one (a config stored under `""` could never be
+/// got or deleted, and the next such create replaced it), and `token`, so no
+/// empty token header is sent. `tenant` already reads `""` as none, and an
+/// empty `taskId` is refused as missing.
+pub(super) fn unset_proto3_defaults(config: &mut TaskPushNotificationConfig) {
+    super::helpers::unset_if_empty(&mut config.id);
+    super::helpers::unset_if_empty(&mut config.token);
+}
+
 /// `InvalidParams` when a field the proto marks REQUIRED is empty. On gRPC
 /// an absent string arrives as `""`, and JSON can send `""` outright; both
 /// used to reach the store, where an empty id on delete or list matched
@@ -147,10 +157,11 @@ impl RequestHandler {
     #[allow(clippy::too_many_lines)]
     pub async fn on_set_push_config(
         &self,
-        config: TaskPushNotificationConfig,
+        mut config: TaskPushNotificationConfig,
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<TaskPushNotificationConfig> {
         let start = Instant::now();
+        unset_proto3_defaults(&mut config);
         #[cfg(feature = "tracing")]
         if let Some(task_id) = config.task_id.as_deref() {
             crate::rpc_span::record_task(task_id, None);

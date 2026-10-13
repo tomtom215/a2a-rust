@@ -1163,6 +1163,16 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `cancel_emits_terminal` check, which existed to catch the silent hook,
     is `cancel_succeeds` now and passes it; `a_cancel_that_fails_is_caught`
     keeps a failing hook failed, which no test covered before.
+51. `fix(server):` §5.1 — proto3 defaults on the JSON bindings mean unset,
+    as gRPC's conversion already read them: a part's `mediaType` and
+    `filename`, a push config's `id` and `token` (standalone, and inline in
+    `SendMessage`, where an `id` of `""` also made the continuation path
+    treat the config as named), and ListTasks' `contextId`, `pageToken` and
+    `status`. `helpers::unset_if_empty` does it on ingress; the four tests in
+    `tests/proto3_defaults.rs` each failed before. Left as they were: an
+    empty `tenant`, already read as none, and push `authentication.credentials`
+    of `""`, which by the code (not run) is delivered as `Bearer ` with
+    nothing after it; neither the audit nor a test covers that one.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

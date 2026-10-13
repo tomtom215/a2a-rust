@@ -17,6 +17,14 @@ use crate::error::{ServerError, ServerResult};
 
 use super::RequestHandler;
 
+/// Unsets `field` when it holds the proto3 default, the empty string: a
+/// field without presence carries "unset" that way on the JSON bindings.
+pub(super) fn unset_if_empty(field: &mut Option<String>) {
+    if field.as_deref() == Some("") {
+        *field = None;
+    }
+}
+
 /// Validates an ID string: rejects empty/whitespace-only and excessively long values.
 pub(super) fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerResult<()> {
     let trimmed = raw.trim();

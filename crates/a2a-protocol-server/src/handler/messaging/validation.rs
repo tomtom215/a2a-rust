@@ -8,16 +8,15 @@
 //! were always reported in, which matters to a client that fixes one problem
 //! at a time.
 
-use a2a_protocol_types::message::Message;
 use a2a_protocol_types::params::MessageSendParams;
 
 use super::super::RequestHandler;
-use super::super::helpers::{validate_id, validate_metadata_object};
+use super::super::helpers::{unset_if_empty, validate_id, validate_metadata_object};
 use super::decisions::json_byte_len;
 use crate::error::{ServerError, ServerResult};
 
 impl RequestHandler {
-    /// Validates the request in place: proto3-empty ids are unset, then ids,
+    /// Validates the request in place: proto3 defaults are unset, then ids,
     /// parts and every `metadata` field are checked against the handler's
     /// limits.
     ///
@@ -25,7 +24,7 @@ impl RequestHandler {
     ///
     /// [`ServerError::InvalidParams`] naming the first field that failed.
     pub(super) fn validate_send_params(&self, params: &mut MessageSendParams) -> ServerResult<()> {
-        unset_proto3_empty_ids(&mut params.message);
+        unset_proto3_defaults(params);
 
         // Validate incoming IDs: reject empty/whitespace-only and excessively
         // long values (AP-1).
@@ -119,23 +118,38 @@ fn check_metadata_size(
     Ok(())
 }
 
-/// Maps an exactly-empty `contextId` / `taskId` on an incoming message to
-/// absent.
+/// Maps the exactly-empty proto3 strings of an incoming send to absent: the
+/// message's `contextId` and `taskId`, each part's `mediaType` and
+/// `filename`, and the inline push config's `id` and `token`.
 ///
-/// The A2A JSON bindings are `ProtoJSON`, and both fields are proto3 strings
-/// without presence: an empty string *is* the unset value. A client that
-/// prints every field — a2a-java's JSON-RPC transport uses
-/// `alwaysPrintFieldsWithNoPresence` — therefore sends `"contextId": ""` for
-/// "none", and until 2026-09-09 this server rejected that as an invalid id,
-/// failing every JSON-RPC pairing with the Java SDK in the official ITK while
-/// the same peer passed over gRPC and HTTP+JSON, whose printers omit
-/// defaults. Whitespace-only is left alone and still rejected by
-/// `validate_id`: no printer produces it for "unset".
-fn unset_proto3_empty_ids(message: &mut Message) {
+/// The A2A JSON bindings are `ProtoJSON`, and these are proto3 strings
+/// without presence: an empty string *is* the unset value, as the gRPC
+/// conversion reads it. A client that prints every field — a2a-java's
+/// JSON-RPC transport uses `alwaysPrintFieldsWithNoPresence` — therefore
+/// sends `"contextId": ""` for "none", and until 2026-09-09 this server
+/// rejected that as an invalid id, failing every JSON-RPC pairing with the
+/// Java SDK in the official ITK while the same peer passed over gRPC and
+/// HTTP+JSON, whose printers omit defaults. Until 2026-10-13 the rest were
+/// read as set: a part's `"mediaType": ""` was checked against the card's
+/// input modes and refused. Whitespace-only is left alone and still rejected
+/// by `validate_id`: no printer produces it for "unset".
+fn unset_proto3_defaults(params: &mut MessageSendParams) {
+    let message = &mut params.message;
     if message.context_id.as_ref().is_some_and(|c| c.0.is_empty()) {
         message.context_id = None;
     }
     if message.task_id.as_ref().is_some_and(|t| t.0.is_empty()) {
         message.task_id = None;
+    }
+    for part in &mut message.parts {
+        unset_if_empty(&mut part.media_type);
+        unset_if_empty(&mut part.filename);
+    }
+    if let Some(config) = params
+        .configuration
+        .as_mut()
+        .and_then(|c| c.task_push_notification_config.as_mut())
+    {
+        super::super::push_config::unset_proto3_defaults(config);
     }
 }

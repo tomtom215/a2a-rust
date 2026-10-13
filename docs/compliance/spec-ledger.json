@@ -922,11 +922,13 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/push_config.rs:25 push_config_crud_lifecycle",
-    "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:152 streaming_mode_push_delivery_with_cooperative_executor"
+    "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:152 streaming_mode_push_delivery_with_cooperative_executor",
+    "crates/a2a-protocol-server/tests/proto3_defaults.rs:93 a_push_config_with_an_empty_id_is_given_one"
    ],
-   "notes": "",
+   "notes": "A create with \"id\": \"\" is given an id (2026-10-13); it was stored under \"\", which Get and Delete refuse, and the next such create replaced it.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 335,
@@ -3164,14 +3166,23 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:125"
+    "crates/a2a-protocol-server/src/handler/mod.rs:125",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:22",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:136",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:25",
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:49"
    ],
    "test_evidence": [
-    "tck/src/equivalence.rs:459 bind_equiv_002"
+    "tck/src/equivalence.rs:459 bind_equiv_002",
+    "crates/a2a-protocol-server/tests/proto3_defaults.rs:72 a_part_with_an_empty_media_type_and_filename_is_accepted_as_unset",
+    "crates/a2a-protocol-server/tests/proto3_defaults.rs:93 a_push_config_with_an_empty_id_is_given_one",
+    "crates/a2a-protocol-server/tests/proto3_defaults.rs:124 an_inline_push_config_with_an_empty_id_is_given_one",
+    "crates/a2a-protocol-server/tests/proto3_defaults.rs:149 list_tasks_filters_at_their_defaults_filter_nothing"
    ],
-   "notes": "All bindings dispatch to the same RequestHandler; TCK compares task views across the four bindings in CI.",
+   "notes": "All bindings dispatch to the same RequestHandler; TCK compares task views across the four bindings in CI. Proto3 defaults on the JSON bindings are unset on ingress since 2026-10-13, as the gRPC conversion reads them: a part's mediaType and filename, a push config's id and token, ListTasks' contextId, pageToken and status. Before, JSON read them as values: an empty mediaType was refused as ContentTypeNotSupported, a config was stored under id \"\", and ListTasks listed nothing, where gRPC accepted, minted an id and listed everything. Each test failed before the change.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 1151,

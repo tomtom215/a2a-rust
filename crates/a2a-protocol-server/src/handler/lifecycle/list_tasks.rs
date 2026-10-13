@@ -10,11 +10,12 @@ use std::time::Instant;
 
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
+use a2a_protocol_types::task::TaskState;
 
 use crate::error::ServerResult;
 
 use super::super::RequestHandler;
-use super::super::helpers::{build_call_context, truncate_history};
+use super::super::helpers::{build_call_context, truncate_history, unset_if_empty};
 
 impl RequestHandler {
     /// Handles `ListTasks`.
@@ -39,6 +40,16 @@ impl RequestHandler {
         let mut params = params;
         if let Some(ps) = params.page_size {
             params.page_size = Some(ps.min(1000));
+        }
+        // a2a.proto: `contextId`, `status` and `pageToken` have no presence,
+        // so their defaults mean "no filter" and "first page", as the gRPC
+        // conversion reads them. Read as values, each alone listed nothing:
+        // no task has an empty context or the state `UNSPECIFIED`, and an
+        // empty token decoded to an empty page.
+        unset_if_empty(&mut params.context_id);
+        unset_if_empty(&mut params.page_token);
+        if params.status == Some(TaskState::Unspecified) {
+            params.status = None;
         }
         // Validate statusTimestampAfter up front so every store backend sees
         // a well-formed value; a malformed timestamp is a client error, not
