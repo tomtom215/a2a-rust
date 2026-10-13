@@ -149,8 +149,18 @@ pub fn server_error_to_rpc_error(err: &ServerError) -> RpcError {
     // `INVALID_ARGUMENT`, and a client's `BearerAuthInterceptor` drops a token
     // only on `UNAUTHENTICATED`, so a revoked one was re-sent: audit N36,
     // which the gRPC dispatcher fixed and this binding had not.
-    match a2a.auth_rejection().map(AuthRejection::kind) {
-        Some(AuthRejectionKind::Unauthenticated) => RpcError::unauthenticated(message),
+    //
+    // Spec §3.3.2: a refusal SHOULD carry the challenge and name the scheme.
+    // A SLIMRPC error has no metadata to carry `WWW-Authenticate` in, so the
+    // challenge ends the message. Until 2026-10-13 it was dropped.
+    let rejection = a2a.auth_rejection();
+    match rejection.map(AuthRejection::kind) {
+        Some(AuthRejectionKind::Unauthenticated) => {
+            RpcError::unauthenticated(match rejection.and_then(AuthRejection::challenge) {
+                Some(challenge) => format!("{message} (WWW-Authenticate: {challenge})"),
+                None => message,
+            })
+        }
         // `PermissionDenied`, and any kind added later: refusing is safer.
         Some(_) => RpcError::permission_denied(message),
         None => RpcError::new(error_code_to_rpc_code(a2a.code), message),
@@ -401,7 +411,6 @@ mod tests {
         }
     }
 
-    /// A call the peer cancelled is not a timeout and must not be retried.
     #[test]
     fn a_refused_credential_reaches_the_client_as_401_or_403() {
         let refused = ServerError::Protocol(A2aError::unauthenticated(
@@ -410,6 +419,12 @@ mod tests {
         ));
         let wire = server_error_to_rpc_error(&refused);
         assert_eq!(wire.code(), RpcCode::Unauthenticated, "{wire:?}");
+        // Spec §3.3.2: the challenge, and so the scheme, reaches the caller.
+        assert_eq!(
+            wire.message(),
+            "InvalidRequestError: authentication required \
+             (WWW-Authenticate: Bearer realm=\"a2a\")"
+        );
         assert!(matches!(
             rpc_error_to_client_error(&wire),
             ClientError::UnexpectedStatus { status: 401, .. }
@@ -431,6 +446,7 @@ mod tests {
         );
     }
 
+    /// A call the peer cancelled is not a timeout and must not be retried.
     #[test]
     fn a_cancelled_call_is_not_retryable() {
         let err = rpc_error_to_client_error(&RpcError::cancelled("gone"));

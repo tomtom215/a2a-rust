@@ -1700,6 +1700,15 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     The axum quick-start's card declared JSON-RPC while `A2aRouter` serves
     HTTP+JSON (C-F10, ledger 162). E-F12 (`event: error` on SSE error
     frames) is kept: the Python SDK does the same.
+91. `fix(server, slimrpc):` §3.3.2 — a refused credential's challenge
+    reaches gRPC and SLIMRPC callers (audit register R59; in Fixed). gRPC:
+    `www-authenticate` metadata on the `UNAUTHENTICATED` status. SLIMRPC,
+    which has no error metadata: `(WWW-Authenticate: <challenge>)` ends the
+    message. WebSocket refusals after the upgrade still carry none. The
+    gRPC helper tests moved to `grpc/helpers_tests.rs` to keep
+    `helpers.rs` under 500 lines; the ledger's 17 citations of them, and
+    five line citations into `helpers.rs` the wrapper shifted, follow.
+    Both tests failed before; mutants 4 of 4.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

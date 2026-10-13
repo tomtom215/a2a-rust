@@ -807,6 +807,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A refused credential names its challenge on gRPC and SLIMRPC** (server,
+  `a2a-protocol-slimrpc`; spec §3.3.2: servers SHOULD include the
+  authentication challenge and specify the scheme). The HTTP bindings send
+  `WWW-Authenticate` with their `401`; the gRPC dispatcher now sends the
+  same challenge as `www-authenticate` metadata on its `UNAUTHENTICATED`
+  status, and the SLIMRPC server, whose errors carry no metadata, ends the
+  message with `(WWW-Authenticate: <challenge>)`. Both dropped it.
 - **SLIMRPC multicast: an agent's error is its outcome**
   (`a2a-protocol-slimrpc`). SLIM names the member an error came from with
   its full four-part SLIM name; `SlimRpcMulticast::send_message` filed the
