@@ -117,11 +117,16 @@ pub(super) fn build_json_response(
 }
 
 /// Reads a request body with a size limit and timeout.
+///
+/// `Err` carries the HTTP status to answer with and why: `413` for a body
+/// over `max_size`, `408` for one not received within `read_timeout` (RFC
+/// 9110 §15.5.9, as the axum router answers it), `400` for a body stream
+/// hyper could not read. Until 2026-10-13 all three were `413`.
 pub(super) async fn read_body_limited(
     body: Incoming,
     max_size: usize,
     read_timeout: std::time::Duration,
-) -> Result<Bytes, String> {
+) -> Result<Bytes, (u16, String)> {
     use http_body_util::{BodyExt, LengthLimitError, Limited};
 
     // Fast path: reject before reading any body bytes when an honest
@@ -130,8 +135,9 @@ pub(super) async fn read_body_limited(
     if let Some(upper) = size_hint.upper()
         && upper > max_size as u64
     {
-        return Err(format!(
-            "request body too large: {upper} bytes exceeds {max_size} byte limit"
+        return Err((
+            413,
+            format!("request body too large: {upper} bytes exceeds {max_size} byte limit"),
         ));
     }
 
@@ -143,12 +149,15 @@ pub(super) async fn read_body_limited(
     // the read as soon as the accumulated body would exceed `max_size`.
     let limited = Limited::new(body, max_size);
     match tokio::time::timeout(read_timeout, limited.collect()).await {
-        Err(_) => Err("request body read timed out".to_owned()),
+        Err(_) => Err((408, "request body read timed out".to_owned())),
         Ok(Ok(collected)) => Ok(collected.to_bytes()),
         Ok(Err(err)) => Err(if err.downcast_ref::<LengthLimitError>().is_some() {
-            format!("request body too large: exceeds {max_size} byte limit")
+            (
+                413,
+                format!("request body too large: exceeds {max_size} byte limit"),
+            )
         } else {
-            err.to_string()
+            (400, err.to_string())
         }),
     }
 }

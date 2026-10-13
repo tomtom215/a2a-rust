@@ -722,6 +722,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An HTTP+JSON body that never arrives is answered `408`** (server; RFC
+  9110 §15.5.9; spec §5.1: the bindings MUST behave the same). Every
+  failure to read a request body was answered `413 Content Too Large`, so a
+  client whose upload stalled was told its body was too big, while the
+  axum router answered the same request `408`. `RestDispatcher` now answers
+  `413` for a body over `max_request_body_size`, `408` for one not received
+  within `body_read_timeout`, and `400` for a body stream it cannot read
+  (a malformed chunk, say). The JSON-RPC binding still answers a body it
+  could not read with `-32700`.
 - **A JSON-RPC request refused for a header is answered with its id**
   (server; spec §9.3: requests follow JSON-RPC 2.0, whose response `id`
   "MUST be the same as the value of the id member in the Request Object").

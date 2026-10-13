@@ -5412,7 +5412,7 @@
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:81 the_same_card_parsed_twice_has_one_static_etag",
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:102 a_card_built_per_request_keeps_its_dynamic_etag",
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:123 the_unconditional_path_keeps_it_too",
-    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:204 the_extended_card_s_etag_is_the_same_for_the_same_card"
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:213 the_extended_card_s_etag_is_the_same_for_the_same_card"
    ],
    "notes": "Content-hash ETag (and Last-Modified) on all three HTTP card routes; If-None-Match answers 304. The axum route had neither until 2026-10-11. The hash is over the card with its maps' keys sorted (card_body_and_etag), since 2026-10-13. It was over the serialization, whose HashMap fields (securitySchemes, a requirement's schemes, OAuth scopes) come out in an order each map draws at random: the same card had another ETag on each replica, after each restart, and on each request of a dynamic handler building its card, so revalidation returned 200. Shown 8 ETags in 8 parses before the fix.",
    "auditor": "D",
@@ -6021,7 +6021,7 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:121-133"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:181 extract_headers_lowercased_keys",
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:190 extract_headers_lowercased_keys",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:586 build_request_includes_extra_headers"
    ],
    "notes": "",
@@ -6059,7 +6059,7 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:66-68",
     "crates/a2a-protocol-client/src/transport/rest/routing.rs:36-102",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:200-207",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:303-501",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:303-502",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:87"
    ],
    "test_evidence": [
@@ -6085,7 +6085,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/request.rs:76-84",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:110-118",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:567-606",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:568-607",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:169-185",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:717",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:721"
@@ -6112,7 +6112,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:169-185",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:572",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:573",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:582",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:12-37",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:717"
@@ -7687,19 +7687,24 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:522",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:512",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:186",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:280",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:39"
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:39",
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:125-163"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_rest_coverage.rs:1078 oversized_body_is_refused_before_reading_and_names_the_size",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:409 axum_honors_configured_body_limit",
-    "crates/a2a-protocol-server/tests/rest_edge_tests.rs:153 oversized_query_string_rejected"
+    "crates/a2a-protocol-server/tests/rest_edge_tests.rs:153 oversized_query_string_rejected",
+    "crates/a2a-protocol-server/tests/rest_body_read_errors.rs:72 a_body_not_received_in_time_is_408",
+    "crates/a2a-protocol-server/tests/rest_body_read_errors.rs:80 a_body_over_the_limit_is_413",
+    "crates/a2a-protocol-server/tests/rest_body_read_errors.rs:92 a_body_stream_that_cannot_be_read_is_400"
    ],
-   "notes": "Body cap (4 MiB default), gRPC message cap, WS frame cap, metadata/id/parts/artifacts caps.",
+   "notes": "Body cap (4 MiB default), gRPC message cap, WS frame cap, metadata/id/parts/artifacts caps. A body not received within body_read_timeout is 408 on HTTP+JSON (the axum router's answer too) since 2026-10-13; every body read failure was 413 there, a stalled upload included. A body stream hyper cannot read is 400. JSON-RPC answers either with -32700.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 3190,
@@ -8344,7 +8349,7 @@
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:96",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:79",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:565",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:566",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1199",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:33",
@@ -8394,7 +8399,7 @@
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:153",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:79",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:565",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:566",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1199"
    ],
@@ -9842,7 +9847,7 @@
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:109",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:79",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:565",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:566",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1199",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:145"

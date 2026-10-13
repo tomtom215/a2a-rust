@@ -1416,6 +1416,18 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `text/event-stream` check) and is unchanged. Ledger §3.6.2 (entry
     134) cited four lines that had drifted to a comment, an attribute,
     `};` and a doc line; it now cites the version checks entry 70 cites.
+69. `fix(server):` RFC 9110 §15.5.9 / spec §5.1 — an HTTP+JSON body that
+    never arrives is `408` (audit register R25). `read_body_limited`
+    (`rest/response.rs`) returned a message and the caller answered every
+    failure `413`, a stalled upload included, where the axum router
+    answers `408`. It returns the status now: `413` over the size limit,
+    `408` past `body_read_timeout`, `400` for a body stream hyper cannot
+    read. `rest_body_read_errors.rs` (raw TCP) failed 2 of 3 before; the
+    third pins `413`. Hand mutants 5 of 5 killed. The JSON-RPC binding
+    still answers both with `-32700`, inside a `200`: its body was not
+    JSON it could read. The axum router's own rejections stay plain text
+    (register R26). Ledger §13.4 (entry 379) cited the JSON-parse
+    `map_err` for the body cap, and now cites the read.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

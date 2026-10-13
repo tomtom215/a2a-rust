@@ -497,8 +497,9 @@ impl RestDispatcher {
     /// and any other path variable the route bound. An empty body is the
     /// empty object, so a bodiless `POST /tasks/{id}:cancel` still parses.
     ///
-    /// `Err` carries the response to return: 413 for an oversized body, 400
-    /// for one that is not JSON.
+    /// `Err` carries the response to return: 413 for an oversized body, 408
+    /// for one not received in time, 400 for one that is not JSON or could
+    /// not be read.
     // The `Err` is the finished response, sent as-is by the one caller of
     // each route; boxing it would only add an allocation on the error path.
     #[allow(clippy::result_large_err)]
@@ -514,7 +515,7 @@ impl RestDispatcher {
             self.config.body_read_timeout,
         )
         .await
-        .map_err(|msg| error_json_response(413, &msg))?;
+        .map_err(|(status, msg)| error_json_response(status, &msg))?;
         let mut value: serde_json::Value = if body_bytes.iter().all(u8::is_ascii_whitespace) {
             serde_json::Value::Object(serde_json::Map::new())
         } else {
