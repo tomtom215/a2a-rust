@@ -125,14 +125,21 @@ impl RequestHandler {
     /// point — before the executor starts — so the very first status
     /// transition is already covered.
     ///
-    /// Must run *after* the task is saved, because the config store rejects a
-    /// config for a task that does not exist, and *before* the executor is
-    /// spawned, so no event can be produced while the webhook is unroutable.
+    /// Runs *before* the executor is spawned, so no event can be produced
+    /// while the webhook is unroutable. For a new task (`created`) it runs
+    /// *after* the task is saved, because the config store rejects a config
+    /// for a task that does not exist. A continuation's task exists already,
+    /// so it runs before the turn touches the row, and a refusal leaves the
+    /// task as it was. Until 2026-10-13 it ran after, and the refusal's
+    /// rollback deleted the task the client was continuing.
     ///
     /// A no-op when the request carried no config. A failure rolls back the
-    /// queue and token exactly as a store failure does: a client that asked
-    /// for push and did not get it must not receive a task that silently
-    /// never notifies.
+    /// queue and token exactly as a store failure does, and the row when
+    /// `created`: a client that asked for push and did not get it must not
+    /// receive a task that silently never notifies.
+    ///
+    /// Returns the config stored, for
+    /// [`withdraw_inline_push_config`](Self::withdraw_inline_push_config).
     ///
     /// # Errors
     ///
@@ -141,11 +148,13 @@ impl RequestHandler {
         &self,
         configuration: Option<&SendMessageConfiguration>,
         task_id: &TaskId,
-    ) -> ServerResult<()> {
+        created: bool,
+    ) -> ServerResult<Option<TaskPushNotificationConfig>> {
         let Some(inline) = configuration.and_then(|c| c.task_push_notification_config.clone())
         else {
-            return Ok(());
+            return Ok(None);
         };
+        let named = inline.id.is_some();
         // Shares the standalone create's validation — capability check, task
         // existence, SSRF screening, quotas — so this cannot become an
         // unguarded back door into the push config store.
@@ -155,8 +164,14 @@ impl RequestHandler {
                 ..inline
             })
             .await;
-        if let Err(e) = stored {
-            self.release_admission(task_id).await;
+        let refused = match stored {
+            // Withdrawn only if this send created it: one the request named
+            // by id may have replaced a config the client already had.
+            Ok(config) => return Ok((!named).then_some(config)),
+            Err(e) => e,
+        };
+        self.release_admission(task_id).await;
+        if created {
             // The task row is already written by this point — the push config
             // is validated against it, so it has to be. Releasing only the
             // queue and the token left a task parked in `Submitted` for ever:
@@ -178,9 +193,33 @@ impl RequestHandler {
                     "push config rejected the send, and rolling the task row back failed"
                 );
             }
-            return Err(e);
         }
-        Ok(())
+        Err(refused)
+    }
+
+    /// Withdraws the config a continuation registered when its turn then
+    /// could not be saved. The client is told the send failed, and a retry
+    /// registers the config again; left in place, the retry's would be a
+    /// second one delivering every notification twice.
+    pub(super) async fn withdraw_inline_push_config(
+        &self,
+        config: Option<TaskPushNotificationConfig>,
+    ) {
+        let Some(TaskPushNotificationConfig {
+            task_id: Some(task_id),
+            id: Some(id),
+            ..
+        }) = config
+        else {
+            return;
+        };
+        if let Err(_e) = self.push_config_store.delete(&task_id, &id).await {
+            trace_warn!(
+                task_id = %task_id,
+                error = %_e,
+                "the turn was not saved, and withdrawing its inline push config failed"
+            );
+        }
     }
 
     /// Releases the queue and cancellation token admitted for a task whose

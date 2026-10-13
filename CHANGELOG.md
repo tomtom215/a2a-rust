@@ -647,6 +647,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A refused inline push config no longer deletes the task it continues**
+  (server; spec §3.4.3: a client continues a task by sending a new message
+  with its `taskId`). A `SendMessage` continuing a task with a
+  `configuration.taskPushNotificationConfig` the server refused (a webhook
+  the SSRF screen rejects, a full per-task quota, push not supported) got
+  the error, and the rollback meant for a send that had just created its
+  task then deleted the task being continued, with its history and
+  artifacts. A continuation now registers its config before the turn touches
+  the task, so a refusal leaves the task as it was. If the config is
+  accepted and the turn then cannot be saved, a config the server created is
+  withdrawn; one the request named by id is kept.
 - **The client advertises its own `acceptedOutputModes`** (client; a2a.proto
   `SendMessageConfiguration.accepted_output_modes`: agents SHOULD use it to
   tailor their output). A request with no `configuration` of its own was

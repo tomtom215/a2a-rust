@@ -1103,6 +1103,12 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `similar_names` refused. Item 41's clippy run predated the test's
     final form, so its message's clippy claim did not hold for the commit
     pushed, and CI's clippy jobs failed on it.
+44. `fix(server):` a refused inline push config on a continuation keeps
+    the task. `commit_task` saved the turn first and registered the config
+    after; a refusal ran the rollback meant for a new task, which deleted
+    the row, so the continued task and its history went with it. A
+    continuation now registers first; if its turn then cannot be saved, a
+    config the server created is withdrawn, one named by id is kept.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

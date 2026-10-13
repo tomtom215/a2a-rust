@@ -2306,14 +2306,21 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:123"
+    "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:123",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:388",
+    "crates/a2a-protocol-server/src/handler/messaging/create.rs:147"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:987 a_live_sibling_task_in_the_same_context_is_still_addressable"
+    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:987 a_live_sibling_task_in_the_same_context_is_still_addressable",
+    "crates/a2a-protocol-server/tests/inline_push_config_continuation.rs:164 a_continuation_whose_webhook_is_refused_keeps_its_task",
+    "crates/a2a-protocol-server/tests/inline_push_config_continuation.rs:190 a_continuation_over_the_push_config_quota_keeps_its_task",
+    "crates/a2a-protocol-server/tests/inline_push_config_continuation.rs:274 a_continuation_whose_turn_cannot_be_saved_withdraws_its_config",
+    "crates/a2a-protocol-server/tests/inline_push_config_continuation.rs:312 a_continuation_whose_turn_cannot_be_saved_keeps_a_named_config"
    ],
-   "notes": "",
+   "notes": "A refused continuation leaves the task it names as it was: an inline push config is registered before the turn touches the row, and a refusal no longer runs the new-task rollback that deleted the row (2026-10-13). When the config is accepted but the turn cannot be saved, a config the server created is withdrawn; one the request named by id stays, since it may have replaced the client's own.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 626,
