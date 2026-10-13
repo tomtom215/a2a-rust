@@ -411,22 +411,47 @@ impl EventQueueManager {
         task_id: &TaskId,
         snapshot: StreamResponse,
     ) -> Option<InMemoryQueueReader> {
-        let map = self.writers.read().await;
-        let writer = map.get(task_id)?;
         // Create a reader with the snapshot as its pending first event.
         // The snapshot is NOT written to the broadcast channel, so other
         // subscribers are unaffected.
         //
-        // The writer's position is read before the receiver attaches, so
-        // every event the receiver holds is above it: a lag catch-up then
-        // starts there, not at the start of the task's log, whose events up
-        // to the snapshot the subscriber did not ask for.
-        let attached_after = writer.current_seq();
-        let rx = writer.raw_subscribe();
-        drop(map);
+        // Every event the receiver holds is above the position it attached
+        // at: a lag catch-up then starts there, not at the start of the
+        // task's log, whose events up to the snapshot the subscriber did not
+        // ask for.
+        let (attached_after, rx, _) = self.attach(task_id).await?;
         let mut reader = InMemoryQueueReader::with_first_event(rx, snapshot);
         reader.starting_after(attached_after);
         Some(reader)
+    }
+
+    /// The task's live queue's mark of how far its events are stored, for
+    /// the consumer that stores them.
+    pub(crate) async fn applied_mark(
+        &self,
+        task_id: &TaskId,
+    ) -> Option<Arc<super::applied::AppliedMark>> {
+        self.writers
+            .read()
+            .await
+            .get(task_id)
+            .map(|w| w.applied_mark())
+    }
+
+    /// A receiver on the task's live queue, the exact position it attached
+    /// after (see [`InMemoryQueueWriter::attach`]), and the queue's mark of
+    /// how far its events are stored, or `None` when the task has no queue.
+    pub(crate) async fn attach(
+        &self,
+        task_id: &TaskId,
+    ) -> Option<(
+        u64,
+        tokio::sync::broadcast::Receiver<super::Shared>,
+        Arc<super::applied::AppliedMark>,
+    )> {
+        let writer = Arc::clone(self.writers.read().await.get(task_id)?);
+        let (position, rx) = writer.attach().await;
+        Some((position, rx, writer.applied_mark()))
     }
 
     /// Removes and drops the event queue for the given task.

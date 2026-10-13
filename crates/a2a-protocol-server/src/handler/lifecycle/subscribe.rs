@@ -130,27 +130,110 @@ impl RequestHandler {
         })
     }
 
-    /// Queues the events a resuming subscriber missed, read from the task's
-    /// event log.
+    /// A stream of `task_id` for a subscriber: its `Task`, then its live
+    /// events, consistent with each other ([`Self::snapshot_and_live`]), with
+    /// the hooks a stream needs once its request has returned.
     ///
-    /// Does nothing without a usable `Last-Event-ID`, which covers every
-    /// first-time subscribe. Does nothing either when the store keeps no log:
-    /// there is nothing to replay from, and the snapshot the stream already
-    /// starts with is the best answer available.
+    /// The log is replayed after the `Task` from `resume_after`, a resuming
+    /// client's `Last-Event-ID`, so the client sees what it missed rather than
+    /// a fold it cannot interpret; or, without one, from where the `Task` is
+    /// known to reach when it could not wait for the store.
+    pub(crate) async fn subscription(
+        &self,
+        task_id: &TaskId,
+        stored: a2a_protocol_types::task::Task,
+        shape: impl FnOnce(&mut a2a_protocol_types::task::Task),
+        resume_after: Option<u64>,
+    ) -> InMemoryQueueReader {
+        let (reader, gap) = self.snapshot_and_live(task_id, stored, shape).await;
+        let mut reader = self.with_stream_hooks(reader, task_id);
+        if let Some(after_seq) = resume_after.or(gap) {
+            self.replay_after(&mut reader, task_id, after_seq).await;
+        }
+        reader
+    }
+
+    /// The `Task` a subscription starts with and the reader on the task's
+    /// live queue it goes on with, consistent with each other (§3.1.6: the
+    /// snapshot is "the current state of the task at the time of
+    /// subscription. This prevents a potential loss of information").
+    ///
+    /// The receiver attaches at an exact position first. The snapshot is then
+    /// read once the queue's consumer has stored every event up to it and is
+    /// storing none, so it reflects exactly the position the queue's mark
+    /// gives, and the reader skips what the receiver holds up to there. Read
+    /// before the receiver attached, as it was until 2026-10-13, the snapshot
+    /// trailed the broadcast, and an event broadcast before the attach and
+    /// stored after the read was in neither.
+    ///
+    /// The wait is bounded by `subscribe_replay_catchup`, as the log replay's
+    /// is. Past it the snapshot is the task as stored, and the position it is
+    /// known to reach comes back with the reader: the caller replays the log
+    /// from there. Without a live queue the stream is `stored` and then
+    /// whatever the reattach hook finds.
+    /// `shape` is applied to the snapshot as read, as a send's response
+    /// trims its history.
+    async fn snapshot_and_live(
+        &self,
+        task_id: &TaskId,
+        stored: a2a_protocol_types::task::Task,
+        shape: impl FnOnce(&mut a2a_protocol_types::task::Task),
+    ) -> (InMemoryQueueReader, Option<u64>) {
+        use a2a_protocol_types::events::StreamResponse;
+        let Some((attached, rx, mark)) = self.event_queue_manager.attach(task_id).await else {
+            // No live event queue for a non-terminal task: the executor for
+            // the previous turn has exited (its queue dies with it), or the
+            // process restarted. The task itself is not finished, so §3.1.6
+            // says the stream must stay open; it starts from the snapshot and
+            // the reattach hook waits for the next turn's queue.
+            let mut stored = stored;
+            shape(&mut stored);
+            return (
+                InMemoryQueueReader::snapshot_then_end(StreamResponse::Task(stored)),
+                None,
+            );
+        };
+        let deadline = tokio::time::Instant::now() + self.limits.subscribe_replay_catchup;
+        let read = mark
+            .read_through(attached, deadline, || self.task_store.get(task_id))
+            .await;
+        let mut task = match read.value {
+            Ok(Some(task)) => task,
+            _ => stored,
+        };
+        shape(&mut task);
+        let gap = (!read.exact).then_some(read.position);
+        if let Some(_after) = gap {
+            trace_warn!(
+                task_id = %task_id,
+                after_seq = _after,
+                attached = attached,
+                "the task's events were not all stored in time for the subscribe \
+                 snapshot; the log is replayed after it instead"
+            );
+        }
+        let mut reader = InMemoryQueueReader::with_first_event(rx, StreamResponse::Task(task));
+        reader.starting_after(attached.max(read.position));
+        (reader, gap)
+    }
+
+    /// Queues the task's log after `after_seq` into `reader`, ahead of its
+    /// live stream.
+    ///
+    /// Does nothing when the store keeps no log: there is nothing to replay
+    /// from, and the snapshot the stream already starts with is the best
+    /// answer available.
     ///
     /// A failed read is not an error. The stream is still correct without the
     /// replay — it is the pre-resumption behaviour, a snapshot then live
     /// events — and refusing to subscribe because the history could not be
     /// read would turn a storage hiccup into a dropped connection.
-    async fn replay_missed_events(
+    async fn replay_after(
         &self,
         reader: &mut InMemoryQueueReader,
         task_id: &TaskId,
-        headers: Option<&HashMap<String, String>>,
+        after_seq: u64,
     ) {
-        let Some(after_seq) = last_event_id(headers) else {
-            return;
-        };
         if !self.task_store.supports_event_log() {
             trace_warn!(
                 task_id = %task_id,
@@ -344,29 +427,11 @@ impl RequestHandler {
 
                     // SPEC: The first event in a SubscribeToTask stream MUST be a Task
                     // snapshot representing the current state (Go #231, JS #323).
-                    let snapshot = a2a_protocol_types::events::StreamResponse::Task(task);
-                    let reader = self
-                        .event_queue_manager
-                        .subscribe_with_snapshot(&task_id, snapshot.clone())
-                        .await
-                        // No live event queue for a non-terminal task — the executor
-                        // for the previous turn has exited (its queue dies with it),
-                        // or the process restarted. Either way the task itself is not
-                        // finished, so §3.1.6 says the stream must stay open; start
-                        // from the snapshot and let the reattach hook below wait for
-                        // the next turn's queue.
-                        .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(snapshot));
-                    let mut reader = self.with_stream_hooks(reader, &task_id);
-
-                    // Resumption. A client that was disconnected sends back the
-                    // `id:` of the last frame it saw; the log is replayed from
-                    // exactly there, after the snapshot and before the live
-                    // stream, so the client sees what it missed rather than a
-                    // fold it cannot interpret.
-                    self.replay_missed_events(&mut reader, &task_id, headers)
-                        .await;
-
-                    Ok(reader)
+                    // A client that was disconnected sends back the `id:` of the
+                    // last frame it saw, and resumes from exactly there.
+                    Ok(self
+                        .subscription(&task_id, task, |_| {}, last_event_id(headers))
+                        .await)
                 }
                 .await;
                 call.finish(result).await
@@ -824,6 +889,138 @@ mod tests {
             );
         };
         assert!(ended.is_none(), "expected clean EOF, got: {ended:?}");
+    }
+
+    /// A snapshot the store could not catch up for in time is followed by
+    /// the log from the position it is known to reach (`snapshot_and_live`),
+    /// so nothing broadcast before the subscriber attached is lost. Here no
+    /// consumer stores the queue's events, so its mark never moves, while the
+    /// log holds all three.
+    #[tokio::test]
+    async fn a_snapshot_the_store_cannot_reach_is_followed_by_the_log() {
+        use crate::streaming::EventQueueWriter as _;
+        use crate::streaming::event_queue::EventQueueReader as _;
+        use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_handler_limits(
+                crate::handler::HandlerLimits::default()
+                    .with_subscribe_replay_catchup(std::time::Duration::from_millis(50)),
+            )
+            .build()
+            .unwrap();
+        let id = TaskId::new("t-gap");
+        let working = TaskStatus::new(TaskState::Working);
+        handler
+            .task_store
+            .save(&Task {
+                id: id.clone(),
+                context_id: ContextId::new("ctx-1"),
+                status: working.clone(),
+                history: None,
+                artifacts: None,
+                metadata: None,
+            })
+            .await
+            .unwrap();
+        let (writer, _first) = handler.event_queue_manager.get_or_create(&id).await;
+        for seq in 1..=3 {
+            let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: id.clone(),
+                context_id: ContextId::new("ctx-1"),
+                status: working.clone(),
+                metadata: None,
+            });
+            writer.write(event.clone()).await.unwrap();
+            handler
+                .task_store
+                .append_event(&id, seq, &event)
+                .await
+                .unwrap();
+        }
+
+        let mut reader = handler
+            .on_resubscribe(
+                TaskIdParams {
+                    tenant: None,
+                    id: id.0.clone(),
+                },
+                None,
+            )
+            .await
+            .expect("subscribed");
+        let mut positions = Vec::new();
+        while let Ok(Some(frame)) =
+            tokio::time::timeout(std::time::Duration::from_millis(200), reader.read()).await
+        {
+            positions.push(frame.expect("no error").seq);
+        }
+        assert_eq!(positions, [None, Some(1), Some(2), Some(3)]);
+    }
+
+    /// A snapshot read at a mark past the position the stream attached at
+    /// already holds the events between the two, so the stream skips them:
+    /// events land between the attach and the read whenever the executor is
+    /// still writing. The mark is moved ahead here by hand to make that
+    /// window deterministic.
+    #[tokio::test]
+    async fn the_stream_skips_what_its_snapshot_already_holds() {
+        use crate::streaming::EventQueueWriter as _;
+        use crate::streaming::event_queue::EventQueueReader as _;
+        use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
+        let id = TaskId::new("t-ahead");
+        let working = TaskStatus::new(TaskState::Working);
+        handler
+            .task_store
+            .save(&Task {
+                id: id.clone(),
+                context_id: ContextId::new("ctx-1"),
+                status: working.clone(),
+                history: None,
+                artifacts: None,
+                metadata: None,
+            })
+            .await
+            .unwrap();
+        let (writer, _first) = handler.event_queue_manager.get_or_create(&id).await;
+        writer.applied_mark().seed(3);
+
+        let mut reader = handler
+            .on_resubscribe(
+                TaskIdParams {
+                    tenant: None,
+                    id: id.0.clone(),
+                },
+                None,
+            )
+            .await
+            .expect("subscribed");
+        for _ in 0..4 {
+            writer
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: id.clone(),
+                    context_id: ContextId::new("ctx-1"),
+                    status: working.clone(),
+                    metadata: None,
+                }))
+                .await
+                .unwrap();
+        }
+        let mut positions = Vec::new();
+        while let Ok(Some(frame)) =
+            tokio::time::timeout(std::time::Duration::from_millis(200), reader.read()).await
+        {
+            positions.push(frame.expect("no error").seq);
+        }
+        assert_eq!(positions, [None, Some(4)]);
     }
 
     #[tokio::test]

@@ -647,6 +647,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `SubscribeToTask` stream misses nothing between its first `Task` and
+  its live events** (server; spec §3.1.6: the first event represents "the
+  current state of the task at the time of subscription. This prevents a
+  potential loss of information"). The `Task` was read from the store before
+  the stream attached to the task's queue, and the store trails the queue:
+  the background processor, or a blocking send's collector, stores each
+  event after it is broadcast. An event broadcast before the attach and
+  stored after the read was in neither, so a subscriber could see
+  `submitted` and none of the work already done. The stream now attaches
+  first, at an exact position, and reads the task once every event up to
+  there is stored and none is being stored; the live stream then skips what
+  that `Task` already holds. The wait is bounded by
+  `HandlerLimits::subscribe_replay_catchup` (2 s by default), after which
+  the task's event log fills the gap. A streaming send replayed by its
+  idempotency key starts the same way.
 - **The WebSocket client connects to `wss://`** (client, feature
   `websocket`; spec §7.1: production deployments MUST use encrypted
   communication). `tokio-tungstenite` was built without TLS, so every

@@ -198,8 +198,10 @@ pub struct HandlerLimits {
     /// last one and continues — the replay is resumable by the same mechanism
     /// that started it.
     pub subscribe_replay_limit: usize,
-    /// How long a resuming `SubscribeToTask` waits for the task's event log to
-    /// catch up with what has already been broadcast. Default: 2 seconds.
+    /// How long a `SubscribeToTask` waits for the task's store to catch up with
+    /// what has already been broadcast: a resuming one for the event log, and
+    /// any one for the task row its first `Task` is read from. Default: 2
+    /// seconds.
     ///
     /// Events reach the log through the background processor, so a position
     /// can have been broadcast to live subscribers before it has been

@@ -11,7 +11,7 @@
 //! broadcast receiver is attached before the log is read and the log itself
 //! trails the writer.
 
-use super::{drain_positions, header};
+use super::header;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::metrics::{Metrics, event_log_catchup_error, persistence_operation};
 use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
@@ -53,6 +53,21 @@ impl Metrics for RecordedErrors {
 async fn positions_from_a_live_resubscribe(
     catchup: Duration,
 ) -> (Vec<Option<u64>>, Arc<RecordedErrors>) {
+    let (frames, errors) = frames_from_a_live_resubscribe(catchup, Some("0"), true).await;
+    (frames.into_iter().map(|f| f.seq).collect(), errors)
+}
+
+/// The same, resuming after `last_event_id` or, with `None`, subscribing
+/// afresh, beside a streaming or a blocking send, and returning every frame
+/// delivered.
+async fn frames_from_a_live_resubscribe(
+    catchup: Duration,
+    last_event_id: Option<&str>,
+    streaming: bool,
+) -> (
+    Vec<a2a_protocol_server::streaming::StreamEvent>,
+    Arc<RecordedErrors>,
+) {
     use a2a_protocol_server::handler::{HandlerLimits, SendMessageResult};
     use a2a_protocol_server::streaming::EventQueueReader as _;
 
@@ -84,13 +99,14 @@ async fn positions_from_a_live_resubscribe(
         match send_handler
             .on_send_message(
                 MessageSendParams::new(Message::user_text("m-live", "go")),
-                true,
+                streaming,
                 None,
             )
             .await
             .expect("send")
         {
             SendMessageResult::Stream(mut reader) => while reader.read().await.is_some() {},
+            SendMessageResult::Response(_) if !streaming => {}
             other => panic!("expected a stream, got {other:?}"),
         }
     });
@@ -104,21 +120,27 @@ async fn positions_from_a_live_resubscribe(
         .expect("list");
     let task_id = listed.tasks.first().expect("one task").id.clone();
 
-    let reader = handler
+    let headers = last_event_id.map(|id| header("last-event-id", id));
+    let mut reader = handler
         .on_resubscribe(
             TaskIdParams {
                 id: task_id.0.clone(),
                 tenant: None,
             },
-            Some(&header("last-event-id", "0")),
+            headers.as_ref(),
         )
         .await
         .expect("resubscribe");
 
-    let positions = drain_positions(reader).await;
+    let mut frames = Vec::new();
+    while let Ok(Some(frame)) =
+        tokio::time::timeout(Duration::from_millis(1_500), reader.read()).await
+    {
+        frames.push(frame.expect("frames must not be errors"));
+    }
     release.notify_one();
     let _ = tokio::time::timeout(Duration::from_secs(5), send).await;
-    (positions, errors)
+    (frames, errors)
 }
 
 /// The defect this guards: the log is written by the background processor, so
@@ -172,4 +194,50 @@ async fn without_the_catchup_the_same_resubscribe_replays_short() {
         1,
         "giving up must be counted, or a short replay is silent"
     );
+}
+
+/// A first subscribe, with no `Last-Event-ID`, misses nothing between its
+/// snapshot and its stream. Spec §3.1.6: the first event is a `Task`
+/// "representing the current state of the task at the time of subscription.
+/// This prevents a potential loss of information". The snapshot was read from
+/// the store before the receiver attached, and the store trails the
+/// broadcast, so an event broadcast before the attach and saved after the
+/// read was in neither: here the three the executor had already emitted.
+#[tokio::test]
+async fn a_first_subscribe_misses_nothing_between_snapshot_and_stream() {
+    assert_a_first_subscribe_misses_nothing(true).await;
+}
+
+/// The same beside a blocking send, whose collector stores the events.
+#[tokio::test]
+async fn a_first_subscribe_beside_a_blocking_send_misses_nothing() {
+    assert_a_first_subscribe_misses_nothing(false).await;
+}
+
+async fn assert_a_first_subscribe_misses_nothing(streaming: bool) {
+    use a2a_protocol_types::events::StreamResponse;
+
+    let (frames, _) =
+        frames_from_a_live_resubscribe(Duration::from_secs(10), None, streaming).await;
+    let mut artifacts = Vec::new();
+    let mut working = false;
+    for frame in &frames {
+        match &frame.event {
+            StreamResponse::Task(task) => {
+                working |= task.status.state == a2a_protocol_types::task::TaskState::Working;
+                artifacts.extend(task.artifacts.iter().flatten().map(|a| a.id.0.clone()));
+            }
+            StreamResponse::StatusUpdate(u) => {
+                working |= u.status.state == a2a_protocol_types::task::TaskState::Working;
+            }
+            StreamResponse::ArtifactUpdate(u) => artifacts.push(u.artifact.id.0.clone()),
+            _ => {}
+        }
+    }
+    artifacts.dedup();
+    assert!(
+        working,
+        "the Working update reached the subscriber: {frames:?}"
+    );
+    assert_eq!(artifacts, ["step-1", "step-2"], "{frames:?}");
 }

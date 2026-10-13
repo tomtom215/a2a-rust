@@ -81,7 +81,11 @@ impl RequestHandler {
                 // two replicates of 10 interleaved runs: +4.4% and +7% (p
                 // 0.049 and 0.023, Mann-Whitney); no change on two workers.
                 tenant.scope(Box::pin(async move {
-                    let super::ProcessorLinks { cancel, gate } = links;
+                    let super::ProcessorLinks {
+                        cancel,
+                        gate,
+                        applied,
+                    } = links;
                     // Closes the gate however this task ends — including by panic —
                     // so no writer waits out its timeout on a processor that is gone.
                     let _gate_guard = gate.clone().map(CloseOnDrop);
@@ -148,6 +152,7 @@ impl RequestHandler {
                         last_task,
                         cancel,
                         gate.as_deref(),
+                        applied.as_deref(),
                     );
                     let mut executor_done = false;
                     let mut handle_fuse = executor_handle;

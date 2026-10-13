@@ -67,24 +67,24 @@ impl RequestHandler {
         // representing the current state. For a replay that is the task the
         // original send created.
         let task_id = snapshot.id.clone();
-        let terminal = snapshot.status.state.is_terminal();
-        let first = a2a_protocol_types::events::StreamResponse::Task(snapshot);
-
-        let reader = if terminal {
+        let reader = if snapshot.status.state.is_terminal() {
             // It will never emit again, and the status inside the snapshot
             // says so, so one event and end is the whole truth.
-            InMemoryQueueReader::snapshot_then_end(first)
+            InMemoryQueueReader::snapshot_then_end(
+                a2a_protocol_types::events::StreamResponse::Task(snapshot),
+            )
         } else {
             // Still running. Attach to its live queue so the caller sees the
-            // remaining events, exactly as `SubscribeToTask` would — ending
-            // the stream after the snapshot would read as a task that had
-            // finished emitting.
-            let reader = self
-                .event_queue_manager
-                .subscribe_with_snapshot(&task_id, first.clone())
-                .await
-                .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(first));
-            self.with_stream_hooks(reader, &task_id)
+            // remaining events, exactly as `SubscribeToTask` would, snapshot
+            // included — ending the stream after the snapshot would read as a
+            // task that had finished emitting.
+            self.subscription(
+                &task_id,
+                snapshot,
+                |task| shape_response_history(task, response_history_length),
+                None,
+            )
+            .await
         };
         Ok(SendMessageResult::Stream(reader))
     }
@@ -120,7 +120,11 @@ impl RequestHandler {
             executor.into_handle(),
             persistence_rx,
             task.clone(),
-            super::super::event_processing::ProcessorLinks { cancel, gate },
+            super::super::event_processing::ProcessorLinks {
+                cancel,
+                gate,
+                applied: self.event_queue_manager.applied_mark(&task.id).await,
+            },
         );
 
         let mut snapshot = task;
@@ -183,7 +187,9 @@ impl RequestHandler {
         // executors tracker, since it may run one, so shutdown counts and
         // waits for it; in the tenant and span of this call, which
         // `tokio::spawn` would otherwise not carry.
-        let collector = self.sync_collector();
+        let collector = self
+            .sync_collector()
+            .with_applied(self.event_queue_manager.applied_mark(&task.id).await);
         let tenant = crate::store::tenant::TenantContext::capture();
         let mut executor = executor.watch();
         let (answer, collected) = tokio::sync::oneshot::channel();

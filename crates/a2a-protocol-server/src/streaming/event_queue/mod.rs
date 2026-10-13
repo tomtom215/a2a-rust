@@ -14,6 +14,7 @@
 //! (fan-out) for the same event stream. This allows `SubscribeToTask`
 //! (resubscribe) to work even when another SSE stream is already active.
 
+pub(crate) mod applied;
 mod in_memory;
 mod manager;
 mod status_stamp;

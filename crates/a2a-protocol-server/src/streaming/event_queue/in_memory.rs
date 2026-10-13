@@ -177,6 +177,10 @@ pub struct InMemoryQueueWriter {
     /// writes beside a running executor), and readers, which skip a position
     /// already passed, lost the terminal event.
     order: Arc<tokio::sync::Mutex<()>>,
+    /// How far the consumer of the persistence channel has stored this
+    /// queue's events, for a subscriber's snapshot; shared by every clone.
+    /// See [`super::applied`].
+    applied: Arc<super::applied::AppliedMark>,
     /// The task and context this writer's events belong to, once the send
     /// path has bound them ([`bind_identity`](Self::bind_identity)); shared
     /// by every clone. See `check_identity`.
@@ -217,6 +221,7 @@ impl InMemoryQueueWriter {
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
             order: Arc::default(),
+            applied: Arc::default(),
             identity: Arc::new(std::sync::OnceLock::new()),
             terminal_gate: None,
             collected: false,
@@ -238,6 +243,7 @@ impl InMemoryQueueWriter {
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
             order: Arc::default(),
+            applied: Arc::default(),
             identity: Arc::new(std::sync::OnceLock::new()),
             terminal_gate: None,
             collected: false,
@@ -253,6 +259,27 @@ impl InMemoryQueueWriter {
     /// new turn.
     pub(crate) fn seed_seq(&self, last: u64) {
         self.seq.store(last, Ordering::Relaxed);
+        // Stored by the turns that wrote them.
+        self.applied.seed(last);
+    }
+
+    /// See [`applied`](Self::applied).
+    pub(crate) fn applied_mark(&self) -> Arc<super::applied::AppliedMark> {
+        Arc::clone(&self.applied)
+    }
+
+    /// A receiver for every event after the position returned, which is the
+    /// one the queue has reached.
+    ///
+    /// Taken under the order lock, while no write is between its position and
+    /// its broadcast, so the position is exact: everything at or below it went
+    /// out before the receiver existed, and everything above it reaches the
+    /// receiver. Read outside the lock, a position assigned but not yet
+    /// broadcast (a terminal event awaiting its verdict) counted as already
+    /// sent, and the reader skipped it when it came.
+    pub(crate) async fn attach(&self) -> (u64, broadcast::Receiver<super::Shared>) {
+        let _order = self.order.lock().await;
+        (self.seq.load(Ordering::Relaxed), self.tx.subscribe())
     }
 
     /// Binds this writer to the task and context its events belong to. From

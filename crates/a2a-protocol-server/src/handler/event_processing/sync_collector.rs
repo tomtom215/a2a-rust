@@ -136,6 +136,8 @@ pub struct SyncCollector {
     cancellation_tokens: Arc<
         tokio::sync::RwLock<std::collections::HashMap<TaskId, crate::handler::CancellationEntry>>,
     >,
+    /// Where each event is marked stored, for a subscriber's snapshot.
+    applied: Option<Arc<crate::streaming::event_queue::applied::AppliedMark>>,
 }
 
 impl RequestHandler {
@@ -150,6 +152,7 @@ impl RequestHandler {
             metrics: Arc::clone(&self.metrics),
             in_flight: self.in_flight.clone(),
             cancellation_tokens: Arc::clone(&self.cancellation_tokens),
+            applied: None,
         }
     }
 
@@ -170,6 +173,16 @@ impl RequestHandler {
 }
 
 impl SyncCollector {
+    /// Marks each event stored on `applied` once it is folded.
+    #[must_use]
+    pub(crate) fn with_applied(
+        mut self,
+        applied: Option<Arc<crate::streaming::event_queue::applied::AppliedMark>>,
+    ) -> Self {
+        self.applied = applied;
+        self
+    }
+
     /// Collects events until stream closes, updating the task store and
     /// delivering push notifications.
     ///
@@ -283,6 +296,12 @@ impl SyncCollector {
         task_id: &TaskId,
         state: &mut CollectState,
     ) -> ServerResult<()> {
+        // Its push notifications go out after the collection, so the event
+        // is stored once this returns.
+        let seq = event.as_ref().ok().and_then(|e| e.seq);
+        let _applying = seq
+            .zip(self.applied.as_deref())
+            .map(|(seq, mark)| mark.applying(seq));
         let folded = self.process_event(event, task_id, state).await;
         self.unless_superseded(folded, task_id, state).await
     }
@@ -808,6 +827,43 @@ mod tests {
 
         let stored = task_store.get(&task_id).await.unwrap().unwrap();
         assert_eq!(stored.status.state, TaskState::Working);
+    }
+
+    /// The collector marks each event stored as it folds it, so a subscriber
+    /// beside a blocking send reads its snapshot at a known position
+    /// (`streaming::event_queue::applied`).
+    #[tokio::test]
+    async fn the_collector_advances_the_applied_mark() {
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        task_store
+            .save(&make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+        let (writer, reader) = collected_queue();
+        let mark = writer.applied_mark();
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let mut executor =
+            crate::handler::messaging::WatchedExecutor::Spawned(Some(tokio::spawn(async {})));
+        handler
+            .sync_collector()
+            .with_applied(Some(Arc::clone(&mark)))
+            .collect_events(reader, TaskId::new("t1"), &mut executor)
+            .await
+            .expect("collected");
+        let read = mark
+            .read_through(1, tokio::time::Instant::now(), || async {})
+            .await;
+        assert_eq!((read.position, read.exact), (1, true));
     }
 
     // ── process_event: invalid state transition ──────────────────────────

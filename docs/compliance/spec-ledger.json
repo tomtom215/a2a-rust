@@ -842,16 +842,23 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:341",
-    "crates/a2a-protocol-server/src/streaming/event_queue/manager.rs:421"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:141",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:176",
+    "crates/a2a-protocol-server/src/streaming/event_queue/applied.rs:1",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:280"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:452 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:643 resubscribe_success_returns_reader"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:643 resubscribe_success_returns_reader",
+    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:207 a_first_subscribe_misses_nothing_between_snapshot_and_stream",
+    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:213 a_first_subscribe_beside_a_blocking_send_misses_nothing",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:900 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:969 the_stream_skips_what_its_snapshot_already_holds"
    ],
-   "notes": "",
+   "notes": "The Task is read at a known position (2026-10-13): the stream attaches to the queue first, at an exact position, and the task row is read once every event up to there is stored and none is being stored (streaming/event_queue/applied.rs), so the Task and the live events neither overlap nor leave a gap. Read before the attach, as until then, it trailed the broadcast and an event broadcast before the attach and stored after the read was in neither. The wait is bounded by subscribe_replay_catchup (2 s); past it the event log fills the gap after the Task. Outside the mark: a row CancelTask or another replica writes.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 330,

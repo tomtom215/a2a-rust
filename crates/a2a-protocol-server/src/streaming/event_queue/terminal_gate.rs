@@ -378,6 +378,45 @@ mod tests {
         );
     }
 
+    /// A receiver attaching while a terminal event awaits its verdict waits
+    /// for the broadcast: the event's position is assigned, and a position
+    /// read then would count it as sent, so the reader would skip it.
+    #[tokio::test]
+    async fn an_attach_waits_for_a_held_event() {
+        let (writer, _reader, mut rx) = gated();
+        let gate = writer.terminal_gate().expect("gated");
+        let w = std::sync::Arc::clone(&writer);
+        let terminal = tokio::spawn(async move { w.write(status(TaskState::Canceled)).await });
+        let held = within(rx.recv()).await.expect("handed over").expect("ok");
+
+        let w = std::sync::Arc::clone(&writer);
+        let attach = tokio::spawn(async move { w.attach().await });
+        tokio::task::yield_now().await;
+        assert!(!attach.is_finished(), "not while the event is held");
+        gate.resolve(held.seq.expect("positioned"), status(TaskState::Canceled));
+        within(terminal)
+            .await
+            .expect("joins")
+            .expect("write succeeds");
+        let (position, mut live) = within(attach).await.expect("joins");
+        assert_eq!(position, 1, "attached after the event it waited for");
+        assert!(live.try_recv().is_err(), "and does not receive it again");
+    }
+
+    /// A continued task's queue numbers on from its log, whose events earlier
+    /// turns stored: the mark starts there too, or a subscriber would wait
+    /// for positions no consumer of this queue will ever store.
+    #[tokio::test]
+    async fn seeding_a_writer_seeds_its_mark() {
+        let (writer, _reader, _rx) = gated();
+        writer.seed_seq(5);
+        let read = writer
+            .applied_mark()
+            .read_through(5, tokio::time::Instant::now(), || async {})
+            .await;
+        assert_eq!((read.position, read.exact), (5, true));
+    }
+
     /// A writer with no persistence channel has nobody to answer, so asking
     /// for a gate gives it none, and a writer never asked has none either.
     #[test]

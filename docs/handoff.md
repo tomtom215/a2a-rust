@@ -1138,6 +1138,19 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     500. A fifth test, `an_accepted_continuation_registers_its_config_once`,
     covers the case the move made easy to break; 12 hand mutants over the
     new shape, all killed.
+49. `fix(server):` §3.1.6 — a `SubscribeToTask` snapshot is consistent
+    with the live stream. `streaming/event_queue/applied.rs` is the queue's
+    mark of how far its events are stored: the background processor and the
+    blocking collector mark each event applying, then stored (the processor
+    at `on_persisted`, before a status update's push). A subscriber attaches
+    under the order lock at an exact position P, waits (bounded by
+    `subscribe_replay_catchup`) until every event up to P is stored and none
+    is being stored, reads the row then, and skips live events up to the
+    mark. Past the bound it replays the log from the mark. Two limits: an
+    artifact's push still delays its mark (only status updates and snapshots
+    report `on_persisted`), and the processor logs each event only after
+    storing the one before, so the log replay rarely outruns a slow store;
+    and a row written by `CancelTask` or another replica is outside the mark.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
