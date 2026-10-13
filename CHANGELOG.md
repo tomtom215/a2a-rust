@@ -688,6 +688,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The agent card fetch sends `A2A-Version`** (client; spec §3.6.1:
+  "Clients MUST send the `A2A-Version` header with each request"). Every
+  transport sent it, but `resolve_agent_card`, `fetch_card_from_url` and
+  the caching resolver fetched the card without it. They send `1.0` now,
+  unless the caller's `CardFetchOptions` carry an `A2A-Version` of their
+  own, which is sent instead.
 - **`A2aError::is_stream_lagged` says what a lag does to the stream**
   (types; documentation only). It said the stream goes on after the lag
   and a consumer that keeps reading still gets every later event, including

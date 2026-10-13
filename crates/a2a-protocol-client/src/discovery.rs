@@ -404,6 +404,19 @@ async fn fetch_card_with_metadata(
         .method(hyper::Method::GET)
         .uri(url)
         .header(header::ACCEPT, "application/json");
+    // §3.6.1: "Clients MUST send the `A2A-Version` header with each
+    // request", the card's fetch among them; until 2026-10-13 it went
+    // without. A caller that sets the header sends its own value instead.
+    if !options
+        .headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case(a2a_protocol_types::A2A_VERSION_HEADER))
+    {
+        builder = builder.header(
+            a2a_protocol_types::A2A_VERSION_HEADER,
+            a2a_protocol_types::A2A_VERSION,
+        );
+    }
 
     // The caller's headers — an `Authorization` for a card behind auth. An
     // invalid name or value poisons the builder and surfaces from `body()`.
@@ -1493,6 +1506,35 @@ mod tests {
             .await
             .expect("same header, same door");
         assert_eq!(fetched.name, "gated");
+    }
+
+    /// The fetch says which protocol version it speaks (§3.6.1), and a
+    /// caller's own `A2A-Version` is sent in its place, not beside it: the
+    /// server reads the first value, so a second one would not be seen.
+    #[tokio::test]
+    async fn the_card_fetch_sends_its_a2a_version_unless_the_caller_does() {
+        use a2a_protocol_types::{AgentCard, AgentInterface};
+
+        let card = serde_json::to_string(&AgentCard::new(
+            "versioned",
+            "1.0",
+            AgentInterface::jsonrpc("http://localhost:9090"),
+        ))
+        .unwrap();
+
+        let addr = spawn_gated_card_server(card.clone(), "a2a-version", "1.0").await;
+        let fetched = resolve_agent_card(&format!("http://127.0.0.1:{}", addr.port()))
+            .await
+            .expect("the fetch names 1.0");
+        assert_eq!(fetched.name, "versioned");
+
+        let addr = spawn_gated_card_server(card, "a2a-version", "1.1").await;
+        let options = CardFetchOptions::default().with_header("a2a-version", "1.1");
+        let fetched =
+            resolve_agent_card_with_options(&format!("http://127.0.0.1:{}", addr.port()), &options)
+                .await
+                .expect("the caller's value, alone");
+        assert_eq!(fetched.name, "versioned");
     }
 
     /// The configured budget is the whole budget. Headers arrive at two

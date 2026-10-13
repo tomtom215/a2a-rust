@@ -1308,6 +1308,16 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     SLIMRPC is not tested. Ledger §3.2.6 (entry 69), §9.2 and §10.2's
     comma-separated entries and the proto `AgentExtension.required` entry
     say so.
+62. `fix(client):` §3.6.1 — the agent card fetch sends `A2A-Version`
+    (audit register R61). "Clients MUST send the `A2A-Version` header with
+    each request"; every transport did, the card fetch
+    (`fetch_card_with_metadata`, behind `resolve_agent_card`,
+    `fetch_card_from_url` and the caching resolver) did not. It sends
+    `1.0` unless the caller's `CardFetchOptions` name the header, whose
+    value is then sent alone. This SDK's server serves discovery with or
+    without the header. Ledger §3.6.1 (entry 130),
+    whose transport citations had drifted, now cites the lines that set
+    the header.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
