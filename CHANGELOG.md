@@ -711,6 +711,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A JSON-RPC request refused for a header is answered with its id**
+  (server; spec §9.3: requests follow JSON-RPC 2.0, whose response `id`
+  "MUST be the same as the value of the id member in the Request Object").
+  An unsupported `A2A-Version` or `Content-Type` was refused before the
+  body was read: the refusal answered `"id": null` and a batch got one
+  object instead of an array, so a client that pairs responses with
+  requests by id could not pair the `VersionNotSupportedError` a 0.3 client
+  most needs to see. The refusal now waits for the body and carries each
+  request's id, one error per request of a batch. A batch beyond
+  `max_batch_size`, a body that is not JSON or is over the size limit, and
+  a request without an id are refused once with a null id, as before.
 - **A card's `ETag` is the same for the same card** (server; spec §8.6.1:
   an `ETag` "derived from ... a hash of the card content"). It hashed the
   card's serialization, and `securitySchemes`, a requirement's `schemes`

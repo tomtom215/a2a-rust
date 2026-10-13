@@ -119,6 +119,36 @@ async fn jsonrpc_records_every_refusal_with_the_code_it_answered() {
     );
 }
 
+/// A request refused for its `A2A-Version` is recorded once, a batch once
+/// per request it answers (audit R18), and a body that is not JSON once.
+#[tokio::test]
+async fn jsonrpc_records_a_version_refusal_per_answer() {
+    let seen = Seen::default();
+    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler(&seen)))
+        .await
+        .expect("serve");
+    let request = r#"{"jsonrpc":"2.0","id":1,"method":"GetTask","params":{"id":"t"}}"#;
+    for body in [
+        request.to_owned(),
+        format!("[{request},{request}]"),
+        "{".to_owned(),
+    ] {
+        let req = hyper::Request::builder()
+            .method("POST")
+            .uri(format!("http://{addr}/"))
+            .header("content-type", "application/json")
+            .header("a2a-version", "0.3")
+            .body(Full::new(Bytes::from(body)))
+            .unwrap();
+        let resp = http_client().request(req).await.expect("request");
+        let _ = resp.into_body().collect().await;
+    }
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![failed("jsonrpc", None, "-32009"); 4]
+    );
+}
+
 #[tokio::test]
 async fn rest_records_the_http_status_it_answered() {
     let seen = Seen::default();

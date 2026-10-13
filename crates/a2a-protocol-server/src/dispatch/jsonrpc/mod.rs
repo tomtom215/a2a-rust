@@ -156,40 +156,19 @@ impl JsonRpcDispatcher {
         req: hyper::Request<Incoming>,
         started: std::time::Instant,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        // Validate Content-Type if present.
-        if let Some(ct) = req.headers().get("content-type") {
-            let ct_str = ct.to_str().unwrap_or("");
-            if !ct_str.starts_with("application/json")
-                && !ct_str.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE)
-            {
-                // Spec §5.4 maps an unsupported media type to
-                // ContentTypeNotSupportedError (-32005), not ParseError
-                // (-32700): the body was never parsed, so "parse error" both
-                // misreports the cause and denies the client the machine-
-                // readable `CONTENT_TYPE_NOT_SUPPORTED` reason. Routing it
-                // through `error_response` also attaches the §10.6 ErrorInfo
-                // detail like every other A2A error.
-                return self.refuse(
-                    started,
-                    &ServerError::Protocol(
-                        a2a_protocol_types::error::A2aError::content_type_not_supported(format!(
-                            "unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"
-                        )),
-                    ),
-                );
-            }
-        }
-
-        // Validate the A2A-Version header per spec §3.6.2: an absent or
-        // empty value is interpreted as protocol 0.3 and rejected under the
-        // strict default (reference-SDK parity); only 1.0 (any patch) is accepted.
+        // Content-Type, then A2A-Version per spec §3.6.2: an absent or empty
+        // version is interpreted as protocol 0.3 and rejected under the
+        // strict default (reference-SDK parity); only 1.0 (any patch) is
+        // accepted. Either refusal waits for the body, to answer with its ids.
         let version_value = super::requested_version(req.headers(), req.uri());
-        if let Err(err) = super::validate_version_header(
-            version_value.as_deref(),
-            self.config.require_version_header,
-        ) {
-            return self.refuse(started, &ServerError::Protocol(err));
-        }
+        let refused = refusal::unsupported_content_type(req.headers()).or_else(|| {
+            super::validate_version_header(
+                version_value.as_deref(),
+                self.config.require_version_header,
+            )
+            .err()
+            .map(ServerError::Protocol)
+        });
 
         // Extract HTTP headers BEFORE consuming the body.
         let mut headers = extract_headers(req.headers());
@@ -207,8 +186,16 @@ impl JsonRpcDispatcher {
         .await
         {
             Ok(bytes) => bytes,
-            Err(msg) => return self.refuse_unparsed(started, &msg),
+            Err(msg) => {
+                return refused.map_or_else(
+                    || self.refuse_unparsed(started, &msg),
+                    |err| self.refuse(started, &err),
+                );
+            }
         };
+        if let Some(err) = refused {
+            return self.refuse_with_ids(started, &body_bytes, &err);
+        }
 
         // JSON-RPC 2.0 §6.3: detect batch (array) vs single (object) request.
         //

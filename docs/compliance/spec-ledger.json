@@ -1093,7 +1093,7 @@
    "status": "NOT_SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:446",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:433",
     "crates/a2a-protocol-server/src/handler/push_config.rs:248"
    ],
    "test_evidence": [],
@@ -1436,7 +1436,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:105",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:187",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:180",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:47",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:704",
@@ -2717,7 +2717,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:190",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:186",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:163",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:1"
    ],
    "test_evidence": [
@@ -2762,7 +2762,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:186",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:190",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:41",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:706",
@@ -3954,7 +3954,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:229",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:216",
     "crates/a2a-protocol-server/src/push/sender.rs:873"
    ],
    "test_evidence": [
@@ -3974,7 +3974,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:225",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:212",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:49"
    ],
    "test_evidence": [
@@ -5508,17 +5508,19 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:271-292",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:160-181",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/refusal.rs:31-40",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:186-200"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:486 json_response_has_content_type_and_version_header",
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:435 jsonrpc_accepts_a2a_content_type",
-    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:315 unsupported_content_type_returns_content_type_not_supported"
+    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:315 unsupported_content_type_returns_content_type_not_supported",
+    "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:102 a_refused_content_type_is_answered_with_the_id"
    ],
-   "notes": "Server emits `application/json` (JSON_CONTENT_TYPE) on every JSON-RPC response and accepts application/json or application/a2a+json on ingress; client sends application/json.",
+   "notes": "Server emits `application/json` (JSON_CONTENT_TYPE) on every JSON-RPC response and accepts application/json or application/a2a+json on ingress; client sends application/json. A refused Content-Type is answered with the request's id since 2026-10-13 (it answered null).",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 2248,
@@ -5531,7 +5533,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:340-354",
     "crates/a2a-protocol-server/src/streaming/sse.rs:424-430",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:320-340"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:307-327"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:662 build_sse_response_has_correct_headers",
@@ -5551,7 +5553,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:127-131",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:186-197",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:163-176",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:24-32",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:195-204"
    ],
@@ -5618,17 +5620,26 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/jsonrpc.rs:51-75",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:223-288",
-    "crates/a2a-protocol-client/src/transport/jsonrpc.rs:180-204"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:210-275",
+    "crates/a2a-protocol-client/src/transport/jsonrpc.rs:180-204",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:197",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/refusal.rs:63-93"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/jsonrpc.rs:414 version_rejects_wrong_version",
     "crates/a2a-protocol-server/tests/jsonrpc_edge_tests.rs:389 a_request_without_a_method_is_an_invalid_request",
-    "crates/a2a-protocol-server/tests/jsonrpc_edge_tests.rs:397 a_bare_json_value_is_an_invalid_request"
+    "crates/a2a-protocol-server/tests/jsonrpc_edge_tests.rs:397 a_bare_json_value_is_an_invalid_request",
+    "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:80 a_refused_request_is_answered_with_its_id",
+    "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:89 a_refused_batch_gets_one_error_per_request",
+    "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:102 a_refused_content_type_is_answered_with_the_id",
+    "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:115 a_batch_past_the_limit_gets_one_refusal",
+    "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:131 without_an_id_the_refusal_keeps_a_null_one",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:125 jsonrpc_records_a_version_refusal_per_answer"
    ],
-   "notes": "`jsonrpc` must be exactly \"2.0\"; non-JSON answers -32700, JSON that is not a Request answers -32600. Client always emits `jsonrpc:\"2.0\"`, PascalCase method, params object.",
+   "notes": "`jsonrpc` must be exactly \"2.0\"; non-JSON answers -32700, JSON that is not a Request answers -32600. Client always emits `jsonrpc:\"2.0\"`, PascalCase method, params object. A request refused for its A2A-Version or Content-Type is answered with its own id, and a batch with one error per request, since 2026-10-13: both were refused before the body was read, so the response id was null (JSON-RPC 2.0 §5: the id MUST be the request's, null only when it cannot be detected) and a batch got one object. A batch beyond max_batch_size, a body that is not JSON or over the size limit, and a request with no id still get one null-id refusal.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 2418,
@@ -5640,7 +5651,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:385-388",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:342-358",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:329-345",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:244-260"
    ],
    "test_evidence": [
@@ -5687,7 +5698,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:66-91",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:184-218",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:469"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:456"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:390 parse_error_response_has_error_code",
@@ -7672,7 +7683,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:522",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:204",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:183",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:280",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:39"
    ],

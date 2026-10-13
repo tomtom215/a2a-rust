@@ -1381,6 +1381,25 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     re-verified entry; they do now. The notes item 60 corrected stay
     unmarked, since reading the code is not that check, and the method
     says so.
+67. `fix(server):` §9.3 — a JSON-RPC request refused for a header is
+    answered with its id (audit register R18; adopter audit S14). The
+    `A2A-Version` and `Content-Type` checks ran before the body was read,
+    so their refusal answered `"id": null` and a batch got one object.
+    Both now wait for the body: `refuse_with_ids` (`refusal.rs`) echoes
+    the request's `id`, and a batch gets one error per request, each
+    recorded as a failed call. A batch beyond `max_batch_size` still gets
+    one null-id refusal, since an answer per item would let a body of
+    `{}`s buy a response 94 times its size (1,000 of them, 3,001 bytes,
+    were answered with 283,001 when the cap was lifted); so do a body that is
+    not JSON, an empty batch, a request without an id, and a body over
+    the size limit, where the header's refusal still wins over the read
+    error. `tests/jsonrpc_header_refusal_ids.rs` failed 4 of 5 before (the
+    fifth guards the null-id cases), and `rpc_calls.rs` gained a check of
+    what is recorded. The `id` is echoed whatever its JSON type, as the
+    dispatcher does for a request it serves; register R21 covers invalid
+    id types for both. Hand mutants: 16 distinct,
+    all killed; three were first written so that they did not build
+    under `-D warnings`, and were rewritten until they did.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
