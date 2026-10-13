@@ -73,12 +73,14 @@
 //! so a request that carries no tenant is rejected rather than served from
 //! the shared default partition.
 //!
-//! With **no** resolver configured, every request through this router is
-//! served from the default (`""`) tenant, because the per-request `tenant`
-//! field is not populated from the URL. That is correct for single-tenant
-//! deployments and is the reason the prefix is absent rather than silently
-//! mis-parsed; it is called out here so it is a choice rather than a
-//! discovery.
+//! With **no** resolver configured, a request is served from the tenant
+//! its own `tenant` field names, and from the default (`""`) tenant when
+//! it names none. A GET or DELETE carries the field in its query
+//! (`?tenant=`), as on the REST dispatcher; a POST in its body, though the
+//! `:cancel` and `:subscribe` routes do not read theirs. The URL prefix is
+//! never read, which is why the prefixed routes are absent rather than
+//! silently mis-parsed; it is called out here so it is a choice rather
+//! than a discovery.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -409,6 +411,10 @@ async fn handle_tasks_catchall(
     let rest = uri.path().strip_prefix("/tasks/").unwrap_or_default();
     let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
     let dec = super::rest::query::percent_decode_path;
+    // §11.5: a GET or DELETE carries its request's other fields in the
+    // query, the `tenant` among them, as the REST dispatcher reads them.
+    let query = uri.query().unwrap_or_default();
+    let tenant = query_tenant(query);
 
     match (method.as_str(), segments.as_slice()) {
         // GET /tasks/{id} (no colon action)
@@ -418,7 +424,13 @@ async fn handle_tasks_catchall(
                 "GetTask",
                 (method.as_str(), "/tasks/{id}"),
                 &hdrs,
-                handle_get_task_inner(&state, &dec(id), &hdrs),
+                handle_get_task_inner(
+                    &state,
+                    &dec(id),
+                    tenant,
+                    super::rest::query::parse_query_param_u32(query, "historyLength"),
+                    &hdrs,
+                ),
             )
             .await
         }
@@ -444,7 +456,7 @@ async fn handle_tasks_catchall(
                 "SubscribeToTask",
                 (method.as_str(), "/tasks/{id}:subscribe"),
                 &hdrs,
-                handle_subscribe_inner(&state, &dec(id), &hdrs),
+                handle_subscribe_inner(&state, &dec(id), tenant, &hdrs),
             )
             .await
         }
@@ -468,7 +480,7 @@ async fn handle_tasks_catchall(
                 "ListTaskPushNotificationConfigs",
                 (method.as_str(), "/tasks/{task_id}/pushNotificationConfigs"),
                 &hdrs,
-                handle_list_push_configs_inner(&state, &dec(task_id), &hdrs),
+                handle_list_push_configs_inner(&state, &dec(task_id), tenant, &hdrs),
             )
             .await
         }
@@ -483,7 +495,7 @@ async fn handle_tasks_catchall(
                     "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
                 ),
                 &hdrs,
-                handle_get_push_config_inner(&state, &dec(task_id), &dec(config_id), &hdrs),
+                handle_get_push_config_inner(&state, &dec(task_id), &dec(config_id), tenant, &hdrs),
             )
             .await
         }
@@ -498,7 +510,13 @@ async fn handle_tasks_catchall(
                     "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
                 ),
                 &hdrs,
-                handle_delete_push_config_inner(&state, &dec(task_id), &dec(config_id), &hdrs),
+                handle_delete_push_config_inner(
+                    &state,
+                    &dec(task_id),
+                    &dec(config_id),
+                    tenant,
+                    &hdrs,
+                ),
             )
             .await
         }
@@ -566,7 +584,7 @@ async fn handle_list_tasks(
     CallHeaders(hdrs): CallHeaders,
 ) -> axum::response::Response {
     let params = a2a_protocol_types::params::ListTasksParams {
-        tenant: None,
+        tenant: query.get("tenant").filter(|t| !t.is_empty()).cloned(),
         context_id: query.get("contextId").cloned(),
         status: query
             .get("status")
@@ -693,15 +711,23 @@ async fn handle_send_inner(
     }
 }
 
+/// The request's `tenant` from the query, as the REST dispatcher reads it:
+/// an empty value names none.
+fn query_tenant(query: &str) -> Option<String> {
+    super::rest::query::parse_query_param(query, "tenant").filter(|t| !t.is_empty())
+}
+
 async fn handle_get_task_inner(
     state: &A2aState,
     id: &str,
+    tenant: Option<String>,
+    history_length: Option<u32>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
     let params = a2a_protocol_types::params::TaskQueryParams {
-        tenant: None,
+        tenant,
         id: id.to_owned(),
-        history_length: None,
+        history_length,
     };
     match state.handler.on_get_task(params, Some(hdrs)).await {
         Ok(task) => a2a_json(&task),
@@ -728,10 +754,11 @@ async fn handle_cancel_task_inner(
 async fn handle_subscribe_inner(
     state: &A2aState,
     id: &str,
+    tenant: Option<String>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
     let params = a2a_protocol_types::params::TaskIdParams {
-        tenant: None,
+        tenant,
         id: id.to_owned(),
     };
     match state.handler.on_resubscribe(params, Some(hdrs)).await {
@@ -774,10 +801,11 @@ async fn handle_get_push_config_inner(
     state: &A2aState,
     task_id: &str,
     config_id: &str,
+    tenant: Option<String>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
     let params = a2a_protocol_types::params::GetPushConfigParams {
-        tenant: None,
+        tenant,
         task_id: task_id.to_owned(),
         id: config_id.to_owned(),
     };
@@ -790,11 +818,12 @@ async fn handle_get_push_config_inner(
 async fn handle_list_push_configs_inner(
     state: &A2aState,
     task_id: &str,
+    tenant: Option<String>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
     match state
         .handler
-        .on_list_push_configs(task_id, None, Some(hdrs))
+        .on_list_push_configs(task_id, tenant.as_deref(), Some(hdrs))
         .await
     {
         Ok(configs) => {
@@ -812,10 +841,11 @@ async fn handle_delete_push_config_inner(
     state: &A2aState,
     task_id: &str,
     config_id: &str,
+    tenant: Option<String>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
     let params = a2a_protocol_types::params::DeletePushConfigParams {
-        tenant: None,
+        tenant,
         task_id: task_id.to_owned(),
         id: config_id.to_owned(),
     };

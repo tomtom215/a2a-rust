@@ -53,7 +53,7 @@ pub fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
 }
 
 /// Parses a single query parameter value as `u32`.
-pub(super) fn parse_query_param_u32(query: &str, key: &str) -> Option<u32> {
+pub fn parse_query_param_u32(query: &str, key: &str) -> Option<u32> {
     parse_query_param(query, key).and_then(|v| v.parse::<u32>().ok())
 }
 

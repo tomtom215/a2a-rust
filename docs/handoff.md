@@ -1109,6 +1109,12 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     the row, so the continued task and its history went with it. A
     continuation now registers first; if its turn then cannot be saved, a
     config the server created is withdrawn, one named by id is kept.
+45. `fix(server):` §11.5 — `A2aRouter` reads GetTask's `historyLength`
+    and every GET or DELETE route's `?tenant=`, as `RestDispatcher` does.
+    Its module docs said a request without a resolver is always served
+    from the default tenant; a POST body's `tenant` was honoured all along.
+    The `:cancel` and `:subscribe` POST bodies are still not read (audit
+    register R24).
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

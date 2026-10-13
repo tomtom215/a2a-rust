@@ -647,6 +647,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`A2aRouter` reads a GET or DELETE request's fields from its query**
+  (server, feature `axum`; spec §11.5: GET and DELETE MUST carry request
+  parameters as path or query parameters). The router ignored the query of
+  every `/tasks/…` route: `GET /tasks/{id}?historyLength=0` returned the
+  task's whole history (a2a.proto: the server MUST NOT return more messages
+  than requested), and `?tenant=` was dropped on GetTask, ListTasks, the
+  push-config routes and `GET :subscribe`, so they read the default
+  partition. Both are now read as the REST dispatcher reads them.
 - **A refused inline push config no longer deletes the task it continues**
   (server; spec §3.4.3: a client continues a task by sending a new message
   with its `taskId`). A `SendMessage` continuing a task with a

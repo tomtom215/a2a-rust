@@ -769,3 +769,140 @@ async fn a_dribbling_body_is_cut_off_at_the_configured_timeout() {
         "a body that never arrives must be refused with 408, got: {status_line:?}"
     );
 }
+
+// ── §11.5: a GET carries its request's fields in the query ───────────────────
+
+/// Sends one message, optionally in `tenant`, and returns the task's id.
+async fn send_in(base: &str, tenant: Option<&str>) -> String {
+    let mut body: serde_json::Value = serde_json::from_str(&make_send_body("query")).unwrap();
+    if let Some(tenant) = tenant {
+        body["tenant"] = serde_json::Value::String(tenant.to_owned());
+    }
+    let (status, resp) = http_post_json(&format!("{base}/message:send"), &body.to_string()).await;
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&resp));
+    match serde_json::from_slice(&resp).unwrap() {
+        SendMessageResponse::Task(task) => task.id.0,
+        other => panic!("expected a task, got {other:?}"),
+    }
+}
+
+/// `GET /tasks/{id}?historyLength=0` returns no history: a2a.proto's
+/// `GetTaskRequest.history_length`, "The server MUST NOT return more messages
+/// than the provided value". The router ignored the query and returned it all.
+#[tokio::test]
+async fn axum_get_task_honours_history_length() {
+    let base = start_test_server().await;
+    let id = send_in(&base, None).await;
+
+    let (status, full) = http_get(&format!("{base}/tasks/{id}")).await;
+    assert_eq!(status, 200);
+    let full: Task = serde_json::from_slice(&full).unwrap();
+    assert!(
+        !full.history.unwrap_or_default().is_empty(),
+        "the task has history to withhold"
+    );
+    let (status, none) = http_get(&format!("{base}/tasks/{id}?historyLength=0")).await;
+    assert_eq!(status, 200);
+    let none: Task = serde_json::from_slice(&none).unwrap();
+    assert_eq!(none.history.unwrap_or_default().len(), 0);
+}
+
+/// `?tenant=` selects the partition a GET reads, as on the REST dispatcher:
+/// the request's `tenant` field, which a GET can only carry in the query.
+/// The router read every GET from the default partition.
+#[tokio::test]
+async fn axum_get_requests_read_the_tenant_from_the_query() {
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .with_agent_card(test_card())
+            .with_task_store(a2a_protocol_server::TenantAwareInMemoryTaskStore::new())
+            .build()
+            .expect("build handler"),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("local addr"));
+    let app = A2aRouter::new(handler).into_router();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let id = send_in(&base, Some("acme")).await;
+
+    let (status, _) = http_get(&format!("{base}/tasks/{id}?tenant=acme")).await;
+    assert_eq!(status, 200, "found in its own tenant");
+    let (status, _) = http_get(&format!("{base}/tasks/{id}")).await;
+    assert_eq!(status, 404, "not in the default partition");
+
+    let listed = |body: &Bytes| -> Vec<String> {
+        let list: a2a_protocol_types::responses::TaskListResponse =
+            serde_json::from_slice(body).unwrap();
+        list.tasks.into_iter().map(|t| t.id.0).collect()
+    };
+    let (status, body) = http_get(&format!("{base}/tasks?tenant=acme")).await;
+    assert_eq!(status, 200);
+    assert_eq!(listed(&body), [id]);
+    let (status, body) = http_get(&format!("{base}/tasks")).await;
+    assert_eq!(status, 200);
+    assert!(listed(&body).is_empty());
+}
+
+/// The push-config routes and `GET :subscribe` read `?tenant=` too: the task
+/// and its config live in `acme`, and only requests naming it find them.
+#[tokio::test]
+async fn axum_push_config_and_subscribe_routes_read_the_tenant_from_the_query() {
+    let mut card = test_card();
+    card.capabilities = AgentCapabilities::none()
+        .with_streaming(true)
+        .with_push_notifications(true);
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .with_agent_card(card)
+            .with_task_store(a2a_protocol_server::TenantAwareInMemoryTaskStore::new())
+            .with_push_config_store(
+                a2a_protocol_server::push::TenantAwareInMemoryPushConfigStore::new(),
+            )
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
+            .build()
+            .expect("build handler"),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("local addr"));
+    let app = A2aRouter::new(handler).into_router();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let id = send_in(&base, Some("acme")).await;
+    let configs = format!("{base}/tasks/{id}/pushNotificationConfigs");
+
+    let body = serde_json::json!({"url": "https://example.com/hook", "tenant": "acme"});
+    let (status, created) = http_post_json(&configs, &body.to_string()).await;
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&created));
+    let created: serde_json::Value = serde_json::from_slice(&created).unwrap();
+    let one = format!("{configs}/{}", created["id"].as_str().expect("config id"));
+
+    let count = |body: &Bytes| -> usize {
+        let v: serde_json::Value = serde_json::from_slice(body).unwrap_or_default();
+        v["configs"].as_array().map_or(0, Vec::len)
+    };
+    let (status, listed) = http_get(&format!("{configs}?tenant=acme")).await;
+    assert_eq!((status, count(&listed)), (200, 1), "listed in its tenant");
+    let (_, listed) = http_get(&configs).await;
+    assert_eq!(count(&listed), 0, "not listed in the default partition");
+    let (status, _) = http_get(&format!("{one}?tenant=acme")).await;
+    assert_eq!(status, 200, "found in its tenant");
+    let (status, _) = http_get(&one).await;
+    assert_ne!(status, 200, "not found in the default partition");
+
+    // The task is completed, so subscribing is refused; what differs is
+    // whether the task was found at all.
+    let (status, _) = http_get(&format!("{base}/tasks/{id}:subscribe?tenant=acme")).await;
+    assert_ne!(status, 404, "the task is found in its tenant");
+    let (status, _) = http_get(&format!("{base}/tasks/{id}:subscribe")).await;
+    assert_eq!(status, 404, "not in the default partition");
+
+    let (status, _) = http_request("DELETE", &one).await;
+    assert_ne!(status, 200, "nothing to delete in the default partition");
+    let (status, _) = http_request("DELETE", &format!("{one}?tenant=acme")).await;
+    assert_eq!(status, 200);
+    let (_, listed) = http_get(&format!("{configs}?tenant=acme")).await;
+    assert_eq!(count(&listed), 0, "deleted in its tenant");
+}
