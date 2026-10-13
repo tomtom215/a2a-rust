@@ -241,3 +241,102 @@ async fn assert_a_first_subscribe_misses_nothing(streaming: bool) {
     );
     assert_eq!(artifacts, ["step-1", "step-2"], "{frames:?}");
 }
+
+/// The first subscribe waits for the store to hold what the queue had
+/// already broadcast, so its `Task` is the task as it stands and the stream
+/// repeats none of it. Past `subscribe_replay_catchup` the log would fill the
+/// gap after a stale `Task` instead, which loses nothing either: only the
+/// shape of the frames shows that the wait happened, so this pins it. The
+/// deadline computed in the past survived the mutation gate on `1672fbf9`.
+#[tokio::test]
+async fn a_first_subscribe_waits_for_the_store_rather_than_the_log() {
+    use a2a_protocol_types::events::StreamResponse;
+    use a2a_protocol_types::task::TaskState;
+
+    let (frames, _) = frames_from_a_live_resubscribe(Duration::from_secs(10), None, true).await;
+    let [first] = frames.as_slice() else {
+        panic!("one frame, the Task, and nothing repeated after it: {frames:?}");
+    };
+    let StreamResponse::Task(task) = &first.event else {
+        panic!("the first frame is the Task: {first:?}");
+    };
+    assert_eq!(task.status.state, TaskState::Working);
+    let artifacts: Vec<_> = task
+        .artifacts
+        .iter()
+        .flatten()
+        .map(|a| a.id.0.as_str())
+        .collect();
+    assert_eq!(artifacts, ["step-1", "step-2"]);
+}
+
+const BURST: usize = 40;
+
+/// Emits a burst of artifacts, each through a queue too small to hold them.
+struct Burst;
+a2a_protocol_server::agent_executor!(Burst, |ctx, q| async {
+    use a2a_protocol_types::message::Part;
+    use a2a_protocol_types::task::TaskState;
+    let emit = a2a_protocol_server::EventEmitter::new(ctx, q);
+    emit.status(TaskState::Working).await?;
+    for i in 0..BURST {
+        emit.artifact(&format!("a{i}"), vec![Part::text("x")], None, Some(true))
+            .await?;
+    }
+    emit.status(TaskState::Completed).await
+});
+
+/// A send stream that falls behind while the agent is still writing, and the
+/// log behind the writer, catches up once the log reaches the writer's
+/// position. A catch-up that did not wait (its deadline computed in the past,
+/// which survived the mutation gate on `1672fbf9`) found the log short and
+/// ended the stream with `streamLagged`.
+#[tokio::test]
+async fn a_lag_while_the_log_trails_waits_for_the_log() {
+    use a2a_protocol_server::handler::SendMessageResult;
+    use a2a_protocol_server::streaming::EventQueueReader as _;
+    use a2a_protocol_types::events::StreamResponse;
+
+    let handler = RequestHandlerBuilder::new(Burst)
+        .without_agent_card()
+        .with_event_queue_capacity(4)
+        // Each append trails its broadcast, so the log is behind the writer
+        // throughout the burst.
+        .with_task_store(super::SlowLog(
+            Arc::new(InMemoryTaskStore::new()),
+            Duration::from_millis(20),
+        ))
+        .build()
+        .expect("handler");
+    let Ok(SendMessageResult::Stream(mut reader)) = handler
+        .on_send_message(
+            MessageSendParams::new(Message::user_text("m-1", "go")),
+            true,
+            None,
+        )
+        .await
+    else {
+        panic!("a streaming send answers with a stream");
+    };
+    // Mid-burst: the reader has fallen behind its four-slot queue, and the
+    // log is behind what has been broadcast.
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    let mut artifacts = 0;
+    let mut positions = Vec::new();
+    while let Some(frame) = tokio::time::timeout(Duration::from_secs(10), reader.read())
+        .await
+        .expect("the stream must not stall")
+    {
+        let frame = frame.expect("the catch-up must not give up: no streamLagged");
+        positions.extend(frame.seq);
+        if matches!(frame.event, StreamResponse::ArtifactUpdate(_)) {
+            artifacts += 1;
+        }
+    }
+    assert_eq!(artifacts, BURST, "every artifact, none lost");
+    assert!(
+        positions.windows(2).all(|w| w[1] == w[0] + 1),
+        "no gap and no repeat: {positions:?}"
+    );
+}

@@ -863,7 +863,8 @@
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:207 a_first_subscribe_misses_nothing_between_snapshot_and_stream",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:213 a_first_subscribe_beside_a_blocking_send_misses_nothing",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:900 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:969 the_stream_skips_what_its_snapshot_already_holds"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:969 the_stream_skips_what_its_snapshot_already_holds",
+    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:252 a_first_subscribe_waits_for_the_store_rather_than_the_log"
    ],
    "notes": "The Task is read at a known position (2026-10-13): the stream attaches to the queue first, at an exact position, and the task row is read once every event up to there is stored and none is being stored (streaming/event_queue/applied.rs), so the Task and the live events neither overlap nor leave a gap. Read before the attach, as until then, it trailed the broadcast and an event broadcast before the attach and stored after the read was in neither. The wait is bounded by subscribe_replay_catchup (2 s); past it the event log fills the gap after the Task. Outside the mark: a row CancelTask or another replica writes.",
    "auditor": "A",
@@ -2531,7 +2532,8 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2394 concurrent_clones_deliver_every_position_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2141 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:171 slow_reader_gets_explicit_lag_error",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1606 subscribe_creates_independent_reader"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1606 subscribe_creates_independent_reader",
+    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:295 a_lag_while_the_log_trails_waits_for_the_log"
    ],
    "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Remaining, each ending the stream with an explicit streamLagged: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log), more missed events than one replay reads (subscribe_replay_limit, 1,000), or a custom store without an event log. Every stream receives positions in the order they were assigned, because writes are broadcast in that order (2026-10-13, see spec line 683); before that a reader, which skips a position it has passed, could lose an event another write had overtaken.",
    "auditor": "B",
