@@ -217,7 +217,7 @@ async fn cancel_completed_task_returns_not_cancelable() {
 }
 
 #[tokio::test]
-async fn list_tasks_pagination_page_size_zero_defaults() {
+async fn list_tasks_page_size_zero_is_invalid_params() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .without_agent_card()
         .build()
@@ -229,7 +229,8 @@ async fn list_tasks_pagination_page_size_zero_defaults() {
         .await
         .unwrap();
 
-    // List with page_size = 0 (should default to 50, not return empty)
+    // a2a.proto: page_size's minimum is 1. Zero read as the default of 50;
+    // it is refused.
     let result = handler
         .on_list_tasks(
             ListTasksParams {
@@ -244,11 +245,10 @@ async fn list_tasks_pagination_page_size_zero_defaults() {
             },
             None,
         )
-        .await
-        .unwrap();
+        .await;
     assert!(
-        !result.tasks.is_empty(),
-        "page_size=0 should default to 50, not empty"
+        matches!(&result, Err(a2a_protocol_server::error::ServerError::InvalidParams(m)) if m.contains("pageSize")),
+        "{result:?}"
     );
 }
 

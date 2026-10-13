@@ -9,7 +9,8 @@
 //! if it were absent: `?historyLength=-1` returned the whole history and
 //! `?status=TASK_STATE_WORKNG` listed every task, where JSON-RPC and gRPC
 //! refuse the same values. Both now answer `400 INVALID_ARGUMENT`, naming the
-//! parameter, from one parser.
+//! parameter, from one parser. A `pageSize` outside a2a.proto's 1 to 100 is
+//! refused the same way, by the handler, on every binding.
 
 use std::sync::Arc;
 
@@ -80,6 +81,10 @@ async fn a_malformed_query_value_is_refused_naming_its_parameter() {
             ("/tasks/t-1?historyLength=abc", "historyLength"),
             ("/tasks?historyLength=-1", "historyLength"),
             ("/tasks?pageSize=ten", "pageSize"),
+            // a2a.proto: page_size's minimum is 1 and its maximum 100; the
+            // spec's validation example answers pageSize=150 with a 400.
+            ("/tasks?pageSize=0", "pageSize"),
+            ("/tasks?pageSize=101", "pageSize"),
             ("/tasks?status=TASK_STATE_WORKNG", "status"),
             ("/tasks?includeArtifacts=maybe", "includeArtifacts"),
         ] {
@@ -107,6 +112,8 @@ async fn well_formed_query_values_are_accepted() {
             "/tasks?includeArtifacts=1",
             "/tasks?includeArtifacts=false",
             "/tasks?includeArtifacts=0",
+            "/tasks?pageSize=1",
+            "/tasks?pageSize=100",
         ] {
             let (status, body) = get(&format!("{base}{path}")).await;
             assert_eq!(status, 200, "{dispatcher} {path}: {body}");

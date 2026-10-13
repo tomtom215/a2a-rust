@@ -794,3 +794,32 @@ async fn debug_impls_dont_panic() {
         "debug output should contain 'RequestHandlerBuilder', got: {debug}"
     );
 }
+
+/// Spec §13.4: agents MUST validate all input parameters. A message's
+/// `referenceTaskIds` are task ids like its `taskId` and get the same checks;
+/// they were stored unchecked, an empty or an oversized id included.
+#[tokio::test]
+async fn reference_task_ids_are_validated_like_the_other_ids() {
+    use a2a_protocol_server::error::ServerError;
+    use a2a_protocol_types::task::TaskId;
+
+    let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
+    for bad in [String::new(), "   ".to_owned(), "x".repeat(1025)] {
+        let mut params = make_params("hello");
+        params.message.reference_task_ids =
+            Some(vec![TaskId::new("t-ok"), TaskId::new(bad.clone())]);
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(&result, Err(ServerError::InvalidParams(m)) if m.contains("reference_task_ids")),
+            "an id of {} chars: {result:?}",
+            bad.len()
+        );
+    }
+    let mut params = make_params("hello");
+    params.message.reference_task_ids = Some(vec![TaskId::new("t-1")]);
+    let result = handler.on_send_message(params, false, None).await;
+    assert!(result.is_ok(), "{result:?}");
+}

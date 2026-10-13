@@ -346,6 +346,13 @@ the log below what the stream misses
 (`TaskStoreConfig::with_max_events_per_task`), or lower
 `HandlerLimits::subscribe_replay_limit`.
 
+### ListTasks takes a `pageSize` from 1 to 100
+
+A2A's proto bounds `page_size` to 1 through 100, and the server now refuses
+anything else with `InvalidParams` (400 on HTTP+JSON). It used to clamp a
+larger size to 1000 and read 0 as the default of 50. A client paging through
+every task should ask for 100 at most; leaving `pageSize` out still lists 50.
+
 ### The conformance kit's cancel check is `cancel_succeeds`
 
 The `conformance` feature's `cancel_emits_terminal` check is renamed

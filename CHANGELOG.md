@@ -315,6 +315,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **ListTasks refuses a `pageSize` outside 1 to 100** (server; a2a.proto:
+  `page_size`'s "minimum value is 1" and "maximum value is 100"; spec
+  §3.3.2 and §13.4: servers MUST validate all input parameters). A larger
+  size was clamped to 1000 and served, and 0 read as the default of 50;
+  both are `InvalidParams` now, on every binding, as the spec's own
+  validation example answers `pageSize=150` with a 400. Omitting `pageSize`
+  still lists 50. A message's `referenceTaskIds` are checked as its
+  `taskId` is (non-empty, not only whitespace, at most `max_id_length`);
+  they were stored unchecked.
 - **The dynamic agent card handler sends no `Last-Modified`** (server; spec
   §8.6.1 makes the header optional). `DynamicAgentCardHandler` stamped it
   with the current second on every response, which told clients the card

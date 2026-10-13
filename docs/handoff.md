@@ -1195,6 +1195,12 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     router's ListTasks reads the raw query with the same parser. The
     fuzzing API's `rest_route` returns `Option` params, so the fuzz target
     is unchanged.
+55. `fix(server):` §3.3.2 / §13.4 — ListTasks refuses a `pageSize`
+    outside a2a.proto's 1 to 100 (it clamped to 1000 and read 0 as 50), and
+    a message's `referenceTaskIds` get `validate_id`. Two tests that pinned
+    the clamp and the 0 default now require the refusal, and
+    `probe_load.py` pages by 100. A behaviour change, in the CHANGELOG and
+    the upgrading guide.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

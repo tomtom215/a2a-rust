@@ -252,7 +252,8 @@ class Load:
         ids, token, guard = set(), "", 0
         while guard < 10000:
             guard += 1
-            params = {"pageSize": 1000}
+            # a2a.proto caps page_size at 100; the server refuses more.
+            params = {"pageSize": 100}
             if token:
                 params["pageToken"] = token
             ok, status, data, dt, terr = conn.call(rpc_bytes("ListTasks", params))

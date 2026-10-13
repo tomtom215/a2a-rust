@@ -36,10 +36,19 @@ impl RequestHandler {
         let tenant = self
             .resolve_tenant("ListTasks", headers, params.tenant.as_deref())
             .await?;
-        // Clamp page_size at the handler level to prevent oversized allocations.
         let mut params = params;
-        if let Some(ps) = params.page_size {
-            params.page_size = Some(ps.min(1000));
+        // a2a.proto: page_size's "minimum value is 1" and its "maximum value
+        // is 100"; the spec's validation example answers pageSize=150 with a
+        // 400. Out-of-range sizes were clamped to 1000, and 0 read as 50.
+        if let Some(ps) = params.page_size
+            && !(1..=100).contains(&ps)
+        {
+            let err = crate::error::ServerError::InvalidParams(format!(
+                "pageSize must be between 1 and 100 inclusive, got {ps}"
+            ));
+            self.metrics.on_error("ListTasks", err.metric_label());
+            self.metrics.on_latency("ListTasks", start.elapsed());
+            return Err(err);
         }
         // a2a.proto: `contextId`, `status` and `pageToken` have no presence,
         // so their defaults mean "no filter" and "first page", as the gRPC

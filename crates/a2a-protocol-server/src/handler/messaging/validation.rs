@@ -55,6 +55,15 @@ impl RequestHandler {
         if let Some(ref task_id) = params.message.task_id {
             validate_id(&task_id.0, "task_id", self.limits.max_id_length)?;
         }
+        // Task ids like `task_id`, so the same checks (spec §13.4); they were
+        // stored unchecked.
+        for reference in params.message.reference_task_ids.iter().flatten() {
+            validate_id(
+                &reference.0,
+                "reference_task_ids",
+                self.limits.max_id_length,
+            )?;
+        }
 
         // a2a.proto marks `Message.role` REQUIRED. The JSON bindings already
         // refuse a message without one, but over gRPC an absent enum decodes

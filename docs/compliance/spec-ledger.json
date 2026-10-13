@@ -1666,16 +1666,22 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:24",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:288",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:275"
+    "crates/a2a-protocol-server/src/handler/helpers.rs:275",
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:44",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:60"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:163 reject_whitespace_only_context_id",
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:230 reject_empty_parts",
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:256 reject_oversized_metadata"
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:256 reject_oversized_metadata",
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:802 reference_task_ids_are_validated_like_the_other_ids",
+    "crates/a2a-protocol-server/tests/audit_tests/edge_cases.rs:70 a_page_size_over_100_is_invalid_params",
+    "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs:220 list_tasks_page_size_zero_is_invalid_params"
    ],
-   "notes": "validate_send_params runs before any side effect (ids, parts, input modes, metadata shape/size).",
+   "notes": "validate_send_params runs before any side effect (ids, parts, input modes, metadata shape/size). Since 2026-10-13 also a message's referenceTaskIds (validate_id, as its taskId) and ListTasks' pageSize, which must be 1 to 100 (a2a.proto); both were accepted unchecked, the page size clamped to 1000 and 0 read as 50.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 520,
@@ -9812,12 +9818,16 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:40"
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:44"
    ],
-   "test_evidence": [],
-   "notes": "Handler clamps to 1000 and stores clamp to DEFAULT_MAX_PAGE_SIZE; page-size bounds are audited under the ListTasks spec section.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter",
+    "crates/a2a-protocol-server/tests/audit_tests/edge_cases.rs:70 a_page_size_over_100_is_invalid_params"
+   ],
+   "notes": "A pageSize outside a2a.proto's 1 to 100 is InvalidParams (2026-10-13; it was clamped to 1000, and 0 read as 50). Within the range a store returns fewer only when configured with a max_page_size below the size asked; every built-in store caps at its max_page_size, DEFAULT_MAX_PAGE_SIZE (1000) by default.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 705,
