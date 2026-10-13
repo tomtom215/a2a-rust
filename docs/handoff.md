@@ -1238,6 +1238,18 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `messaging/start.rs` to keep `mod.rs` under 500 lines. Not covered: a
     continuation that reaches another replica while the first is still
     storing; nothing in-process can see that.
+58. `fix(server):` §3.5.2 — a replay with a hole in the log is not used
+    (audit register R53). A failed append leaves the log without that
+    position and the processor goes on; `LogReplay::read` counted a read
+    that reached its target as complete, so a lagged stream was replayed
+    positions 1 to 9 and 11 to 32 with 10 skipped, and a resume after 1 got
+    2, 4 and 5. `contiguous` now makes such a read incomplete (the lag is
+    reported) and a resume falls back to the snapshot. Left open, low: the
+    catch-up's target is the task's current queue, so a send stream that
+    lags after its turn's queue is gone can be replayed into the next
+    turn's events (the same task's, in order); §11.7 describes a stream as
+    closing at an interrupted state, but §3.1.2's MUST is the terminal
+    state, so send streams were left as they are.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

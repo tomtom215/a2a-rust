@@ -768,7 +768,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:363",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:372",
     "crates/a2a-protocol-server/src/handler/capability.rs:39"
    ],
    "test_evidence": [
@@ -789,10 +789,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:372"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:381"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:442 resubscribe_task_not_found_returns_error"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:451 resubscribe_task_not_found_returns_error"
    ],
    "notes": "",
    "auditor": "A",
@@ -807,10 +807,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:376"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:385"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:456 resubscribe_terminal_task_returns_unsupported_operation"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:465 resubscribe_terminal_task_returns_unsupported_operation"
    ],
    "notes": "",
    "auditor": "A",
@@ -833,8 +833,8 @@
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:92"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:493 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:606 resubscribe_gives_up_after_the_idle_bound",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:502 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:627 resubscribe_gives_up_after_the_idle_bound",
     "crates/a2a-protocol-server/tests/stream_closes_on_terminal.rs:34 the_stream_ends_at_the_terminal_status",
     "crates/a2a-protocol-server/tests/cancel_override_terminal.rs:125 a_cancel_the_hook_does_not_write_ends_a_subscription"
    ],
@@ -858,12 +858,12 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:316"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:493 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:709 resubscribe_success_returns_reader",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:502 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:730 resubscribe_success_returns_reader",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:207 a_first_subscribe_misses_nothing_between_snapshot_and_stream",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:213 a_first_subscribe_beside_a_blocking_send_misses_nothing",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:966 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1035 the_stream_skips_what_its_snapshot_already_holds",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:987 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1056 the_stream_skips_what_its_snapshot_already_holds",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:252 a_first_subscribe_waits_for_the_store_rather_than_the_log"
    ],
    "notes": "The Task is read at a known position (2026-10-13): the stream attaches to the queue first, at an exact position, and the task row is read once every event up to there is stored and none is being stored (streaming/event_queue/applied.rs), so the Task and the live events neither overlap nor leave a gap. Read before the attach, as until then, it trailed the broadcast and an event broadcast before the attach and stored after the read was in neither. The wait is bounded by subscribe_replay_catchup (2 s); past it the event log fills the gap after the Task. Outside the mark: a row CancelTask or another replica writes.",
@@ -1990,7 +1990,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:39",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:252",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:363"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:372"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:196 card_without_streaming_rejects_streaming",
@@ -2540,8 +2540,9 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1156",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1286",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:81",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:384",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:290"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:393",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:290",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:538"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:107 a_lagged_send_stream_catches_up_from_the_event_log",
@@ -2569,9 +2570,11 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/reattach_tests.rs:353 a_dropped_read_keeps_a_lag_s_replay",
     "crates/a2a-protocol-server/src/streaming/event_queue/reattach_tests.rs:379 a_dropped_read_keeps_a_turn_s_replay",
     "crates/a2a-protocol-server/tests/multi_replica.rs:329 intermediate_events_cross_replicas_through_the_log",
-    "crates/a2a-protocol-server/tests/event_log_tests/continuation_race.rs:67 a_continuation_sent_on_input_required_does_not_collide_with_the_log"
+    "crates/a2a-protocol-server/tests/event_log_tests/continuation_race.rs:67 a_continuation_sent_on_input_required_does_not_collide_with_the_log",
+    "crates/a2a-protocol-server/tests/event_log_tests/log_holes.rs:42 a_lag_across_a_hole_in_the_log_is_reported",
+    "crates/a2a-protocol-server/tests/event_log_tests/log_holes.rs:105 a_resume_across_a_hole_in_the_log_starts_from_the_snapshot"
    ],
-   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Remaining, each ending the stream with an explicit streamLagged: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log), more missed events than one replay reads (subscribe_replay_limit, 1,000), or a custom store without an event log. Every stream receives positions in the order they were assigned, because writes are broadcast in that order (2026-10-13, see spec line 683); before that a reader, which skips a position it has passed, could lose an event another write had overtaken. A SubscribeToTask stream across turns replays from the log what each reattach answer leaves it owing (2026-10-13): the events a turn broadcast before the reattach hook found its queue, a turn that ran between two polls and parked again or finished, and, on a replica sharing the store, the running replica's events, a poll late. Until then all of them were lost without a streamLagged. Without a log the turn's missed events are reported as streamLagged, and a turn numbered from 1 is no longer skipped as already delivered. A read dropped while the log is read keeps the replay owed, for a lag too. Remaining as well: with no local queue the subscription reads the log's end and then the task, so an event another replica logs and stores between the two reads arrives twice. A continuation sent the moment a task parks no longer numbers its events over the previous turn's (2026-10-13): it was admitted when the executor returned, before the processor had logged the turn's last events, so its positions collided and its events were dropped from the log. A turn's queue is now released once its events are stored; within one process only.",
+   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Remaining, each ending the stream with an explicit streamLagged: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log), more missed events than one replay reads (subscribe_replay_limit, 1,000), or a custom store without an event log. Every stream receives positions in the order they were assigned, because writes are broadcast in that order (2026-10-13, see spec line 683); before that a reader, which skips a position it has passed, could lose an event another write had overtaken. A SubscribeToTask stream across turns replays from the log what each reattach answer leaves it owing (2026-10-13): the events a turn broadcast before the reattach hook found its queue, a turn that ran between two polls and parked again or finished, and, on a replica sharing the store, the running replica's events, a poll late. Until then all of them were lost without a streamLagged. Without a log the turn's missed events are reported as streamLagged, and a turn numbered from 1 is no longer skipped as already delivered. A read dropped while the log is read keeps the replay owed, for a lag too. Remaining as well: with no local queue the subscription reads the log's end and then the task, so an event another replica logs and stores between the two reads arrives twice. A continuation sent the moment a task parks no longer numbers its events over the previous turn's (2026-10-13): it was admitted when the executor returned, before the processor had logged the turn's last events, so its positions collided and its events were dropped from the log. A turn's queue is now released once its events are stored; within one process only. A replay with a position missing, which a failed append leaves, is not used either (2026-10-13): a lag across it is reported as streamLagged and a resume across it starts from the snapshot, where the stream used to skip the lost event silently.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -5579,12 +5582,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:376-379",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:385-388",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:342-358",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:239-255"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:456 resubscribe_terminal_task_returns_unsupported_operation"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:465 resubscribe_terminal_task_returns_unsupported_operation"
    ],
    "notes": "Shared handler path, so it holds for JSON-RPC, REST, gRPC, WebSocket and SLIMRPC; wire mapping is -32004 / 400 / FAILED_PRECONDITION (SLIMRPC: UNIMPLEMENTED, see 3025).",
    "auditor": "E",
@@ -6689,7 +6692,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:39",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:60",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:41",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:353",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:362",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:34",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:182",
     "crates/a2a-protocol-server/src/handler/push_config.rs:140",
@@ -10132,7 +10135,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:79",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:330",
     "crates/a2a-protocol-server/src/handler/helpers.rs:40",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:372",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:381",
     "crates/a2a-protocol-types/src/params/mod.rs:108",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"

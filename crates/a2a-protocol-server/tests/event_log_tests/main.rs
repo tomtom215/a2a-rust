@@ -15,6 +15,7 @@ mod across_turns;
 mod continuation_race;
 mod live_resubscribe;
 mod log;
+mod log_holes;
 mod resumption;
 mod truncation;
 
@@ -269,6 +270,49 @@ impl TaskStore for WritesWhileSubscribing {
             }
             self.0.last_event_seq(task_id).await
         })
+    }
+    fn read_events<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        after_seq: u64,
+        limit: usize,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
+        self.0.read_events(task_id, after_seq, limit)
+    }
+}
+
+/// The same store with the append at one position failing, as a storage
+/// hiccup leaves a log: the processor reports it and goes on, and the log
+/// skips that position.
+#[derive(Debug)]
+struct HoleAt(Arc<InMemoryTaskStore>, u64);
+
+impl TaskStore for HoleAt {
+    delegate_required!();
+
+    fn supports_event_log(&self) -> bool {
+        true
+    }
+    fn append_event<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        seq: u64,
+        event: &'a StreamResponse,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        if seq == self.1 {
+            return Box::pin(async {
+                Err(a2a_protocol_types::error::A2aError::internal(
+                    "append failed",
+                ))
+            });
+        }
+        self.0.append_event(task_id, seq, event)
+    }
+    fn last_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        self.0.last_event_seq(task_id)
     }
     fn read_events<'a>(
         &'a self,

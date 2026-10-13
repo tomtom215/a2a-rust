@@ -288,6 +288,15 @@ impl RequestHandler {
         let Some(events) = self.read_log_with_catchup(task_id, after_seq).await else {
             return;
         };
+        if !contiguous(after_seq, &events) {
+            trace_warn!(
+                task_id = %task_id,
+                after_seq = after_seq,
+                "the event log misses a position the resume asked for; \
+                 the stream starts from the snapshot rather than a replay with a hole"
+            );
+            return;
+        }
 
         // The log may no longer hold the position the client asked to resume
         // from — the in-memory log is bounded, and a persistent one is swept.
@@ -520,6 +529,16 @@ async fn finished(
     }
 }
 
+/// Whether `events` are every position after `after`, none missing.
+///
+/// A failed append leaves the log without that position, and the processor
+/// goes on, so a read can reach the position it was asked for and still lack
+/// one in between. Until 2026-10-13 such a read was replayed as complete,
+/// and the stream skipped the lost event with no `streamLagged`.
+fn contiguous(after: u64, events: &[crate::store::RecordedEvent]) -> bool {
+    events.iter().zip(after + 1..).all(|(e, seq)| e.seq == seq)
+}
+
 /// Reads a task's event log for a replay, detached from the handler so a
 /// stream can do it after its request returned (the lag catch-up).
 #[derive(Clone)]
@@ -587,12 +606,14 @@ impl LogReplay {
             // `Last-Event-ID`, so there is nothing to wait for.
             if reached >= target || found.len() >= limit {
                 // With no live queue (`target` 0) the log is whole, and the
-                // read is all of it only if the limit did not cap it.
-                let complete = if target == 0 {
-                    found.len() < limit
-                } else {
-                    reached >= target
-                };
+                // read is all of it only if the limit did not cap it. A hole
+                // makes it incomplete wherever it ends.
+                let complete = contiguous(after_seq, &found)
+                    && if target == 0 {
+                        found.len() < limit
+                    } else {
+                        reached >= target
+                    };
                 return Some(Replayed {
                     events: found,
                     complete,

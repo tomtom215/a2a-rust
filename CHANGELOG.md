@@ -342,8 +342,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delivered, and goes on. This is the reader every binding streams
   `SendStreamingMessage` and `SubscribeToTask` from. A subscriber attaching
   mid-task resumes from where it attached, not from the start of the log.
-  Only a complete replay is used, and a live event that does not follow it
-  is reported as a lag. When the log cannot supply every missed event the
+  Only a complete replay is used, with no position missing (a failed
+  append leaves the log without one), and a live event that does not
+  follow it is reported as a lag. When the log cannot supply every missed event the
   stream ends with `streamLagged`, as before: a store without a log, a lag
   beyond what the log still holds (the in-memory stores keep the last 512
   events of a task by default; the SQL stores keep the whole log), or more
@@ -676,6 +677,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A resume across a hole in the event log starts from the snapshot**
+  (server; spec §3.5.2: each stream MUST receive the same events in the
+  same order). A failed append leaves the log without that position, and
+  the processor goes on. A `SubscribeToTask` resumed with `Last-Event-ID`
+  replayed the events on either side of the hole, skipping the lost one
+  without saying so. It now starts from the task snapshot, as it does when
+  the log no longer reaches back to the client's position.
 - **A continuation sent the moment a task parks keeps its events and the
   task's artifacts** (server; spec §3.5.2: each stream MUST receive the same
   events in the same order; §3.3.3: multi-turn interactions). A stream
