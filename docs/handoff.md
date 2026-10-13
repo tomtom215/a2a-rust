@@ -1173,6 +1173,15 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     empty `tenant`, already read as none, and push `authentication.credentials`
     of `""`, which by the code (not run) is delivered as `Bearer ` with
     nothing after it; neither the audit nor a test covers that one.
+52. `refactor(server):` the applied mark's version is bumped when an
+    application starts, not when it ends. The Mutation Testing gate on
+    `1672fbf9` found the two bumps covering for each other: each one's
+    mutant survived because the other still changed the version (shard 6
+    the end's, shard 5 the start's). Only the start's is needed, since a
+    reader reads only when nothing is being applied; with the end's gone,
+    `a_read_an_application_overlapped_is_taken_again` kills the start's.
+    Shard 5's two other survivors, the `+` in each catch-up deadline
+    (`snapshot_and_live`, `LogReplay::read`), get tests of their own.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

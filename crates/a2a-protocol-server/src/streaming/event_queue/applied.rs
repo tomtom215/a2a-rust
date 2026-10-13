@@ -31,8 +31,10 @@ struct Progress {
     position: u64,
     /// Set from the start of an event's application to its end.
     applying: bool,
-    /// Bumped at every start and end, so a reader can tell that an
-    /// application began and ended while it read.
+    /// Bumped at every start, so a reader can tell that an application
+    /// began while it read. An end needs no bump: a reader reads only when
+    /// no application is in progress, so one that ends during the read also
+    /// started during it.
     version: u64,
 }
 
@@ -157,7 +159,6 @@ impl Applying<'_> {
             self.mark.0.send_modify(|p| {
                 p.position = p.position.max(seq);
                 p.applying = false;
-                p.version += 1;
             });
         }
     }
