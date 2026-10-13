@@ -15,14 +15,9 @@ use crate::error::ServerError;
 /// Extracts gRPC metadata into a `HashMap` matching the HTTP headers
 /// interface used by `RequestHandler`.
 pub(super) fn extract_metadata(metadata: &tonic::metadata::MetadataMap) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for kv in metadata.iter() {
-        if let tonic::metadata::KeyAndValueRef::Ascii(key, value) = kv
-            && let Ok(v) = value.to_str()
-        {
-            map.insert(key.as_str().to_owned(), v.to_owned());
-        }
-    }
+    // Binary (`-bin`) entries are not text; the handler reads none.
+    let mut map = crate::dispatch::header_fields(metadata.as_ref());
+    map.retain(|key, _| !key.ends_with("-bin"));
     map
 }
 
@@ -372,6 +367,25 @@ mod tests {
             map.get("authorization").map(String::as_str),
             Some("Bearer token")
         );
+    }
+
+    /// Repeated ASCII entries are one field (RFC 9110 §5.3); binary ones
+    /// are not text and are left out.
+    #[test]
+    fn extract_metadata_joins_repeated_entries_and_skips_binary_ones() {
+        let mut meta = tonic::metadata::MetadataMap::new();
+        meta.append("a2a-extensions", "urn:a".parse().unwrap());
+        meta.append("a2a-extensions", "urn:b".parse().unwrap());
+        meta.insert_bin(
+            "trace-bin",
+            tonic::metadata::MetadataValue::from_bytes(b"\x00\x01"),
+        );
+        let map = extract_metadata(&meta);
+        assert_eq!(
+            map.get("a2a-extensions").map(String::as_str),
+            Some("urn:a, urn:b")
+        );
+        assert_eq!(map.len(), 1, "{map:?}");
     }
 
     #[test]

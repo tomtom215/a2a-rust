@@ -31,8 +31,8 @@ use crate::serve::Dispatcher;
 use crate::streaming::build_sse_response;
 
 use response::{
-    error_response, error_response_bytes, extract_headers, json_response, parse_params,
-    read_body_limited, success_response, success_response_bytes,
+    error_response, error_response_bytes, json_response, parse_params, read_body_limited,
+    success_response, success_response_bytes,
 };
 
 /// JSON-RPC 2.0 request dispatcher.
@@ -124,11 +124,8 @@ impl JsonRpcDispatcher {
         // consumed, so the activated set can be echoed on the response
         // (official-SDK convention; lets clients see which requested
         // extensions the agent honored).
-        let requested_extensions = req
-            .headers()
-            .get(a2a_protocol_types::A2A_EXTENSIONS_HEADER)
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_owned);
+        let requested_extensions =
+            super::field_value(req.headers(), a2a_protocol_types::A2A_EXTENSIONS_HEADER);
 
         // Boxed on clippy's own recommendation: the dispatch future is ~16 KiB,
         // and moving that much state around on the stack per request costs
@@ -174,7 +171,7 @@ impl JsonRpcDispatcher {
             .map(ServerError::Protocol);
 
         // Extract HTTP headers BEFORE consuming the body.
-        let mut headers = extract_headers(req.headers());
+        let mut headers = super::header_fields(req.headers());
         // What `PathSegmentTenantResolver` reads; a real header cannot carry
         // this name, so a client cannot supply it.
         headers.insert(":path".to_owned(), req.uri().path().to_owned());

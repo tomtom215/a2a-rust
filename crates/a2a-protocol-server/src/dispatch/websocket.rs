@@ -667,20 +667,11 @@ impl WebSocketDispatcher {
     }
 }
 
-/// Extracts the upgrade request's headers (lowercased) plus the request path
-/// (under `":path"`), mirroring `extract_headers` in the HTTP dispatchers.
-///
-/// Values that are not valid UTF-8 are skipped, matching HTTP behavior.
+/// The upgrade request's header fields, read as the HTTP bindings read them
+/// ([`header_fields`](super::header_fields)), plus the request path (under
+/// `":path"`).
 fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
-    let mut map: HashMap<String, String> = req
-        .headers()
-        .iter()
-        .filter_map(|(k, v)| {
-            v.to_str()
-                .ok()
-                .map(|val| (k.as_str().to_lowercase(), val.to_owned()))
-        })
-        .collect();
+    let mut map = super::header_fields(req.headers());
     // The pseudo-header name cannot collide with a real HTTP/1 header (colons
     // are not valid in field names), and it is what
     // `PathSegmentTenantResolver` documents reading.

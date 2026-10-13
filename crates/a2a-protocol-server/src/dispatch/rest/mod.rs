@@ -39,7 +39,7 @@ use query::{
     contains_path_traversal, parse_list_tasks_query, parse_query_param, parse_query_param_u32,
     percent_decode_path, strip_tenant_prefix,
 };
-use response::{extract_headers, health_response, inject_field_if_missing, read_body_limited};
+use response::{health_response, inject_field_if_missing, read_body_limited};
 
 /// REST HTTP request dispatcher.
 ///
@@ -196,7 +196,7 @@ impl RestDispatcher {
         let tenant = tenant.as_deref();
 
         // Extract HTTP headers BEFORE consuming the request body.
-        let mut headers = extract_headers(req.headers());
+        let mut headers = super::header_fields(req.headers());
         // What `PathSegmentTenantResolver` reads; a real header cannot carry
         // this name, so a client cannot supply it (the WebSocket dispatcher
         // inserts it the same way).

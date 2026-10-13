@@ -299,19 +299,6 @@ fn card_handler(
         .map(Arc::new)
 }
 
-// ── Helper: extract headers as HashMap ───────────────────────────────────────
-
-fn extract_headers(headers: &axum::http::HeaderMap) -> HashMap<String, String> {
-    headers
-        .iter()
-        .filter_map(|(k, v)| {
-            v.to_str()
-                .ok()
-                .map(|val| (k.as_str().to_lowercase(), val.to_owned()))
-        })
-        .collect()
-}
-
 /// The request's headers as the handler takes them, with the address of the
 /// connection it arrived on: a [`PeerAddr`](crate::call_context::PeerAddr)
 /// extension, or axum's `ConnectInfo<SocketAddr>` when the router is served
@@ -325,7 +312,7 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for CallHeaders {
         parts: &mut axum::http::request::Parts,
         _state: &S,
     ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
-        let mut headers = extract_headers(&parts.headers);
+        let mut headers = super::header_fields(&parts.headers);
         let peer = super::peer_of(&parts.extensions).or_else(|| {
             parts
                 .extensions
@@ -1026,34 +1013,6 @@ mod tests {
             axum::http::StatusCode::OK,
             "a colon action must not be captured by the plain `GetTask` arm"
         );
-    }
-
-    #[test]
-    fn extract_headers_lowercases_names() {
-        let mut map = axum::http::HeaderMap::new();
-        map.insert("X-Request-ID", "abc".parse().unwrap());
-        map.insert("content-type", "application/json".parse().unwrap());
-
-        let result = extract_headers(&map);
-        assert_eq!(result.get("x-request-id").unwrap(), "abc");
-        assert_eq!(result.get("content-type").unwrap(), "application/json");
-    }
-
-    #[test]
-    fn extract_headers_skips_non_utf8_values() {
-        let mut map = axum::http::HeaderMap::new();
-        map.insert("good", "valid".parse().unwrap());
-        // Non-UTF8 values are filtered out by to_str().ok()
-        let result = extract_headers(&map);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result.get("good").unwrap(), "valid");
-    }
-
-    #[test]
-    fn extract_headers_empty_map() {
-        let map = axum::http::HeaderMap::new();
-        let result = extract_headers(&map);
-        assert!(result.is_empty());
     }
 
     #[test]

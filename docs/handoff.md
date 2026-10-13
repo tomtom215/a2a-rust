@@ -1512,6 +1512,28 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     does. `a_scheme_with_two_arms_is_refused`; mutants 4 of 4, one
     rewritten after it did not build. No ledger entry: the `oneof` has no
     RFC 2119 line of its own.
+76. `fix(server):` RFC 9110 §5.3 / spec §9.2, §10.2, §11.2 — a header sent
+    as several lines is one field (audit register R23). Each of the
+    JSON-RPC, HTTP+JSON, axum, gRPC and WebSocket bindings copied headers
+    into a map with `insert`, keeping the last line of a repeated field;
+    the JSON-RPC echo of `A2A-Extensions` read the first. One helper,
+    `dispatch::header_fields`, now builds every binding's map, joining a
+    field's lines in order with `", "` (`"; "` for `cookie`, RFC 9113
+    §8.2.3), as the SLIMRPC binding already did; gRPC drops `-bin` keys as
+    before, and the echo reads the same joined value. Behaviour change: a
+    single-valued field sent twice (`Authorization`, a tenant header)
+    reaches interceptors as both values joined, so a bearer token sent on
+    two lines is refused (`a_credential_sent_on_two_lines_is_refused`).
+    `tests/repeated_header_lines.rs` (one test per binding, all five
+    failing before) and four unit tests on the helper; mutants 14 of 14,
+    two rewritten after they did not build (the "last line only" one, the
+    old behaviour, fails the credential test too). Ledger: the eight
+    entries that cited the deleted extractors (277, 278, 279, 288, 289,
+    290, 296, 297) cite the helper, and 68, 275, 320 and 328 follow the
+    code the diff moved; 279 and 290 lose the last-line-wins note and carry
+    `changed_by`. Entry 296's note that axum never checks `A2A-Version`
+    was stale (`validate_a2a_request` does, `axum_adapter.rs:212`) and its
+    axum citation pointed at a doc comment; both are corrected.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

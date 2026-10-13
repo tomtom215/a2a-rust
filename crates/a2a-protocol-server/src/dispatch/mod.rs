@@ -249,6 +249,45 @@ pub(crate) fn record_peer_addr(
     }
 }
 
+/// A request's header fields by name, as the handler reads them.
+///
+/// Names are lowercase, as `http` stores them. A field sent as several lines
+/// is one field (RFC 9110 §5.3), so its lines are joined in order as
+/// [`field_value`] joins them. Until 2026-10-13 every binding kept one line,
+/// the last, and `A2A-Extensions` sent as two lines activated only the
+/// second.
+pub(crate) fn header_fields(
+    headers: &hyper::HeaderMap,
+) -> std::collections::HashMap<String, String> {
+    headers
+        .keys()
+        .filter_map(|name| {
+            Some((
+                name.as_str().to_owned(),
+                field_value(headers, name.as_str())?,
+            ))
+        })
+        .collect()
+}
+
+/// The value of the field `name` (any case): its lines joined in order with
+/// `", "`, or with `"; "` for `cookie`, which HTTP/2 splits into one line per
+/// cookie (RFC 9113 §8.2.3). A line that is not visible ASCII is left out;
+/// `None` when no line is left.
+pub(crate) fn field_value(headers: &hyper::HeaderMap, name: &str) -> Option<String> {
+    let separator = if name.eq_ignore_ascii_case("cookie") {
+        "; "
+    } else {
+        ", "
+    };
+    let lines: Vec<&str> = headers
+        .get_all(name)
+        .iter()
+        .filter_map(|line| line.to_str().ok())
+        .collect();
+    (!lines.is_empty()).then(|| lines.join(separator))
+}
+
 /// The [`PeerAddr`](crate::call_context::PeerAddr) a server attached to a
 /// request, if any.
 pub(crate) fn peer_of(extensions: &hyper::http::Extensions) -> Option<std::net::SocketAddr> {
@@ -261,6 +300,66 @@ pub(crate) fn peer_of(extensions: &hyper::http::Extensions) -> Option<std::net::
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    // ── header_fields ────────────────────────────────────────────────────
+
+    fn lines(pairs: &[(&'static str, &[u8])]) -> hyper::HeaderMap {
+        let mut headers = hyper::HeaderMap::new();
+        for (name, value) in pairs {
+            headers.append(
+                *name,
+                hyper::header::HeaderValue::from_bytes(value).expect("value"),
+            );
+        }
+        headers
+    }
+
+    #[test]
+    fn header_fields_are_named_in_lowercase() {
+        let fields = header_fields(&lines(&[
+            ("Authorization", b"Bearer tok"),
+            ("X-Request-ID", b"abc"),
+        ]));
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields["authorization"], "Bearer tok");
+        assert_eq!(fields["x-request-id"], "abc");
+        assert!(header_fields(&hyper::HeaderMap::new()).is_empty());
+    }
+
+    /// RFC 9110 §5.3: the lines of one field, joined in the order sent.
+    #[test]
+    fn a_field_sent_as_several_lines_is_one_field() {
+        let fields = header_fields(&lines(&[
+            ("a2a-extensions", b"urn:b"),
+            ("A2A-Extensions", b"urn:a, urn:c"),
+            ("authorization", b"Bearer tok"),
+        ]));
+        assert_eq!(fields["a2a-extensions"], "urn:b, urn:a, urn:c");
+        assert_eq!(fields["authorization"], "Bearer tok");
+    }
+
+    /// RFC 9113 §8.2.3: HTTP/2 sends each cookie on its own line, and they
+    /// are rejoined with `"; "`.
+    #[test]
+    fn cookie_lines_are_joined_as_cookies() {
+        let headers = lines(&[("cookie", b"a=1"), ("Cookie", b"b=2")]);
+        assert_eq!(header_fields(&headers)["cookie"], "a=1; b=2");
+        assert_eq!(field_value(&headers, "Cookie").as_deref(), Some("a=1; b=2"));
+    }
+
+    #[test]
+    fn a_line_that_is_not_visible_ascii_is_left_out() {
+        let headers = lines(&[
+            ("x-name", b"caf\xe9"),
+            ("x-name", b"cafe"),
+            ("x-other", b"caf\xe9"),
+        ]);
+        let fields = header_fields(&headers);
+        assert_eq!(fields["x-name"], "cafe");
+        assert!(!fields.contains_key("x-other"), "{fields:?}");
+        assert_eq!(field_value(&headers, "x-other"), None);
+        assert_eq!(field_value(&headers, "x-absent"), None);
+    }
 
     #[test]
     fn default_values() {

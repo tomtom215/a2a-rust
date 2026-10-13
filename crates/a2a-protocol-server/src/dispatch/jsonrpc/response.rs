@@ -5,7 +5,6 @@
 
 //! JSON-RPC response serialization and helper functions.
 
-use std::collections::HashMap;
 use std::convert::Infallible;
 
 use bytes::Bytes;
@@ -19,17 +18,6 @@ use a2a_protocol_types::jsonrpc::{
 };
 
 use crate::error::ServerError;
-
-/// Extracts HTTP headers into a `HashMap<String, String>` with lowercased keys.
-pub(super) fn extract_headers(headers: &hyper::HeaderMap) -> HashMap<String, String> {
-    let mut map = HashMap::with_capacity(headers.len());
-    for (key, value) in headers {
-        if let Ok(v) = value.to_str() {
-            map.insert(key.as_str().to_owned(), v.to_owned());
-        }
-    }
-    map
-}
 
 /// Serializes a success response to bytes (for batch request support).
 pub(super) fn success_response_bytes<T: serde::Serialize>(id: JsonRpcId, result: &T) -> Vec<u8> {
@@ -290,45 +278,6 @@ pub(super) fn json_response(
 mod tests {
     use super::*;
     use http_body_util::BodyExt;
-    use hyper::header::HeaderValue;
-
-    // ── extract_headers ──────────────────────────────────────────────────────
-
-    #[test]
-    fn extract_headers_lowercases_keys() {
-        // hyper HeaderMap normalises keys to lowercase internally, so
-        // inserting via the typed `header::AUTHORIZATION` constant gives us
-        // the lower-case key "authorization".
-        let mut headers = hyper::HeaderMap::new();
-        headers.insert(
-            hyper::header::AUTHORIZATION,
-            HeaderValue::from_static("Bearer token"),
-        );
-        let map = extract_headers(&headers);
-        assert_eq!(
-            map.get("authorization").map(String::as_str),
-            Some("Bearer token")
-        );
-    }
-
-    #[test]
-    fn extract_headers_skips_non_ascii_values() {
-        // Build a raw HeaderValue that contains non-UTF-8 bytes so that
-        // `to_str()` returns an error and the entry should be skipped.
-        let mut headers = hyper::HeaderMap::new();
-        let bad_value = HeaderValue::from_bytes(b"caf\xe9").unwrap();
-        headers.insert(hyper::header::X_CONTENT_TYPE_OPTIONS, bad_value);
-        let map = extract_headers(&headers);
-        // The entry must NOT appear in the output map.
-        assert!(!map.contains_key("x-content-type-options"));
-    }
-
-    #[test]
-    fn extract_headers_empty() {
-        let headers = hyper::HeaderMap::new();
-        let map = extract_headers(&headers);
-        assert!(map.is_empty());
-    }
 
     // ── parse_params ─────────────────────────────────────────────────────────
 

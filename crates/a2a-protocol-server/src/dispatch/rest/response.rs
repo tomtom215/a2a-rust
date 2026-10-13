@@ -13,17 +13,6 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 
-/// Extracts HTTP headers into a `HashMap<String, String>` with lowercased keys.
-pub(super) fn extract_headers(headers: &hyper::HeaderMap) -> HashMap<String, String> {
-    let mut map = HashMap::with_capacity(headers.len());
-    for (key, value) in headers {
-        if let Ok(v) = value.to_str() {
-            map.insert(key.as_str().to_owned(), v.to_owned());
-        }
-    }
-    map
-}
-
 pub fn json_ok_response<T: serde::Serialize>(
     value: &T,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
@@ -183,26 +172,6 @@ pub(super) fn inject_field_if_missing(
 mod tests {
     use super::*;
     use http_body_util::BodyExt;
-
-    // ── extract_headers ──────────────────────────────────────────────────
-
-    #[test]
-    fn extract_headers_lowercased_keys() {
-        let mut hm = hyper::HeaderMap::new();
-        hm.insert("Content-Type", "application/json".parse().unwrap());
-        hm.insert("Authorization", "Bearer tok".parse().unwrap());
-
-        let map = extract_headers(&hm);
-        assert_eq!(map.get("content-type").unwrap(), "application/json");
-        assert_eq!(map.get("authorization").unwrap(), "Bearer tok");
-    }
-
-    #[test]
-    fn extract_headers_empty() {
-        let hm = hyper::HeaderMap::new();
-        let map = extract_headers(&hm);
-        assert!(map.is_empty());
-    }
 
     // ── Response helpers ─────────────────────────────────────────────────
 

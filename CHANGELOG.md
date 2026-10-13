@@ -326,6 +326,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A header sent as several lines is read as one field** (server; spec
+  §9.2 and §11.2: service parameters are HTTP headers; RFC 9110 §5.3). The
+  JSON-RPC, HTTP+JSON, axum, gRPC and WebSocket bindings each kept one line
+  of a repeated field, the last. `A2A-Extensions` sent as two lines,
+  `urn:a` then `urn:b`, activated `urn:b` only: a card requiring `urn:a`
+  answered `ExtensionSupportRequiredError`, and the JSON-RPC response
+  echoed `urn:a`, read from the first line, as activated. Every binding
+  now joins the lines in order with `", "`, as the SLIMRPC binding already
+  did, and `cookie` lines with `"; "` (RFC 9113 §8.2.3); the echo reads the
+  same value. A field that takes one value and arrives on two lines, such
+  as `Authorization` or a tenant header, reaches interceptors and executors
+  as both values joined rather than as the last line, so a bearer token
+  sent on two lines is refused.
 - **`StaticAgentCardHandler::new` refuses a card a server may not publish**
   (server; proto `REQUIRED` fields, spec §5.7). `build()`, hot reload and
   the dynamic card handler run `AgentCard::validate` and
