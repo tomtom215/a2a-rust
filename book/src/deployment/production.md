@@ -158,8 +158,9 @@ order that works:
 2. let in-flight tasks finish on their own for up to `completion_grace`
    (default 5 s), then cancel the rest and wait up to `task_grace` (default
    10 s) for the executors to act on it — cancel what they delegated,
-   return — after which the executor's `cancel` hook writes the terminal `Canceled` for any
-   that did not write one, so every open stream ends with a terminal event;
+   return — after which the executor's `cancel` hook, or the handler after a hook that
+   writes none, writes the terminal `Canceled` for any that did not write one, so every
+   open stream ends with a terminal event;
 3. drain connections, for up to `drain_timeout` (default 15 s).
 
 ```rust,no_run

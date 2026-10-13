@@ -43,7 +43,7 @@ mod execute;
 pub use execute::WatchedExecutor;
 mod idempotency;
 mod respond;
-mod terminal;
+pub(super) mod terminal;
 mod validation;
 
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;

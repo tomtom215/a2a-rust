@@ -300,13 +300,14 @@ impl RequestHandler {
                 // `CancelTask` runs this hook itself, and cancels only the
                 // task's own child token. The executor saw its token and returned without a
                 // terminal state, so end the task the way `CancelTask`
-                // would — the default hook writes `Canceled` — and every
-                // stream still open on it gets a terminal event instead of
-                // simply stopping. After `execute` returned, never beside
+                // would — the hook, or after a hook that writes none
+                // `cancel_with`, writes `Canceled` — and every stream still
+                // open on it gets a terminal event instead of simply
+                // stopping. After `execute` returned, never beside
                 // it: an executor that wrote its own terminal state while
                 // the hook wrote another would have the second rejected as
                 // an invalid transition and the task marked `Failed`.
-                if let Err(_e) = executor.cancel(&ctx, &writer).await {
+                if let Err(_e) = writer.cancel_with(executor.as_ref(), &ctx).await {
                     trace_warn!(
                         task_id = %ctx.task_id,
                         error = %_e,

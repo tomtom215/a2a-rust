@@ -1151,6 +1151,18 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     report `on_persisted`), and the processor logs each event only after
     storing the one before, so the log replay rarely outruns a slow store;
     and a row written by `CancelTask` or another replica is outside the mark.
+50. `fix(server):` §3.1.2 / §3.1.6 — a cancelled task's streams end on
+    `Canceled` whatever its executor's `cancel` hook writes.
+    `TerminalTracking::cancel_with` runs the hook and, when it returned `Ok`
+    without a terminal state, writes the default hook's `Canceled`
+    (`executor::write_canceled`); `CancelTask` and the shutdown/halt path
+    both go through it. Before, a send stream ended after `Working` with no
+    terminal frame, and a halt left the task `Working` (each checked by
+    reverting its call site). A subscription already recovered `Canceled`
+    through the reattach hook's store read. The conformance kit's
+    `cancel_emits_terminal` check, which existed to catch the silent hook,
+    is `cancel_succeeds` now and passes it; `a_cancel_that_fails_is_caught`
+    keeps a failing hook failed, which no test covered before.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

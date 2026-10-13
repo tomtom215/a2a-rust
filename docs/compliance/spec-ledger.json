@@ -460,15 +460,22 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:470",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:527",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:786",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:857"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:857",
+    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:86",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:116",
+    "crates/a2a-protocol-server/src/handler/messaging/execute.rs:310"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:46 send_message_streaming_returns_reader",
-    "crates/a2a-protocol-server/tests/stream_closes_on_terminal.rs:34 the_stream_ends_at_the_terminal_status"
+    "crates/a2a-protocol-server/tests/stream_closes_on_terminal.rs:34 the_stream_ends_at_the_terminal_status",
+    "crates/a2a-protocol-server/tests/cancel_override_terminal.rs:104 a_cancel_the_hook_does_not_write_still_ends_the_stream",
+    "crates/a2a-protocol-server/tests/cancel_override_terminal.rs:155 a_halt_the_hook_does_not_write_still_ends_the_task",
+    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:282 a_cancel_writes_canceled_only_when_the_hook_did_not_end_the_task"
    ],
-   "notes": "Since 2026-10-12 a reader ends once it has delivered a terminal state (and whatever was queued ahead of it), instead of waiting for the executor to drop its writer; an executor still running, or writing, after its terminal status no longer holds the stream open. The conformance harness reads the raw channel so nothing_after_terminal still sees such writes. The test failed before the change (stream open after 5 s).",
+   "notes": "Since 2026-10-12 a reader ends once it has delivered a terminal state (and whatever was queued ahead of it), instead of waiting for the executor to drop its writer; an executor still running, or writing, after its terminal status no longer holds the stream open. The conformance harness reads the raw channel so nothing_after_terminal still sees such writes. The test failed before the change (stream open after 5 s). A cancelled task reaches its terminal state on the queue whatever its executor's cancel hook writes (2026-10-13): only the default hook wrote Canceled there, so CancelTask against a hook overridden to release state stored Canceled while the send stream ended after Working with no terminal frame, and a halt or shutdown left such a task Working. After a hook that returns Ok without a terminal state the handler writes Canceled itself (TerminalTracking::cancel_with). Both tests failed before the change.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 212,
@@ -822,16 +829,19 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:66",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:232",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:786",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:857"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:857",
+    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:86"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:452 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:540 resubscribe_gives_up_after_the_idle_bound",
-    "crates/a2a-protocol-server/tests/stream_closes_on_terminal.rs:34 the_stream_ends_at_the_terminal_status"
+    "crates/a2a-protocol-server/tests/stream_closes_on_terminal.rs:34 the_stream_ends_at_the_terminal_status",
+    "crates/a2a-protocol-server/tests/cancel_override_terminal.rs:125 a_cancel_the_hook_does_not_write_ends_a_subscription"
    ],
-   "notes": "SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still non-terminal the reattach hook ends the stream early; the client resubscribes.",
+   "notes": "SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still non-terminal the reattach hook ends the stream early; the client resubscribes. A cancel whose executor hook writes nothing now reaches the queue as Canceled too (2026-10-13, see the 210 entry); a SubscribeToTask stream already recovered it through the reattach hook's store read (the subscription test passes without the change), a send stream did not.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 311,

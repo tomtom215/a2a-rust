@@ -263,13 +263,15 @@ impl Run {
     }
 }
 
-/// [`AgentExecutor::cancel`] must leave subscribers a terminal state.
-pub(super) async fn cancel_emits_a_terminal_state(
+/// [`AgentExecutor::cancel`] must return `Ok`, in time and without
+/// panicking. Whether it writes the terminal state is its choice: after a
+/// hook that writes none, the handler writes `Canceled` (spec §3.1.2).
+pub(super) async fn cancel_succeeds(
     executor: &Arc<dyn AgentExecutor>,
     message: &Message,
     call_context: Option<&CallContext>,
 ) -> CheckResult {
-    const NAME: &str = "cancel_emits_terminal";
+    const NAME: &str = "cancel_succeeds";
     let (writer, _reader) = new_in_memory_queue();
     let rx = writer.raw_subscribe();
     let writer = Arc::new(writer);
@@ -309,10 +311,9 @@ pub(super) async fn cancel_emits_a_terminal_state(
             if states(&events).iter().any(|s| s.is_terminal()) {
                 CheckResult::pass(NAME, "emitted a terminal status")
             } else {
-                CheckResult::fail(
+                CheckResult::pass(
                     NAME,
-                    "emitted no terminal status; a subscriber watching the stream \
-                     is left waiting for a task that has already been cancelled",
+                    "emitted no terminal status; the handler writes Canceled after it",
                 )
             }
         }

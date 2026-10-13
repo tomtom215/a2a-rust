@@ -374,6 +374,10 @@ impl AgentExecutor for GpuAgent {
 }
 ```
 
+The last line is optional. After a hook that returns `Ok` without writing a
+terminal state, the handler writes `Canceled` itself, so the task's open
+streams end on it either way.
+
 ### Executor with State
 
 Executors can hold state — database connections, model handles, configuration:

@@ -16,6 +16,7 @@ use crate::request_context::RequestContext;
 
 use super::super::RequestHandler;
 use super::super::helpers::{build_call_context, task_id_param};
+use super::super::messaging::terminal::TerminalTracking;
 
 impl RequestHandler {
     /// Handles `CancelTask`.
@@ -104,9 +105,15 @@ impl RequestHandler {
                     // INSERT a queue for a task whose executor has already exited (e.g.
                     // an input-required task), and nothing on the cancel path ever
                     // destroys it — a permanent map + concurrency-slot leak keyed by a
-                    // client-reachable task id.
-                    let writer = self.event_queue_manager.writer_for_cancel(&task_id).await;
-                    self.executor.cancel(&ctx, writer.as_ref()).await?;
+                    // client-reachable task id. The writer ends the task `Canceled`
+                    // after a hook that wrote no terminal state, so the live queue's
+                    // streams close on it (§3.1.2) whether or not the hook is the
+                    // default one.
+                    let writer = TerminalTracking::new(
+                        self.event_queue_manager.writer_for_cancel(&task_id).await,
+                        std::sync::Arc::default(),
+                    );
+                    writer.cancel_with(self.executor.as_ref(), &ctx).await?;
 
                     // Re-read the task to narrow the TOCTOU window: if the background
                     // processor completed/failed the task between our initial check and

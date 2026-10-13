@@ -647,6 +647,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A cancelled task's streams end on `Canceled` whatever its `cancel` hook
+  writes** (server; spec §3.1.2, §3.1.6: a stream MUST close when the task
+  reaches a terminal state). Only the default `AgentExecutor::cancel` wrote
+  `Canceled` to the task's queue. An executor that overrode the hook to
+  release what the task held, as the trait's documentation invites, and
+  wrote nothing, had its task stored `Canceled` by `CancelTask` while an open
+  `SendStreamingMessage` stream ended after `Working` with no terminal
+  frame; a halt or shutdown that ended such a task left it `Working`, its
+  streams likewise without a terminal frame. After a hook that returns `Ok`
+  without writing a terminal state, the handler now writes `Canceled` to the
+  queue itself, where it is stored and every open stream ends on it. The
+  conformance kit's `cancel_emits_terminal` check, which failed such a hook,
+  is renamed `cancel_succeeds`: it passes a hook that writes nothing, and
+  still fails one that errors, panics or overruns.
 - **A `SubscribeToTask` stream misses nothing between its first `Task` and
   its live events** (server; spec §3.1.6: the first event represents "the
   current state of the task at the time of subscription. This prevents a

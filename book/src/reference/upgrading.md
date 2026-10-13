@@ -346,6 +346,15 @@ the log below what the stream misses
 (`TaskStoreConfig::with_max_events_per_task`), or lower
 `HandlerLimits::subscribe_replay_limit`.
 
+### The conformance kit's cancel check is `cancel_succeeds`
+
+The `conformance` feature's `cancel_emits_terminal` check is renamed
+`cancel_succeeds`; a CI step that greps for the old name finds nothing. It
+failed a `cancel` hook that wrote no terminal state, because such a hook left
+the task's streams without one. The handler now writes `Canceled` after such a
+hook (spec §3.1.2), so the check passes it, and fails a hook that errors,
+panics or overruns.
+
 ### Error codes some clients may match on
 
 - A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with

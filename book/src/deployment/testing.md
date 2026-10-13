@@ -72,7 +72,7 @@ executor conformance:
                                            started — which is when cancellation almost
                                            always arrives
   pass  does_not_panic_when_cancelled_mid_run returned normally
-  pass  cancel_emits_terminal              emitted a terminal status
+  pass  cancel_succeeds                    emitted a terminal status
   9 of 11 graded checks passed, 2 not applicable
 ```
 
