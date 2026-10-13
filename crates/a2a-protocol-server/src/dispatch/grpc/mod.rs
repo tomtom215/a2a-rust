@@ -54,6 +54,7 @@
 
 mod bounded_incoming;
 mod config;
+mod details;
 mod dispatcher;
 mod helpers;
 mod native;

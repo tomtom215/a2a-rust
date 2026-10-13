@@ -79,7 +79,8 @@ pub(super) fn server_error_to_status(err: &ServerError) -> Status {
     let code = grpc_code(err, a2a_err.code);
     let reason = a2a_err.code.a2a_reason();
     let retry_after = a2a_err.retry_after();
-    if reason.is_none() && retry_after.is_none() {
+    let data = a2a_err.data.as_ref().and_then(super::details::data_detail);
+    if reason.is_none() && retry_after.is_none() && data.is_none() {
         return Status::new(code, a2a_err.message);
     }
     let mut details = tonic_types::ErrorDetails::new();
@@ -93,7 +94,22 @@ pub(super) fn server_error_to_status(err: &ServerError) -> Status {
     if retry_after.is_some() {
         details.set_retry_info(retry_after);
     }
-    Status::with_error_details(code, a2a_err.message, details)
+    // §5.1: `data` too, as the JSON bindings carry it (`details`).
+    let mut object = None;
+    match data {
+        Some(super::details::DataDetail::BadRequest(violations)) => {
+            for (field, description) in violations {
+                details.add_bad_request_violation(field, description);
+            }
+        }
+        Some(super::details::DataDetail::Struct(s)) => object = Some(s),
+        None => {}
+    }
+    let status = Status::with_error_details(code, a2a_err.message, details);
+    match object {
+        Some(s) => super::details::with_struct(&status, &s),
+        None => status,
+    }
 }
 
 /// The gRPC status code this binding answers `err` with; `a2a_code` is
@@ -255,6 +271,32 @@ mod tests {
     }
 
     // §10.6: A2A-specific errors carry google.rpc.ErrorInfo in status.details.
+
+    /// §5.1: an error's `data` travels as the JSON bindings carry it, a
+    /// `BadRequest` as itself; it was dropped.
+    #[test]
+    fn invalid_params_carry_their_field_violations() {
+        use tonic_types::StatusExt as _;
+        let err = ServerError::Protocol(a2a_protocol_types::error::A2aError::with_data(
+            a2a_protocol_types::error::ErrorCode::InvalidParams,
+            "bad",
+            crate::streaming::sse::bad_request_detail("message.parts", "empty"),
+        ));
+        let status = server_error_to_status(&err);
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        let violations = status
+            .get_details_bad_request()
+            .expect("BadRequest")
+            .field_violations;
+        assert_eq!(violations.len(), 1);
+        assert_eq!(
+            (
+                violations[0].field.as_str(),
+                violations[0].description.as_str()
+            ),
+            ("message.parts", "empty")
+        );
+    }
 
     #[test]
     fn a2a_error_status_carries_error_info_detail() {

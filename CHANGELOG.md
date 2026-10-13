@@ -677,6 +677,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A gRPC error carries its data, and a stream's error its marker**
+  (server and client; spec §5.1: every binding MUST handle errors the same
+  way). The JSON bindings send an error's `data` beside its `ErrorInfo`: a
+  `google.rpc.BadRequest` as itself, anything else as a
+  `google.protobuf.Struct` detail. The gRPC binding dropped it, so a gRPC
+  client lost a bad request's field violations, and a stream's error was
+  `INTERNAL` "event queue error" whatever it was: a lagged stream could not
+  be told from an executor failure. The server now adds the same details to
+  the status, and answers a stream's error as a unary call's; the gRPC
+  client decodes a `Struct` detail into `A2aError::data`, as its REST
+  transport does, so `is_stream_lagged` holds over gRPC, and a
+  `BadRequest` into the typed detail the JSON bindings send. The types
+  crate's `proto` module re-exports `prost_types`.
 - **A resume across a hole in the event log starts from the snapshot**
   (server; spec §3.5.2: each stream MUST receive the same events in the
   same order). A failed append leaves the log without that position, and

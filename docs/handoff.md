@@ -1250,6 +1250,18 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     turn's events (the same task's, in order); §11.7 describes a stream as
     closing at an interrupted state, but §3.1.2's MUST is the terminal
     state, so send streams were left as they are.
+59. `fix(server, client):` §5.1 — a gRPC error carries its `data` (audit
+    register R60). `server_error_to_status` adds what the JSON bindings'
+    `error_details` send: a BadRequest's field violations as a
+    `google.rpc.BadRequest`, any other `data` as a `google.protobuf.Struct`
+    `Any` (`dispatch/grpc/details.rs`, since `tonic_types::ErrorDetails`
+    holds only the standard detail types). A stream's error goes through
+    it too; it was `Status::internal("event queue error")`, which lost the
+    `streamLagged` marker. The gRPC client's `status_to_error` decodes a
+    `Struct` detail into `data` and a BadRequest into the JSON shape. The
+    types crate's `proto` module re-exports `prost_types`, so neither the
+    server nor the client takes a dependency of its own, and no lockfile
+    changes.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

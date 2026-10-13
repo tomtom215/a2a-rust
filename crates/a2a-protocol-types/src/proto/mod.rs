@@ -41,4 +41,10 @@ mod generated {
 
 pub use generated::*;
 
+/// The protobuf well-known types (`google.protobuf.*`) these messages use,
+/// for a transport that builds or reads one beside them, such as the
+/// `google.protobuf.Struct` an error's data travels in as a gRPC status
+/// detail.
+pub use prost_types;
+
 pub mod convert;

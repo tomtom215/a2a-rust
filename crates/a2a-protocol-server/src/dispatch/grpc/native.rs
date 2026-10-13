@@ -96,8 +96,13 @@ fn reader_to_native_stream(
                         break;
                     }
                 }
-                Some(Err(_)) => {
-                    let _ = tx.send(Err(Status::internal("event queue error"))).await;
+                Some(Err(e)) => {
+                    // The error as a unary call answers it, `streamLagged`
+                    // marker included (§5.1); it was a bare internal error.
+                    let status = super::helpers::server_error_to_status(
+                        &crate::error::ServerError::Protocol(e),
+                    );
+                    let _ = tx.send(Err(status)).await;
                     break;
                 }
                 None => break,
@@ -362,6 +367,51 @@ mod tests {
     use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
     use a2a_protocol_types::responses::SendMessageResponse;
     use a2a_protocol_types::task::{ContextId, TaskId};
+
+    /// §5.1: a stream's error reaches a gRPC client as a unary call's would,
+    /// with its data. A lag was `Status::internal("event queue error")`, and
+    /// the `streamLagged` marker that tells it from an executor failure was
+    /// gone.
+    #[tokio::test]
+    async fn a_lagged_stream_s_error_keeps_its_marker() {
+        use crate::streaming::EventQueueWriter as _;
+        use prost::Message as _;
+        use tokio_stream::StreamExt as _;
+        let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue_with_options(
+            1,
+            crate::streaming::event_queue::DEFAULT_MAX_EVENT_SIZE,
+            crate::streaming::event_queue::DEFAULT_WRITE_TIMEOUT,
+        );
+        for _ in 0..3 {
+            let event = a2a_protocol_types::events::StreamResponse::StatusUpdate(
+                a2a_protocol_types::events::TaskStatusUpdateEvent {
+                    task_id: TaskId::new("t"),
+                    context_id: ContextId::new("c"),
+                    status: a2a_protocol_types::task::TaskStatus::new(
+                        a2a_protocol_types::task::TaskState::Working,
+                    ),
+                    metadata: None,
+                },
+            );
+            writer.write(event).await.expect("write");
+        }
+        let mut stream = reader_to_native_stream(reader, 8);
+
+        let status = stream.next().await.expect("an item").expect_err("the lag");
+        assert_eq!(status.code(), tonic::Code::Internal);
+        let carried = tonic_types::pb::Status::decode(status.details()).expect("details");
+        let any = carried
+            .details
+            .iter()
+            .find(|d| d.type_url == super::super::details::STRUCT_TYPE)
+            .expect("the error's data as a Struct");
+        let data = a2a_protocol_types::proto::convert::struct_to_json(
+            a2a_protocol_types::proto::prost_types::Struct::decode(any.value.as_slice())
+                .expect("a Struct"),
+        )
+        .expect("JSON");
+        assert_eq!(data, serde_json::json!({ "streamLagged": 2 }));
+    }
 
     /// A client that cancels a stream while the task is quiet releases the
     /// server's subscription at once. The forwarder used to notice only at
