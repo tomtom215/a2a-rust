@@ -22,6 +22,10 @@ impl A2aClient {
     /// [`crate::auth::AuthInterceptor`] or equivalent before calling this
     /// method.
     ///
+    /// A client built from a card checks later calls against the
+    /// capabilities this card declares, in place of the public card's
+    /// (spec §3.1.11, §13.3).
+    ///
     /// # Errors
     ///
     /// Returns [`ClientError`] on transport or protocol errors.
@@ -48,8 +52,10 @@ impl A2aClient {
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<AuthenticatedExtendedCardResponse>(resp.result)
-            .map_err(ClientError::Serialization)
+        let card = serde_json::from_value::<AuthenticatedExtendedCardResponse>(resp.result)
+            .map_err(ClientError::Serialization)?;
+        self.adopt_capabilities(&card);
+        Ok(card)
     }
 }
 

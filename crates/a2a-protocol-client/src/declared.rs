@@ -51,6 +51,12 @@ impl DeclaredCapabilities {
         }
     }
 
+    /// The same, with `extendedAgentCard` declared.
+    pub const fn with_extended_agent_card(mut self) -> Self {
+        self.extended_agent_card = true;
+        self
+    }
+
     /// `Ok` when the card declares `capability`.
     ///
     /// # Errors

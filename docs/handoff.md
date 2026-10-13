@@ -1182,8 +1182,14 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `a_read_an_application_overlapped_is_taken_again` kills the start's.
     Shard 5's two other survivors, the `+` in each catch-up deadline
     (`snapshot_and_live`, `LogReplay::read`), get tests of their own.
+53. `fix(client):` §3.1.11 / §13.3 — the client checks calls against the
+    extended card's capabilities once `get_extended_agent_card` has fetched
+    it (`A2aClient::adopt_capabilities`; the field is behind a `RwLock`,
+    since the fetch takes `&self`). Replaced, not merged; `extendedAgentCard`
+    stays declared. Ledger 425 moves from APPLICATION to TESTED and 3166's
+    note no longer says the client keeps no card.
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
 23 exempt of 53. Static checks: 29 of 29 locally.
 

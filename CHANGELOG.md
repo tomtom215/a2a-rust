@@ -647,6 +647,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A client checks calls against the extended card once it has fetched
+  it** (client; spec §3.1.11, §13.3: a client SHOULD replace its cached
+  public card with the extended one). A client built from a card checks a
+  call's capability against that card before sending it, and kept checking
+  against the public card after `get_extended_agent_card`, so a capability
+  only the extended card declares, such as `pushNotifications`, was still
+  refused locally with `CapabilityNotDeclared`. The fetched card's
+  capabilities now replace the public card's; `extendedAgentCard` stays
+  declared, since the agent has just served it. A client built without a
+  card, or with `without_capability_checks`, still checks nothing.
 - **Proto3 defaults on the JSON bindings mean unset** (server; spec §5.1:
   every binding MUST return semantically equivalent results for the same
   request). `ProtoJSON` prints a field without presence at its default as

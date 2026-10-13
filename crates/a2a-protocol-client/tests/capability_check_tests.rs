@@ -341,3 +341,139 @@ async fn a_client_without_a_card_checks_nothing() {
     );
     assert_eq!(recorder.sent().len(), 10);
 }
+
+/// Answers `GetExtendedAgentCard` with `card`, and records and fails every
+/// other call as [`Recorder`] does.
+struct ServesExtendedCard {
+    card: serde_json::Value,
+    recorder: Recorder,
+}
+
+impl Transport for ServesExtendedCard {
+    fn send_request<'a>(
+        &'a self,
+        method: &'a str,
+        params: serde_json::Value,
+        extra_headers: &'a HashMap<String, String>,
+    ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
+        if method == "GetExtendedAgentCard" {
+            let card = self.card.clone();
+            return Box::pin(async move { Ok(card) });
+        }
+        self.recorder.send_request(method, params, extra_headers)
+    }
+
+    fn send_streaming_request<'a>(
+        &'a self,
+        method: &'a str,
+        params: serde_json::Value,
+        extra_headers: &'a HashMap<String, String>,
+    ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+        self.recorder
+            .send_streaming_request(method, params, extra_headers)
+    }
+}
+
+/// Spec §3.1.11 / §13.3: a client SHOULD replace its cached public card with
+/// the extended one. The capabilities it checks are what it caches, so a
+/// capability only the extended card declares is usable once it is fetched,
+/// and one only the public card declared is no longer assumed.
+#[tokio::test]
+async fn the_extended_card_replaces_the_capabilities_checked() {
+    let public = card(
+        AgentCapabilities::none()
+            .with_streaming(true)
+            .with_extended_agent_card(true),
+    );
+    let extended = card(AgentCapabilities::none().with_push_notifications(true));
+    let recorder = Recorder::default();
+    let client = ClientBuilder::from_card(&public)
+        .expect("card")
+        .with_custom_transport(ServesExtendedCard {
+            card: serde_json::to_value(&extended).expect("json"),
+            recorder: recorder.clone(),
+        })
+        .build()
+        .expect("build");
+    let create = || client.set_push_config(TaskPushNotificationConfig::new("t-1", "https://h/"));
+
+    assert_eq!(refusal(create().await), Some("pushNotifications"));
+    client
+        .get_extended_agent_card()
+        .await
+        .expect("extended card");
+    assert_eq!(
+        refusal(create().await),
+        None,
+        "declared by the extended card"
+    );
+    assert_eq!(
+        refusal(client.subscribe_to_task("t-1").await),
+        Some("streaming"),
+        "declared only by the public card"
+    );
+    // The extended card declares no `extendedAgentCard`; the agent that
+    // served it is still asked for it.
+    client
+        .get_extended_agent_card()
+        .await
+        .expect("fetched again");
+    assert_eq!(recorder.sent(), ["CreateTaskPushNotificationConfig"]);
+}
+
+/// A fetch that fails leaves the public card's capabilities in place.
+#[tokio::test]
+async fn a_failed_extended_card_fetch_changes_nothing() {
+    let public = card(AgentCapabilities::none().with_extended_agent_card(true));
+    let recorder = Recorder::default();
+    let client = ClientBuilder::from_card(&public)
+        .expect("card")
+        .with_custom_transport(ServesExtendedCard {
+            card: serde_json::json!({ "not": "a card" }),
+            recorder: recorder.clone(),
+        })
+        .build()
+        .expect("build");
+
+    assert!(client.get_extended_agent_card().await.is_err());
+    assert_eq!(
+        refusal(
+            client
+                .set_push_config(TaskPushNotificationConfig::new("t-1", "https://h/"))
+                .await
+        ),
+        Some("pushNotifications")
+    );
+    assert!(recorder.sent().is_empty());
+}
+
+/// With the checks off, fetching the extended card does not turn them on.
+#[tokio::test]
+async fn an_extended_card_does_not_turn_the_checks_on() {
+    let public = card(AgentCapabilities::none());
+    let extended = card(AgentCapabilities::none());
+    let recorder = Recorder::default();
+    let client = ClientBuilder::from_card(&public)
+        .expect("card")
+        .without_capability_checks()
+        .with_custom_transport(ServesExtendedCard {
+            card: serde_json::to_value(&extended).expect("json"),
+            recorder: recorder.clone(),
+        })
+        .build()
+        .expect("build");
+
+    client
+        .get_extended_agent_card()
+        .await
+        .expect("extended card");
+    assert_eq!(
+        refusal(
+            client
+                .set_push_config(TaskPushNotificationConfig::new("t-1", "https://h/"))
+                .await
+        ),
+        None
+    );
+    assert_eq!(recorder.sent(), ["CreateTaskPushNotificationConfig"]);
+}
