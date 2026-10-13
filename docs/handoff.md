@@ -1611,6 +1611,16 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     one rewritten after it did not build; `append` turned `insert` is
     killed by the extended-card caching tests. Ledger 294 stays PARTIAL for
     its a2a-go trade-off.
+84. `fix(server):` §11.3 / RFC 3986 §3.3 — `RestDispatcher`'s traversal
+    guard refuses dot segments, not every `..` (audit register R24, first
+    half). `contains_path_traversal` splits on `/` and `\` and refuses a
+    `.` or `..` segment in each decoded form; the raw pre-check went, since
+    the first pass holds every raw segment. `tests/rest_dot_segments.rs`
+    (failed before: `/tasks/v1..prod` was 400) and two unit tests; mutants
+    5 of 5, the fail-closed bound surviving until
+    `a_path_still_decoding_at_the_bound_is_refused`. Ledger 299 records it;
+    302's two query citations pointed into this function and now name the
+    boolean and number parsers.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

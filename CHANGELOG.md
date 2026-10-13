@@ -768,6 +768,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`RestDispatcher` serves an id containing `..`** (server; spec §11.3
+  routes). Its path-traversal guard refused any path containing `..`, raw
+  or percent-encoded, so a task or push config id such as `v1..prod`,
+  which JSON-RPC, gRPC and the axum router serve, answered 400 on every
+  HTTP+JSON route. It now refuses a dot segment (`.` or `..` as a whole
+  segment, RFC 3986 §3.3) at any encoding depth, with `\` read as a
+  separator as well as `/`, and still refuses a path that has not finished
+  decoding after eight passes.
 - **An HTTP+JSON response names what chose its media type** (server; spec
   §11.1 negotiation; RFC 9110 §12.5.5). `RestDispatcher` and the axum
   router pick `application/a2a+json` or `application/json` from the

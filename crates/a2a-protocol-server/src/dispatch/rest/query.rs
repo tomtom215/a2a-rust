@@ -147,24 +147,31 @@ fn decode(input: &str, plus_is_space: bool) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-/// Checks if a path contains traversal sequences (`..`) in raw or
-/// percent-encoded form, at any encoding depth.
+/// Checks if a path contains a dot segment (`.` or `..`, RFC 3986 §3.3) in
+/// raw or percent-encoded form, at any encoding depth. A `\` separates
+/// segments as `/` does, since a proxy in front may normalize one to the
+/// other.
 ///
 /// Decodes until the string stops changing (bounded — each decode pass can
 /// only shrink or preserve length, and the bound caps adversarial input that
 /// alternates forms). A fixed decode-twice check let triple-encoded
 /// `%25252E%25252E` through; nothing downstream decodes three times today,
-/// but the detector should not encode that assumption.
+/// but the detector should not encode that assumption. Until 2026-10-13 any
+/// `..` was refused, inside a segment too, so an id such as `v1..prod`,
+/// which every other binding serves, could not be reached here.
 pub(super) fn contains_path_traversal(path: &str) -> bool {
     const MAX_DECODE_PASSES: usize = 8;
+    let has_dot_segment = |p: &str| {
+        p.split(['/', '\\'])
+            .any(|segment| matches!(segment, "." | ".."))
+    };
 
-    if path.contains("..") {
-        return true;
-    }
+    // The first pass's output holds every raw dot segment as well: decoding
+    // never touches `.`, `/` or `\`.
     let mut current = path.to_owned();
     for _ in 0..MAX_DECODE_PASSES {
         let decoded = percent_decode(&current);
-        if decoded.contains("..") {
+        if has_dot_segment(&decoded) {
             return true;
         }
         if decoded == current {
@@ -372,6 +379,39 @@ mod tests {
         assert!(contains_path_traversal("/%25252E%25252E/admin"));
         // Quadruple.
         assert!(contains_path_traversal("/%2525252E%2525252E/admin"));
+    }
+
+    /// Only a dot segment is traversal (RFC 3986 §3.3: `.` and `..` as a
+    /// whole segment). `..` inside an id is not, and refusing it made a push
+    /// config named `v1..prod` unreachable over HTTP+JSON alone. A `\` is
+    /// read as a separator too, since a proxy in front may turn it into `/`.
+    #[test]
+    fn only_a_dot_segment_is_traversal() {
+        for safe in [
+            "/tasks/v1..prod",
+            "/tasks/a../pushNotificationConfigs/..b",
+            "/tasks/%2E%2Ex",
+        ] {
+            assert!(!contains_path_traversal(safe), "{safe}");
+        }
+        for traversal in [
+            "/tasks/..",
+            "/tasks/./x",
+            "/tasks/.%2E/x",
+            "/tasks/a%2F..%2Fb",
+            "/tasks/..%5Cadmin",
+            "/tasks/x\\..\\admin",
+        ] {
+            assert!(contains_path_traversal(traversal), "{traversal}");
+        }
+    }
+
+    /// A path still changing after the decode bound is refused unread,
+    /// failing closed: here `..`, percent-encoded nine deep.
+    #[test]
+    fn a_path_still_decoding_at_the_bound_is_refused() {
+        let dot = format!("%{}2E", "25".repeat(8));
+        assert!(contains_path_traversal(&format!("/tasks/{dot}{dot}/x")));
     }
 
     #[test]

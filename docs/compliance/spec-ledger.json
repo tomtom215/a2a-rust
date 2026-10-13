@@ -6110,7 +6110,8 @@
     "crates/a2a-protocol-client/src/transport/rest/routing.rs:36-102",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:200-207",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:303-502",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:87"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:87",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:162"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:16 rest_send_message",
@@ -6118,11 +6119,13 @@
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:202 rest_push_config_crud",
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:85 rest_list_tasks",
     "crates/a2a-protocol-server/tests/rest_path_ids.rs:127 an_encoded_config_id_is_found_over_rest",
-    "crates/a2a-protocol-server/tests/rest_path_ids.rs:136 an_encoded_config_id_is_found_over_axum"
+    "crates/a2a-protocol-server/tests/rest_path_ids.rs:136 an_encoded_config_id_is_found_over_axum",
+    "crates/a2a-protocol-server/tests/rest_dot_segments.rs:26 an_id_with_two_dots_is_routed_and_a_dot_segment_is_refused"
    ],
-   "notes": "Every route exists on server and client, plus tolerated aliases (GET :subscribe, /tasks/{id}/cancel, singular pushNotificationConfig, POST .../{id}/delete). The client percent-encodes path ids; since 2026-10-12 the REST dispatcher decodes task and config ids (and the tenant) after routing, with + literal as RFC 3986 says, and the axum router routes on the raw path before decoding, so an id with a space, +, : or / round-trips on both. Shown to fail with the decoder disabled.",
+   "notes": "Every route exists on server and client, plus tolerated aliases (GET :subscribe, /tasks/{id}/cancel, singular pushNotificationConfig, POST .../{id}/delete). The client percent-encodes path ids; since 2026-10-12 the REST dispatcher decodes task and config ids (and the tenant) after routing, with + literal as RFC 3986 says, and the axum router routes on the raw path before decoding, so an id with a space, +, : or / round-trips on both. Shown to fail with the decoder disabled. Since 2026-10-13 the REST dispatcher's traversal guard refuses a dot segment (`.` or `..`, RFC 3986 §3.3, raw or encoded at any depth, `\\` read as a separator), not every `..`: an id such as `v1..prod`, which the other bindings serve, answered 400 on every route.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 2861,
@@ -6136,13 +6139,13 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:76-84",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:110-118",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:568-607",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:169-185",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:176-192",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:706",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:710"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/request.rs:305 build_uri_extracts_path_param_and_appends_query",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:593 parse_list_tasks_query_all_params",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:633 parse_list_tasks_query_all_params",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:793 axum_get_task_honours_history_length",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:814 axum_get_requests_read_the_tenant_from_the_query",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:851 axum_push_config_and_subscribe_routes_read_the_tenant_from_the_query"
@@ -6161,14 +6164,14 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:169-185",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:176-192",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:573",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:571",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:12-37",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:706"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:593 parse_list_tasks_query_all_params",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:633 parse_list_tasks_query_all_params",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:321 build_uri_appends_query_for_get",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:793 axum_get_task_honours_history_length",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:814 axum_get_requests_read_the_tenant_from_the_query",
@@ -6188,14 +6191,14 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:163-166",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:172-173",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:204-214",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65-75",
     "crates/a2a-protocol-types/src/task.rs:206-231",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:43-52",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:19-29"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:618 parse_list_tasks_query_with_status",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:658 parse_list_tasks_query_with_status",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:110 build_query_string_handles_bool",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:231 list_tasks_invalid_status_timestamp_after_is_invalid_params"
    ],
@@ -6256,7 +6259,7 @@
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:69 encode_query_value_encodes_special_chars",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:81 build_query_string_encodes_values",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:283 percent_decode_encoded_chars"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:290 percent_decode_encoded_chars"
    ],
    "notes": "Client encodes everything except RFC 3986 unreserved chars. Server percent-decodes values (and `+` as space). Query keys are compared undecoded, which is harmless for the camelCase ASCII keys.",
    "auditor": "E",
@@ -7717,7 +7720,7 @@
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:37",
     "crates/a2a-protocol-server/src/handler/push_config.rs:131",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:217"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:224"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:231 list_tasks_invalid_status_timestamp_after_is_invalid_params",
