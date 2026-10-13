@@ -10,7 +10,7 @@
   "release": "v1.0.1"
  },
  "audited_commit": "9ec265d",
- "method": "Seven read-only auditors (A-G) each took a region of the specification (A-F) or the proto's REQUIRED fields (G) and recorded every RFC 2119 statement with the code and tests they opened. Their entries are model output: the ones this branch changed (changed_by) were re-verified by reproducing the defect and showing the new test fail without the fix; the rest are recorded as found and have not been independently re-verified.",
+ "method": "Seven read-only auditors (A-G) each took a region of the specification (A-F) or the proto's REQUIRED fields (G) and recorded every RFC 2119 statement with the code and tests they opened. Their entries are model output: the ones this branch changed (changed_by) were re-verified by reproducing the defect and showing the new test fail without the fix; the rest are recorded as found and have not been independently re-verified. Notes and citations corrected to match the code without a change to it (2026-10-13) carry no changed_by: they were checked by reading the code, not by a failing test.",
  "entries": [
   {
    "spec_line": 107,
@@ -1423,7 +1423,8 @@
    ],
    "notes": "Server parses the lowercased `a2a-extensions` header/metadata on all bindings via build_call_context. Client, since 2026-10-13: ClientBuilder::with_extensions sends the URIs as one comma-separated header (gRPC metadata on gRPC) on every request an interceptor did not give the header, and WebSocketTransportConfig::with_extensions puts it on the upgrade, where the WebSocket server reads service parameters. extensions_e2e.rs checks what the executor sees on JSON-RPC, HTTP+JSON, gRPC and WebSocket, unary and streaming. Not tested over SLIMRPC. Until then a caller had to set the header itself.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 486,
@@ -2687,7 +2688,8 @@
    ],
    "notes": "All four transports set it; JSON-RPC/REST covered implicitly by e2e tests against the default (version-required) RestDispatcher/JsonRpcDispatcher. WebSocket sends it on the upgrade only (per connection). The agent card fetch sends it too since 2026-10-13 (it went without), unless the caller passes its own A2A-Version in CardFetchOptions.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 724,
@@ -2937,7 +2939,8 @@
    ],
    "notes": "One domain model (serde JSON) with a prost conversion layer for gRPC; golden fixtures from the official Python SDK prove JSON<->proto equivalence. What a client sends is checked since 2026-10-13 (make_portable): a raw part must be base64, read as the gRPC conversion reads it and kept in standard padded form; an integer beyond ±2^53 in metadata or a data part, which the gRPC conversion refuses, is InvalidParams. Before, any such value was stored, and the task could not be read over gRPC (GetTask, ListTasks pages with it and SubscribeToTask answered INTERNAL). Remaining (why PARTIAL/low): an executor's events are not checked, so an artifact holding such a value is served over JSON and fails a gRPC read.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 873,
@@ -5413,7 +5416,8 @@
    ],
    "notes": "Content-hash ETag (and Last-Modified) on all three HTTP card routes; If-None-Match answers 304. The axum route had neither until 2026-10-11. The hash is over the card with its maps' keys sorted (card_body_and_etag), since 2026-10-13. It was over the serialization, whose HashMap fields (securitySchemes, a requirement's schemes, OAuth scopes) come out in an order each map draws at random: the same card had another ETag on each replica, after each restart, and on each request of a dynamic handler building its card, so revalidation returned 200. Shown 8 ETags in 8 parses before the fix.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 2231,
@@ -5601,7 +5605,8 @@
    ],
    "notes": "The client sends what ClientBuilder::with_extensions asks for as one comma-joined field (extensions::header_value), and extra_headers, a HashMap, holds one field per name; server splits on commas and echoes activated extensions as one comma-joined field. Robustness note: extract_headers (jsonrpc/response.rs:28, rest/response.rs:21) inserts into a HashMap, so if a peer sends A2A-Extensions as several header lines only the last survives (RFC 9110 allows a recipient to combine them).",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 2280,
@@ -5854,7 +5859,8 @@
    ],
    "notes": "The client sends one a2a-extensions entry, the comma-joined list ClientBuilder::with_extensions asks for (one entry per key: extra_headers is a HashMap). On ingress, extract_metadata does `map.insert` per entry, so repeated a2a-extensions entries collapse to the last one instead of being joined.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 2553,
@@ -8337,7 +8343,8 @@
    ],
    "notes": "Zero or >1 content members rejected by the hand-rolled Deserialize; gRPC absent oneof -> ConvertError -> INVALID_ARGUMENT. On the server that surfaces as JSON-RPC/WS -32602, REST 400 INVALID_ARGUMENT. Server serializes PartContent as exactly one member. No wire-level dispatcher test sends a content-less part, only type-level tests. A raw member must be base64 at JSON ingress (standard or URL-safe, padded or not) and is kept in standard padded form, as a gRPC read gives it, since 2026-10-13.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 255,
@@ -8862,7 +8869,8 @@
    ],
    "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty description, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Refused since 0.15; AgentCard::new leaves it empty until with_description, and such a card was served with \"description\": \"\". Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 370,
@@ -8908,7 +8916,8 @@
    ],
    "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty version, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Refused since 0.15. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 379,
@@ -9052,7 +9061,8 @@
    ],
    "notes": "Client SDK does not inspect `required` (grep finds no client code); the application must declare the extension, with ClientBuilder::with_extensions (the A2A-Extensions header). Server side rejects undeclared required extensions with ExtensionSupportRequired.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 437,

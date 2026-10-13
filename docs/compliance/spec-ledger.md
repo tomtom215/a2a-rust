@@ -14,7 +14,7 @@ Specification: `https://github.com/a2aproject/A2A` `docs/specification.md` at
 Proto: `proto/a2a_v1/a2a.proto`, A2A v1.0.1.
 Audited at commit `9ec265d`.
 
-**How the entries were made, and how far to trust them.** Seven read-only auditors (A-G) each took a region of the specification (A-F) or the proto's REQUIRED fields (G) and recorded every RFC 2119 statement with the code and tests they opened. Their entries are model output: the ones this branch changed (changed_by) were re-verified by reproducing the defect and showing the new test fail without the fix; the rest are recorded as found and have not been independently re-verified.
+**How the entries were made, and how far to trust them.** Seven read-only auditors (A-G) each took a region of the specification (A-F) or the proto's REQUIRED fields (G) and recorded every RFC 2119 statement with the code and tests they opened. Their entries are model output: the ones this branch changed (changed_by) were re-verified by reproducing the defect and showing the new test fail without the fix; the rest are recorded as found and have not been independently re-verified. Notes and citations corrected to match the code without a change to it (2026-10-13) carry no changed_by: they were checked by reading the code, not by a failing test.
 
 Statuses: `TESTED` (implemented, and a test asserts it); `IMPLEMENTED_UNTESTED`;
 `PARTIAL` (some bindings or paths); `GAP` (not implemented or violated);

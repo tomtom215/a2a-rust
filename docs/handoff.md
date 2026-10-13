@@ -1375,6 +1375,12 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     already held. Open (register R64): an executor's own events are
     not checked, so an artifact with such a value is served over JSON and
     fails a gRPC read; the §4 entry is PARTIAL (low) for it.
+66. `docs(ledger):` the ten entries items 61 to 65 changed with a test
+    that failed first (69, 130, 143, 270, 279, 290, 413, 436, 438, 445)
+    did not carry `changed_by`, which the ledger's method says marks a
+    re-verified entry; they do now. The notes item 60 corrected stay
+    unmarked, since reading the code is not that check, and the method
+    says so.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
