@@ -1636,6 +1636,19 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     497, 498, 500, 501, 503, 505) say it. Not done from H-F10: the client
     still sends an empty `messageId` or empty parts unchecked; the server
     refuses both.
+86. `fix(slimrpc):` — the SLIMRPC server drops a caller's `:`-prefixed
+    metadata key (audit register R41; in Security). `a2a_headers` passed
+    `:peer-addr` and `:path` through, so `CallContext::peer_addr` and
+    `AuthFailureThrottle` read a caller's claim as the connection's
+    address. `a_callers_pseudo_header_never_reaches_the_handler` failed
+    before; mutants 2 of 2. The book's SLIMRPC page says which keys are
+    dropped; ledger 321. **Open, for the maintainer:** the same caller can
+    still send `x-forwarded-for`, and with `trusted_proxy_hops` above 0
+    `forwarded_client` (read by `AuthFailureThrottle` and
+    `RateLimitInterceptor`) takes the entry it names, because no proxy
+    appends one over SLIMRPC. Read from the code, not tested. Dropping the
+    key in the binding, or a per-binding hop count, are both API-visible
+    choices.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

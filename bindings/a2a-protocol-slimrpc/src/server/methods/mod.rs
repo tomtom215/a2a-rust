@@ -94,9 +94,12 @@ fn a2a_headers(
     // sending `Authorization` or `A2A-Version` had it ignored. Two keys that
     // differ only in case are joined with a comma, as HTTP combines a
     // repeated field (RFC 9110 §5.3); sorting first makes the order fixed.
+    // A `:` key names what the binding records (`:peer-addr`, `:path`), and
+    // this one records neither: from a caller it would be a claim read as
+    // fact, so it is dropped. Until 2026-10-13 it was passed through.
     let mut pairs: Vec<(String, String)> = metadata
         .into_iter()
-        .filter(|(key, _)| !is_transport_key(key))
+        .filter(|(key, _)| !is_transport_key(key) && !key.starts_with(':'))
         .collect();
     pairs.sort_unstable();
     let mut headers = std::collections::HashMap::<String, String>::new();

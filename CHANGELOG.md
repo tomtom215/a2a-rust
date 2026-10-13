@@ -1219,6 +1219,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **SLIMRPC: a caller's `:`-prefixed metadata key is dropped**
+  (`a2a-protocol-slimrpc`). A key beginning with `:` names what a server
+  records itself, `":peer-addr"` (the connection's address, for
+  `CallContext::peer_addr`) and `":path"`, and the SLIMRPC server records
+  neither, but it passed a caller's own through as request headers. A caller
+  could therefore set the address `AuthFailureThrottle` charges its failed
+  attempts to, and lock out the HTTP client at that address when one handler
+  serves both. Its `":path"` gave no more than the path an HTTP caller
+  already chooses. Such keys are dropped now, beside SLIMRPC's own.
+  `":peer-addr"` is new in this release; `":path"` was passed through by
+  the binding's 0.6.0.
 - **A card signature naming a critical JWS extension is refused** (types;
   spec §8.4: card signatures are JWS "as defined in RFC 7515", whose
   §4.1.11 makes a JWS invalid when its `crit` names an extension the

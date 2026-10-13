@@ -43,6 +43,25 @@ fn transport_keys_never_reach_the_handler() {
     );
 }
 
+/// A key beginning with `:` names something the binding records, not the
+/// caller: `:peer-addr` is the address `CallContext::peer_addr` reports and
+/// `AuthFailureThrottle` counts failures by, `:path` what
+/// `PathSegmentTenantResolver` reads. This binding records neither, so each
+/// one a caller sent reached the handler as fact: a caller could charge its
+/// failed attempts to another client's address and lock that client out.
+#[test]
+fn a_callers_pseudo_header_never_reaches_the_handler() {
+    let headers = a2a_headers(metadata(&[
+        (":peer-addr", "203.0.113.7:443"),
+        (":path", "/acme/tasks"),
+        (":anything", "x"),
+        ("authorization", "Bearer token"),
+    ]))
+    .expect("no version declared, which is accepted");
+
+    assert_eq!(headers, metadata(&[("authorization", "Bearer token")]));
+}
+
 /// SLIM does not promise a case for its keys, and a filter that missed
 /// `Service` while catching `service` would leak exactly the case an
 /// attacker would pick.

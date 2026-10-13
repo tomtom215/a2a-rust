@@ -6587,12 +6587,13 @@
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs service_parameter_keys_are_case_insensitive",
-    "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs keys_differing_only_in_case_are_combined"
+    "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs keys_differing_only_in_case_are_combined",
+    "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs a_callers_pseudo_header_never_reaches_the_handler"
    ],
-   "notes": "a2a_headers lowercases every key after filtering the transport keys, so the handler's lowercase lookups (authorization, a2a-extensions, a2a-version, tenant headers) see a capitalised key; keys differing only in case are joined with ', '. Until 2026-10-10 keys kept the peer's case and were ignored.",
+   "notes": "a2a_headers lowercases every key after filtering the transport keys, so the handler's lowercase lookups (authorization, a2a-extensions, a2a-version, tenant headers) see a capitalised key; keys differing only in case are joined with ', '. Until 2026-10-10 keys kept the peer's case and were ignored. Since 2026-10-13 it also drops a key beginning with ':' (`:peer-addr`, `:path`), which names what a server records rather than what a caller sends; until then a caller's `:peer-addr` reached CallContext::peer_addr.",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 3023,
