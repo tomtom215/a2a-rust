@@ -1355,9 +1355,29 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     description, version and capabilities entries said `validate` is never
     called in production, which has been wrong since `build()` ran it;
     the three REQUIRED list entries said an empty list may be emitted.
+65. `fix(server):` §4 / §5.1 — what a JSON binding accepts, gRPC can carry
+    (audit register R6). `validate_send_params` now runs `make_portable`:
+    each `raw` part is decoded as the gRPC conversion decodes it (standard
+    or URL-safe, padded or not) and kept in standard padded base64, and an
+    integer beyond ±2^53 in the request's, the message's or a part's
+    metadata or in a `data` part is `InvalidParams` naming the field.
+    `tests/portable_content.rs` failed 3 of 4 before (a non-base64 `raw`
+    and the over-range integers were accepted, a URL-safe `raw` stored as
+    sent); its gRPC case shows the conversion refusing both values.
+    Hand mutants: 16 distinct over the final code, all killed; two
+    survived an earlier version, where `serde_json` reports any positive
+    integer up to `i64::MAX` through `as_i64`, so the `u64` branch, met
+    only above `i64::MAX`, held an equivalent `<=`/`<` mutant and no test
+    went that high: the branch is now `!n.is_u64()`, and `u64::MAX` is a
+    case. `base64` is an unconditional dependency of the server now: the
+    root lockfile is unchanged, and the ITK and SLIMRPC-binding lockfiles
+    each gain one line, the server's edge to `base64 0.23.1`, which both
+    already held. Open (register R64): an executor's own events are
+    not checked, so an artifact with such a value is served over JSON and
+    fails a gRPC read; the §4 entry is PARTIAL (low) for it.
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
-PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
+PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
 proven, 0 unproven, 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**

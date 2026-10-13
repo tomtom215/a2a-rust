@@ -326,6 +326,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A message's raw parts must be base64, and its numbers exact in
+  protobuf** (server; spec §4: every binding MUST represent the same
+  data). A part's `raw` is protobuf `bytes`, and the numbers in metadata
+  and in a `data` part are protobuf doubles, which the gRPC conversion
+  refuses beyond ±2^53 rather than round. The JSON bindings stored any
+  `raw` string and any integer, and the task's history holds the message,
+  so one such send made the task unreadable over gRPC: `GetTask`, every
+  `ListTasks` page holding it and `SubscribeToTask` answered `INTERNAL`.
+  Such a send is `InvalidParams` now, naming the field. A `raw` in
+  URL-safe or unpadded base64 is still accepted, as gRPC reads it, and is
+  kept in standard padded form, so every binding returns the same string.
+  `base64` becomes an unconditional dependency of the server crate (it was
+  already in the build through the SQL, JWT and OTLP features).
 - **An agent card needs a description and a version** (types; `a2a.proto`
   marks `AgentCard.description` and `AgentCard.version` REQUIRED).
   `AgentCard::validate`, which `RequestHandlerBuilder::build`, hot reload

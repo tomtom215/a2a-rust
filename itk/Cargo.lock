@@ -30,6 +30,7 @@ name = "a2a-protocol-server"
 version = "0.14.1"
 dependencies = [
  "a2a-protocol-types",
+ "base64 0.23.1",
  "bytes",
  "futures-util",
  "http-body-util",

@@ -37,9 +37,9 @@ tracing = ["dep:tracing"]
 ## `HttpPushSender` speaks plaintext HTTP only and fails fast on `https://`.
 tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
-sqlite = ["dep:sqlx", "dep:base64"]
+sqlite = ["dep:sqlx"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
-postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json", "dep:base64"]
+postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite"]
 ## Enable gRPC transport via `tonic`. Serves the canonical `lf.a2a.v1.A2AService`
@@ -65,7 +65,7 @@ otel = [
     "tracing",
     "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry",
     "dep:opentelemetry-http", "dep:opentelemetry-appender-tracing", "dep:tracing-subscriber", "dep:async-trait",
-    "dep:http", "dep:base64",
+    "dep:http",
     "dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots",
 ]
 ## A harness that grades an `AgentExecutor` against the protocol invariants
@@ -79,7 +79,7 @@ axum = ["dep:axum"]
 ## Enable JWT bearer-token authentication (HS256/RS256/ES256, static or remote
 ## JWKS with OIDC discovery) via `ring`. The header/token interceptors
 ## (`ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`) need no feature.
-auth-jwt = ["dep:ring", "dep:base64", "dep:zeroize"]
+auth-jwt = ["dep:ring", "dep:zeroize"]
 ## A tamper-evident audit trail (ADR 0015): every call, run start, task event
 ## and cancel request recorded in a SHA-256 hash chain per tenant, with
 ## ES256/Ed25519-signed checkpoints, legal holds and a six-month retention
@@ -119,10 +119,12 @@ rustls         = { version = ">=0.23.45, <0.24", optional = true, default-featur
 rustls-pki-types = { version = ">=1.9, <2", optional = true, features = ["std"] }
 webpki-roots   = { version = ">=1.0, <2", optional = true }
 # JWT verification (auth-jwt feature). `ring` is the same crypto backend the
-# types crate's `signing` feature already uses; `base64` is tiny with no
-# transitive deps.
+# types crate's `signing` feature already uses.
 ring           = { version = "0.17.12", optional = true }
-base64         = { version = "0.23", optional = true }
+# Always: a message's `raw` parts are checked and kept in standard base64 at
+# ingress, so every binding can carry what one accepts. Tiny, with no
+# transitive deps; the JWT, SQL and OTLP code use it too.
+base64         = "0.23"
 # Wipes the HS256 secret when the validator holding it is dropped. Already in
 # the graph through rustls; no new crate.
 zeroize        = { version = ">=1.8, <2", optional = true, default-features = false, features = ["alloc"] }

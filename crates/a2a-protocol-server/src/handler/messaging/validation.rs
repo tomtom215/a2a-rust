@@ -8,6 +8,7 @@
 //! were always reported in, which matters to a client that fixes one problem
 //! at a time.
 
+use a2a_protocol_types::message::PartContent;
 use a2a_protocol_types::params::MessageSendParams;
 
 use super::super::RequestHandler;
@@ -96,11 +97,83 @@ impl RequestHandler {
         for (i, part) in params.message.parts.iter().enumerate() {
             validate_metadata_object(part.metadata.as_ref(), &format!("message part {i}"))?;
         }
+        make_portable(params)?;
 
         // PR-8: Reject oversized metadata to prevent memory exhaustion.
         let max_meta = self.limits.max_metadata_size;
         check_metadata_size(params.message.metadata.as_ref(), "message", max_meta)?;
         check_metadata_size(params.metadata.as_ref(), "request", max_meta)
+    }
+}
+
+/// The rest of cross-binding portability (spec §4: every binding MUST
+/// represent the same thing). A part's `raw` is protobuf `bytes`: it must be
+/// base64, read as the gRPC conversion reads it (standard or URL-safe,
+/// padded or not), and is kept in the standard padded form a gRPC read
+/// gives. The numbers in metadata and in a `data` part are protobuf
+/// doubles, which the gRPC conversion refuses beyond ±2^53 rather than
+/// round. Until 2026-10-13 any `raw` string and any integer were stored,
+/// and the task holding them could not be read over gRPC: `GetTask`, every
+/// `ListTasks` page with it and `SubscribeToTask` answered `INTERNAL`.
+fn make_portable(params: &mut MessageSendParams) -> ServerResult<()> {
+    let inexact = |value: Option<&serde_json::Value>, field: &dyn Fn() -> String| {
+        value.and_then(inexact_number).map_or(Ok(()), |n| {
+            Err(ServerError::InvalidParams(format!(
+                "{} holds the integer {n}, beyond the ±2^53 a protobuf number holds exactly",
+                field()
+            )))
+        })
+    };
+    inexact(params.metadata.as_ref(), &|| "metadata".to_owned())?;
+    inexact(params.message.metadata.as_ref(), &|| {
+        "message.metadata".to_owned()
+    })?;
+    for (i, part) in params.message.parts.iter_mut().enumerate() {
+        inexact(part.metadata.as_ref(), &|| {
+            format!("message.parts[{i}].metadata")
+        })?;
+        match &mut part.content {
+            PartContent::Raw(raw) => {
+                *raw = standard_base64(raw).map_err(|e| {
+                    ServerError::InvalidParams(format!("message.parts[{i}].raw is not base64: {e}"))
+                })?;
+            }
+            PartContent::Data(data) => inexact(Some(data), &|| format!("message.parts[{i}].data"))?,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// `raw` decoded as the gRPC conversion decodes it, and encoded again as
+/// standard padded base64.
+fn standard_base64(raw: &str) -> Result<String, base64::DecodeError> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+    let bytes = STANDARD
+        .decode(raw)
+        .or_else(|_| STANDARD_NO_PAD.decode(raw))
+        .or_else(|_| URL_SAFE.decode(raw))
+        .or_else(|_| URL_SAFE_NO_PAD.decode(raw))?;
+    Ok(STANDARD.encode(bytes))
+}
+
+/// The first integer in `value` that a protobuf double cannot hold exactly:
+/// one beyond ±2^53, the bound the gRPC conversion applies. A number that
+/// is not an `i64` is a float, which is exact, or an integer above
+/// `i64::MAX`, which is not.
+fn inexact_number(value: &serde_json::Value) -> Option<&serde_json::Number> {
+    const MAX_EXACT: u64 = 1 << 53;
+    match value {
+        serde_json::Value::Number(n) => {
+            let exact = n
+                .as_i64()
+                .map_or_else(|| !n.is_u64(), |i| i.unsigned_abs() <= MAX_EXACT);
+            (!exact).then_some(n)
+        }
+        serde_json::Value::Array(items) => items.iter().find_map(inexact_number),
+        serde_json::Value::Object(fields) => fields.values().find_map(inexact_number),
+        _ => None,
     }
 }
 
