@@ -580,7 +580,10 @@ impl RestDispatcher {
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let id = percent_decode_path(id);
         let id = id.as_str();
-        let history_length = parse_query_param_u32(query, "historyLength");
+        let history_length = match parse_query_param_u32(query, "historyLength") {
+            Ok(history_length) => history_length,
+            Err(e) => return server_error_to_response(&e),
+        };
         let params = a2a_protocol_types::params::TaskQueryParams {
             tenant: tenant.map(str::to_owned),
             id: id.to_owned(),
@@ -598,7 +601,10 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = parse_list_tasks_query(query, tenant);
+        let params = match parse_list_tasks_query(query, tenant) {
+            Ok(params) => params,
+            Err(e) => return server_error_to_response(&e),
+        };
         match self.handler.on_list_tasks(params, Some(headers)).await {
             Ok(result) => json_ok_response(&result),
             Err(e) => server_error_to_response(&e),

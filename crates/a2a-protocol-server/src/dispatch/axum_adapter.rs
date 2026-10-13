@@ -88,7 +88,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::{Query, State};
+use axum::extract::{RawQuery, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use bytes::Bytes;
@@ -419,18 +419,17 @@ async fn handle_tasks_catchall(
     match (method.as_str(), segments.as_slice()) {
         // GET /tasks/{id} (no colon action)
         ("GET", [id]) if !id.contains(':') => {
+            let history_length =
+                match super::rest::query::parse_query_param_u32(query, "historyLength") {
+                    Ok(history_length) => history_length,
+                    Err(e) => return handler_error_to_response(&e),
+                };
             rpc_call(
                 &state.handler,
                 "GetTask",
                 (method.as_str(), "/tasks/{id}"),
                 &hdrs,
-                handle_get_task_inner(
-                    &state,
-                    &dec(id),
-                    tenant,
-                    super::rest::query::parse_query_param_u32(query, "historyLength"),
-                    &hdrs,
-                ),
+                handle_get_task_inner(&state, &dec(id), tenant, history_length, &hdrs),
             )
             .await
         }
@@ -580,21 +579,18 @@ async fn handle_stream_message(
 
 async fn handle_list_tasks(
     State(state): State<A2aState>,
-    Query(query): Query<HashMap<String, String>>,
+    RawQuery(query): RawQuery,
     CallHeaders(hdrs): CallHeaders,
 ) -> axum::response::Response {
-    let params = a2a_protocol_types::params::ListTasksParams {
-        tenant: query.get("tenant").filter(|t| !t.is_empty()).cloned(),
-        context_id: query.get("contextId").cloned(),
-        status: query
-            .get("status")
-            .and_then(|s| serde_json::from_value(serde_json::Value::String(s.clone())).ok()),
-        page_size: query.get("pageSize").and_then(|v| v.parse().ok()),
-        page_token: query.get("pageToken").cloned(),
-        status_timestamp_after: query.get("statusTimestampAfter").cloned(),
-        include_artifacts: query.get("includeArtifacts").and_then(|v| v.parse().ok()),
-        history_length: query.get("historyLength").and_then(|v| v.parse().ok()),
-    };
+    // The REST dispatcher's parser, so the two HTTP+JSON surfaces refuse the
+    // same malformed values (spec §5.1, §13.4); this route read its own map,
+    // dropping what did not parse, and took `includeArtifacts=1` as absent.
+    let query = query.unwrap_or_default();
+    let params =
+        match super::rest::query::parse_list_tasks_query(&query, query_tenant(&query).as_deref()) {
+            Ok(params) => params,
+            Err(e) => return handler_error_to_response(&e),
+        };
     rpc_call(
         &state.handler,
         "ListTasks",

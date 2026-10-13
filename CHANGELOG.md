@@ -647,6 +647,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A malformed query value is refused on the HTTP+JSON binding** (server;
+  spec §13.4: agents MUST validate all input parameters; §5.1: every
+  binding MUST handle errors the same way). `RestDispatcher` and
+  `A2aRouter` read a GET's `historyLength`, `pageSize`, `status` or
+  `includeArtifacts` that did not parse as if it were absent:
+  `GET /tasks/{id}?historyLength=-1` returned the whole history and
+  `GET /tasks?status=TASK_STATE_WORKNG` listed every task, where JSON-RPC
+  and gRPC refuse the same values. Both now answer `400 INVALID_ARGUMENT`
+  naming the parameter, from one parser: the router read ListTasks with a
+  parser of its own, which took `includeArtifacts=1` as absent where the
+  dispatcher took it as `true`. A boolean is `true` or `1`, `false` or `0`,
+  in any case; anything else used to read as `false`.
 - **A client checks calls against the extended card once it has fetched
   it** (client; spec §3.1.11, §13.3: a client SHOULD replace its cached
   public card with the extended one). A client built from a card checks a

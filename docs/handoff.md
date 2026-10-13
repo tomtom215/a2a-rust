@@ -1188,6 +1188,13 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     since the fetch takes `&self`). Replaced, not merged; `extendedAgentCard`
     stays declared. Ledger 425 moves from APPLICATION to TESTED and 3166's
     note no longer says the client keeps no card.
+54. `fix(server):` §13.4 / §5.1 — a malformed GET query value
+    (`historyLength`, `pageSize`, `status`, `includeArtifacts`) is
+    `InvalidParams` on both HTTP+JSON dispatchers, from
+    `dispatch::rest::query`'s parsers, which return `Result` now. The axum
+    router's ListTasks reads the raw query with the same parser. The
+    fuzzing API's `rest_route` returns `Option` params, so the fuzz target
+    is unchanged.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

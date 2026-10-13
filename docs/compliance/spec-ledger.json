@@ -3207,11 +3207,13 @@
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:646 bind_equiv_003",
-    "crates/a2a-protocol-server/tests/http_json_error_parity.rs:75 rest_and_axum_answer_the_same_failures_identically"
+    "crates/a2a-protocol-server/tests/http_json_error_parity.rs:75 rest_and_axum_answer_the_same_failures_identically",
+    "crates/a2a-protocol-server/tests/http_query_validation.rs:76 a_malformed_query_value_is_refused_naming_its_parameter"
    ],
-   "notes": "Single ErrorCode table drives HTTP status, gRPC code and JSON-RPC code.",
+   "notes": "Single ErrorCode table drives HTTP status, gRPC code and JSON-RPC code. A malformed query value on HTTP+JSON is InvalidParams as on JSON-RPC and gRPC (2026-10-13); it was read as absent.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 1152,
@@ -6001,9 +6003,10 @@
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:496 parse_list_tasks_query_all_params",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:321 build_uri_appends_query_for_get",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:793 axum_get_task_honours_history_length",
-    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:814 axum_get_requests_read_the_tenant_from_the_query"
+    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:814 axum_get_requests_read_the_tenant_from_the_query",
+    "crates/a2a-protocol-server/tests/http_query_validation.rs:76 a_malformed_query_value_is_refused_naming_its_parameter"
    ],
-   "notes": "Keys used: contextId, status, pageSize, pageToken, statusTimestampAfter, includeArtifacts, historyLength, tenant. Note: a malformed value such as `status=BOGUS` or `pageSize=abc` is silently dropped (`.ok()`) instead of rejected, so the filter is ignored and an unfiltered list is returned.",
+   "notes": "Keys used: contextId, status, pageSize, pageToken, statusTimestampAfter, includeArtifacts, historyLength, tenant. A malformed value such as `status=BOGUS` or `pageSize=abc` is refused with InvalidParams (2026-10-13); until then it was dropped and an unfiltered list returned.",
    "auditor": "E",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -7535,15 +7538,20 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:46",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:37",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:131"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:131",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:217"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:204 list_tasks_invalid_status_timestamp_after_is_invalid_params",
-    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:511 oversized_message_metadata_returns_invalid_params"
+    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:511 oversized_message_metadata_returns_invalid_params",
+    "crates/a2a-protocol-server/tests/http_query_validation.rs:76 a_malformed_query_value_is_refused_naming_its_parameter",
+    "crates/a2a-protocol-server/tests/http_query_validation.rs:102 well_formed_query_values_are_accepted"
    ],
-   "notes": "Protocol-level validation (ids, metadata size, timestamps, page size clamp, push URL) in the SDK; validation of message content semantics is the executor's. Detailed per-field validation is covered by other sections' audits.",
+   "notes": "Protocol-level validation (ids, metadata size, timestamps, page size clamp, push URL) in the SDK; validation of message content semantics is the executor's. Detailed per-field validation is covered by other sections' audits. A GET's query parameters on the HTTP+JSON binding are validated since 2026-10-13: a historyLength, pageSize, status or includeArtifacts that does not parse is InvalidParams (400) on RestDispatcher and A2aRouter alike, where it was read as absent.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 3189,

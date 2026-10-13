@@ -5,6 +5,8 @@
 
 //! Query string and URL parsing helpers for the REST dispatcher.
 
+use crate::error::ServerError;
+
 /// Top-level route heads of the REST binding — the literal first segments a
 /// request path may start with (after any tenant prefix).
 ///
@@ -52,9 +54,24 @@ pub fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
     (None, path)
 }
 
-/// Parses a single query parameter value as `u32`.
-pub fn parse_query_param_u32(query: &str, key: &str) -> Option<u32> {
-    parse_query_param(query, key).and_then(|v| v.parse::<u32>().ok())
+/// Parses a single query parameter value as `u32`: `None` when it is absent.
+///
+/// # Errors
+///
+/// `InvalidParams` naming `key` when it is present and not a non-negative
+/// 32-bit integer. Spec §13.4: an agent MUST validate its input, and the
+/// JSON-RPC and gRPC bindings refuse the same value (§5.1); read as absent,
+/// `?historyLength=-1` returned the whole history.
+pub fn parse_query_param_u32(query: &str, key: &str) -> Result<Option<u32>, ServerError> {
+    parse_query_param(query, key)
+        .map(|v| {
+            v.parse::<u32>().map_err(|_| {
+                ServerError::InvalidParams(format!(
+                    "{key} must be a non-negative integer, not {v:?}"
+                ))
+            })
+        })
+        .transpose()
 }
 
 /// Parses a single query parameter value as a string, with percent-decoding.
@@ -170,28 +187,54 @@ const fn hex_val(b: u8) -> Option<u8> {
     }
 }
 
-/// Parses a single query parameter value as `bool`.
-pub(super) fn parse_query_param_bool(query: &str, key: &str) -> Option<bool> {
-    parse_query_param(query, key).map(|v| v == "true" || v == "1")
+/// Parses a single query parameter value as `bool`: `true` or `1`, `false`
+/// or `0`, in any case; `None` when it is absent.
+///
+/// # Errors
+///
+/// `InvalidParams` naming `key` for any other value. Every other value used
+/// to read as `false`, and the axum router read `1` as absent.
+fn parse_query_param_bool(query: &str, key: &str) -> Result<Option<bool>, ServerError> {
+    parse_query_param(query, key)
+        .map(|v| match v.to_ascii_lowercase().as_str() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            _ => Err(ServerError::InvalidParams(format!(
+                "{key} must be true or false, not {v:?}"
+            ))),
+        })
+        .transpose()
 }
 
-/// Parses `ListTasksParams` from URL query parameters.
+/// Parses `ListTasksParams` from URL query parameters. The REST dispatcher
+/// and the axum router both read `ListTasks` with it.
+///
+/// # Errors
+///
+/// `InvalidParams` naming the first parameter present with a value that does
+/// not parse: `pageSize` and `historyLength` as non-negative integers,
+/// `includeArtifacts` as a boolean, `status` as a task state.
 pub fn parse_list_tasks_query(
     query: &str,
     tenant: Option<&str>,
-) -> a2a_protocol_types::params::ListTasksParams {
+) -> Result<a2a_protocol_types::params::ListTasksParams, ServerError> {
     let status = parse_query_param(query, "status")
-        .and_then(|s| serde_json::from_value(serde_json::Value::String(s)).ok());
-    a2a_protocol_types::params::ListTasksParams {
+        .map(|s| {
+            serde_json::from_value(serde_json::Value::String(s.clone())).map_err(|_| {
+                ServerError::InvalidParams(format!("status must be a task state, not {s:?}"))
+            })
+        })
+        .transpose()?;
+    Ok(a2a_protocol_types::params::ListTasksParams {
         tenant: tenant.map(str::to_owned),
         context_id: parse_query_param(query, "contextId"),
         status,
-        page_size: parse_query_param_u32(query, "pageSize"),
+        page_size: parse_query_param_u32(query, "pageSize")?,
         page_token: parse_query_param(query, "pageToken"),
         status_timestamp_after: parse_query_param(query, "statusTimestampAfter"),
-        include_artifacts: parse_query_param_bool(query, "includeArtifacts"),
-        history_length: parse_query_param_u32(query, "historyLength"),
-    }
+        include_artifacts: parse_query_param_bool(query, "includeArtifacts")?,
+        history_length: parse_query_param_u32(query, "historyLength")?,
+    })
 }
 
 #[cfg(test)]
@@ -464,46 +507,84 @@ mod tests {
     #[test]
     fn parse_query_param_u32_valid() {
         assert_eq!(
-            parse_query_param_u32("historyLength=10", "historyLength"),
+            parse_query_param_u32("historyLength=10", "historyLength").unwrap(),
             Some(10)
         );
     }
 
     #[test]
     fn parse_query_param_u32_invalid() {
+        for bad in [
+            "historyLength=abc",
+            "historyLength=-1",
+            "historyLength=4294967296",
+        ] {
+            assert!(
+                matches!(
+                    parse_query_param_u32(bad, "historyLength"),
+                    Err(ServerError::InvalidParams(m)) if m.starts_with("historyLength ")
+                ),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_query_param_u32_missing() {
         assert_eq!(
-            parse_query_param_u32("historyLength=abc", "historyLength"),
+            parse_query_param_u32("other=5", "historyLength").unwrap(),
             None
         );
     }
 
     #[test]
-    fn parse_query_param_u32_missing() {
-        assert_eq!(parse_query_param_u32("other=5", "historyLength"), None);
-    }
-
-    #[test]
     fn parse_query_param_u32_zero() {
-        assert_eq!(parse_query_param_u32("pageSize=0", "pageSize"), Some(0));
+        assert_eq!(
+            parse_query_param_u32("pageSize=0", "pageSize").unwrap(),
+            Some(0)
+        );
     }
 
     // ── parse_query_param_bool ───────────────────────────────────────────
 
     #[test]
     fn parse_query_param_bool_true() {
-        assert_eq!(parse_query_param_bool("flag=true", "flag"), Some(true));
-        assert_eq!(parse_query_param_bool("flag=1", "flag"), Some(true));
+        for q in ["flag=true", "flag=1", "flag=TRUE"] {
+            assert_eq!(
+                parse_query_param_bool(q, "flag").unwrap(),
+                Some(true),
+                "{q}"
+            );
+        }
     }
 
     #[test]
     fn parse_query_param_bool_false() {
-        assert_eq!(parse_query_param_bool("flag=false", "flag"), Some(false));
-        assert_eq!(parse_query_param_bool("flag=0", "flag"), Some(false));
+        for q in ["flag=false", "flag=0", "flag=False"] {
+            assert_eq!(
+                parse_query_param_bool(q, "flag").unwrap(),
+                Some(false),
+                "{q}"
+            );
+        }
     }
 
     #[test]
     fn parse_query_param_bool_missing() {
-        assert_eq!(parse_query_param_bool("other=true", "flag"), None);
+        assert_eq!(parse_query_param_bool("other=true", "flag").unwrap(), None);
+    }
+
+    #[test]
+    fn parse_query_param_bool_invalid() {
+        for bad in ["flag=yes", "flag=", "flag=2"] {
+            assert!(
+                matches!(
+                    parse_query_param_bool(bad, "flag"),
+                    Err(ServerError::InvalidParams(m)) if m.starts_with("flag ")
+                ),
+                "{bad}"
+            );
+        }
     }
 
     // ── parse_list_tasks_query ───────────────────────────────────────────
@@ -512,7 +593,7 @@ mod tests {
     fn parse_list_tasks_query_all_params() {
         let query =
             "contextId=ctx-1&pageSize=10&pageToken=tok&includeArtifacts=true&historyLength=5";
-        let params = parse_list_tasks_query(query, Some("acme"));
+        let params = parse_list_tasks_query(query, Some("acme")).unwrap();
         assert_eq!(params.tenant.as_deref(), Some("acme"));
         assert_eq!(params.context_id.as_deref(), Some("ctx-1"));
         assert_eq!(params.page_size, Some(10));
@@ -523,7 +604,7 @@ mod tests {
 
     #[test]
     fn parse_list_tasks_query_empty() {
-        let params = parse_list_tasks_query("", None);
+        let params = parse_list_tasks_query("", None).unwrap();
         assert!(params.tenant.is_none());
         assert!(params.context_id.is_none());
         assert!(params.page_size.is_none());
@@ -535,7 +616,7 @@ mod tests {
 
     #[test]
     fn parse_list_tasks_query_with_status() {
-        let params = parse_list_tasks_query("status=completed", None);
+        let params = parse_list_tasks_query("status=completed", None).unwrap();
         assert_eq!(
             params.status,
             Some(a2a_protocol_types::task::TaskState::Completed),
