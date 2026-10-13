@@ -168,6 +168,15 @@ pub struct InMemoryQueueWriter {
     /// collide with the first turn's positions — the continuation's events
     /// would be silently dropped.
     seq: Arc<AtomicU64>,
+    /// Held by one write at a time, shared by every clone, from the moment
+    /// the position is assigned until the event is broadcast. Positions are
+    /// handed out in this order, so the broadcast, and the persistence
+    /// channel, carry events in position order (spec §3.5.2: events MUST NOT
+    /// be reordered). Without it a terminal event held for the processor's
+    /// verdict was overtaken by a later write from another clone (`CancelTask`
+    /// writes beside a running executor), and readers, which skip a position
+    /// already passed, lost the terminal event.
+    order: Arc<tokio::sync::Mutex<()>>,
     /// The task and context this writer's events belong to, once the send
     /// path has bound them ([`bind_identity`](Self::bind_identity)); shared
     /// by every clone. See `check_identity`.
@@ -207,6 +216,7 @@ impl InMemoryQueueWriter {
             write_timeout,
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
+            order: Arc::default(),
             identity: Arc::new(std::sync::OnceLock::new()),
             terminal_gate: None,
             collected: false,
@@ -227,6 +237,7 @@ impl InMemoryQueueWriter {
             write_timeout,
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
+            order: Arc::default(),
             identity: Arc::new(std::sync::OnceLock::new()),
             terminal_gate: None,
             collected: false,
@@ -519,7 +530,36 @@ impl EventQueueWriter for InMemoryQueueWriter {
     /// per echo request.
     fn write<'a>(
         &'a self,
+        event: StreamResponse,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        // Uncontended, the write still completes before this returns; only a
+        // write behind another one (a terminal event awaiting its verdict, or
+        // a full persistence channel) waits for its turn.
+        match self.order.try_lock() {
+            Ok(order) => self.write_in_order(event, order),
+            Err(_) => Box::pin(async move {
+                let order = self.order.lock().await;
+                self.write_in_order(event, order).await
+            }),
+        }
+    }
+
+    fn close<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Dropping all sender clones closes the channel. The spawned
+            // executor task will drop its writer, causing readers to see EOF.
+            Ok(())
+        })
+    }
+}
+
+impl InMemoryQueueWriter {
+    /// A write holding `order`, which it releases once the event is
+    /// broadcast or refused.
+    fn write_in_order<'a>(
+        &'a self,
         mut event: StreamResponse,
+        order: tokio::sync::MutexGuard<'a, ()>,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         // Before anything persists or broadcasts it (N35).
         if let Err(e) = self.check_identity(&mut event) {
@@ -568,14 +608,21 @@ impl EventQueueWriter for InMemoryQueueWriter {
                 Handoff::Sent => {}
                 Handoff::Closed => collector_gone = self.on_persistence_closed(&mut ticket),
                 Handoff::Full => {
-                    return Box::pin(self.finish_write(event, seq, ticket, deadline, false));
+                    return Box::pin(async move {
+                        let _order = order;
+                        self.finish_write(event, seq, ticket, deadline, false).await
+                    });
                 }
             }
         }
         if ticket.is_some() {
-            return Box::pin(self.finish_write(event, seq, ticket, deadline, true));
+            return Box::pin(async move {
+                let _order = order;
+                self.finish_write(event, seq, ticket, deadline, true).await
+            });
         }
         let outcome = self.broadcast(event, collector_gone);
+        drop(order);
         // `try_send` spends none of the task's cooperative budget, and the
         // `send` it replaces spent one unit per write. Without this an
         // executor writing in a tight loop never yields: on a current-thread
@@ -585,14 +632,6 @@ impl EventQueueWriter for InMemoryQueueWriter {
         Box::pin(async move {
             tokio::task::consume_budget().await;
             outcome
-        })
-    }
-
-    fn close<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Dropping all sender clones closes the channel. The spawned
-            // executor task will drop its writer, causing readers to see EOF.
-            Ok(())
         })
     }
 }
@@ -2330,5 +2369,74 @@ mod tests {
             "the stream ends at the terminal snapshot, not when the writer drops"
         );
         drop(writer);
+    }
+
+    /// Uncontended, a write is complete before its future is polled, as
+    /// `write`'s docs say: the future only spends the task's cooperative
+    /// budget. Kills a write that always waits for the order lock in an async
+    /// block, which allocates that block on every write.
+    #[tokio::test]
+    async fn an_uncontended_write_is_done_before_it_is_polled() {
+        let (writer, mut reader) = new_in_memory_queue();
+        drop(writer.write(make_status_event("t-f", TaskState::Working)));
+        drop(writer);
+        let frame = reader.read().await.expect("delivered").unwrap();
+        assert_eq!(frame.seq, Some(1));
+    }
+
+    /// Clones of one writer writing at once, on several threads, reach the
+    /// reader and the persistence channel in position order, so no reader
+    /// skips one as already delivered (spec §3.5.2: events MUST NOT be
+    /// reordered). Kills a write that assigns its position, or broadcasts,
+    /// outside the order lock: the race is narrow, so a round is repeated
+    /// until one reorders, and a broken lock is caught in nearly every run.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_clones_deliver_every_position_in_order() {
+        const ROUNDS: usize = 10;
+        const CLONES: u64 = 4;
+        const EACH: u64 = 2_000;
+        let expected: Vec<_> = (1..=CLONES * EACH).map(Some).collect();
+        for _ in 0..ROUNDS {
+            let (writer, mut reader, mut persisted) = new_in_memory_queue_with_persistence(
+                expected.len(),
+                DEFAULT_MAX_EVENT_SIZE,
+                DEFAULT_WRITE_TIMEOUT,
+            );
+            let drain = tokio::spawn(async move {
+                let mut positions = vec![];
+                while let Some(event) = persisted.recv().await {
+                    positions.push(event.unwrap().seq);
+                }
+                positions
+            });
+            let writes: Vec<_> = (0..CLONES)
+                .map(|_| {
+                    let writer = writer.clone();
+                    tokio::spawn(async move {
+                        for _ in 0..EACH {
+                            writer
+                                .write(make_status_event("t-o", TaskState::Working))
+                                .await
+                                .unwrap();
+                        }
+                    })
+                })
+                .collect();
+            for write in writes {
+                write.await.unwrap();
+            }
+            drop(writer);
+
+            let mut delivered = Vec::with_capacity(expected.len());
+            while let Some(event) = reader.read().await {
+                delivered.push(event.unwrap().seq);
+            }
+            assert_eq!(delivered.len(), expected.len(), "events were skipped");
+            assert!(delivered == expected, "broadcast out of position order");
+            assert!(
+                drain.await.unwrap() == expected,
+                "persisted out of position order"
+            );
+        }
     }
 }

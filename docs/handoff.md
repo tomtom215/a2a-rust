@@ -1081,6 +1081,19 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     §8.8.2.1, §13.1.3). The `ETag` revalidates it; the static handler keeps
     its load-time `Last-Modified`. This replaced item 39's test, which
     pinned the old behaviour.
+41. `fix(server):` §3.5.2 — writes to one queue broadcast in position
+    order. A spec audit of this branch found that a terminal event held for
+    the processor's verdict was overtaken by a later write through another
+    handle on the queue's writer (`CancelTask` beside the executor), and
+    that on a multi-threaded runtime any two writes could swap. Item 36's
+    reader skips a position it has passed, so the terminal event was lost;
+    v0.14.1 has the reordering without the loss. `InMemoryQueueWriter`'s
+    `order` lock is held from the position's assignment to the broadcast;
+    an uncontended write takes it with `try_lock` and still finishes before
+    `write` returns. Five hand mutants of the lock are killed, one only by
+    chance: `concurrent_clones_deliver_every_position_in_order` caught the
+    sync path releasing before its broadcast in 17 of 20 runs, since that
+    race is one call wide.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

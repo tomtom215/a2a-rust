@@ -647,6 +647,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A task's events reach every stream in the order they were written**
+  (server; spec §3.5.2: events MUST NOT be reordered). Each event gets its
+  position when it is written, but two writes on one task in flight at once
+  (`CancelTask`'s beside the executor's, or an executor's own concurrent
+  writes) could broadcast in the other order: a terminal event waits for the
+  store's verdict before it goes out, and a write behind it went out first;
+  on a multi-threaded runtime any two writes could swap. Streams then
+  carried positions out of order, and the lag catch-up above, which skips a
+  position a stream has passed, would have lost the terminal event. Writes
+  to one queue now take turns from the moment a position is assigned until
+  the event is broadcast. An uncontended write still finishes without
+  waiting.
+
 - **A `SubscribeToTask` stream on a tenant- or caller-partitioned task store
   stays open across turns** (server; spec §3.1.6: the stream MUST terminate
   when the task reaches a terminal state). The hook that reattaches the

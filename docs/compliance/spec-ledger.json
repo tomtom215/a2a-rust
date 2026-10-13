@@ -2429,15 +2429,20 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:135"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:179",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:531"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:50 write_multiple_events_read_in_order",
-    "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order"
+    "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2394 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:293 a_held_terminal_event_is_not_overtaken",
+    "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:326 a_terminal_event_that_waited_for_room_is_not_overtaken"
    ],
-   "notes": "Single tokio broadcast channel per task; SSE/gRPC/WS writers forward sequentially.",
+   "notes": "One broadcast channel per task, and writes to it take turns from the moment a position is assigned until the event is broadcast (2026-10-13), so writes in flight at once (CancelTask's beside the executor's, a terminal event held for the store's verdict) reach the persistence channel and every stream in position order. Until then a later write could overtake a held terminal event, and on a multi-threaded runtime any two writes could swap. The SSE, gRPC and WebSocket writers forward each stream sequentially.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 687,
@@ -2484,8 +2489,8 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:980",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1005",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1019",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1044",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:259"
    ],
    "test_evidence": [
@@ -2495,14 +2500,15 @@
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:253 a_lagged_stream_catches_up_in_its_tenant",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:138 a_replay_over_the_limit_ends_with_stream_lagged",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:410 a_lag_the_log_cannot_cover_still_ends_with_stream_lagged",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2102 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2394 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2141 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:171 slow_reader_gets_explicit_lag_error",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1567 subscribe_creates_independent_reader"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1606 subscribe_creates_independent_reader"
    ],
-   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Remaining, each ending the stream with an explicit streamLagged: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log), more missed events than one replay reads (subscribe_replay_limit, 1,000), or a custom store without an event log.",
+   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Remaining, each ending the stream with an explicit streamLagged: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log), more missed events than one replay reads (subscribe_replay_limit, 1,000), or a custom store without an event log. Every stream receives positions in the order they were assigned, because writes are broadcast in that order (2026-10-13, see spec line 683); before that a reader, which skips a position it has passed, could lose an event another write had overtaken.",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 693,
