@@ -1505,6 +1505,13 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `a_card_that_does_not_validate_is_refused` (no skills; an API key
     scheme without a name); mutants 2 of 2. The 25 ledger notes that
     listed where validation runs say this too.
+75. `fix(types):` proto `oneof` — a `SecurityScheme` naming two schemes is
+    refused (audit register R37). The deserializer returned the first arm
+    of `SCHEME_ARMS` present and ignored the rest; it now counts the arms
+    present, in either spelling, and refuses more than one, as `Part`
+    does. `a_scheme_with_two_arms_is_refused`; mutants 4 of 4, one
+    rewritten after it did not build. No ledger entry: the `oneof` has no
+    RFC 2119 line of its own.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

@@ -755,6 +755,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A security scheme naming two schemes is refused** (types; a2a.proto's
+  `SecurityScheme` is a `oneof`). Its deserializer took the first arm it
+  found, so `{"apiKeySecurityScheme": …, "httpAuthSecurityScheme": …}`
+  became an API key scheme and the other was dropped without a word, where
+  a `Part` with two content members, and `OAuthFlows` with two flows, are
+  refused. It now fails to parse, whichever spelling each arm takes.
 - **A push config a header cannot carry is refused when it is created**
   (server; spec §13.2: a webhook request carries the config's
   credentials). A token or credentials holding CR, LF or another control

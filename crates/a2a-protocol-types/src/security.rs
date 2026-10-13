@@ -276,6 +276,21 @@ impl<'de> Deserialize<'de> for SecurityScheme {
         // `Part`, which is and therefore has a hand-rolled visitor.
         let map = serde_json::Map::<String, serde_json::Value>::deserialize(deserializer)?;
 
+        // A `oneof` holds one arm. Two were read as the first, as if the
+        // other were not there, until 2026-10-13; `Part` and `OAuthFlows`
+        // already refused a second member.
+        let arms = SCHEME_ARMS
+            .iter()
+            .filter(|(json_name, proto_name)| {
+                map.contains_key(*json_name) || map.contains_key(*proto_name)
+            })
+            .count();
+        if arms > 1 {
+            return Err(D::Error::custom(format!(
+                "a SecurityScheme sets exactly one scheme; this one sets {arms}"
+            )));
+        }
+
         for (index, (json_name, proto_name)) in SCHEME_ARMS.iter().enumerate() {
             let Some(inner) = map.get(*json_name).or_else(|| map.get(*proto_name)) else {
                 continue;
@@ -617,6 +632,29 @@ pub struct MutualTlsSecurityScheme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `oneof` holds one arm: a scheme naming two is refused, as a `Part`
+    /// with two content members is, whichever spelling each arm takes.
+    #[test]
+    fn a_scheme_with_two_arms_is_refused() {
+        let api_key = serde_json::json!({"location": "header", "name": "X-Key"});
+        let http = serde_json::json!({"scheme": "Bearer"});
+        for two in [
+            serde_json::json!({"apiKeySecurityScheme": api_key, "httpAuthSecurityScheme": http}),
+            serde_json::json!({"api_key_security_scheme": api_key, "httpAuthSecurityScheme": http}),
+            serde_json::json!({"mtlsSecurityScheme": {}, "openIdConnectSecurityScheme": {"openIdConnectUrl": "https://x"}}),
+        ] {
+            let err = serde_json::from_value::<SecurityScheme>(two.clone()).expect_err("two arms");
+            assert!(err.to_string().contains("sets 2"), "{two}: {err}");
+        }
+        // One arm, in either spelling, still parses.
+        for one in [
+            serde_json::json!({"apiKeySecurityScheme": api_key}),
+            serde_json::json!({"api_key_security_scheme": api_key}),
+        ] {
+            serde_json::from_value::<SecurityScheme>(one).expect("one arm");
+        }
+    }
 
     #[test]
     fn api_key_scheme_roundtrip() {
