@@ -384,20 +384,6 @@ impl EventQueueManager {
         map.get(task_id).map(|writer| writer.subscribe())
     }
 
-    /// Returns a raw broadcast receiver for a task's live queue, if one exists.
-    ///
-    /// Unlike [`Self::subscribe`] this hands back the channel itself rather
-    /// than a reader, so a reader that has outlived one queue can swap onto
-    /// the next without being rebuilt — see
-    /// [`InMemoryQueueReader::with_reattach`].
-    pub(crate) async fn raw_subscribe(
-        &self,
-        task_id: &TaskId,
-    ) -> Option<tokio::sync::broadcast::Receiver<super::Shared>> {
-        let map = self.writers.read().await;
-        map.get(task_id).map(|writer| writer.raw_subscribe())
-    }
-
     /// Subscribes to a task's event queue with an initial snapshot event.
     ///
     /// Per A2A spec, the first event in a `SubscribeToTask` stream MUST be a
@@ -854,27 +840,6 @@ mod tests {
             manager.active_count().await,
             1,
             "an over-limit queue must not be stored"
-        );
-    }
-
-    /// Kills: `replace EventQueueManager::raw_subscribe -> Option<..> with
-    /// None`.
-    #[tokio::test]
-    async fn raw_subscribe_returns_a_receiver_for_a_live_queue() {
-        let manager = EventQueueManager::new();
-        let task_id = TaskId::new("raw");
-        let (_writer, _reader) = manager.get_or_create(&task_id).await;
-
-        assert!(
-            manager.raw_subscribe(&task_id).await.is_some(),
-            "a live queue must yield a receiver"
-        );
-        assert!(
-            manager
-                .raw_subscribe(&TaskId::new("absent"))
-                .await
-                .is_none(),
-            "an unknown task must yield None — pins that Some is not blanket"
         );
     }
 

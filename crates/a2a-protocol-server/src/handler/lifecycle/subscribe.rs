@@ -54,12 +54,23 @@ impl RequestHandler {
     /// gone) ends the stream; otherwise it waits for the next turn's queue and
     /// hands back a receiver for it.
     ///
+    /// Spec §3.5.2: each stream MUST receive the same events in the same
+    /// order. The hook is called with the last position the stream
+    /// delivered, and every answer tells the reader what the log must
+    /// replay: the events a turn broadcast before the hook found its queue,
+    /// those of a turn that ran from start to end between two polls, parked
+    /// again or finished. Until 2026-10-13 a subscriber lost all of them
+    /// without a `streamLagged`, seeing at most a terminal status built from
+    /// the stored task. The receiver is attached at an exact position, as
+    /// `snapshot_and_live` attaches it, so the replay and the live stream
+    /// meet without a gap or an overlap.
+    ///
     /// Polling rather than a notification: the alternative is to keep queues
     /// alive past their executor, which deadlocks the background processor —
     /// its persistence channel only closes when the manager drops the writer,
     /// so a retained queue means a drain loop that never ends. Waiting here
-    /// costs one store read per interval on an idle stream and leaves the send
-    /// path untouched.
+    /// costs one store read per interval on an idle stream, two when the
+    /// store keeps a log, and leaves the send path untouched.
     ///
     /// The hook runs while the stream is read, outside the request that built
     /// it, so it re-enters that request's tenant and caller, captured here. A
@@ -74,25 +85,23 @@ impl RequestHandler {
         let max_idle = self.limits.subscribe_max_idle;
         let partition = crate::store::tenant::TenantContext::capture();
 
-        std::sync::Arc::new(move || {
+        std::sync::Arc::new(move |after| {
             let (queues, store, task_id) = (queues.clone(), store.clone(), task_id.clone());
             Box::pin(partition.clone().scope(async move {
+                let logged = store.supports_event_log();
                 let deadline = tokio::time::Instant::now() + max_idle;
                 loop {
                     match store.get(&task_id).await {
                         // The task finished between queues, so the client
-                        // never saw the terminal frame on the wire. Synthesize
-                        // it from the authoritative stored status: the stream
-                        // must not close having reported no terminal state.
+                        // never saw the terminal frame on the wire. The
+                        // processor logs an event before it stores the state
+                        // the event leads to, so the log holds the terminal
+                        // status the reader replays; the one built here from
+                        // the stored status stands in when it does not, and
+                        // the stream does not close having reported no
+                        // terminal state.
                         Ok(Some(t)) if t.status.state.is_terminal() => {
-                            return Reattached::Final(StreamResponse::StatusUpdate(
-                                TaskStatusUpdateEvent {
-                                    task_id: t.id.clone(),
-                                    context_id: t.context_id.clone(),
-                                    status: t.status,
-                                    metadata: None,
-                                },
-                            ));
+                            return finished(store.as_ref(), t, after).await;
                         }
                         // Deleted out from under us: nothing left to stream.
                         Ok(None) => return Reattached::End,
@@ -108,8 +117,20 @@ impl RequestHandler {
                         }
                     }
 
-                    if let Some(rx) = queues.raw_subscribe(&task_id).await {
-                        return Reattached::Channel(rx);
+                    if let Some((attached, rx, _)) = queues.attach(&task_id).await {
+                        return Reattached::Channel {
+                            rx,
+                            after: attached,
+                            fresh: !logged,
+                        };
+                    }
+                    // A turn that ran from start to end since the last poll
+                    // left no queue to find, only its events in the log.
+                    if logged
+                        && let Ok(through) = store.last_event_seq(&task_id).await
+                        && through > after
+                    {
+                        return Reattached::Logged { through };
                     }
 
                     // Bound the wait so a task parked forever does not pin a
@@ -138,19 +159,25 @@ impl RequestHandler {
     /// client's `Last-Event-ID`, so the client sees what it missed rather than
     /// a fold it cannot interpret; or, without one, from where the `Task` is
     /// known to reach when it could not wait for the store.
+    ///
+    /// # Errors
+    ///
+    /// The store's error when the task has no live queue and its log's last
+    /// position cannot be read: the stream would not know where its replays
+    /// start.
     pub(crate) async fn subscription(
         &self,
         task_id: &TaskId,
         stored: a2a_protocol_types::task::Task,
         shape: impl FnOnce(&mut a2a_protocol_types::task::Task),
         resume_after: Option<u64>,
-    ) -> InMemoryQueueReader {
-        let (reader, gap) = self.snapshot_and_live(task_id, stored, shape).await;
+    ) -> ServerResult<InMemoryQueueReader> {
+        let (reader, gap) = self.snapshot_and_live(task_id, stored, shape).await?;
         let mut reader = self.with_stream_hooks(reader, task_id);
         if let Some(after_seq) = resume_after.or(gap) {
             self.replay_after(&mut reader, task_id, after_seq).await;
         }
-        reader
+        Ok(reader)
     }
 
     /// The `Task` a subscription starts with and the reader on the task's
@@ -178,7 +205,7 @@ impl RequestHandler {
         task_id: &TaskId,
         stored: a2a_protocol_types::task::Task,
         shape: impl FnOnce(&mut a2a_protocol_types::task::Task),
-    ) -> (InMemoryQueueReader, Option<u64>) {
+    ) -> ServerResult<(InMemoryQueueReader, Option<u64>)> {
         use a2a_protocol_types::events::StreamResponse;
         let Some((attached, rx, mark)) = self.event_queue_manager.attach(task_id).await else {
             // No live event queue for a non-terminal task: the executor for
@@ -186,12 +213,27 @@ impl RequestHandler {
             // process restarted. The task itself is not finished, so §3.1.6
             // says the stream must stay open; it starts from the snapshot and
             // the reattach hook waits for the next turn's queue.
-            let mut stored = stored;
-            shape(&mut stored);
-            return (
-                InMemoryQueueReader::snapshot_then_end(StreamResponse::Task(stored)),
-                None,
-            );
+            // The hook replays the log after the stream's position, and the
+            // snapshot is the task as of the turns already run, so the
+            // stream starts at the log's end: from 0 it replayed the whole
+            // history at the next turn. No queue here does not mean no turn
+            // is running: another replica sharing the store may be writing.
+            // So the end is read first and the task after it. An event
+            // logged and stored between the two reads is then in the
+            // snapshot and replayed too, where the other order lost one
+            // logged between them: it was in neither.
+            let mut task = stored;
+            let mut after = 0;
+            if self.task_store.supports_event_log() {
+                after = self.task_store.last_event_seq(task_id).await?;
+                if let Some(now) = self.task_store.get(task_id).await? {
+                    task = now;
+                }
+            }
+            shape(&mut task);
+            let mut reader = InMemoryQueueReader::snapshot_then_end(StreamResponse::Task(task));
+            reader.starting_after(after);
+            return Ok((reader, None));
         };
         let deadline = tokio::time::Instant::now() + self.limits.subscribe_replay_catchup;
         let read = mark
@@ -214,7 +256,7 @@ impl RequestHandler {
         }
         let mut reader = InMemoryQueueReader::with_first_event(rx, StreamResponse::Task(task));
         reader.starting_after(attached.max(read.position));
-        (reader, gap)
+        Ok((reader, gap))
     }
 
     /// Queues the task's log after `after_seq` into `reader`, ahead of its
@@ -429,9 +471,8 @@ impl RequestHandler {
                     // snapshot representing the current state (Go #231, JS #323).
                     // A client that was disconnected sends back the `id:` of the
                     // last frame it saw, and resumes from exactly there.
-                    Ok(self
-                        .subscription(&task_id, task, |_| {}, last_event_id(headers))
-                        .await)
+                    self.subscription(&task_id, task, |_| {}, last_event_id(headers))
+                        .await
                 }
                 .await;
                 call.finish(result).await
@@ -451,6 +492,31 @@ impl RequestHandler {
             }
         }
         result
+    }
+}
+
+/// The reattach hook's answer for a task it found finished: the terminal
+/// status built from the stored task, and how far the log reaches, which the
+/// stream replays first. `after`, the stream's own position, when the log's
+/// end cannot be read: the replay is then all that says what was lost.
+async fn finished(
+    store: &dyn crate::store::TaskStore,
+    task: a2a_protocol_types::task::Task,
+    after: u64,
+) -> Reattached {
+    let through = if store.supports_event_log() {
+        store.last_event_seq(&task.id).await.unwrap_or(after)
+    } else {
+        0
+    };
+    Reattached::Final {
+        event: StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: task.id,
+            context_id: task.context_id,
+            status: task.status,
+            metadata: None,
+        }),
+        through,
     }
 }
 

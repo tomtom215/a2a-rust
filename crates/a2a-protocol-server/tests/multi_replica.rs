@@ -219,8 +219,9 @@ async fn a_task_created_on_one_replica_is_readable_on_the_other() {
 ///
 /// This is the property §3.1.6 (`STREAM-SUB-002`) requires — the stream MUST
 /// end when the task reaches a terminal state — and it holds across replicas
-/// even though no event crosses between them. A subscriber that hung forever
-/// on the wrong replica would be a spec violation, not merely a limitation.
+/// even though no event queue crosses between them. A subscriber that hung
+/// forever on the wrong replica would be a spec violation, not merely a
+/// limitation.
 #[tokio::test]
 #[ignore = "needs a live PostgreSQL (see the module docs)"]
 async fn a_subscriber_on_the_other_replica_still_sees_the_stream_end() {
@@ -313,22 +314,19 @@ fn terminal_state_of(event: &a2a_protocol_types::events::StreamResponse) -> Opti
 
 // ── Where sharing a store stops being enough ────────────────────────────────
 
-/// Intermediate events do not cross replicas.
+/// Intermediate events cross replicas through the store's event log.
 ///
-/// The subscriber on B is told the task finished, and is *not* shown the
-/// artifact produced on A along the way. Event queues live in process memory,
-/// so this is a property of the architecture rather than a bug, and it is here
-/// because it is the thing a reader most needs to know before putting two
-/// replicas behind a round-robin balancer: a client that reconnects to the
-/// other replica mid-stream keeps a correct task, and loses the frames in
-/// between.
-///
-/// Pinned as an assertion rather than described in prose so that if a future
-/// change *does* propagate events — a pub/sub event queue — this test fails and
-/// has to be rewritten, rather than quietly becoming a lie.
+/// The subscriber on B is shown the artifact produced on A, at the position
+/// A's own stream gave it, and then told the task finished. Event queues live
+/// in process memory, so nothing crosses between the replicas directly: B's
+/// reattach hook finds no queue for the task, sees the shared log move past
+/// the stream's position, and replays what the log holds (spec §3.5.2: each
+/// stream MUST receive the same events in the same order). Until 2026-10-13 B
+/// saw the ending and not the frames that led to it, and this test pinned
+/// that; the book's "Running More Than One Replica" says which it is.
 #[tokio::test]
 #[ignore = "needs a live PostgreSQL (see the module docs)"]
-async fn intermediate_events_do_not_cross_replicas() {
+async fn intermediate_events_cross_replicas_through_the_log() {
     use a2a_protocol_server::streaming::EventQueueReader as _;
     use a2a_protocol_types::events::StreamResponse;
 
@@ -362,21 +360,26 @@ async fn intermediate_events_do_not_cross_replicas() {
         .await
         .expect("replica B accepts the subscription");
 
+    // Each artifact frame's log position and id.
+    let artifact = |event: &a2a_protocol_server::StreamEvent| match &event.event {
+        StreamResponse::ArtifactUpdate(u) => Some((event.seq, u.artifact.id.0.clone())),
+        _ => None,
+    };
     let a_artifacts = tokio::spawn(async move {
-        let mut count = 0_usize;
+        let mut seen = Vec::new();
         while let Some(Ok(event)) = stream_a.read().await {
-            if matches!(event.event, StreamResponse::ArtifactUpdate(_)) {
-                count += 1;
-            }
+            seen.extend(artifact(&event));
         }
-        count
+        seen
     });
 
-    let mut b_artifacts = 0_usize;
-    let _ = tokio::time::timeout(Duration::from_secs(10), async {
-        while let Some(Ok(event)) = stream_b.read().await {
-            if matches!(event.event, StreamResponse::ArtifactUpdate(_)) {
-                b_artifacts += 1;
+    let (mut b_artifacts, mut last_state) = (Vec::new(), None);
+    let ended = tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(event) = stream_b.read().await {
+            let event = event.expect("no streamLagged: the log holds every event");
+            b_artifacts.extend(artifact(&event));
+            if let Some(state) = terminal_state_of(&event.event) {
+                last_state = Some(state);
             }
         }
     })
@@ -384,16 +387,17 @@ async fn intermediate_events_do_not_cross_replicas() {
 
     let a_artifacts = a_artifacts.await.expect("A's counter joins");
     assert_eq!(
-        a_artifacts, 1,
+        a_artifacts.len(),
+        1,
         "the executor emits exactly one artifact, and the replica running it sees it"
     );
     assert_eq!(
-        b_artifacts, 0,
-        "event queues are per-process, so a subscriber on the other replica \
-         sees the terminal state but not the frames that led to it — if this \
-         now fails, events have started crossing replicas and the docs saying \
-         they do not need rewriting"
+        b_artifacts, a_artifacts,
+        "a subscriber on the other replica sees the artifact the running \
+         replica's stream saw, at the same log position"
     );
+    assert!(ended.is_ok(), "B's stream ends");
+    assert_eq!(last_state, Some(TaskState::Completed));
 
     let _ = a.shutdown().await;
     let _ = b.shutdown().await;

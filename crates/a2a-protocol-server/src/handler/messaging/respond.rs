@@ -84,7 +84,7 @@ impl RequestHandler {
                 |task| shape_response_history(task, response_history_length),
                 None,
             )
-            .await
+            .await?
         };
         Ok(SendMessageResult::Stream(reader))
     }

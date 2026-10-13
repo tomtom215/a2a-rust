@@ -352,8 +352,10 @@ impl InMemoryQueueWriter {
 
     /// Returns a raw broadcast receiver without wrapping in `InMemoryQueueReader`.
     ///
-    /// Used by [`crate::streaming::EventQueueManager::subscribe_with_snapshot`]
-    /// to create a reader with a pending first event.
+    /// Used by the conformance runner and by tests, to watch exactly what the
+    /// queue broadcasts. A reader that reattaches across turns attaches with
+    /// [`Self::attach`], which also gives the position it attached after.
+    #[cfg_attr(not(feature = "conformance"), allow(dead_code))]
     pub(crate) fn raw_subscribe(&self) -> broadcast::Receiver<super::Shared> {
         self.tx.subscribe()
     }
@@ -701,6 +703,16 @@ pub struct InMemoryQueueReader {
     /// The hook's answer while it is still being awaited, kept here for the
     /// same cancel-safety reason as `reattaching`.
     catching_up: std::sync::Mutex<Option<CatchUpFuture>>,
+    /// A replay the stream owes before it reads the channel again.
+    ///
+    /// Recorded before the log is read and cleared only once the read has
+    /// answered, so a `read` dropped while it waits leaves the replay to the
+    /// next `read`, as `reattaching` does for the hook. Until 2026-10-13 a
+    /// lag's replay was owed only by a local of `read`: a `read` dropped
+    /// while the catch-up waited for the log went back to the channel past
+    /// the events the lag had cost, with no `streamLagged`, and the next lag
+    /// awaited the stale catch-up, replaying positions already delivered.
+    owed: Option<Owed>,
     /// Set by a catch-up until the next live event: that event must follow
     /// the replay directly. If it does not, the replay left a gap (a short
     /// log, a failed append), and the stream says so rather than skip it.
@@ -759,25 +771,79 @@ impl std::fmt::Debug for InMemoryQueueReader {
 }
 
 /// What a reader should do when its broadcast channel closes.
-// Returned once per stream at most, so the size gap between a broadcast
-// receiver and a unit variant costs nothing worth an extra allocation.
+///
+/// Every answer but `End` can leave the reader owing events from the task's
+/// log (spec §3.5.2: each stream MUST receive the same events in the same
+/// order). The hook polls, so a turn's events may be broadcast before it
+/// finds the turn's queue, or the whole turn may run between two polls; the
+/// reader replays them from the log before it goes on. Until 2026-10-13 it
+/// did not: a subscriber beside a client that saw every artifact of a turn
+/// saw none of them, or one synthesized terminal status, and no
+/// `streamLagged` said so.
+// Returned once per turn boundary at most, so the size gap between a
+// broadcast receiver and the other variants costs nothing worth an extra
+// allocation.
 #[allow(clippy::large_enum_variant)]
 pub enum Reattached {
     /// Continue on a fresh queue — the task has more turns to run.
-    Channel(broadcast::Receiver<super::Shared>),
-    /// The task finished while no queue was attached. Emit this frame, then
-    /// end: without it the client would see the stream close having never
-    /// observed a terminal state, which is the `STREAM-SUB-002` symptom even
-    /// though the stream stayed open for the right length of time.
-    Final(StreamResponse),
+    Channel {
+        /// Holds every event the queue broadcasts after `after`.
+        rx: broadcast::Receiver<super::Shared>,
+        /// The position the receiver attached after. The events at or below
+        /// it were broadcast before it existed, and the reader replays them
+        /// from the log.
+        after: u64,
+        /// The queue numbers its events from 1 rather than on from the
+        /// task's log: the store keeps no log, so admission had no position
+        /// to seed it from, and nothing can be replayed.
+        fresh: bool,
+    },
+    /// The task is between turns and its log holds events through
+    /// `through`, past the position the hook was given: a turn ran from
+    /// start to end while no queue was attached.
+    Logged {
+        /// The log's last position.
+        through: u64,
+    },
+    /// The task finished while no queue was attached. The reader replays
+    /// what the log holds after its last position, the terminal status
+    /// among it, and emits `event`, the terminal status built from the
+    /// stored task, only when the replay does not carry one. Without either
+    /// the client would see the stream close having never observed a
+    /// terminal state, which is the `STREAM-SUB-002` symptom even though the
+    /// stream stayed open for the right length of time.
+    Final {
+        /// The task's final state, as stored.
+        event: StreamResponse,
+        /// The log's last position; 0 when the store keeps no log.
+        through: u64,
+    },
     /// End the stream now.
     End,
 }
 
-/// Called when a reader's broadcast channel closes, to decide whether the
-/// stream is really over. See [`InMemoryQueueReader::with_reattach`].
+/// Called when a reader's broadcast channel closes, with the last position
+/// the reader delivered, to decide whether the stream is really over. See
+/// [`InMemoryQueueReader::with_reattach`].
 pub type ReattachFn =
-    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Reattached> + Send>> + Send + Sync>;
+    Arc<dyn Fn(u64) -> Pin<Box<dyn Future<Output = Reattached> + Send>> + Send + Sync>;
+
+/// A replay from the task's log that a reader owes its consumer before it
+/// reads the channel again; see `InMemoryQueueReader::owed`.
+enum Owed {
+    /// The reader fell this many events behind the channel.
+    Lag(u64),
+    /// The positions after the last one delivered, through `through`, are
+    /// not on the channel: the next turn's queue attached after them, or a
+    /// turn ran with no queue attached.
+    Through {
+        through: u64,
+        /// The task's final state when it finished, emitted after the
+        /// replay unless the replay carries one. Boxed: every reader holds
+        /// an `Owed` slot, and a task finishes once.
+        last: Option<Box<StreamResponse>>,
+    },
+}
 
 /// What a catch-up hook answers: every event after the position it was
 /// given, up to the writer's position when it was called, or `None` when the
@@ -812,7 +878,11 @@ impl InMemoryQueueReader {
     /// The hook decides, at each close, whether the task has actually
     /// finished. Keeping it here rather than wrapping the reader in a new type
     /// means every binding that already accepts an `InMemoryQueueReader`
-    /// inherits the behaviour with no signature change.
+    /// inherits the behaviour with no signature change. It is given the last
+    /// position the reader delivered, and its answer says what the reader
+    /// must replay from the log before it goes on ([`Reattached`]); the
+    /// replay goes through the catch-up hook ([`Self::with_catch_up`]), and a
+    /// stream without one reports what it cannot replay as a lag.
     pub(crate) fn with_reattach(mut self, reattach: ReattachFn) -> Self {
         self.reattach = Some(reattach);
         self
@@ -850,6 +920,7 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             catch_up: None,
             catching_up: std::sync::Mutex::new(None),
+            owed: None,
             just_caught_up: false,
             saw_terminal: false,
             replayed_through: 0,
@@ -909,6 +980,7 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             catch_up: None,
             catching_up: std::sync::Mutex::new(None),
+            owed: None,
             just_caught_up: false,
             saw_terminal: false,
             replayed_through: 0,
@@ -935,6 +1007,7 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             catch_up: None,
             catching_up: std::sync::Mutex::new(None),
+            owed: None,
             just_caught_up: false,
             saw_terminal: false,
             replayed_through: 0,
@@ -1039,24 +1112,60 @@ impl InMemoryQueueReader {
         answer
     }
 
-    /// What a reader that lagged by `dropped` events yields next: the first
-    /// event the log replay supplies, or the lag error when the log cannot
-    /// supply them all. `None` when the replay holds nothing new, so reading
-    /// the channel goes on.
-    async fn recover_from_lag(&mut self, dropped: u64) -> Option<A2aResult<StreamEvent>> {
-        let Some(missed) = self.catch_up().await else {
-            trace_warn!(
-                dropped_events = dropped,
-                "event queue reader lagged, {dropped} events dropped"
-            );
-            return Some(Err(lag_error(dropped)));
-        };
-        trace_info!(
-            dropped_events = dropped,
-            replayed = missed.len(),
-            "event queue reader lagged; caught up from the event log"
-        );
-        self.queue_replay(missed);
+    /// Pays the replay the stream owes (see `owed`): what the reader yields
+    /// next is the first event the log supplies, the lag error when the log
+    /// cannot supply them all, or, after a task that finished, its final
+    /// state. `None` when the replay holds nothing new, so reading the
+    /// channel goes on.
+    async fn settle(&mut self) -> Option<A2aResult<StreamEvent>> {
+        let replay = self.catch_up().await;
+        // Only once the log has answered: a `read` dropped while it waits
+        // leaves the debt for the next `read`.
+        match self.owed.take()? {
+            Owed::Lag(dropped) => {
+                let Some(missed) = replay else {
+                    trace_warn!(
+                        dropped_events = dropped,
+                        "event queue reader lagged, {dropped} events dropped"
+                    );
+                    return Some(Err(lag_error(dropped)));
+                };
+                trace_info!(
+                    dropped_events = dropped,
+                    replayed = missed.len(),
+                    "event queue reader lagged; caught up from the event log"
+                );
+                self.queue_replay(missed);
+            }
+            Owed::Through { through, last } => {
+                if let Some(missed) = replay {
+                    self.queue_replay(missed);
+                }
+                if self.replayed_through < through {
+                    // No log, or one that could not supply them: the stream
+                    // says so after what it did supply, rather than go on
+                    // without them. Raised so a consumer that reads on past
+                    // the error is not told twice.
+                    let dropped = through - self.replayed_through;
+                    self.replayed_through = through;
+                    trace_warn!(
+                        dropped_events = dropped,
+                        "a subscription could not replay a turn's events from the event log"
+                    );
+                    self.pending.push_back(Err(lag_error(dropped)));
+                }
+                if let Some(last) = last
+                    && !self
+                        .pending
+                        .iter()
+                        .any(|e| e.as_ref().is_ok_and(|e| carries_terminal_state(&e.event)))
+                {
+                    // Built from stored state, not emitted by the agent, so
+                    // it is not in the log and carries no position.
+                    self.pending.push_back(Ok(StreamEvent::unpositioned(*last)));
+                }
+            }
+        }
         self.just_caught_up = true;
         let next = self.pending.pop_front()?;
         if let Ok(ref ev) = next {
@@ -1087,6 +1196,12 @@ impl InMemoryQueueReader {
     async fn next_live(&mut self) -> Option<A2aResult<StreamEvent>> {
         {
             loop {
+                if self.owed.is_some() {
+                    if let Some(next) = self.settle().await {
+                        return Some(next);
+                    }
+                    continue;
+                }
                 match self.rx.recv().await {
                     Ok(shared) => {
                         let event = super::unshare(shared);
@@ -1113,47 +1228,71 @@ impl InMemoryQueueReader {
                         return Some(event);
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        if let Some(next) = self.recover_from_lag(n).await {
-                            return Some(next);
-                        }
+                        self.owed = Some(Owed::Lag(n));
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         // The queue for this turn is gone. If a terminal state
                         // has already been delivered the stream is genuinely
                         // over; otherwise ask the hook whether the task is
                         // finished or merely between turns.
-                        if self.saw_terminal {
+                        if self.saw_terminal || !self.reattach().await {
                             return None;
-                        }
-                        let reattach = self.reattach.as_ref()?;
-                        let answer = {
-                            let slot = self
-                                .reattaching
-                                .get_mut()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            slot.get_or_insert_with(|| reattach()).await
-                        };
-                        // Only once the hook has answered: a `read` dropped
-                        // while awaiting it leaves it for the next `read`.
-                        *self
-                            .reattaching
-                            .get_mut()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-                        match answer {
-                            Reattached::Channel(rx) => self.rx = rx,
-                            Reattached::Final(event) => {
-                                self.saw_terminal = true;
-                                // Synthesized from stored state, not emitted
-                                // by the agent, so it is not in the log and
-                                // carries no position.
-                                return Some(Ok(StreamEvent::unpositioned(event)));
-                            }
-                            Reattached::End => return None,
                         }
                     }
                 }
             }
         }
+    }
+
+    /// Asks the reattach hook whether a task whose queue closed is finished
+    /// or between turns, and records what its answer owes from the log.
+    /// `false` when the stream ends here.
+    async fn reattach(&mut self) -> bool {
+        let Some(reattach) = self.reattach.as_ref() else {
+            return false;
+        };
+        let after = self.replayed_through;
+        let answer = {
+            let slot = self
+                .reattaching
+                .get_mut()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            slot.get_or_insert_with(|| reattach(after)).await
+        };
+        // Only once the hook has answered: a `read` dropped while awaiting it
+        // leaves it for the next `read`. What the answer owes is recorded
+        // before anything else is awaited, for the same reason.
+        *self
+            .reattaching
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        self.owed = match answer {
+            Reattached::Channel { rx, after, fresh } => {
+                self.rx = rx;
+                if fresh {
+                    // Numbered from 1: the positions the last turn delivered
+                    // are not this one's.
+                    self.replayed_through = 0;
+                }
+                // The new receiver goes on from exactly where the stream is,
+                // or the gap is reported.
+                self.just_caught_up = true;
+                (after > self.replayed_through).then_some(Owed::Through {
+                    through: after,
+                    last: None,
+                })
+            }
+            Reattached::Logged { through } => Some(Owed::Through {
+                through,
+                last: None,
+            }),
+            Reattached::Final { event, through } => Some(Owed::Through {
+                through,
+                last: Some(Box::new(event)),
+            }),
+            Reattached::End => return false,
+        };
+        true
     }
 }
 
@@ -1266,7 +1405,7 @@ mod tests {
     /// Records whether the reattach hook was consulted.
     fn counting_reattach(flag: &Arc<std::sync::atomic::AtomicBool>) -> ReattachFn {
         let flag = Arc::clone(flag);
-        Arc::new(move || {
+        Arc::new(move |_| {
             let flag = Arc::clone(&flag);
             Box::pin(async move {
                 flag.store(true, std::sync::atomic::Ordering::SeqCst);

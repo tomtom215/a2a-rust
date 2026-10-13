@@ -19,7 +19,7 @@ test fails rather than this page quietly becoming wrong.
 | A task created on one replica is readable on another | **Yes** | The store holds it |
 | `GetTask` / `ListTasks` see every replica's tasks | **Yes** | Same |
 | A subscription terminates when the task finishes elsewhere | **Yes** | The reattach hook polls the store |
-| A subscriber sees intermediate events from another replica | **No** | Event queues live in process memory |
+| A subscriber sees intermediate events from another replica | **Yes, up to a poll late** | The reattach hook replays them from the store's event log |
 | Rate limiting enforces the configured limit | **Only with a shared counter** | Otherwise each replica counts alone |
 | A second send to a running task is refused | **No** — each replica admits one | Admission state is per-handler |
 | A task one replica finished stays finished | **Yes** | The store refuses to move a terminal task |
@@ -164,24 +164,35 @@ and not an open door. Failing closed would make adding a shared limiter a
 reliability regression; failing open would remove the limit at the moment an
 attacker with database access most wants it gone.
 
-## Streaming does not cross replicas
+## Streaming across replicas
 
-An agent's event queue lives in the process running its executor. A client that
-subscribes on a different replica from the one running the task:
+An agent's event queue lives in the process running its executor. A client
+that subscribes on a different replica from the one running the task gets the
+task's events from the store's event log instead, which the replicas share;
+both SQL stores keep one. That client:
 
 - **does** get a stream that terminates correctly when the task reaches a
   terminal state, with that state reported — spec §3.1.6 (`STREAM-SUB-002`) is
   satisfied across replicas;
-- **does not** see the artifact and status frames produced along the way.
+- **does** see the artifact and status frames produced along the way, in the
+  order the agent emitted them and at the positions the running replica's own
+  subscribers see (spec §3.5.2). They arrive in batches: the subscription's
+  reattach hook looks for new events every `subscribe_reattach_interval`
+  (250 ms by default), so a frame can be up to one interval late.
 
-So a client that reconnects mid-stream to another replica keeps a correct task
-and a correct ending, and loses the middle. That is a property of the
-architecture, not a bug, and there is no configuration that changes it today.
+Two edges remain, both at the moment of subscribing. The snapshot the stream
+starts with is read just after the log's end, so an event the running replica
+logs and stores between those two reads arrives twice, in the snapshot and
+again in the replay; a client folding an `append: true` artifact chunk would
+fold it twice. And a store without an event log has nothing to replay: its
+subscribers get the ending and not the middle.
 
-Three ways to live with it, in the order most deployments should consider them:
+Where a poll's latency matters, or the store keeps no log, three ways to live
+with it, in the order most deployments should consider them:
 
 1. **Session affinity.** Have the load balancer route by task ID or by
-   connection. This is the direct fix and most balancers do it already.
+   connection. A subscriber on the replica running the task reads its queue
+   directly, with no poll in between.
 2. **Poll instead of stream.** `GetTask` is replica-independent, because the
    store is. A client that polls is unaffected by any of this.
 3. **Push notifications.** Configure a webhook; delivery is driven from the

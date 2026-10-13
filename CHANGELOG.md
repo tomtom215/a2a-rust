@@ -348,7 +348,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   beyond what the log still holds (the in-memory stores keep the last 512
   events of a task by default; the SQL stores keep the whole log), or more
   missed events than one replay reads (`subscribe_replay_limit`, 1,000 by
-  default).
+  default). A `read` dropped while the log is read, as the SSE and gRPC
+  bindings drop one whenever a keep-alive or a closed client wins the race,
+  leaves the replay owed to the next `read`.
+- **A subscription across turns receives every turn's events** (server;
+  spec §3.5.2: each stream MUST receive the same events in the same order).
+  A `SubscribeToTask` stream on a task parked at `input-required` waits for
+  the next turn's queue, polling every `subscribe_reattach_interval`. What
+  the turn broadcast before the poll found its queue never reached the
+  subscriber, and a turn that ran from start to end between two polls
+  reached it as one terminal status built from the stored task, or, if it
+  parked the task again, not at all; no `streamLagged` said so. When the
+  store keeps an event log the stream now replays those events from the
+  log, with their positions, before it goes on. So does a subscription on
+  another replica sharing the store, which used to get only the ending: the
+  book's "Running More Than One Replica" says what it sees now. Without a
+  log each turn numbers its events from 1, and a subscriber skipped as many
+  of a turn's events as it had seen positions in the turns before; it now
+  receives them, and reports with `streamLagged` the ones broadcast before
+  it found the turn's queue. A subscription to a task with no live queue
+  starts at the log's end, so the next turn does not replay the history its
+  snapshot holds.
 - **Breaking: `ClientBuilder::from_card` follows the card's interface order**
   (client; spec §8.3.2: a client MUST select the first supported interface,
   preferring earlier entries). It ranked by `ClientConfig::default()`'s

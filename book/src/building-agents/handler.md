@@ -131,7 +131,7 @@ The `HandlerLimits` struct configures per-handler bounds:
 | `max_push_configs_per_task` | `usize` | 100 | Maximum push configs per task (uniform across store backends) |
 | `max_parts_per_artifact` | `usize` | 10,000 | Maximum parts a single artifact may accumulate |
 | `max_total_push_configs` | `usize` | 100,000 | Global push-config ceiling across all tasks |
-| `subscribe_reattach_interval` | `Duration` | 250 ms | How often a `SubscribeToTask` stream re-checks whether its task has finished once the current turn's queue has closed |
+| `subscribe_reattach_interval` | `Duration` | 250 ms | How often a `SubscribeToTask` stream between turns checks the store: for the task finishing, the next turn's queue, or events logged meanwhile, which it replays |
 | `subscribe_max_idle` | `Duration` | 5 minutes | How long a `SubscribeToTask` stream waits for a parked task to make progress before ending; the client resubscribes (§3.5.2) |
 | `subscribe_replay_limit` | `usize` | 1,000 | Maximum logged events replayed to a client resuming with `Last-Event-ID` |
 | `subscribe_replay_catchup` | `Duration` | 2 seconds | How long a resuming `SubscribeToTask` waits for the event log to catch up with what was already broadcast; zero disables the wait |

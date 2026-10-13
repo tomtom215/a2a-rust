@@ -1201,6 +1201,29 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     the clamp and the 0 default now require the refusal, and
     `probe_load.py` pages by 100. A behaviour change, in the CHANGELOG and
     the upgrading guide.
+56. `fix(server):` §3.5.2 — a `SubscribeToTask` stream across turns gets
+    every turn's events. The reattach hook is called with the stream's
+    position, attaches with the manager's exact `attach`, and answers
+    `Channel { rx, after, fresh }`, `Logged { through }` (no queue here, but
+    the log moved: a turn ran between two polls, on this replica or another)
+    or `Final { event, through }`. The reader replays the log for each before
+    it goes on, and reports what the log cannot supply as `streamLagged`. The
+    replay a stream owes lives in the reader (`Owed`), so a `read` dropped
+    while the log is read resumes it; the lag catch-up had that hole too (a
+    dropped `read` went back to the channel past the lag), and it is fixed
+    with it. Without a log each turn numbers from 1, and the reader's dedup
+    skipped as many of a turn's events as it had seen positions before;
+    `fresh` resets it. A subscription with no live queue starts at the log's
+    end, read before the task is re-read, so a race with another replica's
+    writes duplicates an event rather than loses one. Across replicas a
+    subscriber now sees the running replica's events a poll late:
+    `multi_replica.rs`'s test asserts it and the book's horizontal-scaling
+    page says so. Still open, and now more visible (audit register R55,
+    suspected, not yet reproduced): a continuation admitted before the
+    previous turn's processor has logged its last events would seed
+    positions that collide, and the replay would skip the collided ones as
+    already delivered. Admission waits for the executor, not the processor,
+    and the terminal gate holds terminal states only.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
@@ -1234,6 +1257,13 @@ PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
 - A hand-applied mutant checked with `cargo test` (no `--no-fail-fast`)
   shows only the first failing binary's tests; a test in a later target may
   kill it too. Run that target alone before citing it as the killer.
+- No live queue on this replica does not mean no turn is running: another
+  replica sharing the store may be writing (item 56). Reason about the
+  multi-replica case before calling a read order safe.
+- The ledger checker verifies that a cited test function exists, not that a
+  `path:line` names the code meant; some citations were already loose at
+  `7cb97ad8` (`in_memory.rs:667` was a blank line). Move citations through
+  `git diff` when a file changes (item 56 did, 45 lines checked identical).
 - Nightly cargo's `unused_dependencies` lint flags `book-tests`' dependencies,
   which only its doctests use. A warning on the informational nightly job
   today; it would need an allow if the lint stabilizes as-is.

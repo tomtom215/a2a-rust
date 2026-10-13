@@ -17,6 +17,8 @@
 pub(crate) mod applied;
 mod in_memory;
 mod manager;
+#[cfg(test)]
+mod reattach_tests;
 mod status_stamp;
 pub(crate) mod terminal_gate;
 
