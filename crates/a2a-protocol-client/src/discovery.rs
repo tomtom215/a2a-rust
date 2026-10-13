@@ -450,18 +450,6 @@ async fn fetch_card_with_metadata(
     let status = resp.status();
     let retry_after = crate::error::parse_retry_after(resp.headers());
 
-    // 304 Not Modified — return cached card with existing metadata.
-    if status == hyper::StatusCode::NOT_MODIFIED
-        && let Some(cached) = cached
-    {
-        return Ok((
-            cached.card.clone(),
-            cached.etag.clone(),
-            cached.last_modified.clone(),
-        ));
-    }
-    // No cached card but got 304 — shouldn't happen, fall through to error.
-
     // Extract caching headers before consuming the response body. A
     // `no-store` response keeps no validators, so no cache holds it.
     let no_store = resp
@@ -481,6 +469,26 @@ async fn fetch_card_with_metadata(
         .get("last-modified")
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
+
+    // 304 Not Modified: the cached card, its stored validators replaced by
+    // those the 304 carries (RFC 9111 §4.3.4). Until 2026-10-13 the stored
+    // ones were kept, so the next revalidation sent an ETag or date the
+    // server had already replaced.
+    if status == hyper::StatusCode::NOT_MODIFIED
+        && let Some(cached) = cached
+    {
+        let (etag, last_modified) = if no_store {
+            (None, None)
+        } else {
+            (
+                etag.or_else(|| cached.etag.clone()),
+                last_modified.or_else(|| cached.last_modified.clone()),
+            )
+        };
+        return Ok((cached.card.clone(), etag, last_modified));
+    }
+    // No cached card but got 304 — shouldn't happen, fall through to error.
+
     let (etag, last_modified) = if no_store {
         (None, None)
     } else {

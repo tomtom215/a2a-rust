@@ -1534,6 +1534,20 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `changed_by`. Entry 296's note that axum never checks `A2A-Version`
     was stale (`validate_a2a_request` does, `axum_adapter.rs:212`) and its
     axum citation pointed at a doc comment; both are corrected.
+77. `fix(client):` §8.6.2 / RFC 9111 §4.3.4 — `CachingCardResolver` takes
+    the validators a `304` carries (audit register R32). It kept the
+    first `200`'s `ETag` and `Last-Modified` and revalidated with them
+    after a `304` that sent new ones; a `no-store` `304` left the card
+    stored. `a_304_replaces_the_stored_validators` and
+    `a_no_store_304_leaves_nothing_stored`, both failing before; mutants
+    6 of 6. Ledger 272 (PARTIAL: max-age is still not used to skip the
+    request, and the plain functions do not cache) and 273 cite the code
+    by its current lines; six proto `REQUIRED` entries (431, 432, 434,
+    468, 472, 481) cited a `.headers()` call and now cite the card parse,
+    as 435 to 439 do. Not done, and raised instead: the resolver takes
+    no `CardFetchOptions`, because `CardFetchOptions` derives `Debug` and
+    prints its headers, an `Authorization` among them, and a resolver
+    holding one would print it too.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

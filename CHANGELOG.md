@@ -768,6 +768,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`CachingCardResolver` takes the validators a `304` sends** (client;
+  spec §8.6.2: clients SHOULD honour RFC 9111). RFC 9111 §4.3.4 has a
+  cache that freshens a stored response from a `304` replace its stored
+  header fields with the `304`'s. The resolver kept the first `200`'s
+  `ETag` and `Last-Modified`, so after a `304` carrying a new `ETag`, or
+  a `Last-Modified` the `200` lacked, it revalidated with the old ones. It
+  now takes those the `304` carries and keeps the rest, and a `304` marked
+  `no-store` leaves nothing stored, as a `200` so marked already did.
 - **A security scheme naming two schemes is refused** (types; a2a.proto's
   `SecurityScheme` is a `oneof`). Its deserializer took the first arm it
   found, so `{"apiKeySecurityScheme": …, "httpAuthSecurityScheme": …}`
