@@ -1602,6 +1602,15 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `None`, a comment calling it idempotence.
     `an_explicitly_empty_url_keeps_its_presence` failed before; mutants 4
     of 4 (each filter put back). Ledger 248 cites it.
+83. `fix(server):` §11.1 / RFC 9110 §12.5.5 — negotiated HTTP+JSON
+    responses carry `Vary: Accept, Content-Type` (audit register R27), on
+    `RestDispatcher` and axum, appended in `ResponseMediaType::apply` so
+    the extended card keeps its `Vary: Authorization`; `from_headers`
+    reads every `Accept` line through `dispatch::field_value`.
+    `tests/rest_vary.rs` (both bindings failed before); mutants 4 of 4,
+    one rewritten after it did not build; `append` turned `insert` is
+    killed by the extended-card caching tests. Ledger 294 stays PARTIAL for
+    its a2a-go trade-off.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

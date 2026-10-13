@@ -5995,7 +5995,7 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:40-75",
+    "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:40-87",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:91-102",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:173-190",
     "crates/a2a-protocol-types/src/lib.rs:87-98",
@@ -6004,9 +6004,10 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/http_json_error_parity.rs:170 rest_and_axum_negotiate_the_response_media_type",
     "crates/a2a-protocol-server/tests/content_type_essence.rs:94 http_json_reads_the_media_type",
-    "crates/a2a-protocol-server/tests/content_type_essence.rs:110 the_axum_router_reads_the_media_type"
+    "crates/a2a-protocol-server/tests/content_type_essence.rs:110 the_axum_router_reads_the_media_type",
+    "crates/a2a-protocol-server/tests/rest_vary.rs:78 rest_names_what_chose_the_media_type"
    ],
-   "notes": "Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2843-2844 and 2929-2930 are not matched by default. This is a deliberate interop trade-off for a2a-go (media_type.rs:8-25). Since 2026-10-13 the request's Content-Type is read as a media type (RFC 9110 §8.3.1): the type and subtype before any parameter, case-insensitively. It was compared by prefix, case-sensitively, so Application/JSON was refused and application/json-rpc accepted.",
+   "notes": "Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2843-2844 and 2929-2930 are not matched by default. This is a deliberate interop trade-off for a2a-go (media_type.rs:8-25). Since 2026-10-13 the request's Content-Type is read as a media type (RFC 9110 §8.3.1): the type and subtype before any parameter, case-insensitively. It was compared by prefix, case-sensitively, so Application/JSON was refused and application/json-rpc accepted. Since 2026-10-13 a negotiated response names Accept and Content-Type in Vary (RFC 9110 §12.5.5), appended beside the extended card's Vary: Authorization, and every Accept line is read (§5.3); no Vary was sent, and only the first Accept line was read.",
    "auditor": "E",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"

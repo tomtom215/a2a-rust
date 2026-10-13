@@ -768,6 +768,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An HTTP+JSON response names what chose its media type** (server; spec
+  §11.1 negotiation; RFC 9110 §12.5.5). `RestDispatcher` and the axum
+  router pick `application/a2a+json` or `application/json` from the
+  request's `Accept`, else its `Content-Type`, and sent no `Vary`, so a
+  shared cache could serve one client's representation to a client that
+  asked for the other. Negotiated responses now carry `Vary: Accept,
+  Content-Type`, beside the extended card's `Vary: Authorization`, and an
+  `Accept` sent as two lines is read as one list; only its first line was
+  read.
 - **An agent card's explicitly empty `iconUrl` or `documentationUrl`
   survives gRPC** (types; spec §8.4.1: an optional field explicitly set to
   its default MUST be included). Both are `optional string` in a2a.proto,
