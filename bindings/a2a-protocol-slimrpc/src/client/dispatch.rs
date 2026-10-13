@@ -26,7 +26,7 @@ use super::SlimRpcTransport;
 
 /// Turns A2A headers into SLIMRPC call metadata, adding the protocol version.
 ///
-/// The mirror of the server's `headers_from`: A2A carries auth, tenancy and
+/// The mirror of the server's `Served::headers`: A2A carries auth, tenancy and
 /// extension activation in headers, and SLIMRPC's session metadata is where
 /// they ride.
 ///
@@ -44,7 +44,7 @@ use super::SlimRpcTransport;
 ///
 /// Always produces metadata, where the previous version produced `None` for a
 /// caller who sent no headers: the version alone makes the map non-empty.
-fn metadata_from(extra_headers: &HashMap<String, String>) -> Metadata {
+pub(crate) fn metadata_from(extra_headers: &HashMap<String, String>) -> Metadata {
     let mut metadata = extra_headers.clone();
     if !metadata
         .keys()

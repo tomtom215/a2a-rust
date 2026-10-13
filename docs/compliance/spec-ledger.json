@@ -2679,14 +2679,18 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:135",
     "crates/a2a-protocol-client/src/transport/grpc.rs:464",
     "crates/a2a-protocol-client/src/transport/websocket.rs:571",
-    "crates/a2a-protocol-client/src/discovery.rs:413"
+    "crates/a2a-protocol-client/src/discovery.rs:413",
+    "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs metadata_from",
+    "bindings/a2a-protocol-slimrpc/src/multicast/mod.rs SlimRpcMulticast::send_message"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/grpc.rs:1192 add_metadata_injects_a2a_version",
     "crates/a2a-protocol-client/tests/rest_streaming_tests.rs:239 rest_send_message_returns_completed_task",
-    "crates/a2a-protocol-client/src/discovery.rs:1523 the_card_fetch_sends_its_a2a_version_unless_the_caller_does"
+    "crates/a2a-protocol-client/src/discovery.rs:1523 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
+    "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs every_call_declares_the_protocol_version",
+    "bindings/a2a-protocol-slimrpc/tests/multicast.rs every_invited_agent_answers_and_is_identifiable (against the version-required default)"
    ],
-   "notes": "All four transports set it; JSON-RPC/REST covered implicitly by e2e tests against the default (version-required) RestDispatcher/JsonRpcDispatcher. WebSocket sends it on the upgrade only (per connection). The agent card fetch sends it too since 2026-10-13 (it went without), unless the caller passes its own A2A-Version in CardFetchOptions.",
+   "notes": "All four transports set it; JSON-RPC/REST covered implicitly by e2e tests against the default (version-required) RestDispatcher/JsonRpcDispatcher. WebSocket sends it on the upgrade only (per connection). The agent card fetch sends it too since 2026-10-13 (it went without), unless the caller passes its own A2A-Version in CardFetchOptions. SLIMRPC sends it as the a2a-version metadata key. Its multicast client (SlimRpcMulticast) sent none until 2026-10-13, hidden by the SLIMRPC server accepting a missing version; the multicast tests now run against a server that requires it.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -2782,23 +2786,26 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Agents MUST interpret empty value as 0.3 version.",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:110",
     "crates/a2a-protocol-server/src/dispatch/grpc/config.rs:40",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:695"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:695",
+    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs a2a_headers"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:526 jsonrpc_missing_version_header_rejected",
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:841 rest_missing_version_header_rejected_but_card_discovery_versionless",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:697 default_config_rejects_a_versionless_rpc",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2545 ws_missing_version_header_rejected_by_default"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2545 ws_missing_version_header_rejected_by_default",
+    "bindings/a2a-protocol-slimrpc/tests/e2e.rs an_empty_version_is_refused_unless_none_is_required",
+    "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs an_absent_version_is_refused_as_0_3_unless_none_is_required"
    ],
-   "notes": "Empty means 0.3 and is refused on every binding including axum. Only the explicit opt-outs (accept_missing_version_header, gRPC require_version_header=false) serve it as 1.0, by the deployer's choice.",
+   "notes": "Empty means 0.3 and is refused by default on every binding: JSON-RPC, REST, axum, WebSocket, gRPC and, since 2026-10-13, SLIMRPC, which until then served it as 1.0. Only the explicit opt-outs (accept_missing_version_header, gRPC with_require_version_header(false), SLIMRPC with_require_version(false)) serve it as 1.0; a server so configured is not conforming here, by the deployer's choice. PARTIAL until 2026-10-13: this note said every binding refused while SLIMRPC did not.",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 745,

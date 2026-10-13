@@ -38,17 +38,24 @@ struct Fabric {
 
 impl Fabric {
     async fn new(test_name: &str) -> Self {
+        Self::requiring_version(test_name, true).await
+    }
+
+    /// A fabric whose server was given `with_require_version(require)`, or
+    /// left at its default when `require` is `true`.
+    async fn requiring_version(test_name: &str, require: bool) -> Self {
         let service = common::service(test_name);
 
         let agent = SlimName::new("org", "e2e", "echo_agent");
         let caller = SlimName::new("org", "e2e", "caller");
 
         let parts = common::app_for(&service, &agent, "agent");
-        let server = Arc::new(SlimRpcServer::from_app(
-            parts,
-            common::handler_for(&agent),
-            agent.clone(),
-        ));
+        let server = SlimRpcServer::from_app(parts, common::handler_for(&agent), agent.clone());
+        let server = Arc::new(if require {
+            server
+        } else {
+            server.with_require_version(false)
+        });
 
         let (caller_app, _) = common::app_for(&service, &caller, "caller");
 
@@ -329,6 +336,39 @@ async fn an_unknown_method_is_reported() {
     }
 
     fabric.shutdown().await;
+}
+
+/// §3.6.2 reads an empty `A2A-Version` as 0.3, which the server refuses by
+/// default; `with_require_version(false)` serves the same call as 1.0 (here
+/// it reaches the handler, which finds no such task). The client sends the
+/// caller's own `a2a-version` in place of its default, so an empty one goes
+/// out as written.
+#[tokio::test]
+async fn an_empty_version_is_refused_unless_none_is_required() {
+    let params = serde_json::to_value(TaskQueryParams {
+        tenant: None,
+        id: "task-that-does-not-exist".to_string(),
+        history_length: None,
+    })
+    .unwrap();
+    let empty_version = [("a2a-version".to_string(), String::new())].into();
+
+    for (require, expected) in [
+        (true, ErrorCode::VersionNotSupported),
+        (false, ErrorCode::TaskNotFound),
+    ] {
+        let fabric = Fabric::requiring_version(&format!("version-{require}"), require).await;
+        let err = fabric
+            .transport
+            .send_request(method::GET_TASK, params.clone(), &empty_version)
+            .await
+            .expect_err("either refused or not found");
+        match err {
+            ClientError::Protocol(a2a) => assert_eq!(a2a.code, expected, "require={require}"),
+            other => panic!("expected {expected:?}, got {other:?}"),
+        }
+        fabric.shutdown().await;
+    }
 }
 
 // ── Identity beyond shared secrets ──────────────────────────────────────────

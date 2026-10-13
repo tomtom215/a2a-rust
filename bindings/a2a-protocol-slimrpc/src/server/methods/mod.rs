@@ -13,6 +13,7 @@
 //! encoding the response.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use a2a_protocol_server::streaming::EventQueueReader as _;
 use a2a_protocol_server::{
@@ -53,40 +54,48 @@ fn is_transport_key(key: &str) -> bool {
     .any(|reserved| key.eq_ignore_ascii_case(reserved))
 }
 
-/// Turns SLIMRPC call metadata into the header map the handler expects, after
-/// checking the protocol version the caller declared.
-///
-/// A2A carries request-scoped data — auth, tenancy, extension activation — in
-/// headers. SLIMRPC's equivalent is session metadata, so the binding maps one
-/// onto the other rather than inventing a second mechanism, and the
-/// `RequestHandler`'s existing auth and tenant resolvers work unchanged.
-///
-/// # Why the version check is lenient
-///
-/// A declared version that this server does not implement is rejected. An
-/// *absent* one is accepted, which is the gRPC binding's posture rather than
-/// the strict default HTTP uses.
-///
-/// The reason is interop, and it is worth stating because the strict reading is
-/// the defensible one on paper: §3.6.2 says a missing value MUST be read as
-/// protocol 0.3. But the official `a2a-slimrpc` crate does not send the
-/// parameter at all — checked against its 0.2.4 source — so a server that
-/// required it would reject every call from the A2A project's own Rust SDK.
-/// Refusing to talk to the reference implementation is a worse outcome than
-/// accepting a caller who declined to introduce itself, and the gRPC binding
-/// already made exactly this trade for the same reason.
-fn headers_from(ctx: &Context) -> Result<std::collections::HashMap<String, String>, RpcError> {
-    a2a_headers(ctx.metadata())
+/// What every method closure holds: the handler, and whether a call that
+/// declares no `A2A-Version` is refused.
+pub(super) struct Served {
+    pub(super) handler: Arc<RequestHandler>,
+    /// `true` unless `SlimRpcServer::with_require_version(false)` was called.
+    /// Set before `serve` spawns the tasks that read it, so `Relaxed` is
+    /// enough.
+    pub(super) require_version: AtomicBool,
 }
 
-/// The body of [`headers_from`], separated from the `Context` it reads.
+impl Served {
+    /// Turns SLIMRPC call metadata into the header map the handler expects,
+    /// after checking the protocol version the caller declared.
+    ///
+    /// A2A carries request-scoped data — auth, tenancy, extension activation —
+    /// in headers. SLIMRPC's equivalent is session metadata, so the binding
+    /// maps one onto the other rather than inventing a second mechanism, and
+    /// the `RequestHandler`'s existing auth and tenant resolvers work
+    /// unchanged.
+    fn headers(
+        &self,
+        ctx: &Context,
+    ) -> Result<std::collections::HashMap<String, String>, RpcError> {
+        a2a_headers(ctx.metadata(), self.require_version.load(Ordering::Relaxed))
+    }
+}
+
+/// The body of [`Served::headers`], separated from the `Context` it reads.
 ///
 /// `Context` is `slim_rpc`'s, with no public constructor, so a test cannot
 /// build one carrying chosen metadata. Keeping the decisions — which keys to
 /// drop, which versions to refuse — in a function over a plain map is what
 /// makes them assertable at all; the alternative is a live fabric per case.
+///
+/// §3.6.2 reads an absent or empty version as 0.3, which this server does not
+/// serve, so with `require_version` such a call is refused, as the HTTP and
+/// gRPC bindings refuse it by default. Until 2026-10-13 it was served as 1.0,
+/// because the official `a2a-slimrpc` crate sent no version when checked at
+/// 0.2.4; its `A2AClient` sends one now (`a2a-client-lf` 0.2.8).
 fn a2a_headers(
     metadata: std::collections::HashMap<String, String>,
+    require_version: bool,
 ) -> Result<std::collections::HashMap<String, String>, RpcError> {
     // Keys are case-insensitive (SLIMRPC spec §3) and the handler looks
     // headers up by their lowercase names, as HTTP and gRPC deliver them, so
@@ -113,7 +122,7 @@ fn a2a_headers(
             .or_insert(value);
     }
 
-    validate_version_metadata(&headers, false)
+    validate_version_metadata(&headers, require_version)
         .map_err(|e| server_error_to_rpc_error(&ServerError::Protocol(e)))?;
 
     Ok(headers)
@@ -124,21 +133,22 @@ fn a2a_headers(
 /// Nine are unary; `SendStreamingMessage` and `SubscribeToTask` are
 /// unary-request/streaming-response, exactly as the spec's method table says.
 #[allow(clippy::too_many_lines)]
-pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHandler>) {
+pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
     // ── SendMessage ─────────────────────────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_unary(
         A2A_SERVICE_NAME,
         method::SEND_MESSAGE,
         move |req: Pb<pb::SendMessageRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let params = req
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
                 let result = h
+                    .handler
                     .on_send_message(params, false, Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
@@ -163,19 +173,20 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
     );
 
     // ── SendStreamingMessage ────────────────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_stream(
         A2A_SERVICE_NAME,
         method::SEND_STREAMING_MESSAGE,
         move |req: Pb<pb::SendMessageRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let params = req
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
                 let result = h
+                    .handler
                     .on_send_message(params, true, Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
@@ -197,19 +208,20 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
     );
 
     // ── GetTask ─────────────────────────────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_unary(
         A2A_SERVICE_NAME,
         method::GET_TASK,
         move |req: Pb<pb::GetTaskRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let params = req
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
                 let task = h
+                    .handler
                     .on_get_task(params, Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
@@ -220,19 +232,20 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
     );
 
     // ── ListTasks ───────────────────────────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_unary(
         A2A_SERVICE_NAME,
         method::LIST_TASKS,
         move |req: Pb<pb::ListTasksRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let params = req
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
                 let list = h
+                    .handler
                     .on_list_tasks(params, Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
@@ -243,19 +256,20 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
     );
 
     // ── CancelTask ──────────────────────────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_unary(
         A2A_SERVICE_NAME,
         method::CANCEL_TASK,
         move |req: Pb<pb::CancelTaskRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let params = req
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
                 let task = h
+                    .handler
                     .on_cancel_task(params, Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
@@ -266,20 +280,21 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
     );
 
     // ── SubscribeToTask ─────────────────────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_stream(
         A2A_SERVICE_NAME,
         method::SUBSCRIBE_TO_TASK,
         move |req: Pb<pb::SubscribeToTaskRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let inner = req.into_inner();
                 let params = a2a_protocol_types::params::TaskIdParams {
                     tenant: non_empty(inner.tenant),
                     id: inner.id,
                 };
                 let reader = h
+                    .handler
                     .on_resubscribe(params, Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
@@ -289,16 +304,17 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
     );
 
     // ── CreateTaskPushNotificationConfig ────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_unary(
         A2A_SERVICE_NAME,
         method::CREATE_PUSH_CONFIG,
         move |req: Pb<pb::TaskPushNotificationConfig>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let config = req.into_inner().into();
                 let saved = h
+                    .handler
                     .on_set_push_config(config, Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
@@ -308,16 +324,17 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
     );
 
     // ── GetTaskPushNotificationConfig ───────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_unary(
         A2A_SERVICE_NAME,
         method::GET_PUSH_CONFIG,
         move |req: Pb<pb::GetTaskPushNotificationConfigRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let params = req.into_inner().into();
                 let config = h
+                    .handler
                     .on_get_push_config(params, Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
@@ -327,19 +344,20 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
     );
 
     // ── ListTaskPushNotificationConfigs ─────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_unary(
         A2A_SERVICE_NAME,
         method::LIST_PUSH_CONFIGS,
         move |req: Pb<pb::ListTaskPushNotificationConfigsRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let params: a2a_protocol_types::params::ListPushConfigsParams = req
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
                 let configs = h
+                    .handler
                     .on_list_push_configs(&params.task_id, params.tenant.as_deref(), Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
@@ -352,16 +370,17 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
     );
 
     // ── DeleteTaskPushNotificationConfig ────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_unary(
         A2A_SERVICE_NAME,
         method::DELETE_PUSH_CONFIG,
         move |req: Pb<pb::DeleteTaskPushNotificationConfigRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let params = req.into_inner().into();
-                h.on_delete_push_config(params, Some(&headers))
+                h.handler
+                    .on_delete_push_config(params, Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
                 Ok(Empty::default())
@@ -370,15 +389,16 @@ pub(super) fn register_a2a_methods(server: &mut Server, handler: &Arc<RequestHan
     );
 
     // ── GetExtendedAgentCard ────────────────────────────────────────────────
-    let h = Arc::clone(handler);
+    let h = Arc::clone(state);
     server.register_unary_unary(
         A2A_SERVICE_NAME,
         method::GET_EXTENDED_AGENT_CARD,
         move |_req: Pb<pb::GetExtendedAgentCardRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
-                let headers = headers_from(&ctx)?;
+                let headers = h.headers(&ctx)?;
                 let card = h
+                    .handler
                     .on_get_extended_agent_card(Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;

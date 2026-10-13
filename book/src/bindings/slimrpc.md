@@ -137,6 +137,11 @@ caller it would be a claim the handler reads as fact. This is separate from the
 SLIM transport identity below (SPIFFE/MLS or a static token), which
 authenticates the app to the SLIM fabric, not the caller to the agent.
 
+The server reads `a2a-version` as the HTTP bindings read the header: absent or
+empty means 0.3 (A2A §3.6.2), which it refuses with `VersionNotSupportedError`.
+`SlimRpcServer::with_require_version(false)` serves such a call as 1.0 instead,
+for a caller that sends no version.
+
 ## Why the code blocks on this page are not compiled
 
 Every other Rust block in this book is compiled as a doctest by the

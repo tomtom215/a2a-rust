@@ -1649,9 +1649,23 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     appends one over SLIMRPC. Read from the code, not tested. Dropping the
     key in the binding, or a per-binding hop count, are both API-visible
     choices.
+87. `fix(slimrpc)!:` §3.6.2 — the SLIMRPC server refuses a call that
+    declares no `A2A-Version`, as 0.3 (audit register R43; in Behaviour
+    Changes). It served one as 1.0 because the official `a2a-slimrpc` sent
+    none at 0.2.4; read on 2026-10-13, `a2a-client-lf` 0.2.8's `A2AClient`
+    adds the version to every call and `a2a-slimrpc` 0.3.2 forwards it.
+    `SlimRpcServer::with_require_version(false)` is the opt-out, held in an
+    `AtomicBool` beside the handler (`Served`) so `from_app` needs no new
+    argument. `an_absent_version_is_refused_as_0_3_unless_none_is_required`
+    replaces `an_absent_version_is_accepted_for_interop` and failed before;
+    e2e `an_empty_version_is_refused_unless_none_is_required`. The strict
+    default failed 4 of 6 multicast tests: `SlimRpcMulticast` sent no
+    version, so it now adds one through the unicast client's
+    `metadata_from`. Mutants 9 of 9 (7 server, 2 multicast). Ledger 135
+    PARTIAL to TESTED: its note had said every binding refused.
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
-PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
+PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
 proven, 0 unproven, 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**

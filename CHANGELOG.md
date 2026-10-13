@@ -326,6 +326,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **SLIMRPC refuses a call that declares no `A2A-Version`**
+  (`a2a-protocol-slimrpc`; spec §3.6.2: an empty value MUST be read as
+  0.3). The server served such a call as 1.0, because the official
+  `a2a-slimrpc` crate sent no version when this was decided, against its
+  0.2.4. Its `A2AClient` sends one now (`a2a-client-lf` 0.2.8 adds it to
+  every call's parameters, and `a2a-slimrpc` 0.3.2 forwards them as
+  metadata), so the refusal the HTTP and gRPC bindings already make by
+  default is now SLIMRPC's default too: `VersionNotSupportedError`.
+  `SlimRpcServer::with_require_version(false)` restores the old behaviour.
+  This crate's unicast client sends the version, as it has since the
+  workspace's 0.10.0 release; its multicast client (`SlimRpcMulticast`)
+  sent none, which the old default hid, and now adds it the same way.
 - **On HTTP+JSON the path's id is the request's, and an empty one is
   refused where it stands** (server and client; spec §11.3; under
   `google.api.http` a field bound from the path is not read from the

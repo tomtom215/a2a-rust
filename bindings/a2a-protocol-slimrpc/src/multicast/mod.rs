@@ -57,6 +57,7 @@ use slim_service::app::App as SlimApp;
 use crate::SlimName;
 use crate::binding::A2A_SERVICE_NAME;
 use crate::client::TransportBuildError;
+use crate::client::metadata_from;
 use crate::codec::Pb;
 use crate::error::rpc_error_to_client_error;
 use crate::method;
@@ -180,6 +181,10 @@ impl SlimRpcMulticast {
     /// Only for an interaction-level failure — the request could not be encoded
     /// or could not be delivered to the group at all. A per-agent failure is
     /// not an error here; it is an outcome.
+    ///
+    /// `metadata` goes to every agent with `a2a-version` added unless it
+    /// already names one, as the unicast transport sends it. Until 2026-10-13
+    /// none was added, and a server that requires the version refused it.
     pub async fn send_message(
         &self,
         params: MessageSendParams,
@@ -195,7 +200,7 @@ impl SlimRpcMulticast {
                 method::SEND_MESSAGE,
                 Pb(request),
                 self.timeout,
-                metadata,
+                Some(metadata_from(&metadata.unwrap_or_default())),
             );
         futures::pin_mut!(responses);
 
@@ -273,6 +278,7 @@ impl SlimRpcMulticast {
     /// # Errors
     ///
     /// Only for an interaction-level failure, as [`Self::send_message`].
+    /// `metadata` is sent as there.
     pub fn stream_message(
         &self,
         params: MessageSendParams,
@@ -297,6 +303,7 @@ impl SlimRpcMulticast {
 
         let channel = self.channel.clone();
         let timeout = self.timeout;
+        let metadata = Some(metadata_from(&metadata.unwrap_or_default()));
         tokio::spawn(fan_out_to_members(
             channel, request, timeout, metadata, senders,
         ));
