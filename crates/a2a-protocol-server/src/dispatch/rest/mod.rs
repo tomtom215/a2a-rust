@@ -39,7 +39,7 @@ use query::{
     contains_path_traversal, parse_list_tasks_query, parse_query_param, parse_query_param_u32,
     percent_decode_path, strip_tenant_prefix,
 };
-use response::{health_response, inject_field_if_missing, read_body_limited};
+use response::{health_response, read_body_limited, set_path_field};
 
 /// REST HTTP request dispatcher.
 ///
@@ -355,7 +355,11 @@ impl RestDispatcher {
             }
         }
 
-        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        // An empty segment is kept, so an empty id is refused where it
+        // stands; until 2026-10-13 empties were dropped and
+        // `/tasks//pushNotificationConfigs` was GetTask for a task named
+        // `pushNotificationConfigs`. One trailing `/` is tolerated.
+        let segments = path_segments(path);
 
         match (method, segments.as_slice()) {
             // Tasks.
@@ -523,7 +527,7 @@ impl RestDispatcher {
                 .map_err(|e| error_json_response(400, &e.to_string()))?
         };
         for &(field, path_value) in path_fields {
-            value = inject_field_if_missing(value, field, path_value);
+            value = set_path_field(value, field, path_value);
         }
         // The path form is authoritative: under `google.api.http` a variable
         // bound from the path is the field's value, whatever the body says.
@@ -818,6 +822,13 @@ impl crate::serve::Dispatcher for RestDispatcher {
     fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
         Some(&self.handler)
     }
+}
+
+/// A path's segments for routing: one leading and one trailing `/` dropped,
+/// every other segment kept, empty ones included.
+fn path_segments(path: &str) -> Vec<&str> {
+    let path = path.strip_prefix('/').unwrap_or(path);
+    path.strip_suffix('/').unwrap_or(path).split('/').collect()
 }
 
 #[cfg(test)]

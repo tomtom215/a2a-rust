@@ -77,10 +77,9 @@
 //! With **no** resolver configured, a request is served from the tenant
 //! its own `tenant` field names, and from the default (`""`) tenant when
 //! it names none. A GET or DELETE carries the field in its query
-//! (`?tenant=`), as on the REST dispatcher; a POST in its body, though the
-//! `:cancel` and `:subscribe` routes do not read theirs. The URL prefix is
-//! never read, which is why the prefixed routes are absent rather than
-//! silently mis-parsed; it is called out here so it is a choice rather
+//! (`?tenant=`), as on the REST dispatcher; a POST in its body. The URL
+//! prefix is never read, which is why the prefixed routes are absent rather
+//! than silently mis-parsed; it is called out here so it is a choice rather
 //! than a discovery.
 
 use std::collections::HashMap;
@@ -399,7 +398,10 @@ async fn handle_tasks_catchall(
     // `Path` decoded the whole tail first, so such an id was split or read as
     // an action until 2026-10-12.
     let rest = uri.path().strip_prefix("/tasks/").unwrap_or_default();
-    let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+    // Empty segments are kept, as the REST dispatcher keeps them: `rest`
+    // follows `/tasks/`, so a leading `/` here is an empty id. One trailing
+    // `/` is tolerated.
+    let segments: Vec<&str> = rest.strip_suffix('/').unwrap_or(rest).split('/').collect();
     let dec = super::rest::query::percent_decode_path;
     // §11.5: a GET or DELETE carries its request's other fields in the
     // query, the `tenant` among them, as the REST dispatcher reads them.
@@ -432,7 +434,7 @@ async fn handle_tasks_catchall(
                 "CancelTask",
                 (method.as_str(), "/tasks/{id}:cancel"),
                 &hdrs,
-                handle_cancel_task_inner(&state, &dec(id), &hdrs),
+                handle_cancel_task_inner(&state, &dec(id), &hdrs, &body),
             )
             .await
         }
@@ -445,7 +447,7 @@ async fn handle_tasks_catchall(
                 "SubscribeToTask",
                 (method.as_str(), "/tasks/{id}:subscribe"),
                 &hdrs,
-                handle_subscribe_inner(&state, &dec(id), tenant, &hdrs),
+                handle_subscribe_inner(&state, &dec(id), tenant, &hdrs, &body),
             )
             .await
         }
@@ -721,15 +723,36 @@ async fn handle_get_task_inner(
     }
 }
 
+/// A body read as the REST dispatcher reads one: `{}` when empty, and the
+/// path's `id` set over whatever the body says. Until 2026-10-13 the
+/// `:cancel` and `:subscribe` routes never read theirs, so a malformed body
+/// was served, and its `metadata` and `tenant` were dropped.
+// The `Err` is the finished response, returned as-is by both callers.
+#[allow(clippy::result_large_err)]
+fn body_with_path_id<T: serde::de::DeserializeOwned>(
+    body: &Bytes,
+    id: &str,
+) -> Result<T, axum::response::Response> {
+    let mut value: serde_json::Value = if body.iter().all(u8::is_ascii_whitespace) {
+        serde_json::Value::Object(serde_json::Map::new())
+    } else {
+        serde_json::from_slice(body).map_err(|e| bad_body(&e))?
+    };
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("id".to_owned(), serde_json::Value::String(id.to_owned()));
+    }
+    crate::dispatch::rest::params_from_value(value).map_err(hyper_to_axum)
+}
+
 async fn handle_cancel_task_inner(
     state: &A2aState,
     id: &str,
     hdrs: &HashMap<String, String>,
+    body: &Bytes,
 ) -> axum::response::Response {
-    let params = a2a_protocol_types::params::CancelTaskParams {
-        tenant: None,
-        id: id.to_owned(),
-        metadata: None,
+    let params: a2a_protocol_types::params::CancelTaskParams = match body_with_path_id(body, id) {
+        Ok(params) => params,
+        Err(resp) => return resp,
     };
     match state.handler.on_cancel_task(params, Some(hdrs)).await {
         Ok(task) => a2a_json(&task),
@@ -742,11 +765,16 @@ async fn handle_subscribe_inner(
     id: &str,
     tenant: Option<String>,
     hdrs: &HashMap<String, String>,
+    body: &Bytes,
 ) -> axum::response::Response {
-    let params = a2a_protocol_types::params::TaskIdParams {
-        tenant,
-        id: id.to_owned(),
+    // A POST's body may name the tenant; a GET's `?tenant=` names it.
+    let mut params: a2a_protocol_types::params::TaskIdParams = match body_with_path_id(body, id) {
+        Ok(params) => params,
+        Err(resp) => return resp,
     };
+    if params.tenant.is_none() {
+        params.tenant = tenant;
+    }
     match state.handler.on_resubscribe(params, Some(hdrs)).await {
         Ok(reader) => hyper_to_axum(build_sse_response(
             reader,
@@ -768,9 +796,13 @@ async fn handle_create_push_config_inner(
         Ok(v) => v,
         Err(e) => return bad_body(&e),
     };
+    // The path's id is the request's (`google.api.http`), as on the REST
+    // dispatcher; until 2026-10-13 a `taskId` in the body replaced it.
     if let Some(obj) = value.as_object_mut() {
-        obj.entry("taskId")
-            .or_insert_with(|| serde_json::Value::String(task_id.to_owned()));
+        obj.insert(
+            "taskId".to_owned(),
+            serde_json::Value::String(task_id.to_owned()),
+        );
     }
     let config: a2a_protocol_types::push::TaskPushNotificationConfig =
         match crate::dispatch::rest::params_from_value(value) {

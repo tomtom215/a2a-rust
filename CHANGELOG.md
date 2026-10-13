@@ -326,6 +326,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **On HTTP+JSON the path's id is the request's, and an empty one is
+  refused where it stands** (server and client; spec §11.3; under
+  `google.api.http` a field bound from the path is not read from the
+  body). `RestDispatcher` and the axum router let a body's `id` or
+  `taskId` replace the path's, so `POST /tasks/A:cancel` with `{"id": "B"}`
+  cancelled B, which a proxy authorizing by path would not have allowed.
+  The axum router also never read the body of `:cancel` or `:subscribe`,
+  so a malformed one was served and its `metadata` and `tenant` were
+  dropped. And both dropped empty path segments before routing, so
+  `GET /tasks//pushNotificationConfigs` was `GetTask` for a task named
+  `pushNotificationConfigs`. Now the path's value is set over the body's,
+  both routers read those bodies (a malformed one is `400`), an empty
+  segment reaches its handler as an empty id and is `InvalidParams`, and
+  one trailing `/` is still tolerated. The REST client refuses an empty or
+  whitespace-only path id with `InvalidParams` before building the URL;
+  `get_task` with `""` sent `GET /tasks/` and failed to parse the task
+  list it got back.
 - **A header sent as several lines is read as one field** (server; spec
   §9.2 and §11.2: service parameters are HTTP headers; RFC 9110 §5.3). The
   JSON-RPC, HTTP+JSON, axum, gRPC and WebSocket bindings each kept one line

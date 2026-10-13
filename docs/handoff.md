@@ -1621,6 +1621,21 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `a_path_still_decoding_at_the_bound_is_refused`. Ledger 299 records it;
     302's two query citations pointed into this function and now name the
     boolean and number parsers.
+85. `fix(server, client):` §11.3 — on HTTP+JSON the path's id is the
+    request's (audit register R38, and R24's second half; in Behaviour
+    Changes). `set_path_field` (was `inject_field_if_missing`) inserts over
+    the body, as axum's push-config create now does; axum's `:cancel` and
+    `:subscribe` read their bodies through `body_with_path_id`; both
+    routers keep empty interior segments (one trailing `/` tolerated); the
+    REST client refuses an empty path id. `inject_field_preserves_existing`
+    pinned the old behaviour and is replaced by
+    `set_path_field_overrides_the_body`. `tests/http_json_path_ids.rs` (both
+    bindings failed before) and the client's
+    `an_empty_path_id_is_refused_before_the_request_is_built`; mutants 11 of
+    11 (9 server, 2 client). Ledger: the eight proto id entries (485, 495,
+    497, 498, 500, 501, 503, 505) say it. Not done from H-F10: the client
+    still sends an empty `messageId` or empty parts unchecked; the server
+    refuses both.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

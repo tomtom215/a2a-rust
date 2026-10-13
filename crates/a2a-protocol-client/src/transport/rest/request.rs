@@ -62,6 +62,15 @@ impl RestTransport {
                 .and_then(serde_json::Value::as_str)
                 .ok_or_else(|| ClientError::Transport(format!("missing path parameter: {param}")))?
                 .to_owned();
+            // An empty id would build another route's path (`/tasks/` is
+            // ListTasks), so it is refused here as every server refuses it.
+            if value.trim().is_empty() {
+                return Err(ClientError::Protocol(
+                    a2a_protocol_types::A2aError::invalid_params(format!(
+                        "{param} must not be empty"
+                    )),
+                ));
+            }
 
             // Percent-encode path parameters to prevent path traversal and
             // injection (e.g., IDs containing "/" or "..").
@@ -443,6 +452,40 @@ mod tests {
             uri.contains("extra=val"),
             "DELETE request should have remaining params in query string, got: {uri}"
         );
+    }
+
+    /// An empty id would build `/tasks/`, which a server routes as
+    /// `ListTasks`, so `get_task` with `""` failed to parse the list as a
+    /// task. It is refused here, before anything is sent, as every binding's
+    /// server refuses it.
+    #[test]
+    fn an_empty_path_id_is_refused_before_the_request_is_built() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        for (method, params) in [
+            ("GetTask", serde_json::json!({"id": ""})),
+            ("GetTask", serde_json::json!({"id": "  "})),
+            ("CancelTask", serde_json::json!({"id": ""})),
+            ("SubscribeToTask", serde_json::json!({"id": ""})),
+            (
+                "ListTaskPushNotificationConfigs",
+                serde_json::json!({"taskId": ""}),
+            ),
+            (
+                "GetTaskPushNotificationConfig",
+                serde_json::json!({"taskId": "t", "id": ""}),
+            ),
+        ] {
+            let route = route_for(method).unwrap();
+            let err = transport.build_uri(&route, &params).expect_err(method);
+            assert!(
+                matches!(
+                    err,
+                    ClientError::Protocol(ref e)
+                        if e.code == a2a_protocol_types::ErrorCode::InvalidParams
+                ),
+                "{method}: {err:?}"
+            );
+        }
     }
 
     #[test]

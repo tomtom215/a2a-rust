@@ -151,19 +151,22 @@ pub(super) async fn read_body_limited(
     }
 }
 
-/// Injects a field into a JSON object if it is missing.
+/// Sets a path variable's field in a request body.
 ///
-/// REST routes extract path parameters from the URL, so the client may omit
-/// them from the body.  This helper re-injects the value so that the
-/// downstream deserializer always sees the full object.
-pub(super) fn inject_field_if_missing(
+/// Under `google.api.http` a field bound from the path is the path's value,
+/// whatever the body says, and the client may omit it from the body. Until
+/// 2026-10-13 a field the body already had was kept, so
+/// `POST /tasks/A:cancel` with `{"id": "B"}` cancelled B.
+pub(super) fn set_path_field(
     mut value: serde_json::Value,
     field: &str,
     path_value: &str,
 ) -> serde_json::Value {
     if let Some(obj) = value.as_object_mut() {
-        obj.entry(field.to_owned())
-            .or_insert_with(|| serde_json::Value::String(path_value.to_owned()));
+        obj.insert(
+            field.to_owned(),
+            serde_json::Value::String(path_value.to_owned()),
+        );
     }
     value
 }
@@ -240,24 +243,22 @@ mod tests {
 
     // ── server_error_to_response status mapping ──────────────────────────
 
-    // ── inject_field_if_missing ──────────────────────────────────────────
+    // ── set_path_field ───────────────────────────────────────────────────
 
     #[test]
-    fn inject_field_when_missing() {
+    fn set_path_field_when_missing() {
         let val = serde_json::json!({"url": "https://example.com"});
-        let result = inject_field_if_missing(val, "taskId", "task-1");
+        let result = set_path_field(val, "taskId", "task-1");
         assert_eq!(result["taskId"], "task-1");
         assert_eq!(result["url"], "https://example.com");
     }
 
+    /// The path's value replaces the body's.
     #[test]
-    fn inject_field_preserves_existing() {
-        let val = serde_json::json!({"taskId": "existing", "url": "https://example.com"});
-        let result = inject_field_if_missing(val, "taskId", "task-1");
-        assert_eq!(
-            result["taskId"], "existing",
-            "should not overwrite existing field"
-        );
+    fn set_path_field_overrides_the_body() {
+        let val = serde_json::json!({"taskId": "other", "url": "https://example.com"});
+        let result = set_path_field(val, "taskId", "task-1");
+        assert_eq!(result["taskId"], "task-1");
     }
 
     /// Covers lines 32-34 (`json_ok_response` serialization error fallback path).
@@ -292,9 +293,9 @@ mod tests {
     }
 
     #[test]
-    fn inject_field_on_non_object_is_noop() {
+    fn set_path_field_on_non_object_is_noop() {
         let val = serde_json::json!("string value");
-        let result = inject_field_if_missing(val.clone(), "taskId", "task-1");
+        let result = set_path_field(val.clone(), "taskId", "task-1");
         assert_eq!(result, val);
     }
 
