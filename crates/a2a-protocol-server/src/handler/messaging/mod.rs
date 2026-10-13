@@ -24,7 +24,6 @@ use std::time::Instant;
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::task::Task;
 use tokio::sync::OwnedSemaphorePermit;
-use tokio::task::JoinHandle;
 
 use crate::call_context::CallContext;
 use crate::error::ServerResult;
@@ -43,6 +42,8 @@ mod execute;
 pub use execute::WatchedExecutor;
 mod idempotency;
 mod respond;
+mod start;
+use start::{ExecutorStart, runtime_has_one_worker};
 pub(super) mod terminal;
 mod validation;
 
@@ -90,39 +91,6 @@ struct Started {
     cancel: tokio_util::sync::CancellationToken,
     /// The queue's terminal gate, answered by the background processor.
     gate: Option<std::sync::Arc<crate::streaming::event_queue::terminal_gate::TerminalGate>>,
-}
-
-/// Whether the current tokio runtime has a single worker thread: a
-/// current-thread runtime, or a multi-thread one sized to one CPU (as
-/// `available_parallelism` reports for a container limited to one).
-fn runtime_has_one_worker() -> bool {
-    tokio::runtime::Handle::try_current().is_ok_and(|h| h.metrics().num_workers() <= 1)
-}
-
-/// How a committed send's executor runs.
-enum ExecutorStart {
-    /// Already running on a task of its own.
-    Spawned(JoinHandle<()>),
-    /// Run by whoever collects its events; spawned if dropped unrun.
-    Deferred(execute::DeferredExecutor),
-}
-
-impl ExecutorStart {
-    /// The executor on a task of its own, spawning it if it is not yet.
-    fn into_handle(self) -> JoinHandle<()> {
-        match self {
-            Self::Spawned(handle) => handle,
-            Self::Deferred(deferred) => deferred.spawn(),
-        }
-    }
-
-    /// The executor as the sync collector watches it.
-    fn watch(self) -> execute::WatchedExecutor {
-        match self {
-            Self::Spawned(handle) => execute::WatchedExecutor::Spawned(Some(handle)),
-            Self::Deferred(deferred) => deferred.watch(),
-        }
-    }
 }
 
 /// What committing a send produced.
@@ -327,7 +295,9 @@ impl RequestHandler {
         // context other than the canonical one, which is the case
         // `find_task_by_context` cannot see. Everywhere else this is a no-op
         // and `stored_task` stays exactly what it was.
-        let stored_task = resolution.continues.or(stored_task);
+        let stored_task = self
+            .settled_task(&task_id, resolution.continues.or(stored_task))
+            .await?;
         // A decision is checked against the request pending on the task it
         // continues, before anything is claimed; see `crate::approval`.
         let approval = match &self.approval_gate {

@@ -1218,12 +1218,26 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     writes duplicates an event rather than loses one. Across replicas a
     subscriber now sees the running replica's events a poll late:
     `multi_replica.rs`'s test asserts it and the book's horizontal-scaling
-    page says so. Still open, and now more visible (audit register R55,
-    suspected, not yet reproduced): a continuation admitted before the
-    previous turn's processor has logged its last events would seed
-    positions that collide, and the replay would skip the collided ones as
-    already delivered. Admission waits for the executor, not the processor,
-    and the terminal gate holds terminal states only.
+    page says so. A continuation admitted before the previous turn's
+    processor had logged its last events seeded colliding positions, which
+    the replay would skip as already delivered; item 57 fixes that.
+57. `fix(server):` §3.5.2 / §3.3.3 — a continuation sent the moment a task
+    parks keeps its events and the task's artifacts (audit register R55,
+    reproduced 3 of 3 before the fix). A stream delivers `input-required`
+    before the processor has logged and stored it, and the continuation was
+    admitted when the executor returned: its queue numbered from the log's
+    end while the turn was still being logged, its colliding positions were
+    dropped as replays (the log held only the first turn's three events),
+    and it was built from the task read before the turn stored it (the
+    first turn's artifact was gone from the task). The executor's teardown
+    now waits for `InMemoryQueueWriter::settled` (every assigned position
+    stored, or the consumer gone, bounded by the write timeout) before the
+    queue is released; `commit_task` takes the task from `settled_task`,
+    which waits for a parked turn before the approval check and re-reads
+    it, and `reject_in_flight_send` only checks. `ExecutorStart` moved to
+    `messaging/start.rs` to keep `mod.rs` under 500 lines. Not covered: a
+    continuation that reaches another replica while the first is still
+    storing; nothing in-process can see that.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,

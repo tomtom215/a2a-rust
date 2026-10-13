@@ -315,6 +315,10 @@ impl RequestHandler {
                     );
                 }
             }
+            // The queue is released, and a continuation admitted, only once
+            // the turn's events are logged and stored: its numbering resumes
+            // from the log, and the task row has one writer at a time.
+            writer.settled().await;
             // Drop the writer so the channel closes and readers see EOF.
             drop(writer);
             // Explicit cleanup, then disarm the guard so it does not release

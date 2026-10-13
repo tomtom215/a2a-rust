@@ -57,6 +57,12 @@ impl TerminalTracking {
         }
     }
 
+    /// Waits for the turn's events to be stored; see
+    /// [`InMemoryQueueWriter::settled`].
+    pub async fn settled(&self) {
+        self.inner.settled().await;
+    }
+
     /// Reports what the executor writes to `recorder`.
     #[cfg(feature = "tracing")]
     pub(super) fn with_recorder(

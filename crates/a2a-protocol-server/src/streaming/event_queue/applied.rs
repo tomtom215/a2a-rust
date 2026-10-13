@@ -94,6 +94,17 @@ impl AppliedMark {
         }
     }
 
+    /// Waits until every position up to `through` is applied, or `deadline`
+    /// passes; whether it got there.
+    pub async fn wait_through(&self, through: u64, deadline: Instant) -> bool {
+        let mut rx = self.0.subscribe();
+        // The sender is `self`, borrowed for the wait, so the channel cannot
+        // close under it: only the deadline ends the wait unreached.
+        tokio::time::timeout_at(deadline, rx.wait_for(|p| p.position >= through))
+            .await
+            .is_ok()
+    }
+
     /// Reads with `read` once every position up to `through` is applied and
     /// none is being applied, waiting until `deadline` at most. At the
     /// deadline it reads anyway, and says the read is not exact.
@@ -278,6 +289,29 @@ mod tests {
             .read_through(2, Instant::now() + Duration::from_millis(100), || async {})
             .await;
         assert_eq!((read.position, read.exact), (1, false));
+    }
+
+    #[tokio::test]
+    async fn a_wait_ends_once_the_position_is_applied() {
+        let mark = Arc::new(AppliedMark::new(0));
+        let m = Arc::clone(&mark);
+        let apply = tokio::spawn(async move {
+            for seq in 1..=2 {
+                tokio::task::yield_now().await;
+                drop(m.applying(seq));
+            }
+        });
+        assert!(mark.wait_through(2, soon()).await);
+        apply.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_wait_for_a_position_never_applied_ends_at_its_deadline() {
+        let mark = AppliedMark::new(3);
+        assert!(mark.wait_through(3, Instant::now()).await, "already there");
+        let deadline = Instant::now() + Duration::from_millis(20);
+        assert!(!mark.wait_through(4, deadline).await);
+        assert!(Instant::now() >= deadline);
     }
 
     #[test]

@@ -676,6 +676,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A continuation sent the moment a task parks keeps its events and the
+  task's artifacts** (server; spec §3.5.2: each stream MUST receive the same
+  events in the same order; §3.3.3: multi-turn interactions). A stream
+  delivers `input-required` as it is broadcast, before the background
+  processor has logged and stored it, and a continuation was admitted as
+  soon as the turn's executor returned. Its queue numbers on from the
+  task's event log, which was read while the previous turn was still being
+  logged, so its positions collided with that turn's; appends are
+  idempotent by position, and every colliding event of the continuation
+  was dropped from the log, which resumption and catch-up read. The
+  continuation was also built from the task as read before the previous
+  turn had stored it, and saving it removed what that turn had just
+  stored, such as an artifact. A turn's queue is now released once its
+  events are stored, bounded by the queue's write timeout, and a send that
+  waited for a parked turn reads the task again. This holds within one
+  process: a continuation sent to another replica while the first is still
+  storing is not covered.
 - **A malformed query value is refused on the HTTP+JSON binding** (server;
   spec §13.4: agents MUST validate all input parameters; §5.1: every
   binding MUST handle errors the same way). `RestDispatcher` and

@@ -107,6 +107,14 @@ impl PersistenceTx {
         sent.map_or_else(|failed| failed, |()| Handoff::Sent)
     }
 
+    /// Resolves once the consumer has dropped its receiver.
+    async fn closed(&self) {
+        match self {
+            Self::Owned(tx) => tx.closed().await,
+            Self::Shared(tx) => tx.closed().await,
+        }
+    }
+
     /// Hands `event` over, waiting up to `timeout` for room.
     async fn send_within(
         &self,
@@ -261,6 +269,34 @@ impl InMemoryQueueWriter {
         self.seq.store(last, Ordering::Relaxed);
         // Stored by the turns that wrote them.
         self.applied.seed(last);
+    }
+
+    /// Waits until the consumer of the persistence channel has stored every
+    /// event this writer gave a position, has gone, or the queue's write
+    /// timeout passes.
+    ///
+    /// A turn's queue is released, and a continuation admitted, when its
+    /// executor returns, which can be before the background processor has
+    /// logged and stored the turn's last events: a stream delivers
+    /// `input-required` as it is broadcast, and a client may answer at once.
+    /// The continuation's queue numbers on from the log's last position, so
+    /// read early it numbered from a position the turn was still logging,
+    /// and since appends are idempotent by position every colliding event
+    /// of the continuation was dropped from the log; the two turns'
+    /// consumers also stored the task row in either order. Until 2026-10-13
+    /// nothing waited. A blocking send's collector drops its receiver once
+    /// it has its answer, and what is written after that is never stored, so
+    /// a closed channel ends the wait as well.
+    pub(crate) async fn settled(&self) {
+        let Some(ref persistence) = self.persistence_tx else {
+            return;
+        };
+        let through = self.current_seq();
+        let deadline = tokio::time::Instant::now() + self.write_timeout;
+        tokio::select! {
+            _ = self.applied.wait_through(through, deadline) => {}
+            () = persistence.closed() => {}
+        }
     }
 
     /// See [`applied`](Self::applied).

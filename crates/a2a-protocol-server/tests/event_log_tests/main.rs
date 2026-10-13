@@ -12,6 +12,7 @@
 //! against.
 
 mod across_turns;
+mod continuation_race;
 mod live_resubscribe;
 mod log;
 mod resumption;

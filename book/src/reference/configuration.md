@@ -35,7 +35,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_token_age` | `Duration` | 1 hour | Stale token eviction age |
 | `push_delivery_timeout` | `Duration` | 30s | Per-webhook delivery timeout, retries included (the sender's own request timeout is 10s) |
 | `push_delivery_budget` | `Duration` | 30s | Total push-delivery time per event, across all configs |
-| `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn's executor to return |
+| `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn to finish: its executor to return and its events to be stored |
 | `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
 | `max_push_configs_per_task` | `usize` | 100 | Maximum push configs per task (uniform across store backends) |
