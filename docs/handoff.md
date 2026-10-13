@@ -1099,12 +1099,18 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `["text/plain"]` filled the field first, so the configured modes never
     applied; the unit test that covered the merge set an empty
     configuration by hand, with a comment explaining the default away.
+43. `test(server):` item 41's stress test renamed two bindings clippy's
+    `similar_names` refused. Item 41's clippy run predated the test's
+    final form, so its message's clippy claim did not hold for the commit
+    pushed, and CI's clippy jobs failed on it.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**
+- A check describes the tree it ran on. After any edit that follows a
+  clippy or test run, run it again before the commit claims it (item 43).
 - CI's stable toolchain moves under you: 1.99 on 2026-10-12, two releases
   ahead of the container's. Its new clippy lints failed every clippy job.
   `rustup update stable` before the first local clippy run.

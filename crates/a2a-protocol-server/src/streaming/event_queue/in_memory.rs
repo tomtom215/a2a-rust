@@ -2409,7 +2409,7 @@ mod tests {
                 }
                 positions
             });
-            let writes: Vec<_> = (0..CLONES)
+            let handles: Vec<_> = (0..CLONES)
                 .map(|_| {
                     let writer = writer.clone();
                     tokio::spawn(async move {
@@ -2422,8 +2422,8 @@ mod tests {
                     })
                 })
                 .collect();
-            for write in writes {
-                write.await.unwrap();
+            for handle in handles {
+                handle.await.unwrap();
             }
             drop(writer);
 
