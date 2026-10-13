@@ -749,6 +749,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A push config a header cannot carry is refused when it is created**
+  (server; spec §13.2: a webhook request carries the config's
+  credentials). A token or credentials holding CR, LF or another control
+  character was stored, inline or by `CreateTaskPushNotificationConfig`,
+  and listed back, and then every delivery was refused before it was sent
+  (the sender refuses CR/LF; the HTTP client any other control character).
+  Creation now answers `InvalidParams` naming the field.
 - **An HTTP+JSON body that never arrives is answered `408`** (server; RFC
   9110 §15.5.9; spec §5.1: the bindings MUST behave the same). Every
   failure to read a request body was answered `413 Content Too Large`, so a

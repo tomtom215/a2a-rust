@@ -1484,6 +1484,17 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `kid` and `typ` only (`itk/interop/card_signature_interop.py`), so it
     is unaffected. Entry 262 cited a doc line for the verify step; it cites
     `verify_with` now.
+73. `fix(server):` §13.2 — a push config a header cannot carry is refused
+    when it is created (audit register R45). `refuse_an_unservable_config`
+    checked the URL and the scheme, not the token or the credentials, so a
+    value with CR, LF or another control character was stored and every
+    delivery refused (the sender's `validate_header_value` for CR/LF, the
+    HTTP client for the rest). Creation now applies `HeaderValue`'s rule to
+    both, so the check matches what a delivery can send; the inline config
+    of a send takes the same path. `push_config_header_values.rs` failed
+    before; mutants 4 of 4, a CR/LF-only check among them (killed by the
+    NUL and BEL cases). Entry 429's citation had drifted to a `));` and
+    now names the scheme check.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

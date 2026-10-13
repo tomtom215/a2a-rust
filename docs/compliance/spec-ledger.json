@@ -884,8 +884,8 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:47"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1206 push_ops_rejected_when_card_lacks_capability",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:692 set_push_config_without_sender_returns_push_not_supported"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1224 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:710 set_push_config_without_sender_returns_push_not_supported"
    ],
    "notes": "",
    "auditor": "A",
@@ -903,7 +903,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:54"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1188 set_push_config_for_missing_task_returns_task_not_found"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1206 set_push_config_for_missing_task_returns_task_not_found"
    ],
    "notes": "",
    "auditor": "A",
@@ -963,7 +963,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:198"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1206 push_ops_rejected_when_card_lacks_capability"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1224 push_ops_rejected_when_card_lacks_capability"
    ],
    "notes": "Card-only: with no card and no push sender, Get/List/Delete still run against the store (only Create checks push_sender).",
    "auditor": "A",
@@ -981,7 +981,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:217"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1290 get_push_config_not_found_returns_task_not_found",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1308 get_push_config_not_found_returns_task_not_found",
     "crates/a2a-protocol-server/tests/handler_tests/push_config.rs:112 get_push_config_not_found"
    ],
    "notes": "",
@@ -1039,7 +1039,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:265"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1206 push_ops_rejected_when_card_lacks_capability"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1224 push_ops_rejected_when_card_lacks_capability"
    ],
    "notes": "",
    "auditor": "A",
@@ -1113,7 +1113,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:326"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1206 push_ops_rejected_when_card_lacks_capability"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1224 push_ops_rejected_when_card_lacks_capability"
    ],
    "notes": "",
    "auditor": "A",
@@ -1173,7 +1173,7 @@
     "crates/a2a-protocol-server/src/push/sqlite_config_store.rs:202"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1338 delete_push_config_nonexistent_returns_ok",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1356 delete_push_config_nonexistent_returns_ok",
     "crates/a2a-protocol-server/tests/dispatch_rest_coverage.rs:587 delete_push_config_nonexistent_returns_200",
     "crates/a2a-protocol-server/tests/tenant_sqlite_push_config_tests.rs:225 delete_nonexistent_succeeds"
    ],
@@ -1756,7 +1756,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/rest_edge_tests.rs:225 cancel_nonexistent_task_returns_404",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:340 axum_get_nonexistent_task_returns_404",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1290 get_push_config_not_found_returns_task_not_found"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1308 get_push_config_not_found_returns_task_not_found"
    ],
    "notes": "TaskNotFound (404/NOT_FOUND/-32001) for missing tasks and push configs on every binding.",
    "auditor": "B",
@@ -1998,7 +1998,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:326"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1206 push_ops_rejected_when_card_lacks_capability"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1224 push_ops_rejected_when_card_lacks_capability"
    ],
    "notes": "All four ops checked; also PushNotSupported when no push sender is wired.",
    "auditor": "B",
@@ -2952,16 +2952,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs validate_and_store_push_config (scheme check)",
-    "crates/a2a-protocol-server/src/push/sender.rs (Authorization: Bearer|Basic)"
+    "crates/a2a-protocol-server/src/push/sender.rs (Authorization: Bearer|Basic)",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:502"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs set_push_config_refuses_an_auth_scheme_it_cannot_send",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs basic_auth_header_is_sent"
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs basic_auth_header_is_sent",
+    "crates/a2a-protocol-server/tests/push_config_header_values.rs:79 a_token_or_credentials_a_header_cannot_carry_is_refused_at_creation"
    ],
-   "notes": "The sender writes Authorization for Bearer and Basic (case-insensitive), as a2a-go v2.5.0 does. A config naming any other scheme is now refused at creation with InvalidParams, so no webhook is called without the credentials its config specifies. Until 2026-10-10 such a config was stored and delivered without credentials (a2a-go still does that). The sender's runtime drop remains for configs stored before.",
+   "notes": "The sender writes Authorization for Bearer and Basic (case-insensitive), as a2a-go v2.5.0 does. A config naming any other scheme is now refused at creation with InvalidParams, so no webhook is called without the credentials its config specifies. Until 2026-10-10 such a config was stored and delivered without credentials (a2a-go still does that). The sender's runtime drop remains for configs stored before. Since 2026-10-13 a token or credentials a header cannot carry (CR, LF or another control character) is InvalidParams at creation, inline or by CreateTaskPushNotificationConfig; it was stored and refused at every delivery.",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 877,
@@ -6992,16 +6994,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs validate_and_store_push_config (scheme check)",
-    "crates/a2a-protocol-server/src/push/sender.rs (Authorization: Bearer|Basic)"
+    "crates/a2a-protocol-server/src/push/sender.rs (Authorization: Bearer|Basic)",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:502"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs set_push_config_refuses_an_auth_scheme_it_cannot_send",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs basic_auth_header_is_sent"
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs basic_auth_header_is_sent",
+    "crates/a2a-protocol-server/tests/push_config_header_values.rs:79 a_token_or_credentials_a_header_cannot_carry_is_refused_at_creation"
    ],
-   "notes": "The sender writes Authorization for Bearer and Basic (case-insensitive), as a2a-go v2.5.0 does. A config naming any other scheme is now refused at creation with InvalidParams, so no webhook is called without the credentials its config specifies. Until 2026-10-10 such a config was stored and delivered without credentials (a2a-go still does that). The sender's runtime drop remains for configs stored before.",
+   "notes": "The sender writes Authorization for Bearer and Basic (case-insensitive), as a2a-go v2.5.0 does. A config naming any other scheme is now refused at creation with InvalidParams, so no webhook is called without the credentials its config specifies. Until 2026-10-10 such a config was stored and delivered without credentials (a2a-go still does that). The sender's runtime drop remains for configs stored before. Since 2026-10-13 a token or credentials a header cannot carry (CR, LF or another control character) is InvalidParams at creation, inline or by CreateTaskPushNotificationConfig; it was stored and refused at every delivery.",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 3118,
@@ -7266,8 +7270,8 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_sender_https_e2e.rs:199 https_push_delivered_over_real_tls",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1145 set_push_config_refuses_http_when_the_sender_is_https_only",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1170 set_push_config_accepts_http_from_a_sender_that_does_not_require_https",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1163 set_push_config_refuses_http_when_the_sender_is_https_only",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1188 set_push_config_accepts_http_from_a_sender_that_does_not_require_https",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:792 an_https_only_sender_refuses_http_before_connecting"
    ],
    "notes": "HTTPS delivery supported (tls-rustls feature, on by default via sdk) and tested over real TLS. Since 2026-10-12 opt-in HttpPushSender::https_only() refuses an http:// webhook at config creation (InvalidParams naming the reason, via PushSender::requires_https) and again at delivery before any connection, as the opt-in allowlist (line 3124) does for hosts. Off by default: plain http is still accepted unless a deployment sets it. Before: no option enforced https.",
@@ -8737,13 +8741,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:471",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:482",
     "crates/a2a-protocol-server/src/push/sender.rs:862",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:25",
     "crates/a2a-protocol-types/src/push.rs:31"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1038 set_push_config_refuses_an_auth_scheme_it_cannot_send"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1056 set_push_config_refuses_an_auth_scheme_it_cannot_send"
    ],
    "notes": "Creation refuses any scheme the sender cannot write (only Bearer and Basic, since item 15), which covers an empty scheme: gRPC's absent value. The test's empty-scheme case is shown to fail with empty schemes exempted.",
    "auditor": "G",
@@ -10165,7 +10169,7 @@
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:303"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1079 empty_required_ids_are_invalid_params"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1097 empty_required_ids_are_invalid_params"
    ],
    "notes": "Empty taskId is InvalidParams before any lookup (require_field, since 56f8d61); this entry had not been updated.",
    "auditor": "G",
@@ -10185,7 +10189,7 @@
     "crates/a2a-protocol-types/src/params/mod.rs:215"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1079 empty_required_ids_are_invalid_params"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1097 empty_required_ids_are_invalid_params"
    ],
    "notes": "Empty id is InvalidParams before any lookup (require_field, since 56f8d61); this entry had not been updated.",
    "auditor": "G",

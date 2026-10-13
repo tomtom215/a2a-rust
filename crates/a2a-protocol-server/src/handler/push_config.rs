@@ -488,6 +488,24 @@ fn refuse_an_unservable_config(
             auth.scheme
         )));
     }
+    // The token and the credentials travel as header values. One a header
+    // cannot carry (CR, LF or another control character) was stored, and
+    // listed back, then refused at every delivery until 2026-10-13.
+    let credentials = config
+        .authentication
+        .as_ref()
+        .and_then(|auth| auth.credentials.as_deref());
+    for (field, value) in [
+        ("token", config.token.as_deref()),
+        ("credentials", credentials),
+    ] {
+        if value.is_some_and(|v| hyper::header::HeaderValue::from_str(v).is_err()) {
+            return Err(ServerError::InvalidParams(format!(
+                "push notification {field} holds a character a header cannot carry \
+                 (a control character such as CR or LF)"
+            )));
+        }
+    }
     Ok(())
 }
 
