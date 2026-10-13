@@ -3338,7 +3338,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:287 validate_empty_supported_interfaces_returns_error"
    ],
-   "notes": "Card content is author-supplied; builder only rejects an empty supported_interfaces, it does not cross-check against the dispatchers actually served.",
+   "notes": "Card content is author-supplied; builder only rejects an empty supported_interfaces, it does not cross-check against the dispatchers actually served. The SDK's own axum quick-start (axum_adapter.rs module docs) declared a JSON-RPC interface while A2aRouter serves HTTP+JSON; it declares HTTP+JSON since 2026-10-13.",
    "auditor": "C",
    "source": "spec"
   },

@@ -11,7 +11,7 @@
 //! The default discovery path is `/.well-known/agent-card.json` appended to
 //! the agent's base URL.
 //!
-//! Per spec §8.3, the client supports HTTP caching via `ETag` and
+//! Per spec §8.6, the client supports HTTP caching via `ETag` and
 //! `If-None-Match` / `If-Modified-Since` conditional request headers.
 
 use std::collections::HashMap;
@@ -253,7 +253,7 @@ struct CachedCard {
 ///
 /// Stores the last fetched card and uses conditional HTTP requests
 /// (`If-None-Match`, `If-Modified-Since`) to avoid unnecessary re-downloads
-/// (spec §8.3).
+/// (spec §8.6).
 #[derive(Debug, Clone)]
 pub struct CachingCardResolver {
     url: String,

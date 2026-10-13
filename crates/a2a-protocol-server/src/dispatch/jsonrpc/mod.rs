@@ -41,7 +41,7 @@ use response::{
 /// Optionally applies CORS headers to all responses.
 ///
 /// Also serves the agent card at `GET /.well-known/agent-card.json` so that
-/// JSON-RPC servers can participate in agent card discovery (spec §8.3).
+/// JSON-RPC servers can participate in agent card discovery (spec §8.2).
 pub struct JsonRpcDispatcher {
     handler: Arc<RequestHandler>,
     card_handler: Option<StaticAgentCardHandler>,
@@ -107,7 +107,7 @@ impl JsonRpcDispatcher {
             return json_response(204, Vec::new());
         }
 
-        // Serve the agent card at the well-known discovery path (spec §8.3).
+        // Serve the agent card at the well-known discovery path (spec §8.2).
         // This must be handled before JSON-RPC body parsing since it's a GET.
         if matches!(*req.method(), hyper::Method::GET | hyper::Method::HEAD)
             && req.uri().path() == "/.well-known/agent-card.json"

@@ -8,7 +8,7 @@
 //! [`StaticAgentCardHandler`] serves a pre-serialized [`AgentCard`] as JSON.
 //! The card is serialized once at construction time and served as raw bytes
 //! on every request. Supports HTTP caching via `ETag`, `Last-Modified`,
-//! `Cache-Control`, and conditional request headers (spec §8.3).
+//! `Cache-Control`, and conditional request headers (spec §8.6).
 
 use a2a_protocol_types::agent_card::AgentCard;
 use bytes::Bytes;

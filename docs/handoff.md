@@ -1694,6 +1694,12 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     and 35.81; at 100K old 33.20 and 33.86, new 33.86 and 35.28; at 1K no
     change. The 10K gap (0.9 to 1.8 µs) is wider than the old code's
     run-to-run spread and is not explained by the O(1) path it takes.
+90. `docs:` spec section citations (audit register R48). Card caching is
+    §8.6 and discovery §8.2 (four files cited §8.3), signing §8.4 (cited
+    §10), and `method.rs`'s eleven methods §3.1.1 to §3.1.11 (cited §8.x).
+    The axum quick-start's card declared JSON-RPC while `A2aRouter` serves
+    HTTP+JSON (C-F10, ledger 162). E-F12 (`event: error` on SSE error
+    frames) is kept: the Python SDK does the same.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
