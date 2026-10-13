@@ -315,6 +315,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **The dynamic agent card handler sends no `Last-Modified`** (server; spec
+  §8.6.1 makes the header optional). `DynamicAgentCardHandler` stamped it
+  with the current second on every response, which told clients the card
+  changed at every request, and answered `If-Modified-Since` with `304` only
+  within that same second. A card produced per request has no modification
+  date (RFC 9110 §8.8.2.1), so the handler now omits the header and ignores
+  `If-Modified-Since` (§13.1.3). Revalidate with `If-None-Match`: the `ETag`,
+  a hash of the card, is unchanged. The static handler still sends
+  `Last-Modified`, the time it loaded the card.
 - **A stream that falls behind catches up from the task's event log**
   (server; spec §3.5.2: each stream MUST receive the same events in the same
   order). A reader slower than the agent lost the events the bounded

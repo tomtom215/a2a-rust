@@ -275,15 +275,15 @@ let signal_watcher = handler.spawn_signal_watcher(
 
 ## HTTP Caching
 
-Agent card responses include standard HTTP caching headers (RFC 7232):
+Agent card responses include standard HTTP caching headers (spec §8.6, RFC 9110):
 
 | Header | Purpose |
 |--------|---------|
 | `ETag` | Content hash for cache validation |
-| `Last-Modified` | Timestamp of last change |
+| `Last-Modified` | Static handler only: when it loaded the card |
 | `Cache-Control` | `public, max-age=3600` (configurable) |
 
-Clients should send `If-None-Match` or `If-Modified-Since` headers. If the card hasn't changed, the server returns `304 Not Modified` with no body.
+Clients revalidate with `If-None-Match`, or with `If-Modified-Since` against the static handler. If the card hasn't changed, the server returns `304 Not Modified` with no body. The dynamic handler sends no `Last-Modified` and ignores `If-Modified-Since`: a card produced per request has no modification date, so the `ETag` is its only validator.
 
 ## Security
 

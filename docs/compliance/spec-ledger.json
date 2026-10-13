@@ -2501,7 +2501,8 @@
    ],
    "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Remaining, each ending the stream with an explicit streamLagged: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log), more missed events than one replay reads (subscribe_replay_limit, 1,000), or a custom store without an event log.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 693,
@@ -5288,14 +5289,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:47",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:87"
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:87",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:102"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:110 static_handler_returns_etag_and_cache_headers"
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:110 static_handler_returns_etag_and_cache_headers",
+    "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:154 handle_sends_no_last_modified",
+    "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:260 if_modified_since_is_ignored"
    ],
-   "notes": "Set to handler construction time (changes on every restart); If-Modified-Since compared by exact string equality (caching.rs:127).",
+   "notes": "Static handler: set to handler construction time (changes on every restart); If-Modified-Since compared by exact string equality (caching.rs:127). Dynamic handler: sends none since 2026-10-13. It had stamped the current second on every request, claiming the card changed at each one; a card produced per request has no modification date (RFC 9110 §8.8.2.1), so it now ignores If-Modified-Since (§13.1.3) and revalidates by ETag alone.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 2235,
@@ -7035,7 +7040,8 @@
    "test_evidence": [],
    "notes": "Client picks the URL; the A2A client does not warn on http:// push URLs and the server accepts both http and https, unless its push sender is set to https_only (since 2026-10-12).",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 3137,
@@ -7105,7 +7111,8 @@
    ],
    "notes": "Opt-in, since 2026-10-12: given a PushConfigCipher (with_cipher), the four SQL push-config stores write each config sealed (the whole JSON, so token and authentication.credentials are never stored in the clear) as a2a-sealed:v1:<base64>, bound as associated data to its row (partition, task id, config id), so a sealed config moved to another row does not open; with a cipher an unsealed row is refused unless accept_unsealed_rows, and without one a sealed row is refused. The SDK ships no cipher (tests use AES-256-GCM from ring). Default stores still write plaintext JSON; in-memory stores and Debug output are redacted as before.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 3140,
@@ -7626,7 +7633,8 @@
    ],
    "notes": "Opt-in, since 2026-10-12: AuthFailureThrottle, registered before the authenticating interceptor, counts per peer the calls refused as unauthenticated and, once a peer reaches max_failures in a window, refuses its calls as rate-limited (HTTP+JSON 429 with Retry-After, JSON-RPC -32603 and gRPC RESOURCE_EXHAUSTED with RetryInfo) until the window ends, the right credential included. The peer is CallContext::peer_addr, which every binding now records when the SDK serves it (axum: with ConnectInfo or a PeerAddr extension), or the client address trusted x-forwarded-for hops name; at most max_peers are tracked, failing open beyond. A default server throttles nothing. RateLimitInterceptor limits throughput per caller and does not use the peer address.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
    "spec_line": 3202,

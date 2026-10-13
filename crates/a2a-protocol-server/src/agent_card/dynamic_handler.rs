@@ -8,7 +8,11 @@
 //! [`DynamicAgentCardHandler`] calls an [`AgentCardProducer`] on every request
 //! to generate a fresh [`AgentCard`]. This is useful when the card contents
 //! depend on runtime state (e.g. feature flags, authenticated context).
-//! Supports HTTP caching via `ETag` and conditional request headers (spec §8.3).
+//! Supports HTTP caching via `Cache-Control`, `ETag` and `If-None-Match` (spec
+//! §8.6). It sends no `Last-Modified`, which §8.6.1 leaves optional: a card
+//! produced per request has no modification date, so the header could only
+//! claim the card changed at every request. Without one, `If-Modified-Since`
+//! is ignored (RFC 9110 §8.8.2.1, §13.1.3); the `ETag` is the validator.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -19,7 +23,7 @@ use bytes::Bytes;
 use http_body_util::Full;
 
 use crate::agent_card::CORS_ALLOW_ALL;
-use crate::agent_card::caching::{CacheConfig, format_http_date, make_etag};
+use crate::agent_card::caching::{CacheConfig, make_etag};
 
 /// Trait for producing an [`AgentCard`] dynamically.
 ///
@@ -75,23 +79,19 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
 
     /// Handles an agent card request with conditional caching support.
     ///
-    /// Serializes the produced card, computes an `ETag`, and checks
-    /// conditional request headers before returning the response.
+    /// Serializes the produced card, computes an `ETag`, and answers a
+    /// matching `If-None-Match` with `304`. `If-Modified-Since` is ignored:
+    /// a produced card has no modification date (RFC 9110 §13.1.3).
     #[allow(clippy::future_not_send)] // Body impl may not be Sync
     pub async fn handle(
         &self,
         req: &hyper::Request<impl hyper::body::Body>,
     ) -> hyper::Response<Full<Bytes>> {
-        // Extract conditional headers before the await point so the
+        // Extract the conditional header before the await point so the
         // non-Send `impl Body` reference doesn't cross it.
         let if_none_match = req
             .headers()
             .get("if-none-match")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_owned);
-        let if_modified_since = req
-            .headers()
-            .get("if-modified-since")
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned);
 
@@ -99,20 +99,14 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
             Ok(card) => match serde_json::to_vec(&card) {
                 Ok(json) => {
                     let etag = make_etag(&json);
-                    let last_modified = format_http_date(std::time::SystemTime::now());
-
-                    let not_modified = is_not_modified(
-                        if_none_match.as_deref(),
-                        if_modified_since.as_deref(),
-                        &etag,
-                        &last_modified,
-                    );
+                    let not_modified = if_none_match
+                        .as_deref()
+                        .is_some_and(|inm| etag_matches(inm, &etag));
 
                     if not_modified {
                         hyper::Response::builder()
                             .status(304)
                             .header("etag", &etag)
-                            .header("last-modified", &last_modified)
                             .header("cache-control", self.cache_config.header_value())
                             .body(Full::new(Bytes::new()))
                             .unwrap_or_else(|_| fallback_error_response())
@@ -122,7 +116,6 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
                             .header("content-type", "application/json")
                             .header("access-control-allow-origin", CORS_ALLOW_ALL)
                             .header("etag", &etag)
-                            .header("last-modified", &last_modified)
                             .header("cache-control", self.cache_config.header_value())
                             .body(Full::new(Bytes::from(json)))
                             .unwrap_or_else(|_| fallback_error_response())
@@ -140,13 +133,11 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
             Ok(card) => match serde_json::to_vec(&card) {
                 Ok(json) => {
                     let etag = make_etag(&json);
-                    let last_modified = format_http_date(std::time::SystemTime::now());
                     hyper::Response::builder()
                         .status(200)
                         .header("content-type", "application/json")
                         .header("access-control-allow-origin", CORS_ALLOW_ALL)
                         .header("etag", &etag)
-                        .header("last-modified", &last_modified)
                         .header("cache-control", self.cache_config.header_value())
                         .body(Full::new(Bytes::from(json)))
                         .unwrap_or_else(|_| fallback_error_response())
@@ -156,23 +147,6 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
             Err(e) => error_response(500, &format!("card producer error: {e}")),
         }
     }
-}
-
-/// Checks whether the response should be 304 using pre-extracted header values.
-fn is_not_modified(
-    if_none_match: Option<&str>,
-    if_modified_since: Option<&str>,
-    current_etag: &str,
-    current_last_modified: &str,
-) -> bool {
-    // If-None-Match takes precedence per RFC 7232 §6.
-    if let Some(inm) = if_none_match {
-        return etag_matches(inm, current_etag);
-    }
-    if let Some(ims) = if_modified_since {
-        return ims == current_last_modified;
-    }
-    false
 }
 
 /// Weak `ETag` comparison for `If-None-Match` header values.
