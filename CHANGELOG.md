@@ -326,6 +326,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **Timestamps are read as RFC 3339, as gRPC reads them, 1969 included**
+  (types and server; spec §5.6.1: ISO 8601 date-times; §5.1: the bindings
+  MUST represent the same thing). `parse_iso8601_to_unix_millis` trimmed
+  whitespace, took unpadded or signed fields and an offset without minutes,
+  rolled `2026-02-30` into March, and refused every instant before 1970.
+  An executor's status timestamp in one of those shapes went out as written
+  on JSON-RPC and HTTP+JSON, while the gRPC conversion, which parses with
+  the `time` crate's RFC 3339 parser, answered `INTERNAL`. A
+  `statusTimestampAfter` before 1970 was `InvalidParams`. The parser now
+  reads exactly what the gRPC conversion reads, which a test checks over
+  1,655,808 strings: fixed-width fields, a real date, an offset with
+  minutes, a fraction with digits, `t`/`z` in either case, second 60 only
+  as a month's last, and years 0000 to 9999 in UTC.
+  `unix_millis_to_iso8601` writes a pre-1970 instant as itself rather than
+  as the epoch. A status timestamp is kept as written only in the canonical
+  shape (`T`, `Z`, no offset); any other accepted form is written as the
+  same instant canonically.
 - **JSON-RPC follows three more JSON-RPC 2.0 rules** (server and types;
   spec §9.3: requests MUST follow JSON-RPC 2.0), over HTTP and WebSocket.
   An `id` that is not a string, a number or `null` (§4) is now an Invalid

@@ -1445,6 +1445,33 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     rewritten after it did not build. Still open, the maintainer's call
     (register R21): a notification is answered, which JSON-RPC 2.0 §4.1
     forbids; `jsonrpc_absent_id_request_answered_with_null_id` pins it.
+71. `fix(types, server):` §5.6.1 / §5.1 — timestamps are read as RFC 3339,
+    as the gRPC conversion reads them (audit register R20).
+    `parse_iso8601_to_unix_millis` was lenient (whitespace, unpadded or
+    signed fields, an offset without minutes, `02-30` rolled into March)
+    and refused every pre-1970 instant; the gRPC conversion parses with
+    the `time` crate's RFC 3339 parser. An executor's status timestamp in
+    a lenient shape went out as written on the JSON bindings and failed a
+    gRPC read; a 1969 `statusTimestampAfter` was `InvalidParams` on every
+    binding. The parser now takes RFC 3339's fixed-width grammar with a
+    real date, `t`/`z` in either case, second 60 only as a month's last
+    second in UTC (read as `time` reads it, the millisecond before), and
+    years 0000-9999 in UTC; `unix_millis_to_iso8601` writes pre-1970
+    instants as themselves, through `utc_fields`, which moves an instant
+    five 400-year cycles forward and its year back. `stamp_status` keeps a
+    timestamp as written only in the canonical shape (`T`, `Z`, no
+    offset). `tests/timestamp_parity.rs` (types, feature `proto`) compares
+    the two parsers over 1,655,808 strings (141,444 accepted) and checks
+    the `iso8601` fuzz target's round trip on each; it failed at once on
+    the old parser (`0000-01-01T00:00:00Z`), as did the three
+    `pre_epoch_timestamps.rs` tests (both stores, and the handler's
+    filter). Hand mutants: 27 of 27 in the types crate, 2 of 2 in the
+    server. Two tests that pinned the old behaviour changed with it:
+    `parse_rejects_pre_epoch_dates` became
+    `parse_accepts_pre_epoch_dates_back_to_year_0`, and the formatter test
+    asserts `-5` writes `1969-12-31T23:59:59.995Z`. Two drifted citations
+    were corrected in passing: entry 182's `list_tasks.rs:47` (the
+    page-size message) and entry 424's `status_stamp.rs:21` (a doc line).
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 316,
 PARTIAL 22, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

@@ -3711,12 +3711,13 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs an_offset_timestamp_is_rewritten_in_utc",
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_timestamp_that_is_not_iso_8601_is_refused",
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_status_without_a_timestamp_is_stamped_in_iso_8601_utc"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_status_without_a_timestamp_is_stamped_in_iso_8601_utc",
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_lower_case_timestamp_is_rewritten_and_a_pre_epoch_one_kept"
    ],
-   "notes": "Every executor event passes the queue writer, which stamps an empty status timestamp with UTC now, rewrites one with a non-Z offset to the same instant in UTC (millisecond precision), and refuses one that does not parse as ISO 8601. Until 2026-10-10 an executor-set value went out unchanged on JSON-RPC/REST/WebSocket. Not covered: a Task an application writes straight to the task store, bypassing the queue.",
+   "notes": "Every executor event passes the queue writer, which stamps an empty status timestamp with UTC now, rewrites one with a non-Z offset to the same instant in UTC (millisecond precision), and refuses one that does not parse as ISO 8601. Until 2026-10-10 an executor-set value went out unchanged on JSON-RPC/REST/WebSocket. Not covered: a Task an application writes straight to the task store, bypassing the queue. Since 2026-10-13 a timestamp is kept as written only in the canonical shape (T, Z, no offset): a lower-case t or z is rewritten as an offset is, and the parser reads RFC 3339 exactly as the gRPC conversion does, so a value served over JSON is one gRPC can carry.",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 1236,
@@ -3727,10 +3728,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:200"
+    "crates/a2a-protocol-types/src/lib.rs:209"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:462 utc_now_has_millisecond_precision_and_z_suffix"
+    "crates/a2a-protocol-types/src/lib.rs:495 utc_now_has_millisecond_precision_and_z_suffix"
    ],
    "notes": "utc_now_iso8601 formats YYYY-MM-DDTHH:mm:ss.sssZ.",
    "auditor": "C",
@@ -3745,20 +3746,25 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:220",
+    "crates/a2a-protocol-types/src/lib.rs:245",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:151",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:168",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:47"
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:67"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:476 utc_now_roundtrips_through_parser",
-    "crates/a2a-protocol-types/src/lib.rs:491 parse_epoch_and_known_instants",
+    "crates/a2a-protocol-types/src/lib.rs:509 utc_now_roundtrips_through_parser",
+    "crates/a2a-protocol-types/src/lib.rs:524 parse_epoch_and_known_instants",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:514 timestamp_parses_offset_and_normalizes_to_utc",
-    "crates/a2a-protocol-types/src/proto/convert/mod.rs:534 timestamp_rejects_invalid_string"
+    "crates/a2a-protocol-types/src/proto/convert/mod.rs:534 timestamp_rejects_invalid_string",
+    "crates/a2a-protocol-types/tests/timestamp_parity.rs:32 the_json_parser_reads_what_the_grpc_conversion_reads",
+    "crates/a2a-protocol-types/src/lib.rs:632 parse_refuses_what_rfc_3339_does_not_allow",
+    "crates/a2a-protocol-types/src/lib.rs:603 parse_accepts_pre_epoch_dates_back_to_year_0",
+    "crates/a2a-protocol-server/tests/pre_epoch_timestamps.rs:85 list_tasks_accepts_a_pre_epoch_filter"
    ],
-   "notes": "Server rejects malformed statusTimestampAfter with InvalidParams; JSON-path clients keep timestamps as opaque strings (no parsing needed).",
+   "notes": "Server rejects malformed statusTimestampAfter with InvalidParams; JSON-path clients keep timestamps as opaque strings (no parsing needed). Until 2026-10-13 the parser was lenient (whitespace, unpadded or signed fields, an offset without minutes, 02-30 rolled into March) and refused every pre-1970 instant, so the JSON and gRPC bindings disagreed on such values and a 1969 statusTimestampAfter was InvalidParams. It now reads exactly what the time crate's RFC 3339 parser reads, checked over 1,655,808 strings, and the formatter writes pre-1970 instants as themselves.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 1254,
@@ -3769,10 +3775,10 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:220"
+    "crates/a2a-protocol-types/src/lib.rs:245"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:491 parse_epoch_and_known_instants"
+    "crates/a2a-protocol-types/src/lib.rs:524 parse_epoch_and_known_instants"
    ],
    "notes": "Parser accepts with and without fractional seconds.",
    "auditor": "C",
@@ -3792,12 +3798,13 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs an_offset_timestamp_is_rewritten_in_utc",
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_timestamp_that_is_not_iso_8601_is_refused",
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_status_without_a_timestamp_is_stamped_in_iso_8601_utc"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_status_without_a_timestamp_is_stamped_in_iso_8601_utc",
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs a_lower_case_timestamp_is_rewritten_and_a_pre_epoch_one_kept"
    ],
-   "notes": "Every executor event passes the queue writer, which stamps an empty status timestamp with UTC now, rewrites one with a non-Z offset to the same instant in UTC (millisecond precision), and refuses one that does not parse as ISO 8601. Until 2026-10-10 an executor-set value went out unchanged on JSON-RPC/REST/WebSocket. Not covered: a Task an application writes straight to the task store, bypassing the queue.",
+   "notes": "Every executor event passes the queue writer, which stamps an empty status timestamp with UTC now, rewrites one with a non-Z offset to the same instant in UTC (millisecond precision), and refuses one that does not parse as ISO 8601. Until 2026-10-10 an executor-set value went out unchanged on JSON-RPC/REST/WebSocket. Not covered: a Task an application writes straight to the task store, bypassing the queue. Since 2026-10-13 a timestamp is kept as written only in the canonical shape (T, Z, no offset): a lower-case t or z is rewritten as an offset is, and the parser reads RFC 3339 exactly as the gRPC conversion does, so a value served over JSON is one gRPC can carry.",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
    "spec_line": 1259,
@@ -8610,7 +8617,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:21",
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:37",
     "crates/a2a-protocol-types/src/events.rs:46",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:337",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:339"
