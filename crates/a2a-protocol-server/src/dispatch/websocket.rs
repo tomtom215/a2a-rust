@@ -1638,15 +1638,19 @@ mod tests {
             activity: ActivityClock::new(),
         });
 
-        // Held from before the half-budget (200 ms) until 300 ms, as a stream
-        // write in flight would hold it; released with 100 ms to spare.
-        let idle = Duration::from_millis(400);
+        // Held from before the half-budget (1 s) until 1.3 s, as a stream
+        // write in flight would hold it; released with 700 ms to spare. The
+        // spare was 100 ms (a 400 ms budget) until the holder's wake-up
+        // overran it on a loaded macOS runner (52e35e27): the budget ran out
+        // first and the connection closed with no ping, which is the right
+        // verdict for a sink held past the budget, not what this test pins.
+        let idle = Duration::from_millis(2_000);
         let (locked_tx, locked_rx) = tokio::sync::oneshot::channel();
         let held = Arc::clone(&conn);
         let holder = tokio::spawn(async move {
             let _guard = held.sink.lock().await;
             let _ = locked_tx.send(());
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            tokio::time::sleep(Duration::from_millis(1_300)).await;
         });
         locked_rx.await.expect("the sink is held");
 
@@ -1654,7 +1658,7 @@ mod tests {
             WebSocketDispatcher::next_frame(&mut reader, &conn, Some(idle)).await
         });
 
-        let pinged = tokio::time::timeout(Duration::from_secs(2), async {
+        let pinged = tokio::time::timeout(Duration::from_secs(10), async {
             while let Some(Ok(frame)) = client_ws.next().await {
                 if matches!(frame, WsMessage::Ping(_)) {
                     return true;

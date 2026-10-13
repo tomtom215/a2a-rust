@@ -1115,6 +1115,14 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     from the default tenant; a POST body's `tenant` was honoured all along.
     The `:cancel` and `:subscribe` POST bodies are still not read (audit
     register R24).
+46. `test(server):` `a_keepalive_that_finds_the_sink_busy_is_retried`
+    failed once on macOS at `52e35e27` (no ping: the sink holder's wake-up
+    overran the 100 ms left in a 400 ms budget). The budget is 2 s now, the
+    hold 1.3 s, 700 ms to spare; the mutant it was written for (a busy sink
+    recorded as pinged) is still killed. The same run's two-replica soak
+    failed its p95 bound (3.94x, a dip at 40-50 s that recovered), not
+    reproduced; it ran 59,090 pairs where the two runs before ran 32,773
+    and 45,486, so a faster runner. Recorded, not fixed: read the next run.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 315,
 PARTIAL 21, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30 proven, 0 unproven,
