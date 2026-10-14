@@ -69,7 +69,10 @@ where
             agent: agent()?,
             fallback_on_error: true,
         })
-        .with_agent_card(card)
+        .with_agent_card(card.clone())
+        // §3.1.11: the card declares an extended card, so one is set; the
+        // public card is served as it.
+        .with_extended_agent_card(card)
         .with_push_config_store(InMemoryPushConfigStore::new())
         .with_push_sender(HttpPushSender::new().allow_private_urls())
         .allow_unauthenticated_extended_card()

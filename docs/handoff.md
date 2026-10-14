@@ -1267,7 +1267,12 @@ follow the text. The register's status column tracks what is done.
     `e2e::extended_agent_card_advertises_the_slimrpc_binding`, which failed
     the SLIMRPC and Test coverage jobs). Each restricted agent is back to no
     extended card; the ITK agent and the fixture serve their public card as
-    the extended one when they declare it. The other red checks on earlier
+    the extended one when they declare it. Running the example binaries
+    CI runs (it had stopped at echo-agent) found three more: the surface
+    agents of genai-agent, rig-agent and multi-lang-team (`surface.rs`)
+    declare an extended card and set none, so `GetExtendedAgentCard`
+    answered `-32007` on every binding; each now serves its public card as
+    the extended one. The other red checks on earlier
     heads were already fixed: `interceptor_on_complete` (item 11, macOS and
     mutants shard 0 on `9fcc65a5`).
 
