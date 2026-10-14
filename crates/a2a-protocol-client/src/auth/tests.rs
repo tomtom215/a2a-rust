@@ -232,8 +232,8 @@ fn auth_interceptor_debug_contains_fields() {
 
 /// §4.5.2: an API key goes where the agent's scheme says. A header name is
 /// sent lowercased, as the other headers here are; a cookie joins any the
-/// request already carries; a query-string key and a name no header can
-/// carry are refused when the interceptor is made, not on every call.
+/// request already carries; a name no header can carry is refused when the
+/// interceptor is made, not on every call.
 #[tokio::test]
 async fn an_api_key_goes_where_the_scheme_says() {
     let store: Arc<dyn CredentialsStore> = Arc::new(InMemoryCredentialsStore::new());
@@ -282,7 +282,7 @@ async fn an_api_key_goes_where_the_scheme_says() {
     );
 
     for refused in [
-        scheme(ApiKeyLocation::Query, "key"),
+        scheme(ApiKeyLocation::Query, "a b"),
         scheme(ApiKeyLocation::Header, "x key"),
         scheme(ApiKeyLocation::Cookie, "a;b"),
         scheme(ApiKeyLocation::Header, ""),
@@ -296,4 +296,30 @@ async fn an_api_key_goes_where_the_scheme_says() {
             "{refused:?} must be refused with InvalidAuthScheme"
         );
     }
+}
+
+/// A query-string key goes into the request's query parameters, once per
+/// name however often `before` runs (audit register R67); it was refused
+/// until 2026-10-14.
+#[tokio::test]
+async fn a_query_api_key_is_one_query_parameter() {
+    let store: Arc<dyn CredentialsStore> = Arc::new(InMemoryCredentialsStore::new());
+    let session = SessionId::new("s");
+    store.set(session.clone(), "api-key", "k-1".into());
+    let query = AuthInterceptor::api_key(
+        store,
+        session,
+        "api-key",
+        &ApiKeySecurityScheme {
+            location: ApiKeyLocation::Query,
+            name: "key".into(),
+            description: None,
+        },
+    )
+    .expect("a query key");
+    let mut req = ClientRequest::new("GetTask", serde_json::Value::Null);
+    query.before(&mut req).await.unwrap();
+    query.before(&mut req).await.unwrap();
+    assert_eq!(req.query_params, [("key".to_owned(), "k-1".to_owned())]);
+    assert!(req.extra_headers.is_empty());
 }

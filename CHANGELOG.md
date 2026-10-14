@@ -10,6 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **`ClientRequest` has a new public field, `query_params`** (client;
+  a2a.proto `APIKeySecurityScheme.location`: "Valid values are "query",
+  "header", or "cookie""; audit register R67). The client refused an API
+  key that goes in the query string, because a request reached the
+  transports with headers only. An interceptor now adds query parameters
+  to `query_params`, and the JSON-RPC and HTTP+JSON transports append them
+  to the request URL, percent-encoded, after any query the route builds
+  itself; a retried call sends them on every attempt. `Debug` prints their
+  names, never their values. A struct literal that names every field of
+  `ClientRequest` no longer compiles: build it with `ClientRequest::new`,
+  or add `query_params: Vec::new()`. This field is why the next release
+  is 0.15.0 rather than 0.14.2.
+
+  The `Transport` trait gains `send_request_with_query` and
+  `send_streaming_request_with_query`, with defaults, so a custom
+  transport still compiles. The default sends a call with no query
+  parameters as before and refuses one with them, with
+  `ClientError::InvalidAuthScheme`, rather than send it without its
+  credential. gRPC, WebSocket and the SLIMRPC binding have no query string
+  and refuse the same way.
+
 ### Added
 
 - **`DispatchConfig::with_agent_card_max_age`** (server; spec §8.6.1: the
@@ -18,11 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   way to change it; it is now the deployment's, defaulting to 3600.
 - **`AuthInterceptor::api_key`** (client; spec §4.5.2, §3.1.11). An
   agent whose card declares an `APIKeySecurityScheme` reads its key from the
-  header or cookie the scheme names; the client could only write the key
-  into `Authorization`, which such an agent refuses. `api_key` sends it
-  where the scheme says, over JSON-RPC, HTTP+JSON and gRPC. A scheme that
-  places the key in the query string, or names a header no request can
-  carry, is refused when the interceptor is made, with the new
+  header, cookie or query parameter the scheme names; the client could only
+  write the key into `Authorization`, which such an agent refuses. `api_key`
+  sends it where the scheme says: a header or cookie over JSON-RPC,
+  HTTP+JSON and gRPC, and a query parameter over JSON-RPC and HTTP+JSON
+  (see Breaking Changes). A name that is not an HTTP token (RFC 9110
+  `tchar`), which no header or cookie can carry, is refused when the
+  interceptor is made, for a query parameter too, with the new
   `ClientError::InvalidAuthScheme`.
 - **`ClientBuilder::with_extensions`** and
   **`WebSocketTransportConfig::with_extensions`** (client; spec §3.2.6: the

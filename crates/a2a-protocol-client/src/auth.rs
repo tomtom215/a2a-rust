@@ -200,6 +200,10 @@ enum Placement {
     Header(String),
     /// The cookie an `APIKeySecurityScheme` names.
     Cookie(String),
+    /// The query parameter an `APIKeySecurityScheme` names (audit register
+    /// R67): sent by the JSON-RPC and HTTP+JSON transports, refused by gRPC
+    /// and WebSocket.
+    Query(String),
 }
 
 /// RFC 9110 §5.6.2 `tchar`: what a header name, and a cookie name
@@ -254,15 +258,21 @@ impl AuthInterceptor {
 
     /// Creates an [`AuthInterceptor`] that sends the credential stored under
     /// `scheme` where an agent's `APIKeySecurityScheme` says (spec §4.5.2):
-    /// in the header or the cookie it names.
+    /// in the header, the cookie or the query parameter it names.
     /// [`with_scheme`](Self::with_scheme) writes `Authorization`, which an
     /// agent that reads its key from `X-API-Key` never sees.
     ///
+    /// A key in the query string travels in the request URL, which the
+    /// JSON-RPC and HTTP+JSON transports send and the gRPC and WebSocket
+    /// transports refuse (`InvalidAuthScheme` on the call). It was refused
+    /// here until 2026-10-14 (audit register R67). A URL can reach server
+    /// and proxy access logs; prefer the header when the agent offers both.
+    ///
     /// # Errors
     ///
-    /// [`ClientError::InvalidAuthScheme`] for a key the scheme places in the
-    /// query string, which this client's transports cannot add, and for a
-    /// name that is not an HTTP token, which no header or cookie can carry.
+    /// [`ClientError::InvalidAuthScheme`] for a name that is not an HTTP
+    /// token, which no header or cookie can carry; a query parameter is held
+    /// to the same rule.
     pub fn api_key(
         store: Arc<dyn CredentialsStore>,
         session: SessionId,
@@ -278,11 +288,7 @@ impl AuthInterceptor {
         let placement = match api_key.location {
             ApiKeyLocation::Header => Placement::Header(name.to_ascii_lowercase()),
             ApiKeyLocation::Cookie => Placement::Cookie(name.to_owned()),
-            ApiKeyLocation::Query => {
-                return Err(ClientError::InvalidAuthScheme(format!(
-                    "API key {name:?} goes in the query string, which this client cannot send"
-                )));
-            }
+            ApiKeyLocation::Query => Placement::Query(name.to_owned()),
         };
         Ok(Self {
             store,
@@ -339,6 +345,12 @@ impl CallInterceptor for AuthInterceptor {
                             cookies.push_str(&pair);
                         })
                         .or_insert(pair);
+                }
+                Placement::Query(name) => {
+                    // One value per name, as a header gets: a second pass
+                    // replaces the first rather than sending the key twice.
+                    req.query_params.retain(|(n, _)| n != name);
+                    req.query_params.push((name.clone(), credential));
                 }
             }
             Ok(())

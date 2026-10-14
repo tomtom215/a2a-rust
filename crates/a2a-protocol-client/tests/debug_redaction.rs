@@ -56,13 +56,15 @@ const PUSH_CONFIG_KEYS: &str = r#"["authentication", "taskId", "token", "url"]"#
 fn a_client_request_prints_header_names_and_param_keys_only() {
     let mut req = ClientRequest::new("CreateTaskPushNotificationConfig", push_config());
     req.extra_headers = headers();
+    req.query_params = vec![("api_key".into(), "query-s3cret".into())];
     let shown = format!("{req:?}");
     assert_no_secret(&shown);
     assert_eq!(
         shown,
         format!(
             "ClientRequest {{ method: \"CreateTaskPushNotificationConfig\", \
-             param_keys: {PUSH_CONFIG_KEYS}, extra_header_names: {SORTED_NAMES} }}"
+             param_keys: {PUSH_CONFIG_KEYS}, extra_header_names: {SORTED_NAMES}, \
+             query_param_names: [\"api_key\"] }}"
         )
     );
 }
@@ -94,7 +96,7 @@ fn a_request_whose_params_are_not_an_object_prints_no_keys() {
         assert_no_secret(&shown);
         assert_eq!(
             shown,
-            r#"ClientRequest { method: "GetTask", param_keys: [], extra_header_names: [] }"#
+            r#"ClientRequest { method: "GetTask", param_keys: [], extra_header_names: [], query_param_names: [] }"#
         );
     }
 }

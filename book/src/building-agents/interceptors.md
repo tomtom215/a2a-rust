@@ -230,6 +230,10 @@ impl CallInterceptor for RequestIdInterceptor {
 }
 ```
 
+`before` can also add to `req.query_params`, which the JSON-RPC and HTTP+JSON
+transports append to the request URL; the gRPC and WebSocket transports refuse
+a call that carries any, rather than send it without them.
+
 `after` runs only when the call succeeds. To see failures, override
 `on_error`, which has a no-op default: it gets the request as `before` left
 it (its params have gone to the transport, so they read as `null`) and the

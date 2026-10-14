@@ -134,7 +134,7 @@ Enums follow the same rule: `ClientError`, and the protocol enums that can
 grow with the specification, are `#[non_exhaustive]`, so a `match` on one
 already carries a wildcard arm and a new variant does not break it.
 
-## 0.14 → next (unreleased)
+## 0.14 → 0.15 (unreleased)
 
 These come from making the SDK follow the A2A 1.0 specification where it did
 not. CHANGELOG.md has every item; these are the ones an existing deployment can
@@ -503,6 +503,28 @@ the background processor marks the task failed, and a blocking send answers
 status update. One leaving a terminal state is refused. A snapshot in the
 task's current state is stored as before.
 
+### `ClientRequest` gains `query_params`
+
+An API key that the agent's card places in the query string is sent there
+now, so a request reaches the transports with query parameters as well as
+headers. `ClientRequest` has a new public field, `query_params`, and a struct
+literal that names every field no longer compiles. Build the request with
+`ClientRequest::new`, which leaves it empty:
+
+```rust
+use a2a_protocol_client::ClientRequest;
+
+let mut req = ClientRequest::new("GetTask", serde_json::json!({ "id": "t-1" }));
+assert!(req.query_params.is_empty());
+req.query_params.push(("api_key".into(), "k".into()));
+```
+
+A custom `Transport` still compiles: the new `send_request_with_query` and
+`send_streaming_request_with_query` methods have defaults, which send a call
+with no query parameters as before and refuse one with them
+(`ClientError::InvalidAuthScheme`). Override both if your transport has a URL
+to put them in. gRPC, WebSocket and the SLIMRPC binding refuse such a call.
+
 ### Error codes some clients may match on
 
 - A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with
@@ -541,7 +563,7 @@ in an SDK built without default features. A build that did that and still
 reached `https://` agents was relying on the defect:
 
 ```toml
-a2a-protocol-sdk = { version = "0.14", default-features = false, features = ["tls-rustls"] }
+a2a-protocol-sdk = { version = "0.15", default-features = false, features = ["tls-rustls"] }
 ```
 
 ### A peer that goes away reads the same on every binding

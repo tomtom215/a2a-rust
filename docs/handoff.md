@@ -12,8 +12,9 @@ stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
 Last updated 2026-10-14 — `claude/funny-heisenberg-e6tl83`: main's three red
-workflows (docs site, OSV-Scanner, the rate-limit benchmark) and Dependabot
-#169. Before that, 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
+workflows (docs site, OSV-Scanner, the rate-limit benchmark), Dependabot
+#169, the v1.0.1 re-anchor, the approved audit-register items, and R67 with
+the move to 0.15.0. Before that, 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
 left after #165, OpenTelemetry 0.33, a versioned documentation site, the
 weekly mutation sweep, the ledger's last GAP (§3.3.4), push timeouts,
 JSON-RPC `RetryInfo`, §13.1 caller isolation by default, Dependabot #166
@@ -120,7 +121,7 @@ the *content* merge.
 | `claude/bold-gauss-9qc9dc` | merged | **Merged as `f824b035` via [#163](https://github.com/tomtom215/a2a-rust/pull/163).** Compliance, audit and human oversight. It had no row here. |
 | `claude/nifty-fermat-roj04f` | merged | **Merged as `6ce5dc9a` via [#165](https://github.com/tomtom215/a2a-rust/pull/165).** The spec ledger. It had no row here. |
 | `claude/tender-cray-bsfw83` | merged | **Merged as `2b0a3abd` via [#168](https://github.com/tomtom215/a2a-rust/pull/168) on 2026-10-14.** Items 1-107 of its section. It had no row here. |
-| `claude/funny-heisenberg-e6tl83` | open | **Destined for `main`.** Started from `2b0a3abd`: main's three red workflows first, then the spec, the EU AI Act and the rest. See its section below. |
+| `claude/funny-heisenberg-e6tl83` | open | **Destined for `main`.** Started from `2b0a3abd`: main's three red workflows first, then the spec, the EU AI Act and the rest. Items 1-22 merged as `2a888a4c` via [#170](https://github.com/tomtom215/a2a-rust/pull/170) on 2026-10-14; the branch restarted from that merge for item 23 on. See its section below. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -1324,6 +1325,30 @@ follow the text. The register's status column tracks what is done.
     reachability notes as `osv-scanner.toml`'s GHSA waivers; SECURITY.md
     names both. `cargo deny check advisories` in the binding (cargo-deny
     0.20.2) reported the three and FAILED before, and `advisories ok` after.
+
+**After #170.** #170 was frozen at `8c0ac658` by the maintainer's choice
+and merged as `2a888a4c`; the branch restarted from that merge, and what
+follows is a new pull request.
+
+23. `docs(compliance):` the register records the maintainer's R67 and R12
+    decisions: R67 option (b) with 0.15.0 as the next release, and R12 as a
+    one-shot migration per store rather than reading old keys for a
+    release. Then the approved §8.4.3, §12 and §5.4 reclassifications,
+    PARTIAL to TESTED (TESTED 323, PARTIAL 14).
+
+24. `feat(client)!:` audit register R67 — an API key the card places in the
+    query string is sent there over JSON-RPC and HTTP+JSON, through a new
+    public `ClientRequest::query_params` and two defaulted `Transport`
+    methods; gRPC, WebSocket, the SLIMRPC binding and a custom transport
+    that does not override them refuse such a call with
+    `InvalidAuthScheme`. The four crates and the CLI are at 0.15.0 (the
+    binding at 0.7.0, its pins `0.15`), all eight tracked lockfiles pass
+    `check_lockfiles.sh`, and the 32 dependency snippets
+    `check_doc_versions.py` named move to `0.15`. The register's "Done"
+    paragraph lists the tests, the fail-before and the 19 hand mutants.
+    Until the tag, `cargo-semver-checks` reads 0.14 to 0.15 as allowed to
+    break, as at 0.14.0. The `benches/sdk-comparison` agent keeps
+    `=0.14.1`: it benchmarks the crate published on crates.io.
 
 **Lessons, new this session.**
 - A failing test's name is not its address. `every_handler_method_reports_its_outcome`

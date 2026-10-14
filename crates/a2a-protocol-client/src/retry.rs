@@ -340,6 +340,28 @@ impl Transport for RetryTransport {
         params: serde_json::Value,
         extra_headers: &'a HashMap<String, String>,
     ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
+        self.send_request_with_query(method, params, extra_headers, &[])
+    }
+
+    fn send_streaming_request<'a>(
+        &'a self,
+        method: &'a str,
+        params: serde_json::Value,
+        extra_headers: &'a HashMap<String, String>,
+    ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+        self.send_streaming_request_with_query(method, params, extra_headers, &[])
+    }
+
+    // The retry loops live here, so the query reaches the wrapped transport
+    // on every attempt (audit register R67); the trait's default would have
+    // refused a query before the inner transport saw it.
+    fn send_request_with_query<'a>(
+        &'a self,
+        method: &'a str,
+        params: serde_json::Value,
+        extra_headers: &'a HashMap<String, String>,
+        query: &'a [(String, String)],
+    ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
         Box::pin(async move {
             let mut last_err: Option<ClientError> = None;
             let mut backoff = self.policy.initial_backoff;
@@ -367,7 +389,7 @@ impl Transport for RetryTransport {
 
                 match self
                     .inner
-                    .send_request(method, attempt_params, extra_headers)
+                    .send_request_with_query(method, attempt_params, extra_headers, query)
                     .await
                 {
                     Ok(result) => return Ok(result),
@@ -392,11 +414,12 @@ impl Transport for RetryTransport {
         })
     }
 
-    fn send_streaming_request<'a>(
+    fn send_streaming_request_with_query<'a>(
         &'a self,
         method: &'a str,
         params: serde_json::Value,
         extra_headers: &'a HashMap<String, String>,
+        query: &'a [(String, String)],
     ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
         Box::pin(async move {
             let mut last_err: Option<ClientError> = None;
@@ -430,7 +453,7 @@ impl Transport for RetryTransport {
 
                 match self
                     .inner
-                    .send_streaming_request(method, attempt_params, extra_headers)
+                    .send_streaming_request_with_query(method, attempt_params, extra_headers, query)
                     .await
                 {
                     Ok(stream) => return Ok(stream),

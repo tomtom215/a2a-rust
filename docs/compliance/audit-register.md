@@ -27,7 +27,7 @@ release text; the ledger's own numbering).
 
 | Id | Area | Recommendation | Breaks | Status |
 |---|---|---|---|---|
-| R12 | JWT caller identity | key by issuer and subject; refuse a token with no `sub` | re-keys stored partitions (old keys read for one release) | approved |
+| R12 | JWT caller identity | key by issuer and subject; refuse a token with no `sub` | re-keys stored partitions (a one-shot migration per store) | approved |
 | R13 | SLIMRPC caller identity | move to agntcy-slim-rpc 3.x and record the verified peer | the binding's API (unpublished) | approved |
 | R19 | `Struct` error details | write ProtoJSON `Any` (`{"@type", "value"}`), read both shapes | a2a-go reading our `data` | done; a2a-go report drafted, not filed |
 | R21 | JSON-RPC notifications | execute, never reply | a client that relied on a reply | done |
@@ -37,7 +37,7 @@ release text; the ledger's own numbering).
 | R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | approved |
 | R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | done |
 | R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | done |
-| R67 | API key in the query string | carry query parameters on the HTTP transports | custom `Transport` impls, if the trait changes | approved |
+| R67 | API key in the query string | carry query parameters on the HTTP transports | a `ClientRequest` struct literal; the 0.15.0 bump | done |
 | R68 | extended card declared, none configured | `ExtendedAgentCardNotConfiguredError`, as §3.1.11 and §13.3 state | a deployer relying on the public card being served | done |
 
 ## R12 — a JWT caller is its `sub` alone
@@ -325,6 +325,28 @@ not cover, with the client at 0.14.1 as published. So (b) needs the next
 release to be 0.15, which is the maintainer's to decide; (c) needs no bump.
 
 **Decided (2026-10-14): (b), and the next release is 0.15.0.**
+
+**Done (2026-10-14), as (b) with a defaulted method.** `ClientRequest` has a
+public `query_params`, which `AuthInterceptor::api_key` fills for
+`ApiKeyLocation::Query` (replacing an earlier entry of the same name, so a
+retried `before` does not send the key twice). `client.rs` hands them to
+the new `Transport::send_request_with_query` and
+`send_streaming_request_with_query`; the JSON-RPC and HTTP+JSON transports
+append them to the URL through `transport::with_query`, percent-encoded,
+after any query the REST route builds, and `RetryTransport` passes them to
+every attempt. The trait's default refuses a non-empty query with
+`InvalidAuthScheme`, which is what gRPC, WebSocket, the SLIMRPC binding and
+any custom transport that does not override it answer. The crates are at
+0.15.0 (the binding at 0.7.0), so `cargo-semver-checks` reads the field as a
+minor-version break, and until the tag it no longer blocks an accidental
+break on this line either, as at 0.14.0. Tests:
+`crates/a2a-protocol-client/tests/api_key_query.rs` (both transports, a
+route with its own query, a retry, a stream with and without the retry
+wrapper, a transport that refuses), `auth::tests` for the placement, and
+`debug_redaction.rs` for the names-only `Debug`. All five integration tests
+fail on the old source, at the refusal. Hand mutants: 19, one equivalent
+(an early return for an empty query, since removed); the other 18 are
+killed.
 
 ## R68 — a declared extended card with none configured served the public card
 

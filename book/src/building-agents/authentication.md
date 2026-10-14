@@ -68,7 +68,7 @@ signature and its `exp`/`nbf`/`iss`/`aud` claims. Keys come from a static
 `Jwks`, a shared HS256 secret, or a remote JWKS endpoint.
 
 ```toml
-a2a-protocol-server = { version = "0.14", features = ["auth-jwt", "tls-rustls"] }
+a2a-protocol-server = { version = "0.15", features = ["auth-jwt", "tls-rustls"] }
 ```
 
 `tls-rustls` is needed to fetch JWKS or OIDC discovery documents over

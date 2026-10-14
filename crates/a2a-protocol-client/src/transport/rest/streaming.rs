@@ -25,9 +25,20 @@ impl RestTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<EventStream> {
+        self.execute_streaming_request_with_query(method, params, extra_headers, &[])
+            .await
+    }
+
+    pub(super) async fn execute_streaming_request_with_query(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        extra_headers: &HashMap<String, String>,
+        query: &[(String, String)],
+    ) -> ClientResult<EventStream> {
         trace_info!(method, base_url = %self.inner.base_url, "opening REST SSE stream");
 
-        let req = self.build_request(method, &params, extra_headers, true)?;
+        let req = self.build_request(method, &params, extra_headers, true, query)?;
 
         // One deadline for the headers and, when the answer is not a stream,
         // the error body — see the JSON-RPC transport for why.

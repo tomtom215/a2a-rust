@@ -172,12 +172,15 @@ impl JsonRpcTransport {
 
     // ── internals ─────────────────────────────────────────────────────────────
 
+    /// Builds the request, with `query` appended to the endpoint URL (audit
+    /// register R67).
     fn build_request(
         &self,
         method: &str,
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
         accept_sse: bool,
+        query: &[(String, String)],
     ) -> ClientResult<(serde_json::Value, hyper::Request<Full<Bytes>>)> {
         let id = serde_json::Value::String(Uuid::new_v4().to_string());
         let rpc_req = JsonRpcRequest::with_params(id.clone(), method, params);
@@ -191,7 +194,7 @@ impl JsonRpcTransport {
 
         let mut builder = hyper::Request::builder()
             .method(hyper::Method::POST)
-            .uri(&self.inner.endpoint)
+            .uri(super::with_query(&self.inner.endpoint, query))
             .header(header::CONTENT_TYPE, a2a_protocol_types::JSON_CONTENT_TYPE)
             .header(
                 a2a_protocol_types::A2A_VERSION_HEADER,
@@ -216,9 +219,21 @@ impl JsonRpcTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<serde_json::Value> {
+        self.execute_request_with_query(method, params, extra_headers, &[])
+            .await
+    }
+
+    #[allow(clippy::too_many_lines)]
+    async fn execute_request_with_query(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        extra_headers: &HashMap<String, String>,
+        query: &[(String, String)],
+    ) -> ClientResult<serde_json::Value> {
         trace_info!(method, endpoint = %self.inner.endpoint, "sending JSON-RPC request");
 
-        let (request_id, req) = self.build_request(method, params, extra_headers, false)?;
+        let (request_id, req) = self.build_request(method, params, extra_headers, false, query)?;
 
         // Single deadline across header fetch AND body read, so `request_timeout`
         // is a true per-call budget rather than being applied twice (headers,
@@ -327,9 +342,20 @@ impl JsonRpcTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<EventStream> {
+        self.execute_streaming_request_with_query(method, params, extra_headers, &[])
+            .await
+    }
+
+    async fn execute_streaming_request_with_query(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        extra_headers: &HashMap<String, String>,
+        query: &[(String, String)],
+    ) -> ClientResult<EventStream> {
         trace_info!(method, endpoint = %self.inner.endpoint, "opening SSE stream");
 
-        let (_request_id, req) = self.build_request(method, params, extra_headers, true)?;
+        let (_request_id, req) = self.build_request(method, params, extra_headers, true, query)?;
 
         // `stream_connect_timeout` bounds establishing the stream: headers,
         // and — when the answer is not a stream — the error body too, from
@@ -459,6 +485,26 @@ impl Transport for JsonRpcTransport {
         extra_headers: &'a HashMap<String, String>,
     ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
         Box::pin(self.execute_streaming_request(method, params, extra_headers))
+    }
+
+    fn send_request_with_query<'a>(
+        &'a self,
+        method: &'a str,
+        params: serde_json::Value,
+        extra_headers: &'a HashMap<String, String>,
+        query: &'a [(String, String)],
+    ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
+        Box::pin(self.execute_request_with_query(method, params, extra_headers, query))
+    }
+
+    fn send_streaming_request_with_query<'a>(
+        &'a self,
+        method: &'a str,
+        params: serde_json::Value,
+        extra_headers: &'a HashMap<String, String>,
+        query: &'a [(String, String)],
+    ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+        Box::pin(self.execute_streaming_request_with_query(method, params, extra_headers, query))
     }
 }
 

@@ -187,9 +187,12 @@ impl A2aClient {
             self.config.propagate_trace,
             &mut req.extra_headers,
         );
-        let send = self
-            .transport
-            .send_request(method, params, &req.extra_headers);
+        let send = self.transport.send_request_with_query(
+            method,
+            params,
+            &req.extra_headers,
+            &req.query_params,
+        );
         #[cfg(feature = "tracing")]
         let send = tracing::Instrument::instrument(send, call.span.clone());
         let result = send.await;
@@ -221,9 +224,12 @@ impl A2aClient {
             self.config.propagate_trace,
             &mut req.extra_headers,
         );
-        let send = self
-            .transport
-            .send_streaming_request(method, params, &req.extra_headers);
+        let send = self.transport.send_streaming_request_with_query(
+            method,
+            params,
+            &req.extra_headers,
+            &req.query_params,
+        );
         #[cfg(feature = "tracing")]
         let send = tracing::Instrument::instrument(send, call.span.clone());
         let result = send.await;

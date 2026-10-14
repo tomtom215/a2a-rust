@@ -40,7 +40,7 @@ pub(super) fn build_query_string(params: &serde_json::Value) -> String {
 ///
 /// Encodes all characters except unreserved characters (RFC 3986 §2.3):
 /// `A-Z a-z 0-9 - . _ ~`
-pub(in crate::transport::rest) fn encode_query_value(s: &str) -> String {
+pub fn encode_query_value(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
