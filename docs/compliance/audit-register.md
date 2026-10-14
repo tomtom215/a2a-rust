@@ -76,6 +76,10 @@ one release"; the design goes back to the maintainer before it is built,
 because the scheme+issuer key also changes what an approver allowlist,
 `requested_by` and the audit actor compare against.
 
+**Decided (2026-10-14): a one-shot migration per store** that rewrites the
+old partition keys to the scheme+issuer+subject form; the stores read only
+the new key. This replaces the earlier "read old keys one release".
+
 ## R13 — SLIMRPC records no caller identity
 
 **Now.** The binding depends on agntcy-slim-rpc 2.3.0 (`bindings/a2a-protocol-slimrpc/Cargo.toml:66`,
@@ -319,6 +323,8 @@ and which is not `#[non_exhaustive]`: adding one breaks a struct literal,
 and `cargo-semver-checks` (ci.yml, `semver`) fails a break the version does
 not cover, with the client at 0.14.1 as published. So (b) needs the next
 release to be 0.15, which is the maintainer's to decide; (c) needs no bump.
+
+**Decided (2026-10-14): (b), and the next release is 0.15.0.**
 
 ## R68 — a declared extended card with none configured served the public card
 
