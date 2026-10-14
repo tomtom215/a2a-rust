@@ -32,15 +32,15 @@ default = ["tls-rustls", "tracing"]
 ## Mozilla roots, so the public `rustls-tls-*` features would only add a
 ## second root-store crate. The version range below pins the feature name.
 tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots", "tokio-tungstenite?/__rustls-tls"]
-## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
+## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization),
+## and let card discovery verify signatures.
 ##
-## This forwards the types-crate feature and nothing more: no code in this crate
-## calls `verify_agent_card`, and `resolve_agent_card`/`fetch_card_from_url`
-## return the card they fetched without checking its `signatures`. Verifying
-## needs a trust anchor the client cannot invent, so the decision is the
-## caller's — call `verify_agent_card` yourself against a key you trust. The
-## description here used to read "Enable agent card signing verification", which
-## claimed an integration that does not exist.
+## Verifying needs a trust anchor the client cannot invent, so nothing is
+## verified by default: `resolve_agent_card` and `fetch_card_from_url` return
+## the card they fetched without checking its `signatures`. Pass the keys you
+## trust with `CardFetchOptions::with_signature_keys` to the `_with_options`
+## variants and the fetch verifies the card, refusing an unsigned one unless
+## `with_require_signature(false)`; `fetch_jwks` fetches a key set.
 signing = ["a2a-protocol-types/signing"]
 ## Structured logging via the `tracing` crate (on by default; compiled out
 ## when disabled).

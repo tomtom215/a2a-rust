@@ -104,6 +104,9 @@ pub struct CardFetchOptions {
     /// [`with_signature_keys`](Self::with_signature_keys).
     #[cfg(feature = "signing")]
     signature_keys: Option<a2a_protocol_types::signing::Jwks>,
+    /// See [`with_require_signature`](Self::with_require_signature).
+    #[cfg(feature = "signing")]
+    require_signature: bool,
 }
 
 impl std::fmt::Debug for CardFetchOptions {
@@ -112,7 +115,8 @@ impl std::fmt::Debug for CardFetchOptions {
         f.field("header_names", &crate::redact::names(self.headers.keys()))
             .field("timeout", &self.timeout);
         #[cfg(feature = "signing")]
-        f.field("signature_keys", &self.signature_keys);
+        f.field("signature_keys", &self.signature_keys)
+            .field("require_signature", &self.require_signature);
         f.finish()
     }
 }
@@ -125,6 +129,8 @@ impl Default for CardFetchOptions {
             timeout: CARD_FETCH_BUDGET,
             #[cfg(feature = "signing")]
             signature_keys: None,
+            #[cfg(feature = "signing")]
+            require_signature: true,
         }
     }
 }
@@ -142,7 +148,13 @@ impl CardFetchOptions {
     /// clients SHOULD verify signatures when present). A card that carries
     /// signatures is returned only if at least one verifies against a key in
     /// `keys`, matched by `kid`; otherwise the fetch fails with
-    /// [`ClientError::Protocol`]. An unsigned card is returned as it is.
+    /// [`ClientError::Protocol`].
+    ///
+    /// An unsigned card fails the fetch too, unless
+    /// [`with_require_signature(false)`](Self::with_require_signature) says
+    /// otherwise: anyone able to alter a card on its way can also remove its
+    /// signatures, so a fetch that returned an unsigned card would return the
+    /// altered one unverified.
     ///
     /// The keys are the caller's trust decision: from a trusted store, or
     /// from [`fetch_jwks`](crate::jwks::fetch_jwks) on a URL the caller
@@ -152,6 +164,22 @@ impl CardFetchOptions {
     #[must_use]
     pub fn with_signature_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
         self.signature_keys = Some(keys);
+        self
+    }
+
+    /// Whether a fetch with [`with_signature_keys`](Self::with_signature_keys)
+    /// refuses a card that carries no signature. Default: `true`.
+    ///
+    /// `false` verifies signatures only when present, which is all §14 asks,
+    /// for a caller whose agents are not all signed: a signed card must still
+    /// verify, and an unsigned one is returned as it is. It accepts a card
+    /// whose signatures were removed on the way, too; the caller decides
+    /// whether an unsigned card is good enough. Without signature keys
+    /// nothing is verified and this has no effect.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub const fn with_require_signature(mut self, require: bool) -> Self {
+        self.require_signature = require;
         self
     }
 
@@ -575,7 +603,8 @@ async fn fetch_card_with_metadata(
 
 /// Spec §14: verify a card's signatures when the caller supplied keys. One
 /// valid signature suffices (JWS allows several signers); none valid, or no
-/// matching key, fails the fetch.
+/// matching key, fails the fetch, and so does no signature at all unless the
+/// caller turned `require_signature` off.
 ///
 /// Verified as received, before it is read into an [`AgentCard`]: the signer
 /// signed every field it serves, and the typed card drops any this SDK does
@@ -594,6 +623,14 @@ fn verify_card_signatures(
         .and_then(serde_json::Value::as_array)
         .is_some_and(|signatures| !signatures.is_empty());
     if !signed {
+        if options.require_signature {
+            return Err(ClientError::Protocol(
+                a2a_protocol_types::error::A2aError::invalid_params(
+                    "agent card is not signed, and signature keys were supplied \
+                     (CardFetchOptions::with_require_signature(false) accepts it)",
+                ),
+            ));
+        }
         return Ok(());
     }
     a2a_protocol_types::signing::verify_card_json_with_jwks(card, keys).map_err(|e| {

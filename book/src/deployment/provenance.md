@@ -24,16 +24,22 @@ use a2a_protocol_client::jwks::fetch_jwks;
 // Not the `jku` in the card's own signature header, which is unverified.
 let keys = fetch_jwks("https://keys.example.com/a2a/jwks.json", &CardFetchOptions::default()).await?;
 
-// The fetch verifies any of the card's signatures, by `kid`, as received.
+// The fetch verifies any of the card's signatures, by `kid`, as received,
+// and refuses a card that carries none.
 let options = CardFetchOptions::default().with_signature_keys(keys);
 let card = resolve_agent_card_with_options("https://agent.example.com", &options).await?;
-// An unsigned card is returned as it is; refuse it if you require one.
-if card.signatures.as_deref().unwrap_or_default().is_empty() {
-    return Err("the agent card is not signed".into());
-}
+# let _ = card;
 # Ok(())
 # }
 ```
+
+- **Unsigned cards:** with keys supplied, a card with no signature fails the
+  fetch. Anyone able to alter a card on its way can also remove its
+  signatures, so a fetch that returned an unsigned card would return the
+  altered one unverified. If some of your agents do not sign,
+  `.with_require_signature(false)` verifies signatures only when present,
+  which is all §14 asks: a signed card must still verify, and an unsigned
+  one is returned as it is, whoever removed its signatures.
 
 - **As received:** the fetch verifies the card's JSON before reading it into
   an `AgentCard`. The signer signed every field it serves, and `AgentCard`

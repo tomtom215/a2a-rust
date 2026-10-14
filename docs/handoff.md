@@ -1805,6 +1805,19 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     that drops the sort is caught through `HashMap` iteration order, so
     only by chance, though six names come out sorted by accident about
     once in 720 maps.
+100. `fix(client):` a fetch with signature keys refuses an unsigned card
+    (audit register R9; amends the unreleased `with_signature_keys` entry in
+    Added, so no release behaved otherwise). Anyone able to alter a card on
+    its way can remove its signatures too, and the fetch returned an
+    unsigned card, so it returned the altered one unverified.
+    `with_require_signature(false)` keeps verify-when-present for a fleet
+    that is not all signed. `a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied`
+    failed before. Mutants 6 of 6; treating an empty list as signed
+    survived until the lenient test covered `[]`, since the types crate
+    refuses an empty list with the same "not signed" message. The
+    client's `signing` feature note in `Cargo.toml` said no code in the
+    crate verifies a card, untrue since `7260a8f`; corrected. Ledger 3352
+    (still PARTIAL, low: `CachingCardResolver` and `from_card` take no keys).
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

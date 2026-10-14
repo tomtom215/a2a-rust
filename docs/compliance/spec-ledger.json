@@ -1283,13 +1283,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/extended_card.rs:57",
     "crates/a2a-protocol-client/src/client.rs:145",
-    "crates/a2a-protocol-client/src/discovery.rs:358"
+    "crates/a2a-protocol-client/src/discovery.rs:386"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:382 the_extended_card_replaces_the_capabilities_checked",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:426 a_failed_extended_card_fetch_changes_nothing",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:452 an_extended_card_does_not_turn_the_checks_on",
-    "crates/a2a-protocol-client/src/discovery.rs:971 an_installed_extended_card_is_served_until_cleared"
+    "crates/a2a-protocol-client/src/discovery.rs:1008 an_installed_extended_card_is_served_until_cleared"
    ],
    "notes": "The SDK caches a card in two places. A2aClient caches the capabilities it checks calls against (DeclaredCapabilities, from the card it was built from); since 2026-10-13 get_extended_agent_card replaces them with the extended card's (A2aClient::adopt_capabilities), keeping extendedAgentCard declared, and only when the client checks at all. Before, it kept the public card's, so a capability only the extended card declared was refused locally with CapabilityNotDeclared. The other, the resolver's, is replaced when the application calls CachingCardResolver::install_extended_card, which serves the extended card from resolve() until clear_extended_card() or invalidate(); the application decides when the session ends.",
    "auditor": "A",
@@ -2710,14 +2710,14 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:135",
     "crates/a2a-protocol-client/src/transport/grpc.rs:464",
     "crates/a2a-protocol-client/src/transport/websocket.rs:591",
-    "crates/a2a-protocol-client/src/discovery.rs:427",
+    "crates/a2a-protocol-client/src/discovery.rs:455",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs metadata_from",
     "bindings/a2a-protocol-slimrpc/src/multicast/mod.rs SlimRpcMulticast::send_message"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/grpc.rs:1192 add_metadata_injects_a2a_version",
     "crates/a2a-protocol-client/tests/rest_streaming_tests.rs:239 rest_send_message_returns_completed_task",
-    "crates/a2a-protocol-client/src/discovery.rs:1548 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
+    "crates/a2a-protocol-client/src/discovery.rs:1585 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs every_call_declares_the_protocol_version",
     "bindings/a2a-protocol-slimrpc/tests/multicast.rs every_invited_agent_answers_and_is_identifiable (against the version-required default)"
    ],
@@ -4227,9 +4227,10 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/card_signature_verification.rs a_signed_card_is_verified_when_keys_are_supplied",
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:111 a_card_signed_over_a_field_this_sdk_does_not_model_is_accepted"
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs:103 a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied",
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs:146 a_card_signed_over_a_field_this_sdk_does_not_model_is_accepted"
    ],
-   "notes": "With CardFetchOptions::with_signature_keys (feature signing), resolve_agent_card_with_options and fetch_card_from_url_with_options return a signed card only if one signature verifies against the caller's keys; a tampered card or one with no matching key fails the fetch; an unsigned card is returned. Why PARTIAL/low: verification needs keys only the application can trust, so it is opt-in, not default; CachingCardResolver and ClientBuilder::from_card do not take keys yet; jku is never followed (the card cannot vouch for its own keys, §8.4.3 line 2132). Since 2026-10-14 the fetch verifies the card as received, before reading it into an AgentCard; it verified the typed card, so a correctly signed card from a peer that models a field this SDK does not was refused.",
+   "notes": "With CardFetchOptions::with_signature_keys (feature signing), resolve_agent_card_with_options and fetch_card_from_url_with_options return a signed card only if one signature verifies against the caller's keys; a tampered card or one with no matching key fails the fetch, and so does an unsigned card unless with_require_signature(false), which verifies signatures only when present (until 2026-10-14 an unsigned card was returned, so removing a card's signatures let an altered card through; audit register R9). Why PARTIAL/low: verification needs keys only the application can trust, so it is opt-in, not default; CachingCardResolver and ClientBuilder::from_card do not take keys yet; jku is never followed (the card cannot vouch for its own keys, §8.4.3 line 2132). Since 2026-10-14 the fetch verifies the card as received, before reading it into an AgentCard; it verified the typed card, so a correctly signed card from a peer that models a field this SDK does not was refused.",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
@@ -5246,7 +5247,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json",
     "crates/a2a-protocol-types/src/signing.rs:679 verify_card_json_with_jwks",
-    "crates/a2a-protocol-client/src/discovery.rs:585 verify_card_signatures"
+    "crates/a2a-protocol-client/src/discovery.rs:614 verify_card_signatures"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/card_signature_as_received.rs:97 a_received_cards_defaults_are_dropped_before_canonicalizing",
@@ -5324,13 +5325,13 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:585 verify_card_signatures",
+    "crates/a2a-protocol-client/src/discovery.rs:614 verify_card_signatures",
     "crates/a2a-protocol-client/src/builder/mod.rs:147",
     "crates/a2a-protocol-types/src/signing.rs:679 verify_card_json_with_jwks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/card_signature_verification.rs:75 a_signed_card_is_verified_when_keys_are_supplied",
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:111 a_card_signed_over_a_field_this_sdk_does_not_model_is_accepted"
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs:146 a_card_signed_over_a_field_this_sdk_does_not_model_is_accepted"
    ],
    "notes": "Opt-in on the discovery path: with CardFetchOptions::with_signature_keys the fetch refuses a signed card none of whose signatures verifies, checking the card as received. Without keys, resolve_agent_card and ClientBuilder::from_card trust the card unverified; which keys to trust is the application's decision. The previous note said there was no opt-in on the discovery path, which with_signature_keys (2026-10-11) had already made untrue.",
    "auditor": "D",
@@ -5419,7 +5420,7 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:291",
+    "crates/a2a-protocol-client/src/discovery.rs:319",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:88",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:564",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:611"
@@ -5528,9 +5529,9 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:319",
-    "crates/a2a-protocol-client/src/discovery.rs:469",
-    "crates/a2a-protocol-client/src/discovery.rs:491-503"
+    "crates/a2a-protocol-client/src/discovery.rs:347",
+    "crates/a2a-protocol-client/src/discovery.rs:497",
+    "crates/a2a-protocol-client/src/discovery.rs:519-531"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/card_revalidation.rs:98 a_no_store_card_is_not_kept",
@@ -5551,11 +5552,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:319",
-    "crates/a2a-protocol-client/src/discovery.rs:442-448"
+    "crates/a2a-protocol-client/src/discovery.rs:347",
+    "crates/a2a-protocol-client/src/discovery.rs:470-476"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:774 fetch_card_with_metadata_304_returns_cached",
+    "crates/a2a-protocol-client/src/discovery.rs:811 fetch_card_with_metadata_304_returns_cached",
     "crates/a2a-protocol-client/tests/card_revalidation.rs:66 a_cached_card_is_revalidated_with_its_validators"
    ],
    "notes": "CachingCardResolver revalidates on every resolve with If-None-Match and If-Modified-Since from the cached response; a server that answers 304 only to a request carrying both validators sees them on the second fetch. Shown to fail with the If-None-Match header removed.",
@@ -5571,7 +5572,7 @@
    "status": "NOT_SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:291"
+    "crates/a2a-protocol-client/src/discovery.rs:319"
    ],
    "test_evidence": [],
    "notes": "No freshness lifetime; every resolve() hits the network.",
@@ -7618,13 +7619,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/extended_card.rs:57",
     "crates/a2a-protocol-client/src/client.rs:145",
-    "crates/a2a-protocol-client/src/discovery.rs:358"
+    "crates/a2a-protocol-client/src/discovery.rs:386"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:382 the_extended_card_replaces_the_capabilities_checked",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:426 a_failed_extended_card_fetch_changes_nothing",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:452 an_extended_card_does_not_turn_the_checks_on",
-    "crates/a2a-protocol-client/src/discovery.rs:971 an_installed_extended_card_is_served_until_cleared"
+    "crates/a2a-protocol-client/src/discovery.rs:1008 an_installed_extended_card_is_served_until_cleared"
    ],
    "notes": "The SDK caches a card in two places. A2aClient caches the capabilities it checks calls against (DeclaredCapabilities, from the card it was built from); since 2026-10-13 get_extended_agent_card replaces them with the extended card's (A2aClient::adopt_capabilities), keeping extendedAgentCard declared, and only when the client checks at all. Before, it kept the public card's, so a capability only the extended card declared was refused locally with CapabilityNotDeclared. The other, the resolver's, is replaced when the application calls CachingCardResolver::install_extended_card, which serves the extended card from resolve() until clear_extended_card() or invalidate(); the application decides when the session ends.",
    "auditor": "F",
@@ -8881,7 +8882,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
-    "crates/a2a-protocol-client/src/discovery.rs:572",
+    "crates/a2a-protocol-client/src/discovery.rs:600",
     "crates/a2a-protocol-server/src/builder.rs:547",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:38"
@@ -8904,7 +8905,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
-    "crates/a2a-protocol-client/src/discovery.rs:572",
+    "crates/a2a-protocol-client/src/discovery.rs:600",
     "crates/a2a-protocol-server/src/builder.rs:547",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:51"
@@ -8955,7 +8956,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
-    "crates/a2a-protocol-client/src/discovery.rs:572",
+    "crates/a2a-protocol-client/src/discovery.rs:600",
     "crates/a2a-protocol-server/src/builder.rs:547",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:57"
@@ -8982,7 +8983,7 @@
     "crates/a2a-protocol-server/src/builder.rs:717",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
-    "crates/a2a-protocol-client/src/discovery.rs:572"
+    "crates/a2a-protocol-client/src/discovery.rs:600"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
@@ -9005,7 +9006,7 @@
     "crates/a2a-protocol-server/src/builder.rs:717",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
-    "crates/a2a-protocol-client/src/discovery.rs:572"
+    "crates/a2a-protocol-client/src/discovery.rs:600"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
@@ -9052,7 +9053,7 @@
     "crates/a2a-protocol-server/src/builder.rs:717",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
-    "crates/a2a-protocol-client/src/discovery.rs:572"
+    "crates/a2a-protocol-client/src/discovery.rs:600"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
@@ -9074,7 +9075,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:285",
-    "crates/a2a-protocol-client/src/discovery.rs:572"
+    "crates/a2a-protocol-client/src/discovery.rs:600"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
@@ -9665,7 +9666,7 @@
     "crates/a2a-protocol-types/src/security.rs:449",
     "crates/a2a-protocol-types/src/security.rs:512",
     "crates/a2a-protocol-types/src/security.rs:533",
-    "crates/a2a-protocol-client/src/discovery.rs:572"
+    "crates/a2a-protocol-client/src/discovery.rs:600"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty"
@@ -9745,7 +9746,7 @@
     "crates/a2a-protocol-types/src/security.rs:449",
     "crates/a2a-protocol-types/src/security.rs:512",
     "crates/a2a-protocol-types/src/security.rs:533",
-    "crates/a2a-protocol-client/src/discovery.rs:572"
+    "crates/a2a-protocol-client/src/discovery.rs:600"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty"
@@ -9931,7 +9932,7 @@
     "crates/a2a-protocol-types/src/security.rs:449",
     "crates/a2a-protocol-types/src/security.rs:512",
     "crates/a2a-protocol-types/src/security.rs:533",
-    "crates/a2a-protocol-client/src/discovery.rs:572"
+    "crates/a2a-protocol-client/src/discovery.rs:600"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty"

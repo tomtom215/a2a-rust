@@ -108,7 +108,7 @@ fn card_fetch_options_print_header_names_only() {
     assert_no_secret(&shown);
     // The keys a card is verified against are public; they print as before.
     let keys = if cfg!(feature = "signing") {
-        ", signature_keys: None"
+        ", signature_keys: None, require_signature: true"
     } else {
         ""
     };

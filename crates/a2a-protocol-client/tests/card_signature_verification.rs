@@ -93,13 +93,53 @@ async fn a_signed_card_is_verified_when_keys_are_supplied() {
         .await
         .expect_err("a tampered card must not verify");
     assert!(err.to_string().contains("signature"), "{err}");
+}
 
-    // Unsigned: returned as it is; the SHOULD is about signatures present.
-    let url = serve(&card()).await;
-    assert!(
-        resolve_agent_card_with_options(&url, &with_keys)
+/// R9: anyone who can alter the card on its way can also remove its
+/// signatures, and a fetch that accepted an unsigned card returned the
+/// altered card unverified. With keys supplied, a card with no signature, or
+/// an empty list, is refused.
+#[tokio::test]
+async fn a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied() {
+    let with_keys = CardFetchOptions::default().with_signature_keys(keys());
+    for signatures in [None, Some(vec![])] {
+        let mut stripped = signed();
+        stripped.name = "someone-else".into();
+        stripped.signatures = signatures;
+        let url = serve(&stripped).await;
+        let err = resolve_agent_card_with_options(&url, &with_keys)
             .await
-            .is_ok()
+            .expect_err("an unsigned card must not pass for a verified one");
+        assert!(err.to_string().contains("not signed"), "{err}");
+    }
+}
+
+/// `with_require_signature(false)` verifies signatures only when present, as
+/// §14 asks: an unsigned card, or one with an empty list, is returned; a
+/// signed one must still verify.
+#[tokio::test]
+async fn signatures_only_when_present_returns_an_unsigned_card() {
+    let lenient = CardFetchOptions::default()
+        .with_signature_keys(keys())
+        .with_require_signature(false);
+    for signatures in [None, Some(vec![])] {
+        let mut unsigned = card();
+        unsigned.signatures = signatures;
+        let url = serve(&unsigned).await;
+        let fetched = resolve_agent_card_with_options(&url, &lenient)
+            .await
+            .expect("an unsigned card is returned as it is");
+        assert_eq!(fetched.name, "signed-agent");
+    }
+
+    let mut tampered = signed();
+    tampered.name = "someone-else".into();
+    let url = serve(&tampered).await;
+    assert!(
+        resolve_agent_card_with_options(&url, &lenient)
+            .await
+            .is_err(),
+        "a signed card must still verify"
     );
 }
 
