@@ -421,6 +421,18 @@ no exception for a chunk. An executor that ended a streamed artifact with an
 empty `lastChunk: true` chunk sets `lastChunk: true` on the chunk carrying the
 last part instead.
 
+### A JSON-RPC notification gets no reply
+
+A JSON-RPC request with no `id` member is a notification, and "the Server
+MUST NOT reply to a Notification, including those that are within a batch
+request" (JSON-RPC 2.0 §4.1). The server ran one and answered it with
+`"id": null`; it now runs it and answers nothing: `204 No Content` over HTTP
+for a notification alone, a batch's array without the notifications' answers
+(`204` when every member is one), and no frame over WebSocket. A streaming
+method sent as a notification is not run, as in a batch: a stream is its
+only answer. A client that sent requests without an `id` and read the reply
+sends an `id`. `"id": null` is a call, and is still answered.
+
 ### A task snapshot cannot move a task back to `Submitted`
 
 An executor's `Task` snapshot that changes the task's state is held to the

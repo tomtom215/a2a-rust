@@ -30,7 +30,7 @@ release text; the ledger's own numbering).
 | R12 | JWT caller identity | key by issuer and subject; refuse a token with no `sub` | re-keys stored partitions (old keys read for one release) | approved |
 | R13 | SLIMRPC caller identity | move to agntcy-slim-rpc 3.x and record the verified peer | the binding's API (unpublished) | approved |
 | R19 | `Struct` error details | write ProtoJSON `Any` (`{"@type", "value"}`), read both shapes | a2a-go reading our `data` | approved |
-| R21 | JSON-RPC notifications | execute, never reply | a client that relied on a reply | approved |
+| R21 | JSON-RPC notifications | execute, never reply | a client that relied on a reply | done |
 | R33 | first frame of a send stream | keep, documented | — | approved |
 | R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | done |
 | R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | approved |
@@ -142,6 +142,15 @@ notifications, with no reply.
 **Recommendation: (b).** It is what JSON-RPC 2.0 requires. A notification
 `SendMessage` creates a task whose id its sender never learns, which is the
 sender's choice.
+
+**Done (2026-10-14), as (b)** in `crates/a2a-protocol-server/src/dispatch/jsonrpc/notification.rs`, the
+batch loop and `refusal.rs`, and the WebSocket dispatch. One narrowing: a
+streaming method (`SendStreamingMessage`, `SubscribeToTask`) sent as a
+notification is refused rather than run, as it already was inside a batch,
+since a stream is the only answer it gives. A notification refused on its
+headers is refused without an answer too. Tests:
+`crates/a2a-protocol-server/tests/jsonrpc_notifications.rs` (HTTP) and `a_notification_is_run_and_sent_nothing`
+in `crates/a2a-protocol-server/tests/websocket_binding_spec.rs`; the pin test is gone.
 
 ## R33 — a send stream's first frame waits for the executor
 

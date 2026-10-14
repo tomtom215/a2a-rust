@@ -354,6 +354,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A JSON-RPC notification is run and gets no reply** (server; JSON-RPC
+  2.0 §4.1 under A2A §9, audit register R21). A request with no `id` member
+  was run and answered with `"id": null`. It is now answered with
+  `204 No Content` over HTTP; a batch's array leaves notifications out (and
+  is `204` when every member is one); WebSocket sends no frame. A streaming
+  method sent as a notification is refused rather than run, as inside a
+  batch. A notification refused on its headers gets no answer either.
+  `"id": null` is a call and is still answered. Six of the seven new HTTP
+  tests and the WebSocket test failed before the change; the seventh guards
+  an id-less object that is not a valid Request, still Invalid Request.
+
 - **A task snapshot is held to the state-transition rules a status update
   is** (server; audit register R36(b)). An executor's `Task` snapshot was
   stored without `can_transition_to`, so one moving a `Working` task back to

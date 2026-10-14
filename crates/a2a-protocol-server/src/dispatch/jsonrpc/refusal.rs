@@ -15,6 +15,7 @@ use a2a_protocol_types::error::ErrorCode;
 use a2a_protocol_types::jsonrpc::JsonRpcErrorResponse;
 
 use super::JsonRpcDispatcher;
+use super::notification::{is_notification, no_content};
 use super::response::{
     error_response, invalid_request_response, json_response, parse_error_response,
 };
@@ -40,7 +41,8 @@ impl JsonRpcDispatcher {
     /// body was read, so every such refusal answered null and a batch one
     /// object. A batch beyond `max_batch_size` still gets one, as it would
     /// with a supported version: one answer per item would let a body of
-    /// `{}`s buy a response 94 times its size.
+    /// `{}`s buy a response 94 times its size. A notification is refused
+    /// without an answer (JSON-RPC 2.0 §4.1, audit register R21).
     pub(super) fn refuse_with_ids(
         &self,
         started: std::time::Instant,
@@ -62,18 +64,26 @@ impl JsonRpcDispatcher {
                 let error = err.to_a2a_error();
                 let answers: Vec<_> = batch
                     .iter()
-                    .map(|request| {
+                    .filter_map(|request| {
                         self.record_unrouted(started, error.code);
-                        JsonRpcErrorResponse::new(
-                            id_of(request),
-                            crate::streaming::sse::jsonrpc_error_from(&error),
-                        )
+                        (!is_notification(request)).then(|| {
+                            JsonRpcErrorResponse::new(
+                                id_of(request),
+                                crate::streaming::sse::jsonrpc_error_from(&error),
+                            )
+                        })
                     })
                     .collect();
+                if answers.is_empty() {
+                    return no_content();
+                }
                 json_response(200, serde_json::to_vec(&answers).unwrap_or_default())
             }
             Ok(request) => {
                 self.record_unrouted(started, err.to_a2a_error().code);
+                if is_notification(&request) {
+                    return no_content();
+                }
                 error_response(id_of(&request), err)
             }
             Err(_) => self.refuse(started, err),

@@ -854,16 +854,31 @@ async fn process_ws_message(
     };
 
     let id = rpc_req.id.to_response_id();
+    // A notification (no `id` member) is run and sent nothing (JSON-RPC 2.0
+    // §4.1, audit register R21); until 2026-10-14 it was answered with a
+    // null id. A streaming method is refused rather than run, as in an HTTP
+    // batch: a stream is the only answer it gives.
+    let reply = (!rpc_req.id.is_absent()).then_some(&writer);
 
     match rpc_req.method.as_str() {
+        "SendStreamingMessage" | "SubscribeToTask" if reply.is_none() => {
+            let _: Result<(), ServerError> = ws_span(handler, &rpc_req, headers)
+                .run(async {
+                    Err(ServerError::UnsupportedOperation(format!(
+                        "{} cannot be sent as a notification",
+                        rpc_req.method
+                    )))
+                })
+                .await;
+        }
         "SendMessage" => {
-            dispatch_send_message(handler, &rpc_req, false, headers, id, &writer).await;
+            dispatch_send_message(handler, &rpc_req, false, headers, id, reply).await;
         }
         "SendStreamingMessage" => {
-            dispatch_send_message(handler, &rpc_req, true, headers, id, &writer).await;
+            dispatch_send_message(handler, &rpc_req, true, headers, id, reply).await;
         }
         "GetTask" => {
-            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+            dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::TaskQueryParams = ws_params(&p)?;
                     h.on_get_task(params, Some(hdr))
@@ -875,7 +890,7 @@ async fn process_ws_message(
             .await;
         }
         "ListTasks" => {
-            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+            dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::ListTasksParams = ws_params(&p)?;
                     h.on_list_tasks(params, Some(hdr))
@@ -887,7 +902,7 @@ async fn process_ws_message(
             .await;
         }
         "CancelTask" => {
-            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+            dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::CancelTaskParams = ws_params(&p)?;
                     h.on_cancel_task(params, Some(hdr))
@@ -915,7 +930,7 @@ async fn process_ws_message(
             }
         }
         "CreateTaskPushNotificationConfig" => {
-            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+            dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::push::TaskPushNotificationConfig =
                         ws_params(&p)?;
@@ -928,7 +943,7 @@ async fn process_ws_message(
             .await;
         }
         "GetTaskPushNotificationConfig" => {
-            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+            dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::GetPushConfigParams = ws_params(&p)?;
                     h.on_get_push_config(params, Some(hdr))
@@ -940,7 +955,7 @@ async fn process_ws_message(
             .await;
         }
         "ListTaskPushNotificationConfigs" => {
-            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+            dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::ListPushConfigsParams = ws_params(&p)?;
                     h.on_list_push_configs(&params.task_id, params.tenant.as_deref(), Some(hdr))
@@ -958,7 +973,7 @@ async fn process_ws_message(
             .await;
         }
         "DeleteTaskPushNotificationConfig" => {
-            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+            dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::DeletePushConfigParams = ws_params(&p)?;
                     h.on_delete_push_config(params, Some(hdr))
@@ -970,7 +985,7 @@ async fn process_ws_message(
             .await;
         }
         "GetExtendedAgentCard" => {
-            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, _p, hdr| {
+            dispatch_simple(handler, &rpc_req, id, headers, reply, |h, _p, hdr| {
                 Box::pin(async move {
                     h.on_get_extended_agent_card(Some(hdr))
                         .await
@@ -984,8 +999,8 @@ async fn process_ws_message(
             let refused: Result<(), ServerError> = ws_span(handler, &rpc_req, headers)
                 .run(async { Err(ServerError::MethodNotFound(other.to_owned())) })
                 .await;
-            if let Err(err) = refused {
-                send_error(&writer, id, &err).await;
+            if let (Err(err), Some(writer)) = (refused, reply) {
+                send_error(writer, id, &err).await;
             }
         }
     }
@@ -1012,7 +1027,7 @@ async fn dispatch_send_message(
     streaming: bool,
     headers: &HashMap<String, String>,
     id: JsonRpcId,
-    writer: &WsSink,
+    writer: Option<&WsSink>,
 ) {
     let call = async {
         let params =
@@ -1021,7 +1036,9 @@ async fn dispatch_send_message(
             .on_send_message(params, streaming, Some(headers))
             .await
     };
-    match ws_span(handler, rpc_req, headers).run(call).await {
+    let outcome = ws_span(handler, rpc_req, headers).run(call).await;
+    let Some(writer) = writer else { return };
+    match outcome {
         Ok(SendMessageResult::Response(resp)) => {
             let result = serde_json::to_value(&resp).unwrap_or(serde_json::Value::Null);
             let success = JsonRpcSuccessResponse {
@@ -1101,7 +1118,7 @@ async fn dispatch_simple<'a, F>(
     rpc_req: &JsonRpcRequest,
     id: JsonRpcId,
     headers: &'a HashMap<String, String>,
-    writer: &WsSink,
+    writer: Option<&WsSink>,
     f: F,
 ) where
     F: FnOnce(
@@ -1118,10 +1135,11 @@ async fn dispatch_simple<'a, F>(
     >,
 {
     let params = rpc_req.params.clone().unwrap_or_else(empty_params);
-    match ws_span(handler, rpc_req, headers)
+    let outcome = ws_span(handler, rpc_req, headers)
         .run(f(handler, params, headers))
-        .await
-    {
+        .await;
+    let Some(writer) = writer else { return };
+    match outcome {
         Ok(result) => {
             let success = JsonRpcSuccessResponse {
                 jsonrpc: JsonRpcVersion,

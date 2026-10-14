@@ -1103,7 +1103,7 @@
    "status": "NOT_SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:438",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:449",
     "crates/a2a-protocol-server/src/handler/push_config.rs:251"
    ],
    "test_evidence": [],
@@ -1406,7 +1406,7 @@
     "spec/slimrpc_v1/slimrpc.md:56"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2444 ws_upgrade_headers_drive_tenant_resolution",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2462 ws_upgrade_headers_drive_tenant_resolution",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:78 the_version_is_checked_at_the_handshake_with_a_query_fallback"
    ],
    "notes": "WebSocket: the binding specification (book/src/bindings/websocket.md §2) states the mechanism (upgrade headers, once per connection), the A2A-Version query fallback, value constraints, the reserved :path key, and that parameters cannot vary per request. SLIMRPC: slimrpc.md §3. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
@@ -1459,7 +1459,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:105",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:168",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:169",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:181",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:42",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:701",
@@ -2767,7 +2767,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:191",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:166",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:1"
    ],
    "test_evidence": [
@@ -2795,7 +2795,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:197 version_metadata_refuses_another_minor_or_no_minor",
     "crates/a2a-protocol-server/src/dispatch/version.rs:181 version_metadata_accepts_this_major_minor_with_any_patch",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2508 ws_version_mismatch_rejects_handshake",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2526 ws_version_mismatch_rejects_handshake",
     "crates/a2a-protocol-server/tests/actionable_errors.rs (the refusal names the supported version)"
    ],
    "notes": "Since 2026-10-12 (maintainer decision) a request is served only when its A2A-Version names this server's Major.Minor, 1.0, with any patch; any other version, 1.1 included, is VersionNotSupportedError naming 1.0, on every binding through one validator (the WebSocket handshake had its own copy). Until then any 1.x was accepted and served with 1.0 semantics, as the official Python SDK still does (_is_version_compatible compares the major only).",
@@ -2812,7 +2812,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:168",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:169",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:181",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:42",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:701",
@@ -2844,7 +2844,7 @@
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:526 jsonrpc_missing_version_header_rejected",
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:841 rest_missing_version_header_rejected_but_card_discovery_versionless",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:698 default_config_rejects_a_versionless_rpc",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2551 ws_missing_version_header_rejected_by_default",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2569 ws_missing_version_header_rejected_by_default",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs an_empty_version_is_refused_unless_none_is_required",
     "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs an_absent_version_is_refused_as_0_3_unless_none_is_required"
    ],
@@ -3280,10 +3280,10 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:880",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:139",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:305",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:883"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:898"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2163 ws_legacy_method_names_rejected",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2181 ws_legacy_method_names_rejected",
     "crates/a2a-protocol-server/tests/method_routing_completeness.rs:198 every_spec_method_is_routed",
     "crates/a2a-protocol-server/tests/method_routing_completeness.rs:225 nothing_outside_the_spec_set_is_routed",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:97 refusals_carry_the_documented_codes",
@@ -3673,7 +3673,7 @@
     "bindings/a2a-protocol-slimrpc/src/error.rs:41",
     "bindings/a2a-protocol-slimrpc/src/error.rs:98",
     "book/src/bindings/websocket.md",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:862",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:877",
     "spec/slimrpc_v1/slimrpc.md:214"
    ],
    "test_evidence": [
@@ -3693,7 +3693,7 @@
    "severity": "low",
    "impl_evidence": [
     "book/src/bindings/websocket.md",
-    "book/src/concepts/transport-layers.md:147",
+    "book/src/concepts/transport-layers.md:153",
     "spec/slimrpc_v1/slimrpc.md:214"
    ],
    "test_evidence": [],
@@ -4025,7 +4025,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:219",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:220",
     "crates/a2a-protocol-server/src/push/sender.rs:873"
    ],
    "test_evidence": [
@@ -4045,7 +4045,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:215",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:216",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:50"
    ],
    "test_evidence": [
@@ -4157,7 +4157,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:177",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:113",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:114",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:167"
    ],
    "test_evidence": [
@@ -4385,7 +4385,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:107",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:113",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:114",
     "crates/a2a-protocol-client/src/tls.rs:60"
    ],
    "test_evidence": [
@@ -4725,7 +4725,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:101",
     "crates/a2a-protocol-server/src/builder.rs:117",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:113",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:114",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:177",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:564"
    ],
@@ -5419,7 +5419,7 @@
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:564",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:611",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:181 with_agent_card_max_age",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:67",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:69",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:299 card_handler"
    ],
@@ -5588,7 +5588,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:340-354",
     "crates/a2a-protocol-server/src/streaming/sse.rs:424-430",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:310-330"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:321-341"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:662 build_sse_response_has_correct_headers",
@@ -5607,8 +5607,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:130-131",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165-179",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:131-132",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:166-180",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:272-284",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:195-204"
    ],
@@ -5679,22 +5679,23 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/jsonrpc.rs:51-75",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:213-278",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:214-285",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:180-204",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:200",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/refusal.rs:44-81",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:201",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/refusal.rs:46-91",
     "crates/a2a-protocol-types/src/jsonrpc.rs:167",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:61"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:61",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/notification.rs:26-42",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:861"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/jsonrpc.rs:422 version_rejects_wrong_version",
-    "crates/a2a-protocol-server/tests/jsonrpc_edge_tests.rs:389 a_request_without_a_method_is_an_invalid_request",
-    "crates/a2a-protocol-server/tests/jsonrpc_edge_tests.rs:397 a_bare_json_value_is_an_invalid_request",
+    "crates/a2a-protocol-server/tests/jsonrpc_edge_tests.rs:372 a_request_without_a_method_is_an_invalid_request",
+    "crates/a2a-protocol-server/tests/jsonrpc_edge_tests.rs:380 a_bare_json_value_is_an_invalid_request",
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:80 a_refused_request_is_answered_with_its_id",
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:89 a_refused_batch_gets_one_error_per_request",
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:102 a_refused_content_type_is_answered_with_the_id",
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:115 a_batch_past_the_limit_gets_one_refusal",
-    "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:131 without_an_id_the_refusal_keeps_a_null_one",
     "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:125 jsonrpc_records_a_version_refusal_per_answer",
     "crates/a2a-protocol-types/src/jsonrpc.rs:746 a_request_id_must_be_a_string_a_number_or_null",
     "crates/a2a-protocol-server/tests/jsonrpc_2_0_rules.rs:76 an_id_of_another_type_is_an_invalid_request",
@@ -5702,12 +5703,21 @@
     "crates/a2a-protocol-server/tests/jsonrpc_2_0_rules.rs:138 a_stream_in_a_batch_is_an_unsupported_operation",
     "crates/a2a-protocol-server/tests/jsonrpc_2_0_rules.rs:97 a_version_refusal_does_not_echo_an_id_of_another_type",
     "crates/a2a-protocol-server/tests/jsonrpc_2_0_rules.rs:183 over_websocket_an_id_of_another_type_is_an_invalid_request",
-    "crates/a2a-protocol-server/tests/jsonrpc_2_0_rules.rs:192 over_websocket_omitted_params_are_read_as_an_empty_object"
+    "crates/a2a-protocol-server/tests/jsonrpc_2_0_rules.rs:192 over_websocket_omitted_params_are_read_as_an_empty_object",
+    "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:133 without_an_id_the_refusal_keeps_a_null_one",
+    "crates/a2a-protocol-server/tests/jsonrpc_notifications.rs:134 a_notification_is_run_and_answered_with_no_content",
+    "crates/a2a-protocol-server/tests/jsonrpc_notifications.rs:145 a_failing_notification_is_not_answered",
+    "crates/a2a-protocol-server/tests/jsonrpc_notifications.rs:155 a_streaming_notification_is_not_run",
+    "crates/a2a-protocol-server/tests/jsonrpc_notifications.rs:164 a_batch_answers_its_calls_and_not_its_notifications",
+    "crates/a2a-protocol-server/tests/jsonrpc_notifications.rs:179 a_batch_of_notifications_gets_no_content",
+    "crates/a2a-protocol-server/tests/jsonrpc_notifications.rs:191 a_notification_refused_on_its_headers_is_not_answered",
+    "crates/a2a-protocol-server/tests/jsonrpc_notifications.rs:210 an_invalid_request_without_an_id_is_still_answered",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:187 a_notification_is_run_and_sent_nothing"
    ],
-   "notes": "`jsonrpc` must be exactly \"2.0\"; non-JSON answers -32700, JSON that is not a Request answers -32600. Client always emits `jsonrpc:\"2.0\"`, PascalCase method, params object. A request refused for its A2A-Version or Content-Type is answered with its own id, and a batch with one error per request, since 2026-10-13: both were refused before the body was read, so the response id was null (JSON-RPC 2.0 §5: the id MUST be the request's, null only when it cannot be detected) and a batch got one object. A batch beyond max_batch_size, a body that is not JSON or over the size limit, and a request with no id still get one null-id refusal. Also since 2026-10-13, over HTTP and WebSocket: an id that is not a string, a number or null (JSON-RPC 2.0 §4) is -32600 with a null id, where it was run and echoed; an omitted params (§4.2: MAY be omitted) is read as {}, where it was \"missing params\"; a stream inside a batch is UnsupportedOperation (-32004), where it was -32602. Not followed: a notification (no id) is still answered, which §4.1 forbids (audit register R21, the maintainer's decision).",
+   "notes": "`jsonrpc` must be exactly \"2.0\"; non-JSON answers -32700, JSON that is not a Request answers -32600. Client always emits `jsonrpc:\"2.0\"`, PascalCase method, params object. A request refused for its A2A-Version or Content-Type is answered with its own id, and a batch with one error per request, since 2026-10-13: both were refused before the body was read, so the response id was null (JSON-RPC 2.0 §5: the id MUST be the request's, null only when it cannot be detected) and a batch got one object. A batch beyond max_batch_size, and a body that is not JSON or over the size limit, still get one null-id refusal. Also since 2026-10-13, over HTTP and WebSocket: an id that is not a string, a number or null (JSON-RPC 2.0 §4) is -32600 with a null id, where it was run and echoed; an omitted params (§4.2: MAY be omitted) is read as {}, where it was \"missing params\"; a stream inside a batch is UnsupportedOperation (-32004), where it was -32602. Since 2026-10-14 a notification (no id member) is run and not answered (§4.1, audit register R21): 204 No Content alone or when a batch holds only notifications, left out of a batch's array, no WebSocket frame, and no answer when refused on its headers; a streaming method sent as one is refused rather than run. Until then each was answered with a null id.",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
   },
   {
    "spec_line": 2408,
@@ -5719,7 +5729,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:385-388",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:332-348",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:343-359",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:244-260"
    ],
    "test_evidence": [
@@ -5766,12 +5776,12 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:66-91",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:173-207",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:461"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:472"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:343 parse_error_response_has_error_code",
     "crates/a2a-protocol-server/tests/method_routing_completeness.rs:258 method_not_found_is_actually_distinguishable",
-    "crates/a2a-protocol-server/tests/jsonrpc_edge_tests.rs:389 a_request_without_a_method_is_an_invalid_request"
+    "crates/a2a-protocol-server/tests/jsonrpc_edge_tests.rs:372 a_request_without_a_method_is_an_invalid_request"
    ],
    "notes": "The codes match the table. The messages are free text such as \"Parse error: ...\" and \"invalid params: ...\", not the table's \"Standard Message\" column. That column is informational, so this is not a violation.",
    "auditor": "E",
@@ -6469,7 +6479,7 @@
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/src/error.rs:96-115",
     "crates/a2a-protocol-types/src/error.rs:217-246",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1108-1118"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1125-1135"
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/src/error.rs status_codes_follow_the_slimrpc_table"
@@ -6488,13 +6498,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:879-1027",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:894-1044",
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:108-370"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2244 ws_push_config_methods_routed",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2417 ws_get_extended_agent_card_routed",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2005 ws_send_streaming_message_events",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2262 ws_push_config_methods_routed",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2435 ws_get_extended_agent_card_routed",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2023 ws_send_streaming_message_events",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:86 every_spec_method_is_registered"
    ],
    "notes": "Both bindings route all 11 v1.0 methods to the shared RequestHandler. WebSocket also accepts the v0.3 alias `message/stream` (websocket.rs:883). The module rustdoc (websocket.rs:20-23) says v0.3 names are rejected, while the book (dispatchers.md:225-229) documents the alias; the alias is untested (ws_legacy_method_names_rejected covers only message/send, tasks/list, tasks/get).",
@@ -6510,11 +6520,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1058-1069",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1075-1086",
     "bindings/a2a-protocol-slimrpc/src/codec.rs:1-130"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1772 ws_send_message_success",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1790 ws_send_message_success",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:119 send_message_round_trips_over_the_fabric"
    ],
    "notes": "WebSocket reuses the JSON-RPC ProtoJSON types. SLIMRPC uses the canonical lf.a2a.v1 protobuf messages.",
@@ -6530,11 +6540,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1085-1128",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1102-1146",
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:88-100"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1789 ws_get_task_not_found",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1807 ws_get_task_not_found",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:240 streaming_send_delivers_events_and_terminates"
    ],
    "notes": "Same handler, so the semantics match. Deviations: WebSocket ends every stream with a synthetic success frame `{\"result\":{\"status\":\"stream_complete\"}}` that is not a StreamResponse (documented). SLIMRPC accepts a missing a2a-version (methods/mod.rs:96 `validate_version_metadata(&headers, false)`), unlike the strict default of the other bindings. Its rationale comment (\"the gRPC binding already made exactly this trade\") is stale, since gRPC now enforces it (helpers.rs:42-51).",
@@ -6635,12 +6645,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1187-1196",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1205-1214",
     "bindings/a2a-protocol-slimrpc/src/error.rs:40-63",
     "bindings/a2a-protocol-slimrpc/src/error.rs:96-115"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1789 ws_get_task_not_found",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1807 ws_get_task_not_found",
     "bindings/a2a-protocol-slimrpc/src/error.rs:255 every_error_code_round_trips_through_the_message_prefix",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:206 a2a_errors_keep_their_identity_across_the_fabric"
    ],
@@ -6721,13 +6731,13 @@
    "impl_evidence": [
     "book/src/bindings/websocket.md",
     "book/src/building-agents/dispatchers.md:224",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1085-1128",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1102-1146",
     "spec/slimrpc_v1/slimrpc.md:237-266",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:678 extract_upgrade_headers"
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:240 streaming_send_delivers_events_and_terminates",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2005 ws_send_streaming_message_events",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2023 ws_send_streaming_message_events",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:139 a_stream_is_frames_then_the_marker",
     "crates/a2a-protocol-server/tests/websocket_tests.rs:426 ws_upgrade_last_event_id_does_not_replay_the_log"
    ],
@@ -6745,7 +6755,7 @@
    "status": "NOT_APPLICABLE",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1085",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1102",
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:407"
    ],
    "test_evidence": [],
@@ -6768,7 +6778,7 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:678-697"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2444 ws_upgrade_headers_drive_tenant_resolution",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2462 ws_upgrade_headers_drive_tenant_resolution",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:344 a_jwt_identity_carries_an_a2a_call",
     "bindings/a2a-protocol-slimrpc/tests/spiffe.rs:94 a_spiffe_identity_carries_an_a2a_call"
    ],
@@ -6824,11 +6834,11 @@
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/README.md:17-31",
     "book/src/bindings/websocket.md",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1763-2742"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1781-2760"
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/tests/out_of_process.rs (suite)",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1918 ws_oversized_message_rejected",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1936 ws_oversized_message_rejected",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:139 a_stream_is_frames_then_the_marker",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:97 refusals_carry_the_documented_codes",
     "crates/a2a-protocol-server/tests/websocket_tests.rs:332 ws_json_without_a_method_returns_invalid_request"
@@ -7796,7 +7806,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:517",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:186",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:187",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:280",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:39",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:114-152"
@@ -8173,7 +8183,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/bindings/websocket.md",
-    "book/src/concepts/transport-layers.md:188",
+    "book/src/concepts/transport-layers.md:194",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:24",
     "crates/a2a-protocol-types/src/lib.rs:85"
    ],
@@ -8191,11 +8201,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1013",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1028",
     "crates/a2a-protocol-server/src/auth/mod.rs:9"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2417 ws_get_extended_agent_card_routed"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2435 ws_get_extended_agent_card_routed"
    ],
    "notes": "WebSocket routes through the same RequestHandler, so interceptors (auth, rate limit, audit) and tenant resolution apply identically per message.",
    "auditor": "F",
@@ -8210,7 +8220,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "book/src/concepts/transport-layers.md:188 (WebSocket: credentials at connect as upgrade headers)",
+    "book/src/concepts/transport-layers.md:194 (WebSocket: credentials at connect as upgrade headers)",
     "book/src/bindings/slimrpc.md (SLIMRPC: credentials as session metadata; transport identity)",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs metadata_from",
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs a2a_headers"
@@ -8467,7 +8477,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1202",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1220",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:33",
     "crates/a2a-protocol-server/src/portable.rs:13",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:149"
@@ -8519,7 +8529,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1202",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1220",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:71"
    ],
    "test_evidence": [
@@ -9983,7 +9993,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1202",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1220",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:145"
    ],
    "test_evidence": [

@@ -125,18 +125,16 @@ async fn a_batch_past_the_limit_gets_one_refusal() {
 }
 
 /// Without an id to echo, the refusal is still the header's, with a null
-/// id: a body that is not JSON, a request that names no id, an empty batch,
-/// and a body over the size limit, which is not read at all.
+/// id: a body that is not JSON, an empty batch, and a body over the size
+/// limit, which is not read at all. A request that names no id is a
+/// notification and is refused without an answer since 2026-10-14
+/// (`jsonrpc_notifications.rs`, audit register R21).
 #[tokio::test]
 async fn without_an_id_the_refusal_keeps_a_null_one() {
     let too_large = request(&json!(1)).to_string();
     let small = || DispatchConfig::default().with_max_request_body_size(too_large.len() - 1);
     let cases = [
         ("{not json".to_owned(), DispatchConfig::default()),
-        (
-            json!({"jsonrpc": "2.0", "method": "GetTask", "params": {"id": "t"}}).to_string(),
-            DispatchConfig::default(),
-        ),
         ("[]".to_owned(), DispatchConfig::default()),
         (too_large.clone(), small()),
     ];

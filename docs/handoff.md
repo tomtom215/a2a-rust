@@ -1207,6 +1207,27 @@ follow the text. The register's status column tracks what is done.
     added (`Submitted` to itself is the one same-state move
     `can_transition_to` refuses).
 
+15. `fix(server):` audit register R21 — a JSON-RPC notification (no `id`
+    member) is run and not answered (JSON-RPC 2.0 §4.1): `204 No Content`
+    alone, left out of a batch's array (`204` when nothing is left), no
+    frame over WebSocket, and no answer when refused on its headers. The new
+    `dispatch/jsonrpc/notification.rs` holds the HTTP side so `mod.rs` stays
+    under 500 lines (496); the WebSocket dispatch helpers take an optional
+    writer. One narrowing of the approved option (b), recorded in the
+    register: a streaming method sent as a notification is refused rather
+    than run, as inside a batch. Tests: `tests/jsonrpc_notifications.rs`
+    (seven; six failed before, the seventh guards an id-less object that is
+    not a Request) and `a_notification_is_run_and_sent_nothing` in
+    `tests/websocket_binding_spec.rs` (failed before: the send's answer
+    arrived with a null id). Two tests pinned the old answer and were
+    changed: `jsonrpc_absent_id_request_answered_with_null_id` is removed,
+    and `without_an_id_the_refusal_keeps_a_null_one` loses its notification
+    case. Hand mutants: `is_notification` always true, `notify` a no-op, and
+    the WebSocket streaming guard off each fail a test (the first was
+    rewritten once after it did not build: the unused import is an error
+    under `-D warnings`). Ledger §9.3 (2270): the "Not followed" clause is
+    replaced, and the new tests are cited.
+
 **Lessons, new this session.**
 - A failing test's name is not its address. `every_handler_method_reports_its_outcome`
   exists in two files; item 10's fix went to the one in
