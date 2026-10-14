@@ -1170,6 +1170,27 @@ follow the text. The register's status column tracks what is done.
     comments; `sync_collector.rs:394`, a state-transition log line): the
     checker verifies test names, not implementation lines, so these drift
     silently. Re-pointed by reading the code.
+13. `docs(compliance):` five more EU AI Act rows, each read in the Official
+    Journal text: Art. 14(4)(a) (monitoring and anomalies; partial: per-call
+    outcomes to interceptors and `Metrics`, spans named by method, failed
+    and timed-out executors), Art. 15(4) (resilience to errors and faults;
+    partial: executor timeout, bounded shutdown, push retries within
+    timeouts, events refused at the queue, a PostgreSQL store shared by
+    replicas), and three integrator rows that say where the SDK carries
+    nothing: 13(1)-(2) and 13(3)(a)-(e), 14(1)-(3) and 14(4)(b)-(c), 15(1)-(3).
+    Two claims first written into those rows were narrowed to what a cited
+    test shows (spans: named by their method, not "carry the method, task
+    and outcome"; replicas: the PostgreSQL store, whose test CI runs with
+    `--ignored`). Then integrator rows for the rest of what the Act asks of
+    providers and deployers: Art. 4 as replaced by 2026/1744 (AI literacy),
+    9, 10 and 17 (risk management, data, QMS), 11 with Annex IV (technical
+    documentation; the row names the per-crate CycloneDX SBOMs `release.yml`
+    attaches, the provenance manifest, the ADRs and the ledger as material a
+    provider can cite), 26(1)-(2), (5) and 27 (deployer duties, FRIA), and
+    50(3)-(4). The map is 37 controls, 72 cited tests, 33 cited
+    implementations. Not mapped, deliberately: the general-purpose AI model
+    chapter (Arts. 51-56; the SDK is not a model) and the authorities'
+    chapters.
 
 **Lessons, new this session.**
 - A failing test's name is not its address. `every_handler_method_reports_its_outcome`

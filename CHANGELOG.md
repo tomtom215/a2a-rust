@@ -1507,6 +1507,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   self-test of those rules runs first on every invocation (`--self-test`
   runs only it), and fails under each of 11 hand-applied mutants of the
   retry code.
+- **The control map covers EU AI Act Articles 13 to 15 in full**: new rows
+  for 14(4)(a) (monitoring) and 15(4) (resilience), both partial with cited
+  code and tests, and integrator rows for the obligations only a provider or
+  deployer can meet (13(1)-(3)(e), 14(1)-(3) and (4)(b)-(c), 15(1)-(3)), and
+  for Arts. 4 (as replaced), 9, 10, 11 with Annex IV, 17, 26, 27 and
+  50(3)-(4). 37 controls in all.
 - **The regulatory control map cites the code behind each EU AI Act
   control**, as `code = ["path.rs::Symbol"]`, and `check_compliance_map.py`
   fails when a cited symbol is not declared in its file or when a supported
