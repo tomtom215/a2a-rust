@@ -26,9 +26,18 @@
 #   go to code scanning, where they are visible, without turning the build red
 #   over a dependency this repository does not ship.
 #
-# On a pull request only *newly introduced* findings fail (the PR variant
-# compares the head against the base), so an advisory published against an
-# unchanged lockfile reddens the next scheduled run, not an unrelated PR.
+# A pull request runs both Rust jobs. `rust` scans the head as it is and
+# fails on any finding not waived, exactly as on main; `rust-pr` compares the
+# head against the base and attributes what the pull request introduced.
+# Until 2026-10-14 a pull request ran only `rust-pr`, and `rust` showed as
+# skipped. A finding already on main is not new, so no pull request could
+# fail on it: RUSTSEC-2024-0449 was waived in the binding's deny.toml but not
+# in its osv-scanner.toml (PR #168), every run of that PR passed, and main
+# went red on the merge. cargo-deny in ci.yml already fails a pull request on
+# any unwaived advisory, published that day or not; this job now agrees with
+# it. The cost is the same one deny has: an advisory published against an
+# unchanged lockfile reddens every open pull request until it is fixed or
+# waived.
 #
 # The PR variant scans the base with the same arguments, and a lockfile the
 # base does not have yet fails that scan, which fails the job. So a new
@@ -84,7 +93,6 @@ jobs:
   # reported (alerts #94-#96 on main).
   rust:
     name: Rust lockfiles
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       actions: read

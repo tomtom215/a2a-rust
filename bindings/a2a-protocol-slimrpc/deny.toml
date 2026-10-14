@@ -167,6 +167,14 @@ yanked  = "deny"
 # would still leave the slim-config path. Nothing this repository can bump
 # removes it. Remove this entry when agntcy-slim-config publishes a release
 # without serde_yaml and the binding moves to it.
+#
+# Re-checked 2026-10-14 against the crates.io index: agntcy-slim-config
+# 0.17.3 depends on yaml_serde ^0.10 (renamed to serde_yaml in its manifest;
+# yaml_serde uses libyaml-rs, not unsafe-libyaml), agntcy-slim-rpc 3.3.1
+# requires that 0.17.3, and agntcy-slim-auth 0.17.x takes regorus 0.12.0.
+# The release condition is met; what remains is the binding's move from
+# agntcy-slim-rpc 2.3.0 to 3.x, a major version. osv-scanner.toml beside
+# this file carries the matching waiver.
 ignore  = [
     { id = "RUSTSEC-2026-0285", reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; slim-auth 0.15.4 -> mls-rs-crypto-awslc 0.23.0 pins aws-lc-rs =1.16.2. No upstream release resolves this yet (checked 2026-09-16). See the note above." },
     { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml (unmaintained) via serde_yaml, required by every agntcy-slim-config release through 0.17.2. No upstream release resolves this yet (checked 2026-10-12). See the note above." },

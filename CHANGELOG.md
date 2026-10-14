@@ -1476,6 +1476,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of a hand-made dev book, and its healthy case failed before the
   fix with the fault CI reported. The full build (13 release lines and dev)
   checks clean locally: 794 book pages, 0 faults.
+- **OSV-Scanner on the SLIMRPC binding.** RUSTSEC-2024-0449 (unsafe-libyaml,
+  unmaintained) was waived in the binding's `deny.toml` but not in its
+  `osv-scanner.toml`, so the scan failed on `main`; the waiver is mirrored.
+  The file now says why RUSTSEC-2026-0285 is listed under both of its ids
+  (osv-scanner matches it by the GHSA id and reports the RUSTSEC entry as
+  unused, a warning). `osv.yml`'s blocking `Rust lockfiles` job runs on pull
+  requests too: until now a pull request ran only the job that reports
+  findings new against the base, so a finding already on `main` failed no
+  pull request. That is what cargo-deny in `ci.yml` already does.
 - **`keep_alive_comments_reset_the_idle_bound` tolerates a runner stall**
   (client tests). It failed on Windows on `9aacd7a` and on `main` at
   `6ce5dc9`: the stub and the client share one thread, so a stall longer

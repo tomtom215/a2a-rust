@@ -975,6 +975,22 @@ reproduced locally before its fix.
    with five faults, the dev API index and the four crate indexes, whose
    fixture pages had no head either. This workflow runs only on pushes to
    `main`, so no pull request could have caught it.
+2. `ci(osv):` OSV-Scanner, job `Rust lockfiles`: RUSTSEC-2024-0449
+   (unsafe-libyaml 0.2.11) unignored in the binding's lockfile, reproduced
+   with osv-scanner 2.6.0 (exit 1, the same table). #168 waived it in the
+   binding's `deny.toml` and not in its `osv-scanner.toml`; it is mirrored
+   now, and all eight lockfiles scan clean with the workflow's arguments.
+   The scheduled runs on `f3fdddc9` (before #168) were red on it too. The
+   "unused ignore" warning for RUSTSEC-2026-0285 is osv-scanner matching
+   the advisory by its GHSA id; both entries stay, and the file says why.
+   On a pull request the blocking job was skipped and only the
+   new-findings job ran, so a finding already on `main` failed nothing;
+   `rust` now runs on pull requests too, as cargo-deny does. Found while
+   checking the waiver: agntcy-slim-config 0.17.3 (under agntcy-slim-rpc
+   3.3.1) replaces serde_yaml with yaml_serde, and agntcy-slim-auth 0.17.x
+   takes regorus 0.12.0, so the SLIM 3.x upgrade (audit register R13)
+   removes unsafe-libyaml. It does not clear RUSTSEC-2026-0285:
+   mls-rs-crypto-awslc 0.25.0, the newest, still pins aws-lc-rs =1.16.3.
 
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 

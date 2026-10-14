@@ -1,17 +1,32 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 #
-# osv-scanner's view of this binding's Cargo.lock. Mirrors the one ignore in
-# this directory's deny.toml, whose note gives the full dependency chain; the
-# GHSA id is the same advisory under its GitHub alias, which osv-scanner
-# reports separately.
+# osv-scanner's view of this binding's Cargo.lock. Mirrors the ignores in
+# this directory's deny.toml, whose notes give the full dependency chains.
+#
+# RUSTSEC-2026-0285 is listed twice, under both of its ids. OSV publishes the
+# rustls advisory as GHSA-2mjx-qc3c-rqvc with the RUSTSEC id as an alias, and
+# osv-scanner 2.6.0 matches it by the GHSA id: it reports "GHSA-2mjx-qc3c-rqvc
+# and 1 alias have been filtered out" and calls the RUSTSEC entry an unused
+# ignore. That warning does not fail the scan. The RUSTSEC entry stays because
+# it is the id deny.toml and the advisory database use, and because which id
+# OSV treats as primary is OSV's choice: if it flips, the GHSA entry becomes
+# the unused one and the waiver still holds. Both entries carry the same date
+# and are removed together.
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0285"
 ignoreUntil = 2027-01-08
-reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; agntcy-slim-auth pins it below that through mls-rs-crypto-awslc (0.23.0 =1.16.2 in the locked tree; the newest, 0.25.0 under slim-auth 0.16.3, still =1.16.3, checked 2026-10-08). The binding is unpublished. See deny.toml."
+reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; agntcy-slim-auth pins it below that through mls-rs-crypto-awslc (0.23.0 =1.16.2 in the locked tree; the newest, 0.25.0 under slim-auth 0.16.3 to 0.17.3, still =1.16.3, checked 2026-10-14). The binding is unpublished. See deny.toml."
 
 [[IgnoredVulns]]
 id = "GHSA-2mjx-qc3c-rqvc"
 ignoreUntil = 2027-01-08
-reason = "Alias of RUSTSEC-2026-0285; see that entry."
+reason = "Alias of RUSTSEC-2026-0285, the id osv-scanner matches it by; see that entry and this file's header."
+
+# Mirrors deny.toml's waiver, added there 2026-10-12 and missing here until
+# the scheduled and push runs on main failed on it (2026-10-13, 2026-10-14).
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0449"
+ignoreUntil = 2027-01-08
+reason = "unsafe-libyaml 0.2.11 is unmaintained (informational, not a vulnerability). It arrives through serde_yaml 0.9.34+deprecated, required by agntcy-slim-config 0.16.1 and regorus 0.11.0 in the locked tree. agntcy-slim-config 0.17.3 (under agntcy-slim-rpc 3.3.1) moves to yaml_serde and regorus 0.12.0 drops serde_yaml, so the SLIM 3.x upgrade removes it; remove this entry with that upgrade. See deny.toml."
