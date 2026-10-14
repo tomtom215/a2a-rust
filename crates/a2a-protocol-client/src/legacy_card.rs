@@ -156,6 +156,42 @@ mod tests {
         assert_eq!(card["capabilities"]["extendedAgentCard"], json!(true));
     }
 
+    /// Only an exact repeat of the preferred interface is dropped: the same
+    /// URL on another transport, or another URL on the same transport, is
+    /// an interface of its own.
+    #[test]
+    fn only_the_preferred_interface_itself_is_dropped_from_the_extras() {
+        let mut card = json!({
+            "url": "https://a.example/rpc",
+            "preferredTransport": "JSONRPC",
+            "additionalInterfaces": [
+                { "url": "https://a.example/rpc", "transport": "JSONRPC" },
+                { "url": "https://a.example/rpc", "transport": "GRPC" },
+                { "url": "https://b.example/rpc", "transport": "JSONRPC" }
+            ]
+        });
+        upgrade(&mut card);
+        let folded: Vec<_> = card["supportedInterfaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| {
+                (
+                    i["url"].as_str().unwrap(),
+                    i["protocolBinding"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            folded,
+            [
+                ("https://a.example/rpc", "JSONRPC"),
+                ("https://a.example/rpc", "GRPC"),
+                ("https://b.example/rpc", "JSONRPC"),
+            ]
+        );
+    }
+
     /// App. A.2.2's spelling of the moved field, with its fallback.
     #[test]
     fn the_app_a22_spelling_is_read_too() {
