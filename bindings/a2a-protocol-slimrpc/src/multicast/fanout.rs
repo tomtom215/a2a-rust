@@ -32,8 +32,9 @@ pub(super) const MEMBER_STREAM_CAPACITY: usize = 64;
 /// How long the fan-out task will wait, once the source is exhausted, to hand a
 /// lagging member the report of what it missed.
 ///
-/// A member that falls behind mid-stream is told by the send that carries the
-/// *next* event it receives. One that falls behind on the last events has no
+/// A member that falls behind mid-stream is told in place of the *next* event
+/// it would have received, and the report ends its stream (see
+/// [`fan_out_to_members`]). One that falls behind on the last events has no
 /// next event, and a stream that simply ends is indistinguishable from one that
 /// ended cleanly — so the tail is flushed explicitly. Bounded, because a
 /// consumer that never reads at all must not hold this task open forever; the
@@ -43,10 +44,11 @@ const LAG_REPORT_FLUSH: Duration = Duration::from_secs(5);
 
 /// Routes each multicast frame to the stream of the member that sent it.
 ///
-/// Extracted from [`SlimRpcMulticast::stream_message`] rather than left inline:
-/// the send below is the whole reason this loop is delicate, and inline it sat
-/// under two layers of closure in a function clippy had already grown past its
-/// line limit.
+/// Extracted from
+/// [`SlimRpcMulticast::stream_message`](super::SlimRpcMulticast::stream_message)
+/// rather than left inline: the send below is the whole reason this loop is
+/// delicate, and inline it sat under two layers of closure in a function
+/// clippy had already grown past its line limit.
 ///
 /// # One consumer's backpressure is not everybody's
 ///
@@ -63,6 +65,11 @@ const LAG_REPORT_FLUSH: Duration = Duration::from_secs(5);
 /// everybody else up — and, as there, the gap is *reported* rather than silent.
 /// A task event stream is ordered state, and a consumer that skips from
 /// `Working` to `Completed` cannot otherwise tell that from a task that did.
+///
+/// The report ends that member's stream: it is an error, and an `EventStream`
+/// is finished after its first error, as an SSE stream the event log cannot
+/// catch up ends with `streamLagged`. Nothing the fan-out routes to the member
+/// afterwards is read.
 pub(super) async fn fan_out_to_members(
     channel: Channel,
     request: pb::SendMessageRequest,

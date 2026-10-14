@@ -367,7 +367,8 @@ away for five 200 ms windows gets 129 events — the two 64-slot hops and the
 one in flight — then the one error, then the end, milliseconds after it
 starts reading rather than at the 20 s deadline (third test). The second test
 fails — 129 of 300 delivered — when the bridge is changed to drop on a full
-channel, which is the trade multicast makes (`src/multicast/fanout.rs:116`);
+channel, which is the trade multicast makes (`src/multicast/fanout.rs:138`),
+and the lag report then ends that member's stream;
 the third fails — all 302 delivered, no error — when the timeout around the
 bridge's `send` is removed. Unicast buffers instead of dropping because the
 bridge task is private to the call and parks nobody else; it stops buffering

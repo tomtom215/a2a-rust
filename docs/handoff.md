@@ -1874,6 +1874,16 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     states; mirroring the status-update rule in both processors means
     sharing the background mark-failed path, which also drives the
     writer's terminal verdicts.
+104. `docs(slimrpc):` a multicast member's lag report ends its stream, and
+    the fan-out's docs say so (audit register R66; docs only). The report
+    is an `Err`, and `EventStream::from_event_channel` bridges it into the
+    one parsing path, which finishes the stream at its first error
+    (`event_stream.rs`, `Phase::Finished`); the docs read as if the member
+    went on, and the README cited the drop at `fanout.rs:116`, the
+    malformed-event mapping. Making the report non-terminal is a client
+    behaviour change and is left to the maintainer. A private intra-doc
+    link in the same file did not resolve under `--document-private-items`;
+    it does now.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
