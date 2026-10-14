@@ -1350,7 +1350,37 @@ follows is a new pull request.
     break, as at 0.14.0. The `benches/sdk-comparison` agent keeps
     `=0.14.1`: it benchmarks the crate published on crates.io.
 
+25. `feat(server)!:` audit register R12 — a caller is named by how it
+    authenticated: `bearer:<label>`, `api-key:<label>`,
+    `jwt:<issuer>:<sub>` (`auth::caller_id`), everywhere the identity is
+    used, and a JWT with no `sub` is refused under caller isolation. The
+    four persistent tenant-aware stores gain `migrate_caller_keys(map)`
+    (`store::caller_keys`), whose map the deployer gives because the old
+    key records neither scheme nor issuer. The four-eyes check also
+    refuses a requester named bare before 0.15, instead of the migration
+    rewriting `requested_by` (the register says why). The ITK's ACTS guard
+    compared against the bare label and now has a test. **Postgres runs
+    here:** PostgreSQL 16 is installed in this container
+    (`pg_ctlcluster 16 main start`, then set the `postgres` password), so
+    `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`
+    runs the ignored Postgres suites locally.
+
+26. `fix(client):` spec App. A.2 — a v0.3 card (top-level `url`,
+    `preferredTransport`, `additionalInterfaces`,
+    `supportsAuthenticatedExtendedCard`, and A.2.2's
+    `supportsExtendedAgentCard`) is read in its v1.0 form, with a
+    `tracing` warning, on discovery and from `GetExtendedAgentCard`
+    (`legacy_card.rs`). A.2.1's `kind` discriminator is not handled: only
+    a v0.3 interface sends it, and selection never picks one. Ledger App.
+    A.2 (3421) PARTIAL to TESTED (TESTED 324, PARTIAL 13).
+
 **Lessons, new this session.**
+- `cargo doc` is a gate, and not one clippy covers. `edc8bbc0` (#171) went
+  red on Documentation for an intra-doc link to a type not in scope
+  there, and the next commit's workspace doc build caught a redundant link
+  target that only the `sqlite`/`postgres` features compile. Run both of
+  ci.yml's doc steps (`cargo doc --workspace --no-deps` and the per-crate
+  loop, `RUSTDOCFLAGS="-D warnings"`) before a push that adds doc links.
 - A failing test's name is not its address. `every_handler_method_reports_its_outcome`
   exists in two files; item 10's fix went to the one in
   `method_routing_completeness.rs` and its re-run covered only that file,

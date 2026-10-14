@@ -33,8 +33,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   credential. gRPC, WebSocket and the SLIMRPC binding have no query string
   and refuse the same way.
 
+- **A caller is named by how it authenticated** (server; spec §13.1,
+  RFC 7519 §4.1.2; audit register R12). The bundled interceptors record
+  `bearer:<label>`, `api-key:<label>` and `jwt:<issuer>:<sub>` (the issuer
+  percent-encoded) where they recorded the bare label or `sub`. A `sub` is
+  unique only within its issuer, so one `sub` from two accepted issuers was
+  one caller: one task partition, one rate-limit budget, one approver. The
+  new identity is what caller isolation, the rate limiter, the audit actor,
+  `ApprovalRequest.requested_by` and `ApprovalGate::with_approvers` see.
+  **An approver allowlist of bare names matches nobody**: write it with
+  `auth::caller_id`, e.g. `caller_id::bearer("alice")`. Code that compares
+  `CallContext::caller_identity()` against a label must compare against the
+  qualified form. **Stored partitions keep their old keys until migrated**:
+  run `migrate_caller_keys` once on each SQLite or PostgreSQL tenant-aware
+  task and push-config store (see Added), or each caller's tasks and
+  webhooks are not found under its new identity. A pending approval stored
+  before the upgrade names its requester bare; the four-eyes check still
+  refuses that requester, under any issuer.
+- **A JWT with no `sub` is refused under caller isolation** (server; audit
+  register R12). It authenticated and named nobody, and under the default
+  isolation was served the tenant's shared records. It is now refused with
+  `PermissionDenied` unless callers share tasks
+  (`share_tasks_across_callers`).
+
 ### Added
 
+- **`migrate_caller_keys`** on `TenantAwareSqliteTaskStore`,
+  `TenantAwarePostgresTaskStore`, `TenantAwareSqlitePushConfigStore` and
+  `TenantAwarePostgresPushConfigStore`, with `store::caller_keys` (server;
+  audit register R12). The old key does not record the scheme or issuer, so
+  the deployer gives a map from an old caller name to its new identity;
+  `caller_keys::bearer_labels`, `api_key_labels` and `jwt_subjects(issuer)`
+  cover a deployment that used one authenticator. One transaction per call:
+  a task moves with its logged events and idempotency keys, a sealed push
+  config is opened under its old partition and sealed again under the new
+  one, and a task id the new partition already holds refuses the whole run.
+  A second run moves nothing.
+- **`auth::caller_id`** (server): `bearer`, `api_key` and `jwt` build the
+  identities the bundled interceptors record.
 - **`DispatchConfig::with_agent_card_max_age`** (server; spec §8.6.1: the
   card's `max-age` SHOULD suit how often it changes). The JSON-RPC, REST
   and axum dispatchers served the public card with `max-age=3600` and no
@@ -969,6 +1005,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A v0.3 agent card is read with its legacy fields** (client; spec App.
+  A.2, A.2.2). A card fetched from its well-known path, or returned by
+  `GetExtendedAgentCard`, that names its address with v0.3's top-level
+  `url`, `preferredTransport` and `additionalInterfaces` has them folded
+  into `supportedInterfaces` (with the card's `protocolVersion`, or `0.3`),
+  and `supportsAuthenticatedExtendedCard` or `supportsExtendedAgentCard` is
+  read as `capabilities.extendedAgentCard`. A field the v1.0 form sets wins.
+  Each legacy field found is named in a `tracing` warning. Such a card used
+  to come back with no interfaces and no extended card; interface
+  selection still passes over a 0.3 interface for a 1.x one.
 - **A database that cannot answer for now is a temporary failure** (server,
   `a2a-protocol-slimrpc`; spec §3.3.2: servers SHOULD tell temporary failures
   from permanent ones). Every SQL store answered every database error as

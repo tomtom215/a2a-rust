@@ -105,9 +105,11 @@ A shared counter makes the limit global. It does not make it *per caller* —
 that depends on `CallContext::caller_identity`, and only an authentication
 interceptor can supply one:
 
-- `JwtAuthInterceptor` records the validated `sub` automatically.
+- `JwtAuthInterceptor` records the validated issuer and `sub` automatically,
+  as `jwt:<issuer>:<sub>`.
 - `ApiKeyAuthInterceptor::with_labelled_keys` and
-  `BearerTokenAuthInterceptor::with_labelled_tokens` record a label you choose.
+  `BearerTokenAuthInterceptor::with_labelled_tokens` record a label you
+  choose, as `api-key:<label>` and `bearer:<label>`.
 
 The label is separate from the credential on purpose. A caller key reaches the
 rate-limit table your replicas share, and can reach logs and metrics; a bearer

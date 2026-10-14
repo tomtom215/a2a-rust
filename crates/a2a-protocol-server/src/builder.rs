@@ -92,9 +92,9 @@ pub(crate) enum CallerIsolation {
     /// authenticating interceptor.
     Shared,
     /// A partition per identified caller; a request no interceptor identified
-    /// (an unlabelled bearer token or API key, a JWT without `sub`) stays in
-    /// the tenant's shared records, as it would with no isolation. The
-    /// default with an authenticating interceptor.
+    /// (an unlabelled bearer token or API key) stays in the tenant's shared
+    /// records, as it would with no isolation, and a JWT without `sub` is
+    /// refused. The default with an authenticating interceptor.
     IdentifiedCallers,
     /// A partition per caller, and a request no interceptor identified is
     /// refused: [`RequestHandlerBuilder::isolate_tasks_by_caller`].
@@ -531,9 +531,9 @@ impl RequestHandlerBuilder {
     /// Partitioning is already **the default whenever an interceptor
     /// [`authenticates`](crate::interceptor::ServerInterceptor::authenticates)**,
     /// with one difference: by default a request no interceptor identified (an
-    /// unlabelled bearer token or API key, a JWT without `sub`) keeps the
-    /// tenant's shared records, as it would with no isolation, so credentials
-    /// that name nobody behave as before. Call this when every caller must be
+    /// unlabelled bearer token or API key) keeps the tenant's shared records,
+    /// as it would with no isolation, so credentials that name nobody behave
+    /// as before. A JWT without `sub` is refused under either. Call this when every caller must be
     /// identified: such a request is then refused with `PermissionDenied`, and
     /// `build()` refuses a chain with no authenticating interceptor.
     ///

@@ -72,8 +72,9 @@ let handler = RequestHandlerBuilder::new(MyAgent)
 ```
 
 Records name the caller only when authentication does: give each credential
-a label (`with_labelled_tokens`, `with_labelled_keys`), or use JWT, whose
-`sub` becomes the subject. The recording interceptor is placed first in the
+a label (`with_labelled_tokens`, `with_labelled_keys`), or use JWT. The
+subject is the scheme and the name together: `bearer:<label>`,
+`api-key:<label>`, or `jwt:<issuer>:<sub>` (`auth::caller_id` builds each). The recording interceptor is placed first in the
 chain whatever order you add interceptors in, so refused calls are recorded
 too.
 

@@ -28,6 +28,8 @@
 //! current tenant, ordered by `(updated_at DESC, id DESC)` with a composite
 //! row-value cursor. `updated_at` is written at millisecond precision.
 
+mod caller_keys;
+
 use std::future::Future;
 use std::pin::Pin;
 

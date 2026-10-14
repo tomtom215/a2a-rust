@@ -138,6 +138,7 @@ On the server, `with_approval_gate` decides which decisions reach the executor:
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 use a2a_protocol_server::approval::ApprovalGate;
+use a2a_protocol_server::auth::caller_id;
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};
 # struct MyAgent;
 # a2a_protocol_server::agent_executor!(MyAgent, |_ctx, _q| async { Ok(()) });
@@ -146,8 +147,11 @@ let handler = RequestHandlerBuilder::new(MyAgent)
     .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
         ("token-a", "alice"), ("token-b", "bob"), ("token-agent", "billing-agent"),
     ]))
-    // Only these two may approve, and never the caller whose run asked.
-    .with_approval_gate(ApprovalGate::new().with_approvers(["alice", "bob"]))
+    // Only these two may approve, and never the caller whose run asked. The
+    // bearer interceptor names them `bearer:alice` and `bearer:bob`.
+    .with_approval_gate(
+        ApprovalGate::new().with_approvers([caller_id::bearer("alice"), caller_id::bearer("bob")]),
+    )
     // The approver has to reach the requester's task.
     .share_tasks_across_callers()
     .build();

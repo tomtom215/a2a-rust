@@ -27,7 +27,7 @@ release text; the ledger's own numbering).
 
 | Id | Area | Recommendation | Breaks | Status |
 |---|---|---|---|---|
-| R12 | JWT caller identity | key by issuer and subject; refuse a token with no `sub` | re-keys stored partitions (a one-shot migration per store) | approved |
+| R12 | JWT caller identity | key by issuer and subject; refuse a token with no `sub` | re-keys stored partitions (a one-shot migration per store); bare approver allowlists | done |
 | R13 | SLIMRPC caller identity | move to agntcy-slim-rpc 3.x and record the verified peer | the binding's API (unpublished) | approved |
 | R19 | `Struct` error details | write ProtoJSON `Any` (`{"@type", "value"}`), read both shapes | a2a-go reading our `data` | done; a2a-go report drafted, not filed |
 | R21 | JSON-RPC notifications | execute, never reply | a client that relied on a reply | done |
@@ -79,6 +79,47 @@ because the scheme+issuer key also changes what an approver allowlist,
 **Decided (2026-10-14): a one-shot migration per store** that rewrites the
 old partition keys to the scheme+issuer+subject form; the stores read only
 the new key. This replaces the earlier "read old keys one release".
+
+**Decided (2026-10-14), the design.** The qualified identity is used
+everywhere the identity is: partitions, the rate limiter, the audit actor,
+`requested_by`, the four-eyes check and the approver allowlist. The
+migration takes a map from old caller name to new identity, given by the
+deployer, because the old key records neither scheme nor issuer.
+
+**Done (2026-10-14).**
+- `auth::caller_id` builds `bearer:<label>`, `api-key:<label>` and
+  `jwt:<issuer>:<sub>`. The issuer is percent-encoded (`%`, `:`) so the
+  form is injective: issuer `a:b` with subject `c` and issuer `a` with
+  subject `b:c` would otherwise both be `jwt:a:b:c`.
+- The three bundled interceptors record it.
+- `enter_caller_partition` refuses a JWT with no `sub` with
+  `PermissionDenied` unless callers share tasks.
+- `migrate_caller_keys` on the four persistent tenant-aware stores, with
+  `store::caller_keys` (the helpers pass over names already in the new
+  form, so a second run moves nothing). A task store copies each moved
+  task, moves its logged events and idempotency keys, then deletes the
+  original, because the event log's foreign key has no `ON UPDATE`; a
+  push-config store opens each config under the old partition and seals it
+  under the new one. One transaction per run.
+- Narrowed from the option as put to the maintainer: `requested_by` in
+  stored pending approvals is not rewritten. The four-eyes check instead
+  also treats a bare `requested_by` equal to the approver's unqualified
+  name as the same caller. That covers the plain (non-tenant) stores a
+  deployment whose callers share tasks keeps approvals in, which no
+  partition migration reaches; it errs toward refusing (an `alice` from
+  another issuer is refused too).
+- Also found: the ITK's ACTS guard compared the identity with the bare
+  label and would have stopped refusing its limited caller; it compares
+  with `caller_id::bearer` now, under a new unit test that fails with the
+  old comparison.
+- Tests: `tests/jwt_caller_identity.rs` (two issuers, a sub-less token
+  under isolation and when sharing; two of three fail on the old source,
+  the third is the sharing baseline), `tests/caller_key_migration.rs`
+  (SQLite: tasks, events, keys, a collision, a sealed config), two Postgres
+  tests in `postgres_store_tests.rs` (run against a local PostgreSQL 16),
+  and unit tests in `caller_id`, `caller_keys` and `approval::tests`.
+  Hand mutants: 29, all killed (11 on the identities and the refusal, 18
+  on the gate and the four migrations).
 
 ## R13 — SLIMRPC records no caller identity
 
@@ -378,7 +419,7 @@ failed before the change.
 | §12 (line 2977) and §5.4 (line 1194), medium/low: custom bindings define "equivalent error code mappings that preserve the semantic meaning" | SLIMRPC follows its own spec's table (UNIMPLEMENTED where A2A's gRPC column says FAILED_PRECONDITION) | **Done**: both MUSTs TESTED. The text asks for an equivalent mapping that preserves meaning, not the gRPC column. The upstream report is drafted for the maintainer, not filed. |
 | §13.3 (line 3164): no card and no extended card | `-32007 ExtendedAgentCardNotConfigured` (`crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:83-87`, before the change) | **Done**: `UnsupportedOperationError`; a handler with neither card cannot serve the operation, and `-32007` asserts a capability it cannot know is declared. |
 | proto `Artifact.parts` (line 287): "Must contain at least one part" | an `append: true` chunk with no parts was accepted (`crates/a2a-protocol-server/src/streaming/event_queue/content.rs:36-37`, before the change), and one for an unknown artifact id stored a zero-part artifact | **Done**: refused at the queue write and dropped by both processors. |
-| App. A.2 (line 3421): clients prefer new names, dual-handle, warn on legacy forms | legacy enum spellings and `AgentCard.url` parsed; no fallback for `supportsAuthenticatedExtendedCard`; no warning; `url` not folded into `supportedInterfaces` | Implement: the fallback, a warning (client, `tracing`), and `url` plus `preferredTransport` folded into an interface. |
+| App. A.2 (line 3421): clients prefer new names, dual-handle, warn on legacy forms | legacy enum spellings and `AgentCard.url` parsed; no fallback for `supportsAuthenticatedExtendedCard`; no warning; `url` not folded into `supportedInterfaces` | **Done** (`crates/a2a-protocol-client/src/legacy_card.rs`): a fetched or extended card's `url`, `preferredTransport` and `additionalInterfaces` fold into `supportedInterfaces`, `supportsAuthenticatedExtendedCard` and A.2.2's `supportsExtendedAgentCard` into `capabilities.extendedAgentCard`, and each is named in a `tracing` warning. Not done: A.2.1's `kind` discriminator on parts and events, which only a v0.3 interface sends and which the client never selects. |
 | §5.7 (line 1263): required arrays non-empty | `ListTasksResponse.tasks` may be empty (the spec contradicts itself); `HotReloadAgentCardHandler::update` does not validate | Report the contradiction upstream; add a validating `try_update`, deprecate `update`. |
 | §8.1 (line 1970): a server MUST make an agent card available | JSON-RPC, REST and axum serve it; WebSocket and gRPC serve none | Serve `/.well-known/agent-card.json` from the WebSocket listener, and from the gRPC server through tonic's HTTP router. |
 | §14 (line 3342): implementations SHOULD support HTTPS | only gRPC terminates TLS | TLS on the HTTP listeners under `tls-rustls`. |

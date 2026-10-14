@@ -356,7 +356,8 @@ impl RequestHandler {
     /// `PermissionDenied` when isolation was asked for explicitly
     /// ([`isolate_tasks_by_caller`](crate::RequestHandlerBuilder::isolate_tasks_by_caller))
     /// and no interceptor established who the caller is: there is then no
-    /// partition that is safe to serve. `Internal` if the request has no
+    /// partition that is safe to serve. Under any isolation, also for a JWT
+    /// that authenticated with no `sub`. `Internal` if the request has no
     /// caller slot to fill, which would mean a handler entry point that does
     /// not open one.
     pub(crate) fn enter_caller_partition(
@@ -368,6 +369,17 @@ impl RequestHandler {
             return Ok(());
         }
         let Some(caller) = call_ctx.caller_identity() else {
+            // A JWT with no `sub` authenticated and names nobody; serving it
+            // the tenant's shared partition would hand an anonymous token
+            // every unattributed task (audit register R12).
+            if call_ctx.auth_scheme() == Some("jwt") {
+                return Err(crate::error::ServerError::Protocol(
+                    a2a_protocol_types::error::A2aError::permission_denied(
+                        "this agent isolates tasks by caller, and the JWT has no `sub` \
+                         claim to name the caller by",
+                    ),
+                ));
+            }
             if self.caller_isolation == CallerIsolation::IdentifiedCallers {
                 return Ok(());
             }

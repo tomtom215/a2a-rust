@@ -190,6 +190,7 @@ fn to_a2a_error(e: &sqlx::Error) -> A2aError {
     crate::sql_error::sql_error(crate::sql_error::Db::Postgres, "postgres error", e)
 }
 
+mod caller_keys;
 mod store_impl;
 
 #[cfg(test)]

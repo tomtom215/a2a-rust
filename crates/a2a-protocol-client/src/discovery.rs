@@ -596,8 +596,10 @@ async fn fetch_card_with_metadata(
             serde_json::from_slice(&body_bytes).map_err(ClientError::Serialization)?;
         verify_card_signatures(&received, options)?;
     }
-    let card =
-        serde_json::from_slice::<AgentCard>(&body_bytes).map_err(ClientError::Serialization)?;
+    let mut card: serde_json::Value =
+        serde_json::from_slice(&body_bytes).map_err(ClientError::Serialization)?;
+    crate::legacy_card::read_as_current(&mut card);
+    let card = serde_json::from_value::<AgentCard>(card).map_err(ClientError::Serialization)?;
     Ok((card, etag, last_modified))
 }
 

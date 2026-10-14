@@ -30,7 +30,7 @@ async fn a_labelled_api_key_names_its_caller() {
 
     assert_eq!(
         ctx.caller_identity(),
-        Some("globex"),
+        Some("api-key:globex"),
         "the second key's label, so the match is by credential and not by position"
     );
 }
@@ -46,7 +46,7 @@ async fn the_credential_never_becomes_the_identity() {
     auth.before(&ctx).await.expect("accepted");
 
     let identity = ctx.caller_identity().expect("an identity was recorded");
-    assert_eq!(identity, "acme");
+    assert_eq!(identity, "api-key:acme");
     assert!(
         !identity.contains("sekrit"),
         "the credential must not appear in the identity"
@@ -89,7 +89,7 @@ async fn a_labelled_bearer_token_names_its_caller() {
     let ctx = ctx_with_header("authorization", "Bearer tok-b");
     auth.before(&ctx).await.expect("accepted");
 
-    assert_eq!(ctx.caller_identity(), Some("team-b"));
+    assert_eq!(ctx.caller_identity(), Some("bearer:team-b"));
 }
 
 /// The payoff, end to end: authentication names the caller, and the rate
@@ -141,7 +141,7 @@ async fn authentication_gives_each_caller_its_own_budget() {
         .run_before(&ctx)
         .await
         .expect("a different caller has a different budget");
-    assert_eq!(ctx.caller_identity(), Some("globex"));
+    assert_eq!(ctx.caller_identity(), Some("api-key:globex"));
 }
 
 // ── labelled_constant_time_match ────────────────────────────────────────

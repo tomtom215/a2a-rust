@@ -176,6 +176,41 @@ fn who_may_approve() {
     );
 }
 
+/// A request stored before 0.15 names its requester bare (`alice`); the same
+/// caller now authenticates as `bearer:alice` or `jwt:<issuer>:alice`. The
+/// four-eyes rule must still recognise them, or an upgrade would let a
+/// requester approve their own pending action (audit register R12). It errs
+/// toward refusing: an `alice` from another issuer is refused too.
+#[test]
+fn a_requester_named_before_0_15_still_cannot_approve() {
+    let (task, req) = pending(Some("alice"));
+    let m = answer(&ApprovalDecision::approve(&req), "t-1");
+    for same in [
+        crate::auth::caller_id::bearer("alice"),
+        crate::auth::caller_id::api_key("alice"),
+        crate::auth::caller_id::jwt(Some("https://idp.example"), "alice"),
+    ] {
+        denied(
+            &ApprovalGate::new().check(Some(&task), &m, &caller(Some(&same))),
+            "someone other than",
+        );
+    }
+    for other in [
+        crate::auth::caller_id::bearer("bob"),
+        crate::auth::caller_id::jwt(Some("https://idp.example"), "bob"),
+        // An unqualified identity a custom interceptor set is compared as is.
+        "malice".to_owned(),
+    ] {
+        assert!(
+            ApprovalGate::new()
+                .check(Some(&task), &m, &caller(Some(&other)))
+                .unwrap()
+                .is_some(),
+            "{other} is not the requester"
+        );
+    }
+}
+
 /// A request whose run had no authenticated caller names no requester, so
 /// the four-eyes rule has nothing to compare and any allowed approver passes.
 #[test]
@@ -276,7 +311,7 @@ async fn an_approval_flows_through_the_gate_to_the_executor() {
         .expect("the request is on the status message");
     assert_eq!(
         req.requested_by.as_deref(),
-        Some("alice"),
+        Some("bearer:alice"),
         "set by the server"
     );
 
@@ -288,7 +323,7 @@ async fn an_approval_flows_through_the_gate_to_the_executor() {
     decision.id = MessageId::new("a-2");
     let done = send(&h, "t-bob", decision).await.unwrap();
     assert_eq!(done.status.state, TaskState::Completed);
-    assert_eq!(result_text(&done), "Approve by bob");
+    assert_eq!(result_text(&done), "Approve by bearer:bob");
 }
 
 /// Isolated by caller, nobody but Alice reaches Alice's task, so a gate that
@@ -349,7 +384,7 @@ async fn a_self_approving_gate_works_with_caller_isolation() {
     decision.id = MessageId::new("a-2");
     let done = send(&h, "t-alice", decision).await.unwrap();
     assert_eq!(done.status.state, TaskState::Completed);
-    assert_eq!(result_text(&done), "Approve by alice");
+    assert_eq!(result_text(&done), "Approve by bearer:alice");
 }
 
 #[tokio::test]
@@ -427,10 +462,10 @@ async fn an_admitted_decision_is_audited_with_the_approver() {
         .collect();
     assert_eq!(approvals.len(), 1, "{records:#?}");
     let r = approvals[0];
-    assert_eq!(r.actor.as_ref().expect("actor").subject, "bob");
+    assert_eq!(r.actor.as_ref().expect("actor").subject, "bearer:bob");
     assert_eq!(r.task_id.as_deref(), Some(asked.id.0.as_str()));
     assert_eq!(r.digests["action"], "sha256:aa");
     assert_eq!(r.detail["requestId"], "req-1");
     assert_eq!(r.detail["decision"], "deny");
-    assert_eq!(r.detail["requestedBy"], "alice");
+    assert_eq!(r.detail["requestedBy"], "bearer:alice");
 }

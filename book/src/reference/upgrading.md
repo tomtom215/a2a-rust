@@ -525,6 +525,52 @@ with no query parameters as before and refuse one with them
 (`ClientError::InvalidAuthScheme`). Override both if your transport has a URL
 to put them in. gRPC, WebSocket and the SLIMRPC binding refuse such a call.
 
+### A caller is named by how it authenticated
+
+The bundled interceptors record `bearer:<label>`, `api-key:<label>` and
+`jwt:<issuer>:<sub>` where they recorded the bare label or `sub`, so one `sub`
+from two issuers is two callers. Three things follow.
+
+An approver allowlist, or anything else that compares against an identity,
+names the new form. `auth::caller_id` builds it:
+
+```rust
+use a2a_protocol_server::approval::ApprovalGate;
+use a2a_protocol_server::auth::caller_id;
+
+let gate = ApprovalGate::new().with_approvers([
+    caller_id::bearer("alice"),
+    caller_id::jwt(Some("https://idp.example"), "bob"),
+]);
+# let _ = gate;
+```
+
+Records a SQLite or PostgreSQL tenant-aware store keeps under caller
+isolation are keyed by the old name. Move them once, before serving with
+0.15, or each caller's tasks and webhooks are not found. The old key does not
+say how the caller authenticated, so you give the map; the helpers cover a
+deployment that used one authenticator:
+
+```rust,no_run
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+use a2a_protocol_server::store::caller_keys;
+use a2a_protocol_server::store::tenant_sqlite_store::TenantAwareSqliteTaskStore;
+
+let tasks = TenantAwareSqliteTaskStore::new("sqlite:tasks.db").await?;
+let moved = tasks.migrate_caller_keys(caller_keys::bearer_labels()).await?;
+println!("{} partitions, {} rows", moved.partitions, moved.rows);
+# Ok(())
+# }
+```
+
+Run it on the push-config store too, with its cipher set: a sealed config's
+context names its partition, and the migration seals it again under the new
+one. For several authenticators, pass your own `Fn(&str) -> Option<String>`
+returning the new identity of each old name, or `None` to leave it.
+
+A JWT with no `sub` is refused with `PermissionDenied` under caller isolation;
+it used to be served the tenant's shared records.
+
 ### Error codes some clients may match on
 
 - A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with

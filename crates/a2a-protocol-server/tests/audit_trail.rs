@@ -154,7 +154,7 @@ async fn every_call_and_event_is_recorded_and_attributable() {
     assert!(calls[0].actor.is_none(), "a refused caller has no identity");
     assert_eq!(calls[1].outcome.as_ref().unwrap().status, "ok");
     let alice = calls[1].actor.as_ref().unwrap();
-    assert_eq!(alice.subject, "alice@example.test");
+    assert_eq!(alice.subject, "bearer:alice@example.test");
     assert_eq!(alice.scheme.as_deref(), Some("bearer"));
     assert_eq!(
         calls[2].outcome.as_ref().unwrap().error.as_deref(),
@@ -171,7 +171,10 @@ async fn every_call_and_event_is_recorded_and_attributable() {
         .find(|r| r.kind == kind::RUN_STARTED)
         .expect("run.started");
     assert_eq!(run.task_id.as_deref(), Some(task_id.as_str()));
-    assert_eq!(run.actor.as_ref().unwrap().subject, "alice@example.test");
+    assert_eq!(
+        run.actor.as_ref().unwrap().subject,
+        "bearer:alice@example.test"
+    );
     assert!(run.digests.contains_key("message") && run.digests.contains_key("part.0"));
 
     // Every event of the task points at that run.
@@ -262,7 +265,7 @@ async fn a_cancel_request_names_who_asked() {
         .find(|r| r.kind == kind::CANCEL_REQUESTED)
         .expect("task.cancel_requested");
     assert_eq!(cancel.task_id.as_deref(), Some(task_id.as_str()));
-    assert_eq!(cancel.actor.as_ref().unwrap().subject, "bob");
+    assert_eq!(cancel.actor.as_ref().unwrap().subject, "bearer:bob");
     assert!(verify_chain(&records, &[], &[]).is_intact());
 }
 
