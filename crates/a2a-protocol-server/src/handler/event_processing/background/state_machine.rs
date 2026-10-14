@@ -63,6 +63,40 @@ fn refusal(e: &a2a_protocol_types::error::A2aError) -> Option<Outcome> {
     TerminalStateConflict::from_error(e).map(Outcome::Refused)
 }
 
+/// An event moved the task where `can_transition_to` forbids: mark the task
+/// failed, as the sync collector refuses the same event, so the state is
+/// consistent whichever path processed it (FIX(#6)). Shared by status updates
+/// and task snapshots.
+async fn fail_invalid_transition(
+    task_store: &dyn crate::store::TaskStore,
+    metrics: &dyn crate::metrics::Metrics,
+    task_id: &TaskId,
+    last_task: &mut Task,
+    current: TaskState,
+    next: TaskState,
+) -> Outcome {
+    trace_error!(
+        task_id = %task_id,
+        from = %current,
+        to = %next,
+        "invalid state transition rejected (background); marking task as failed"
+    );
+    last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
+    if let Err(e) = task_store.save_status_delta(last_task).await {
+        if let Some(refused) = refusal(&e) {
+            return refused;
+        }
+        trace_error!(
+            task_id = %task_id,
+            error = %e,
+            "background processor: failed to persist failed state after invalid transition"
+        );
+        metrics.on_persistence_error(persistence_operation::FAILED_STATE, e.metric_label());
+        return Outcome::NotPersisted;
+    }
+    Outcome::Persisted
+}
+
 /// Processes a single streaming event: validates state transitions, updates the
 /// task store, and triggers push delivery.
 ///
@@ -125,32 +159,10 @@ pub(super) async fn process_event_with(
                 };
             }
             if !current.can_transition_to(next) {
-                // FIX(#6): Match sync-mode behavior — invalid transitions are errors,
-                // not silent warnings. Mark the task as failed so the state is
-                // consistent regardless of transport mode.
-                trace_error!(
-                    task_id = %task_id,
-                    from = %current,
-                    to = %next,
-                    "invalid state transition rejected (background); marking task as failed"
-                );
-                last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                if let Err(e) = task_store.save_status_delta(last_task).await {
-                    if let Some(refused) = refusal(&e) {
-                        return refused;
-                    }
-                    trace_error!(
-                        task_id = %task_id,
-                        error = %e,
-                        "background processor: failed to persist failed state after invalid transition"
-                    );
-                    metrics.on_persistence_error(
-                        persistence_operation::FAILED_STATE,
-                        e.metric_label(),
-                    );
-                    return Outcome::NotPersisted;
-                }
-                return Outcome::Persisted;
+                return fail_invalid_transition(
+                    task_store, metrics, task_id, last_task, current, next,
+                )
+                .await;
             }
             // Save previous state so we can revert on failure.
             let prev_status = last_task.status.clone();
@@ -378,6 +390,27 @@ pub(super) async fn process_event_with(
             Outcome::Persisted
         }
         Ok(StreamResponse::Task(task)) => {
+            // A snapshot that changes the task's state is a transition, held
+            // to the rules a status update is (audit register R36(b)): until
+            // 2026-10-14 one moving `Working` back to `Submitted` was stored
+            // as written. Leaving a terminal state is refused here, as the
+            // status branch refuses it, rather than left to the store.
+            let (current, next) = (last_task.status.state, task.status.state);
+            if current != next {
+                if current.is_terminal() {
+                    return Outcome::Refused(TerminalStateConflict::new(
+                        task_id.clone(),
+                        current,
+                        next,
+                    ));
+                }
+                if !current.can_transition_to(next) {
+                    return fail_invalid_transition(
+                        task_store, metrics, task_id, last_task, current, next,
+                    )
+                    .await;
+                }
+            }
             let prev = last_task.clone();
             *last_task = task;
             if let Err(e) = task_store.save(last_task).await {
@@ -641,6 +674,147 @@ mod tests {
         assert_eq!(last_task.status.state, TaskState::Failed);
         let stored = task_store.get(&task_id).await.unwrap().unwrap();
         assert_eq!(stored.status.state, TaskState::Failed);
+    }
+
+    /// Audit register R36(b): a task snapshot is held to the same transition
+    /// rules as a status update. A snapshot moving `Working` back to
+    /// `Submitted` was stored as written, since only status updates went
+    /// through `can_transition_to`; it now marks the task failed, as the
+    /// status update in the test above does.
+    #[tokio::test]
+    async fn a_snapshot_moving_the_task_back_to_submitted_marks_it_failed() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t1");
+        task_store
+            .save(&make_task("t1", TaskState::Working))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t1", TaskState::Working);
+
+        let event: A2aResult<StreamResponse> =
+            Ok(StreamResponse::Task(make_task("t1", TaskState::Submitted)));
+        let outcome = process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
+        )
+        .await;
+
+        assert_eq!(outcome, Outcome::Persisted);
+        assert_eq!(last_task.status.state, TaskState::Failed);
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Failed);
+    }
+
+    /// A snapshot that keeps the task's state is not a transition: it is
+    /// stored as written, whatever else it changes.
+    #[tokio::test]
+    async fn a_snapshot_in_the_same_state_is_stored() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t1");
+        task_store
+            .save(&make_task("t1", TaskState::Working))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t1", TaskState::Working);
+        let mut snapshot = make_task("t1", TaskState::Working);
+        snapshot.metadata = Some(serde_json::json!({"seen": true}));
+
+        let outcome = process_event_bg(
+            Ok(StreamResponse::Task(snapshot)),
+            &task_id,
+            &mut last_task,
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
+        )
+        .await;
+
+        assert_eq!(outcome, Outcome::Persisted);
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Working);
+        assert!(stored.metadata.is_some(), "the snapshot was stored");
+    }
+
+    /// A snapshot leaving a terminal state is refused before the store sees
+    /// it, as a status update leaving one is: the task stays finished even
+    /// in a custom store without the terminal guard.
+    #[tokio::test]
+    async fn a_snapshot_leaving_a_terminal_state_is_refused_as_written() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-done");
+        task_store
+            .save(&make_task("t-done", TaskState::Completed))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-done", TaskState::Completed);
+
+        let outcome = process_event_bg(
+            Ok(StreamResponse::Task(make_task(
+                "t-done",
+                TaskState::Working,
+            ))),
+            &task_id,
+            &mut last_task,
+            deps(&task_store, &push_store),
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            Outcome::Refused(TerminalStateConflict::new(
+                task_id.clone(),
+                TaskState::Completed,
+                TaskState::Working
+            ))
+        );
+        assert_eq!(last_task.status.state, TaskState::Completed);
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Completed);
+    }
+
+    /// `Submitted` cannot move to `Submitted` (`can_transition_to` is false
+    /// for a state to itself), so the snapshot check must skip a snapshot
+    /// that keeps the state: a fresh task's first snapshot is stored.
+    #[tokio::test]
+    async fn a_submitted_snapshot_of_a_submitted_task_is_stored() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-new");
+        task_store
+            .save(&make_task("t-new", TaskState::Submitted))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-new", TaskState::Submitted);
+
+        let outcome = process_event_bg(
+            Ok(StreamResponse::Task(make_task(
+                "t-new",
+                TaskState::Submitted,
+            ))),
+            &task_id,
+            &mut last_task,
+            deps(&task_store, &push_store),
+        )
+        .await;
+
+        assert_eq!(outcome, Outcome::Persisted);
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Submitted);
     }
 
     fn deps<'a>(

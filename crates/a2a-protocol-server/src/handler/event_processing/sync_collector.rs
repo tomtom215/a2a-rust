@@ -521,6 +521,23 @@ impl SyncCollector {
                 }
             }
             Ok(StreamResponse::Task(task)) => {
+                // A snapshot that changes the task's state is a transition,
+                // refused as a status update's is (audit register R36(b));
+                // until 2026-10-14 it was stored as written.
+                let (current, next) = (last_task.status.state, task.status.state);
+                if current != next && !current.can_transition_to(next) {
+                    trace_warn!(
+                        task_id = %task_id,
+                        from = %current,
+                        to = %next,
+                        "invalid state transition in a task snapshot rejected"
+                    );
+                    return Err(ServerError::InvalidStateTransition {
+                        task_id: task_id.clone(),
+                        from: current,
+                        to: next,
+                    });
+                }
                 *last_task = task;
                 self.task_store.save(last_task).await?;
                 state.saw_task_shaped_event = true;
@@ -905,6 +922,92 @@ mod tests {
             ),
             "expected InvalidStateTransition error, got: {result:?}"
         );
+    }
+
+    /// Audit register R36(b): a task snapshot is held to the same transition
+    /// rules as a status update. `Working` back to `Submitted` was stored as
+    /// written; it is now the same `InvalidStateTransition` a status update
+    /// gets.
+    #[tokio::test]
+    async fn a_snapshot_moving_the_task_back_to_submitted_is_an_invalid_transition() {
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-snap-back");
+        task_store
+            .save(&make_task("t-snap-back", TaskState::Working))
+            .await
+            .unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = collected_queue();
+        writer
+            .write(StreamResponse::Task(make_task(
+                "t-snap-back",
+                TaskState::Working,
+            )))
+            .await
+            .unwrap();
+        writer
+            .write(StreamResponse::Task(make_task(
+                "t-snap-back",
+                TaskState::Submitted,
+            )))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let result = handler
+            .collect_events(reader, task_id.clone(), tokio::spawn(async {}))
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::ServerError::InvalidStateTransition {
+                    from: TaskState::Working,
+                    to: TaskState::Submitted,
+                    ..
+                })
+            ),
+            "expected InvalidStateTransition, got: {result:?}"
+        );
+    }
+
+    /// `can_transition_to` refuses `Submitted` to itself, so the snapshot
+    /// check must skip a snapshot that keeps the state: an executor's first
+    /// snapshot of a fresh task is stored, not refused.
+    #[tokio::test]
+    async fn a_submitted_snapshot_of_a_submitted_task_is_stored() {
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-snap-same");
+        task_store
+            .save(&make_task("t-snap-same", TaskState::Submitted))
+            .await
+            .unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let mut snapshot = make_task("t-snap-same", TaskState::Submitted);
+        snapshot.metadata = Some(serde_json::json!({"seen": true}));
+        let (writer, reader) = collected_queue();
+        writer.write(StreamResponse::Task(snapshot)).await.unwrap();
+        drop(writer);
+
+        let result = handler
+            .collect_events(reader, task_id.clone(), tokio::spawn(async {}))
+            .await;
+        assert!(
+            result.is_ok(),
+            "expected the snapshot stored, got: {result:?}"
+        );
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Submitted);
+        assert!(stored.metadata.is_some(), "the snapshot was stored");
     }
 
     // ── process_event: artifact update ──────────────────────────────────

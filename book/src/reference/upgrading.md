@@ -421,6 +421,15 @@ no exception for a chunk. An executor that ended a streamed artifact with an
 empty `lastChunk: true` chunk sets `lastChunk: true` on the chunk carrying the
 last part instead.
 
+### A task snapshot cannot move a task back to `Submitted`
+
+An executor's `Task` snapshot that changes the task's state is held to the
+transitions a status update is. For one moving a task back to `Submitted`,
+the background processor marks the task failed, and a blocking send answers
+`InvalidStateTransition` (an `InvalidParams` error), as each does for such a
+status update. One leaving a terminal state is refused. A snapshot in the
+task's current state is stored as before.
+
 ### Error codes some clients may match on
 
 - A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with

@@ -32,7 +32,7 @@ release text; the ledger's own numbering).
 | R19 | `Struct` error details | write ProtoJSON `Any` (`{"@type", "value"}`), read both shapes | a2a-go reading our `data` | approved |
 | R21 | JSON-RPC notifications | execute, never reply | a client that relied on a reply | approved |
 | R33 | first frame of a send stream | keep, documented | — | approved |
-| R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | approved |
+| R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | done |
 | R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | approved |
 | R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | approved |
 | R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | approved |
@@ -170,6 +170,12 @@ writes over a terminal state.
 **Recommendation: refuse it at the queue write**, as a status update with the
 same transition is refused, through the processors' existing mark-failed
 path. No test pins the current acceptance.
+
+**Done (2026-10-14).** Both processors now hold a snapshot that changes the
+task's state to `can_transition_to`: the background processor marks the task
+failed through the status branch's path and refuses a move out of a terminal
+state itself, and the sync collector answers `InvalidStateTransition`. A
+snapshot in the task's current state is stored as before.
 
 ## R41 — SLIMRPC believes a caller's `x-forwarded-for`
 

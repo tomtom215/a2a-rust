@@ -1191,6 +1191,21 @@ follow the text. The register's status column tracks what is done.
     implementations. Not mapped, deliberately: the general-purpose AI model
     chapter (Arts. 51-56; the SDK is not a model) and the authorities'
     chapters.
+14. `fix(server):` audit register R36(b) — a task snapshot that changes the
+    task's state is held to `can_transition_to`, as a status update is. The
+    background processor's invalid-transition path is now a shared helper
+    (`fail_invalid_transition`), so a snapshot moving `Working` back to
+    `Submitted` marks the task failed, and one leaving a terminal state is
+    refused as `TerminalStateConflict` before the store sees it; the sync
+    collector answers `InvalidStateTransition`. Six new tests; the two
+    "back to Submitted" tests failed before the change. Hand mutants, each
+    run against the server lib suite: `current != next` to `true` in the
+    background processor, removing its terminal refusal, dropping
+    `current != next` in the sync collector, and replacing the sync check
+    with `false` each fail one test. The third survived until the sync
+    collector's `a_submitted_snapshot_of_a_submitted_task_is_stored` was
+    added (`Submitted` to itself is the one same-state move
+    `can_transition_to` refuses).
 
 **Lessons, new this session.**
 - A failing test's name is not its address. `every_handler_method_reports_its_outcome`

@@ -354,6 +354,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A task snapshot is held to the state-transition rules a status update
+  is** (server; audit register R36(b)). An executor's `Task` snapshot was
+  stored without `can_transition_to`, so one moving a `Working` task back to
+  `Submitted` was stored as written. The background processor now marks the
+  task failed for such a snapshot and refuses one leaving a terminal state,
+  as it does for a status update; the sync collector answers
+  `InvalidStateTransition`. A snapshot that keeps the task's state is stored
+  as before.
+
 - **An appended artifact chunk with no parts is refused** (server; a2a.proto
   `Artifact.parts`, approved in the audit register). The event queue refused
   an artifact update with no parts unless it was an append, and the
