@@ -29,15 +29,19 @@ pub(super) fn unset_if_empty(field: &mut Option<String>) {
 pub(super) fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerResult<()> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return Err(ServerError::InvalidParams(format!(
-            "{name} must not be empty or whitespace-only"
-        )));
+        return Err(ServerError::InvalidField {
+            field: name.to_owned(),
+            message: format!("{name} must not be empty or whitespace-only"),
+        });
     }
     if trimmed.len() > max_length {
-        return Err(ServerError::InvalidParams(format!(
-            "{name} exceeds maximum length (got {}, max {max_length})",
-            trimmed.len()
-        )));
+        return Err(ServerError::InvalidField {
+            field: name.to_owned(),
+            message: format!(
+                "{name} exceeds maximum length (got {}, max {max_length})",
+                trimmed.len()
+            ),
+        });
     }
     Ok(())
 }
@@ -59,18 +63,25 @@ pub(super) fn task_id_param(raw: &str, max_length: usize) -> ServerResult<TaskId
 /// the same task is served over gRPC, so it would be representable on one
 /// binding but not another. Rejecting non-object metadata at ingress keeps every
 /// accepted task portable across all A2A transports.
+///
+/// `field` names the metadata in the message; `path` is its path in the
+/// request, which the error's `BadRequest` detail carries.
 pub(super) fn validate_metadata_object(
     metadata: Option<&serde_json::Value>,
     field: &str,
+    path: &str,
 ) -> ServerResult<()> {
     if let Some(value) = metadata
         && !value.is_object()
     {
-        return Err(ServerError::InvalidParams(format!(
-            "{field} metadata must be a JSON object (got {}); non-object metadata \
+        return Err(ServerError::InvalidField {
+            field: path.to_owned(),
+            message: format!(
+                "{field} metadata must be a JSON object (got {}); non-object metadata \
                  is not representable across all A2A transports (gRPC google.protobuf.Struct)",
-            json_kind(value)
-        )));
+                json_kind(value)
+            ),
+        });
     }
     Ok(())
 }
@@ -444,7 +455,7 @@ mod tests {
     fn validate_id_rejects_empty_string() {
         let err = validate_id("", "task_id", 1024).unwrap_err();
         assert!(
-            matches!(err, ServerError::InvalidParams(ref msg) if msg.contains("empty")),
+            matches!(err, ServerError::InvalidField { message: ref msg, .. } if msg.contains("empty")),
             "empty string should be rejected with InvalidParams: {err:?}"
         );
     }
@@ -453,7 +464,7 @@ mod tests {
     fn validate_id_rejects_whitespace_only() {
         let err = validate_id("   \t\n  ", "context_id", 1024).unwrap_err();
         assert!(
-            matches!(err, ServerError::InvalidParams(ref msg) if msg.contains("empty")),
+            matches!(err, ServerError::InvalidField { message: ref msg, .. } if msg.contains("empty")),
             "whitespace-only string should be rejected: {err:?}"
         );
     }
@@ -463,7 +474,7 @@ mod tests {
         let long_id = "a".repeat(2000);
         let err = validate_id(&long_id, "task_id", 1024).unwrap_err();
         assert!(
-            matches!(err, ServerError::InvalidParams(ref msg) if msg.contains("maximum length")),
+            matches!(err, ServerError::InvalidField { message: ref msg, .. } if msg.contains("maximum length")),
             "overly long ID should be rejected: {err:?}"
         );
     }
@@ -490,7 +501,7 @@ mod tests {
     fn validate_id_includes_field_name_in_error() {
         let err = validate_id("", "my_field", 1024).unwrap_err();
         assert!(
-            matches!(err, ServerError::InvalidParams(ref msg) if msg.contains("my_field")),
+            matches!(err, ServerError::InvalidField { message: ref msg, .. } if msg.contains("my_field")),
             "error message should contain the field name: {err:?}"
         );
     }

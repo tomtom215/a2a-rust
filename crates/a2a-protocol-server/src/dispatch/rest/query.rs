@@ -65,10 +65,9 @@ pub fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
 pub fn parse_query_param_u32(query: &str, key: &str) -> Result<Option<u32>, ServerError> {
     parse_query_param(query, key)
         .map(|v| {
-            v.parse::<u32>().map_err(|_| {
-                ServerError::InvalidParams(format!(
-                    "{key} must be a non-negative integer, not {v:?}"
-                ))
+            v.parse::<u32>().map_err(|_| ServerError::InvalidField {
+                field: key.to_owned(),
+                message: format!("{key} must be a non-negative integer, not {v:?}"),
             })
         })
         .transpose()
@@ -206,9 +205,10 @@ fn parse_query_param_bool(query: &str, key: &str) -> Result<Option<bool>, Server
         .map(|v| match v.to_ascii_lowercase().as_str() {
             "true" | "1" => Ok(true),
             "false" | "0" => Ok(false),
-            _ => Err(ServerError::InvalidParams(format!(
-                "{key} must be true or false, not {v:?}"
-            ))),
+            _ => Err(ServerError::InvalidField {
+                field: key.to_owned(),
+                message: format!("{key} must be true or false, not {v:?}"),
+            }),
         })
         .transpose()
 }
@@ -228,7 +228,10 @@ pub fn parse_list_tasks_query(
     let status = parse_query_param(query, "status")
         .map(|s| {
             serde_json::from_value(serde_json::Value::String(s.clone())).map_err(|_| {
-                ServerError::InvalidParams(format!("status must be a task state, not {s:?}"))
+                ServerError::InvalidField {
+                    field: "status".into(),
+                    message: format!("status must be a task state, not {s:?}"),
+                }
             })
         })
         .transpose()?;
@@ -562,7 +565,7 @@ mod tests {
             assert!(
                 matches!(
                     parse_query_param_u32(bad, "historyLength"),
-                    Err(ServerError::InvalidParams(m)) if m.starts_with("historyLength ")
+                    Err(ServerError::InvalidField { message: m, .. }) if m.starts_with("historyLength ")
                 ),
                 "{bad}"
             );
@@ -620,7 +623,7 @@ mod tests {
             assert!(
                 matches!(
                     parse_query_param_bool(bad, "flag"),
-                    Err(ServerError::InvalidParams(m)) if m.starts_with("flag ")
+                    Err(ServerError::InvalidField { message: m, .. }) if m.starts_with("flag ")
                 ),
                 "{bad}"
             );

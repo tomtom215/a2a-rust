@@ -43,9 +43,10 @@ impl RequestHandler {
         if let Some(ps) = params.page_size
             && !(1..=100).contains(&ps)
         {
-            let err = crate::error::ServerError::InvalidParams(format!(
-                "pageSize must be between 1 and 100 inclusive, got {ps}"
-            ));
+            let err = crate::error::ServerError::InvalidField {
+                field: "pageSize".into(),
+                message: format!("pageSize must be between 1 and 100 inclusive, got {ps}"),
+            };
             self.metrics.on_error("ListTasks", err.metric_label());
             self.metrics.on_latency("ListTasks", start.elapsed());
             return Err(err);
@@ -66,9 +67,12 @@ impl RequestHandler {
         if let Some(ref after) = params.status_timestamp_after
             && a2a_protocol_types::parse_iso8601_to_unix_millis(after).is_none()
         {
-            let err = crate::error::ServerError::InvalidParams(format!(
-                "statusTimestampAfter is not a valid ISO 8601 timestamp: {after:?}"
-            ));
+            let err = crate::error::ServerError::InvalidField {
+                field: "statusTimestampAfter".into(),
+                message: format!(
+                    "statusTimestampAfter is not a valid ISO 8601 timestamp: {after:?}"
+                ),
+            };
             self.metrics.on_error("ListTasks", err.metric_label());
             self.metrics.on_latency("ListTasks", start.elapsed());
             return Err(err);
@@ -242,7 +246,7 @@ mod tests {
             .await
             .expect_err("malformed statusTimestampAfter must be rejected");
         assert!(
-            matches!(err, crate::error::ServerError::InvalidParams(ref m) if m.contains("statusTimestampAfter")),
+            matches!(err, crate::error::ServerError::InvalidField { message: ref m, .. } if m.contains("statusTimestampAfter")),
             "expected InvalidParams naming the field, got {err:?}"
         );
     }

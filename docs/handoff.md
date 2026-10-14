@@ -1298,6 +1298,24 @@ follow the text. The register's status column tracks what is done.
     `error_details`, from before this change; both are re-pointed at
     `build_sse_response` (362).
 
+21. `fix(server):` §3.3.2 SHOULD — the handler's own request checks carry
+    a `google.rpc.BadRequest` naming the field, through the new
+    `ServerError::InvalidField { field, message }` (same code, status,
+    message and metric label as `InvalidParams`). Changing `InvalidParams`'
+    payload instead fails the semver gate at 0.14.1. 35 tests matched these
+    errors as `InvalidParams` and were rewritten mechanically inside their
+    own bodies; code outside this repository that does the same still
+    compiles and stops matching, which the upgrading guide spells out. New:
+    `a_handler_check_names_the_field_over_http_json` and `..._over_jsonrpc`
+    (both failed with the old sources restored) and an `error/tests.rs`
+    unit test. Ledger: the §3.3.2 SHOULD (544) PARTIAL to TESTED (TESTED
+    320, PARTIAL 17); eight `impl_evidence` lines the edit moved were
+    re-pointed by their text. R67 (query-string API keys) and R12 (issuer
+    in the caller key) are recorded in the register as waiting on the
+    maintainer: R67's approved option breaks `ClientRequest`, which needs a
+    0.15 release; R12's read-through needs a design decision across six
+    stores.
+
 **Lessons, new this session.**
 - A failing test's name is not its address. `every_handler_method_reports_its_outcome`
   exists in two files; item 10's fix went to the one in

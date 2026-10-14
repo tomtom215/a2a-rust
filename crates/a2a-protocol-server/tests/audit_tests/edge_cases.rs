@@ -88,7 +88,7 @@ async fn a_page_size_over_100_is_invalid_params() {
 
     let result = handler.on_list_tasks(params, None).await;
     assert!(
-        matches!(&result, Err(a2a_protocol_server::error::ServerError::InvalidParams(m)) if m.contains("pageSize")),
+        matches!(&result, Err(a2a_protocol_server::error::ServerError::InvalidField { message: m, .. }) if m.contains("pageSize")),
         "{result:?}"
     );
 }

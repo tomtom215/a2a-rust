@@ -29,6 +29,18 @@ pub enum ServerError {
     TaskNotCancelable(TaskId),
     /// Invalid method parameters.
     InvalidParams(String),
+    /// Invalid method parameters, with the field at fault: answered as
+    /// `InvalidParams` carrying a `google.rpc.BadRequest` detail that names
+    /// the field (spec §3.3.2: well-known error types "SHOULD be used where
+    /// applicable"; audit register, the §3.3.2 row). The handler's own
+    /// request checks named the field in the message only.
+    InvalidField {
+        /// The field's path in the request, as the JSON bindings spell it
+        /// (`message.parts`, `message.parts[0].raw`).
+        field: String,
+        /// What is wrong with it.
+        message: String,
+    },
     /// JSON serialization/deserialization failure.
     Serialization(serde_json::Error),
     /// Hyper HTTP error.
@@ -76,7 +88,9 @@ impl fmt::Display for ServerError {
         match self {
             Self::TaskNotFound(id) => write!(f, "task not found: {id}"),
             Self::TaskNotCancelable(id) => write!(f, "task not cancelable: {id}"),
-            Self::InvalidParams(msg) => write!(f, "invalid params: {msg}"),
+            Self::InvalidParams(msg) | Self::InvalidField { message: msg, .. } => {
+                write!(f, "invalid params: {msg}")
+            }
             Self::Serialization(e) => write!(f, "serialization error: {e}"),
             Self::Http(e) => write!(f, "HTTP error: {e}"),
             Self::HttpClient(msg) => write!(f, "HTTP client error: {msg}"),
@@ -124,7 +138,7 @@ impl ServerError {
         match self {
             Self::TaskNotFound(_) => "task_not_found",
             Self::TaskNotCancelable(_) => "task_not_cancelable",
-            Self::InvalidParams(_) => "invalid_params",
+            Self::InvalidParams(_) | Self::InvalidField { .. } => "invalid_params",
             Self::Serialization(_) => "serialization",
             Self::Http(_) => "http",
             Self::HttpClient(_) => "http_client",
@@ -275,6 +289,11 @@ impl ServerError {
             Self::TaskNotFound(id) => A2aError::task_not_found(id),
             Self::TaskNotCancelable(id) => A2aError::task_not_cancelable(id),
             Self::InvalidParams(msg) => A2aError::invalid_params(msg.clone()),
+            Self::InvalidField { field, message } => A2aError::with_data(
+                ErrorCode::InvalidParams,
+                message.clone(),
+                crate::streaming::sse::bad_request_detail(field, message),
+            ),
             Self::Serialization(e) => A2aError::parse_error(e.to_string()),
             Self::MethodNotFound(m) => {
                 A2aError::new(ErrorCode::MethodNotFound, format!("Method not found: {m}"))

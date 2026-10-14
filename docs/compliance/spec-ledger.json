@@ -564,7 +564,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:78",
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:82",
     "crates/a2a-protocol-types/src/task.rs:429"
    ],
    "test_evidence": [
@@ -882,12 +882,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:46",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:47"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:49",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:50"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1288 push_ops_rejected_when_card_lacks_capability",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:729 set_push_config_without_sender_returns_push_not_supported"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:741 set_push_config_without_sender_returns_push_not_supported"
    ],
    "notes": "",
    "auditor": "A",
@@ -902,10 +902,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:54"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:57"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1270 set_push_config_for_missing_task_returns_task_not_found"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1294 set_push_config_for_missing_task_returns_task_not_found"
    ],
    "notes": "",
    "auditor": "A",
@@ -920,7 +920,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:40",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:43",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:72"
    ],
    "test_evidence": [
@@ -942,7 +942,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:96",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:99",
     "crates/a2a-protocol-server/src/push/config_store.rs:251"
    ],
    "test_evidence": [
@@ -963,11 +963,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:64",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:257"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:261"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1288 push_ops_rejected_when_card_lacks_capability",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:743 every_push_op_without_a_sender_returns_push_not_supported",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:755 every_push_op_without_a_sender_returns_push_not_supported",
     "crates/a2a-protocol-server/src/handler/capability.rs:208 no_sender_rejects_push"
    ],
    "notes": "Get answers PushNotificationNotSupported when the card does not declare pushNotifications or no push sender is wired (ensure_push_supported). Until 2026-10-13 Get checked the card only: with no sender it still ran against the store, answering what Create could never have stored.",
@@ -984,10 +984,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:219"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:223"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1372 get_push_config_not_found_returns_task_not_found",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1396 get_push_config_not_found_returns_task_not_found",
     "crates/a2a-protocol-server/tests/handler_tests/push_config.rs:112 get_push_config_not_found"
    ],
    "notes": "",
@@ -1003,7 +1003,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:219"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:223"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/push_config.rs:25 push_config_crud_lifecycle"
@@ -1043,11 +1043,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:64",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:329"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:333"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1288 push_ops_rejected_when_card_lacks_capability",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:743 every_push_op_without_a_sender_returns_push_not_supported",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:755 every_push_op_without_a_sender_returns_push_not_supported",
     "crates/a2a-protocol-server/src/handler/capability.rs:208 no_sender_rejects_push"
    ],
    "notes": "List answers PushNotificationNotSupported when the card does not declare pushNotifications or no push sender is wired (ensure_push_supported). Until 2026-10-13 List checked the card only: with no sender it still ran against the store, answering what Create could never have stored.",
@@ -1064,7 +1064,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:280"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:284"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs list_push_configs_for_an_unknown_task_is_task_not_found",
@@ -1084,7 +1084,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:280"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:284"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/push_config.rs:25 push_config_crud_lifecycle",
@@ -1104,7 +1104,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:449",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:251"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:255"
    ],
    "test_evidence": [],
    "notes": "pageSize/pageToken are ignored and nextPageToken is always None; the list is bounded by max_push_configs_per_task.",
@@ -1121,11 +1121,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:64",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:400"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:404"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1288 push_ops_rejected_when_card_lacks_capability",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:743 every_push_op_without_a_sender_returns_push_not_supported",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:755 every_push_op_without_a_sender_returns_push_not_supported",
     "crates/a2a-protocol-server/src/handler/capability.rs:208 no_sender_rejects_push"
    ],
    "notes": "Delete answers PushNotificationNotSupported when the card does not declare pushNotifications or no push sender is wired (ensure_push_supported). Until 2026-10-13 Delete checked the card only: with no sender it still ran against the store, answering what Create could never have stored.",
@@ -1142,7 +1142,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:345"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:349"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs delete_push_config_of_an_unknown_task_is_task_not_found",
@@ -1162,7 +1162,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:345",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:349",
     "crates/a2a-protocol-server/src/push/config_store.rs:260",
     "crates/a2a-protocol-server/src/push/sqlite_config_store.rs:202"
    ],
@@ -1187,7 +1187,7 @@
     "crates/a2a-protocol-server/src/push/sqlite_config_store.rs:202"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1420 delete_push_config_nonexistent_returns_ok",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1444 delete_push_config_nonexistent_returns_ok",
     "crates/a2a-protocol-server/tests/dispatch_rest_coverage.rs:590 delete_push_config_nonexistent_returns_200",
     "crates/a2a-protocol-server/tests/tenant_sqlite_push_config_tests.rs:225 delete_nonexistent_succeeds"
    ],
@@ -1375,16 +1375,16 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:275",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:286",
     "crates/a2a-protocol-server/src/handler/messaging/decisions.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:55",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:70",
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:73",
     "crates/a2a-protocol-types/src/task.rs:426"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:391 truncate_history_zero_omits_rather_than_emptying",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:402 truncate_history_zero_omits_rather_than_emptying",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:200 get_task_history_length_zero_returns_no_history",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:327 list_tasks_history_length_zero_omits_history_from_every_task"
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:335 list_tasks_history_length_zero_omits_history_from_every_task"
    ],
    "notes": "truncate_history returns None for n==0, so the field is omitted (not []) on GetTask, ListTasks and SendMessage responses.",
    "auditor": "B",
@@ -1422,8 +1422,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:258",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:91",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:269",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:102",
     "crates/a2a-protocol-server/src/handler/capability.rs:121",
     "crates/a2a-protocol-client/src/builder/mod.rs:578",
     "crates/a2a-protocol-client/src/builder/transport_factory.rs:98",
@@ -1432,8 +1432,8 @@
     "crates/a2a-protocol-client/src/transport/websocket.rs:602"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:711 build_call_context_parses_extensions_header",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:738 parse_extensions_header_drops_empty_segments",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:722 build_call_context_parses_extensions_header",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:749 parse_extensions_header_drops_empty_segments",
     "crates/a2a-protocol-server/src/handler/capability.rs:375 activated_extensions_header_intersects_with_declared",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:103 json_rpc_sends_the_extensions_asked_for",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:117 http_json_sends_the_extensions_asked_for",
@@ -1536,8 +1536,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/error/mod.rs:162",
-    "crates/a2a-protocol-server/src/error/mod.rs:252",
+    "crates/a2a-protocol-server/src/error/mod.rs:176",
+    "crates/a2a-protocol-server/src/error/mod.rs:266",
     "crates/a2a-protocol-types/src/error.rs:32",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:44",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:70",
@@ -1584,7 +1584,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:1",
     "crates/a2a-protocol-types/src/auth_rejection.rs:14",
-    "crates/a2a-protocol-server/src/error/mod.rs:162"
+    "crates/a2a-protocol-server/src/error/mod.rs:176"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:114 rest_answers_a_missing_bearer_token_401_with_its_challenge",
@@ -1657,7 +1657,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:22",
-    "crates/a2a-protocol-server/src/error/mod.rs:166",
+    "crates/a2a-protocol-server/src/error/mod.rs:180",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:74"
    ],
    "test_evidence": [
@@ -1715,7 +1715,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:26",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:257",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:275",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:286",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:44",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:62"
    ],
@@ -1742,7 +1742,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:46",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:100"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:110"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/actionable_errors.rs:63 each_refusal_names_the_parameter_and_what_is_accepted"
@@ -1760,9 +1760,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:38",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:166",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:70",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:41",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:189",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:80",
     "crates/a2a-protocol-server/src/dispatch/version.rs:123"
    ],
    "test_evidence": [
@@ -1783,13 +1783,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:47",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:42",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:219",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:223",
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:73"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/rest_edge_tests.rs:225 cancel_nonexistent_task_returns_404",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:340 axum_get_nonexistent_task_returns_404",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1372 get_push_config_not_found_returns_task_not_found"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1396 get_push_config_not_found_returns_task_not_found"
    ],
    "notes": "TaskNotFound (404/NOT_FOUND/-32001) for missing tasks and push configs on every binding.",
    "auditor": "B",
@@ -1822,11 +1822,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/error/mod.rs:171",
+    "crates/a2a-protocol-server/src/error/mod.rs:185",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:87",
     "crates/a2a-protocol-server/src/sql_error.rs:29",
-    "crates/a2a-protocol-server/src/error/mod.rs:174",
-    "crates/a2a-protocol-server/src/error/mod.rs:221"
+    "crates/a2a-protocol-server/src/error/mod.rs:188",
+    "crates/a2a-protocol-server/src/error/mod.rs:235"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:328 server_error_overloaded_maps_to_503",
@@ -1940,19 +1940,24 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Well-known types from the google.rpc error model (e.g., ErrorInfo, BadRequest) SHOULD be used where applicable",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:653",
-    "crates/a2a-protocol-types/src/error.rs:99"
+    "crates/a2a-protocol-types/src/error.rs:99",
+    "crates/a2a-protocol-server/src/error/mod.rs:292"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:73 jsonrpc_invalid_params_name_the_field",
-    "crates/a2a-protocol-types/src/error.rs:1071 a2a_reason_all_a2a_variants_distinct_and_non_empty"
+    "crates/a2a-protocol-types/src/error.rs:1071 a2a_reason_all_a2a_variants_distinct_and_non_empty",
+    "crates/a2a-protocol-server/tests/bad_request_details.rs:109 a_handler_check_names_the_field_over_http_json",
+    "crates/a2a-protocol-server/tests/bad_request_details.rs:124 a_handler_check_names_the_field_over_jsonrpc",
+    "crates/a2a-protocol-server/src/error/tests.rs:468 an_invalid_field_is_invalid_params_with_a_bad_request_detail"
    ],
-   "notes": "ErrorInfo on every A2A-specific error. Since ef31df9 a body or params that do not deserialize carry google.rpc.BadRequest with the field path (jsonrpc_error_details.rs, bad_request_details.rs). Remaining: the handler's own validation failures (empty message.id, no parts, oversize metadata) name the field in the message only, because ServerError::InvalidParams carries a String.",
+   "notes": "ErrorInfo on every A2A-specific error. Since ef31df9 a body or params that do not deserialize carry google.rpc.BadRequest with the field path (jsonrpc_error_details.rs, bad_request_details.rs). Since 2026-10-14 (audit register, the §3.3.2 row) the handler's own request checks carry a BadRequest naming the field too, through the new ServerError::InvalidField: ids (empty, too long, reference_task_ids), message.role, message.parts, every metadata and number-range check, a part's raw, the push config's required ids, taskId, url, authentication.scheme, token and credentials, ListTasks pageSize and statusTimestampAfter, and the REST query parameters. They named the field in the message only. Errors that name no single field (a per-task config limit, a card refused at build()) stay InvalidParams.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
   },
   {
    "spec_line": 549,
@@ -2032,15 +2037,15 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:64",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:76",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:257",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:329",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:400",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:79",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:261",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:333",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:404",
     "crates/a2a-protocol-server/src/builder.rs:765"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1288 push_ops_rejected_when_card_lacks_capability",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:743 every_push_op_without_a_sender_returns_push_not_supported",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:755 every_push_op_without_a_sender_returns_push_not_supported",
     "crates/a2a-protocol-server/src/handler/capability.rs:208 no_sender_rejects_push",
     "crates/a2a-protocol-server/src/builder.rs:1237 build_refuses_a_card_declaring_push_without_a_sender"
    ],
@@ -2258,7 +2263,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:286",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:297",
     "crates/a2a-protocol-server/src/request_context.rs:46"
    ],
    "test_evidence": [
@@ -2980,7 +2985,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:148",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:168",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:119",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:134",
     "crates/a2a-protocol-server/src/portable.rs:13",
     "crates/a2a-protocol-server/src/portable.rs:28",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:107",
@@ -3011,7 +3016,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs validate_and_store_push_config (scheme check)",
     "crates/a2a-protocol-server/src/push/sender.rs (Authorization: Bearer|Basic)",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:511"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:520"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs set_push_config_refuses_an_auth_scheme_it_cannot_send",
@@ -3216,7 +3221,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:121",
     "crates/a2a-protocol-server/src/handler/capability.rs:137",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:87"
+    "crates/a2a-protocol-server/src/handler/helpers.rs:98"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:375 activated_extensions_header_intersects_with_declared",
@@ -3238,7 +3243,7 @@
     "crates/a2a-protocol-server/src/handler/capability.rs:88",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:188",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:44",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:145",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:148",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17"
    ],
    "test_evidence": [
@@ -3306,10 +3311,10 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/mod.rs:127",
     "crates/a2a-protocol-server/src/handler/helpers.rs:22",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:187",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:211",
     "crates/a2a-protocol-server/src/handler/push_config.rs:25",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:49",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:119"
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:50",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:134"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:459 bind_equiv_002",
@@ -3335,8 +3340,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/error/mod.rs:162",
-    "crates/a2a-protocol-server/src/error/mod.rs:196",
+    "crates/a2a-protocol-server/src/error/mod.rs:176",
+    "crates/a2a-protocol-server/src/error/mod.rs:210",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:108",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:38",
     "crates/a2a-protocol-client/src/transport/grpc.rs:893"
@@ -3444,7 +3449,7 @@
     "crates/a2a-protocol-types/src/error.rs:46",
     "crates/a2a-protocol-types/src/error.rs:197",
     "crates/a2a-protocol-types/src/error.rs:220",
-    "crates/a2a-protocol-server/src/error/mod.rs:252",
+    "crates/a2a-protocol-server/src/error/mod.rs:266",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:74",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:144"
    ],
@@ -3809,7 +3814,7 @@
     "crates/a2a-protocol-types/src/lib.rs:246",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:151",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:168",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:67"
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:68"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/lib.rs:510 utc_now_roundtrips_through_parser",
@@ -4469,7 +4474,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:80",
-    "crates/a2a-protocol-server/src/error/mod.rs:162",
+    "crates/a2a-protocol-server/src/error/mod.rs:176",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:143"
    ],
    "test_evidence": [
@@ -5653,13 +5658,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:258",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:269",
     "crates/a2a-protocol-server/src/handler/capability.rs:137",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:290",
     "crates/a2a-protocol-client/src/extensions.rs:35"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:738 parse_extensions_header_drops_empty_segments",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:749 parse_extensions_header_drops_empty_segments",
     "crates/a2a-protocol-client/src/extensions.rs:160 the_value_is_the_uris_comma_separated",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:103 json_rpc_sends_the_extensions_asked_for",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:344 a_field_sent_as_several_lines_is_one_field",
@@ -5946,11 +5951,11 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/grpc.rs:458",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:258",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:269",
     "crates/a2a-protocol-client/src/extensions.rs:35"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:738 parse_extensions_header_drops_empty_segments",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:749 parse_extensions_header_drops_empty_segments",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:133 grpc_sends_the_extensions_asked_for",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:250 extract_metadata_joins_repeated_entries_and_skips_binary_ones",
     "crates/a2a-protocol-server/tests/repeated_header_lines.rs:187 grpc_reads_both_lines"
@@ -6129,7 +6134,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:242-253",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:253-264",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:228-234"
    ],
    "test_evidence": [
@@ -6152,8 +6157,8 @@
     "crates/a2a-protocol-client/src/transport/rest/routing.rs:36-102",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:201-208",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:304-507",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:87",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:162"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:86",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:161"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:16 rest_send_message",
@@ -6181,13 +6186,13 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:85-93",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:124-131",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:573-612",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:176-192",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:175-191",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:723",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:727"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/request.rs:319 build_uri_extracts_path_param_and_appends_query",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:633 parse_list_tasks_query_all_params",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:636 parse_list_tasks_query_all_params",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:849 axum_get_task_honours_history_length",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:870 axum_get_requests_read_the_tenant_from_the_query",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:907 axum_push_config_and_subscribe_routes_read_the_tenant_from_the_query"
@@ -6206,14 +6211,14 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:176-192",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:175-191",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:578",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:588",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:12-37",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:723"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:633 parse_list_tasks_query_all_params",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:636 parse_list_tasks_query_all_params",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:335 build_uri_appends_query_for_get",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:849 axum_get_task_honours_history_length",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:870 axum_get_requests_read_the_tenant_from_the_query",
@@ -6233,16 +6238,16 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:204-214",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65-75",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:203-214",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65-74",
     "crates/a2a-protocol-types/src/task.rs:206-231",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:43-52",
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:43-53",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:19-29"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:658 parse_list_tasks_query_with_status",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:661 parse_list_tasks_query_with_status",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:110 build_query_string_handles_bool",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:231 list_tasks_invalid_status_timestamp_after_is_invalid_params"
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:235 list_tasks_invalid_status_timestamp_after_is_invalid_params"
    ],
    "notes": "Server also accepts `1` for true and legacy lowercase enum aliases. Both are lenient extensions.",
    "auditor": "E",
@@ -6258,7 +6263,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:19-29",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:58-71"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:58"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:144 build_query_string_handles_array_value"
@@ -6296,12 +6301,12 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:43-58",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:58-117"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:58-116"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:69 encode_query_value_encodes_special_chars",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:81 build_query_string_encodes_values",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:290 percent_decode_encoded_chars"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:293 percent_decode_encoded_chars"
    ],
    "notes": "Client encodes everything except RFC 3986 unreserved chars. Server percent-decodes values (and `+` as space). Query keys are compared undecoded, which is harmless for the camelCase ASCII keys.",
    "auditor": "E",
@@ -6886,15 +6891,15 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:39",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:60",
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:61",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:41",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:362",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:40",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:183",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:140",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:205",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:274",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:338",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:143",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:209",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:278",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:342",
     "crates/a2a-protocol-server/src/auth/mod.rs:242"
    ],
    "test_evidence": [
@@ -7039,8 +7044,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:41",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:62",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:142",
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:63",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:145",
     "crates/a2a-protocol-server/src/handler/mod.rs:273"
    ],
    "test_evidence": [
@@ -7078,7 +7083,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs validate_and_store_push_config (scheme check)",
     "crates/a2a-protocol-server/src/push/sender.rs (Authorization: Bearer|Basic)",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:511"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:520"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs set_push_config_refuses_an_auth_scheme_it_cannot_send",
@@ -7165,7 +7170,7 @@
     "crates/a2a-protocol-server/src/push/sender.rs:497",
     "crates/a2a-protocol-server/src/push/sender.rs:599",
     "crates/a2a-protocol-server/src/push/sender.rs:829",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:68"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:71"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:1609 the_resolver_seam_checks_and_pins_what_it_is_given",
@@ -7349,12 +7354,12 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:391",
     "crates/a2a-protocol-server/src/push/sender.rs:875",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:459"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:463"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_sender_https_e2e.rs:199 https_push_delivered_over_real_tls",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1227 set_push_config_refuses_http_when_the_sender_is_https_only",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1252 set_push_config_accepts_http_from_a_sender_that_does_not_require_https",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1251 set_push_config_refuses_http_when_the_sender_is_https_only",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1276 set_push_config_accepts_http_from_a_sender_that_does_not_require_https",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:792 an_https_only_sender_refuses_http_before_connecting"
    ],
    "notes": "HTTPS delivery supported (tls-rustls feature, on by default via sdk) and tested over real TLS. Since 2026-10-12 opt-in HttpPushSender::https_only() refuses an http:// webhook at config creation (InvalidParams naming the reason, via PushSender::requires_https) and again at delivery before any connection, as the opt-in allowlist (line 3116) does for hosts. Off by default: plain http is still accepted unless a deployment sets it. Before: no option enforced https.",
@@ -7787,12 +7792,12 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:46",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:37",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:131",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:134",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:224"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:231 list_tasks_invalid_status_timestamp_after_is_invalid_params",
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:235 list_tasks_invalid_status_timestamp_after_is_invalid_params",
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:517 oversized_message_metadata_returns_invalid_params",
     "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter",
     "crates/a2a-protocol-server/tests/http_query_validation.rs:107 well_formed_query_values_are_accepted"
@@ -7937,7 +7942,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/audit/interceptor.rs:68",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:94"
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:98"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/audit_trail.rs:113 every_call_and_event_is_recorded_and_attributable"
@@ -8081,7 +8086,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:108",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:161",
     "crates/a2a-protocol-server/src/rate_limit/window.rs:36",
-    "crates/a2a-protocol-server/src/error/mod.rs:171"
+    "crates/a2a-protocol-server/src/error/mod.rs:185"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/rate_limit_wire.rs a_throttled_rest_call_is_429_with_retry_after",
@@ -8302,7 +8307,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/decisions.rs:34",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:275",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:286",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:217"
    ],
    "test_evidence": [
@@ -8865,13 +8870,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:491",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:497",
     "crates/a2a-protocol-server/src/push/sender.rs:862",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:25",
     "crates/a2a-protocol-types/src/push.rs:31"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1120 set_push_config_refuses_an_auth_scheme_it_cannot_send"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1132 set_push_config_refuses_an_auth_scheme_it_cannot_send"
    ],
    "notes": "Creation refuses any scheme the sender cannot write (only Bearer and Basic, since item 15), which covers an empty scheme: gRPC's absent value. The test's empty-scheme case is shown to fail with empty schemes exempted.",
    "auditor": "G",
@@ -10043,7 +10048,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:40",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:46",
     "crates/a2a-protocol-types/src/params/mod.rs:108",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
@@ -10072,7 +10077,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:55",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:275"
+    "crates/a2a-protocol-server/src/handler/helpers.rs:286"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:225 get_task_history_length_truncates_to_most_recent",
@@ -10091,7 +10096,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/helpers.rs:275"
+    "crates/a2a-protocol-server/src/handler/helpers.rs:286"
    ],
    "test_evidence": [],
    "notes": "History is also bounded by MAX_TASK_HISTORY_MESSAGES at write time.",
@@ -10252,7 +10257,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:40",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:53",
     "crates/a2a-protocol-types/src/params/mod.rs:108",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
@@ -10300,13 +10305,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:219",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:259",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:223",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:263",
     "crates/a2a-protocol-types/src/params/mod.rs:212",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:303"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1161 empty_required_ids_are_invalid_params",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1176 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:101 axum_reads_the_path_first",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:467 an_empty_path_id_is_refused_before_the_request_is_built"
@@ -10325,12 +10330,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:180",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:259",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:183",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:263",
     "crates/a2a-protocol-types/src/params/mod.rs:215"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1161 empty_required_ids_are_invalid_params",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1176 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:101 axum_reads_the_path_first",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:467 an_empty_path_id_is_refused_before_the_request_is_built"
@@ -10436,7 +10441,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:40",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:381",
     "crates/a2a-protocol-types/src/params/mod.rs:108",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",

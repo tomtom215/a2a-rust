@@ -354,6 +354,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **The handler's own request checks name the field at fault** (server;
+  §3.3.2 SHOULD, audit register). An empty or over-long id, a message with
+  no role or no parts, metadata that is not an object or too large, a part's
+  `raw` that is not base64, a push config's required ids, `url`, scheme,
+  token or credentials, `ListTasks`' `pageSize` and `statusTimestampAfter`,
+  and a bad REST query parameter now answer `InvalidParams` with a
+  `google.rpc.BadRequest` detail naming the field. They named it in the
+  message only. They are the new `ServerError::InvalidField { field, message }`,
+  which answers with the same code, status, message and metric label as
+  `InvalidParams`; code matching `ServerError::InvalidParams` on these errors
+  matches `InvalidField` too (see the upgrading guide).
+
 - **A `google.protobuf.Struct` error detail is written as ProtoJSON writes
   an `Any`** (server; §3.3.2, §9.5, §11.6, audit register R19). An error's
   `data` went into its details array with its fields beside `@type`

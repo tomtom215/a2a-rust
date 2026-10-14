@@ -67,6 +67,15 @@ invisible to their owners unless a migration maps the old keys, so it ships
 with a documented migration (or a read-through of the old key for one
 release).
 
+**Waiting on a design pass (2026-10-14).** The partition is read in 38
+places across six stores (tasks and push configs, each in memory, SQLite
+and PostgreSQL). A read-through of the old key has to decide what a write,
+a list and a page token do when a caller has rows under both keys; a
+one-shot migration per store is the alternative. Approved as "read old keys
+one release"; the design goes back to the maintainer before it is built,
+because the scheme+issuer key also changes what an approver allowlist,
+`requested_by` and the audit actor compare against.
+
 ## R13 — SLIMRPC records no caller identity
 
 **Now.** The binding depends on agntcy-slim-rpc 2.3.0 (`bindings/a2a-protocol-slimrpc/Cargo.toml:66`,
@@ -303,6 +312,14 @@ transports and refused by gRPC.
 compiling and refuses a query parameter it does not handle, rather than (c),
 which overloads the header map.
 
+
+**Blocked (2026-10-14), a release decision.** The query parameters have to
+reach the transports through `ClientRequest`, whose fields are all public
+and which is not `#[non_exhaustive]`: adding one breaks a struct literal,
+and `cargo-semver-checks` (ci.yml, `semver`) fails a break the version does
+not cover, with the client at 0.14.1 as published. So (b) needs the next
+release to be 0.15, which is the maintainer's to decide; (c) needs no bump.
+
 ## R68 — a declared extended card with none configured served the public card
 
 Found 2026-10-14 while implementing the §13.3 row below, and decided the
@@ -338,6 +355,6 @@ failed before the change.
 | §8.1 (line 1970): a server MUST make an agent card available | JSON-RPC, REST and axum serve it; WebSocket and gRPC serve none | Serve `/.well-known/agent-card.json` from the WebSocket listener, and from the gRPC server through tonic's HTTP router. |
 | §14 (line 3342): implementations SHOULD support HTTPS | only gRPC terminates TLS | TLS on the HTTP listeners under `tls-rustls`. |
 | §14 (line 3344): clients SHOULD verify signatures when present | opt-in, per fetch; `CachingCardResolver` and `ClientBuilder::from_card` take no keys | Take keys in both. |
-| §3.3.2 (line 544): use `BadRequest` where applicable | the handler's own validation names the field in the message only | Carry field violations on `ServerError::InvalidParams`. |
+| §3.3.2 (line 544): use `BadRequest` where applicable | the handler's own validation names the field in the message only | **Done** as a new `ServerError::InvalidField { field, message }`: changing `InvalidParams`' payload would fail the semver gate at 0.14.1; the new variant answers exactly as `InvalidParams` does, plus the detail. |
 | §3.1.6 (line 309), §3.5.2 (line 692), §8.6 / §8.6.2 (lines 2215, 2225), §11.1 server (line 2750), §12.4 (line 3016), §12.6 (line 3033) | dispositions recorded in each entry's notes | Approve each as recorded, or name the ones to change. |
 | MAY, NOT_SUPPORTED: §3.1.9 pagination, §3.6.1, §8.4.2 `jku` in signers, §8.6.2 default cache lifetime, §11.5 repeated query fields, §11.7 final snapshot, §13.3 per-caller extended card | not implemented | Implement §3.1.9 pagination, §8.4.2 (`jku` on the signer) and a §13.3 per-caller card hook; keep the rest NOT_SUPPORTED with the reasons in their entries. |

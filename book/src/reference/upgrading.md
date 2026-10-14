@@ -421,6 +421,33 @@ no exception for a chunk. An executor that ended a streamed artifact with an
 empty `lastChunk: true` chunk sets `lastChunk: true` on the chunk carrying the
 last part instead.
 
+### Request-field errors are `ServerError::InvalidField`
+
+The handler's own checks of a request field (ids, a message's role, parts and
+metadata, a push config's fields, `ListTasks` filters, REST query
+parameters) return `ServerError::InvalidField { field, message }`, which
+answers as `InvalidParams` does plus a `google.rpc.BadRequest` detail naming
+the field. They returned `ServerError::InvalidParams(message)`. The wire, the
+message and the `invalid_params` metric label are unchanged; a `match` or
+`matches!` on the variant is not, and still compiles. Match either variant,
+or the code:
+
+```rust
+use a2a_protocol_server::ServerError;
+use a2a_protocol_types::error::ErrorCode;
+
+fn is_invalid_params(err: &ServerError) -> bool {
+    matches!(err, ServerError::InvalidParams(_) | ServerError::InvalidField { .. })
+        || err.to_a2a_error().code == ErrorCode::InvalidParams
+}
+
+let err = ServerError::InvalidField {
+    field: "message.parts".into(),
+    message: "message must contain at least one part".into(),
+};
+assert!(is_invalid_params(&err));
+```
+
 ### An error's `data` detail is a ProtoJSON `Any`
 
 The JSON-RPC, HTTP+JSON and WebSocket bindings carry an error's `data` as a

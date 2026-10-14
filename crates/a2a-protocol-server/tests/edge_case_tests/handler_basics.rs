@@ -247,7 +247,7 @@ async fn list_tasks_page_size_zero_is_invalid_params() {
         )
         .await;
     assert!(
-        matches!(&result, Err(a2a_protocol_server::error::ServerError::InvalidParams(m)) if m.contains("pageSize")),
+        matches!(&result, Err(a2a_protocol_server::error::ServerError::InvalidField { message: m, .. }) if m.contains("pageSize")),
         "{result:?}"
     );
 }

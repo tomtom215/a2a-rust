@@ -72,16 +72,18 @@ impl RequestHandler {
         // as 0, `ROLE_UNSPECIFIED`, and was accepted until 2026-10-10, so the
         // bindings disagreed about the same request.
         if params.message.role == a2a_protocol_types::message::MessageRole::Unspecified {
-            return Err(ServerError::InvalidParams(
-                "message.role is required: ROLE_USER or ROLE_AGENT".into(),
-            ));
+            return Err(ServerError::InvalidField {
+                field: "message.role".into(),
+                message: "message.role is required: ROLE_USER or ROLE_AGENT".into(),
+            });
         }
 
         // SC-4: Reject messages with no parts.
         if params.message.parts.is_empty() {
-            return Err(ServerError::InvalidParams(
-                "message must contain at least one part".into(),
-            ));
+            return Err(ServerError::InvalidField {
+                field: "message.parts".into(),
+                message: "message must contain at least one part".into(),
+            });
         }
 
         // Spec §3.1.1: a part whose media type the card does not declare is
@@ -93,17 +95,30 @@ impl RequestHandler {
         // gRPC (google.protobuf.Struct), not just over JSON-RPC/REST. Reject
         // arrays and scalars at ingress rather than storing a task that one
         // binding can serve and another cannot.
-        validate_metadata_object(params.message.metadata.as_ref(), "message")?;
-        validate_metadata_object(params.metadata.as_ref(), "request")?;
+        validate_metadata_object(
+            params.message.metadata.as_ref(),
+            "message",
+            "message.metadata",
+        )?;
+        validate_metadata_object(params.metadata.as_ref(), "request", "metadata")?;
         for (i, part) in params.message.parts.iter().enumerate() {
-            validate_metadata_object(part.metadata.as_ref(), &format!("message part {i}"))?;
+            validate_metadata_object(
+                part.metadata.as_ref(),
+                &format!("message part {i}"),
+                &format!("message.parts[{i}].metadata"),
+            )?;
         }
         make_portable(params)?;
 
         // PR-8: Reject oversized metadata to prevent memory exhaustion.
         let max_meta = self.limits.max_metadata_size;
-        check_metadata_size(params.message.metadata.as_ref(), "message", max_meta)?;
-        check_metadata_size(params.metadata.as_ref(), "request", max_meta)
+        check_metadata_size(
+            params.message.metadata.as_ref(),
+            "message",
+            "message.metadata",
+            max_meta,
+        )?;
+        check_metadata_size(params.metadata.as_ref(), "request", "metadata", max_meta)
     }
 }
 
@@ -119,10 +134,13 @@ impl RequestHandler {
 fn make_portable(params: &mut MessageSendParams) -> ServerResult<()> {
     let inexact = |value: Option<&serde_json::Value>, field: &dyn Fn() -> String| {
         value.and_then(inexact_number).map_or(Ok(()), |n| {
-            Err(ServerError::InvalidParams(format!(
-                "{} holds the integer {n}, beyond the ±2^53 a protobuf number holds exactly",
-                field()
-            )))
+            let field = field();
+            Err(ServerError::InvalidField {
+                message: format!(
+                    "{field} holds the integer {n}, beyond the ±2^53 a protobuf number holds exactly"
+                ),
+                field,
+            })
         })
     };
     inexact(params.metadata.as_ref(), &|| "metadata".to_owned())?;
@@ -135,8 +153,9 @@ fn make_portable(params: &mut MessageSendParams) -> ServerResult<()> {
         })?;
         match &mut part.content {
             PartContent::Raw(raw) => {
-                *raw = standard_base64(raw).map_err(|e| {
-                    ServerError::InvalidParams(format!("message.parts[{i}].raw is not base64: {e}"))
+                *raw = standard_base64(raw).map_err(|e| ServerError::InvalidField {
+                    field: format!("message.parts[{i}].raw"),
+                    message: format!("message.parts[{i}].raw is not base64: {e}"),
                 })?;
             }
             PartContent::Data(data) => inexact(Some(data), &|| format!("message.parts[{i}].data"))?,
@@ -150,10 +169,12 @@ fn make_portable(params: &mut MessageSendParams) -> ServerResult<()> {
 ///
 /// Uses a byte-counting writer rather than serializing to a throwaway
 /// `String`, so measuring the limit costs no allocation. `what` names the
-/// field in the error — `"message"` or `"request"`.
+/// field in the error — `"message"` or `"request"` — and `path` is its path
+/// in the request, for the error's `BadRequest` detail.
 fn check_metadata_size(
     metadata: Option<&serde_json::Value>,
     what: &str,
+    path: &str,
     max_meta: usize,
 ) -> ServerResult<()> {
     let Some(meta) = metadata else {
@@ -162,9 +183,12 @@ fn check_metadata_size(
     let meta_size = json_byte_len(meta)
         .map_err(|_| ServerError::InvalidParams(format!("{what} metadata is not serializable")))?;
     if meta_size > max_meta {
-        return Err(ServerError::InvalidParams(format!(
-            "{what} metadata exceeds maximum size ({meta_size} bytes, max {max_meta})"
-        )));
+        return Err(ServerError::InvalidField {
+            field: path.to_owned(),
+            message: format!(
+                "{what} metadata exceeds maximum size ({meta_size} bytes, max {max_meta})"
+            ),
+        });
     }
     Ok(())
 }
