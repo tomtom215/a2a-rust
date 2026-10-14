@@ -991,6 +991,12 @@ reproduced locally before its fix.
    takes regorus 0.12.0, so the SLIM 3.x upgrade (audit register R13)
    removes unsafe-libyaml. It does not clear RUSTSEC-2026-0285:
    mls-rs-crypto-awslc 0.25.0, the newest, still pins aws-lc-rs =1.16.3.
+3. `fix(bench):` Benchmarks, `enterprise_scenarios`: `with_rate_limit`
+   panicked at "rate limit exceeded: 100000 requests per 60 seconds".
+   Criterion sizes its sample from the measured speed: 86k iterations at
+   95.5 us a send on `2b0a3abd` against 40k at 207 us on `6ce5dc9a`, so the
+   fixed budget was spent inside one window. The limit is `u64::MAX`; the
+   limiter compares the count against it the same way whatever it is.
 
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 
