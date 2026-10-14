@@ -38,6 +38,11 @@ impl tonic::codegen::Service<hyper::Request<tonic::body::Body>> for WellKnownCar
     type Error = Infallible;
     type Future = Ready<Result<Self::Response, Infallible>>;
 
+    // Equivalent mutant: cargo-mutants replaces the body with
+    // `Poll::from(Ok(()))`, and `Poll::from(t)` is `Poll::Ready(t)`, the value
+    // written here; `Result<(), Infallible>` has no other value. No test can
+    // distinguish the two (ADR 0006).
+    #[mutants::skip]
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
         Poll::Ready(Ok(()))
     }

@@ -120,4 +120,26 @@ mod tests {
         assert_eq!(decide(b"GET /.well-known/agent-card.json"), None);
         assert_eq!(decide(b"HEA"), None);
     }
+
+    /// A peer that sends the start of a card request and stalls is handed to
+    /// the handshake once `within` passes. `peek` returns at once on bytes
+    /// already received, so the read's own timeout never fires; only the
+    /// deadline check ends the wait.
+    #[tokio::test]
+    async fn a_stalled_partial_request_line_gives_up_at_the_deadline() {
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        client.write_all(b"GET /.well-known/agent").await.unwrap();
+        let answer = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            super::asks_for_card(&server, std::time::Duration::from_millis(50)),
+        )
+        .await
+        .expect("gave up at the deadline");
+        assert!(!answer);
+    }
 }

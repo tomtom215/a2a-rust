@@ -38,7 +38,7 @@ orchestration flows.
 
 2. **Target**: Zero surviving mutants across all four library crates
    (`a2a-protocol-types`, `a2a-protocol-client`, `a2a-protocol-server`,
-   `a2a-protocol-sdk`), with the documented exception of the three equivalent
+   `a2a-protocol-sdk`), with the documented exception of the equivalent
    mutants in [Equivalent mutants](#equivalent-mutants) below.
 
    The target is unconditional; the *enforcement* is scoped. A PR must add no
@@ -128,8 +128,9 @@ three conditions:
    *Decided 2026-09-10.* `a2a-protocol-server` depends on `mutants`
    (`>=0.0.4, <0.1`) and carried three `#[mutants::skip]` attributes:
    `TenantLimits::builder`, `PerTenantConfig::builder` and
-   `SseBodyWriter::close` (a fourth, `TerminalTracking::close`, was added
-   2026-09-22), each with its equivalence argument in a comment
+   `SseBodyWriter::close` (since then a fourth, `TerminalTracking::close`,
+   2026-09-22; a fifth, the default `ServerInterceptor::on_complete`,
+   2026-09-26; and a sixth, `WellKnownCard::poll_ready`, 2026-10-14), each with its equivalence argument in a comment
    above the attribute (the argument is recorded in `ROADMAP.md`, "Mutants no
    test can kill"). The supply-chain review that the deferral asked for:
    `mutants` 0.0.4 is MIT, declares **zero** dependencies (crates.io

@@ -90,7 +90,7 @@ audit = ["a2a-protocol-types/audit"]
 [dependencies]
 a2a-protocol-types      = { version = "0.15.0", path = "../a2a-protocol-types" }
 serde           = { workspace = true }
-# `#[mutants::skip]` for the three mutants no test can distinguish (ADR 0006,
+# `#[mutants::skip]` for the mutants no test can distinguish (ADR 0006,
 # "Equivalent mutants"). Attribute-only, zero transitive dependencies, MIT,
 # published by the cargo-mutants author; a regular dependency because
 # cargo-mutants builds the library outside `cfg(test)`.
