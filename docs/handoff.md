@@ -1386,6 +1386,12 @@ follows is a new pull request.
     client gets a card can verify it. Ledger §14 (3344) PARTIAL to TESTED
     (TESTED 326, PARTIAL 11).
 
+29. `feat(server):` spec §5.7 — `HotReloadAgentCardHandler::try_update`
+    validates the card, and `update` is deprecated. The §5.7 entry stays
+    PARTIAL on the specification's own contradiction (`ListTasksResponse.tasks`
+    is REQUIRED-repeated yet empty for a listing with no matches); the
+    upstream report is a draft the maintainer files.
+
 **Lessons, new this session.**
 - In these crates an item in a private module is `pub`, not `pub(crate)`:
   `clippy::redundant_pub_crate` is denied, and this branch wrote it wrong

@@ -3948,12 +3948,13 @@
     "crates/a2a-protocol-server/src/handler/input_modes.rs nothing_is_enforced_without_a_card_or_a_declaration_or_when_opted_out",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs an_invalid_produced_card_is_not_served",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json_refuses_an_invalid_card",
-    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused"
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs try_update_refuses_a_card_the_spec_does_not_allow"
    ],
-   "notes": "Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid produced card, hot reload refuses one. Remaining, why PARTIAL/low: (1) ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty for a listing with no matches, a contradiction inside the specification; the SDK returns the empty list. (2) HotReloadAgentCardHandler::new and update are infallible and do not validate (a change would break their signatures). Client-side parsing stays tolerant on purpose. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked. Since 2026-10-14 the queue writer also refuses an executor message (event, status message, snapshot history) with no parts and a snapshot artifact with no parts (R36).",
+   "notes": "Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid produced card, hot reload refuses one. Remaining, why PARTIAL/low: (1) ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty for a listing with no matches, a contradiction inside the specification; the SDK returns the empty list. (2) closed 2026-10-14: HotReloadAgentCardHandler::try_update validates as reload_from_json does and update is deprecated; served through DynamicAgentCardHandler, a card from new or update that does not validate is answered 500 rather than served (dynamic_handler.rs an_invalid_produced_card_is_not_served). The contradiction in (1) is reported upstream by the maintainer (draft, not filed). Client-side parsing stays tolerant on purpose. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked. Since 2026-10-14 the queue writer also refuses an executor message (event, status message, snapshot history) with no parts and a snapshot artifact with no parts (R36).",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
   },
   {
    "spec_line": 1275,
@@ -9032,7 +9033,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:227",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:321",
     "crates/a2a-protocol-server/src/builder.rs:754",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
     "crates/a2a-protocol-client/src/discovery.rs:615"
    ],
@@ -9055,7 +9056,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:248",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:324",
     "crates/a2a-protocol-server/src/builder.rs:754",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
     "crates/a2a-protocol-client/src/discovery.rs:615"
    ],
@@ -9102,7 +9103,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:251",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:327",
     "crates/a2a-protocol-server/src/builder.rs:754",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
     "crates/a2a-protocol-client/src/discovery.rs:615"
    ],
@@ -9147,7 +9148,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:268",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:360",
     "crates/a2a-protocol-server/src/builder.rs:754",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
    ],
    "test_evidence": [
@@ -9169,7 +9170,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:275",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:363",
     "crates/a2a-protocol-server/src/builder.rs:754",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
    ],
    "test_evidence": [
@@ -9191,7 +9192,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:282",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:366",
     "crates/a2a-protocol-server/src/builder.rs:754",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:146",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
    ],
    "test_evidence": [
@@ -9526,14 +9527,14 @@
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:755",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:120 a_card_that_does_not_validate_is_refused"
    ],
@@ -9571,14 +9572,14 @@
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:755",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
@@ -9634,14 +9635,14 @@
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:755",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
@@ -9662,14 +9663,14 @@
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:755",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
@@ -9690,14 +9691,14 @@
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:755",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
@@ -9770,14 +9771,14 @@
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:755",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
@@ -9928,14 +9929,14 @@
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:755",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
@@ -9956,14 +9957,14 @@
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
     "crates/a2a-protocol-server/src/builder.rs:755",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:147",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:520 reload_from_json_refuses_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",

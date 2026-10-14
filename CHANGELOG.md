@@ -1432,6 +1432,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
+- **`HotReloadAgentCardHandler::update`**, for **`try_update`** (server;
+  spec §5.7: arrays marked as required MUST contain at least one element).
+  `update` stored any card; `try_update` checks it as `reload_from_json`
+  checks a reloaded one (`AgentCard::validate` and
+  `validate_security_schemes`) and refuses with `InvalidParams`, leaving
+  the current card in place.
 - **`ClientConfig::preferred_bindings` and `ClientConfig::with_preferred_bindings`**
   (client). Nothing reads them once `ClientBuilder::from_card` follows the
   card's interface order (spec §8.3.2); setting them changed nothing a caller
