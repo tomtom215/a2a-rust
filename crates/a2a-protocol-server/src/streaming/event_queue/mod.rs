@@ -15,6 +15,7 @@
 //! (resubscribe) to work even when another SSE stream is already active.
 
 pub(crate) mod applied;
+mod content;
 mod in_memory;
 mod manager;
 #[cfg(test)]

@@ -147,6 +147,15 @@ agent_executor!(MyAgent, |ctx, queue| async {
 | `artifact(id, parts, append, last_chunk)` | Emit an artifact update event |
 | `is_cancelled()` | Check if the task was cancelled |
 
+The queue checks what an executor writes before anything stores or sends
+it, and refuses an event that leaves a field a2a.proto marks REQUIRED unset:
+a message with no `messageId`, no role or no parts; an artifact with no
+`artifactId`, or no parts unless it is an appended chunk; a status in
+`TASK_STATE_UNSPECIFIED`. That holds for a message, a status update and its
+message, an artifact update, and a task snapshot's status, artifacts and
+history. The write returns `InvalidParams` naming the field, and `?`
+returns it from `execute`, which fails the task.
+
 ## RequestContext
 
 The `RequestContext` provides information about the incoming request:

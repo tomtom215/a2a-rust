@@ -1855,6 +1855,24 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     Mutants 23 of 23 (two in the SLIMRPC workspace). Ledger 532. Postgres
     paths are compiled and their codes table-tested, not run against a
     database here; CI's Postgres job runs those stores.
+103. `fix(server):` the event queue refuses an executor's event missing a
+    REQUIRED field (audit register R36, part (a); in Behaviour Changes).
+    `event_queue/content.rs`, called where the artifact-parts check was:
+    message `messageId`, role and parts; artifact `artifactId` and parts
+    (an appended chunk may have none); status `state`, in every event kind
+    and inside a snapshot's status, artifacts and history.
+    `tests/executor_event_fields.rs` writes eleven broken events; all
+    eleven were accepted before. The conformance harness drained only what
+    the queue broadcast, so an executor writing a nameless artifact earned
+    a clean report once the queue refused it; `HarnessWriter` keeps refused
+    writes and `artifacts_have_ids` grades them. Mutants 18 of 18. Every
+    workspace package's tests pass (server 2672, sdk and client 948, the
+    other eighteen packages 463), run per package because the workspace
+    build filled the disk. Not done, part (b): a task snapshot that moves
+    back to `Submitted` is still accepted. The store guards terminal
+    states; mirroring the status-update rule in both processors means
+    sharing the background mark-failed path, which also drives the
+    writer's terminal verdicts.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

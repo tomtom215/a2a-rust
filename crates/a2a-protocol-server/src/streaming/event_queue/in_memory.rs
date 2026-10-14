@@ -633,13 +633,12 @@ impl InMemoryQueueWriter {
         if let Err(e) = super::status_stamp::stamp_status(&mut event) {
             return Box::pin(std::future::ready(Err(e)));
         }
-        // a2a.proto: an artifact "Must contain at least one part". Persistence
-        // already dropped one that did not, but live subscribers were sent it.
-        // An appending chunk may be empty, as the processors allow.
-        if let StreamResponse::ArtifactUpdate(u) = &event
-            && u.append != Some(true)
-            && let Err(e) = u.artifact.validate()
-        {
+        // a2a.proto's REQUIRED fields: an artifact "Must contain at least one
+        // part" (persistence already dropped one that did not, but live
+        // subscribers were sent it; an appending chunk may be empty, as the
+        // processors allow), and a message's id, role and parts, an
+        // artifact's id, a status's state, wherever the executor wrote them.
+        if let Err(e) = super::content::check_required_fields(&event) {
             return Box::pin(std::future::ready(Err(e)));
         }
         if let Err(e) = self.check_event_size(&event) {

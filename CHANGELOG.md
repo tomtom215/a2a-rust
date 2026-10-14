@@ -354,6 +354,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **The event queue refuses an executor's event missing a REQUIRED field**
+  (server; a2a.proto). A message with no `messageId`, role or parts, an
+  artifact with no `artifactId`, or a status in `TASK_STATE_UNSPECIFIED`,
+  written as an event or inside a status update or task snapshot, was stored
+  and served as written; over gRPC the last reads as a task with no state.
+  The write now returns `InvalidParams` naming the field. A client's message
+  was already held to the same fields. The conformance harness grades
+  artifacts the queue refused, so `artifacts_have_ids` still fails an
+  executor that writes one without an id.
 - **Push-config operations need a push sender, and so does a card that
   declares push** (server; spec §3.3.4). Without a sender, Create answered
   `PushNotificationNotSupported` while Get, List and Delete still ran

@@ -279,7 +279,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:792"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:791"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader"
@@ -395,7 +395,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:129",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:133",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:705"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:704"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs a_message_only_stream_is_exactly_one_message",
@@ -416,8 +416,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:133",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:705",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:888"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:704",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:887"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs a_message_only_stream_is_exactly_one_message",
@@ -459,8 +459,8 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:508",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:565",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:888",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:964",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:887",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:963",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:92",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:116",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:310"
@@ -524,7 +524,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:103",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:792"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:791"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:153 streaming_mode_push_delivery_with_cooperative_executor",
@@ -828,8 +828,8 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:116",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:77",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:232",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:888",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:964",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:887",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:963",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:92"
    ],
    "test_evidence": [
@@ -2549,7 +2549,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:50 write_multiple_events_read_in_order",
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2596 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2595 concurrent_clones_deliver_every_position_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:293 a_held_terminal_event_is_not_overtaken",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:326 a_terminal_event_that_waited_for_room_is_not_overtaken"
    ],
@@ -2603,9 +2603,9 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1134",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1156",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1286",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1133",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1155",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1285",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:81",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:393",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:290",
@@ -2618,10 +2618,10 @@
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:253 a_lagged_stream_catches_up_in_its_tenant",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:138 a_replay_over_the_limit_ends_with_stream_lagged",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:410 a_lag_the_log_cannot_cover_still_ends_with_stream_lagged",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2596 concurrent_clones_deliver_every_position_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2343 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2595 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2342 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:171 slow_reader_gets_explicit_lag_error",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1808 subscribe_creates_independent_reader",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1807 subscribe_creates_independent_reader",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:295 a_lag_while_the_log_trails_waits_for_the_log",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:200 a_turn_that_ends_between_polls_reaches_the_subscriber",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:208 a_turn_longer_than_a_poll_keeps_its_first_events",
@@ -3921,18 +3921,20 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs AgentCard::validate",
     "crates/a2a-protocol-server/src/builder.rs build",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs valid_card",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json"
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:27"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs validate_refuses_each_empty_required_array",
     "crates/a2a-protocol-server/src/handler/input_modes.rs nothing_is_enforced_without_a_card_or_a_declaration_or_when_opted_out",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs an_invalid_produced_card_is_not_served",
-    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json_refuses_an_invalid_card"
+    "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json_refuses_an_invalid_card",
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
    ],
-   "notes": "Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid produced card, hot reload refuses one. Remaining, why PARTIAL/low: (1) ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty for a listing with no matches, a contradiction inside the specification; the SDK returns the empty list. (2) HotReloadAgentCardHandler::new and update are infallible and do not validate (a change would break their signatures). Client-side parsing stays tolerant on purpose. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
+   "notes": "Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid produced card, hot reload refuses one. Remaining, why PARTIAL/low: (1) ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty for a listing with no matches, a contradiction inside the specification; the SDK returns the empty list. (2) HotReloadAgentCardHandler::new and update are infallible and do not validate (a change would break their signatures). Client-side parsing stays tolerant on purpose. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked. Since 2026-10-14 the queue writer also refuses an executor message (event, status message, snapshot history) with no parts and a snapshot artifact with no parts (R36).",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 1275,
@@ -4585,7 +4587,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:660",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:659",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:88"
    ],
    "test_evidence": [],
@@ -6455,7 +6457,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:335-376",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:792-892"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:791-891"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
@@ -8480,15 +8482,18 @@
     "crates/a2a-protocol-types/src/task.rs:352",
     "crates/a2a-protocol-types/src/task.rs:318",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:238",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:375"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:375",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:56"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:872 process_event_invalid_state_transition_returns_error",
-    "crates/a2a-protocol-types/tests/tck_wire_format.rs:91 tck_task_state_rejects_invalid"
+    "crates/a2a-protocol-types/tests/tck_wire_format.rs:91 tck_task_state_rejects_invalid",
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
    ],
-   "notes": "Always serialized; server refuses an executor transition into Unspecified from any real state (can_transition_to rule 2), so a meaningful state is always emitted after creation. Client JSON missing -> serde error; gRPC 0 decodes as Unspecified (tolerated).",
+   "notes": "Always serialized; the queue writer refuses an executor status update or task snapshot in Unspecified (since 2026-10-14, audit register R36; a snapshot bypassed the transition rule, so one was stored and served), and the processors refuse a status transition into it (can_transition_to rule 2). Client JSON missing -> serde error; gRPC 0 decodes as Unspecified (tolerated).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 225,
@@ -8556,14 +8561,17 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1202"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1202",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:68"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:2309 an_empty_message_id_is_refused"
+    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:2309 an_empty_message_id_is_refused",
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
    ],
-   "notes": "JSON-RPC/WS: absent messageId -> serde error -> InvalidParams -32602; REST -> 400 INVALID_ARGUMENT; gRPC absent == \"\" -> validate_id -> InvalidParams -> INVALID_ARGUMENT; empty/whitespace on any binding -> InvalidParams naming `message.id`. Server always serializes messageId (non-optional) but does not validate executor-authored agent message ids. Client refuses a response missing it (ClientError::Serialization). Only handler-level test; no wire test of an absent messageId.",
+   "notes": "JSON-RPC/WS: absent messageId -> serde error -> InvalidParams -32602; REST -> 400 INVALID_ARGUMENT; gRPC absent == \"\" -> validate_id -> InvalidParams -> INVALID_ARGUMENT; empty/whitespace on any binding -> InvalidParams naming `message.id`. Server always serializes messageId (non-optional) but does not validate executor-authored agent message ids. Client refuses a response missing it (ClientError::Serialization). Only handler-level test; no wire test of an absent messageId. An executor-written message (event, status message, snapshot history) with an empty messageId is refused at the queue writer since 2026-10-14 (audit register R36); it was stored and served.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 268,
@@ -8578,15 +8586,17 @@
     "crates/a2a-protocol-types/src/message.rs:76",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:66",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:155",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:28"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:28",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:68"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/tests.rs an_unspecified_role_is_refused"
+    "crates/a2a-protocol-server/src/handler/messaging/tests.rs an_unspecified_role_is_refused",
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
    ],
-   "notes": "validate_send_params refuses ROLE_UNSPECIFIED (what an absent gRPC enum decodes to) with InvalidParams, as the JSON bindings refuse a missing role.",
+   "notes": "validate_send_params refuses ROLE_UNSPECIFIED (what an absent gRPC enum decodes to) with InvalidParams, as the JSON bindings refuse a missing role. An executor-written message with ROLE_UNSPECIFIED is refused at the queue writer since 2026-10-14 (R36).",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 270,
@@ -8598,15 +8608,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/message.rs:120",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:62"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:62",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:68"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:503 empty_message_parts_returns_invalid_params",
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:235 reject_empty_parts"
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:235 reject_empty_parts",
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
    ],
-   "notes": "Absent parts defaults to [] (ProtoJSON omits empty repeated) and is rejected in the shared handler with InvalidParams(\"message must contain at least one part\") on all four bindings (-32602 / 400 / INVALID_ARGUMENT). Server always serializes `parts`. Client tolerates absence (default []). Tests are handler-level only.",
+   "notes": "Absent parts defaults to [] (ProtoJSON omits empty repeated) and is rejected in the shared handler with InvalidParams(\"message must contain at least one part\") on all four bindings (-32602 / 400 / INVALID_ARGUMENT). Server always serializes `parts`. Client tolerates absence (default []). Tests are handler-level only. An executor-written message with no parts is refused at the queue writer since 2026-10-14 (R36).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 281,
@@ -8642,14 +8655,17 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/artifact.rs:67",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:204",
-    "crates/a2a-protocol-server/src/executor_helpers.rs:330"
+    "crates/a2a-protocol-server/src/executor_helpers.rs:330",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:87"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/tck_wire_format.rs:1034 tck_artifact_golden_format"
+    "crates/a2a-protocol-types/tests/tck_wire_format.rs:1034 tck_artifact_golden_format",
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
    ],
-   "notes": "Always serialized as `artifactId` (non-optional). Not checked non-empty for executor-written artifacts. Client JSON refuses an artifact without artifactId; gRPC tolerates \"\".",
+   "notes": "Always serialized as `artifactId` (non-optional). An executor-written artifact (update or snapshot) with an empty artifactId is refused at the queue writer since 2026-10-14 (R36); until then it was stored and served. Client JSON refuses an artifact without artifactId; gRPC tolerates \"\".",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 287,
