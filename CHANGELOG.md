@@ -1498,6 +1498,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   self-test of those rules runs first on every invocation (`--self-test`
   runs only it), and fails under each of 11 hand-applied mutants of the
   retry code.
+- **The regulatory control map cites the code behind each EU AI Act
+  control**, as `code = ["path.rs::Symbol"]`, and `check_compliance_map.py`
+  fails when a cited symbol is not declared in its file or when a supported
+  or partial AI Act row cites none (26 symbols across 8 rows). Its preamble
+  no longer says Article 25(4) exempts open-source components from "the
+  value-chain duties": the exemption is from that paragraph's written
+  agreement only.
 - **The audit register's open items are committed**, as
   `docs/compliance/audit-register.md`: eleven decisions (R12, R13, R19, R21,
   R33, R36(b), R41, R49, R50, R66, R67) and the ledger entries that need one,

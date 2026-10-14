@@ -1133,6 +1133,23 @@ follow the text. The register's status column tracks what is done.
     edited file moved through the diff (`git diff -U0`, by script), and the
     seven that named rewritten lines or the renamed test were re-pointed by
     hand. Counts: TESTED 317, PARTIAL 19.
+11. `docs(compliance):` the control map traces each EU AI Act control to
+    code. `controls.toml` rows take `code = ["path.rs::Symbol"]` (or
+    `::Type::method`); `check_compliance_map.py` fails when a cited symbol
+    is not declared in that file (a method's type may be declared elsewhere
+    and implemented there), and when an AI Act row marked supported or
+    partial cites no code. The eight such rows now cite 26 symbols, all
+    resolved. Proven by injection: a renamed method, a missing file, a
+    method under the wrong type, a renamed type, and a supported row
+    without code each fail it, naming the row. The preamble said Article
+    25(4) "exempts free and open-source components from the value-chain
+    duties"; the article's exemption is from that paragraph's written
+    agreement only, for components other than general-purpose AI models,
+    and Regulation (EU) 2026/1744 rewrote the paragraph's first
+    subparagraph and kept it (both read in the Official Journal text,
+    fetched from the Publications Office's CELLAR service; EUR-Lex itself
+    answered 202 with an empty body). The rest of Step 2 (the articles the
+    map does not cover yet) is open.
 
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 
