@@ -1803,8 +1803,8 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `interceptor/tests.rs` (checked byte for byte). Ledger 3194, which binds
     both sides and cited only server evidence. Mutants 18 of 18; the one
     that drops the sort is caught through `HashMap` iteration order, so
-    only by chance, though six names come out sorted by accident about
-    once in 720 maps.
+    only by chance: if that order is uniform, six names come out sorted
+    by accident once in 720 maps (not measured).
 100. `fix(client):` a fetch with signature keys refuses an unsigned card
     (audit register R9; amends the unreleased `with_signature_keys` entry in
     Added, so no release behaved otherwise). Anyone able to alter a card on
@@ -1829,8 +1829,9 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     advertisements (`advertise` is now one function for both), and refuses
     one a non-declaring public card would never serve. Four tests in
     `lifecycle/extended_card.rs`; the API is new, so none could fail before
-    it. Mutants 8 of 8; advertising only when a public card is present
-    survived until the no-public-card test asserted the advertisement.
+    it. Mutants 8 of 8. The no-public-card test asserts the advertisement
+    because, read before the run, nothing else would catch advertising
+    only when a public card is present; that mutant was not run without it.
     Ledger: 424, 3157, 3158 and 3159 move from NOT_SUPPORTED to SUPPORTED
     (MAY clauses; 3159's user-specific half and 3152's per-caller variation
     remain unsupported), and eleven entries whose notes said the extended
