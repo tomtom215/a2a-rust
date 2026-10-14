@@ -83,6 +83,8 @@ pub struct RequestHandler {
     pub(crate) event_queue_manager: EventQueueManager,
     pub(crate) interceptors: ServerInterceptorChain,
     pub(crate) agent_card: Option<AgentCard>,
+    /// What `GetExtendedAgentCard` serves in place of `agent_card`.
+    pub(crate) extended_agent_card: Option<AgentCard>,
     pub(crate) executor_timeout: Option<Duration>,
     pub(crate) metrics: Arc<dyn Metrics>,
     pub(crate) limits: HandlerLimits,
@@ -428,6 +430,7 @@ impl std::fmt::Debug for RequestHandler {
             .field("event_queue_manager", &self.event_queue_manager)
             .field("interceptors", &self.interceptors)
             .field("agent_card", &self.agent_card.is_some())
+            .field("extended_agent_card", &self.extended_agent_card.is_some())
             .field("metrics", &"<dyn Metrics>")
             .field("tenant_resolver", &self.tenant_resolver.is_some())
             .field("tenant_config", &self.tenant_config)

@@ -1818,9 +1818,28 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     client's `signing` feature note in `Cargo.toml` said no code in the
     crate verifies a card, untrue since `7260a8f`; corrected. Ledger 3352
     (still PARTIAL, low: `CachingCardResolver` and `from_card` take no keys).
+101. `feat(server):` `RequestHandlerBuilder::with_extended_agent_card`
+    (audit register R56; in Added). No setting existed, so an agent that
+    declared `extendedAgentCard` served its public card again. Not a MUST
+    gap, as the register had it: ledger 3173 already read the public card
+    as the configured extended card, which is why the change is additive
+    rather than a `build()` refusal that would have broken about twenty
+    builders declaring the capability. `build()` gives the extended card the
+    public card's validation, push-sender check and extension
+    advertisements (`advertise` is now one function for both), and refuses
+    one a non-declaring public card would never serve. Four tests in
+    `lifecycle/extended_card.rs`; the API is new, so none could fail before
+    it. Mutants 8 of 8; advertising only when a public card is present
+    survived until the no-public-card test asserted the advertisement.
+    Ledger: 424, 3157, 3158 and 3159 move from NOT_SUPPORTED to SUPPORTED
+    (MAY clauses; 3159's user-specific half and 3152's per-caller variation
+    remain unsupported), and eleven entries whose notes said the extended
+    card was always the public one are corrected. Several of their
+    citations already pointed at the wrong lines (575 at `result`); they
+    cite the match arms now.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
-PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
+PARTIAL 21, NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
 proven, 0 unproven, 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**

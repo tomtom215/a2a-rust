@@ -182,9 +182,43 @@ let capabilities = AgentCapabilities::none()
     .with_extended_agent_card(true);
 ```
 
-If the capability is `false` or absent, the server returns `UnsupportedOperationError`.
-`ExtendedAgentCardNotConfiguredError` is returned when the handler has no agent
-card at all.
+Give the handler the card to serve with `with_extended_agent_card`: the public
+card plus what only clients you know should see, such as a further skill.
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+use a2a_protocol_sdk::server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};
+
+let public = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+    .with_description("An example agent")
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+    .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true));
+let extended = public
+    .clone()
+    .with_skill(AgentSkill::new("billing", "Billing", "Account details").with_tags(["billing"]));
+
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(public)
+    .with_extended_agent_card(extended)
+    .with_interceptor(BearerTokenAuthInterceptor::new(["s3cret"]))
+    .build()
+    .unwrap();
+# let _ = handler;
+# }
+```
+
+`build()` checks the extended card as it checks the public one, and advertises
+the same extensions on it, since a client that fetches it uses its capabilities
+from then on. Without `with_extended_agent_card`, the public card is served as
+the extended one, so an authenticated caller learns nothing more.
+
+If the capability is `false` or absent, the server returns `UnsupportedOperationError`,
+and `build()` refuses an extended card it would never serve.
+`ExtendedAgentCardNotConfiguredError` is returned when the handler has neither
+card.
 
 The operation must be authenticated (§13.3): without an authenticating
 interceptor (e.g. `BearerTokenAuthInterceptor`, `JwtAuthInterceptor`) the server

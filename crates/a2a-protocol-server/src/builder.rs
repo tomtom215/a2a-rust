@@ -156,6 +156,7 @@ pub struct RequestHandlerBuilder {
     push_sender: Option<Arc<dyn PushSender>>,
     interceptors: ServerInterceptorChain,
     agent_card: CardSetting,
+    extended_agent_card: Option<Box<AgentCard>>,
     executor_timeout: Option<Duration>,
     event_queue_capacity: Option<usize>,
     max_event_size: Option<usize>,
@@ -193,6 +194,7 @@ impl RequestHandlerBuilder {
             push_sender: None,
             interceptors: ServerInterceptorChain::new(),
             agent_card: CardSetting::Unset,
+            extended_agent_card: None,
             executor_timeout: Some(DEFAULT_EXECUTOR_TIMEOUT),
             event_queue_capacity: None,
             max_event_size: None,
@@ -368,6 +370,28 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Sets the card `GetExtendedAgentCard` serves to an authenticated caller
+    /// (spec §3.1.11, §13.3): the public card plus whatever the agent offers
+    /// only to clients it knows, such as more skills or a security scheme.
+    ///
+    /// Without it, a handler whose card declares
+    /// `capabilities.extendedAgentCard` serves that public card as the
+    /// extended one, so a caller who authenticates learns nothing more.
+    ///
+    /// `build()` checks it as it checks the public card: it must be valid, a
+    /// push-notification capability needs a sender, and the extensions this
+    /// server can honour are advertised on it too, since a client that
+    /// fetches it uses its capabilities from then on. `build()` refuses it
+    /// when the public card does not declare `extendedAgentCard`, since it
+    /// would never be served. Without a public card
+    /// ([`without_agent_card`](Self::without_agent_card)) it is served, the
+    /// card published elsewhere being the one that declares it.
+    #[must_use]
+    pub fn with_extended_agent_card(mut self, card: AgentCard) -> Self {
+        self.extended_agent_card = Some(Box::new(card));
+        self
+    }
+
     /// Builds a handler with no agent card.
     ///
     /// Spec §8.1: an A2A server MUST make an agent card available, so
@@ -378,8 +402,9 @@ impl RequestHandlerBuilder {
     /// or when the handler is not a public A2A server at all, as in a test.
     ///
     /// Without a card the dispatchers answer `/.well-known/agent-card.json`
-    /// with 404, `GetExtendedAgentCard` answers `ExtendedAgentCardNotConfigured`,
-    /// and nothing a card would declare is checked: streaming and push
+    /// with 404, `GetExtendedAgentCard` answers `ExtendedAgentCardNotConfigured`
+    /// unless [`with_extended_agent_card`](Self::with_extended_agent_card) set
+    /// one, and nothing a card would declare is checked: streaming and push
     /// notifications are served, any input mode is accepted, no extension is
     /// required, and none is advertised.
     #[must_use]
@@ -712,26 +737,46 @@ impl RequestHandlerBuilder {
         // Until 2026-10-11 only the interface list was checked, so a card
         // with no skills or modes was served as it was; until 2026-10-12 a
         // security scheme's REQUIRED strings were not checked at all.
-        if let CardSetting::Card(ref card) = self.agent_card
-            && let Err(why) = card
+        // The extended card is checked the same way: a client that fetches it
+        // reads its capabilities from then on (§3.1.11).
+        let public_card = match &self.agent_card {
+            CardSetting::Card(card) => Some(("agent card", card.as_ref())),
+            CardSetting::Unset | CardSetting::Without => None,
+        };
+        let extended_card = self
+            .extended_agent_card
+            .as_deref()
+            .map(|card| ("extended agent card", card));
+        for (which, card) in public_card.into_iter().chain(extended_card) {
+            if let Err(why) = card
                 .validate()
                 .and_then(|()| card.validate_security_schemes())
-        {
-            return Err(crate::error::ServerError::InvalidParams(why.into()));
+            {
+                return Err(crate::error::ServerError::InvalidParams(format!(
+                    "the {which} is not valid: {why}"
+                )));
+            }
+            // Spec §3.3.4: a card that declares push notifications promises the
+            // four push-config operations, and without a sender each of them
+            // answers PushNotificationNotSupported. Until 2026-10-13 such a card
+            // was served as it was.
+            if card.capabilities.push_notifications == Some(true) && self.push_sender.is_none() {
+                return Err(crate::error::ServerError::InvalidParams(format!(
+                    "the {which} declares capabilities.pushNotifications, but no push \
+                     sender is wired, so every push-config operation would answer \
+                     PushNotificationNotSupported (spec §3.3.4): call with_push_sender(sender), \
+                     or declare pushNotifications false"
+                )));
+            }
         }
-        // Spec §3.3.4: a card that declares push notifications promises the
-        // four push-config operations, and without a sender each of them
-        // answers PushNotificationNotSupported. Until 2026-10-13 such a card
-        // was served as it was.
-        if let CardSetting::Card(ref card) = self.agent_card
-            && card.capabilities.push_notifications == Some(true)
-            && self.push_sender.is_none()
+        if let (Some((_, public)), Some(_)) = (public_card, extended_card)
+            && public.capabilities.extended_agent_card != Some(true)
         {
             return Err(crate::error::ServerError::InvalidParams(
-                "the agent card declares capabilities.pushNotifications, but no push \
-                 sender is wired, so every push-config operation would answer \
-                 PushNotificationNotSupported (spec §3.3.4): call with_push_sender(sender), \
-                 or declare pushNotifications false"
+                "an extended agent card is set, but the agent card does not declare \
+                 capabilities.extendedAgentCard, so GetExtendedAgentCard answers \
+                 UnsupportedOperation and the extended card is never served \
+                 (spec §3.1.11): declare extendedAgentCard true, or drop the extended card"
                     .to_owned(),
             ));
         }
@@ -830,7 +875,8 @@ impl RequestHandlerBuilder {
             CardSetting::Card(card) => Some(*card),
             CardSetting::Unset | CardSetting::Without => None,
         };
-        if let Some(card) = agent_card.as_mut() {
+        let mut extended_agent_card = self.extended_agent_card.map(|card| *card);
+        if agent_card.is_some() || extended_agent_card.is_some() {
             let mut wanted: Vec<AgentExtension> = Vec::new();
             if task_store.supports_idempotency() {
                 wanted.push(AgentExtension {
@@ -868,43 +914,11 @@ impl RequestHandlerBuilder {
                 params: None,
             });
 
-            let declared = card.capabilities.extensions.as_deref().unwrap_or(&[]);
-            let missing: Vec<AgentExtension> = wanted
-                .into_iter()
-                .filter(|w| !declared.iter().any(|have| have.uri == w.uri))
-                .collect();
-
-            // `canonicalize_card` strips only `signatures`, so
-            // `capabilities.extensions` is inside the bytes a signature covers.
-            // Appending an entry to a card that is already signed would leave
-            // the served card canonicalizing to bytes the operator never
-            // signed, and every client that verifies would fail — silently,
-            // because nothing on this side reads the signature again. Refusing
-            // is the only honest answer: declare the extensions on the card and
-            // sign the card that results, or serve it unsigned.
-            if !missing.is_empty()
-                && card
-                    .signatures
-                    .as_ref()
-                    .is_some_and(|sigs| !sigs.is_empty())
-            {
-                let uris: Vec<&str> = missing.iter().map(|e| e.uri.as_str()).collect();
-                return Err(crate::error::ServerError::InvalidParams(format!(
-                    "the agent card carries a signature but does not declare {}. \
-                     Advertising an extension edits `capabilities.extensions`, \
-                     which is inside the signed bytes, so the card this server \
-                     would serve no longer verifies against its own signature. \
-                     Declare the extension on the card before signing it, or \
-                     supply the card unsigned.",
-                    uris.join(", ")
-                )));
+            if let Some(card) = agent_card.as_mut() {
+                advertise("agent card", card, &wanted)?;
             }
-
-            if !missing.is_empty() {
-                card.capabilities
-                    .extensions
-                    .get_or_insert_with(Vec::new)
-                    .extend(missing);
+            if let Some(card) = extended_agent_card.as_mut() {
+                advertise("extended agent card", card, &wanted)?;
             }
         }
 
@@ -1016,6 +1030,7 @@ impl RequestHandlerBuilder {
             },
             interceptors,
             agent_card,
+            extended_agent_card,
             executor_timeout: self.executor_timeout,
             metrics: self.metrics,
             limits: self.handler_limits,
@@ -1092,6 +1107,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
                     CardSetting::Without => "without",
                 },
             )
+            .field("extended_agent_card", &self.extended_agent_card.is_some())
             .field("executor_timeout", &self.executor_timeout)
             .field("event_queue_capacity", &self.event_queue_capacity)
             .field("max_event_size", &self.max_event_size)
@@ -1119,6 +1135,51 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("profile", &self.profile);
         d.finish()
     }
+}
+
+/// Adds to `card` each extension in `wanted` it does not declare, keeping an
+/// entry the operator wrote as it is. Refused on a signed card that would
+/// change, since the card served would no longer verify.
+fn advertise(which: &str, card: &mut AgentCard, wanted: &[AgentExtension]) -> ServerResult<()> {
+    let declared = card.capabilities.extensions.as_deref().unwrap_or(&[]);
+    let missing: Vec<AgentExtension> = wanted
+        .iter()
+        .filter(|w| !declared.iter().any(|have| have.uri == w.uri))
+        .cloned()
+        .collect();
+    // `canonicalize_card` strips only `signatures`, so
+    // `capabilities.extensions` is inside the bytes a signature covers.
+    // Appending an entry to a card that is already signed would leave
+    // the served card canonicalizing to bytes the operator never
+    // signed, and every client that verifies would fail — silently,
+    // because nothing on this side reads the signature again. Refusing
+    // is the only honest answer: declare the extensions on the card and
+    // sign the card that results, or serve it unsigned.
+    if !missing.is_empty()
+        && card
+            .signatures
+            .as_ref()
+            .is_some_and(|sigs| !sigs.is_empty())
+    {
+        let uris: Vec<&str> = missing.iter().map(|e| e.uri.as_str()).collect();
+        return Err(crate::error::ServerError::InvalidParams(format!(
+            "the {which} carries a signature but does not declare {}. \
+             Advertising an extension edits `capabilities.extensions`, \
+             which is inside the signed bytes, so the card this server \
+             would serve no longer verifies against its own signature. \
+             Declare the extension on the card before signing it, or \
+             supply the card unsigned.",
+            uris.join(", ")
+        )));
+    }
+
+    if !missing.is_empty() {
+        card.capabilities
+            .extensions
+            .get_or_insert_with(Vec::new)
+            .extend(missing);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

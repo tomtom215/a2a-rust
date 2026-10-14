@@ -103,6 +103,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   §13.1): keeps one set of records per tenant, shared by every caller in it,
   now that an authenticating interceptor isolates callers by default. See
   Behaviour Changes.
+- **`RequestHandlerBuilder::with_extended_agent_card`** (server; spec §3.1.11,
+  §13.3). The card `GetExtendedAgentCard` serves to an authenticated caller,
+  distinct from the public one: a further skill, more detailed capabilities.
+  A handler whose card declared `extendedAgentCard` could only serve that
+  public card again, so authenticating gained a caller nothing. `build()`
+  validates it, requires a push sender if it declares push notifications,
+  and advertises the server's extensions on it as on the public card; it
+  refuses one the public card does not declare, since it would never be
+  served. Without it, the public card is served, as before.
 - **`CardFetchOptions::with_signature_keys`** (client, feature `signing`;
   spec §14: clients SHOULD verify signatures when present). Card discovery
   with these options returns a signed card only if one of its signatures
