@@ -253,6 +253,16 @@ async fn the_default_alpn_list_negotiates_h2_and_http1() {
     }
 }
 
+/// The certificate and key never reach `Debug`, and the TLS setting does.
+#[tokio::test]
+async fn a_tls_server_debugs_without_its_key() {
+    let certs = certs();
+    let server = tls_server(&certs, ServeConfig::default()).await;
+    let debug = format!("{server:?}");
+    assert!(debug.contains("tls: Some(Tls(..))"), "{debug}");
+    assert!(!debug.contains("PRIVATE KEY"), "{debug}");
+}
+
 #[tokio::test]
 async fn with_tls_pem_refuses_what_it_cannot_use() {
     let certs = certs();
