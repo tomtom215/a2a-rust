@@ -29,7 +29,7 @@ release text; the ledger's own numbering).
 |---|---|---|---|---|
 | R12 | JWT caller identity | key by issuer and subject; refuse a token with no `sub` | re-keys stored partitions (old keys read for one release) | approved |
 | R13 | SLIMRPC caller identity | move to agntcy-slim-rpc 3.x and record the verified peer | the binding's API (unpublished) | approved |
-| R19 | `Struct` error details | write ProtoJSON `Any` (`{"@type", "value"}`), read both shapes | a2a-go reading our `data` | approved |
+| R19 | `Struct` error details | write ProtoJSON `Any` (`{"@type", "value"}`), read both shapes | a2a-go reading our `data` | done; a2a-go report drafted, not filed |
 | R21 | JSON-RPC notifications | execute, never reply | a client that relied on a reply | done |
 | R33 | first frame of a send stream | keep, documented | — | approved |
 | R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | done |
@@ -120,6 +120,18 @@ flat form; reading both keeps a2a-go's errors working here. An a2a-go client
 reading ours would see the fields one level down, under `value`; the
 interop suite (`scripts/go_sdk_interop.sh`) says whether anything it checks
 depends on them.
+
+**Done (2026-10-14), the (b) half of (c).** `sse::error_details` writes
+`{"@type": "…/google.protobuf.Struct", "value": {…}}`; a non-object `data` is
+the `Struct` `{"value": …}`, which is also what the gRPC binding sends, so the
+two carry the same detail. `A2aError::lag_marker` and the REST client's
+`error_frame::struct_detail` read both shapes; a flat `Struct` whose only
+field is an object named `value` reads as the `Any` form, an ambiguity the
+flat form cannot avoid. `scripts/go_sdk_interop.sh` passes both directions
+(137 checks, 0 failures; its Go client does not inspect error details). The
+report to a2a-go is not filed: the draft cites a2a-go's code from these notes
+rather than from a reading this session, so it is the maintainer's to check
+and file.
 
 ## R21 — JSON-RPC notifications are answered
 

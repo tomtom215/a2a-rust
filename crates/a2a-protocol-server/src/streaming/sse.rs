@@ -295,9 +295,8 @@ const STRUCT_DETAIL_TYPE: &str = "type.googleapis.com/google.protobuf.Struct";
 ///
 /// `code`, `status` and the `ErrorInfo` detail are what the unary REST
 /// response carries for the same error. `A2aError::data` — where the
-/// `streamLagged` marker lives — becomes a `google.protobuf.Struct` detail,
-/// written flat (`{"@type":…,"streamLagged":6}`) the way a2a-go writes and
-/// reads one (`errordetails.Typed`); a non-object value goes under `value`.
+/// `streamLagged` marker lives — becomes a `google.protobuf.Struct` detail
+/// (see [`error_details`]).
 fn rest_stream_error(err: &a2a_protocol_types::error::A2aError) -> serde_json::Value {
     let details = error_details(err);
     let mut status = serde_json::json!({
@@ -315,8 +314,14 @@ fn rest_stream_error(err: &a2a_protocol_types::error::A2aError) -> serde_json::V
 /// frame: the `ErrorInfo` an A2A error carries (and `RetryInfo` for a rate
 /// limit), then `A2aError::data`. A `data` object that already names its
 /// `@type` (a `google.rpc.BadRequest`, say) is a typed detail and goes as it
-/// is; any other value is wrapped as a `google.protobuf.Struct`, written
-/// flat.
+/// is; any other value is a `google.protobuf.Struct`, in the `ProtoJSON` form
+/// of an `Any` holding one: `{"@type": …, "value": {…}}`, as §3.3.2 asks
+/// ("using `ProtoJSON` `Any` representation"). `Struct` is one of `ProtoJSON`'s
+/// special-cased well-known types, whose `Any` carries its JSON under
+/// `value`. A non-object value is the `Struct` `{"value": …}`, the same
+/// detail the gRPC binding sends (`dispatch::grpc::details`). Until
+/// 2026-10-14 the fields were written beside `@type`, the form a2a-go writes
+/// (audit register R19); the SDK's clients read both.
 pub(crate) fn error_details(err: &a2a_protocol_types::error::A2aError) -> Vec<serde_json::Value> {
     let mut details = match err.error_info_data(None) {
         serde_json::Value::Array(items) => items,
@@ -327,16 +332,11 @@ pub(crate) fn error_details(err: &a2a_protocol_types::error::A2aError) -> Vec<se
             details.push(data.clone());
             return details;
         }
-        let mut detail = match data {
-            serde_json::Value::Object(fields) => fields.clone(),
-            other => {
-                let mut fields = serde_json::Map::new();
-                fields.insert("value".into(), other.clone());
-                fields
-            }
+        let fields = match data {
+            serde_json::Value::Object(_) => data.clone(),
+            other => serde_json::json!({ "value": other }),
         };
-        detail.insert("@type".into(), STRUCT_DETAIL_TYPE.into());
-        details.push(serde_json::Value::Object(detail));
+        details.push(serde_json::json!({ "@type": STRUCT_DETAIL_TYPE, "value": fields }));
     }
     details
 }
@@ -1048,8 +1048,25 @@ mod tests {
             v["error"]["details"],
             serde_json::json!([{
                 "@type": "type.googleapis.com/google.protobuf.Struct",
-                "value": [1, 2]
+                "value": {"value": [1, 2]}
             }])
+        );
+    }
+
+    /// Audit register R19: a `Struct` detail is the `ProtoJSON` `Any` form,
+    /// its fields under `value`. They were written beside `@type`, which a
+    /// `ProtoJSON` decoder of `google.protobuf.Any` rejects.
+    #[test]
+    fn an_object_data_is_a_protojson_any_holding_a_struct() {
+        use a2a_protocol_types::error::A2aError;
+        let details = error_details(&A2aError::stream_lagged(6));
+        let detail = details
+            .iter()
+            .find(|d| d["@type"] == STRUCT_DETAIL_TYPE)
+            .expect("a Struct detail");
+        assert_eq!(
+            detail,
+            &serde_json::json!({"@type": STRUCT_DETAIL_TYPE, "value": {"streamLagged": 6}})
         );
     }
 }

@@ -421,6 +421,22 @@ no exception for a chunk. An executor that ended a streamed artifact with an
 empty `lastChunk: true` chunk sets `lastChunk: true` on the chunk carrying the
 last part instead.
 
+### An error's `data` detail is a ProtoJSON `Any`
+
+The JSON-RPC, HTTP+JSON and WebSocket bindings carry an error's `data` as a
+`google.protobuf.Struct` detail in the error's details array. Its fields
+were written beside `@type`; they are now under `value`, as ProtoJSON writes
+an `Any` holding a `Struct`:
+
+```json
+{"@type": "type.googleapis.com/google.protobuf.Struct", "value": {"streamLagged": 6}}
+```
+
+`A2aError::is_stream_lagged` and `dropped_event_count` read both shapes, as
+does the REST client's stream decoder. Code that read a detail's fields
+directly, or a client in another language that reads them beside `@type`,
+reads `value` instead.
+
 ### The REST client sends `application/a2a+json`
 
 The HTTP+JSON client labels a request body `application/a2a+json`, as §11.1

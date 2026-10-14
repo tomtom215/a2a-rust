@@ -354,6 +354,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A `google.protobuf.Struct` error detail is written as ProtoJSON writes
+  an `Any`** (server; §3.3.2, §9.5, §11.6, audit register R19). An error's
+  `data` went into its details array with its fields beside `@type`
+  (`{"@type":"…Struct","streamLagged":6}`), which a ProtoJSON decoder of
+  `google.protobuf.Any` rejects: `Struct` is a special-cased well-known type,
+  whose `Any` carries its JSON under `value`. It is now
+  `{"@type":"…Struct","value":{"streamLagged":6}}`, and a non-object `data`
+  is the `Struct` `{"value": …}`, the detail the gRPC binding already sent.
+  This SDK's clients read both shapes. A client that read the fields beside
+  `@type` (a2a-go's `errordetails.Typed` does) reads them under `value`.
+
 - **The REST client labels its requests `application/a2a+json`** (client;
   §11.1, audit register R50). A request body is sent as
   `application/a2a+json`, a GET or DELETE carries no `Content-Type`, and a

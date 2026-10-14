@@ -1276,6 +1276,28 @@ follow the text. The register's status column tracks what is done.
     heads were already fixed: `interceptor_on_complete` (item 11, macOS and
     mutants shard 0 on `9fcc65a5`).
 
+20. `fix(server):` audit register R19 — a `google.protobuf.Struct` error
+    detail is written in the ProtoJSON `Any` form, `{"@type", "value"}`; a
+    non-object `data` is the `Struct` `{"value": …}`, which is what the gRPC
+    binding already sent. `A2aError::lag_marker` and the REST client's
+    `error_frame::struct_detail` read both shapes. Three tests pinned the
+    flat shape and now read `value` (`jsonrpc_error_details.rs`,
+    `streaming_error_envelope_tests.rs` twice, and a WebSocket unit test);
+    the three new tests failed with the old code restored. Hand mutants on
+    the readers: unwrap regardless of other fields (caught by the new
+    `a_flat_struct_with_a_value_field_and_others_stays_flat`), never unwrap,
+    and no `value` lookup in `lag_marker`. `scripts/go_sdk_interop.sh`
+    passes both directions (137, 0 failures, debug build); its Go client
+    does not inspect details, so it cannot see the shape change itself. The
+    register's option (c) also asked to report the shape to a2a-go: the
+    draft went to the maintainer in the session's report, not into this
+    repository, because it cites a2a-go's code from these notes and was not
+    checked against a2a-go's source this session. Filing it is the
+    maintainer's call. The
+    ledger's §11.7 citations into `sse.rs` started at line 335, inside
+    `error_details`, from before this change; both are re-pointed at
+    `build_sse_response` (362).
+
 **Lessons, new this session.**
 - A failing test's name is not its address. `every_handler_method_reports_its_outcome`
   exists in two files; item 10's fix went to the one in

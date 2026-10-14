@@ -2724,7 +2724,7 @@ mod tests {
         assert_eq!(found["code"], -32603, "{found}");
         let lagged = found["data"]
             .as_array()
-            .and_then(|d| d.iter().find_map(|x| x["streamLagged"].as_u64()));
+            .and_then(|d| d.iter().find_map(|x| x["value"]["streamLagged"].as_u64()));
         assert!(lagged.is_some_and(|n| n > 0), "{found}");
         assert!(
             found["data"]

@@ -557,12 +557,16 @@ impl A2aError {
     /// (how this SDK's servers sent it on JSON-RPC until 2026-10-10, and how
     /// the REST client decodes a `Struct` detail), or in one of the typed
     /// detail objects of a `data` array (how §9.5 requires JSON-RPC error
-    /// data to be shaped, and how servers send it since).
+    /// data to be shaped, and how servers send it since). In a detail, the
+    /// marker is under `value` in the `ProtoJSON` `Any` form this SDK writes
+    /// since 2026-10-14, or beside `@type` in the flat form it wrote before
+    /// and a2a-go writes (audit register R19).
     fn lag_marker(&self) -> Option<&serde_json::Value> {
         match self.data.as_ref()? {
-            serde_json::Value::Array(details) => {
-                details.iter().find_map(|d| d.get(STREAM_LAGGED_MARKER))
-            }
+            serde_json::Value::Array(details) => details.iter().find_map(|d| {
+                d.get(STREAM_LAGGED_MARKER)
+                    .or_else(|| d.get("value")?.get(STREAM_LAGGED_MARKER))
+            }),
             data => data.get(STREAM_LAGGED_MARKER),
         }
     }
@@ -1425,6 +1429,19 @@ mod tests {
         );
         assert!(array.is_stream_lagged());
         assert_eq!(array.dropped_event_count(), Some(42));
+
+        // The ProtoJSON `Any` form servers send since 2026-10-14 (audit
+        // register R19): the `Struct`'s fields under `value`.
+        let any = A2aError::with_data(
+            ErrorCode::InternalError,
+            "lagged",
+            serde_json::json!([
+                {"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "X"},
+                {"@type": "type.googleapis.com/google.protobuf.Struct", "value": {"streamLagged": 42}}
+            ]),
+        );
+        assert!(any.is_stream_lagged());
+        assert_eq!(any.dropped_event_count(), Some(42));
 
         let object = A2aError::with_data(
             ErrorCode::InternalError,
