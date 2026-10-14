@@ -257,6 +257,9 @@ let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
 - The binding's full specification (service parameters, data types, stream
   ordering and termination, error mapping, security) is
   [its own page](../bindings/websocket.md)
+- `GET /.well-known/agent-card.json` on the same port answers the agent card
+  as plain HTTP/1.1, as the HTTP dispatchers do (spec §8.1), since 0.15; any
+  other request goes to the WebSocket handshake
 
 ### Authentication and tenancy
 
@@ -446,6 +449,13 @@ streaming. The pre-0.7 JSON-in-`bytes` tunnel (`a2a.v1.A2aService`), served
 alongside the canonical service through 0.7 behind the off-by-default
 `grpc-legacy-json` feature, was **removed in 0.8**. The canonical service is
 the only gRPC surface.
+
+The agent card is served on the same port at `/.well-known/agent-card.json`
+(spec §8.1), since 0.15. A card fetch is usually HTTP/1.1, so a dispatcher
+with a card also accepts HTTP/1.1 connections; gRPC itself is HTTP/2 either
+way. Over TLS tonic offers only `h2` in ALPN, so a fetch there needs a client
+that speaks HTTP/2, as this SDK's does. `into_service()` below is the A2A
+service alone, without the card.
 
 ### Custom Server Setup
 

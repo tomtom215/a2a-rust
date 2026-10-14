@@ -56,6 +56,7 @@ use crate::error::ServerError;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::EventQueueReader;
 
+mod card;
 mod shutdown;
 
 /// Maximum size of an incoming WebSocket message (and frame), in bytes.
@@ -405,6 +406,13 @@ impl WebSocketDispatcher {
         // Match the HTTP serve path: avoid ~40ms delayed-ACK latency on the
         // small text frames JSON-RPC produces.
         let _ = stream.set_nodelay(true);
+
+        // Spec §8.1: the agent card, at its well-known path, on this listener
+        // too. Anything else is the WebSocket handshake.
+        if card::asks_for_card(&stream, self.handshake_timeout).await {
+            card::serve(stream, super::well_known::card_handler(&self.handler)).await;
+            return Ok(());
+        }
 
         // Cap message/frame sizes at the protocol level so oversized input is
         // rejected during the read, before it is buffered in memory.

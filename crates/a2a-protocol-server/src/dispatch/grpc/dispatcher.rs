@@ -291,8 +291,12 @@ impl GrpcDispatcher {
     /// `serve*` callers are the same in both builds.
     #[cfg_attr(not(feature = "grpc-tls"), allow(clippy::unnecessary_wraps))]
     pub(super) fn build_router(&self) -> std::io::Result<tonic::transport::server::Router> {
+        // Spec §8.1: the agent card on this listener too; a card fetch is
+        // usually HTTP/1.1. See `well_known`.
+        let card = crate::dispatch::well_known::card_handler(&self.handler);
         let mut server = tonic::transport::Server::builder()
-            .concurrency_limit_per_connection(self.config.concurrency_limit);
+            .concurrency_limit_per_connection(self.config.concurrency_limit)
+            .accept_http1(card.is_some());
         if let Some((interval, timeout)) = self.keepalive {
             server = server
                 .http2_keepalive_interval(Some(interval))
@@ -308,7 +312,11 @@ impl GrpcDispatcher {
                 std::io::Error::other(format!("gRPC TLS configuration rejected: {e}"))
             })?;
         }
-        Ok(server.add_service(self.into_service()))
+        let router = server.add_service(self.into_service());
+        Ok(match card {
+            Some(card) => router.add_service(super::well_known::WellKnownCard(card)),
+            None => router,
+        })
     }
 }
 

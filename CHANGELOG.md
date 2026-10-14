@@ -1005,6 +1005,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The WebSocket and gRPC listeners serve the agent card** (server; spec
+  §8.1, "A2A Servers **MUST** make an Agent Card available", §8.2). A
+  deployment on either alone published none; both now answer `GET` and
+  `HEAD` of `/.well-known/agent-card.json` as the HTTP dispatchers do
+  (`ETag`, conditional requests, `max-age=3600`), and `404` without a card.
+  The WebSocket listener reads the request line without consuming it and
+  hands every other connection to the handshake unchanged. **A gRPC
+  dispatcher with a card now accepts HTTP/1.1 connections** (tonic's
+  `accept_http1`), because a card fetch is usually HTTP/1.1; gRPC is
+  HTTP/2 either way. `GrpcDispatcher::into_service` is unchanged and
+  serves no card.
 - **A v0.3 agent card is read with its legacy fields** (client; spec App.
   A.2, A.2.2). A card fetched from its well-known path, or returned by
   `GetExtendedAgentCard`, that names its address with v0.3's top-level

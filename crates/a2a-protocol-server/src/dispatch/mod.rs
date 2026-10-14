@@ -16,6 +16,8 @@ pub mod rest;
 mod version;
 #[cfg(feature = "websocket")]
 pub mod websocket;
+#[cfg(any(feature = "websocket", feature = "grpc"))]
+mod well_known;
 
 pub use cors::CorsConfig;
 #[cfg(feature = "grpc")]

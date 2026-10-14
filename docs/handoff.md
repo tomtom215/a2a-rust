@@ -1374,7 +1374,19 @@ follows is a new pull request.
     a v0.3 interface sends it, and selection never picks one. Ledger App.
     A.2 (3421) PARTIAL to TESTED (TESTED 324, PARTIAL 13).
 
+27. `fix(server):` spec §8.1 MUST — the WebSocket and gRPC listeners
+    serve the agent card at its well-known path. The WebSocket listener
+    peeks the request line; the gRPC router gains a `.well-known` service
+    and accepts HTTP/1.1 when there is a card (over TLS tonic offers only
+    `h2`, so a fetch there needs an HTTP/2 client). Ledger §8.1 (1970)
+    PARTIAL to TESTED (TESTED 325, PARTIAL 12).
+
 **Lessons, new this session.**
+- In these crates an item in a private module is `pub`, not `pub(crate)`:
+  `clippy::redundant_pub_crate` is denied, and this branch wrote it wrong
+  three times (`rest::query`, `legacy_card`, `dispatch::well_known`). Run
+  `cargo clippy -p <crate> --all-targets --all-features -- -D warnings`
+  right after adding a module, before the full matrix.
 - `cargo doc` is a gate, and not one clippy covers. `edc8bbc0` (#171) went
   red on Documentation for an intra-doc link to a type not in scope
   there, and the next commit's workspace doc build caught a redundant link
