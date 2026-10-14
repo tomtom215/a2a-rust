@@ -1374,9 +1374,9 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     case. `base64` is an unconditional dependency of the server now: the
     root lockfile is unchanged, and the ITK and SLIMRPC-binding lockfiles
     each gain one line, the server's edge to `base64 0.23.1`, which both
-    already held. Open (register R64): an executor's own events are
-    not checked, so an artifact with such a value is served over JSON and
-    fails a gRPC read; the §4 entry is PARTIAL (low) for it.
+    already held. An executor's own events were left open (register
+    R64): an artifact with such a value was served over JSON and failed a
+    gRPC read. Item 105 closes it, and the §4 entry is TESTED.
 66. `docs(ledger):` the ten entries items 61 to 65 changed with a test
     that failed first (69, 130, 143, 270, 279, 290, 413, 436, 438, 445)
     did not carry `changed_by`, which the ledger's method says marks a
