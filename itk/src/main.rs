@@ -634,6 +634,14 @@ async fn main() {
     let builder = RequestHandlerBuilder::new(ItkExecutor)
         .with_interceptor(acts_modes::Guard::new(scope))
         .share_tasks_across_callers();
+    // §3.1.11: a card that declares an extended card and has none set answers
+    // ExtendedAgentCardNotConfigured, so the public card is served as the
+    // extended one whenever the pass declares it (`acts_modes::capabilities`).
+    let builder = if card.capabilities.extended_agent_card == Some(true) {
+        builder.with_extended_agent_card(card.clone())
+    } else {
+        builder
+    };
     let handler = Arc::new(
         builder
             .with_agent_card(card)

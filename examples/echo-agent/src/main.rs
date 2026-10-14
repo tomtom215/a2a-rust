@@ -282,8 +282,7 @@ async fn start_restricted_agent() -> String {
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
-            .with_agent_card(card.clone())
-            .with_extended_agent_card(card)
+            .with_agent_card(card)
             .build()
             .expect("build restricted handler"),
     );

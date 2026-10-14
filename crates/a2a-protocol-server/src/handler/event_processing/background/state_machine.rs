@@ -75,6 +75,9 @@ async fn fail_invalid_transition(
     current: TaskState,
     next: TaskState,
 ) -> Outcome {
+    // Read only by the trace lines, which a build without `tracing` drops.
+    #[cfg(not(feature = "tracing"))]
+    let _ = (task_id, current, next);
     trace_error!(
         task_id = %task_id,
         from = %current,

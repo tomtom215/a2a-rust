@@ -250,8 +250,7 @@ pub async fn start_restricted() -> String {
 
     let handler: Arc<RequestHandler> = Arc::new(
         RequestHandlerBuilder::new(SurfaceExecutor)
-            .with_agent_card(c.clone())
-            .with_extended_agent_card(c)
+            .with_agent_card(c)
             .build()
             .expect("build restricted handler"),
     );

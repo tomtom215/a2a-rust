@@ -342,8 +342,7 @@ pub(crate) async fn start_restricted_agent() -> Result<String, Box<dyn std::erro
 
     let handler: Arc<RequestHandler> = Arc::new(
         RequestHandlerBuilder::new(LogSearchExecutor)
-            .with_agent_card(card.clone())
-            .with_extended_agent_card(card)
+            .with_agent_card(card)
             .build()?,
     );
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
