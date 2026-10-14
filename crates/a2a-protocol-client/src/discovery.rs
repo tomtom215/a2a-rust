@@ -548,37 +548,48 @@ async fn fetch_card_with_metadata(
         });
     }
 
+    #[cfg(feature = "signing")]
+    if options.signature_keys.is_some() {
+        let received: serde_json::Value =
+            serde_json::from_slice(&body_bytes).map_err(ClientError::Serialization)?;
+        verify_card_signatures(&received, options)?;
+    }
     let card =
         serde_json::from_slice::<AgentCard>(&body_bytes).map_err(ClientError::Serialization)?;
-    #[cfg(feature = "signing")]
-    verify_card_signatures(&card, options)?;
     Ok((card, etag, last_modified))
 }
 
 /// Spec §14: verify a card's signatures when the caller supplied keys. One
 /// valid signature suffices (JWS allows several signers); none valid, or no
 /// matching key, fails the fetch.
+///
+/// Verified as received, before it is read into an [`AgentCard`]: the signer
+/// signed every field it serves, and the typed card drops any this SDK does
+/// not model. Until 2026-10-14 the typed card was verified, so a correctly
+/// signed card from a peer on a later version was refused.
 #[cfg(feature = "signing")]
-fn verify_card_signatures(card: &AgentCard, options: &CardFetchOptions) -> ClientResult<()> {
-    let (Some(keys), Some(signatures)) = (&options.signature_keys, &card.signatures) else {
+fn verify_card_signatures(
+    card: &serde_json::Value,
+    options: &CardFetchOptions,
+) -> ClientResult<()> {
+    let Some(keys) = &options.signature_keys else {
         return Ok(());
     };
-    if signatures.is_empty() {
+    let signed = card
+        .get("signatures")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|signatures| !signatures.is_empty());
+    if !signed {
         return Ok(());
     }
-    let mut last = None;
-    for sig in signatures {
-        match a2a_protocol_types::signing::verify_agent_card_with_jwks(card, sig, keys) {
-            Ok(()) => return Ok(()),
-            Err(e) => last = Some(e),
-        }
-    }
-    let why = last.map_or_else(String::new, |e| e.message);
-    Err(ClientError::Protocol(
-        a2a_protocol_types::error::A2aError::invalid_params(format!(
-            "agent card signature did not verify against the supplied keys: {why}"
-        )),
-    ))
+    a2a_protocol_types::signing::verify_card_json_with_jwks(card, keys).map_err(|e| {
+        ClientError::Protocol(a2a_protocol_types::error::A2aError::invalid_params(
+            format!(
+                "agent card signature did not verify against the supplied keys: {}",
+                e.message
+            ),
+        ))
+    })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

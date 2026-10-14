@@ -104,6 +104,7 @@ dependencies = [
  "prost",
  "protoc-bin-vendored",
  "rcgen",
+ "ring",
  "rustls",
  "rustls-pki-types",
  "serde",

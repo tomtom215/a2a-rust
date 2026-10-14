@@ -823,6 +823,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A signed agent card is verified as received** (client, types;
+  `signing` feature; spec §8.4.3). The signer signs every field it serves,
+  and the client verified the card after reading it into an `AgentCard`,
+  which drops any field this SDK does not model (one a later minor version
+  adds, say). So a correctly signed card from such a peer was refused by a
+  fetch with `CardFetchOptions::with_signature_keys`. The fetch now
+  verifies the card's JSON first. New in `signing`:
+  `verify_card_json_with_jwks` and `canonicalize_card_json`, for a card
+  fetched another way; `verify_card_with_jwks` still verifies a card as
+  this SDK models it.
 - **The axum router's own refusals are AIP-193** (server, `axum` feature;
   spec §11.6). Refusals the router made before any A2A handler ran went out
   as axum wrote them: a method a route does not take as a bodiless `405`, a

@@ -75,8 +75,23 @@ const MAX_CANONICAL_DEPTH: usize = 256;
 ///
 /// Returns an error if serialization or canonicalization fails.
 pub fn canonicalize_card(card: &AgentCard) -> A2aResult<Vec<u8>> {
-    let mut value = serde_json::to_value(card)
+    let value = serde_json::to_value(card)
         .map_err(|e| A2aError::internal(format!("card serialization: {e}")))?;
+    canonicalize_card_json(&value)
+}
+
+/// [`canonicalize_card`] for a card as received: the JSON object a peer
+/// served, with every field it holds, including ones this SDK does not model.
+///
+/// # Errors
+///
+/// Returns an error if `card` is not a JSON object, or canonicalization
+/// fails.
+pub fn canonicalize_card_json(card: &serde_json::Value) -> A2aResult<Vec<u8>> {
+    let mut value = card.clone();
+    let Some(obj) = value.as_object_mut() else {
+        return Err(A2aError::invalid_params("an agent card is a JSON object"));
+    };
     // The `signatures` field MUST be excluded from the canonical payload that
     // signatures are computed over. A signed card is served on the wire with
     // its `signatures` array populated; if that field were part of the
@@ -84,11 +99,10 @@ pub fn canonicalize_card(card: &AgentCard) -> A2aResult<Vec<u8>> {
     // signed (and multi-signature / key-rotation flows would sign over the
     // wrong bytes). Removing it here fixes both `sign_card_es256` and
     // `verify_agent_card`, which share this canonicalizer.
-    if let Some(obj) = value.as_object_mut() {
-        obj.remove("signatures");
-        // §8.4.1 rule 1: the protobuf field-presence form, not serde's.
-        presence::prune(obj, "AgentCard");
-    }
+    obj.remove("signatures");
+    // §8.4.1 rule 1: the protobuf field-presence form, not serde's. A field
+    // the presence table does not name is left as it is.
+    presence::prune(obj, "AgentCard");
     canonicalize(&value)
 }
 
@@ -577,7 +591,7 @@ pub fn verify_agent_card(
 ) -> A2aResult<()> {
     let alg = signature_header(sig)?.alg;
     let key = VerifyingKey::from_bytes(&alg, public_key)?;
-    verify_with(card, sig, &alg, &key)
+    verify_with(&canonicalize_card(card)?, sig, &alg, &key)
 }
 
 /// Verifies an [`AgentCardSignature`] against the keys of a JWK Set: those
@@ -600,6 +614,15 @@ pub fn verify_agent_card_with_jwks(
     sig: &AgentCardSignature,
     jwks: &Jwks,
 ) -> A2aResult<()> {
+    verify_canonical_with_jwks(&canonicalize_card(card)?, sig, jwks)
+}
+
+/// [`verify_agent_card_with_jwks`] over a card's canonical bytes.
+fn verify_canonical_with_jwks(
+    canonical: &[u8],
+    sig: &AgentCardSignature,
+    jwks: &Jwks,
+) -> A2aResult<()> {
     let header = signature_header(sig)?;
     let candidates = jwks.candidates(header.kid.as_deref(), &header.alg);
     if candidates.is_empty() {
@@ -610,7 +633,7 @@ pub fn verify_agent_card_with_jwks(
     }
     if candidates
         .iter()
-        .any(|k| verify_with(card, sig, &header.alg, k).is_ok())
+        .any(|k| verify_with(canonical, sig, &header.alg, k).is_ok())
     {
         Ok(())
     } else {
@@ -624,6 +647,11 @@ pub fn verify_agent_card_with_jwks(
 /// set. Spec §8.4.3 allows several signatures, for key rotation, and asks a
 /// verifier to try each.
 ///
+/// This verifies the card as this SDK models it. A card fetched from a peer
+/// may hold a field this SDK does not model, which the signer signed over and
+/// [`AgentCard`] drops; verify that card as received, with
+/// [`verify_card_json_with_jwks`].
+///
 /// # Errors
 ///
 /// Returns an error when the card carries no signature, or none verifies.
@@ -632,9 +660,39 @@ pub fn verify_card_with_jwks(card: &AgentCard, jwks: &Jwks) -> A2aResult<()> {
     if sigs.is_empty() {
         return Err(A2aError::invalid_params("the agent card is not signed"));
     }
+    verify_any(&canonicalize_card(card)?, sigs, jwks)
+}
+
+/// [`verify_card_with_jwks`] for a card as received: the JSON object a peer
+/// served, verified before it is read into an [`AgentCard`].
+///
+/// The signer signed the card it serves, with every field it holds. One this
+/// SDK does not model, such as a field a later minor version adds, is part of
+/// those bytes, and the typed path drops it; so does any field the typed path
+/// writes back differently, such as v0.3's `in` for an API key's `location`.
+/// Either way a correctly signed card would not verify as an [`AgentCard`].
+///
+/// # Errors
+///
+/// Returns an error when `card` is not a JSON object, its `signatures` are
+/// not signatures, it carries none, or none verifies.
+pub fn verify_card_json_with_jwks(card: &serde_json::Value, jwks: &Jwks) -> A2aResult<()> {
+    let sigs: Vec<AgentCardSignature> = match card.get("signatures") {
+        None | Some(serde_json::Value::Null) => Vec::new(),
+        Some(sigs) => serde_json::from_value(sigs.clone())
+            .map_err(|e| A2aError::invalid_params(format!("agent card signatures: {e}")))?,
+    };
+    if sigs.is_empty() {
+        return Err(A2aError::invalid_params("the agent card is not signed"));
+    }
+    verify_any(&canonicalize_card_json(card)?, &sigs, jwks)
+}
+
+/// Succeeds when any of `sigs` verifies `canonical` under a key of `jwks`.
+fn verify_any(canonical: &[u8], sigs: &[AgentCardSignature], jwks: &Jwks) -> A2aResult<()> {
     if sigs
         .iter()
-        .any(|sig| verify_agent_card_with_jwks(card, sig, jwks).is_ok())
+        .any(|sig| verify_canonical_with_jwks(canonical, sig, jwks).is_ok())
     {
         Ok(())
     } else {
@@ -645,13 +703,12 @@ pub fn verify_card_with_jwks(card: &AgentCard, jwks: &Jwks) -> A2aResult<()> {
 }
 
 fn verify_with(
-    card: &AgentCard,
+    canonical: &[u8],
     sig: &AgentCardSignature,
     alg: &str,
     key: &VerifyingKey,
 ) -> A2aResult<()> {
-    let canonical = canonicalize_card(card)?;
-    let signing_input = format!("{}.{}", sig.protected, URL_SAFE_NO_PAD.encode(&canonical));
+    let signing_input = format!("{}.{}", sig.protected, URL_SAFE_NO_PAD.encode(canonical));
     let sig_bytes = URL_SAFE_NO_PAD
         .decode(&sig.signature)
         .map_err(|e| A2aError::internal(format!("invalid signature encoding: {e}")))?;

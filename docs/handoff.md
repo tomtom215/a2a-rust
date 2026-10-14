@@ -1763,6 +1763,20 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     failed before. Ledger 2908; ledger 2918's axum citation pointed at the
     body extractor, not the content-type check, before this change and now
     names the check. Mutants 4 of 4.
+96. `fix(client, types):` a signed card is verified as received (audit
+    register R31; in Fixed). `canonicalize_card_json` is now the one
+    canonicalization path (`canonicalize_card` serializes and calls it);
+    verification takes canonical bytes, so the typed and JSON entry points
+    share it. `verify_card_json_with_jwks` is new; the client's fetch with
+    signature keys parses the body as JSON and verifies that before the
+    typed parse. Two tests sign over a field this SDK does not model: the
+    types one shows the typed path refusing it, the client one failed
+    before. Removing the presence prune survived every types-crate test;
+    `a_received_cards_defaults_are_dropped_before_canonicalizing` now kills
+    it (the Python interop test in `itk/` covers it across SDKs). The client
+    gained `ring` and `base64` as dev-dependencies, already in the tree.
+    Ledger 2131, 2133, 2140 (its note denied the opt-in that exists) and
+    3352. Mutants 6 of 6.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

@@ -128,6 +128,11 @@ futures-util = { version = ">=0.3.30, <0.4", default-features = false, features 
 # through hyper-util.
 socket2 = { version = ">=0.6, <0.7", features = ["all"] }
 tower-service = ">=0.3, <0.4"
+# Sign a card's JSON as a peer would, over a field this SDK does not model
+# (`tests/card_signature_verification.rs`); both already in the tree through
+# a2a-protocol-types.
+ring = "0.17.12"
+base64 = "0.23"
 
 [[bench]]
 name = "sse_parse"
