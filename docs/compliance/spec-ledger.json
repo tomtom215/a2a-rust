@@ -1456,7 +1456,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:180",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:42",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:701",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:214"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:218"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs axum_enforces_the_protocol_version_except_for_discovery"
@@ -2801,7 +2801,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:180",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:42",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:701",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:214"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:218"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs axum_enforces_the_protocol_version_except_for_discovery"
@@ -4752,7 +4752,7 @@
     "crates/a2a-protocol-server/src/builder.rs:117",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:112",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:176",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:550"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:562"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:252 agent_card_get_returns_card_when_configured",
@@ -5412,8 +5412,8 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:277",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:88",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:550",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:597"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:562",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:609"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/agent_card_caching.rs:79 the_axum_agent_card_is_cacheable_like_the_rest_one"
@@ -5433,8 +5433,8 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/caching.rs:221",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:95",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:550",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:597",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:562",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:609",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:66"
    ],
    "test_evidence": [
@@ -5459,8 +5459,8 @@
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:50",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:101",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:41",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:300",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:614",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:306",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:626",
     "crates/a2a-protocol-server/src/agent_card/caching.rs:140"
    ],
    "test_evidence": [
@@ -6035,7 +6035,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:40-87",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:91-102",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:173-190",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:173-194",
     "crates/a2a-protocol-types/src/lib.rs:87-98",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:203-218"
    ],
@@ -6082,8 +6082,8 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:185-214",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:259-271",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:130-142",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:199-219",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:317"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:203-223",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:323"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:347 rest_required_extension_enforced_and_echoed",
@@ -6178,15 +6178,15 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:119-127",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:572-611",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:176-192",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:709",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:713"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:721",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:725"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/request.rs:314 build_uri_extracts_path_param_and_appends_query",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:633 parse_list_tasks_query_all_params",
-    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:793 axum_get_task_honours_history_length",
-    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:814 axum_get_requests_read_the_tenant_from_the_query",
-    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:851 axum_push_config_and_subscribe_routes_read_the_tenant_from_the_query"
+    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:848 axum_get_task_honours_history_length",
+    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:869 axum_get_requests_read_the_tenant_from_the_query",
+    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:906 axum_push_config_and_subscribe_routes_read_the_tenant_from_the_query"
    ],
    "notes": "Client sends an empty body on GET/DELETE and puts the leftover params in the query. Server reads GetTask historyLength and ListTasks filters from the query, and the tenant from `?tenant=` when there is no path prefix. The axum router (A2aRouter) does the same since 2026-10-13: until then it read neither GetTask's historyLength nor any GET or DELETE route's `?tenant=`, so `GET /tasks/{id}?historyLength=0` returned the whole history.",
    "auditor": "E",
@@ -6204,15 +6204,15 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:176-192",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:577",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:574",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:586",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:12-37",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:709"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:721"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:633 parse_list_tasks_query_all_params",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:330 build_uri_appends_query_for_get",
-    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:793 axum_get_task_honours_history_length",
-    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:814 axum_get_requests_read_the_tenant_from_the_query",
+    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:848 axum_get_task_honours_history_length",
+    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:869 axum_get_requests_read_the_tenant_from_the_query",
     "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter"
    ],
    "notes": "Keys used: contextId, status, pageSize, pageToken, statusTimestampAfter, includeArtifacts, historyLength, tenant. A malformed value such as `status=BOGUS` or `pageSize=abc` is refused with InvalidParams (2026-10-13); until then it was dropped and an unfiltered list returned.",
@@ -6313,16 +6313,21 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:70-98",
-    "crates/a2a-protocol-types/src/error.rs:198-213"
+    "crates/a2a-protocol-types/src/error.rs:198-213",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:357 method_not_allowed",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:276"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:653 rest_error_task_not_found_has_aip193_body",
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:728 rest_error_push_not_supported_has_aip193_body",
-    "crates/a2a-protocol-server/tests/http_json_error_parity.rs:76 rest_and_axum_answer_the_same_failures_identically"
+    "crates/a2a-protocol-server/tests/http_json_error_parity.rs:76 rest_and_axum_answer_the_same_failures_identically",
+    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:446 axum_refusals_of_its_own_are_aip_193",
+    "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:763 a_dribbling_body_is_cut_off_at_the_configured_timeout"
    ],
-   "notes": "Body shape `{error:{code,status,message,details}}` matches the spec example at lines 2932-2949, except that ErrorInfo.metadata is never populated (it is optional).",
+   "notes": "Body shape `{error:{code,status,message,details}}` matches the spec example at lines 2932-2949, except that ErrorInfo.metadata is never populated (it is optional). The axum router's own refusals, made before any A2A handler runs, take the same shape since 2026-10-14: a method a route does not take (405, Allow kept), a body over the cap (413), one not received in time (408), an unreadable one (400). They were axum's plain text, or no body for 405. An unknown path outside the A2A routes stays the composing app's to answer.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 2914,
@@ -6399,7 +6404,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:70-98",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:148-168",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:265-281"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:213"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/hardening.rs rest_rejects_wrong_content_type_on_post",
@@ -6408,7 +6413,7 @@
    "notes": "ContentTypeNotSupportedError now goes through server_error_to_response with its ErrorInfo on REST and axum.",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 2981,

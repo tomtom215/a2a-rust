@@ -1753,6 +1753,16 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     parameter, which needs a `Transport` change and is put to the
     maintainer. `auth.rs` passed 500 lines, so its tests moved to
     `auth/tests.rs` (checked byte for byte). Ledger 423. Mutants 9 of 9.
+95. `fix(server):` the axum router's own refusals are AIP-193 (audit
+    register R26; in Fixed): `405` through `method_not_allowed_fallback`,
+    which keeps `Allow`, and the body extractor's `413`, `408` and `400`.
+    Not a router-wide `fallback` for unknown paths: it would answer every
+    path of an app the router is merged into, and axum panics merging two
+    routers that both have one. `axum_refusals_of_its_own_are_aip_193` and
+    the extended `a_dribbling_body_is_cut_off_at_the_configured_timeout`
+    failed before. Ledger 2908; ledger 2918's axum citation pointed at the
+    body extractor, not the content-type check, before this change and now
+    names the check. Mutants 4 of 4.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

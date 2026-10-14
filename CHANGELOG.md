@@ -823,6 +823,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The axum router's own refusals are AIP-193** (server, `axum` feature;
+  spec §11.6). Refusals the router made before any A2A handler ran went out
+  as axum wrote them: a method a route does not take as a bodiless `405`, a
+  body over the cap as plain-text `413`, one not received in time as
+  plain-text `408`. They now carry an AIP-193 body (`error.code` and
+  `error.message`, with `error.status` where the code has a name), as
+  `RestDispatcher`'s do; the statuses and the `405`'s `Allow` header are
+  unchanged. An unknown path outside the A2A routes is left to the app the
+  router is merged into.
 - **A `Last-Event-ID` on a WebSocket upgrade no longer replays the event
   log** (server, `websocket` feature). The WebSocket binding has no
   resumption: a resubscribe starts from the task's snapshot. But the

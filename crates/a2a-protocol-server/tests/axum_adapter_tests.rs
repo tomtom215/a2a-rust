@@ -426,6 +426,49 @@ async fn axum_honors_configured_body_limit() {
     );
 }
 
+/// A refusal the router makes itself, before any A2A handler runs, in the
+/// AIP-193 shape `RestDispatcher` answers with (spec §11.6), status kept.
+fn assert_aip193(status: u16, body: &[u8], want: u16) {
+    let text = String::from_utf8_lossy(body);
+    assert_eq!(status, want, "{text}");
+    let v: serde_json::Value =
+        serde_json::from_slice(body).unwrap_or_else(|e| panic!("not JSON ({e}): {text}"));
+    assert_eq!(v["error"]["code"], want, "{v}");
+    assert!(v["error"]["message"].is_string(), "{v}");
+}
+
+/// R26: a method an A2A route does not take, and a body over the cap, were
+/// axum's own answers: no body at all for `405`, plain text for `413`. An
+/// unknown path outside the A2A routes stays the composing app's to answer:
+/// a router-wide fallback would claim every path of an app this router is
+/// merged into, and axum refuses to merge two routers that both have one.
+#[tokio::test]
+async fn axum_refusals_of_its_own_are_aip_193() {
+    let base = start_test_server_with_body_limit(1024).await;
+
+    // `/message:send` takes POST only.
+    let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("{base}/message:send"))
+        .header("a2a-version", "1.0")
+        .body(Empty::new())
+        .unwrap();
+    let resp = client.request(req).await.unwrap();
+    let allow = resp.headers().get("allow").cloned();
+    let status = resp.status().as_u16();
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert_aip193(status, &body, 405);
+    assert!(
+        allow.is_some(),
+        "a 405 names the methods it takes (RFC 9110 §15.5.6)"
+    );
+
+    let big = make_send_body(&"x".repeat(4096));
+    let (status, body) = http_post_json(&format!("{base}/message:send"), &big).await;
+    assert_aip193(status, &body, 413);
+}
+
 // ── Routes that had no coverage at all ───────────────────────────────────────
 //
 // The suite above drove send/get/list/cancel and the two static endpoints,
@@ -768,6 +811,18 @@ async fn a_dribbling_body_is_cut_off_at_the_configured_timeout() {
         status_line.contains("408"),
         "a body that never arrives must be refused with 408, got: {status_line:?}"
     );
+
+    // R26: in the AIP-193 shape, as `RestDispatcher` answers it; it was
+    // plain text until 2026-10-14.
+    let mut response = buf[..n].to_vec();
+    while !String::from_utf8_lossy(&response).contains("\"code\":408") {
+        match tokio::time::timeout(std::time::Duration::from_secs(2), sock.read(&mut buf)).await {
+            Ok(Ok(n)) if n > 0 => response.extend_from_slice(&buf[..n]),
+            _ => break,
+        }
+    }
+    let text = String::from_utf8_lossy(&response);
+    assert!(text.contains("\"code\":408"), "{text}");
 }
 
 // ── §11.5: a GET carries its request's fields in the query ───────────────────

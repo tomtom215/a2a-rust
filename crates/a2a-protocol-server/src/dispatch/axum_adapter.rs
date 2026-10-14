@@ -178,6 +178,10 @@ impl A2aRouter {
             // Health check
             .route("/health", get(handle_health))
             .route("/ready", get(handle_ready))
+            // Not a router-wide `fallback`: that would answer every unknown
+            // path of an app this router is merged into, and axum refuses to
+            // merge two routers that both have one.
+            .method_not_allowed_fallback(method_not_allowed)
             .with_state(state)
             .layer(axum::extract::DefaultBodyLimit::max(max_body))
             .layer(axum::middleware::from_fn_with_state(
@@ -266,15 +270,17 @@ impl axum::extract::FromRequest<A2aState> for TimedBody {
         let deadline = state.config.body_read_timeout;
         match tokio::time::timeout(deadline, Bytes::from_request(req, state)).await {
             Ok(Ok(bytes)) => Ok(Self(bytes)),
-            // A body that exceeded `DefaultBodyLimit`, or a broken stream:
-            // axum's own rejection already says which, and says it better than
-            // a re-wrap would.
-            Ok(Err(rejection)) => Err(rejection.into_response()),
-            Err(_) => Err((
-                axum::http::StatusCode::REQUEST_TIMEOUT,
-                format!("request body not fully received within {deadline:?}"),
-            )
-                .into_response()),
+            // A body over `DefaultBodyLimit` (413), or a broken stream: axum's
+            // status, in the AIP-193 shape `RestDispatcher` answers with.
+            // Until 2026-10-14 axum's plain-text rejection went out as it was.
+            Ok(Err(rejection)) => Err(plain_error(
+                rejection.status().as_u16(),
+                &rejection.body_text(),
+            )),
+            Err(_) => Err(plain_error(
+                408,
+                &format!("request body not fully received within {deadline:?}"),
+            )),
         }
     }
 }
@@ -344,6 +350,12 @@ fn plain_error(status: u16, message: &str) -> axum::response::Response {
 /// [`ServerError::http_status`]: crate::error::ServerError::http_status
 fn handler_error_to_response(err: &crate::error::ServerError) -> axum::response::Response {
     hyper_to_axum(crate::dispatch::rest::server_error_to_response(err))
+}
+
+/// A method an A2A route does not take, answered in the AIP-193 shape (spec
+/// §11.6) instead of axum's bodiless `405`, which keeps its `Allow` header.
+async fn method_not_allowed() -> axum::response::Response {
+    plain_error(405, "method not allowed")
 }
 
 /// A request body this adapter could not read, answered as `RestDispatcher`
