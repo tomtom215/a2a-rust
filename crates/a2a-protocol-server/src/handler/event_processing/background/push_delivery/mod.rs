@@ -202,7 +202,9 @@ async fn deliver_once(
         Ok(Err(_err)) => {
             trace_warn!(
                 task_id = %task_id,
-                url = %config.url,
+                // The origin only: a webhook's path or query is often its
+                // receiver's secret. Until 2026-10-14 the whole URL went out.
+                url = %crate::push::webhook::origin_for_log(&config.url),
                 error = %_err,
                 "push notification delivery failed"
             );
@@ -211,7 +213,7 @@ async fn deliver_once(
         Err(_) => {
             trace_warn!(
                 task_id = %task_id,
-                url = %config.url,
+                url = %crate::push::webhook::origin_for_log(&config.url),
                 outcome = timeout_label,
                 "push notification delivery timed out"
             );

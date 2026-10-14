@@ -3131,7 +3131,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:1364 the_default_schedule_starts_every_attempt_inside_the_default_bound",
     "crates/a2a-protocol-server/src/handler/limits/tests.rs:13 default_values",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/mod.rs:317 deliver_push_bg_logs_delivery_timeout"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/mod.rs:319 deliver_push_bg_logs_delivery_timeout"
    ],
    "notes": "HttpPushSender's per-request timeout defaults to 10s and HandlerLimits::push_delivery_timeout, which bounds a whole delivery with its retries, to 30s: both inside the recommended 10-30s. At the defaults every attempt of the three-attempt schedule starts inside the bound (5s, 16s, 28s when each request runs to its timeout); the first two finish. Until 2026-10-12 the bound was 5s and truncated the schedule to one attempt.",
    "auditor": "C",
@@ -7383,15 +7383,18 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/push.rs:43",
     "crates/a2a-protocol-types/src/push.rs:104",
-    "crates/a2a-protocol-server/src/push/webhook.rs:78"
+    "crates/a2a-protocol-server/src/push/webhook.rs:78",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:207"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/push.rs:353 debug_redacts_secrets_but_keeps_presence",
-    "crates/a2a-protocol-server/tests/push_log_redaction.rs:93 delivery_and_failure_logs_carry_the_origin_not_the_secret"
+    "crates/a2a-protocol-server/tests/push_log_redaction.rs:93 delivery_and_failure_logs_carry_the_origin_not_the_secret",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/log_redaction.rs:63 a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret"
    ],
-   "notes": "Secret handling (Debug redaction, origin-only URL logging) tested; rotation is an application duty (re-create config).",
+   "notes": "Secret handling (Debug redaction, origin-only URL logging) tested; rotation is an application duty (re-create config). The background delivery's failure and timeout WARNs logged the whole webhook URL, path and query included, until 2026-10-14 (audit register R14); they now log its origin, as the sender's own lines did.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 3139,

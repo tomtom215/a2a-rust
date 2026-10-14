@@ -22,6 +22,8 @@ use crate::push::{InMemoryPushConfigStore, PushConfigStore};
 use super::*;
 
 mod budget;
+#[cfg(feature = "tracing")]
+mod log_redaction;
 
 /// A push config store that always returns errors.
 struct AlwaysErrPushConfigStore;

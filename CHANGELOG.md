@@ -1301,6 +1301,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A failed push delivery is logged with the webhook's origin, not its
+  URL** (server). The background delivery's failure and timeout warnings
+  logged the whole webhook URL, so a secret in its path or query
+  (`/hooks/<token>`, `?sig=`) went into every log pipeline the server
+  feeds. `HttpPushSender`'s own log lines already named the origin only.
 - **SLIMRPC: a caller's `:`-prefixed metadata key is dropped**
   (`a2a-protocol-slimrpc`). A key beginning with `:` names what a server
   records itself, `":peer-addr"` (the connection's address, for

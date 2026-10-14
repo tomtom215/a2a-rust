@@ -1783,6 +1783,12 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     test fails without it; the existing caching test now pins the default
     exactly rather than any `max-age=`, which let a changed default pass.
     Ledger 2229. Mutants 5 of 5.
+98. `fix(server):` a failed push delivery logs the webhook's origin (audit
+    register R14; in Security). `deliver_once`'s two WARNs logged
+    `config.url` whole; they use `push::webhook::origin_for_log`, as
+    `HttpPushSender`'s own lines have since audit O16.
+    `a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret` saw the
+    secret in the failure line before the fix. Ledger 3138. Mutants 2 of 2.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
