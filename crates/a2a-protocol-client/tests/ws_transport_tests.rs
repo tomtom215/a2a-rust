@@ -278,6 +278,7 @@ async fn an_unread_stream_does_not_stall_a_unary_call_on_the_same_socket() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(ChattyExecutor { count: 300 })
             .with_agent_card(minimal_agent_card())
+            .with_push_sender(MockPushSender)
             .build()
             .expect("build handler"),
     );
@@ -358,6 +359,7 @@ fn serve_until(
     let handler = Arc::new(
         RequestHandlerBuilder::new(SimpleExecutor)
             .with_agent_card(minimal_agent_card())
+            .with_push_sender(MockPushSender)
             .build()
             .expect("build handler"),
     );

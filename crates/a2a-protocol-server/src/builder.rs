@@ -695,6 +695,8 @@ impl RequestHandlerBuilder {
     ///   have to edit to declare an extension;
     /// - no agent card, unless [`without_agent_card`](Self::without_agent_card)
     ///   (spec §8.1);
+    /// - an agent card that declares `pushNotifications` with no
+    ///   [`push sender`](Self::with_push_sender) (spec §3.3.4);
     /// - a zero executor timeout, `max_id_length`, `max_metadata_size` or
     ///   `push_delivery_timeout`;
     /// - tasks isolated by caller with a store that does not partition by
@@ -716,6 +718,22 @@ impl RequestHandlerBuilder {
                 .and_then(|()| card.validate_security_schemes())
         {
             return Err(crate::error::ServerError::InvalidParams(why.into()));
+        }
+        // Spec §3.3.4: a card that declares push notifications promises the
+        // four push-config operations, and without a sender each of them
+        // answers PushNotificationNotSupported. Until 2026-10-13 such a card
+        // was served as it was.
+        if let CardSetting::Card(ref card) = self.agent_card
+            && card.capabilities.push_notifications == Some(true)
+            && self.push_sender.is_none()
+        {
+            return Err(crate::error::ServerError::InvalidParams(
+                "the agent card declares capabilities.pushNotifications, but no push \
+                 sender is wired, so every push-config operation would answer \
+                 PushNotificationNotSupported (spec §3.3.4): call with_push_sender(sender), \
+                 or declare pushNotifications false"
+                    .to_owned(),
+            ));
         }
 
         #[cfg(feature = "audit")]
@@ -1148,6 +1166,29 @@ mod tests {
         assert!(why.contains("spec §8.1"), "{why}");
         assert!(why.contains("with_agent_card(card)"), "{why}");
         assert!(why.contains("without_agent_card()"), "{why}");
+    }
+
+    /// Spec §3.3.4: a card that declares push notifications needs a sender to
+    /// keep that promise, so one with none is refused, naming the way out.
+    #[test]
+    fn build_refuses_a_card_declaring_push_without_a_sender() {
+        let declaring = || {
+            let mut card = unsigned_card();
+            card.capabilities = card.capabilities.with_push_notifications(true);
+            card
+        };
+        let err = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(declaring())
+            .build()
+            .expect_err("push declared, no sender");
+        let why = err.to_string();
+        assert!(why.contains("spec §3.3.4"), "{why}");
+        assert!(why.contains("with_push_sender(sender)"), "{why}");
+        RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(declaring())
+            .with_push_sender(crate::push::HttpPushSender::new())
+            .build()
+            .expect("push declared, sender wired");
     }
 
     #[test]

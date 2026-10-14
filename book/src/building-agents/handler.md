@@ -12,7 +12,7 @@ The `RequestHandler` is the central orchestrator that connects your executor to 
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyExecutor;
@@ -182,7 +182,7 @@ on top is decoding the wire format and encoding the reply.
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 use std::collections::HashMap;
 
@@ -239,7 +239,7 @@ The handler is wrapped in `Arc` for sharing between dispatchers:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyExecutor;
@@ -270,7 +270,7 @@ The default `InMemoryTaskStore` supports TTL and capacity limits:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyExecutor;
@@ -302,7 +302,7 @@ For production use, implement the `TaskStore` trait for your database:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use std::future::Future;
 # use std::pin::Pin;

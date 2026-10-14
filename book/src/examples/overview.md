@@ -37,7 +37,7 @@ Every example that serves A2A follows the same three-step integration pattern:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 use a2a_protocol_sdk::prelude::*;
 use std::sync::Arc;

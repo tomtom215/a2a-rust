@@ -1709,6 +1709,31 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `helpers.rs` under 500 lines; the ledger's 17 citations of them, and
     five line citations into `helpers.rs` the wrapper shifted, follow.
     Both tests failed before; mutants 4 of 4.
+92. `fix(server)!:` §3.3.4 — push-config operations need a push sender, and
+    so does a card that declares push (audit register R34; in Behaviour
+    Changes). `ensure_push_supported` refuses when no sender is wired, so
+    Get, List and Delete answer `PushNotificationNotSupported` as Create
+    did; they ran against the store. `build()` refuses a card declaring
+    `pushNotifications` with no sender. Three tests failed before:
+    `every_push_op_without_a_sender_returns_push_not_supported`,
+    `no_sender_rejects_push` and
+    `build_refuses_a_card_declaring_push_without_a_sender`.
+    The workspace run (`--all-features`) then failed 26 tests across 9
+    targets, all from this change. Twenty now wire a sender: they test
+    behaviour past the gate, or build a card that declares push for another
+    reason. Three about the missing sender build without a card instead.
+    Three named for the old answers (`*_no_push_sender_still_works`,
+    `get_push_config_no_push_sender_returns_404`) now assert
+    `PUSH_NOTIFICATION_NOT_SUPPORTED` under new names. Two metrics tests
+    that had passed on the gate's error rather than the one they name, and
+    three capability tests written for the old contract, wire a sender too.
+    The SLIMRPC binding (its own workspace) was not run: by grep, no card
+    in it declares push and no test calls a push-config operation. 39
+    hidden book cards declared push with no sender wired and no longer
+    declare it; the push-config store snippet wires one. Ledger 355, 376,
+    397 and 573; 87 citations into the three edited files follow their
+    lines (the 74 bare ones checked byte for byte against the old source).
+    Mutants 8 of 8.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

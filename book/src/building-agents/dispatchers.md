@@ -12,7 +12,7 @@ Routes JSON-RPC 2.0 requests to the handler:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
@@ -73,7 +73,7 @@ Routes RESTful HTTP requests to the handler:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
@@ -148,7 +148,7 @@ Both dispatchers implement the `Dispatcher` trait, so you can use the `serve()` 
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
@@ -223,7 +223,7 @@ a2a-protocol-server = { version = "0.14", features = ["websocket"] }
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
@@ -298,7 +298,7 @@ descriptor for the life of the process. Two knobs bound that, both opt-in:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_server::WebSocketDispatcher;
@@ -345,7 +345,7 @@ a2a-protocol-server = { version = "0.14", features = ["grpc"] }
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
@@ -402,7 +402,7 @@ silent were all accepted, and the oldest was still alive twelve seconds later.
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
@@ -457,7 +457,7 @@ For advanced scenarios, use `into_service()` to get a tonic service:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
@@ -520,7 +520,7 @@ The returned `Router` can be merged with other Axum routes and middleware:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
@@ -589,7 +589,7 @@ configured: without `with_cors`, no response carries CORS headers — an
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;

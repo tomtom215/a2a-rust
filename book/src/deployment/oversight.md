@@ -135,7 +135,7 @@ On the server, `with_approval_gate` decides which decisions reach the executor:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 use a2a_protocol_server::approval::ApprovalGate;
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};

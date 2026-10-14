@@ -13,7 +13,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `with_task_store` | `impl TaskStore` | `InMemoryTaskStore`; `TenantAwareInMemoryTaskStore` when tasks are isolated by caller | Custom task storage backend |
 | `with_task_store_config` | `TaskStoreConfig` | 1hr TTL, 10k capacity | TTL and capacity for default store; per caller partition when tasks are isolated by caller, so the store holds up to 1,000 times the capacity |
 | `with_push_config_store` | `impl PushConfigStore` | `InMemoryPushConfigStore`; the tenant-aware one when the task store partitions by tenant | Custom push config storage |
-| `with_push_sender` | `impl PushSender` | None | Webhook delivery implementation |
+| `with_push_sender` | `impl PushSender` | None | Webhook delivery implementation. Without one, every push-config operation answers `PushNotificationNotSupported`, and `build()` refuses a card that declares `pushNotifications` (spec §3.3.4) |
 | `with_interceptor` | `impl ServerInterceptor` | Empty chain | Server middleware |
 | `isolate_tasks_by_caller()` | — | On, with an authenticating interceptor | A partition per caller within a tenant (spec §13.1). On by default for the callers an authenticating interceptor identifies; calling it also refuses a request with no identity. See [Multi-tenancy](../deployment/multi-tenancy.md#callers-within-one-tenant) |
 | `share_tasks_across_callers()` | — | Off | Every caller in a tenant sees its tasks, and stores that do not partition by tenant are accepted |

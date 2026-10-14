@@ -231,6 +231,7 @@ impl PushConfigStore for MyPushConfigStore {
 RequestHandlerBuilder::new(executor)
     .with_agent_card(card())
     .with_push_config_store(MyPushConfigStore { /* ... */ })
+    .with_push_sender(a2a_protocol_sdk::server::HttpPushSender::new())
     // (SQLite and PostgreSQL push-config stores ship with the crate —
     //  SqlitePushConfigStore / PostgresPushConfigStore.)
     .build()

@@ -27,6 +27,7 @@ async fn an_id_with_two_dots_is_routed_and_a_dot_segment_is_refused() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(Exec)
             .without_agent_card()
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
             .build()
             .expect("handler"),
     );

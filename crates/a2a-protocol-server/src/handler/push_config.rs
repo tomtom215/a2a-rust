@@ -153,7 +153,8 @@ impl RequestHandler {
     ///
     /// # Errors
     ///
-    /// Returns [`ServerError::PushNotSupported`] if no push sender is configured.
+    /// Returns [`ServerError::PushNotSupported`] if the agent card does not
+    /// advertise push notifications or no push sender is configured.
     #[allow(clippy::too_many_lines)]
     pub async fn on_set_push_config(
         &self,
@@ -229,8 +230,9 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::PushNotSupported`] if the agent card does not
-    /// advertise push notifications, or [`ServerError::TaskNotFound`] if the
-    /// requested configuration does not exist (spec §3.1.8).
+    /// advertise push notifications or no push sender is configured, or
+    /// [`ServerError::TaskNotFound`] if the requested configuration does not
+    /// exist (spec §3.1.8).
     pub async fn on_get_push_config(
         &self,
         params: GetPushConfigParams,
@@ -302,7 +304,10 @@ impl RequestHandler {
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`] if the store query fails.
+    /// Returns [`ServerError::PushNotSupported`] if the agent card does not
+    /// advertise push notifications or no push sender is configured,
+    /// [`ServerError::TaskNotFound`] if the task does not exist (spec
+    /// §3.1.9), or another [`ServerError`] if the store query fails.
     pub async fn on_list_push_configs(
         &self,
         task_id: &str,
@@ -367,7 +372,10 @@ impl RequestHandler {
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`] if the delete operation fails.
+    /// Returns [`ServerError::PushNotSupported`] if the agent card does not
+    /// advertise push notifications or no push sender is configured,
+    /// [`ServerError::TaskNotFound`] if the task does not exist (spec
+    /// §3.1.10), or another [`ServerError`] if the delete operation fails.
     pub async fn on_delete_push_config(
         &self,
         params: DeletePushConfigParams,
@@ -521,6 +529,16 @@ mod tests {
     fn make_handler() -> RequestHandler {
         RequestHandlerBuilder::new(DummyExecutor)
             .without_agent_card()
+            .build()
+            .unwrap()
+    }
+
+    /// A handler with a sender wired, so push-config calls get past the
+    /// §3.3.4 gate to the behaviour a test is about.
+    fn make_push_handler() -> RequestHandler {
+        RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_push_sender(NoopSender)
             .build()
             .unwrap()
     }
@@ -714,6 +732,51 @@ mod tests {
         assert!(
             matches!(result, Err(crate::error::ServerError::PushNotSupported)),
             "expected PushNotSupported, got: {result:?}"
+        );
+    }
+
+    /// §3.3.4: without a push sender every push-config operation answers
+    /// `PushNotificationNotSupported`, as Create already did. Get, List and
+    /// Delete answered `TaskNotFound`, `[]` and success.
+    #[tokio::test]
+    async fn every_push_op_without_a_sender_returns_push_not_supported() {
+        use a2a_protocol_types::params::{DeletePushConfigParams, GetPushConfigParams};
+
+        let handler = make_handler();
+        save_task(&handler, "task-1").await;
+
+        let get = handler
+            .on_get_push_config(
+                GetPushConfigParams {
+                    tenant: None,
+                    task_id: "task-1".into(),
+                    id: "cfg-1".into(),
+                },
+                None,
+            )
+            .await;
+        assert!(
+            matches!(get, Err(crate::error::ServerError::PushNotSupported)),
+            "get: {get:?}"
+        );
+        let list = handler.on_list_push_configs("task-1", None, None).await;
+        assert!(
+            matches!(list, Err(crate::error::ServerError::PushNotSupported)),
+            "list: {list:?}"
+        );
+        let delete = handler
+            .on_delete_push_config(
+                DeletePushConfigParams {
+                    tenant: None,
+                    task_id: "task-1".into(),
+                    id: "cfg-1".into(),
+                },
+                None,
+            )
+            .await;
+        assert!(
+            matches!(delete, Err(crate::error::ServerError::PushNotSupported)),
+            "delete: {delete:?}"
         );
     }
 
@@ -1310,7 +1373,7 @@ mod tests {
         // TaskNotFoundError.
         use a2a_protocol_types::params::GetPushConfigParams;
 
-        let handler = make_handler();
+        let handler = make_push_handler();
         let params = GetPushConfigParams {
             tenant: None,
             task_id: "no-task".to_owned(),
@@ -1329,7 +1392,7 @@ mod tests {
     /// a peer could not tell from a known task with no webhooks.
     #[tokio::test]
     async fn list_push_configs_for_an_unknown_task_is_task_not_found() {
-        let handler = make_handler();
+        let handler = make_push_handler();
         let result = handler.on_list_push_configs("no-task", None, None).await;
         assert!(
             matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
@@ -1339,7 +1402,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_push_configs_of_a_task_without_any_is_empty() {
-        let handler = make_handler();
+        let handler = make_push_handler();
         save_task(&handler, "t-empty").await;
         let result = handler
             .on_list_push_configs("t-empty", None, None)
@@ -1356,7 +1419,7 @@ mod tests {
     async fn delete_push_config_nonexistent_returns_ok() {
         use a2a_protocol_types::params::DeletePushConfigParams;
 
-        let handler = make_handler();
+        let handler = make_push_handler();
         save_task(&handler, "t-del").await;
         let params = DeletePushConfigParams {
             tenant: None,
@@ -1375,7 +1438,7 @@ mod tests {
     async fn delete_push_config_of_an_unknown_task_is_task_not_found() {
         use a2a_protocol_types::params::DeletePushConfigParams;
 
-        let handler = make_handler();
+        let handler = make_push_handler();
         let params = DeletePushConfigParams {
             tenant: None,
             task_id: "no-task".to_owned(),
@@ -1424,6 +1487,7 @@ mod tests {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
             .without_agent_card()
             .with_interceptor(FailInterceptor)
+            .with_push_sender(NoopSender)
             .build()
             .unwrap();
 
@@ -1503,7 +1567,7 @@ mod tests {
         // This additionally ensures error metrics are tracked for missing configs.
         use a2a_protocol_types::params::GetPushConfigParams;
 
-        let handler = make_handler();
+        let handler = make_push_handler();
         let params = GetPushConfigParams {
             tenant: None,
             task_id: "missing-task".to_owned(),

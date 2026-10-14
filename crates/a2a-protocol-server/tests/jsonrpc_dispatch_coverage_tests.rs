@@ -113,6 +113,7 @@ fn make_plain_dispatcher() -> Arc<JsonRpcDispatcher> {
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
             .without_agent_card()
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
             .build()
             .unwrap(),
     );

@@ -297,7 +297,7 @@ async fn rest_push_config_not_supported_error_status() {
     // Build a handler without push sender.
     let handler = Arc::new(
         RequestHandlerBuilder::new(SimpleExecutor)
-            .with_agent_card(minimal_agent_card())
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );
@@ -360,6 +360,7 @@ async fn rest_required_extension_enforced_and_echoed() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(SimpleExecutor)
             .with_agent_card(card)
+            .with_push_sender(MockPushSender)
             .build()
             .expect("build handler"),
     );
@@ -729,7 +730,7 @@ async fn rest_error_push_not_supported_has_aip193_body() {
     // Build a handler without push sender.
     let handler = Arc::new(
         RequestHandlerBuilder::new(SimpleExecutor)
-            .with_agent_card(minimal_agent_card())
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );

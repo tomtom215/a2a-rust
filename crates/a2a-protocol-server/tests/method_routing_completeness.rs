@@ -109,6 +109,7 @@ async fn start_server() -> std::net::SocketAddr {
         RequestHandlerBuilder::new(EchoExecutor)
             .with_agent_card(full_card())
             .with_push_config_store(InMemoryPushConfigStore::new())
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
             .allow_unauthenticated_extended_card()
             .build()
             .expect("build handler"),

@@ -36,6 +36,7 @@ fn handler(seen: &Seen) -> Arc<a2a_protocol_server::RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(SimpleExecutor)
             .with_agent_card(minimal_agent_card())
+            .with_push_sender(MockPushSender)
             .with_metrics(Recording(Arc::clone(seen)))
             .build()
             .expect("build handler"),

@@ -127,12 +127,16 @@ let caps = AgentCapabilities::none()
 >   return `UnsupportedOperationError`.
 > - If `pushNotifications` is not `true`, the push-config operations
 >   (Create/Get/List/Delete) return `PushNotificationNotSupportedError`.
+>   They also need a push sender (`RequestHandlerBuilder::with_push_sender`):
+>   without one they return that error whatever the card says, and `build()`
+>   refuses a card that declares `pushNotifications` with no sender.
 > - If `extendedAgentCard` is not `true`, `GetExtendedAgentCard` returns
 >   `UnsupportedOperationError`.
 >
 > So if your agent serves streaming or push, **set the matching flag to `true`**
 > — otherwise clients are told the operation is unsupported. A handler with no
-> agent card configured publishes no contract and is not gated.
+> agent card configured publishes no contract and is not gated by one; push
+> still needs a sender.
 >
 > **The client reads the same flags (spec §3.3.4).** A client built with
 > `ClientBuilder::from_card` refuses those calls itself, before sending, when

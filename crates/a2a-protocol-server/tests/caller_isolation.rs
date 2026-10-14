@@ -64,6 +64,7 @@ const ISOLATED: [Callers; 2] = [Callers::ByDefault, Callers::Isolated];
 fn handler(callers: Callers) -> RequestHandler {
     let b = RequestHandlerBuilder::new(Worker)
         .without_agent_card()
+        .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
             ("alice-token", "alice"),
             ("bob-token", "bob"),

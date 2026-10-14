@@ -172,6 +172,17 @@ A push config with an empty or scheme-less `url`, or with an authentication
 scheme other than Bearer or Basic, answers `InvalidParams`. The second used to
 be stored and then delivered with no credentials at all.
 
+### Push needs a push sender
+
+Spec §3.3.4: when push is not supported, every push-config operation MUST
+answer `PushNotificationNotSupported`. A handler with no push sender now
+answers that to Get, List and Delete as well as Create; they used to run
+against the store. And `build()` refuses an agent card that declares
+`capabilities.pushNotifications` with no sender, since every push-config
+operation would refuse what the card advertises. Wire one with
+`.with_push_sender(HttpPushSender::new())`, or declare `pushNotifications`
+false.
+
 ### `ClientBuilder::from_card` follows the card's interface order
 
 Spec §8.3.2: a client MUST select the first interface it supports, preferring
@@ -288,7 +299,7 @@ callers are meant to see each other's tasks, say so:
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true).with_push_notifications(true))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_sdk::server::InMemoryTaskStore;

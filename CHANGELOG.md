@@ -326,6 +326,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **Push-config operations need a push sender, and so does a card that
+  declares push** (server; spec §3.3.4). Without a sender, Create answered
+  `PushNotificationNotSupported` while Get, List and Delete still ran
+  against the push-config store, so a client was told `TaskNotFound`, `[]`
+  or success; all four now answer `PushNotificationNotSupported`. And `RequestHandlerBuilder::build`
+  refuses an agent card that declares `capabilities.pushNotifications`
+  with no `with_push_sender`, since every push-config operation would
+  refuse what the card advertises; wire a sender or declare it false.
 - **ListTasks follows a2a.proto's `ListTasksRequest` and
   `ListTasksResponse`** (server, every task store). `statusTimestampAfter`
   includes its bound ("greater than or equal to"); every store excluded
