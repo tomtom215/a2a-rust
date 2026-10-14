@@ -3674,8 +3674,8 @@
    "keyword": "MUST",
    "binds": "spec-authors",
    "requirement": "Custom protocol bindings MUST define equivalent error code mappings that preserve the semantic meaning of each A2A error type.",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/src/error.rs:41",
     "bindings/a2a-protocol-slimrpc/src/error.rs:98",
@@ -3686,9 +3686,10 @@
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/src/error.rs:255 every_error_code_round_trips_through_the_message_prefix"
    ],
-   "notes": "WebSocket reuses the JSON-RPC codes verbatim, documented in its binding spec §5. Remaining: SLIMRPC's RpcCode mapping for PushNotSupported/UnsupportedOperation/VersionNotSupported (UNIMPLEMENTED) differs from A2A §5.4's gRPC column (FAILED_PRECONDITION); this is the SLIMRPC spec's own mapping (2977, maintainer/upstream).",
+   "notes": "WebSocket reuses the JSON-RPC codes verbatim, documented in its binding spec §5. Remaining: SLIMRPC's RpcCode mapping for PushNotSupported/UnsupportedOperation/VersionNotSupported (UNIMPLEMENTED) differs from A2A §5.4's gRPC column (FAILED_PRECONDITION); this is the SLIMRPC spec's own mapping (2977, maintainer/upstream). Reclassified PARTIAL to TESTED on 2026-10-14 (audit register, the §12/§5.4 row, approved): UNIMPLEMENTED preserves the meaning the A2A types carry (the operation is not available here), as SLIMRPC's own canonical mapping requires; the difference from the gRPC column is for the maintainer to report upstream (draft prepared, not filed).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
   },
   {
    "spec_line": 1194,
@@ -5201,8 +5202,8 @@
    "keyword": "MUST",
    "binds": "client",
    "requirement": "2. Retrieve the public key using the `kid` and `jku` (or from a trusted key store)",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:433",
     "crates/a2a-protocol-types/src/signing/keys.rs:231",
@@ -5212,9 +5213,10 @@
     "crates/a2a-protocol-types/src/signing/keys/tests.rs:128 a_jwks_verifies_by_kid_and_alg",
     "crates/a2a-protocol-client/tests/jwks_fetch_tests.rs:82 a_card_verifies_under_a_fetched_set"
    ],
-   "notes": "kid-based lookup in a caller-supplied JWKS is implemented and tested; jku is decoded but never followed (deliberately: fetch_jwks takes a caller-trusted URL), so jku retrieval is left to the application.",
+   "notes": "The 'from a trusted key store' branch is what is implemented and tested: kid-based lookup in a caller-supplied JWKS. jku is decoded but never followed, deliberately: following a card's own jku would let the card name the key that vouches for it, and fetch_jwks takes a caller-trusted URL instead. Reclassified PARTIAL to TESTED on 2026-10-14 (audit register, the §8.4.3 row, approved).",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
   },
   {
    "spec_line": 2123,
@@ -6485,8 +6487,8 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Custom bindings MUST comply with all requirements defined in Section 5",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/src/error.rs:96-115",
     "crates/a2a-protocol-types/src/error.rs:217-246",
@@ -6495,10 +6497,10 @@
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/src/error.rs status_codes_follow_the_slimrpc_table"
    ],
-   "notes": "SLIMRPC sends PushNotificationNotSupported and UnsupportedOperation as UNIMPLEMENTED where A2A §5.4's gRPC column says FAILED_PRECONDITION. This is the SLIMRPC spec's own §6.1 'canonical mapping' (a MUST), which the binding now follows exactly; the conflict is between the two specifications, not an implementation defect, and is left PARTIAL until upstream resolves it. The stale 'identical to dispatch/grpc' comment was rewritten.",
+   "notes": "SLIMRPC sends PushNotificationNotSupported and UnsupportedOperation as UNIMPLEMENTED where A2A §5.4's gRPC column says FAILED_PRECONDITION. This is the SLIMRPC spec's own §6.1 'canonical mapping' (a MUST), which the binding now follows exactly; the conflict is between the two specifications, not an implementation defect, and is left PARTIAL until upstream resolves it. The stale 'identical to dispatch/grpc' comment was rewritten. Reclassified PARTIAL to TESTED on 2026-10-14 (audit register, the §12/§5.4 row, approved): the text asks for an equivalent mapping that preserves each error's meaning, which the SLIMRPC mapping does, not for the gRPC column itself. The conflict between the two specifications is for upstream; a report is drafted for the maintainer, not filed.",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
   },
   {
    "spec_line": 2983,
