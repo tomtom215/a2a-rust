@@ -48,6 +48,12 @@ let card = resolve_agent_card_with_options("https://agent.example.com", &options
   card you fetched yourself, `verify_card_json_with_jwks` takes its JSON;
   `verify_card_with_jwks` verifies a card as this SDK models it.
 
+- **Every way in:** a `CachingCardResolver` verifies with the options it is
+  given (`CachingCardResolver::new(url)?.with_options(options)`), and never
+  caches a card that fails. For a card you hold as JSON,
+  `ClientBuilder::from_signed_card(&json, keys)` verifies it as given and
+  then builds as `from_card` does. Both since 0.15.
+
 - **Algorithms:** ES256 (P-256) and EdDSA (Ed25519). A key is only ever
   tried under the algorithm its type is for.
 - **Revoking a key:** remove it from the set. A verifier that re-fetches the

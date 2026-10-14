@@ -37,6 +37,9 @@ mod transport_factory;
 #[cfg(test)]
 mod selection_tests;
 
+#[cfg(feature = "signing")]
+mod signed;
+
 use std::time::Duration;
 
 use a2a_protocol_types::{AgentCard, AgentInterface};

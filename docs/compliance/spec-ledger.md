@@ -38,10 +38,10 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §11 | 16 |  |  | 2 |  | 1 | 19 |
 | §12 | 8 | 1 | 7 |  | 1 | 2 | 19 |
 | §13 | 34 | 26 | 8 | 1 |  |  | 69 |
-| §14 | 5 | 5 | 3 |  |  | 2 | 15 |
+| §14 | 6 | 5 | 3 |  |  | 1 | 15 |
 | §A |  |  |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 81 | 11 | 6 |  | 8 |  | 106 |
-| **All** | **325** | **87** | **56** | **7** | **22** | **12** | **509** |
+| **All** | **326** | **87** | **56** | **7** | **22** | **11** | **509** |
 
 ## Open items, most severe first
 
@@ -58,7 +58,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | low | PARTIAL | §12.4 (line 3016) | 2. Preserve Error Information: Ensure error details are accessible to clients | WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker ins… |
 | low | PARTIAL | §12.6 (line 3033) | Custom bindings MUST: Support Standard Schemes; Document Integration; Handle Challenges; Maintain Security | WebSocket spec §6 documents integration: credentials on the upgrade headers, checked per request; a refused credential is -32600 in the body with no 401/WWW-Authenticate (the connection is already upgraded), and browsers cannot set Authorization. Remaining: n… |
 | low | PARTIAL | §14 (line 3342) | Implementations SHOULD support HTTPS to ensure authenticity and integrity of the Agent Card | Client fetches over HTTPS (rustls). Server HTTP listeners (serve/, JSON-RPC/REST/WS) do not terminate TLS; docs require a reverse proxy; only gRPC has native TLS (grpc-tls). |
-| low | PARTIAL | §14 (line 3344) | Clients SHOULD verify signatures when present | With CardFetchOptions::with_signature_keys (feature signing), resolve_agent_card_with_options and fetch_card_from_url_with_options return a signed card only if one signature verifies against the caller's keys; a tampered card or one with no matching key fails… |
 
 ## After the release
 

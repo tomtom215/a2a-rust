@@ -1381,6 +1381,11 @@ follows is a new pull request.
     `h2`, so a fetch there needs an HTTP/2 client). Ledger §8.1 (1970)
     PARTIAL to TESTED (TESTED 325, PARTIAL 12).
 
+28. `feat(client):` spec §14 SHOULD — `CachingCardResolver::with_options`
+    and `ClientBuilder::from_signed_card(json, keys)`, so every way a
+    client gets a card can verify it. Ledger §14 (3344) PARTIAL to TESTED
+    (TESTED 326, PARTIAL 11).
+
 **Lessons, new this session.**
 - In these crates an item in a private module is `pub`, not `pub(crate)`:
   `clippy::redundant_pub_crate` is denied, and this branch wrote it wrong

@@ -69,6 +69,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config is opened under its old partition and sealed again under the new
   one, and a task id the new partition already holds refuses the whole run.
   A second run moves nothing.
+- **`CachingCardResolver::with_options`** and
+  **`ClientBuilder::from_signed_card`** (client; spec §14: clients SHOULD
+  verify signatures when present). The caching resolver fetched with
+  default options, so it could not verify a signed card at all, and a
+  client built from a card the caller held had no way to verify it. The
+  resolver now fetches with the `CardFetchOptions` it is given, signature
+  keys included, and caches nothing that fails; `from_signed_card` (feature
+  `signing`) verifies the card's JSON as given, before reading it into an
+  `AgentCard`, then builds as `from_card` does.
 - **`auth::caller_id`** (server): `bearer`, `api_key` and `jwt` build the
   identities the bundled interceptors record.
 - **`DispatchConfig::with_agent_card_max_age`** (server; spec §8.6.1: the
