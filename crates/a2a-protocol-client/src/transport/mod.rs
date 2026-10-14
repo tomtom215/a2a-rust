@@ -222,6 +222,8 @@ pub trait Transport: Send + Sync + 'static {
     /// transport that cannot carry query parameters says so rather than
     /// dropping a credential. The JSON-RPC and HTTP+JSON transports carry
     /// them; gRPC and WebSocket refuse.
+    ///
+    /// [`ClientError::InvalidAuthScheme`]: crate::error::ClientError::InvalidAuthScheme
     fn send_request_with_query<'a>(
         &'a self,
         method: &'a str,
