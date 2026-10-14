@@ -1009,9 +1009,28 @@ reproduced locally before its fix.
    (38516495025) passed all eight shards. Not fixed, low: a shard that
    starts after its PR merges grades nothing and the gate accepts that.
 
+6. `fix(deps):` rustls 0.23.46. RustSec published four rustls advisories
+   at 2026-10-14 10:34 UTC (advisory-db 2290866), all patched in 0.23.46:
+   GHSA-w44r-93j7-qv28 (classical key-exchange downgrade), -c8m5-c952-6cm4
+   (`Debug` prints session secrets), -vp88-798v-h67f (ECH), -h2v8-394m-p7vv
+   (Brotli, `brotli` feature only). `check_advisory_floors.py` found the
+   published manifests' `>=0.23.45` admitting 0.23.45 under all four (8
+   pairs; 0 after). The floors are `>=0.23.46` in the client, server and sdk
+   manifests, normal and dev; the root and both harness locks take 0.23.46
+   (version and checksum lines only); `prove_gates_fail.sh`'s
+   `advisory_floors` injection now looks for the new floor. The binding
+   stays at 0.23.43 (aws-lc-rs, as for RUSTSEC-2026-0285) and waives the
+   three that reach it in `osv-scanner.toml` by GHSA id. cargo-deny cannot
+   take them yet: it matches `ignore` by RUSTSEC id only (cargo-deny 0.20.2,
+   checked by ignoring RUSTSEC-2026-0285 by its GHSA alias: it was still
+   reported), and the database lists the four under the placeholder
+   RUSTSEC-0000-0000. **When RustSec assigns their ids, the binding's
+   `cargo-deny` step fails until `deny.toml` waives the three.** Checked:
+   neither the binding nor the crates implement a `ClientSessionStore`, and
+   the binding's lock gives rustls no brotli dependency.
 **Step 1: A2A v1.0.1.**
 
-6. `docs(ledger):` the ledger audits the v1.0.1 release. The vendored copy
+8. `docs(ledger):` the ledger audits the v1.0.1 release. The vendored copy
    it was made against was upstream `main` at `12e9d2fb`, byte-identical to
    that commit's `docs/specification.md` (checked with `cmp`), and not tag
    `v1.0.1` (`3303592`, the commit `proto/UPSTREAM` already pins the proto

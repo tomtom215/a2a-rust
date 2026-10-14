@@ -924,7 +924,7 @@ PY
             # verbatim, as the adopter found it (N24).
             local client_toml=crates/a2a-protocol-client/Cargo.toml
             note_touched "$client_toml"
-            sed -i 's/version = ">=0.23.45, <0.24"/version = ">=0.23, <0.24"/' "$client_toml"
+            sed -i 's/version = ">=0.23.46, <0.24"/version = ">=0.23, <0.24"/' "$client_toml"
             grep -q 'version = ">=0.23, <0.24"' "$client_toml" \
                 || { echo "advisory_floors: rustls requirement not found in $client_toml" >&2; return 1; }
             ;;

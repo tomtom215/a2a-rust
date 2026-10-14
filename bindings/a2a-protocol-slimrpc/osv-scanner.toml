@@ -30,3 +30,29 @@ reason = "Alias of RUSTSEC-2026-0285, the id osv-scanner matches it by; see that
 id = "RUSTSEC-2024-0449"
 ignoreUntil = 2027-01-08
 reason = "unsafe-libyaml 0.2.11 is unmaintained (informational, not a vulnerability). It arrives through serde_yaml 0.9.34+deprecated, required by agntcy-slim-config 0.16.1 and regorus 0.11.0 in the locked tree. agntcy-slim-config 0.17.3 (under agntcy-slim-rpc 3.3.1) moves to yaml_serde and regorus 0.12.0 drops serde_yaml, so the SLIM 3.x upgrade removes it; remove this entry with that upgrade. See deny.toml."
+
+# The rustls 0.23.46 advisories, published 2026-10-14 (advisory-db 2290866,
+# "Add rustls 0.23.46 advisories"). The root workspace and the published
+# crates' floors moved to 0.23.46 the same day; this binding cannot, for the
+# reason RUSTSEC-2026-0285 gives: 0.23.46 needs aws-lc-rs ^1.18. Three of the
+# four reach the locked 0.23.43. The fourth, GHSA-vp88-798v-h67f (ECH),
+# lists 0.23.43 as unaffected and is not waived. They are waived here by their
+# GHSA ids, which is how osv-scanner matches them. cargo-deny matches only
+# RUSTSEC ids (checked with cargo-deny 0.20.2: an ignore naming
+# RUSTSEC-2026-0285's GHSA alias did not suppress it), and the database still
+# lists these under the placeholder RUSTSEC-0000-0000, so deny.toml gets its
+# entries once the ids are assigned.
+[[IgnoredVulns]]
+id = "GHSA-w44r-93j7-qv28"
+ignoreUntil = 2027-01-08
+reason = "rustls < 0.23.46: an unauthenticated ServerHello's key-exchange group is remembered for the server name, downgrading later connections to classical key exchange. Not reachable from this binding's fix (rustls 0.23.46 needs aws-lc-rs ^1.18; see RUSTSEC-2026-0285). The binding is unpublished."
+
+[[IgnoredVulns]]
+id = "GHSA-c8m5-c952-6cm4"
+ignoreUntil = 2027-01-08
+reason = "rustls < 0.23.46: Debug of TLS client session values prints the master secret or resumption PSK; exposed only through a custom ClientSessionStore that logs them with Debug, which this binding does not have. Not reachable from the fix, as for RUSTSEC-2026-0285. The binding is unpublished."
+
+[[IgnoredVulns]]
+id = "GHSA-h2v8-394m-p7vv"
+ignoreUntil = 2027-01-08
+reason = "rustls < 0.23.46: Brotli certificate decompression can allocate 1 GiB. Only with rustls's non-default brotli feature, which this binding's lock does not enable (rustls 0.23.43 has no brotli dependency in Cargo.lock). Not reachable from the fix, as for RUSTSEC-2026-0285. The binding is unpublished."

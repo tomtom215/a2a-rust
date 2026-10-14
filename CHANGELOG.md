@@ -1346,6 +1346,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`rustls` 0.23.46 is the floor** (client, server, sdk). RustSec published
+  four rustls advisories on 2026-10-14, all patched in 0.23.46
+  (GHSA-w44r-93j7-qv28, an unauthenticated ServerHello downgrading later
+  connections to classical key exchange; GHSA-c8m5-c952-6cm4, `Debug` of
+  client session values printing TLS secrets; GHSA-vp88-798v-h67f, buffered
+  data sent to the outer server after an ECH rejection; GHSA-h2v8-394m-p7vv,
+  Brotli certificate decompression, only with rustls's `brotli` feature).
+  The published manifests required `>=0.23.45`, so a consumer could keep an
+  affected rustls; they now require `>=0.23.46`, and the root and both
+  benchmark-harness lockfiles take 0.23.46. `check_advisory_floors.py` found
+  it: 8 requirement/advisory pairs, 0 after the change. The SLIMRPC binding
+  stays on 0.23.43 for RUSTSEC-2026-0285's reason (aws-lc-rs), and waives
+  the three that reach 0.23.43 in its `osv-scanner.toml`; cargo-deny matches
+  waivers only by RUSTSEC id, which these advisories do not have yet.
 - **The client's debug output names headers and JSON keys, never their
   values** (client). `ClientRequest`, `ClientResponse`, `CardFetchOptions` and
   `WebSocketTransportConfig` derived `Debug`, so `{req:?}` in an interceptor
