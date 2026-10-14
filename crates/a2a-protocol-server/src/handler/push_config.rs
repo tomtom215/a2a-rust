@@ -1157,7 +1157,7 @@ mod tests {
         assert!(
             matches!(
                 &refused,
-                Err(crate::error::ServerError::InvalidField { message: _, .. })
+                Err(crate::error::ServerError::InvalidField { .. })
             ),
             "{refused:?}"
         );
@@ -1193,27 +1193,18 @@ mod tests {
         for (task_id, id) in [("", "cfg-1"), ("t-1", "")] {
             let r = handler.on_get_push_config(get(task_id, id), None).await;
             assert!(
-                matches!(
-                    r,
-                    Err(crate::error::ServerError::InvalidField { message: _, .. })
-                ),
+                matches!(r, Err(crate::error::ServerError::InvalidField { .. })),
                 "get {task_id:?}/{id:?}: {r:?}"
             );
             let r = handler.on_delete_push_config(del(task_id, id), None).await;
             assert!(
-                matches!(
-                    r,
-                    Err(crate::error::ServerError::InvalidField { message: _, .. })
-                ),
+                matches!(r, Err(crate::error::ServerError::InvalidField { .. })),
                 "delete {task_id:?}/{id:?}: {r:?}"
             );
         }
         let r = handler.on_list_push_configs("", None, None).await;
         assert!(
-            matches!(
-                r,
-                Err(crate::error::ServerError::InvalidField { message: _, .. })
-            ),
+            matches!(r, Err(crate::error::ServerError::InvalidField { .. })),
             "list: {r:?}"
         );
     }

@@ -376,7 +376,7 @@ async fn metadata_exactly_at_limit_is_accepted_but_one_byte_over_is_not() {
             handler_with_metadata_limit(MAX)
                 .on_send_message(params, false, None)
                 .await,
-            Err(ServerError::InvalidField { message: _, .. })
+            Err(ServerError::InvalidField { .. })
         ),
         "message metadata of exactly {MAX} bytes is within the limit"
     );
@@ -388,7 +388,7 @@ async fn metadata_exactly_at_limit_is_accepted_but_one_byte_over_is_not() {
             handler_with_metadata_limit(MAX)
                 .on_send_message(params, false, None)
                 .await,
-            Err(ServerError::InvalidField { message: _, .. })
+            Err(ServerError::InvalidField { .. })
         ),
         "message metadata one byte over the limit must be rejected"
     );
@@ -401,7 +401,7 @@ async fn metadata_exactly_at_limit_is_accepted_but_one_byte_over_is_not() {
             handler_with_metadata_limit(MAX)
                 .on_send_message(params, false, None)
                 .await,
-            Err(ServerError::InvalidField { message: _, .. })
+            Err(ServerError::InvalidField { .. })
         ),
         "request metadata of exactly {MAX} bytes is within the limit"
     );
@@ -413,7 +413,7 @@ async fn metadata_exactly_at_limit_is_accepted_but_one_byte_over_is_not() {
             handler_with_metadata_limit(MAX)
                 .on_send_message(params, false, None)
                 .await,
-            Err(ServerError::InvalidField { message: _, .. })
+            Err(ServerError::InvalidField { .. })
         ),
         "request metadata one byte over the limit must be rejected"
     );
@@ -508,7 +508,7 @@ async fn empty_message_parts_returns_invalid_params() {
     let result = handler.on_send_message(params, false, None).await;
 
     assert!(
-        matches!(result, Err(ServerError::InvalidField { message: _, .. })),
+        matches!(result, Err(ServerError::InvalidField { .. })),
         "expected InvalidParams for empty parts"
     );
 }
@@ -527,7 +527,7 @@ async fn oversized_message_metadata_returns_invalid_params() {
     let result = handler.on_send_message(params, false, None).await;
 
     assert!(
-        matches!(result, Err(ServerError::InvalidField { message: _, .. })),
+        matches!(result, Err(ServerError::InvalidField { .. })),
         "expected InvalidParams for oversized message metadata"
     );
 }
@@ -543,7 +543,7 @@ async fn oversized_request_metadata_returns_invalid_params() {
     let result = handler.on_send_message(params, false, None).await;
 
     assert!(
-        matches!(result, Err(ServerError::InvalidField { message: _, .. })),
+        matches!(result, Err(ServerError::InvalidField { .. })),
         "expected InvalidParams for oversized request metadata"
     );
 }
@@ -838,7 +838,7 @@ async fn whitespace_only_context_id_returns_invalid_params() {
     let result = handler.on_send_message(params, false, None).await;
 
     assert!(
-        matches!(result, Err(ServerError::InvalidField { message: _, .. })),
+        matches!(result, Err(ServerError::InvalidField { .. })),
         "expected InvalidParams for whitespace-only context_id, got {result:?}"
     );
 }
@@ -2340,7 +2340,7 @@ async fn an_unspecified_role_is_refused() {
         .expect_err("ROLE_UNSPECIFIED must be refused");
     match err {
         ServerError::InvalidField { message: msg, .. } => {
-            assert!(msg.contains("message.role"), "{msg}")
+            assert!(msg.contains("message.role"), "{msg}");
         }
         other => panic!("expected InvalidParams, got {other:?}"),
     }
